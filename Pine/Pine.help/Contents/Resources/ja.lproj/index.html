@@ -4,8 +4,8 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
-    <meta name="description" content="Pineでプロジェクトを開き、コード編集、ペイン、ターミナル、Git、キーボードショートカットを使う方法を説明します。" />
-    <meta name="keywords" content="Pine, ヘルプ, エディタ, プロジェクト, タブ, ペイン, ターミナル, Git, ショートカット" />
+    <meta name="description" content="Pineでプロジェクトを開き、コード編集、ペイン、ターミナル、Git、LSP診断、エージェント機能、キーボードショートカットを使う方法を説明します。" />
+    <meta name="keywords" content="Pine, ヘルプ, エディタ, プロジェクト, タブ, ペイン, ターミナル, Git, LSP, 診断, エージェント, ショートカット, 設定, キーバインド, 折りたたみ, ミニマップ, 検索, 置換" />
     <title>Pineヘルプ</title>
     <link rel="stylesheet" type="text/css" href="../style.css" />
 </head>
@@ -16,43 +16,249 @@
         <h1>Pineヘルプ</h1>
         <p class="lead">macOSのプロジェクト、コード、ターミナル、Gitに集中できるネイティブエディタです。</p>
     </header>
+
+    <nav class="toc">
+        <h3>このガイドの内容</h3>
+        <ul>
+            <li><a href="#getting-started">はじめに</a></li>
+            <li><a href="#workspace">エディタ、ペイン、ターミナル</a></li>
+            <li><a href="#terminal">ターミナルとクイックターミナル</a></li>
+            <li><a href="#git">Git連携</a></li>
+            <li><a href="#lsp">言語サーバーと診断</a></li>
+            <li><a href="#agents">エージェント認識</a></li>
+            <li><a href="#settings">設定とキーバインド</a></li>
+            <li><a href="#shortcuts">キーボードショートカット</a></li>
+            <li><a href="#troubleshooting">トラブルシューティング</a></li>
+            <li><a href="#support">もっとヘルプが必要ですか？</a></li>
+        </ul>
+    </nav>
+
     <section id="getting-started">
         <h2>はじめに</h2>
         <div class="steps">
-            <div class="card"><h3>1. フォルダを開く</h3><p>「ファイル」&gt;「フォルダを開く」を選び、プロジェクトが入っているディレクトリを選択します。</p></div>
-            <div class="card"><h3>2. ファイルを開く</h3><p>サイドバーでファイルを選ぶか、クイックオープンで名前を検索します。</p></div>
-            <div class="card"><h3>3. ワークスペースを整える</h3><p>タブをエディタの端へドラッグすると分割でき、別のタブバーへドラッグすると移動できます。</p></div>
-            <div class="card"><h3>4. 作業を再開する</h3><p>Pineは次回起動時にプロジェクトウインドウ、エディタタブ、ペインの配置を復元します。</p></div>
+            <div class="card">
+                <h3>1. フォルダを開く</h3>
+                <p>「ファイル」&gt;「フォルダを開く」を選択し、プロジェクトを含むディレクトリを選びます。</p>
+            </div>
+            <div class="card">
+                <h3>2. ファイルを開く</h3>
+                <p>サイドバーでファイルを選ぶか、クイックオープンで名前から探します。</p>
+            </div>
+            <div class="card">
+                <h3>3. ワークスペースを整える</h3>
+                <p>タブをエディタの端にドラッグして分割を作るか、別のタブバーにドラッグして移動します。</p>
+            </div>
+            <div class="card">
+                <h3>4. 作業を続ける</h3>
+                <p>Pineはプロジェクトのウィンドウ、エディタのタブ、ペインのレイアウトを復元します。</p>
+            </div>
         </div>
     </section>
-    <section id="shortcuts">
-        <h2>基本ショートカット</h2>
-        <div class="shortcut-grid">
-            <div class="shortcut"><span>フォルダを開く</span><kbd>⇧⌘O</kbd></div>
-            <div class="shortcut"><span>クイックオープン</span><kbd>⌘P</kbd></div>
-            <div class="shortcut"><span>シンボル</span><kbd>⌘R</kbd></div>
-            <div class="shortcut"><span>プロジェクト内を検索</span><kbd>⇧⌘F</kbd></div>
-            <div class="shortcut"><span>行へ移動</span><kbd>⌘L</kbd></div>
-            <div class="shortcut"><span>保存</span><kbd>⌘S</kbd></div>
-            <div class="shortcut"><span>ターミナルを表示／非表示</span><kbd>⌘`</kbd></div>
-            <div class="shortcut"><span>新規ターミナルタブ</span><kbd>⌘T</kbd></div>
-            <div class="shortcut"><span>Markdownプレビュー</span><kbd>⇧⌘P</kbd></div>
-            <div class="shortcut"><span>Gitブランチを切り替える</span><kbd>⇧⌘B</kbd></div>
-        </div>
-        <p class="tip"><strong>ヒント：</strong>メニューには使用できるすべてのコマンドと現在のショートカットが表示されます。</p>
-    </section>
+
     <section id="workspace">
         <h2>エディタ、ペイン、ターミナル</h2>
         <div class="feature-grid">
-            <div class="card"><h3>ペインを分割</h3><p>エディタとターミナルのタブは同じ種類のペイン間で移動できます。端へドロップすると新しい分割を作成します。</p></div>
-            <div class="card"><h3>統合ターミナル</h3><p>コードの隣で完全なターミナルを使えます。開いているタブではスクロールバックが保持されます。</p></div>
-            <div class="card"><h3>安全な保存</h3><p>変更済みのタブは閉じる前に保護されます。自動保存と保存時の整形は「ファイル」メニューにあります。</p></div>
-            <div class="card"><h3>Git連携</h3><p>サイドバーとガターに変更が表示されます。ブランチ切り替えでローカルブランチを選択できます。</p></div>
+            <div class="card">
+                <h3>分割ペイン</h3>
+                <p>エディタとターミナルのタブは、同じ種類のペイン間で移動できます。端にドロップすると新しい分割が作成されます。</p>
+            </div>
+            <div class="card">
+                <h3>プレビューとピン留めタブ</h3>
+                <p>サイドバーのファイルをクリックすると一時的なプレビュータブとして開きます。ダブルクリックまたは編集でピン留めできます。</p>
+            </div>
+            <div class="card">
+                <h3>検索と置換</h3>
+                <p>Cmd+Fでファイル内検索。Cmd+Option+Fで検索と置換。プロジェクト全体の検索はCmd+Shift+Fです。</p>
+            </div>
+            <div class="card">
+                <h3>コード折りたたみとミニマップ</h3>
+                <p>ガターの三角をクリックしてコードブロックを折りたたみます。ミニマップは「表示」メニューから切り替えられます。</p>
+            </div>
+            <div class="card">
+                <h3>Markdownプレビュー</h3>
+                <p>Cmd+Shift+Pで、ソースのみ・レンダリング・並列Markdownプレビューを切り替えます。</p>
+            </div>
+            <div class="card">
+                <h3>シンボルナビゲーション</h3>
+                <p>Cmd+Rを押すと、現在のファイル内の関数・クラス・構造体へジャンプします。</p>
+            </div>
+            <div class="card">
+                <h3>安全な保存</h3>
+                <p>変更のあるタブは閉じる前に保護されます。自動保存と保存時フォーマットは「ファイル」メニューにあります。</p>
+            </div>
+            <div class="card">
+                <h3>セッションの復元</h3>
+                <p>Pineはプロジェクトを再度開いたときに、タブ・ペインレイアウト・カーソル位置を復元します。</p>
+            </div>
         </div>
     </section>
+
+    <section id="terminal">
+        <h2>ターミナルとクイックターミナル</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>統合ターミナル</h3>
+                <p>コードのすぐ隣でフル機能のターミナルを使えます。開いている間はスクロールバックが保持されます。</p>
+            </div>
+            <div class="card">
+                <h3>クイックターミナル</h3>
+                <p>Ctrl+Option+Spaceで、どのアプリの上にも重なるフローティング型のドロップダウンターミナルを切り替えられます。</p>
+            </div>
+            <div class="card">
+                <h3>クリック可能なリンク</h3>
+                <p>ターミナル出力の「ファイル:行」参照をCmd+クリックするとエディタで開きます。URLはシステムブラウザで開きます。</p>
+            </div>
+            <div class="card">
+                <h3>TUIアプリ</h3>
+                <p>Vim、htopなどTUIアプリがネイティブに動作します。oh-my-zshやカラーテーマも完全にサポートされます。</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="git">
+        <h2>Git連携</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>ファイルステータス</h3>
+                <p>サイドバーに変更・追加・削除されたファイルが色付きのステータス表示で示されます。</p>
+            </div>
+            <div class="card">
+                <h3>差分マーカー</h3>
+                <p>追加・変更・削除された行が、エディタのガターに色付きマーカーとして表示されます。</p>
+            </div>
+            <div class="card">
+                <h3>ブランチの切り替え</h3>
+                <p>タイトルバーのブランチ名をクリックするか、Cmd+Shift+Bでローカルブランチを切り替えます。</p>
+            </div>
+            <div class="card">
+                <h3>Blame表示</h3>
+                <p>Blame表示をオンにして、行ごとのコミット情報（ハッシュ・作成者・タイムスタンプ・メッセージ）を確認します。</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="lsp">
+        <h2>言語サーバーと診断</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>コードインテリジェンス</h3>
+                <p>PineはLanguage Server Protocolを利用し、診断・補完・ホバー・定義へ移動・名前変更を提供します。</p>
+            </div>
+            <div class="card">
+                <h3>サーバーの設定</h3>
+                <p>「設定」&gt;「言語」を開き、言語ごとにサーバー実行ファイルの有効化・無効化・設定を行います。</p>
+            </div>
+            <div class="card">
+                <h3>問題パネル</h3>
+                <p>プロジェクト全体の診断を折りたたみ可能なパネルで確認します。キーボードショートカットでエラーや警告を移動できます。</p>
+            </div>
+            <div class="card">
+                <h3>コードアクション</h3>
+                <p>ガターの診断インジケータをクリックするか、メニューからクイック修正やリファクタリングを適用します。</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="agents">
+        <h2>エージェント認識</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>エージェント検出</h3>
+                <p>Pineはターミナルで動作する対応CLIエージェントを検出し、バッジとインジケータでステータスを表示します。</p>
+            </div>
+            <div class="card">
+                <h3>アクティビティパネル</h3>
+                <p>エージェントのアクティビティをライブ表示します：変更されたファイル、実行されたコマンド、現在の状態。</p>
+            </div>
+            <div class="card">
+                <h3>エージェント履歴</h3>
+                <p>エージェントの変更を確認・取り消しできます。検証済みプレビューが、適用前に変更内容を正確に示します。</p>
+            </div>
+            <div class="card">
+                <h3>プライバシー</h3>
+                <p>エージェントへのコンテキスト受け渡しは任意かつ読み取り専用です。操作なしにコードやターミナル出力を送信することはありません。</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="settings">
+        <h2>設定とキーバインド</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>設定ウィンドウ</h3>
+                <p>Cmd+カンマで設定を開きます。エディタの既定値、ターミナル、言語サーバー、エージェントのプライバシーを設定します。</p>
+            </div>
+            <div class="card">
+                <h3>カスタムキーバインド</h3>
+                <p>管理されたキーバインドファイルでショートカットを上書きできます。コマンドパレットに有効な割り当てが表示されます。</p>
+            </div>
+            <div class="card">
+                <h3>コマンドパレット</h3>
+                <p>VS Codeのように、あいまい検索可能なパレットからコマンドを探して実行できます。</p>
+            </div>
+            <div class="card">
+                <h3>タスク</h3>
+                <p>カスタムタスクを定義し、コマンドパレットや「タスク」メニューからシェルコマンド・フォーマッタ・ビルドスクリプトを実行できます。</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="shortcuts">
+        <h2>主要なショートカット</h2>
+        <div class="shortcut-grid">
+            <div class="shortcut"><span>フォルダを開く</span><kbd>⇧⌘O</kbd></div>
+            <div class="shortcut"><span>クイックオープン</span><kbd>⌘P</kbd></div>
+            <div class="shortcut"><span>ファイル内検索</span><kbd>⌘F</kbd></div>
+            <div class="shortcut"><span>プロジェクト内検索</span><kbd>⇧⌘F</kbd></div>
+            <div class="shortcut"><span>検索と置換</span><kbd>⌥⌘F</kbd></div>
+            <div class="shortcut"><span>行へ移動</span><kbd>⌘L</kbd></div>
+            <div class="shortcut"><span>シンボルへ移動</span><kbd>⌘R</kbd></div>
+            <div class="shortcut"><span>保存</span><kbd>⌘S</kbd></div>
+            <div class="shortcut"><span>ターミナルの表示切り替え</span><kbd>⌘`</kbd></div>
+            <div class="shortcut"><span>新しいターミナルタブ</span><kbd>⌘T</kbd></div>
+            <div class="shortcut"><span>Markdownプレビュー</span><kbd>⇧⌘P</kbd></div>
+            <div class="shortcut"><span>Gitブランチ切替</span><kbd>⇧⌘B</kbd></div>
+            <div class="shortcut"><span>クイックターミナル</span><kbd>⌃⌥Space</kbd></div>
+            <div class="shortcut"><span>コメントの切り替え</span><kbd>⌘/</kbd></div>
+            <div class="shortcut"><span>ミニマップの切り替え</span><kbd>⇧⌘M</kbd></div>
+            <div class="shortcut"><span>次 / 前の変更</span><kbd>⌃⌥↓/↑</kbd></div>
+        </div>
+        <p class="tip"><strong>ヒント：</strong>メニューにはすべてのコマンドと現在のキーボードショートカットが表示されます。</p>
+    </section>
+
+    <section id="troubleshooting">
+        <h2>トラブルシューティング</h2>
+        <ul class="topic-list">
+            <li>
+                <strong>ターミナルが黒い画面を表示する</strong>
+                <span>Pineは既定でMetalレンダラーを使用します。黒い画面になる場合は、optionキーを押しながら再起動するか、<code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code>を実行してCoreGraphicsに切り替えてください。</span>
+            </li>
+            <li>
+                <strong>LSPの補完や診断が機能しない</strong>
+                <span>「設定」&gt;「言語」を開き、サーバー実行ファイルのパスを確認してください。Pineはサーバーのエラーをステータスバーに表示します。</span>
+            </li>
+            <li>
+                <strong>大きなファイルが遅い</strong>
+                <span>1 MB超のファイルはシンタックスハイライトを無効にするか確認します。10 MB超のファイルは段階的に読み込まれます。大きなファイルの移動にはミニマップを使ってください。</span>
+            </li>
+            <li>
+                <strong>保存時フォーマットが適用されない</strong>
+                <span>保存時フォーマットには、フォーマッタ（<code>terraform</code>・<code>shfmt</code>・<code>prettier</code> など）がPATHに存在する必要があります。Homebrewでインストールしてください。</span>
+            </li>
+            <li>
+                <strong>macOS 26または27の互換性</strong>
+                <span>PineはmacOS 26（Tahoe）を対象としています。プラットフォーム固有の問題が起きた場合は、バグ報告に<code>sw_vers</code>と<code>xcodebuild -version</code>の出力を含めてください。</span>
+            </li>
+            <li>
+                <strong>エージェントが検出されない</strong>
+                <span>Pineは対応CLIエージェントをプロセス名で検出します。エージェントがPineのターミナルペインで実行されていることを確認してください。クイックターミナルはまだエージェント検出に対応していません。</span>
+            </li>
+        </ul>
+    </section>
+
     <section class="support" id="support">
-        <h2>さらにサポートが必要ですか？</h2>
-        <p><a href="https://github.com/batonogov/pine/issues">Pineの課題トラッカー</a>で問題を報告したり、改善を提案したりできます。</p>
+        <h2>もっとヘルプが必要ですか？</h2>
+        <p><a href="https://github.com/batonogov/pine/issues">Pineのイシュートラッカー</a>で問題を報告したり、改善を提案したりできます。</p>
     </section>
 </main>
 </body>
