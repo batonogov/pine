@@ -135,4 +135,113 @@ struct ToastManagerTests {
         #expect(ToastItem.Kind.info == .info)
         #expect(ToastItem.Kind.filesReloaded != .info)
     }
+
+    // MARK: - Accessibility announcements (#1247)
+
+    @Test("Announcement posted when toast appears")
+    func announcementPostedOnShow() {
+        let manager = ToastManager()
+        manager.prefixesAnnouncements = false
+        var announcements: [String] = []
+        manager.announce = { announcements.append($0) }
+
+        manager.show(ToastItem(message: "Hello"))
+
+        #expect(announcements == ["Hello"])
+    }
+
+    @Test("Announcement includes localized prefix by default")
+    func announcementIncludesPrefix() {
+        let manager = ToastManager()
+        var announcements: [String] = []
+        manager.announce = { announcements.append($0) }
+
+        manager.show(ToastItem(message: "Saved"))
+
+        #expect(announcements.count == 1)
+        #expect(announcements[0].hasPrefix("Notification:") || announcements[0].contains("Saved"))
+    }
+
+    @Test("No announcement when queueing a toast behind a visible one")
+    func noAnnouncementWhileQueued() {
+        let manager = ToastManager()
+        manager.dismissDelay = 10  // Prevent auto-dismiss during test
+        var announcements: [String] = []
+        manager.announce = { announcements.append($0) }
+
+        manager.show(ToastItem(message: "First"))
+        manager.show(ToastItem(message: "Second"))
+
+        // Only the visible toast announces; the queued one is silent until
+        // it is actually presented.
+        #expect(announcements == ["Notification: First"])
+    }
+
+    // MARK: - Queue / overlap behavior (#1247)
+
+    @Test("interToastDelay defaults to UITimings.Delay.standard for predictable timing")
+    func interToastDelayDefault() {
+        let manager = ToastManager()
+        #expect(manager.interToastDelay == UITimings.Delay.standard)
+    }
+
+    @Test("Manual dismiss while queued toast is pending cancels advance work")
+    func manualDismissCancelsAdvance() async throws {
+        let manager = ToastManager()
+        manager.dismissDelay = 10
+        manager.show(ToastItem(message: "First"))
+        manager.show(ToastItem(message: "Second"))
+        // Trigger the inter-toast advance scheduling.
+        manager.dismiss()
+        // Immediately dismiss again before the advance fires — this must
+        // cancel the pending advance and drain the queue without overlapping
+        // two presentations.
+        manager.dismiss()
+
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(manager.currentToast == nil)
+        #expect(manager.queueCount == 0)
+    }
+
+    @Test("Queued toasts drain one at a time without overlap")
+    func queueDrainsSequentially() async throws {
+        let manager = ToastManager()
+        manager.dismissDelay = 10
+        var announcements: [String] = []
+        manager.prefixesAnnouncements = false
+        manager.announce = { announcements.append($0) }
+
+        manager.show(ToastItem(message: "A"))
+        manager.show(ToastItem(message: "B"))
+        manager.show(ToastItem(message: "C"))
+        #expect(announcements == ["A"])
+
+        manager.dismiss()
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(manager.currentToast?.message == "B")
+        #expect(announcements == ["A", "B"])
+
+        manager.dismiss()
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(manager.currentToast?.message == "C")
+        #expect(announcements == ["A", "B", "C"])
+        #expect(manager.queueCount == 0)
+    }
+
+    @Test("Newer toast's auto-dismiss is independent of prior toast's schedule")
+    func newerToastAutoDismissIndependent() async throws {
+        // First toast is shown then manually dismissed; Second is shown
+        // immediately after. Second's auto-dismiss must be scheduled fresh
+        // and fire on its own delay, not be confused with any prior work.
+        let manager = ToastManager()
+        manager.dismissDelay = 0.15
+        manager.show(ToastItem(message: "First"))
+        manager.dismiss()
+        manager.show(ToastItem(message: "Second"))
+
+        #expect(manager.currentToast?.message == "Second")
+        // Wait just past Second's auto-dismiss window.
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(manager.currentToast == nil)
+    }
 }

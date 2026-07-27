@@ -1104,6 +1104,19 @@ enum Strings {
         String(localized: "toast.filesReloaded.more \(count) \(names) \(remaining)")
     }
 
+    /// VoiceOver label for the toast dismiss (✕) button. Localized into all 9
+    /// supported languages (issue #1247).
+    static var a11yToastDismissLabel: String {
+        String(localized: "a11y.toast.dismiss.label", defaultValue: "Dismiss")
+    }
+
+    /// Prefix spoken by VoiceOver before the toast message when an
+    /// announcement is posted. Localized into all 9 supported languages
+    /// (issue #1247).
+    static var a11yToastAnnouncementPrefix: String {
+        String(localized: "a11y.toast.announcement.prefix", defaultValue: "Notification:")
+    }
+
     // MARK: - Progress Indicators
 
     static var progressLoadingProject: String {
