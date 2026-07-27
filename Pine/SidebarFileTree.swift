@@ -7,6 +7,7 @@
 //  (which the parent translates into "open tab"). See #739, #763, #778.
 //
 
+import AppKit
 import SwiftUI
 
 /// Sidebar row layout constants.
@@ -37,6 +38,20 @@ enum SidebarRowMetrics {
 enum SidebarFileOpenDisposition: Equatable, Sendable {
     case transientPreview
     case permanent
+
+    /// AppKit reports each click in a multi-click sequence immediately.
+    /// Opening a preview on click one and promoting it on click two avoids
+    /// delaying selection while waiting to rule out a double-click.
+    static func pointerClick(count: Int) -> Self {
+        count >= 2 ? .permanent : .transientPreview
+    }
+
+    /// A preview should leave keyboard focus in the sidebar so Finder-style
+    /// commands such as Return-to-rename keep working. Explicit opens move
+    /// focus into the editor.
+    var requestsEditorFocus: Bool {
+        self == .permanent
+    }
 }
 
 struct SidebarFileTree: View {
@@ -44,6 +59,7 @@ struct SidebarFileTree: View {
     let treeRevision: Int
     @Binding var selection: FileNode?
     let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
+    let onKeyboardFocusRequested: () -> Void
 
     var body: some View {
         ForEach(nodes) { node in
@@ -51,7 +67,8 @@ struct SidebarFileTree: View {
                 node: node,
                 treeRevision: treeRevision,
                 selection: $selection,
-                onFileOpen: onFileOpen
+                onFileOpen: onFileOpen,
+                onKeyboardFocusRequested: onKeyboardFocusRequested
             )
         }
     }
@@ -63,6 +80,7 @@ private struct SidebarFileTreeNode: View {
     let treeRevision: Int
     @Binding var selection: FileNode?
     let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
+    let onKeyboardFocusRequested: () -> Void
     @Environment(SidebarExpansionState.self) private var expansion
     @Environment(SidebarEditState.self) private var editState
     @State private var fontSettings = FontSizeSettings.shared
@@ -97,7 +115,8 @@ private struct SidebarFileTreeNode: View {
                                 node: child,
                                 treeRevision: treeRevision,
                                 selection: $selection,
-                                onFileOpen: onFileOpen
+                                onFileOpen: onFileOpen,
+                                onKeyboardFocusRequested: onKeyboardFocusRequested
                             )
                         }
                     }
@@ -176,11 +195,8 @@ private struct SidebarFileTreeNode: View {
             rowContent
         } else {
             rowContent
-                .onTapGesture(count: 2) {
-                    openFile(.permanent)
-                }
-                .onTapGesture(count: 1) {
-                    openFile(.transientPreview)
+                .onTapGesture {
+                    openFile(.pointerClick(count: NSApp.currentEvent?.clickCount ?? 1))
                 }
                 // Expose one labeled element with a stable identifier.
                 // The default action deliberately gives file rows an
@@ -214,6 +230,7 @@ private struct SidebarFileTreeNode: View {
     private func handleFolderTap() {
         guard !isRenamingThisNode else { return }
         selection = node
+        onKeyboardFocusRequested()
         if !expansion.isExpanded(node.url) {
             loadDeferredChildrenIfNeeded()
         }
@@ -224,6 +241,9 @@ private struct SidebarFileTreeNode: View {
         guard !isRenamingThisNode else { return }
         selection = node
         onFileOpen(node, disposition)
+        if disposition == .transientPreview {
+            onKeyboardFocusRequested()
+        }
     }
 
     private func loadDeferredChildrenIfNeeded() {

@@ -403,18 +403,26 @@ final class PaneManager {
         Array(tabManagers.values)
     }
 
-    /// Selects an editor tab and makes its owning pane the active focus
-    /// destination. Tab-strip controls use this instead of changing only the
-    /// local selection, which could leave focus routed to another pane.
+    /// Selects an editor tab and makes its owning pane active.
+    ///
+    /// Tab-strip controls use the default focus request so the destination
+    /// editor becomes first responder. Callers such as sidebar previews can
+    /// opt out to keep keyboard interaction at the source.
     @discardableResult
-    func selectEditorTab(_ tabID: UUID, in paneID: PaneID) -> Bool {
+    func selectEditorTab(
+        _ tabID: UUID,
+        in paneID: PaneID,
+        requestFocus: Bool = true
+    ) -> Bool {
         guard let tabManager = tabManagers[paneID],
               tabManager.tabs.contains(where: { $0.id == tabID }) else {
             return false
         }
         activePaneID = paneID
         tabManager.activeTabID = tabID
-        tabManager.pendingFocusTabID = tabID
+        // Clearing here is intentional: a previously queued AppKit retry for
+        // this same tab must not steal focus after a sidebar preview click.
+        tabManager.pendingFocusTabID = requestFocus ? tabID : nil
         recordTabActivation(paneID: paneID, tabID: tabID, contentType: .editor)
         return true
     }
@@ -602,11 +610,15 @@ final class PaneManager {
     }
 
     /// Opens a file into the usable editor destination and routes pane/tab
-    /// activation plus first-responder focus through the same path as a tab
-    /// click. Sidebar previews, explicit opens, Quick Open, and Activity Panel
-    /// navigation use this instead of mutating a pane-local manager directly.
+    /// activation through the same path as a tab click. Explicit opens, Quick
+    /// Open, and Activity Panel navigation request first-responder focus by
+    /// default; sidebar previews opt out so their keyboard focus is preserved.
     @discardableResult
-    func openFileInActiveEditor(url: URL, asTransientPreview: Bool = false) -> Bool {
+    func openFileInActiveEditor(
+        url: URL,
+        asTransientPreview: Bool = false,
+        requestFocus: Bool = true
+    ) -> Bool {
         let tabManager = ensureEditorPane()
         let paneID = activePaneID
         if asTransientPreview {
@@ -615,7 +627,7 @@ final class PaneManager {
             tabManager.openTab(url: url)
         }
         guard let tabID = tabManager.activeTabID else { return false }
-        return selectEditorTab(tabID, in: paneID)
+        return selectEditorTab(tabID, in: paneID, requestFocus: requestFocus)
     }
 
     /// Removes a pane and promotes its sibling. When the very last leaf in

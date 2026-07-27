@@ -477,6 +477,116 @@ struct TabDestinationFocusTests {
         #expect(terminalState.pendingFocusRequestID == previousRequestID)
     }
 
+    @Test("Selection can preserve source focus and cancels stale AppKit requests")
+    func selectionWithoutDestinationFocusCancelsPendingRequest() throws {
+        let paneManager = PaneManager()
+        let editorPaneID = paneManager.activePaneID
+        let editorManager = try #require(paneManager.tabManager(for: editorPaneID))
+        let tab = EditorTab(url: URL(fileURLWithPath: "/tmp/sidebar-preview.swift"))
+        editorManager.tabs = [tab]
+        editorManager.activeTabID = tab.id
+
+        let terminalPaneID = try #require(paneManager.createTerminalPane(
+            relativeTo: editorPaneID,
+            axis: .vertical,
+            workingDirectory: nil
+        ))
+        #expect(paneManager.activePaneID == terminalPaneID)
+
+        // Seed a request for the already-active tab. Because activeTabID does
+        // not change below, only the explicit no-focus path can cancel it.
+        editorManager.pendingFocusTabID = tab.id
+        #expect(editorManager.pendingFocusRequestID != nil)
+
+        #expect(paneManager.selectEditorTab(
+            tab.id,
+            in: editorPaneID,
+            requestFocus: false
+        ))
+        #expect(paneManager.activePaneID == editorPaneID)
+        #expect(editorManager.activeTabID == tab.id)
+        #expect(editorManager.pendingFocusTabID == nil)
+        #expect(editorManager.pendingFocusRequestID == nil)
+
+        let identity = GlobalTabIdentity(
+            paneID: editorPaneID,
+            tabID: tab.id,
+            contentType: .editor
+        )
+        #expect(paneManager.validGlobalTabSwitchOrder().first == identity)
+
+        #expect(paneManager.selectEditorTab(tab.id, in: editorPaneID))
+        #expect(editorManager.pendingFocusTabID == tab.id)
+    }
+
+    @Test("Sidebar preview preserves focus while an explicit open targets the editor")
+    func sidebarOpenDispositionFocusPolicy() {
+        #expect(!SidebarFileOpenDisposition.transientPreview.requestsEditorFocus)
+        #expect(SidebarFileOpenDisposition.permanent.requestsEditorFocus)
+        #expect(SidebarFileOpenDisposition.pointerClick(count: 0) == .transientPreview)
+        #expect(SidebarFileOpenDisposition.pointerClick(count: 1) == .transientPreview)
+        #expect(SidebarFileOpenDisposition.pointerClick(count: 2) == .permanent)
+        #expect(SidebarFileOpenDisposition.pointerClick(count: 3) == .permanent)
+    }
+
+    @Test("Sidebar AppKit responder takes synchronous first-responder focus")
+    func sidebarResponderTakesFocus() {
+        let controller = SidebarKeyboardFocusController()
+        let responder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(responder)
+        controller.attach(responder)
+
+        #expect(controller.requestFocus())
+        #expect(window.firstResponder === responder)
+
+        let tabID = UUID()
+        let editor = FocusAcceptingTestView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView?.addSubview(editor)
+
+        #expect(!CodeEditorView.attemptInitialFocus(
+            on: editor,
+            canAttempt: {
+                SidebarKeyboardFocusPolicy.allowsEditorInitialFocus(
+                    tabID: tabID,
+                    pendingFocusTabID: nil,
+                    firstResponder: window.firstResponder
+                )
+            }
+        ))
+        #expect(window.firstResponder === responder)
+
+        #expect(CodeEditorView.attemptInitialFocus(
+            on: editor,
+            canAttempt: {
+                SidebarKeyboardFocusPolicy.allowsEditorInitialFocus(
+                    tabID: tabID,
+                    pendingFocusTabID: tabID,
+                    firstResponder: window.firstResponder
+                )
+            }
+        ))
+        #expect(window.firstResponder === editor)
+        #expect(SidebarKeyboardFocusPolicy.allowsEditorInitialFocus(
+            tabID: tabID,
+            pendingFocusTabID: nil,
+            firstResponder: window.firstResponder
+        ))
+
+        // Keyboard preview actions can originate from SwiftUI's focusable
+        // host. The controller must be able to normalize that path back to
+        // the sidebar responder after another view held focus.
+        #expect(controller.requestFocus())
+        #expect(window.firstResponder === responder)
+    }
+
     @Test("Quick Look focus target is an explicit first responder")
     func quickLookAcceptsDestinationFocus() throws {
         let view = try #require(FocusableQuickLookPreviewView(

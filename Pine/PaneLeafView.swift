@@ -5,6 +5,7 @@
 //  A single leaf pane showing the editor area with its own tab bar.
 //
 
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -420,6 +421,11 @@ struct PaneLeafView: View {
             canBecomeInitialFirstResponder: {
                 paneManager.activePaneID == paneID
                     && tabManager.activeTabID == tab.id
+                    && SidebarKeyboardFocusPolicy.allowsEditorInitialFocus(
+                        tabID: tab.id,
+                        pendingFocusTabID: tabManager.pendingFocusTabID,
+                        firstResponder: NSApp.keyWindow?.firstResponder
+                    )
             },
             indentStyle: tab.cachedIndentation,
             fontSize: FontSizeSettings.shared.fontSize
