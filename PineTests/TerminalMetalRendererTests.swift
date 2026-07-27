@@ -168,6 +168,11 @@ struct TerminalMetalRendererTests {
             window.contentView = nil
             return
         }
+        guard let originalMetalView = firstMetalView(in: view) else {
+            Issue.record("Attached terminal has no Metal view")
+            window.contentView = nil
+            return
+        }
 
         // Cancel the first batch before the main queue can deliver it, then
         // reattach to the same window. A fresh batch is required because the
@@ -178,6 +183,324 @@ struct TerminalMetalRendererTests {
         try? await Task.sleep(for: .milliseconds(450))
 
         #expect(redrawRequests == UITimings.Render.terminalFirstFrameRetryDelays.count)
+        guard let reattachedMetalView = firstMetalView(in: view) else {
+            Issue.record("Reattached terminal lost its Metal view")
+            window.contentView = nil
+            return
+        }
+        #expect(reattachedMetalView === originalMetalView)
+        window.contentView = nil
+    }
+
+    @Test("Switching away and back to the same host keeps Metal renderer")
+    func sameHostReattachKeepsMetalView() {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let state = TerminalPaneState()
+        let firstTab = state.addTab(workingDirectory: nil)
+        let secondTab = state.addTab(workingDirectory: nil)
+        state.activeTerminalID = firstTab.id
+        let container = TerminalContainerView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        container.bind(to: state)
+        let window = makeWindow(containing: container)
+        defer {
+            firstTab.stop()
+            secondTab.stop()
+            window.contentView = nil
+        }
+        guard let view = firstTab.terminalView as? PineTerminalView else {
+            Issue.record("Terminal tab does not use PineTerminalView")
+            return
+        }
+        guard view.isUsingMetalRenderer,
+              let originalMetalView = firstMetalView(in: view) else {
+            return
+        }
+
+        state.activeTerminalID = secondTab.id
+        container.showTab(secondTab)
+        state.activeTerminalID = firstTab.id
+        container.showTab(firstTab)
+
+        #expect(firstMetalView(in: view) === originalMetalView)
+        #expect(view.superview === container)
+        #expect(view.isUsingMetalRenderer)
+    }
+
+    @Test("Repeated same-window container reparent recreates only Metal presentation")
+    func repeatedSameWindowContainerReparentRecreatesMetalView() {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        let container = TerminalContainerView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        container.bind(to: state)
+        let firstHost = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let secondHost = NSView(frame: NSRect(x: 400, y: 0, width: 400, height: 300))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        root.addSubview(firstHost)
+        root.addSubview(secondHost)
+        firstHost.addSubview(container)
+
+        let window = makeWindow(containing: root)
+        defer {
+            tab.stop()
+            window.contentView = nil
+        }
+        guard let view = tab.terminalView as? PineTerminalView else {
+            Issue.record("Terminal tab does not use PineTerminalView")
+            return
+        }
+        guard view.isUsingMetalRenderer,
+              var previousMetalView = firstMetalView(in: view) else {
+            return
+        }
+        let originalTerminal = view.getTerminal()
+
+        // Direct same-window moves keep both the terminal view's immediate
+        // superview and its NSWindow unchanged. Exercise both directions
+        // repeatedly: this is the maximize/restore presentation boundary.
+        for index in 0..<20 {
+            let destination = index.isMultiple(of: 2) ? secondHost : firstHost
+            destination.addSubview(container)
+            guard let recreatedMetalView = firstMetalView(in: view) else {
+                Issue.record("Reparented terminal lost its Metal view")
+                return
+            }
+            #expect(recreatedMetalView !== previousMetalView)
+            #expect(view.getTerminal() === originalTerminal)
+            #expect(view.superview === container)
+            #expect(container.superview === destination)
+            #expect(view.isUsingMetalRenderer)
+            previousMetalView = recreatedMetalView
+        }
+    }
+
+    @Test("Cross-pane tab move recreates Metal presentation and preserves terminal")
+    func crossPaneTabMoveRecreatesMetalPresentation() {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let sourceState = TerminalPaneState()
+        let movedTab = sourceState.addTab(workingDirectory: nil)
+        let remainingTab = sourceState.addTab(workingDirectory: nil)
+        sourceState.activeTerminalID = movedTab.id
+        let destinationState = TerminalPaneState()
+        let destinationExistingTab = destinationState.addTab(workingDirectory: nil)
+
+        let source = TerminalContainerView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        let destination = TerminalContainerView(
+            frame: NSRect(x: 400, y: 0, width: 400, height: 300)
+        )
+        source.bind(to: sourceState)
+        destination.bind(to: destinationState)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        root.addSubview(source)
+        root.addSubview(destination)
+
+        let window = makeWindow(containing: root)
+        defer {
+            source.prepareForDismantle()
+            destination.prepareForDismantle()
+            movedTab.stop()
+            remainingTab.stop()
+            destinationExistingTab.stop()
+            window.contentView = nil
+        }
+        #expect(source.window === window)
+        #expect(destination.window === window)
+        #expect(movedTab.terminalView.superview === source)
+        #expect(movedTab.presentationOwner === source)
+        #expect(destinationExistingTab.terminalView.superview === destination)
+        #expect(destinationExistingTab.presentationOwner === destination)
+        guard let view = movedTab.terminalView as? PineTerminalView else {
+            Issue.record("Terminal tab does not use PineTerminalView")
+            return
+        }
+        guard view.isUsingMetalRenderer,
+              let originalMetalView = firstMetalView(in: view) else {
+            return
+        }
+        let originalTerminal = view.getTerminal()
+
+        // Mirror PaneManager's add-before-remove transfer while both pane
+        // hosts are already committed to the same window. The destination
+        // must replace only the renderer presentation, never the session.
+        destinationState.terminalTabs.append(movedTab)
+        destinationState.activeTerminalID = movedTab.id
+        sourceState.terminalTabs.removeAll { $0.id == movedTab.id }
+        sourceState.activeTerminalID = remainingTab.id
+        destination.showTab(movedTab)
+        source.showTab(remainingTab)
+
+        guard let recreatedMetalView = firstMetalView(in: view) else {
+            Issue.record("Cross-pane terminal move lost its Metal view")
+            return
+        }
+        #expect(recreatedMetalView !== originalMetalView)
+        #expect(view.getTerminal() === originalTerminal)
+        #expect(view.isUsingMetalRenderer)
+        #expect(view.superview === destination)
+        #expect(destinationState.presentationOwner === destination)
+        #expect(movedTab.presentationOwner === destination)
+        #expect(remainingTab.terminalView.superview === source)
+        #expect(sourceState.presentationOwner === source)
+        #expect(remainingTab.presentationOwner === source)
+        #expect(destinationExistingTab.terminalView.superview == nil)
+        #expect(destinationExistingTab.presentationOwner == nil)
+    }
+
+    @Test("Ancestor detach and same-window reattach recreates Metal presentation")
+    func ancestorDetachReattachRecreatesMetalView() {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        let container = TerminalContainerView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        container.bind(to: state)
+        let root = NSView(frame: container.bounds)
+        root.addSubview(container)
+        let window = makeWindow(containing: root)
+        defer {
+            tab.stop()
+            window.contentView = nil
+        }
+        guard let view = tab.terminalView as? PineTerminalView else {
+            Issue.record("Terminal tab does not use PineTerminalView")
+            return
+        }
+        guard view.isUsingMetalRenderer,
+              let originalMetalView = firstMetalView(in: view) else { return }
+        let originalTerminal = view.getTerminal()
+
+        // Neither the terminal nor its container changes immediate superview;
+        // only the ancestor presentation subtree leaves and re-enters window.
+        window.contentView = nil
+        window.contentView = root
+
+        guard let recreatedMetalView = firstMetalView(in: view) else {
+            Issue.record("Reattached terminal lost its Metal view")
+            return
+        }
+        #expect(recreatedMetalView !== originalMetalView)
+        #expect(view.getTerminal() === originalTerminal)
+        #expect(view.superview === container)
+        #expect(container.superview === root)
+        #expect(view.isUsingMetalRenderer)
+    }
+
+    @Test("Direct same-window ancestor move recreates Metal presentation")
+    func directSameWindowAncestorMoveRecreatesMetalView() {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        let container = TerminalContainerView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        container.bind(to: state)
+        let ancestor = NSView(frame: container.bounds)
+        ancestor.addSubview(container)
+        let firstHost = NSView(frame: ancestor.bounds)
+        let secondHost = NSView(frame: ancestor.bounds)
+        firstHost.addSubview(ancestor)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        root.addSubview(firstHost)
+        root.addSubview(secondHost)
+        let window = makeWindow(containing: root)
+        defer {
+            tab.stop()
+            window.contentView = nil
+        }
+        guard let view = tab.terminalView as? PineTerminalView else {
+            Issue.record("Terminal tab does not use PineTerminalView")
+            return
+        }
+        guard view.isUsingMetalRenderer,
+              let originalMetalView = firstMetalView(in: view) else { return }
+        let originalTerminal = view.getTerminal()
+
+        // Moving the ancestor directly within one window leaves both the
+        // terminal and container immediate superviews unchanged. AppKit only
+        // reports the presentation-subtree change through the descendant's
+        // same-window viewDidMoveToWindow callback.
+        secondHost.addSubview(ancestor)
+
+        guard let recreatedMetalView = firstMetalView(in: view) else {
+            Issue.record("Ancestor-reparented terminal lost its Metal view")
+            return
+        }
+        #expect(recreatedMetalView !== originalMetalView)
+        #expect(view.getTerminal() === originalTerminal)
+        #expect(view.superview === container)
+        #expect(container.superview === ancestor)
+        #expect(ancestor.superview === secondHost)
+        #expect(view.isUsingMetalRenderer)
+    }
+
+    @Test("CoreGraphics redraws after direct same-window ancestor move")
+    func coreGraphicsAncestorMovePreservesTerminalAndRedraws() throws {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        let container = TerminalContainerView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        container.bind(to: state)
+        let ancestor = NSView(frame: container.bounds)
+        ancestor.addSubview(container)
+        let firstHost = NSView(frame: ancestor.bounds)
+        let secondHost = NSView(frame: ancestor.bounds)
+        firstHost.addSubview(ancestor)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        root.addSubview(firstHost)
+        root.addSubview(secondHost)
+        let window = makeWindow(containing: root)
+        defer {
+            tab.stop()
+            window.contentView = nil
+        }
+        guard let view = tab.terminalView as? PineTerminalView else {
+            Issue.record("Terminal tab does not use PineTerminalView")
+            return
+        }
+        view.metalRendererDisabledForTesting = true
+        if view.isUsingMetalRenderer {
+            try view.setUseMetal(false)
+        }
+        let originalTerminal = view.getTerminal()
+        feed("core-graphics-probe", to: view)
+        var redrawRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        secondHost.addSubview(ancestor)
+
+        #expect(!view.isUsingMetalRenderer)
+        #expect(view.getTerminal() === originalTerminal)
+        #expect(view.superview === container)
+        #expect(container.superview === ancestor)
+        #expect(ancestor.superview === secondHost)
+        #expect(redrawRequests >= 1)
+    }
+
+    @Test("Ordinary resize does not recreate Metal view")
+    func resizeKeepsMetalRenderer() {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = makeWindow(containing: view)
+        guard view.isUsingMetalRenderer,
+              let originalMetalView = firstMetalView(in: view) else {
+            window.contentView = nil
+            return
+        }
+
+        view.setFrameSize(NSSize(width: 640, height: 240))
+        view.layoutSubtreeIfNeeded()
+        view.requestRendererDisplay()
+
+        #expect(firstMetalView(in: view) === originalMetalView)
+        #expect(view.isUsingMetalRenderer)
         window.contentView = nil
     }
 

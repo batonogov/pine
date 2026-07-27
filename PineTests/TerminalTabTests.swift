@@ -107,6 +107,363 @@ struct TerminalTabTests {
         #expect(!container.subviews.contains(tab1.terminalView))
     }
 
+    @Test @MainActor func staleContainerCannotReclaimTabFromLiveOwner() {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        let first = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let second = TerminalContainerView(frame: NSRect(x: 400, y: 0, width: 400, height: 300))
+        first.terminalPaneState = state
+        second.terminalPaneState = state
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = NSWindow(
+            contentRect: host.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        host.addSubview(first)
+        host.addSubview(second)
+        defer {
+            tab.stop()
+            window.contentView = nil
+        }
+
+        first.showTab(tab)
+        second.showTab(tab)
+        #expect(tab.presentationOwner === second)
+        #expect(tab.terminalView.superview === second)
+
+        // Models the outgoing maximize/restore representable receiving late
+        // updateNSView and layout callbacks during a structural transition.
+        first.showTab(tab)
+        first.layout()
+
+        #expect(tab.presentationOwner === second)
+        #expect(tab.terminalView.superview === second)
+    }
+
+    @Test @MainActor func newlyAttachedContainerCanReclaimPresentationLease() {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        let first = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let second = TerminalContainerView(frame: NSRect(x: 400, y: 0, width: 400, height: 300))
+        first.terminalPaneState = state
+        second.terminalPaneState = state
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = NSWindow(
+            contentRect: host.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        host.addSubview(first)
+        host.addSubview(second)
+        defer {
+            tab.stop()
+            window.contentView = nil
+        }
+
+        first.showTab(tab)
+        second.showTab(tab)
+        #expect(tab.presentationOwner === second)
+
+        // Reattaching the previously used split container models restore.
+        // Its window-attachment callback is the one legitimate force claim.
+        first.removeFromSuperview()
+        host.addSubview(first)
+
+        #expect(tab.presentationOwner === first)
+        #expect(tab.terminalView.superview === first)
+
+        // The older live host can no longer steal the view back.
+        second.showTab(tab)
+        second.layout()
+        #expect(tab.presentationOwner === first)
+        #expect(tab.terminalView.superview === first)
+    }
+
+    @Test @MainActor func detachedContainerCannotStealFromLivePaneOwner() {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        let live = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let incoming = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        live.terminalPaneState = state
+        incoming.terminalPaneState = state
+
+        let host = NSView(frame: live.bounds)
+        let window = NSWindow(
+            contentRect: host.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        host.addSubview(live)
+        defer {
+            tab.stop()
+            window.contentView = nil
+        }
+
+        live.showTab(tab)
+        incoming.showTab(tab)
+
+        #expect(state.presentationOwner === live)
+        #expect(tab.presentationOwner === live)
+        #expect(tab.terminalView.superview === live)
+
+        host.addSubview(incoming)
+
+        #expect(state.presentationOwner === incoming)
+        #expect(tab.presentationOwner === incoming)
+        #expect(tab.terminalView.superview === incoming)
+    }
+
+    @Test @MainActor func staleContainerCannotStealNewlySelectedTab() {
+        let state = TerminalPaneState()
+        let firstTab = state.addTab(workingDirectory: nil)
+        let secondTab = state.addTab(workingDirectory: nil)
+        state.activeTerminalID = firstTab.id
+        let stale = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let live = TerminalContainerView(frame: NSRect(x: 400, y: 0, width: 400, height: 300))
+        stale.terminalPaneState = state
+        live.terminalPaneState = state
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = NSWindow(
+            contentRect: host.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        host.addSubview(stale)
+        host.addSubview(live)
+        defer {
+            firstTab.stop()
+            secondTab.stop()
+            window.contentView = nil
+        }
+
+        #expect(state.presentationOwner === live)
+        #expect(firstTab.presentationOwner === live)
+
+        state.activeTerminalID = secondTab.id
+        live.showTab(secondTab)
+        stale.showTab(secondTab)
+        stale.layout()
+
+        #expect(state.presentationOwner === live)
+        #expect(secondTab.presentationOwner === live)
+        #expect(secondTab.terminalView.superview === live)
+    }
+
+    @Test @MainActor func sameWindowContainerReparentReclaimsPaneLease() {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        let moving = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let competing = TerminalContainerView(frame: NSRect(x: 400, y: 0, width: 400, height: 300))
+        moving.terminalPaneState = state
+        competing.terminalPaneState = state
+
+        let firstHost = NSView(frame: moving.bounds)
+        let secondHost = NSView(frame: competing.bounds)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        root.addSubview(firstHost)
+        root.addSubview(secondHost)
+        let window = NSWindow(
+            contentRect: root.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = root
+        firstHost.addSubview(moving)
+        secondHost.addSubview(competing)
+        defer {
+            tab.stop()
+            window.contentView = nil
+        }
+
+        #expect(state.presentationOwner === competing)
+        #expect(tab.terminalView.superview === competing)
+
+        // Direct addSubview reparents without calling moving.removeFromSuperview().
+        secondHost.addSubview(moving)
+
+        #expect(state.presentationOwner === moving)
+        #expect(tab.presentationOwner === moving)
+        #expect(tab.terminalView.superview === moving)
+
+        competing.showTab(tab)
+        competing.layout()
+        #expect(state.presentationOwner === moving)
+        #expect(tab.presentationOwner === moving)
+        #expect(tab.terminalView.superview === moving)
+    }
+
+    @Test @MainActor func sameWindowAncestorReparentReclaimsPaneLease() {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        let reclaiming = TerminalContainerView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        let outgoing = TerminalContainerView(
+            frame: NSRect(x: 400, y: 0, width: 400, height: 300)
+        )
+        reclaiming.bind(to: state)
+        outgoing.bind(to: state)
+
+        let movingAncestor = NSView(frame: reclaiming.bounds)
+        movingAncestor.addSubview(reclaiming)
+        let firstHost = NSView(frame: reclaiming.bounds)
+        let secondHost = NSView(frame: outgoing.bounds)
+        firstHost.addSubview(movingAncestor)
+        secondHost.addSubview(outgoing)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        root.addSubview(firstHost)
+        root.addSubview(secondHost)
+        let window = NSWindow(
+            contentRect: root.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = root
+        defer {
+            tab.stop()
+            window.contentView = nil
+        }
+
+        outgoing.showTab(tab, forcePresentationClaim: true)
+        #expect(state.presentationOwner === outgoing)
+        #expect(tab.terminalView.superview === outgoing)
+
+        // The container itself keeps the same immediate superview. AppKit
+        // reports only a same-window descendant callback when its ancestor is
+        // moved directly to another presentation subtree.
+        secondHost.addSubview(movingAncestor)
+
+        #expect(state.presentationOwner === reclaiming)
+        #expect(tab.presentationOwner === reclaiming)
+        #expect(tab.terminalView.superview === reclaiming)
+        #expect(reclaiming.superview === movingAncestor)
+        #expect(movingAncestor.superview === secondHost)
+
+        outgoing.showTab(tab)
+        outgoing.layout()
+        #expect(state.presentationOwner === reclaiming)
+        #expect(tab.presentationOwner === reclaiming)
+        #expect(tab.terminalView.superview === reclaiming)
+    }
+
+    @Test @MainActor func detachedDestinationWaitsToClaimMovedTabUntilAttach() {
+        let sourceState = TerminalPaneState()
+        let movedTab = sourceState.addTab(workingDirectory: nil)
+        let remainingTab = sourceState.addTab(workingDirectory: nil)
+        sourceState.activeTerminalID = movedTab.id
+        let destinationState = TerminalPaneState()
+        let source = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let destination = TerminalContainerView(frame: NSRect(x: 400, y: 0, width: 400, height: 300))
+        source.bind(to: sourceState)
+        destination.bind(to: destinationState)
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = NSWindow(
+            contentRect: host.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        host.addSubview(source)
+        defer {
+            movedTab.stop()
+            remainingTab.stop()
+            window.contentView = nil
+        }
+
+        #expect(sourceState.presentationOwner === source)
+        #expect(movedTab.presentationOwner === source)
+
+        destinationState.terminalTabs.append(movedTab)
+        destinationState.activeTerminalID = movedTab.id
+        sourceState.terminalTabs.removeAll { $0.id == movedTab.id }
+        sourceState.activeTerminalID = remainingTab.id
+
+        destination.showTab(movedTab)
+        #expect(destinationState.presentationOwner == nil)
+        #expect(movedTab.presentationOwner === source)
+        #expect(movedTab.terminalView.superview === source)
+
+        host.addSubview(destination)
+        source.showTab(sourceState.activeTab)
+
+        #expect(destinationState.presentationOwner === destination)
+        #expect(movedTab.presentationOwner === destination)
+        #expect(movedTab.terminalView.superview === destination)
+        #expect(sourceState.presentationOwner === source)
+        #expect(remainingTab.presentationOwner === source)
+        #expect(remainingTab.terminalView.superview === source)
+    }
+
+    @Test @MainActor func rebindingContainerReleasesPreviousPaneLease() {
+        let firstState = TerminalPaneState()
+        let firstTab = firstState.addTab(workingDirectory: nil)
+        let secondState = TerminalPaneState()
+        let secondTab = secondState.addTab(workingDirectory: nil)
+        let container = TerminalContainerView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        let outgoingSecondOwner = TerminalContainerView(
+            frame: NSRect(x: 400, y: 0, width: 400, height: 300)
+        )
+        container.bind(to: firstState)
+        outgoingSecondOwner.bind(to: secondState)
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = NSWindow(
+            contentRect: host.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        host.addSubview(container)
+        host.addSubview(outgoingSecondOwner)
+        defer {
+            firstTab.stop()
+            secondTab.stop()
+            window.contentView = nil
+        }
+
+        #expect(firstState.presentationOwner === container)
+        #expect(firstTab.presentationOwner === container)
+        #expect(secondState.presentationOwner === outgoingSecondOwner)
+        #expect(secondTab.presentationOwner === outgoingSecondOwner)
+
+        let didRebind = container.bind(to: secondState)
+        container.showTab(
+            secondState.activeTab,
+            forcePresentationClaim: didRebind && container.window != nil
+        )
+
+        #expect(firstState.presentationOwner == nil)
+        #expect(firstTab.presentationOwner == nil)
+        #expect(secondState.presentationOwner === container)
+        #expect(secondTab.presentationOwner === container)
+        #expect(secondTab.terminalView.superview === container)
+
+        outgoingSecondOwner.showTab(secondState.activeTab)
+        outgoingSecondOwner.layout()
+        #expect(secondState.presentationOwner === container)
+        #expect(secondTab.presentationOwner === container)
+        #expect(secondTab.terminalView.superview === container)
+    }
+
     // MARK: - TerminalContainerView scroll monitor lifecycle
 
     @Test @MainActor func showTabNilClearsScrollInterceptorTerminalView() {

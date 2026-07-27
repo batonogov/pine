@@ -12,6 +12,14 @@ import SwiftUI
 @Observable
 final class TerminalPaneState {
     var terminalTabs: [TerminalTab] = []
+    /// The AppKit host currently presenting this pane's active terminal.
+    ///
+    /// SwiftUI may temporarily keep outgoing and incoming representables
+    /// alive during structural pane updates. A pane-wide lease prevents the
+    /// stale host from reclaiming a newly selected tab after the incoming host
+    /// has taken over. This is presentation plumbing, not observable state.
+    @ObservationIgnored
+    weak var presentationOwner: TerminalContainerView?
     var activeTerminalID: UUID? {
         didSet {
             guard activeTerminalID != oldValue else { return }

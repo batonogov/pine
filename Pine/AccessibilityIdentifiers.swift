@@ -58,6 +58,7 @@ nonisolated enum AccessibilityID {
     // MARK: - Terminal
     static let terminalTabBar = "terminalTabBar"
     static func terminalTab(_ name: String) -> String { "terminalTab_\(name)" }
+    static let terminalSurface = "terminalSurface"
     static let newTerminalButton = "newTerminalButton"
     static let maximizeTerminalButton = "maximizeTerminalButton"
     static let hideTerminalButton = "hideTerminalButton"

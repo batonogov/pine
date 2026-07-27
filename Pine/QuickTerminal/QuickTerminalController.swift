@@ -95,7 +95,7 @@ final class QuickTerminalController {
         // as contentView triggers `viewDidMoveToWindow` → observer install +
         // `layout()` → `showTab(activeTab)` → `startIfNeeded()`.
         let container = TerminalContainerView(frame: rect)
-        container.terminalPaneState = paneState
+        container.bind(to: paneState)
         win.contentView = container
         // Explicit `showTab` matches the in-window pattern
         // (`TerminalContentView.updateNSView`) and makes the PTY-spawn path
