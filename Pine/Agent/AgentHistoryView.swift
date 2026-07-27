@@ -115,7 +115,7 @@ struct AgentHistoryRowView: View {
                     Button {
                         onRevert(row)
                     } label: {
-                        Text(Strings.agentHistoryRevertButton)
+                        Text(Strings.agentHistoryReviewChangesButton)
                     }
                     .controlSize(.small)
                     .accessibilityIdentifier(AccessibilityID.agentHistoryRevertButton)
@@ -159,12 +159,12 @@ struct AgentHistoryRowView: View {
     }
 }
 
-/// Sheet wrapper that binds to the live `AgentHistoryStore`, computes rows, and
-/// handles the revert confirmation + side effect.
+/// Sheet wrapper that binds to the live `AgentHistoryStore`, computes rows,
+/// and opens the verified undo review before any mutation (#1237).
 struct AgentHistoryView: View {
     @Bindable var store: AgentHistoryStore
     @Binding var isPresented: Bool
-    @State private var revertTarget: AgentHistoryRow?
+    @State private var reviewTarget: AgentHistoryEntry?
     @State private var revertResult: AgentHistoryRevertResult?
 
     private var rows: [AgentHistoryRow] {
@@ -186,7 +186,7 @@ struct AgentHistoryView: View {
                 Divider()
             }
             AgentHistoryList(rows: rows) { row in
-                revertTarget = row
+                openReview(for: row)
             }
             if let revertResult {
                 Divider()
@@ -198,33 +198,31 @@ struct AgentHistoryView: View {
             await store.refreshCheckedUndoAvailability()
             await store.refreshRecoveryNotices()
         }
-        .alert(
-            Strings.agentHistoryRevertConfirmTitle,
-            isPresented: Binding(
-                get: { revertTarget != nil },
-                set: { if !$0 { revertTarget = nil } }
-            )
-        ) {
-            Button(Strings.agentHistoryRevertConfirmAction, role: .destructive) {
-                guard let target = revertTarget else { return }
-                let entry = store.entries.first { $0.id == target.id }
-                revertTarget = nil
-                guard let entry else { return }
-                // `revert` runs git off-main; wrap in a Task so the result
-                // banner reflects the outcome once the revert completes.
-                Task { revertResult = await store.revert(entry: entry) }
+        .sheet(item: $reviewTarget) { entry in
+            AgentHistoryUndoReviewView(
+                store: store,
+                entry: entry,
+                isPresented: Binding(
+                    get: { reviewTarget != nil },
+                    set: { if !$0 { reviewTarget = nil } }
+                )
+            ) { result in
+                revertResult = result
             }
-            Button(Strings.dialogCancel, role: .cancel) {
-                revertTarget = nil
-            }
-        } message: {
-            // For a verified, checked undo, explain the exact inverse rather
-            // than the legacy git-checkout wording (#1183).
-            let isAvailable = revertTarget?.effectiveUndoAvailability == .available
-            Text(isAvailable
-                ? Strings.agentHistoryCheckedRevertConfirmMessage
-                : Strings.agentHistoryRevertConfirmMessage)
         }
+    }
+
+    /// Opens the verified undo review sheet for the entry behind a row.
+    /// Preparing the preview performs no filesystem mutation; the undo itself
+    /// only runs after the user confirms inside the review and a fresh
+    /// revalidation passes (#1237).
+    private func openReview(for row: AgentHistoryRow) {
+        guard let entry = store.entries.first(where: {
+            $0.id == row.id
+        }) else {
+            return
+        }
+        reviewTarget = entry
     }
 
     private var sheetHeader: some View {

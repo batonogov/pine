@@ -611,6 +611,89 @@ final class AgentHistoryStore {
         return entry
     }
 
+    // MARK: - Verified undo preview (#1237)
+
+    /// Prepares a read-only, verified undo preview for an entry without
+    /// mutating the workspace. Loads the owner-private authority and inverse
+    /// payload, runs the engine's pure preflight + read-only content-divergence
+    /// check, and returns a display-only diff model — or a structured reason
+    /// the undo must stay disabled.
+    ///
+    /// The preview is stale-able: the caller must `revalidateVerifiedUndoPreview`
+    /// immediately before applying, and the engine re-checks everything under
+    /// its private lock during `revert`.
+    func prepareVerifiedUndoPreview(
+        for entry: AgentHistoryEntry
+    ) async -> AgentHistoryUndoPreviewResult {
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else {
+            return .unavailable(.entryNotFound)
+        }
+        let current = entries[index]
+        guard let changeSet = current.verifiedChangeSet,
+              let root = projectRoot else {
+            return .unavailable(.notEligible)
+        }
+        let privateStore = privateStore
+        return await runOnBackground {
+            guard let manifest = privateStore.loadAuthority(
+                recordID: changeSet.authority.recordID
+            ) else {
+                return AgentHistoryUndoPreviewResult.unavailable(
+                    .authorityRecordMissing
+                )
+            }
+            guard let payload = privateStore.loadPayload(
+                blobID: changeSet.inversePayload.blobID,
+                expectedSHA256: changeSet.inversePayload.sha256,
+                expectedByteCount: changeSet.inversePayload.byteCount,
+                expectedFormatVersion: changeSet.inversePayload.formatVersion
+            ) else {
+                return AgentHistoryUndoPreviewResult.unavailable(
+                    .inversePayloadMissing
+                )
+            }
+            return AgentHistoryUndoPreview.prepare(
+                entry: current,
+                changeSet: changeSet,
+                payload: payload,
+                root: root,
+                manifest: manifest
+            )
+        }
+    }
+
+    /// Revalidates an already-prepared preview immediately before applying
+    /// Undo. Returns `.available` only if the workspace still matches the
+    /// recorded state; any race fails closed and disables the Undo button.
+    func revalidateVerifiedUndoPreview(
+        for entry: AgentHistoryEntry
+    ) async -> AgentHistoryUndoPreviewResult {
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else {
+            return .unavailable(.entryNotFound)
+        }
+        let current = entries[index]
+        guard let changeSet = current.verifiedChangeSet,
+              let root = projectRoot else {
+            return .unavailable(.notEligible)
+        }
+        let privateStore = privateStore
+        return await runOnBackground {
+            guard let manifest = privateStore.loadAuthority(
+                recordID: changeSet.authority.recordID
+            ) else {
+                return AgentHistoryUndoPreviewResult.unavailable(
+                    .authorityRecordMissing
+                )
+            }
+            return AgentHistoryUndoPreview.revalidate(
+                entry: current,
+                changeSet: changeSet,
+                root: root,
+                manifest: manifest
+            )
+        }
+    }
+
     // MARK: - Revert
 
     /// Safely reverts an entry. Heuristic/ambiguous entries and verified
