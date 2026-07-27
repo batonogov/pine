@@ -187,6 +187,16 @@ private struct SidebarFileTreeNode: View {
             rowContent.onTapGesture {
                 handleFolderTap()
             }
+            // VoiceOver: expose disclosure state and actions so folder rows
+            // behave like an NSOutlineView disclosure triangle (#1238).
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(node.name))
+            .accessibilityValue(Text(expansion.isExpanded(node.url) ? Strings.a11ySidebarDisclosureExpanded : Strings.a11ySidebarDisclosureCollapsed))
+            .accessibilityHint(Strings.a11ySidebarFolderHint)
+            .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
+            .accessibilityAction(named: Text(expansion.isExpanded(node.url) ? Strings.a11ySidebarCollapseAction : Strings.a11ySidebarExpandAction)) {
+                expansion.toggleDebounced(node.url)
+            }
         } else if isRenamingThisNode {
             // Keep the inline TextField as its own accessibility element.
             // Combining the row's children is useful for a normal file row,

@@ -1562,6 +1562,21 @@ enum Strings {
     static let a11ySidebarOpenPreview: String =
         String(localized: "a11y.sidebar.file.preview.action", defaultValue: "Open Preview")
 
+    // Sidebar folder disclosure (VoiceOver) — #1238
+    static let a11ySidebarDisclosureExpanded: String =
+        String(localized: "a11y.sidebar.disclosure.expanded", defaultValue: "expanded")
+    static let a11ySidebarDisclosureCollapsed: String =
+        String(localized: "a11y.sidebar.disclosure.collapsed", defaultValue: "collapsed")
+    static let a11ySidebarFolderHint: String =
+        String(
+            localized: "a11y.sidebar.folder.hint",
+            defaultValue: "Folder. Press Left or Right arrow to collapse or expand."
+        )
+    static let a11ySidebarExpandAction: String =
+        String(localized: "a11y.sidebar.expand.action", defaultValue: "Expand")
+    static let a11ySidebarCollapseAction: String =
+        String(localized: "a11y.sidebar.collapse.action", defaultValue: "Collapse")
+
     // Pane divider
     static let a11yPaneDividerLabel: String =
         String(localized: "a11y.paneDivider.label", defaultValue: "Pane divider")

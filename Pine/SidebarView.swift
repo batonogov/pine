@@ -224,6 +224,7 @@ struct SidebarView: View {
     @State private var editState = SidebarEditState()
     @State private var expansion = SidebarExpansionState()
     @State private var keyboardFocusController = SidebarKeyboardFocusController()
+    @State private var navigation = SidebarTreeNavigation()
     @FocusState private var hasSwiftUIKeyboardFocus: Bool
 
     var body: some View {
@@ -285,6 +286,11 @@ struct SidebarView: View {
                     }
                     .focusable()
                     .focused($hasSwiftUIKeyboardFocus)
+                    .onGeometryChange(for: Double.self) { proxy in
+                        proxy.size.height
+                    } action: { newValue in
+                        navigation.viewportHeight = newValue
+                    }
                     .onChange(of: hasSwiftUIKeyboardFocus) { _, hasFocus in
                         guard hasFocus else { return }
                         // Full Keyboard Access focuses SwiftUI's host first.
@@ -294,10 +300,58 @@ struct SidebarView: View {
                     }
                     .environment(editState)
                     .environment(expansion)
+                    .environment(navigation)
                     .onChange(of: workspace.rootNodesRevision) { _, _ in
                         // Drop expanded entries for folders that disappeared
                         // (e.g. after delete) so the set stays bounded.
                         expansion.prune(toMatch: workspace.rootNodes)
+                    }
+                    .onAppear {
+                        // Wire the ScrollViewReader proxy so selection
+                        // changes can keep the selected row visible.
+                        navigation.scrollToNode = { id in
+                            DispatchQueue.main.async {
+                                withAnimation {
+                                    scrollProxy.scrollTo(id, anchor: .center)
+                                }
+                            }
+                        }
+                    }
+                    .onKeyPress(.upArrow) {
+                        handleArrow(delta: -1)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        handleArrow(delta: 1)
+                        return .handled
+                    }
+                    .onKeyPress(.leftArrow) {
+                        handleLeftArrow()
+                        return .handled
+                    }
+                    .onKeyPress(.rightArrow) {
+                        handleRightArrow()
+                        return .handled
+                    }
+                    .onKeyPress(.home) {
+                        handleHome()
+                        return .handled
+                    }
+                    .onKeyPress(.end) {
+                        handleEnd()
+                        return .handled
+                    }
+                    .onKeyPress(.pageUp) {
+                        handlePageUp()
+                        return .handled
+                    }
+                    .onKeyPress(.pageDown) {
+                        handlePageDown()
+                        return .handled
+                    }
+                    .onKeyPress(.characters) { press in
+                        handleTypedCharacters(press.characters)
+                        return .handled
                     }
                     .onKeyPress(.return, phases: .down) { press in
                         handleSidebarReturn(
@@ -390,20 +444,69 @@ struct SidebarView: View {
     }
 
     /// Handles real AppKit events when the sidebar was focused by a row click.
+    /// Routes arrow, Home/End, Page Up/Down, and type-ahead characters
+    /// through the same ``SidebarTreeNavigation`` model as the SwiftUI
+    /// `.onKeyPress` handlers so both focus paths stay in sync (#1238).
     private func handleSidebarKeyDown(_ event: NSEvent) -> Bool {
+        // While renaming, let the TextField consume all key events.
+        guard editState.renamingURL == nil else { return false }
+
+        let modifiers = event.modifierFlags.intersection([
+            .command, .option, .control, .shift
+        ])
+        // Arrow / Home / End / Page navigation only fires with no modifiers
+        // so Shift-, Cmd-, etc. keep their standard behaviour.
+        let plainModifiers = modifiers.isEmpty
+
         switch event.keyCode {
         case 36, 76: // Return and keypad Enter
-            let modifiers = event.modifierFlags.intersection([
-                .command, .option, .control, .shift
-            ])
             return handleSidebarReturn(
                 commandPressed: modifiers.contains(.command),
                 hasAnyModifiers: !modifiers.isEmpty
             )
         case 49: // Space
             return handleSidebarSpace()
+        case 123: // Left arrow
+            guard plainModifiers else { return false }
+            handleLeftArrow()
+            return true
+        case 124: // Right arrow
+            guard plainModifiers else { return false }
+            handleRightArrow()
+            return true
+        case 125: // Down arrow
+            guard plainModifiers else { return false }
+            handleArrow(delta: 1)
+            return true
+        case 126: // Up arrow
+            guard plainModifiers else { return false }
+            handleArrow(delta: -1)
+            return true
+        case 115: // Home
+            guard plainModifiers else { return false }
+            handleHome()
+            return true
+        case 119: // End
+            guard plainModifiers else { return false }
+            handleEnd()
+            return true
+        case 116: // Page Up
+            guard plainModifiers else { return false }
+            handlePageUp()
+            return true
+        case 121: // Page Down
+            guard plainModifiers else { return false }
+            handlePageDown()
+            return true
         default:
-            return false
+            // Type-to-select: plain printable characters only.
+            guard plainModifiers,
+                  let first = event.characters?.first,
+                  let scalar = first.unicodeScalars.first.map({ Unicode.Scalar($0.value) }),
+                  CharacterSet.alphanumerics.contains(scalar)
+            else { return false }
+            handleTypedCharacters(String(first))
+            return true
         }
     }
 
@@ -436,6 +539,86 @@ struct SidebarView: View {
         claimSidebarKeyboardFocus()
         onFileOpen(selected, .transientPreview)
         return true
+    }
+
+    // MARK: - Finder-style keyboard navigation (#1238)
+
+    /// Flattened list of currently-visible rows (respecting expansion state).
+    private var visibleRows: [SidebarVisibleRow] {
+        SidebarTreeFlattener.visibleRows(
+            rootNodes: workspace.rootNodes,
+            expansion: expansion
+        )
+    }
+
+    /// Updates the selection and ensures the newly-selected row is visible.
+    private func navigate(to node: FileNode?) {
+        guard let node else { return }
+        selectedFile = node
+        navigation.scroll(to: node)
+    }
+
+    /// Up / Down arrow: move by `delta` visible rows.
+    private func handleArrow(delta: Int) {
+        let rows = visibleRows
+        guard !rows.isEmpty else { return }
+        navigate(to: navigation.move(by: delta, current: selectedFile, rows: rows))
+    }
+
+    /// Left: collapse an expanded folder, or move to the parent.
+    private func handleLeftArrow() {
+        let rows = visibleRows
+        guard !rows.isEmpty else { return }
+        navigate(
+            to: navigation.handleLeftArrow(
+                current: selectedFile,
+                rows: rows,
+                expansion: expansion
+            )
+        )
+    }
+
+    /// Right: expand a collapsed folder, or enter the first child.
+    private func handleRightArrow() {
+        let rows = visibleRows
+        guard !rows.isEmpty else { return }
+        navigate(
+            to: navigation.handleRightArrow(
+                current: selectedFile,
+                rows: rows,
+                expansion: expansion
+            )
+        )
+    }
+
+    private func handleHome() {
+        navigate(to: navigation.firstRow(rows: visibleRows))
+    }
+
+    private func handleEnd() {
+        navigate(to: navigation.lastRow(rows: visibleRows))
+    }
+
+    private func handlePageUp() {
+        let rows = visibleRows
+        guard !rows.isEmpty else { return }
+        navigate(to: navigation.pageUp(current: selectedFile, rows: rows))
+    }
+
+    private func handlePageDown() {
+        let rows = visibleRows
+        guard !rows.isEmpty else { return }
+        navigate(to: navigation.pageDown(current: selectedFile, rows: rows))
+    }
+
+    /// Type-to-select with repeated-character cycling and Unicode support.
+    private func handleTypedCharacters(_ characters: String) {
+        let rows = visibleRows
+        guard !rows.isEmpty, let first = characters.first else { return }
+        // Ignore modifiers that aren't part of a plain typed character.
+        let scalar = first.unicodeScalars.first.map { Unicode.Scalar($0.value) }
+        guard let scalar, CharacterSet.alphanumerics.contains(scalar) else { return }
+        navigate(to: navigation.typeSelect(character: String(first), current: selectedFile, rows: rows))
     }
 }
 
