@@ -293,7 +293,7 @@ struct AgentHistoryUndoReviewView: View {
         VStack(alignment: .leading, spacing: 3) {
             if let sha = operation.expectedContentSHA256 {
                 identityRow(
-                    label: Strings.agentHistoryUndoReviewExpected,
+                    label: String(localized: Strings.agentHistoryUndoReviewExpected),
                     path: operation.relativePath,
                     sha: sha,
                     byteCount: operation.expectedByteCount,
@@ -302,7 +302,7 @@ struct AgentHistoryUndoReviewView: View {
             }
             if let sha = operation.resultContentSHA256 {
                 identityRow(
-                    label: Strings.agentHistoryUndoReviewResult,
+                    label: String(localized: Strings.agentHistoryUndoReviewResult),
                     path: operation.relativePath,
                     sha: sha,
                     byteCount: operation.resultByteCount,
@@ -527,22 +527,22 @@ extension AgentHistoryUndoPreviewOperation.Kind {
     var displayName: String {
         switch self {
         case .restoreModifiedFile:
-            Strings.agentHistoryUndoReviewKindRestore
+            String(localized: Strings.agentHistoryUndoReviewKindRestore)
         case .removeCreatedFile:
-            Strings.agentHistoryUndoReviewKindRemove
+            String(localized: Strings.agentHistoryUndoReviewKindRemove)
         case .restoreDeletedFile:
-            Strings.agentHistoryUndoReviewKindRecreate
+            String(localized: Strings.agentHistoryUndoReviewKindRecreate)
         }
     }
 
     var detailText: String {
         switch self {
         case .restoreModifiedFile:
-            Strings.agentHistoryUndoReviewDetailRestore
+            String(localized: Strings.agentHistoryUndoReviewDetailRestore)
         case .removeCreatedFile:
-            Strings.agentHistoryUndoReviewDetailRemove
+            String(localized: Strings.agentHistoryUndoReviewDetailRemove)
         case .restoreDeletedFile:
-            Strings.agentHistoryUndoReviewDetailRecreate
+            String(localized: Strings.agentHistoryUndoReviewDetailRecreate)
         }
     }
 }

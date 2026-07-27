@@ -368,7 +368,7 @@ nonisolated enum AgentHistoryUndoPreview {
                     )
                 }
             )
-        ].filter { added > 0 || removed > 0 }
+        ].filter { _ in added > 0 || removed > 0 }
     }
 
     /// Splits bytes into lines, preserving the terminator kind for display.
