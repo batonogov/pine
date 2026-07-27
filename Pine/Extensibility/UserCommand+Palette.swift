@@ -387,6 +387,9 @@ nonisolated extension UserCommand {
             value = "cmd+option+return"
         case .editKeybindings, .editTasks, .reloadUserConfiguration:
             value = nil
+        case .newFile, .openFile, .clearRecentProjects,
+             .closeTab, .closeWindow:
+            value = nil
         }
         return value.flatMap(UserKeybindingRegistry.parse)
     }
