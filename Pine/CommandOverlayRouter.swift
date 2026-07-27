@@ -89,7 +89,7 @@ final class CommandOverlayRouter {
             capturedWindow = nil
         }
         guard let responder = capturedResponder,
-              let window = capturedWindow ?? responder.window,
+              let window = capturedWindow ?? (responder as? NSView)?.window,
               window.firstResponder !== responder else {
             return
         }
