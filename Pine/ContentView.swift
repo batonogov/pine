@@ -316,10 +316,6 @@ struct ContentView: View {
                 paneManager: paneManager,
                 tabManager: activeTabManager,
                 progress: projectManager.progress,
-                diagnosticsSummary: projectManager.problemsController.summary,
-                onToggleProblems: {
-                    projectManager.problemsController.togglePanel()
-                },
                 onToggleTerminal: {
                     if paneManager.terminalPaneIDs.isEmpty {
                         terminal.focusOrCreateTerminal(
@@ -339,6 +335,10 @@ struct ContentView: View {
                             paneManager.removePane(paneID)
                         }
                     }
+                },
+                diagnosticsSummary: projectManager.problemsController.summary,
+                onToggleProblems: {
+                    projectManager.problemsController.togglePanel()
                 },
                 onShowAttention: {
                     withAnimation(PineAnimation.overlay) {
