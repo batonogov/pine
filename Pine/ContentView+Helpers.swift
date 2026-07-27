@@ -97,6 +97,9 @@ extension ContentView {
     ///     the restore attempt and this call (e.g. a rapid sidebar click).
     func seedInitialTerminalIfNeeded(disposition: SessionStartupDisposition) {
         guard case .noSavedSession = disposition else { return }
+        // UI tests pass `--disable-terminal-seeding` to preserve the legacy
+        // empty-editor behavior they were written against.
+        guard !CommandLine.arguments.contains("--disable-terminal-seeding") else { return }
         // If recovery entries were discovered, the recovery dialog will be
         // presented; let the user recover into the existing editor leaf.
         guard !showRecoveryDialog, recoveryEntries.isEmpty else { return }
