@@ -1,0 +1,198 @@
+//
+//  UserTaskRun.swift
+//  Pine
+//
+//  Task execution UI (issue #1246): a lightweight, observable model that
+//  represents a single user-task invocation — running state, elapsed time,
+//  exit status, and captured stdout/stderr. Owned by `UserTaskRunStore`,
+//  which lives on the initiating `ProjectManager` so each project window
+//  surfaces only its own task activity.
+//
+//  The model is a pure UI projection: it never spawns processes or touches
+//  the shell. `UserTaskRunner` drives it by updating state as the task
+//  progresses; the validated command path (`UserTaskInvocationController`
+//  → `UserTaskValidator` → `UserTaskRunner`) is unchanged.
+//
+
+import Foundation
+
+/// Lifecycle phase of a single task run.
+nonisolated enum UserTaskRunState: Sendable, Equatable {
+    /// The task has been queued / is preparing to launch.
+    case pending
+    /// The process is running.
+    case running
+    /// The process exited with status 0.
+    case succeeded
+    /// The process exited with a non-zero status, was cancelled, timed out,
+    /// or could not be launched.
+    case failed
+    /// The user cancelled the run before it finished.
+    case cancelled
+
+    /// `true` while the run has not reached a terminal state.
+    var isActive: Bool {
+        switch self {
+        case .pending, .running: true
+        case .succeeded, .failed, .cancelled: false
+        }
+    }
+}
+
+/// A single user-task invocation surfaced in the UI.
+///
+/// `@MainActor @Observable` so SwiftUI can render progress, elapsed time,
+/// and captured output reactively. The `id` is stable for the lifetime of
+/// the run; the store replaces a run in place by `id` as state evolves.
+@MainActor
+@Observable
+final class UserTaskRun: Identifiable {
+    /// Stable identifier for this run.
+    let id: UUID
+    /// The task definition's id (from `tasks.json`).
+    let taskID: String
+    /// Human-readable task label, snapshotted at invocation time so later
+    /// edits to `tasks.json` do not retroactively rename an in-flight run.
+    let taskLabel: String
+    /// The validated shell command text, captured for display only. This is
+    /// the exact string handed to `/bin/sh -c` — never editor or terminal
+    /// content interpolated into shell text (issue #1117 safety contract).
+    let command: String
+    /// Whether this run was an active-file replacement task.
+    let replacesFileContent: Bool
+
+    /// Current lifecycle phase.
+    private(set) var state: UserTaskRunState
+    /// Wall-clock start time.
+    let startedAt: Date
+    /// Wall-clock finish time, set when the run reaches a terminal state.
+    private(set) var finishedAt: Date?
+
+    /// Captured stdout (UTF-8). Populated as/after the process runs.
+    private(set) var stdout: String
+    /// Captured stderr (UTF-8). Populated as/after the process runs.
+    private(set) var stderr: String
+    /// Process exit status. `-1` when the process could not be spawned or
+    /// was cancelled before exiting.
+    private(set) var exitCode: Int32?
+    /// `true` when the task exceeded its timeout and was terminated.
+    private(set) var timedOut: Bool
+    /// Short, human-readable reason when the run was blocked before launch
+    /// (e.g. the validator rejected the command) or failed to launch.
+    private(set) var blockedReason: String?
+
+    init(
+        taskID: String,
+        taskLabel: String,
+        command: String,
+        replacesFileContent: Bool,
+        startedAt: Date = Date()
+    ) {
+        self.id = UUID()
+        self.taskID = taskID
+        self.taskLabel = taskLabel
+        self.command = command
+        self.replacesFileContent = replacesFileContent
+        self.state = .pending
+        self.startedAt = startedAt
+        self.finishedAt = nil
+        self.stdout = ""
+        self.stderr = ""
+        self.exitCode = nil
+        self.timedOut = false
+        self.blockedReason = nil
+    }
+
+    // MARK: - Mutations (driven by UserTaskRunner)
+
+    /// Marks the run as having started executing.
+    func markRunning() {
+        guard state == .pending else { return }
+        state = .running
+    }
+
+    /// Records that the run was blocked before launch (validator rejection
+    /// or spawn failure). Treated as a failure with a descriptive reason.
+    func markBlocked(reason: String) {
+        state = .failed
+        finishedAt = Date()
+        blockedReason = reason
+    }
+
+    /// Applies the terminal outcome of the run.
+    func applyOutcome(
+        stdout: String,
+        stderr: String,
+        exitCode: Int32,
+        timedOut: Bool,
+        cancelled: Bool
+    ) {
+        self.stdout = stdout
+        self.stderr = stderr
+        self.exitCode = exitCode
+        self.timedOut = timedOut
+        finishedAt = Date()
+        if cancelled {
+            state = .cancelled
+        } else if exitCode == 0 && !timedOut {
+            state = .succeeded
+        } else {
+            state = .failed
+        }
+    }
+
+    /// Forces the run into the cancelled state (used when the user cancels
+    /// an in-flight process whose exact exit code is not yet known).
+    func markCancelled() {
+        guard state.isActive else { return }
+        state = .cancelled
+        finishedAt = Date()
+    }
+
+    // MARK: - Derived presentation values
+
+    /// Elapsed seconds for an active run (computed at render time from
+    /// `startedAt` and now) or the final duration for a finished run.
+    var elapsedSeconds: TimeInterval {
+        let end = finishedAt ?? Date()
+        return max(0, end.timeIntervalSince(startedAt))
+    }
+
+    /// `true` when the run captured any stdout or stderr worth showing in
+    /// the output surface.
+    var hasOutput: Bool {
+        !stdout.isEmpty || !stderr.isEmpty
+    }
+
+    /// The output text to display, preferring stdout and appending stderr
+    /// when present. Returns an empty string when nothing was captured.
+    var combinedOutput: String {
+        if !stdout.isEmpty && !stderr.isEmpty {
+            return stdout + "\n" + stderr
+        }
+        return stdout.isEmpty ? stderr : stdout
+    }
+
+    /// A short, human-readable summary of the terminal status, e.g.
+    /// "Exit 0", "Exit 1", "Cancelled", "Timed out".
+    var statusSummary: String {
+        switch state {
+        case .pending:
+            return Strings.userTaskRunStatusPending
+        case .running:
+            return Strings.userTaskRunStatusRunning
+        case .succeeded:
+            return Strings.userTaskRunStatusSucceeded
+        case .failed:
+            if timedOut {
+                return Strings.userTaskRunStatusTimedOut
+            }
+            if let exitCode {
+                return Strings.userTaskRunStatusExitCode(Int(exitCode))
+            }
+            return Strings.userTaskRunStatusFailed
+        case .cancelled:
+            return Strings.userTaskRunStatusCancelled
+        }
+    }
+}

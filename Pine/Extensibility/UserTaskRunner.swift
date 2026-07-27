@@ -25,6 +25,52 @@ nonisolated struct UserTaskOutcome: Sendable, Equatable {
     var succeeded: Bool { exitCode == 0 && !timedOut }
 }
 
+/// A handle that can cancel a running task (issue #1246).
+///
+/// Cancelling terminates the spawned process (if still running) via
+/// `Process.terminate()`. The handle is safe to invoke from the main actor;
+/// process termination itself happens synchronously on the calling thread
+/// (Process is thread-safe for `terminate`).
+nonisolated final class UserTaskCancellation: @unchecked Sendable {
+    private let terminate: @Sendable () -> Void
+
+    init(terminate: @escaping @Sendable () -> Void) {
+        self.terminate = terminate
+    }
+
+    /// A no-op handle used when a task was blocked before launch.
+    static let noop = UserTaskCancellation(terminate: {})
+
+    /// Terminates the underlying process if it is still running.
+    func cancel() {
+        terminate()
+    }
+}
+
+/// Progress callbacks for a running task (issue #1246).
+///
+/// Each closure is invoked on the main thread so `@MainActor` UI models can
+/// be updated directly. All are optional; `onStart` fires when the process
+/// has been spawned, `onFinish` when it has exited (or was cancelled), and
+/// `cancellation` returns a handle the caller stores to enable Cancel.
+nonisolated struct UserTaskProgress: Sendable {
+    let onStart: (@Sendable () -> Void)?
+    let onFinish: (@Sendable (UserTaskOutcome, Bool) -> Void)?
+    /// Receives the cancellation handle once the process is spawned so the
+    /// caller can terminate it later.
+    let onCancellationReady: (@Sendable (UserTaskCancellation) -> Void)?
+
+    init(
+        onStart: (@Sendable () -> Void)? = nil,
+        onFinish: (@Sendable (UserTaskOutcome, Bool) -> Void)? = nil,
+        onCancellationReady: (@Sendable (UserTaskCancellation) -> Void)? = nil
+    ) {
+        self.onStart = onStart
+        self.onFinish = onFinish
+        self.onCancellationReady = onCancellationReady
+    }
+}
+
 /// Runs `UserTask`s on a background queue.
 ///
 /// Threading: `run(...)` dispatches the `Process` to `DispatchQueue.global`
@@ -59,6 +105,31 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         fileContent: String?,
         completion: @escaping @Sendable (UserTaskOutcome) -> Void
     ) {
+        run(
+            task: task,
+            fileURL: fileURL,
+            projectRootURL: projectRootURL,
+            fileContent: fileContent,
+            progress: UserTaskProgress(onFinish: { outcome, _ in
+                completion(outcome)
+            })
+        )
+    }
+
+    /// Runs a task with structured progress reporting (issue #1246).
+    ///
+    /// The validated command path is identical to ``run(task:fileURL:projectRootURL:fileContent:completion:)``;
+    /// this overload additionally surfaces start/cancellation/finish events
+    /// so the UI can render running state, elapsed time, and a Cancel button.
+    /// Shell text still comes directly from the validated task definition —
+    /// editor, terminal, and OSC-derived content is never interpolated.
+    func run(
+        task: UserTask,
+        fileURL: URL?,
+        projectRootURL: URL?,
+        fileContent: String?,
+        progress: UserTaskProgress
+    ) {
         // --- Security gate (milestone #1088, item 4) ---
         // Validate the command *before* spawning any process.  Commands that
         // match known-dangerous patterns (rm -rf, sudo, curl|sh, …) are
@@ -75,7 +146,13 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 exitCode: -1,
                 timedOut: false
             )
-            DispatchQueue.main.async { completion(outcome) }
+            // Surface the blocked outcome through the progress callbacks so
+            // the UI model reflects the rejection (issue #1246), then invoke
+            // the legacy completion for backward compatibility.
+            DispatchQueue.main.async {
+                progress.onFinish?(outcome, false)
+                completion(outcome)
+            }
             return
         }
 
@@ -98,14 +175,25 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             "Task '\(task.id, privacy: .public)' starting: '\(task.command, privacy: .public)'"
         )
 
+        // Cancellation flag shared between the cancel handle and the execute
+        // path. Set to `true` when the user cancels so the reported outcome
+        // is marked as cancelled rather than a generic failure.
+        let cancelFlag = UserTaskCancellationFlag()
+
         DispatchQueue.global(qos: .userInitiated).async {
             let outcome = Self.execute(
                 command: task.command,
                 workingDirectory: workingDir,
                 stdin: stdinText,
                 timeout: timeout,
-                taskID: task.id
+                taskID: task.id,
+                cancelFlag: cancelFlag,
+                onStart: {
+                    DispatchQueue.main.async { progress.onStart?() }
+                }
             )
+
+            let didCancel = cancelFlag.isCancelled
 
             // Log the result (exit code).
             if outcome.succeeded {
@@ -116,14 +204,22 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 let exitCode = outcome.exitCode
                 let timedOut = outcome.timedOut
                 Logger.task.error(
-                    "Task '\(task.id, privacy: .public)' finished (exit \(exitCode), timedOut: \(timedOut)): \(outcome.stderr, privacy: .public)"
+                    "Task '\(task.id, privacy: .public)' finished (exit \(exitCode), timedOut: \(timedOut), cancelled: \(didCancel)): \(outcome.stderr, privacy: .public)"
                 )
             }
 
             DispatchQueue.main.async {
+                progress.onFinish?(outcome, didCancel)
                 completion(outcome)
             }
         }
+
+        // Provide the cancellation handle so the caller can terminate the
+        // process. The handle flips `cancelFlag` and calls `terminate()` on
+        // the process once it has been spawned.
+        progress.onCancellationReady?(UserTaskCancellation {
+            cancelFlag.cancel()
+        })
     }
 
     // MARK: - Private
@@ -134,7 +230,9 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         workingDirectory: URL?,
         stdin: String,
         timeout: TimeInterval,
-        taskID: String
+        taskID: String,
+        cancelFlag: UserTaskCancellationFlag,
+        onStart: @escaping @Sendable () -> Void
     ) -> UserTaskOutcome {
         precondition(!Thread.isMainThread, "UserTaskRunner must run off the main thread")
 
@@ -162,13 +260,24 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             )
         }
 
+        // Publish the process so user-initiated cancellation can terminate it
+        // (issue #1246). If the user cancelled between spawn and here, the
+        // flag terminates the process immediately.
+        cancelFlag.setProcess(process)
+
+        // Notify the caller that the process is now running so the UI can
+        // switch from the pending to the running state and start the timer.
+        onStart()
+
         // Write stdin and close.
         if !stdin.isEmpty {
             stdinPipe.fileHandleForWriting.write(stdin.data(using: .utf8) ?? Data())
         }
         stdinPipe.fileHandleForWriting.closeFile()
 
-        // Timeout via a timer source.
+        // Timeout via a timer source. The same terminate path is reused for
+        // user-initiated cancellation (issue #1246): `cancelFlag.cancel()`
+        // terminates the process and records that the exit was a cancel.
         let timedOutLock = NSLock()
         nonisolated(unsafe) var timedOutValue = false
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
@@ -210,5 +319,51 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             exitCode: process.terminationStatus,
             timedOut: didTimeout
         )
+    }
+}
+
+/// Thread-safe handle coordinating user cancellation with the background
+/// `execute` path (issue #1246). Lives outside actor isolation because the
+/// process runs on `DispatchQueue.global` and the cancel handle may be
+/// invoked from the main actor.
+///
+/// The spawned `Process` is stored as a weak, locked reference so that
+/// `cancel()` can terminate it even if it is called before `execute` has
+/// finished wiring (the handle captures the flag; `execute` publishes the
+/// process into it once spawned).
+final class UserTaskCancellationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    private weak var process: Process?
+
+    /// Publishes the spawned process so `cancel()` can terminate it. Called
+    /// from `execute` on the background queue right after `process.run()`.
+    func setProcess(_ process: Process) {
+        lock.lock()
+        self.process = process
+        let shouldTerminate = cancelled
+        lock.unlock()
+        // If the user cancelled between spawn and publication, terminate now.
+        if shouldTerminate, process.isRunning {
+            process.terminate()
+        }
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        let alreadyCancelled = cancelled
+        cancelled = true
+        let proc = process
+        lock.unlock()
+        guard !alreadyCancelled else { return }
+        if let proc, proc.isRunning {
+            proc.terminate()
+        }
     }
 }

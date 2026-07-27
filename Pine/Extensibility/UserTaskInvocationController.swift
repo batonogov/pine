@@ -111,6 +111,16 @@ enum UserTaskInvocationController {
             content: currentActiveTab?.content,
             context: context
         )
+        let runStore = projectManager.taskRunStore
+        let run = runStore.start(
+            UserTaskRun(
+                taskID: task.id,
+                taskLabel: task.label,
+                command: task.command,
+                replacesFileContent: task.replacesFileContent
+            )
+        )
+        run.markRunning()
         runTask(
             task,
             currentActiveTab?.url,
@@ -118,9 +128,18 @@ enum UserTaskInvocationController {
             snapshot.content
         ) { outcome in
             Task { @MainActor in
+                run.applyOutcome(
+                    stdout: outcome.stdout,
+                    stderr: outcome.stderr,
+                    exitCode: outcome.exitCode,
+                    timedOut: outcome.timedOut,
+                    cancelled: false
+                )
                 presentOutcome(
                     outcome,
+                    cancelled: false,
                     task: task,
+                    run: run,
                     projectManager: projectManager,
                     snapshot: snapshot
                 )
@@ -146,41 +165,80 @@ enum UserTaskInvocationController {
 
     private static func presentOutcome(
         _ outcome: UserTaskOutcome,
+        cancelled: Bool,
         task: UserTask,
+        run: UserTaskRun,
         projectManager: ProjectManager,
         snapshot: InvocationSnapshot
     ) {
-        guard outcome.succeeded else {
+        // Always log for diagnostics (parity with the previous behaviour).
+        if outcome.succeeded {
+            Logger.extensibility.info(
+                "Task '\(task.label)' completed successfully"
+            )
+        } else {
             Logger.extensibility.error(
                 "Task '\(task.label)' failed (exit \(outcome.exitCode)): \(outcome.stderr)"
+            )
+        }
+
+        // A cancelled run needs no further UI — the output surface already
+        // reflects the cancelled state.
+        if cancelled { return }
+
+        // Fail closed for replacement-content tasks: only apply stdout when
+        // the active tab is unchanged. When the buffer moved, keep the newer
+        // edits and offer Copy / Open Output so the user can recover the
+        // output without clobbering their work.
+        if task.replacesFileContent {
+            guard let owner = snapshot.context.nsWindow,
+                  owner.isVisible,
+                  !owner.isMiniaturized else {
+                return
+            }
+            guard outcome.succeeded, !cancelled else {
+                projectManager.taskRunStore.isOutputVisible = true
+                return
+            }
+            let tabManager = projectManager.activeTabManager
+            if canApplyReplacement(
+                capturedTabID: capturedTabID,
+                capturedContent: capturedContent,
+                currentTabID: tabManager.activeTab?.id,
+                currentContent: tabManager.activeTab?.content
+            ) {
+                tabManager.updateContent(outcome.stdout)
+                // Simple success: brief, accessible toast. The output surface
+                // is kept available but not force-shown for a clean apply.
+                if outcome.succeeded {
+                    projectManager.toastManager.show(
+                        ToastItem(message: Strings.userTaskToastSucceeded(task.label))
+                    )
+                }
+                return
+            }
+            // Conflict: fail closed. Surface the output panel with Copy/Open
+            // actions so the user can recover stdout without losing edits.
+            presentReplacementConflict(
+                run: run,
+                projectManager: projectManager,
+                context: snapshot.context
             )
             return
         }
 
-        Logger.extensibility.info(
-            "Task '\(task.label)' completed successfully"
-        )
-        guard task.replacesFileContent else { return }
-        guard let owner = snapshot.context.nsWindow,
-              owner.isVisible,
-              !owner.isMiniaturized else {
-            return
+        // Non-replacement tasks: a clean success with no output is reported
+        // via a brief toast; failures or any captured output are routed to
+        // the durable output surface for inspection.
+        if outcome.succeeded && !run.hasOutput {
+            projectManager.toastManager.show(
+                ToastItem(message: Strings.userTaskToastSucceeded(task.label))
+            )
+        } else {
+            // Make sure the output surface is visible so the user sees the
+            // failure / captured output.
+            projectManager.taskRunStore.isOutputVisible = true
         }
-
-        // Fail closed if the user switched tabs or edited the file while the
-        // process ran. Applying stdout to a different/newer buffer would lose
-        // unrelated work and violate the task's active-file contract.
-        let tabManager = projectManager.activeTabManager
-        guard canApplyReplacement(
-            capturedTabID: snapshot.tabID,
-            capturedContent: snapshot.content,
-            currentTabID: tabManager.activeTab?.id,
-            currentContent: tabManager.activeTab?.content
-        ) else {
-            presentReplacementConflict(context: snapshot.context)
-            return
-        }
-        tabManager.updateContent(outcome.stdout)
     }
 
     nonisolated static func canApplyReplacement(
@@ -195,6 +253,8 @@ enum UserTaskInvocationController {
     }
 
     private static func presentReplacementConflict(
+        run: UserTaskRun,
+        projectManager: ProjectManager,
         context: DialogPresentationContext
     ) {
         Task { @MainActor in
@@ -202,8 +262,26 @@ enum UserTaskInvocationController {
             alert.alertStyle = .warning
             alert.messageText = Strings.userTaskOutputConflictTitle
             alert.informativeText = Strings.userTaskOutputConflictMessage
+            // Offer safe recovery actions: Copy the captured stdout to the
+            // pasteboard, and reveal the output surface for inspection.
+            alert.addButton(withTitle: Strings.userTaskCopyOutput)
+            alert.addButton(withTitle: Strings.userTaskOpenOutput)
             alert.addButton(withTitle: Strings.dialogOK)
-            _ = await alert.runSheet(on: context)
+            let response = await alert.runSheet(on: context)
+            guard let owner = context.nsWindow,
+                  owner.isVisible,
+                  !owner.isMiniaturized else {
+                return
+            }
+            switch response {
+            case .alertFirstButtonReturn:
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(run.stdout, forType: .string)
+            case .alertSecondButtonReturn:
+                projectManager.taskRunStore.isOutputVisible = true
+            default:
+                break
+            }
         }
     }
 
