@@ -42,6 +42,10 @@ final class ProjectManager {
     /// and aggregates diagnostics (#1010, parent #994). Spawned lazily on the
     /// first open of a matching file; shut down on project close / app quit.
     let lspManager: LSPManager
+    /// Project-scoped diagnostics aggregate for the Problems panel (#1236).
+    /// Merges LSP diagnostics (read live) with config-validator diagnostics
+    /// (revision-guarded). Owned here so every window observes the same truth.
+    let problemsController: ProblemsPanelController
     @ObservationIgnored
     private(set) lazy var paneManager = PaneManager(existingTabManager: primaryTabManager)
 
@@ -176,6 +180,7 @@ final class ProjectManager {
 
     init(lspSettings: LSPSettings = .shared) {
         self.lspManager = LSPManager(settings: lspSettings)
+        self.problemsController = ProblemsPanelController(lspManager: lspManager)
         workspace.setOnRootNodesChanged { [weak self] nodes in
             guard let self, let rootURL = self.workspace.rootURL else { return }
             self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)

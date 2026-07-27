@@ -1538,6 +1538,28 @@ enum Strings {
         String(localized: "problems.noIssues", defaultValue: "No problems detected")
     }
 
+    // Problems panel chrome wiring (#1236)
+
+    static var problemsPanelTitle: String {
+        String(localized: "problems.panelTitle", defaultValue: "Problems")
+    }
+
+    static var problemsClose: String {
+        String(localized: "problems.close", defaultValue: "Close panel")
+    }
+
+    static var menuProblems: String {
+        String(localized: "menu.problems", defaultValue: "Problems")
+    }
+
+    static var menuNextDiagnostic: String {
+        String(localized: "menu.nextDiagnostic", defaultValue: "Next Diagnostic")
+    }
+
+    static var menuPreviousDiagnostic: String {
+        String(localized: "menu.previousDiagnostic", defaultValue: "Previous Diagnostic")
+    }
+
     // MARK: - Accessibility (#1003)
     //
     // VoiceOver labels / hints for custom controls. These are resolved into

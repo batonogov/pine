@@ -441,11 +441,26 @@ struct PaneLeafView: View {
         .onDisappear {
             configValidator.clear()
             projectManager.lspManager.didClose(url: tab.url)
+            // Remove this file's config diagnostics from the project-wide
+            // Problems panel aggregate (#1236).
+            projectManager.problemsController.removeConfigDiagnostics(
+                for: tab.url.absoluteString
+            )
             clearLSPUIEndpoint()
         }
         .onChange(of: tab.content) { _, newValue in
             configValidator.validate(url: tab.url, content: newValue)
             projectManager.lspManager.didChange(url: tab.url, text: newValue)
+        }
+        .onChange(of: configValidator.diagnostics) { _, newValue in
+            // Push config-validator diagnostics into the project-wide Problems
+            // panel aggregate, tagged with the editor's contentVersion so stale
+            // results from a superseded edit are dropped (#1236).
+            projectManager.problemsController.setConfigDiagnostics(
+                newValue,
+                for: tab.url.absoluteString,
+                contentVersion: tab.contentVersion
+            )
         }
     }
 

@@ -169,3 +169,58 @@ private struct ProblemsDiagnosticRow: View {
         .buttonStyle(.plain)
     }
 }
+
+// MARK: - Chrome container (#1236)
+
+/// Editor-chrome wrapper around the existing `ProblemsPanelView`: a header bar
+/// (title + diagnostic count + close button) sitting above the panel content.
+/// The bottom pane's visibility is driven by `ProblemsPanelController`.
+struct ProblemsPanelChrome: View {
+    @Bindable var controller: ProblemsPanelController
+    /// Called when the user selects a diagnostic row. The arguments are the
+    /// file URL and the 1-based line number to navigate to.
+    var onSelect: ((URL, Int) -> Void)?
+    /// Called when the user clicks the close button.
+    var onClose: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            ProblemsPanelView(
+                groups: controller.groupedDiagnostics,
+                onSelect: onSelect
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.regularMaterial)
+        .accessibilityIdentifier(AccessibilityID.problemsPanel)
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: MenuIcons.problems)
+                .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                .foregroundStyle(.secondary)
+            Text(Strings.problemsPanelTitle)
+                .font(.system(size: LayoutMetrics.bodySmallFontSize, weight: .semibold))
+            Text(verbatim: "(\(controller.summary.total))")
+                .font(.system(size: LayoutMetrics.captionFontSize))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                onClose?()
+            } label: {
+                Image(systemName: MenuIcons.closeProblems)
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(Strings.problemsClose)
+            .accessibilityLabel(Strings.problemsClose)
+        }
+        .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
+        .frame(height: LayoutMetrics.problemsPanelHeaderHeight)
+        .background(.bar)
+    }
+}

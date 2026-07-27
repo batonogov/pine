@@ -122,6 +122,12 @@ nonisolated extension UserCommand {
             String(localized: "menu.editTasks")
         case .reloadUserConfiguration:
             String(localized: "menu.reloadUserConfiguration")
+        case .showProblems:
+            String(localized: "menu.problems")
+        case .nextDiagnostic:
+            String(localized: "menu.nextDiagnostic")
+        case .previousDiagnostic:
+            String(localized: "menu.previousDiagnostic")
         }
     }
 
@@ -143,8 +149,10 @@ nonisolated extension UserCommand {
         case .increaseFontSize, .decreaseFontSize, .resetFontSize,
              .toggleWordWrap, .toggleMinimap, .toggleBlame, .togglePreview,
              .revealFileInFinder, .revealProjectInFinder,
-             .showAgentActivity, .showAgentHistory:
+             .showAgentActivity, .showAgentHistory, .showProblems:
             .view
+        case .nextDiagnostic, .previousDiagnostic:
+            .edit
         case .showBranchSwitcher:
             .git
         case .toggleTerminal, .newTerminalTab, .findInTerminal,
@@ -261,6 +269,12 @@ nonisolated extension UserCommand {
             MenuIcons.editTasks
         case .reloadUserConfiguration:
             MenuIcons.reloadUserConfiguration
+        case .showProblems:
+            MenuIcons.problems
+        case .nextDiagnostic:
+            MenuIcons.nextDiagnostic
+        case .previousDiagnostic:
+            MenuIcons.previousDiagnostic
         }
     }
 
@@ -276,7 +290,8 @@ nonisolated extension UserCommand {
              .closeTab, .closeWindow,
              .findInProject, .toggleTerminal, .newTerminalTab,
              .toggleMinimap, .toggleBlame, .toggleWordWrap,
-             .revealProjectInFinder, .showAgentActivity, .showAgentHistory:
+             .revealProjectInFinder, .showAgentActivity, .showAgentHistory,
+             .showProblems, .nextDiagnostic, .previousDiagnostic:
             .project
         case .showBranchSwitcher:
             .gitRepository
@@ -390,6 +405,12 @@ nonisolated extension UserCommand {
         case .newFile, .openFile, .clearRecentProjects,
              .closeTab, .closeWindow:
             value = nil
+        case .showProblems:
+            value = "cmd+shift+x"
+        case .nextDiagnostic:
+            value = "f8"
+        case .previousDiagnostic:
+            value = "shift+f8"
         }
         return value.flatMap(UserKeybindingRegistry.parse)
     }
