@@ -112,12 +112,15 @@ extension AlertTemplate {
         let roles = buttonRoles
         for (index, buttonTitle) in buttonTitles.enumerated() {
             let role = roles[index]
-            let isCancel = role == .cancel
-            alert.addButton(
-                withTitle: buttonTitle,
-                variant: NSAlert.Button.variant(for: role),
-                role: isCancel ? .cancel : (role == .destructive ? .destructive : .default)
-            )
+            let button = alert.addButton(withTitle: buttonTitle)
+            switch role {
+            case .destructive:
+                button.hasDestructiveAction = true
+            case .cancel:
+                button.keyEquivalent = "\u{1b}" // Escape
+            case .default:
+                break
+            }
         }
 
         return alert
@@ -242,7 +245,7 @@ extension AlertTemplate {
     /// `.cancel`     — Escape / ⌘-. target (Cancel, Keep). A single-button
     ///                 OK alert uses `.default` since there is nothing to cancel.
     /// `.destructive`— Don't Save / Discard / Quit — confirmed data loss.
-    private var buttonRoles: [NSAlert.Button.Role] {
+    private var buttonRoles: [AlertButtonRole] {
         switch self {
         case .unsavedChangesSingle, .unsavedChangesBulk:
             return [.default, .destructive, .cancel]
@@ -267,24 +270,22 @@ extension AlertTemplate {
     }
 }
 
-// MARK: - NSAlert.Button role bridging
+// MARK: - Alert button role bridging
 
-extension NSAlert.Button {
-    /// Semantic role for an alert button.
-    enum Role: Sendable, Equatable {
-        case `default`
-        case cancel
-        case destructive
-    }
+/// Semantic role for an alert button.
+enum AlertButtonRole: Sendable, Equatable {
+    case `default`
+    case cancel
+    case destructive
+}
 
-    /// Maps a role to the `NSAlert.Button.Variant` used by
-    /// `addButton(withTitle:variant:role:)`. `.default` → `.standard`,
-    /// `.cancel` → `.cancel`, `.destructive` → `.destructive`.
-    static func variant(for role: Role) -> NSAlert.Button.Variant {
-        switch role {
-        case .default: return .standard
-        case .cancel: return .cancel
-        case .destructive: return .destructive
-        }
+/// Maps a role to the `NSAlert.Button.Variant` used by
+/// `addButton(withTitle:variant:role:)`. `.default` → `.standard`,
+/// `.cancel` → `.cancel`, `.destructive` → `.destructive`.
+func nsAlertVariant(for role: AlertButtonRole) -> NSAlert.Button.Variant {
+    switch role {
+    case .default: return .standard
+    case .cancel: return .cancel
+    case .destructive: return .destructive
     }
 }

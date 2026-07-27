@@ -103,19 +103,3 @@ extension NSSavePanel {
         }
     }
 }
-
-extension NSOpenPanel {
-    /// Presents this open panel as a sheet attached to the window resolved
-    /// from `context`. Falls back to application-modal `runModal()` when the
-    /// context has no window (issue #1241).
-    func runSheet(on context: DialogPresentationContext) async -> NSApplication.ModalResponse {
-        guard let window = context.nsWindow, window.isVisible else {
-            return runModal()
-        }
-        return await withCheckedContinuation { continuation in
-            beginSheetModal(for: window) { response in
-                continuation.resume(returning: response)
-            }
-        }
-    }
-}
