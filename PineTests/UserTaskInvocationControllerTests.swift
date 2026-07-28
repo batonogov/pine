@@ -11,46 +11,93 @@ import Testing
 
 @Suite("User task invocation safety")
 struct UserTaskInvocationControllerTests {
-    @Test("Output replacement requires the same unchanged editor buffer")
+    @Test("Successful output replacement requires the same unchanged editor buffer")
     func replacementRequiresSameUnchangedBuffer() {
         let tabID = UUID()
+        let fileURL = URL(fileURLWithPath: "/tmp/source.swift")
+        let success = outcome(exitCode: 0)
 
         #expect(UserTaskInvocationController.canApplyReplacement(
-            capturedTabID: tabID,
-            capturedContent: "before",
-            currentTabID: tabID,
-            currentContent: "before"
+            outcome: success,
+            cancelled: false,
+            captured: capture(id: tabID, url: fileURL),
+            current: capture(id: tabID, url: fileURL)
         ))
         #expect(!UserTaskInvocationController.canApplyReplacement(
-            capturedTabID: tabID,
-            capturedContent: "before",
-            currentTabID: UUID(),
-            currentContent: "before"
+            outcome: success,
+            cancelled: false,
+            captured: capture(id: tabID, url: fileURL),
+            current: capture(id: UUID(), url: fileURL)
         ))
         #expect(!UserTaskInvocationController.canApplyReplacement(
-            capturedTabID: tabID,
-            capturedContent: "before",
-            currentTabID: tabID,
-            currentContent: "human edit"
+            outcome: success,
+            cancelled: false,
+            captured: capture(id: tabID, url: fileURL),
+            current: capture(
+                id: tabID,
+                url: fileURL,
+                content: "human edit"
+            )
+        ))
+        #expect(!UserTaskInvocationController.canApplyReplacement(
+            outcome: success,
+            cancelled: false,
+            captured: capture(id: tabID, url: fileURL),
+            current: capture(
+                id: tabID,
+                url: URL(fileURLWithPath: "/tmp/saved-as.swift")
+            )
+        ))
+        #expect(!UserTaskInvocationController.canApplyReplacement(
+            outcome: success,
+            cancelled: false,
+            captured: capture(id: tabID, url: fileURL),
+            current: capture(id: tabID, url: fileURL, contentVersion: 2)
+        ))
+        #expect(!UserTaskInvocationController.canApplyReplacement(
+            outcome: success,
+            cancelled: false,
+            captured: capture(id: tabID, url: fileURL),
+            current: .init(
+                id: tabID,
+                url: fileURL.standardizedFileURL,
+                content: "before",
+                contentVersion: 1,
+                isEligibleForReplacement: false
+            )
         ))
     }
 
     @Test("Missing capture data always fails closed", arguments: [
-        (nil, "before", UUID(), "before"),
-        (UUID(), nil, UUID(), "before"),
+        (nil, URL(fileURLWithPath: "/tmp/a"), "before", 1),
+        (UUID(), nil, "before", 1),
+        (UUID(), URL(fileURLWithPath: "/tmp/a"), nil, 1),
+        (UUID(), URL(fileURLWithPath: "/tmp/a"), "before", nil),
         (nil, nil, nil, nil),
-    ] as [(UUID?, String?, UUID?, String?)])
+    ] as [(UUID?, URL?, String?, UInt64?)])
     func missingCaptureFailsClosed(
         capturedTabID: UUID?,
+        capturedURL: URL?,
         capturedContent: String?,
-        currentTabID: UUID?,
-        currentContent: String?
+        capturedContentVersion: UInt64?
     ) {
+        let current = capture(
+            id: capturedTabID ?? UUID(),
+            url: capturedURL ?? URL(fileURLWithPath: "/tmp/a"),
+            content: capturedContent ?? "before",
+            contentVersion: capturedContentVersion ?? 1
+        )
         #expect(!UserTaskInvocationController.canApplyReplacement(
-            capturedTabID: capturedTabID,
-            capturedContent: capturedContent,
-            currentTabID: currentTabID,
-            currentContent: currentContent
+            outcome: outcome(exitCode: 0),
+            cancelled: false,
+            captured: .init(
+                id: capturedTabID,
+                url: capturedURL,
+                content: capturedContent,
+                contentVersion: capturedContentVersion,
+                isEligibleForReplacement: true
+            ),
+            current: current
         ))
     }
 
@@ -101,6 +148,7 @@ struct UserTaskInvocationControllerTests {
                 },
                 runTask: { _, fileURL, _, content, _ in
                     runnerInputs.append((fileURL, content))
+                    return .noop
                 }
             )
         }
@@ -166,6 +214,7 @@ struct UserTaskInvocationControllerTests {
                 },
                 runTask: { _, fileURL, _, _, _ in
                     runnerFileURLs.append(fileURL)
+                    return .noop
                 }
             )
         }
@@ -178,5 +227,115 @@ struct UserTaskInvocationControllerTests {
 
         #expect(await invocation.value == false)
         #expect(runnerFileURLs.isEmpty)
+    }
+
+    @Test("Partial stdout from every unsuccessful path fails closed")
+    func unsuccessfulOutcomesNeverReplaceContent() {
+        let tabID = UUID()
+        let fileURL = URL(fileURLWithPath: "/tmp/source.swift")
+        let unsuccessfulPaths: [(UserTaskOutcome, Bool)] = [
+            (outcome(exitCode: 7, stdout: "partial"), false),
+            (outcome(exitCode: 15, stdout: "partial", timedOut: true), false),
+            (outcome(exitCode: -1, stdout: "partial"), false),
+            (outcome(exitCode: 15, stdout: "partial"), true),
+            // Cancellation wins even if the process happened to exit zero
+            // before termination was observed.
+            (outcome(exitCode: 0, stdout: "partial"), true),
+        ]
+
+        for (taskOutcome, cancelled) in unsuccessfulPaths {
+            #expect(!UserTaskInvocationController.canApplyReplacement(
+                outcome: taskOutcome,
+                cancelled: cancelled,
+                captured: capture(id: tabID, url: fileURL),
+                current: capture(id: tabID, url: fileURL)
+            ))
+        }
+    }
+
+    @Test(
+        "Replacement preflight requires active-file scope and a complete text tab",
+        arguments: [
+            (UserTask.Scope.activeFile, true, false, true),
+            (.project, true, false, false),
+            (.activeFile, false, false, false),
+            (.activeFile, true, true, false),
+            (.activeFile, true, nil, false),
+        ] as [(UserTask.Scope, Bool, Bool?, Bool)]
+    )
+    func replacementPreflight(
+        scope: UserTask.Scope,
+        isText: Bool,
+        isTruncated: Bool?,
+        expected: Bool
+    ) {
+        #expect(
+            UserTaskInvocationController.replacementTargetIsEligible(
+                scope: scope,
+                isText: isText,
+                isTruncated: isTruncated
+            ) == expected
+        )
+    }
+
+    @Test("Cleanup and incomplete stdin failures never replace content")
+    func lifecycleFailuresNeverReplaceContent() {
+        let tabID = UUID()
+        let fileURL = URL(fileURLWithPath: "/tmp/source.swift")
+        let capture = capture(id: tabID, url: fileURL)
+        let cleanupFailure = UserTaskOutcome(
+            taskID: "format",
+            stdout: "partial",
+            stderr: "cleanup",
+            exitCode: 0,
+            timedOut: false,
+            cleanupSucceeded: false
+        )
+        let inputFailure = UserTaskOutcome(
+            taskID: "format",
+            stdout: "partial",
+            stderr: "stdin",
+            exitCode: 0,
+            timedOut: false,
+            standardInputCompleted: false
+        )
+
+        for failure in [cleanupFailure, inputFailure] {
+            #expect(!UserTaskInvocationController.canApplyReplacement(
+                outcome: failure,
+                cancelled: false,
+                captured: capture,
+                current: capture
+            ))
+        }
+    }
+
+    private func capture(
+        id: UUID,
+        url: URL = URL(fileURLWithPath: "/tmp/source.swift"),
+        content: String = "before",
+        contentVersion: UInt64 = 1
+    ) -> UserTaskInvocationController.CapturedTab {
+        .init(
+            id: id,
+            url: url.standardizedFileURL,
+            content: content,
+            contentVersion: contentVersion,
+            isEligibleForReplacement: true
+        )
+    }
+
+    private func outcome(
+        exitCode: Int32,
+        stdout: String = "formatted",
+        timedOut: Bool = false
+    ) -> UserTaskOutcome {
+        UserTaskOutcome(
+            taskID: "format",
+            stdout: stdout,
+            stderr: exitCode == 0 ? "" : "failure",
+            exitCode: exitCode,
+            timedOut: timedOut
+        )
     }
 }

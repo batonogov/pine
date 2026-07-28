@@ -22,6 +22,9 @@ nonisolated enum UserTaskRunState: Sendable, Equatable {
     case pending
     /// The process is running.
     case running
+    /// Cancellation won, but subprocess cleanup and direct-child reaping have
+    /// not completed yet. The run remains active and waitable in this state.
+    case cancelling
     /// The process exited with status 0.
     case succeeded
     /// The process exited with a non-zero status, was cancelled, timed out,
@@ -33,7 +36,7 @@ nonisolated enum UserTaskRunState: Sendable, Equatable {
     /// `true` while the run has not reached a terminal state.
     var isActive: Bool {
         switch self {
-        case .pending, .running: true
+        case .pending, .running, .cancelling: true
         case .succeeded, .failed, .cancelled: false
         }
     }
@@ -80,6 +83,9 @@ final class UserTaskRun: Identifiable {
     /// Short, human-readable reason when the run was blocked before launch
     /// (e.g. the validator rejected the command) or failed to launch.
     private(set) var blockedReason: String?
+    /// Cached retained bytes so history trimming never rescans large strings
+    /// on the main actor.
+    private(set) var retainedOutputBytes: Int
 
     init(
         taskID: String,
@@ -101,6 +107,7 @@ final class UserTaskRun: Identifiable {
         self.exitCode = nil
         self.timedOut = false
         self.blockedReason = nil
+        self.retainedOutputBytes = 0
     }
 
     // MARK: - Mutations (driven by UserTaskRunner)
@@ -113,9 +120,12 @@ final class UserTaskRun: Identifiable {
 
     /// Records that the run was blocked before launch (validator rejection
     /// or spawn failure). Treated as a failure with a descriptive reason.
-    func markBlocked(reason: String) {
+    func markBlocked(
+        reason: String,
+        finishedAt: Date = Date()
+    ) {
         state = .failed
-        finishedAt = Date()
+        self.finishedAt = finishedAt
         blockedReason = reason
     }
 
@@ -125,14 +135,25 @@ final class UserTaskRun: Identifiable {
         stderr: String,
         exitCode: Int32,
         timedOut: Bool,
-        cancelled: Bool
+        cancelled: Bool,
+        cleanupSucceeded: Bool = true,
+        standardInputCompleted: Bool = true,
+        retainedOutputBytes: Int? = nil,
+        finishedAt: Date = Date()
     ) {
         self.stdout = stdout
         self.stderr = stderr
         self.exitCode = exitCode
         self.timedOut = timedOut
-        finishedAt = Date()
-        if cancelled {
+        self.retainedOutputBytes = max(
+            retainedOutputBytes
+                ?? stdout.utf8.count + stderr.utf8.count,
+            0
+        )
+        self.finishedAt = finishedAt
+        if !cleanupSucceeded || !standardInputCompleted {
+            state = .failed
+        } else if cancelled {
             state = .cancelled
         } else if exitCode == 0 && !timedOut {
             state = .succeeded
@@ -141,12 +162,11 @@ final class UserTaskRun: Identifiable {
         }
     }
 
-    /// Forces the run into the cancelled state (used when the user cancels
-    /// an in-flight process whose exact exit code is not yet known).
-    func markCancelled() {
+    /// Records an accepted cancellation request while retaining active
+    /// ownership until the runner confirms reaping and cleanup.
+    func markCancelling() {
         guard state.isActive else { return }
-        state = .cancelled
-        finishedAt = Date()
+        state = .cancelling
     }
 
     // MARK: - Derived presentation values
@@ -154,8 +174,40 @@ final class UserTaskRun: Identifiable {
     /// Elapsed seconds for an active run (computed at render time from
     /// `startedAt` and now) or the final duration for a finished run.
     var elapsedSeconds: TimeInterval {
-        let end = finishedAt ?? Date()
+        elapsedSeconds(at: Date())
+    }
+
+    /// Elapsed seconds at an explicit render instant. Terminal runs always
+    /// use their recorded finish time, so the displayed duration freezes
+    /// after completion.
+    func elapsedSeconds(at date: Date) -> TimeInterval {
+        let end = finishedAt ?? date
         return max(0, end.timeIntervalSince(startedAt))
+    }
+
+    /// Stable, compact duration text suitable for a live task-row timer.
+    func elapsedText(at date: Date) -> String {
+        Self.formatElapsedDuration(elapsedSeconds(at: date))
+    }
+
+    /// Formats a duration as `M:SS`, or `H:MM:SS` after the first hour.
+    nonisolated static func formatElapsedDuration(
+        _ duration: TimeInterval
+    ) -> String {
+        let totalSeconds = max(0, Int(duration.rounded(.down)))
+        let seconds = totalSeconds % 60
+        let totalMinutes = totalSeconds / 60
+        let minutes = totalMinutes % 60
+        let hours = totalMinutes / 60
+        if hours > 0 {
+            return String(
+                format: "%d:%02d:%02d",
+                hours,
+                minutes,
+                seconds
+            )
+        }
+        return String(format: "%d:%02d", totalMinutes, seconds)
     }
 
     /// `true` when the run captured any stdout or stderr worth showing in
@@ -173,6 +225,11 @@ final class UserTaskRun: Identifiable {
         return stdout.isEmpty ? stderr : stdout
     }
 
+    /// Exact payload copied by the ordinary task-row Copy Output action.
+    var outputCopyPayload: String {
+        combinedOutput
+    }
+
     /// A short, human-readable summary of the terminal status, e.g.
     /// "Exit 0", "Exit 1", "Cancelled", "Timed out".
     var statusSummary: String {
@@ -181,6 +238,8 @@ final class UserTaskRun: Identifiable {
             return Strings.userTaskRunStatusPending
         case .running:
             return Strings.userTaskRunStatusRunning
+        case .cancelling:
+            return Strings.userTaskRunStatusCancelling
         case .succeeded:
             return Strings.userTaskRunStatusSucceeded
         case .failed:

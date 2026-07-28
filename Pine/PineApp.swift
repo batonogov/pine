@@ -12,6 +12,7 @@
 
 import Sparkle
 import SwiftUI
+import os
 
 @main
 struct PineApp: App {
@@ -1376,7 +1377,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             }
             pm.recoveryManager?.stopPeriodicSnapshots()
         }
-        registry.destroyAllProjects()
+        // `applicationShouldTerminate` already spent the one shared task
+        // shutdown budget. Do not multiply quit latency in this final hook.
+        _ = registry.destroyAllProjects(userTaskDeadline: .now())
 
         // Stop the global quick-terminal session so its PTY does not outlive
         // Pine (#1113 review). The session is keep-alive across toggles but
@@ -1576,6 +1579,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                ) {
                 return false
             }
+        }
+
+        // Window closure keeps project tasks alive by policy; application
+        // termination does not. Use one shared deadline across every project
+        // so N concurrent tasks cannot multiply the quit delay. This happens
+        // only after every user authorization and discard commit above.
+        let taskShutdownDeadline = DispatchTime.now() + 3
+        var userTasksStopped = true
+        for projectManager in registry.openProjects.values {
+            projectManager.requestUserTaskShutdown()
+        }
+        for projectManager in registry.openProjects.values
+        where !projectManager.shutdownUserTasks(
+            until: taskShutdownDeadline
+        ) {
+            userTasksStopped = false
+        }
+        if !userTasksStopped {
+            Logger.task.error(
+                "One or more user tasks exceeded Pine's quit cleanup deadline"
+            )
         }
 
         return true

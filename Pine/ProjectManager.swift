@@ -949,4 +949,18 @@ final class ProjectManager {
     func shutdownLanguageServers() {
         lspManager.shutdownAll()
     }
+
+    /// Requests cancellation without waiting. Closing a project window does
+    /// not call this: background projects intentionally keep both terminals
+    /// and tasks alive.
+    func requestUserTaskShutdown() {
+        taskRunStore.requestShutdown()
+    }
+
+    /// Waits for project-owned user tasks only until the shared absolute
+    /// deadline, requesting cancellation first when needed.
+    @discardableResult
+    func shutdownUserTasks(until deadline: DispatchTime) -> Bool {
+        taskRunStore.shutdownAll(until: deadline)
+    }
 }

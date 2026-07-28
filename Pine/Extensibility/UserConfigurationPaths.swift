@@ -32,7 +32,21 @@ nonisolated enum UserConfigurationPaths {
 
     /// `…/Pine/tasks.json` — user-defined external commands/tasks.
     static var userTasksFile: URL {
-        applicationSupportDirectory.appendingPathComponent("tasks.json", isDirectory: false)
+        // A narrowly gated UI-test hook keeps task execution scenarios
+        // deterministic without reading or overwriting a developer's real
+        // configuration. `--reset-state` is already Pine's UI-test launch
+        // mode; the environment override is ignored for normal launches.
+        if CommandLine.arguments.contains("--reset-state"),
+           let path = ProcessInfo.processInfo.environment[
+               "PINE_USER_TASKS_FILE"
+           ],
+           !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: false)
+        }
+        return applicationSupportDirectory.appendingPathComponent(
+            "tasks.json",
+            isDirectory: false
+        )
     }
 
     /// `…/Pine/keybindings.json` — user-defined command → key mappings.

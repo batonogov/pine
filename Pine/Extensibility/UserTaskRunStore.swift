@@ -27,6 +27,8 @@ final class UserTaskRunStore {
 
     /// Maximum number of finished runs retained for the output history.
     static let maxRuns = 25
+    /// Independent memory bound for retained UTF-8 stdout/stderr history.
+    static let maxRetainedOutputBytes = 32 * 1_024 * 1_024
 
     /// Optional binding target the presenter watches to auto-expand the
     /// output surface when a new run starts or fails.
@@ -35,8 +37,20 @@ final class UserTaskRunStore {
     /// Cancellation handles keyed by run id, so the UI's Cancel button can
     /// terminate the spawned process. Cleared when a run finishes.
     private var cancellationHandles: [UUID: UserTaskCancellation] = [:]
+    /// Cancel clicks received before the runner publishes its handle.
+    private var pendingCancellationRunIDs: Set<UUID> = []
+    private let maximumRuns: Int
+    private let maximumRetainedOutputBytes: Int
 
-    init() {}
+    init(
+        maximumRuns: Int = UserTaskRunStore.maxRuns,
+        maximumRetainedOutputBytes: Int =
+            UserTaskRunStore.maxRetainedOutputBytes
+    ) {
+        self.maximumRuns = max(maximumRuns, 0)
+        self.maximumRetainedOutputBytes =
+            max(maximumRetainedOutputBytes, 0)
+    }
 
     // MARK: - Recording
 
@@ -45,6 +59,7 @@ final class UserTaskRunStore {
     @discardableResult
     func start(_ run: UserTaskRun) -> UserTaskRun {
         runs.insert(run, at: 0)
+        isOutputVisible = true
         trimToCapacity()
         return run
     }
@@ -56,6 +71,18 @@ final class UserTaskRunStore {
         _ handle: UserTaskCancellation,
         forRunID id: UUID
     ) {
+        if pendingCancellationRunIDs.remove(id) != nil {
+            guard let run = run(forID: id), run.state.isActive else {
+                _ = handle.cancel()
+                return
+            }
+            cancellationHandles[id] = handle
+            if handle.cancel() {
+                run.markCancelling()
+            }
+            return
+        }
+        guard let run = run(forID: id), run.state.isActive else { return }
         cancellationHandles[id] = handle
     }
 
@@ -63,9 +90,45 @@ final class UserTaskRunStore {
     /// UI model. No-op for finished runs or unknown ids.
     func cancelRun(id: UUID) {
         guard let run = run(forID: id), run.state.isActive else { return }
-        cancellationHandles[id]?.cancel()
-        run.markCancelled()
+        guard let handle = cancellationHandles[id] else {
+            pendingCancellationRunIDs.insert(id)
+            return
+        }
+        if handle.cancel() {
+            run.markCancelling()
+        }
+    }
+
+    /// Applies the terminal result and releases its cancellation handle.
+    ///
+    /// A run cancelled before its handle arrived remains cancelled when the
+    /// process later reports its concrete exit status and captured output.
+    @discardableResult
+    func finishRun(
+        id: UUID,
+        outcome: UserTaskOutcome,
+        cancelled: Bool
+    ) -> Bool {
         cancellationHandles.removeValue(forKey: id)
+        pendingCancellationRunIDs.remove(id)
+        guard let run = run(forID: id) else { return false }
+        let cancellationWon = cancelled || run.state == .cancelling
+        guard run.state.isActive else { return false }
+        run.applyOutcome(
+            stdout: outcome.stdout,
+            stderr: outcome.stderr,
+            exitCode: outcome.exitCode,
+            timedOut: outcome.timedOut,
+            cancelled: cancellationWon,
+            cleanupSucceeded: outcome.cleanupSucceeded,
+            standardInputCompleted: outcome.standardInputCompleted,
+            retainedOutputBytes: outcome.retainedOutputBytes
+        )
+        if run.state == .failed || run.hasOutput {
+            isOutputVisible = true
+        }
+        trimToCapacity()
+        return true
     }
 
     // MARK: - Queries
@@ -85,6 +148,23 @@ final class UserTaskRunStore {
         runs.first
     }
 
+    /// Internal lifecycle observability used by unit tests.
+    var cancellationHandleCount: Int {
+        cancellationHandles.count
+    }
+
+    var pendingCancellationCount: Int {
+        pendingCancellationRunIDs.count
+    }
+
+    var retainedOutputByteCount: Int {
+        runs.lazy
+            .filter { !$0.state.isActive }
+            .reduce(into: 0) { total, run in
+                total += run.retainedOutputBytes
+            }
+    }
+
     /// Finds a run by id.
     func run(forID id: UUID) -> UserTaskRun? {
         runs.first { $0.id == id }
@@ -97,26 +177,110 @@ final class UserTaskRunStore {
     func removeRun(id: UUID) {
         guard let run = run(forID: id), !run.state.isActive else { return }
         runs.removeAll { $0.id == id }
+        cancellationHandles.removeValue(forKey: id)
+        pendingCancellationRunIDs.remove(id)
     }
 
     /// Clears all finished runs.
     func clearFinished() {
-        runs.removeAll { !$0.state.isActive }
+        let finishedIDs = Set(
+            runs.lazy.filter { !$0.state.isActive }.map { $0.id }
+        )
+        runs.removeAll { finishedIDs.contains($0.id) }
+        cancellationHandles = cancellationHandles.filter {
+            !finishedIDs.contains($0.key)
+        }
+        pendingCancellationRunIDs.subtract(finishedIDs)
     }
 
-    /// Clears every run (used on project teardown).
+    /// Immediately clears every run and requests active-process cancellation.
+    /// Project teardown should prefer ``shutdownAll(until:)`` so it can wait.
+    ///
+    /// Runs whose handle has not arrived remain in the pending-cancellation
+    /// set so a late handle is terminated instead of becoming unreachable.
     func clearAll() {
+        let activeIDs = Set(runs.lazy.filter { $0.state.isActive }.map { $0.id })
+        for id in activeIDs {
+            if let handle = cancellationHandles[id] {
+                _ = handle.cancel()
+            } else {
+                pendingCancellationRunIDs.insert(id)
+            }
+        }
         runs.removeAll()
+        cancellationHandles.removeAll()
+    }
+
+    /// Requests cancellation for every active run without waiting. Project
+    /// shutdown calls this across all stores before it waits on any one store,
+    /// ensuring the first TERM reaches every project promptly.
+    func requestShutdown() {
+        for run in runs where run.state.isActive {
+            if let handle = cancellationHandles[run.id] {
+                if handle.cancel() {
+                    run.markCancelling()
+                }
+            } else {
+                pendingCancellationRunIDs.insert(run.id)
+            }
+        }
+    }
+
+    /// Cancels and waits for every active run using one shared absolute
+    /// deadline. Runner completion is published before its main-thread finish
+    /// callback, so this bounded wait cannot deadlock the main actor.
+    @discardableResult
+    func shutdownAll(until deadline: DispatchTime) -> Bool {
+        requestShutdown()
+        let activeIDs = Array(runs.lazy
+            .filter { $0.state.isActive }
+            .map { $0.id })
+        var handles: [UserTaskCancellation] = []
+        var allCompleted = true
+
+        for id in activeIDs {
+            if let handle = cancellationHandles[id] {
+                handles.append(handle)
+            } else {
+                pendingCancellationRunIDs.insert(id)
+                allCompleted = false
+            }
+        }
+        for handle in handles where !handle.wait(until: deadline) {
+            allCompleted = false
+        }
+
+        if allCompleted {
+            runs.removeAll()
+            cancellationHandles.removeAll()
+            pendingCancellationRunIDs.removeAll()
+        }
+        return allCompleted
     }
 
     // MARK: - Private
 
     private func trimToCapacity() {
-        // Never trim active runs; only drop the oldest finished runs.
-        let finished = runs.filter { !$0.state.isActive }
-        let overflow = finished.count - Self.maxRuns
-        guard overflow > 0 else { return }
-        let toDrop = Set(finished.suffix(overflow).map { $0.id })
+        // Never trim active runs. Remove oldest terminal runs until both the
+        // count and retained-byte limits hold after every terminal transition.
+        var finishedCount = runs.lazy.filter { !$0.state.isActive }.count
+        var retainedBytes = retainedOutputByteCount
+        var toDrop: Set<UUID> = []
+
+        for run in runs.reversed() where !run.state.isActive {
+            guard finishedCount > maximumRuns
+                    || retainedBytes > maximumRetainedOutputBytes else {
+                break
+            }
+            toDrop.insert(run.id)
+            finishedCount -= 1
+            retainedBytes -= run.retainedOutputBytes
+        }
+        guard !toDrop.isEmpty else { return }
         runs.removeAll { toDrop.contains($0.id) }
+        cancellationHandles = cancellationHandles.filter {
+            !toDrop.contains($0.key)
+        }
+        pendingCancellationRunIDs.subtract(toDrop)
     }
 }

@@ -52,6 +52,7 @@ final class ProjectRegistry: LSPSettingsObserver {
                 guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDir),
                       isDir.boolValue else {
                     // Directory was deleted while in background — clean up
+                    _ = existing.shutdownUserTasks(until: .now() + 2)
                     existing.terminal.terminateAll()
                     openProjects.removeValue(forKey: canonical)
                     backgroundProjects.remove(canonical)
@@ -97,8 +98,9 @@ final class ProjectRegistry: LSPSettingsObserver {
         return canonical
     }
 
-    /// Closes the project window but keeps the ProjectManager alive (preserving terminal sessions).
-    /// The PM moves to `backgroundProjects` and will be reused if the project is reopened.
+    /// Closes the project window but keeps the ProjectManager alive. Terminal
+    /// sessions and user tasks continue in the background; reopening the
+    /// project restores access to their current state and output history.
     func closeProjectWindow(_ url: URL) {
         let canonical = url.resolvingSymlinksInPath()
         guard openProjects[canonical] != nil else { return }
@@ -112,15 +114,26 @@ final class ProjectRegistry: LSPSettingsObserver {
     }
 
     /// Fully destroys all project managers. Called during app termination.
-    func destroyAllProjects() {
+    @discardableResult
+    func destroyAllProjects(
+        userTaskDeadline: DispatchTime = .now() + 3
+    ) -> Bool {
         lspSettingsChangeTask?.cancel()
         lspSettingsChangeTask = nil
+        var tasksStopped = true
+        for projectManager in openProjects.values {
+            projectManager.requestUserTaskShutdown()
+        }
         for (_, pm) in openProjects {
+            if !pm.shutdownUserTasks(until: userTaskDeadline) {
+                tasksStopped = false
+            }
             pm.terminal.terminateAll()
             pm.shutdownLanguageServers()
         }
         openProjects.removeAll()
         backgroundProjects.removeAll()
+        return tasksStopped
     }
 
     /// Returns true if the project has an open (non-background) window.
