@@ -717,6 +717,19 @@ struct AgentHistoryUndoReviewTests {
                 ) == expectation.retained
             )
         }
+
+        let unsafePath = "safe\n\u{202E}\\file"
+        let unsafeExplanation =
+            AgentHistoryUndoPreviewFailure.currentContentDiverged(
+                path: unsafePath
+            ).explanation(locale: Locale(identifier: "en"))
+        #expect(
+            unsafeExplanation.contains(
+                #"safe\u{A}\u{202E}\u{5C}file"#
+            )
+        )
+        #expect(!unsafeExplanation.contains("\n"))
+        #expect(!unsafeExplanation.contains("\u{202E}"))
     }
 
     @Test("Every undo-review key is translated in all supported locales")

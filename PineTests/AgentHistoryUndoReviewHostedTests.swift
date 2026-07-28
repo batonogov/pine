@@ -29,7 +29,8 @@ struct AgentHistoryUndoReviewHostedTests {
         // Return must activate the default Apply action. The deterministic
         // fixture has no store, so activation remains visibly in-progress
         // without starting a workspace task.
-        sendReturn(to: hosted.window)
+        sendReturn(to: hosted.window, drainRunLoop: false)
+        sendEscape(to: hosted.window, drainRunLoop: false)
         sendReturn(to: hosted.window)
         #expect(activation.count == 1)
         #expect(presented.value)
@@ -174,26 +175,35 @@ struct AgentHistoryUndoReviewHostedTests {
         return HostedReview(window: window)
     }
 
-    private func sendReturn(to window: NSWindow) {
+    private func sendReturn(
+        to window: NSWindow,
+        drainRunLoop: Bool = true
+    ) {
         sendKey(
             to: window,
             characters: "\r",
-            keyCode: 36
+            keyCode: 36,
+            drainRunLoop: drainRunLoop
         )
     }
 
-    private func sendEscape(to window: NSWindow) {
+    private func sendEscape(
+        to window: NSWindow,
+        drainRunLoop: Bool = true
+    ) {
         sendKey(
             to: window,
             characters: "\u{1B}",
-            keyCode: 53
+            keyCode: 53,
+            drainRunLoop: drainRunLoop
         )
     }
 
     private func sendKey(
         to window: NSWindow,
         characters: String,
-        keyCode: UInt16
+        keyCode: UInt16,
+        drainRunLoop: Bool = true
     ) {
         guard let event = NSEvent.keyEvent(
             with: .keyDown,
@@ -213,7 +223,9 @@ struct AgentHistoryUndoReviewHostedTests {
         if !window.performKeyEquivalent(with: event) {
             window.sendEvent(event)
         }
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
-        window.contentView?.layoutSubtreeIfNeeded()
+        if drainRunLoop {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+            window.contentView?.layoutSubtreeIfNeeded()
+        }
     }
 }

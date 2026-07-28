@@ -208,7 +208,7 @@ struct AgentHistoryUndoReviewView: View {
                     )
             }
             Button {
-                isPresented = false
+                dismissIfAllowed()
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
@@ -217,7 +217,9 @@ struct AgentHistoryUndoReviewView: View {
             .buttonStyle(.plain)
             .disabled(!actionGate.canDismiss)
             .accessibilityLabel(
-                Strings.dialogCancel(locale: locale)
+                applyResult != nil
+                    ? Strings.dialogClose(locale: locale)
+                    : Strings.dialogCancel(locale: locale)
             )
             .accessibilityIdentifier(
                 AccessibilityID.agentHistoryUndoReviewHeaderDismiss
@@ -641,7 +643,7 @@ struct AgentHistoryUndoReviewView: View {
             }
             Spacer()
             Button {
-                isPresented = false
+                dismissIfAllowed()
             } label: {
                 Text(
                     verbatim: applyResult != nil
@@ -682,6 +684,14 @@ struct AgentHistoryUndoReviewView: View {
         guard actionGate.phase == .preparing else { return }
         preparation = result
         actionGate.finishPreparation(result)
+    }
+
+    /// Re-checks the synchronous gate inside the action itself. SwiftUI may
+    /// not have reconciled the rendered `.disabled` state before a queued
+    /// Escape or click is delivered immediately after Apply.
+    private func dismissIfAllowed() {
+        guard actionGate.canDismiss else { return }
+        isPresented = false
     }
 
     /// Locks the sheet synchronously in the button action, before the task can
@@ -835,7 +845,10 @@ extension AgentHistoryUndoPreviewFailure {
         case .inversePayloadInvalid:
             Strings.undoFailPayloadInvalid(locale: locale)
         case .currentContentDiverged(let path):
-            Strings.undoFailContentDiverged(path, locale: locale)
+            Strings.undoFailContentDiverged(
+                VerifiedDiffDisplaySanitizer.escapeUnsafeScalars(in: path),
+                locale: locale
+            )
         case .previewEncodingFailed:
             Strings.undoFailPreviewFailed(locale: locale)
         }
