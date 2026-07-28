@@ -14,7 +14,7 @@ import Testing
 /// `@Sendable` closure without triggering Swift 6's "mutation of captured var"
 /// diagnostic. The toast `announce` hook is `@Sendable` and may be invoked
 /// concurrently, so captured `var` mutations are unsafe.
-final class AnnouncementBox {
+nonisolated final class AnnouncementBox: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String] = []
 
@@ -29,14 +29,6 @@ final class AnnouncementBox {
         defer { lock.unlock() }
         return storage
     }
-}
-
-/// Thread-safe box for capturing announcements in tests.
-final class AnnouncementBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage: [String] = []
-    func append(_ s: String) { lock.lock(); defer { lock.unlock() }; storage.append(s) }
-    var values: [String] { lock.lock(); defer { lock.unlock() }; return storage }
 }
 
 @Suite("ToastManager Tests")
