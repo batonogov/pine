@@ -213,8 +213,29 @@ struct SidebarKeyboardFocusBridge: NSViewRepresentable {
 
 // MARK: - Sidebar
 
-
 private struct SidebarKeyboardNavigationModifier: ViewModifier {
+    var actions: SidebarKeyboardActions
+
+    func body(content: Content) -> some View {
+        content
+            .onKeyPress(.upArrow) { actions.onUp(); return .handled }
+            .onKeyPress(.downArrow) { actions.onDown(); return .handled }
+            .onKeyPress(.leftArrow) { actions.onLeft(); return .handled }
+            .onKeyPress(.rightArrow) { actions.onRight(); return .handled }
+            .onKeyPress(.home) { actions.onHome(); return .handled }
+            .onKeyPress(.end) { actions.onEnd(); return .handled }
+            .onKeyPress(.pageUp) { actions.onPageUp(); return .handled }
+            .onKeyPress(.pageDown) { actions.onPageDown(); return .handled }
+            .onKeyPress(.characters) { press in
+                actions.onCharacters(press.characters)
+                return .handled
+            }
+    }
+}
+
+/// Groups sidebar keyboard-navigation callbacks to stay under SwiftLint's
+/// 5-parameter limit.
+struct SidebarKeyboardActions {
     var onUp: () -> Void
     var onDown: () -> Void
     var onLeft: () -> Void
@@ -224,41 +245,11 @@ private struct SidebarKeyboardNavigationModifier: ViewModifier {
     var onPageUp: () -> Void
     var onPageDown: () -> Void
     var onCharacters: (String) -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .onKeyPress(.upArrow) { onUp(); return .handled }
-            .onKeyPress(.downArrow) { onDown(); return .handled }
-            .onKeyPress(.leftArrow) { onLeft(); return .handled }
-            .onKeyPress(.rightArrow) { onRight(); return .handled }
-            .onKeyPress(.home) { onHome(); return .handled }
-            .onKeyPress(.end) { onEnd(); return .handled }
-            .onKeyPress(.pageUp) { onPageUp(); return .handled }
-            .onKeyPress(.pageDown) { onPageDown(); return .handled }
-            .onKeyPress(.characters) { press in
-                onCharacters(press.characters)
-                return .handled
-            }
-    }
 }
 
 extension View {
-    func sidebarKeyboardNavigation(
-        onUp: @escaping () -> Void,
-        onDown: @escaping () -> Void,
-        onLeft: @escaping () -> Void,
-        onRight: @escaping () -> Void,
-        onHome: @escaping () -> Void,
-        onEnd: @escaping () -> Void,
-        onPageUp: @escaping () -> Void,
-        onPageDown: @escaping () -> Void,
-        onCharacters: @escaping (String) -> Void
-    ) -> some View {
-        modifier(SidebarKeyboardNavigationModifier(
-            onUp: onUp, onDown: onDown, onLeft: onLeft, onRight: onRight,
-            onHome: onHome, onEnd: onEnd, onPageUp: onPageUp, onPageDown: onPageDown,
-            onCharacters: onCharacters
-        ))
+    func sidebarKeyboardNavigation(_ actions: SidebarKeyboardActions) -> some View {
+        modifier(SidebarKeyboardNavigationModifier(actions: actions))
     }
 }
 
@@ -365,7 +356,7 @@ struct SidebarView: View {
                             }
                         }
                     }
-                    .sidebarKeyboardNavigation(
+                    .sidebarKeyboardNavigation(SidebarKeyboardActions(
                         onUp: { handleArrow(delta: -1) },
                         onDown: { handleArrow(delta: 1) },
                         onLeft: { handleLeftArrow() },
@@ -375,8 +366,7 @@ struct SidebarView: View {
                         onPageUp: { handlePageUp() },
                         onPageDown: { handlePageDown() },
                         onCharacters: { handleTypedCharacters($0) }
-                    )
-                    }
+                    ))
                     .onKeyPress(.return, phases: .down) { press in
                         handleSidebarReturn(
                             commandPressed: press.modifiers.contains(.command),
