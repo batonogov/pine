@@ -114,16 +114,7 @@ final class UserTaskRunStore {
         guard let run = run(forID: id) else { return false }
         let cancellationWon = cancelled || run.state == .cancelling
         guard run.state.isActive else { return false }
-        run.applyOutcome(
-            stdout: outcome.stdout,
-            stderr: outcome.stderr,
-            exitCode: outcome.exitCode,
-            timedOut: outcome.timedOut,
-            cancelled: cancellationWon,
-            cleanupSucceeded: outcome.cleanupSucceeded,
-            standardInputCompleted: outcome.standardInputCompleted,
-            retainedOutputBytes: outcome.retainedOutputBytes
-        )
+        run.applyOutcome(outcome, cancelled: cancellationWon)
         if run.state == .failed || run.hasOutput {
             isOutputVisible = true
         }

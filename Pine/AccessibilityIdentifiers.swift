@@ -163,6 +163,9 @@ nonisolated enum AccessibilityID {
     static func userTaskOutputText(_ id: UUID) -> String {
         "userTaskOutputText_\(id.uuidString)"
     }
+    static func userTaskOutputTruncationNotice(_ id: UUID) -> String {
+        "userTaskOutputTruncation_\(id.uuidString)"
+    }
     static func userTaskCancelButton(_ id: UUID) -> String {
         "userTaskCancel_\(id.uuidString)"
     }

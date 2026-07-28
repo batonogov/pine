@@ -341,10 +341,13 @@ struct UserTaskRunStoreTests {
 
         run.markRunning()
         run.applyOutcome(
-            stdout: "",
-            stderr: "",
-            exitCode: 0,
-            timedOut: false,
+            UserTaskOutcome(
+                taskID: "elapsed",
+                stdout: "",
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            ),
             cancelled: false,
             finishedAt: startedAt + 3_661.9
         )
@@ -367,34 +370,43 @@ struct UserTaskRunStoreTests {
         #expect(UserTaskRun.formatElapsedDuration(90_061) == "25:01:01")
     }
 
-    @Test("Copy payload exactly matches the displayed combined output")
+    @Test("Copy payload exactly preserves the captured combined output")
     func outputCopyPayload() {
         let stdoutOnly = makeRun(taskID: "stdout")
         stdoutOnly.applyOutcome(
-            stdout: "standard output",
-            stderr: "",
-            exitCode: 0,
-            timedOut: false,
+            UserTaskOutcome(
+                taskID: "stdout",
+                stdout: "standard output",
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            ),
             cancelled: false
         )
         #expect(stdoutOnly.outputCopyPayload == "standard output")
 
         let stderrOnly = makeRun(taskID: "stderr")
         stderrOnly.applyOutcome(
-            stdout: "",
-            stderr: "standard error",
-            exitCode: 7,
-            timedOut: false,
+            UserTaskOutcome(
+                taskID: "stderr",
+                stdout: "",
+                stderr: "standard error",
+                exitCode: 7,
+                timedOut: false
+            ),
             cancelled: false
         )
         #expect(stderrOnly.outputCopyPayload == "standard error")
 
         let combined = makeRun(taskID: "combined")
         combined.applyOutcome(
-            stdout: "standard output",
-            stderr: "standard error",
-            exitCode: 7,
-            timedOut: false,
+            UserTaskOutcome(
+                taskID: "combined",
+                stdout: "standard output",
+                stderr: "standard error",
+                exitCode: 7,
+                timedOut: false
+            ),
             cancelled: false
         )
         #expect(
@@ -402,6 +414,80 @@ struct UserTaskRunStoreTests {
                 == "standard output\nstandard error"
         )
         #expect(combined.outputCopyPayload == combined.combinedOutput)
+    }
+
+    @Test("Output preview bounds bytes and preserves exact Copy payload")
+    func outputPreviewByteBoundaries() {
+        let limit = UserTaskOutputPreview.maximumUTF8Bytes
+        let exactText = String(repeating: "x", count: limit)
+        let exact = UserTaskOutcome(
+            taskID: "exact-preview",
+            stdout: exactText,
+            stderr: "",
+            exitCode: 0,
+            timedOut: false
+        )
+        #expect(exact.outputPreview.text == exactText)
+        #expect(!exact.outputPreview.wasTruncated)
+
+        let overLimitText = exactText + "y"
+        let overLimit = UserTaskOutcome(
+            taskID: "truncated-preview",
+            stdout: overLimitText,
+            stderr: "",
+            exitCode: 0,
+            timedOut: false
+        )
+        #expect(overLimit.outputPreview.text == exactText)
+        #expect(overLimit.outputPreview.wasTruncated)
+
+        let run = makeRun(taskID: "truncated-preview")
+        run.applyOutcome(overLimit, cancelled: false)
+        #expect(run.displayOutputPreview == exactText)
+        #expect(run.displayOutputPreviewWasTruncated)
+        #expect(run.outputCopyPayload == overLimitText)
+    }
+
+    @Test("Output preview accounts for stream separator and line boundary")
+    func outputPreviewStreamAndLineBoundaries() {
+        let byteLimit = UserTaskOutputPreview.maximumUTF8Bytes
+        let stdout = String(repeating: "x", count: byteLimit - 1)
+        let splitStreams = UserTaskOutputPreview.make(
+            stdout: stdout,
+            stderr: "z"
+        )
+        #expect(splitStreams.text == stdout + "\n")
+        #expect(splitStreams.wasTruncated)
+
+        let lineLimit = UserTaskOutputPreview.maximumLines
+        let lines = Array(
+            repeating: "line",
+            count: lineLimit + 1
+        ).joined(separator: "\n")
+        let lineBounded = UserTaskOutputPreview.make(
+            stdout: lines,
+            stderr: ""
+        )
+        #expect(lineBounded.text.split(
+            separator: "\n",
+            omittingEmptySubsequences: false
+        ).count == lineLimit)
+        #expect(lineBounded.wasTruncated)
+    }
+
+    @Test("Output preview never publishes partial UTF-8 scalars")
+    func outputPreviewUTF8Boundary() {
+        let limit = UserTaskOutputPreview.maximumUTF8Bytes
+        let prefix = String(repeating: "a", count: limit - 1)
+        let fullOutput = prefix + "🙂"
+        let preview = UserTaskOutputPreview.make(
+            stdout: fullOutput,
+            stderr: ""
+        )
+
+        #expect(preview.text == prefix)
+        #expect(preview.wasTruncated)
+        #expect(!preview.text.contains("\u{FFFD}"))
     }
 
     private func makeRun(

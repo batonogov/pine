@@ -101,12 +101,14 @@ final class UserTaskExecutionUITests: PineUITestCase {
     }
 
     func testSuccessfulTaskCopiesExactCombinedOutputWithoutModal() throws {
-        let expectedOutput = "success-out\nsuccess-err"
+        let stdout = String(repeating: "x", count: 20_000)
+        let expectedOutput = stdout + "\nsuccess-err"
         try launchWithTask(
             id: "ui-success",
             label: "UI Success Task",
             command: """
-            printf 'success-out'; printf 'success-err' >&2
+            /usr/bin/perl -e \
+            'print "x" x 20000; print STDERR "success-err"'
             """
         )
 
@@ -119,7 +121,20 @@ final class UserTaskExecutionUITests: PineUITestCase {
             identifierBeginningWith: "userTaskOutputText_"
         ).firstMatch
         XCTAssertTrue(output.waitForExistence(timeout: 3))
-        XCTAssertEqual(output.label, expectedOutput)
+        XCTAssertEqual(output.label.utf8.count, 16 * 1_024)
+        XCTAssertTrue(output.label.allSatisfy { $0 == "x" })
+        XCTAssertLessThan(output.label.utf8.count, expectedOutput.utf8.count)
+
+        let truncationNotice = app.staticTexts.matching(
+            identifierBeginningWith: "userTaskOutputTruncation_"
+        ).firstMatch
+        XCTAssertTrue(truncationNotice.waitForExistence(timeout: 3))
+        XCTAssertEqual(
+            truncationNotice.label,
+            """
+            Preview truncated. Copy Output includes the complete captured output.
+            """
+        )
         XCTAssertFalse(
             app.dialogs.firstMatch.exists,
             "Ordinary task success should not present a modal alert"

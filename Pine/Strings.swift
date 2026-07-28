@@ -1210,6 +1210,15 @@ enum Strings {
         )
     }
 
+    static var userTaskOutputPreviewTruncated: String {
+        String(
+            localized: "userTask.output.previewTruncated",
+            defaultValue: """
+            Preview truncated. Copy Output includes the complete captured output.
+            """
+        )
+    }
+
     static var userTaskClearFinished: String {
         String(
             localized: "userTask.output.clearFinished",

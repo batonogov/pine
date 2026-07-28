@@ -16,6 +16,79 @@
 
 import Foundation
 
+/// Bounded text used by SwiftUI for task-output rendering.
+///
+/// The full captured streams remain available for an explicit Copy action,
+/// but rendering multi-megabyte output in one SwiftUI `Text` can synchronously
+/// allocate and lay out the whole value on the main actor. This preview is
+/// prepared with the outcome on the runner's background queue and caps both
+/// bytes and lines before the result reaches the UI model.
+nonisolated struct UserTaskOutputPreview: Sendable, Equatable {
+    static let maximumUTF8Bytes = 16 * 1_024
+    static let maximumLines = 200
+
+    let text: String
+    let wasTruncated: Bool
+
+    static let empty = UserTaskOutputPreview(
+        text: "",
+        wasTruncated: false
+    )
+
+    static func make(
+        stdout: String,
+        stderr: String,
+        maximumUTF8Bytes: Int = maximumUTF8Bytes,
+        maximumLines: Int = maximumLines
+    ) -> UserTaskOutputPreview {
+        let byteLimit = max(maximumUTF8Bytes, 0)
+        let lineLimit = max(maximumLines, 1)
+        var data = Data()
+        data.reserveCapacity(byteLimit)
+        var lineCount = 1
+        let newline: UInt8 = 0x0A
+
+        func append<Bytes: Sequence>(_ bytes: Bytes) -> Bool
+        where Bytes.Element == UInt8 {
+            for byte in bytes {
+                guard data.count < byteLimit else { return false }
+                if byte == newline, lineCount >= lineLimit {
+                    return false
+                }
+                data.append(byte)
+                if byte == newline {
+                    lineCount += 1
+                }
+            }
+            return true
+        }
+
+        var complete = append(stdout.utf8)
+        if complete, !stdout.isEmpty, !stderr.isEmpty {
+            complete = append(CollectionOfOne(newline))
+        }
+        if complete {
+            complete = append(stderr.utf8)
+        }
+
+        // Both source strings are valid UTF-8. A byte-boundary cut can only
+        // leave one incomplete scalar at the end, so remove at most its tail
+        // before publishing the preview. Never inject a replacement glyph.
+        var text: String?
+        repeat {
+            text = String(data: data, encoding: .utf8)
+            if text == nil, !data.isEmpty {
+                data.removeLast()
+            }
+        } while text == nil && !data.isEmpty
+
+        return UserTaskOutputPreview(
+            text: text ?? "",
+            wasTruncated: !complete
+        )
+    }
+}
+
 /// Lifecycle phase of a single task run.
 nonisolated enum UserTaskRunState: Sendable, Equatable {
     /// The task has been queued / is preparing to launch.
@@ -86,6 +159,8 @@ final class UserTaskRun: Identifiable {
     /// Cached retained bytes so history trimming never rescans large strings
     /// on the main actor.
     private(set) var retainedOutputBytes: Int
+    /// Cached, bounded output used by the SwiftUI history surface.
+    private(set) var outputPreview: UserTaskOutputPreview
 
     init(
         taskID: String,
@@ -108,6 +183,7 @@ final class UserTaskRun: Identifiable {
         self.timedOut = false
         self.blockedReason = nil
         self.retainedOutputBytes = 0
+        self.outputPreview = .empty
     }
 
     // MARK: - Mutations (driven by UserTaskRunner)
@@ -131,31 +207,22 @@ final class UserTaskRun: Identifiable {
 
     /// Applies the terminal outcome of the run.
     func applyOutcome(
-        stdout: String,
-        stderr: String,
-        exitCode: Int32,
-        timedOut: Bool,
+        _ outcome: UserTaskOutcome,
         cancelled: Bool,
-        cleanupSucceeded: Bool = true,
-        standardInputCompleted: Bool = true,
-        retainedOutputBytes: Int? = nil,
         finishedAt: Date = Date()
     ) {
-        self.stdout = stdout
-        self.stderr = stderr
-        self.exitCode = exitCode
-        self.timedOut = timedOut
-        self.retainedOutputBytes = max(
-            retainedOutputBytes
-                ?? stdout.utf8.count + stderr.utf8.count,
-            0
-        )
+        stdout = outcome.stdout
+        stderr = outcome.stderr
+        exitCode = outcome.exitCode
+        timedOut = outcome.timedOut
+        retainedOutputBytes = outcome.retainedOutputBytes
+        outputPreview = outcome.outputPreview
         self.finishedAt = finishedAt
-        if !cleanupSucceeded || !standardInputCompleted {
+        if !outcome.cleanupSucceeded || !outcome.standardInputCompleted {
             state = .failed
         } else if cancelled {
             state = .cancelled
-        } else if exitCode == 0 && !timedOut {
+        } else if outcome.exitCode == 0 && !outcome.timedOut {
             state = .succeeded
         } else {
             state = .failed
@@ -228,6 +295,16 @@ final class UserTaskRun: Identifiable {
     /// Exact payload copied by the ordinary task-row Copy Output action.
     var outputCopyPayload: String {
         combinedOutput
+    }
+
+    /// Bounded, precomputed text safe to lay out in the output panel.
+    var displayOutputPreview: String {
+        outputPreview.text
+    }
+
+    /// Whether the panel must explain that Copy retains more than it renders.
+    var displayOutputPreviewWasTruncated: Bool {
+        outputPreview.wasTruncated
     }
 
     /// A short, human-readable summary of the terminal status, e.g.

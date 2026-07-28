@@ -172,6 +172,14 @@ nonisolated struct UserTaskRunnerTests {
                 Strings.userTaskDiagnosticInvalidUTF8
             )
         )
+        #expect(
+            completion.outcome.outputPreview.text
+                == completion.outcome.stderr
+        )
+        #expect(
+            !completion.outcome.outputPreview.text.contains("\u{FFFD}")
+        )
+        #expect(!completion.outcome.outputPreview.wasTruncated)
         #expect(!completion.outcome.succeeded)
     }
 

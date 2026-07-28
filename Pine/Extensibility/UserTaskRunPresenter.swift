@@ -175,15 +175,29 @@ private struct UserTaskRunRow: View {
                 .textSelection(.enabled)
 
             if run.hasOutput {
-                Text(verbatim: run.combinedOutput)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(6)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
-                    .accessibilityIdentifier(
-                        AccessibilityID.userTaskOutputText(run.id)
-                    )
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(verbatim: run.displayOutputPreview)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier(
+                            AccessibilityID.userTaskOutputText(run.id)
+                        )
+                    if run.displayOutputPreviewWasTruncated {
+                        Text(Strings.userTaskOutputPreviewTruncated)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier(
+                                AccessibilityID
+                                    .userTaskOutputTruncationNotice(run.id)
+                            )
+                    }
+                }
+                .padding(6)
+                .background(
+                    .quaternary,
+                    in: RoundedRectangle(cornerRadius: 5)
+                )
             }
         }
         .padding(8)

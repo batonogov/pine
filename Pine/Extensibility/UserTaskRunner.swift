@@ -31,6 +31,8 @@ nonisolated struct UserTaskOutcome: Sendable, Equatable {
     /// UTF-8 bytes retained by the UI history, calculated off the main actor
     /// for process outcomes so store trimming remains constant-time per run.
     let retainedOutputBytes: Int
+    /// Bounded rendering payload, prepared beside the outcome off-main.
+    let outputPreview: UserTaskOutputPreview
 
     init(
         taskID: String,
@@ -53,6 +55,10 @@ nonisolated struct UserTaskOutcome: Sendable, Equatable {
             retainedOutputBytes
                 ?? stdout.utf8.count + stderr.utf8.count,
             0
+        )
+        outputPreview = UserTaskOutputPreview.make(
+            stdout: stdout,
+            stderr: stderr
         )
     }
 
