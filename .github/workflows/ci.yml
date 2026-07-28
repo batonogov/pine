@@ -507,7 +507,7 @@ jobs:
           fi
           echo "All $(echo "$ACTUAL" | wc -l | tr -d ' ') UI test classes are sharded."
 
-  # UI test shards — 7 parallel jobs, 24-27 tests each (delta ±3).
+  # UI test shards — 7 parallel jobs, 27-28 tests each (delta ±1).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -539,7 +539,7 @@ jobs:
               -only-testing:PineUITests/QuickOpenUITests
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/ToggleCommentTests
-          # Shard 4 — Editor Chrome (27 tests)
+          # Shard 4 — Editor Chrome (28 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests

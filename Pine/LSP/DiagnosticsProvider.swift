@@ -116,6 +116,11 @@ nonisolated struct LSPDiagnostic: Equatable, Sendable {
 /// The `textDocument/publishDiagnostics` notification payload.
 nonisolated struct LSPDiagnosticsNotification: Equatable, Sendable {
     let uri: String
+    /// Optional document version supplied by the language server. When present,
+    /// it must match the manager's current LSP document version. When omitted,
+    /// the manager binds the notification to its current editor revision and
+    /// invalidates it on the next edit or lifecycle transition.
+    let version: Int?
     let diagnostics: [LSPDiagnostic]
 
     /// Initialises from the raw `params` dictionary. Returns `nil` if the URI
@@ -124,15 +129,30 @@ nonisolated struct LSPDiagnosticsNotification: Equatable, Sendable {
     init?(params: [String: Any]) {
         guard let uri = params["uri"] as? String else { return nil }
         self.uri = uri
+        self.version = params["version"] as? Int
         let rawArray = (params["diagnostics"] as? [Any]) ?? []
         self.diagnostics = rawArray.compactMap { LSPDiagnostic(json: $0) }
     }
 
     /// Convenience constructor for tests / fixtures.
-    init(uri: String, diagnostics: [LSPDiagnostic]) {
+    init(uri: String, version: Int? = nil, diagnostics: [LSPDiagnostic]) {
         self.uri = uri
+        self.version = version
         self.diagnostics = diagnostics
     }
+}
+
+/// A `publishDiagnostics` payload bound to the exact editor revision that was
+/// synchronized when the notification was accepted.
+///
+/// `documentVersion` remains optional because the LSP protocol permits servers
+/// to omit it. In that case the editor revision and manager lifecycle generation
+/// still prevent a result from being rebound to newer content.
+nonisolated struct LSPProblemsDiagnostics: Equatable, Sendable {
+    let uri: String
+    let documentVersion: Int?
+    let contentRevision: UInt64
+    let diagnostics: [ValidationDiagnostic]
 }
 
 // MARK: - Diagnostic mapping

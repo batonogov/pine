@@ -25536,6 +25536,231 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "Solarized" } }
       }
     },
+    "menu.nextDiagnostic" : {
+      "comment" : "View menu command that navigates to the next diagnostic.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Nächste Diagnose" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Next Diagnostic" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Diagnóstico siguiente" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Diagnostic suivant" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "次の診断" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "다음 진단" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Próximo diagnóstico" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Следующая диагностика" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下一个诊断" } }
+      }
+    },
+    "menu.previousDiagnostic" : {
+      "comment" : "View menu command that navigates to the previous diagnostic.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Vorherige Diagnose" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Previous Diagnostic" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Diagnóstico anterior" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Diagnostic précédent" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "前の診断" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "이전 진단" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Diagnóstico anterior" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Предыдущая диагностика" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上一个诊断" } }
+      }
+    },
+    "menu.problems" : {
+      "comment" : "View menu command that toggles the Problems panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Probleme" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Problems" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Problemas" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Problèmes" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "問題" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "문제" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Problemas" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проблемы" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "问题" } }
+      }
+    },
+    "problems.close" : {
+      "comment" : "Accessibility label and help text for closing the Problems panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Bereich schließen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Close panel" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cerrar panel" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Fermer le panneau" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "パネルを閉じる" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "패널 닫기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar painel" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Закрыть панель" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭面板" } }
+      }
+    },
+    "problems.errorCount.one" : {
+      "comment" : "Status bar summary for exactly one error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "1 Fehler" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 error" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "1 error" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "1 erreur" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "1件のエラー" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "1개 오류" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "1 erro" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "1 ошибка" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1个错误" } }
+      }
+    },
+    "problems.filter.allSeverities" : {
+      "comment" : "Problems filter option that includes every severity.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Alle Schweregrade" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All Severities" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Todas las gravedades" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Toutes les gravités" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "すべての重大度" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "모든 심각도" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Todas as gravidades" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Все уровни" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所有严重性" } }
+      }
+    },
+    "problems.filter.allSources" : {
+      "comment" : "Problems filter option that includes every diagnostic source.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Alle Quellen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All Sources" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Todas las fuentes" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Toutes les sources" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "すべてのソース" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "모든 소스" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Todas as fontes" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Все источники" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所有来源" } }
+      }
+    },
+    "problems.filter.severity" : {
+      "comment" : "Accessibility label for the Problems severity filter.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Schweregrad" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Severity" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Gravedad" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Gravité" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "重大度" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "심각도" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gravidade" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Важность" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "严重性" } }
+      }
+    },
+    "problems.filter.source" : {
+      "comment" : "Accessibility label for the Problems source filter.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Quelle" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Source" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Fuente" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Source" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ソース" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "소스" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fonte" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Источник" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来源" } }
+      }
+    },
+    "problems.panelTitle" : {
+      "comment" : "Title of the Problems panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Probleme" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Problems" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Problemas" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Problèmes" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "問題" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "문제" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Problemas" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проблемы" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "问题" } }
+      }
+    },
+    "problems.state.disabled" : {
+      "comment" : "Problems empty state when language servers are disabled.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Sprachserver sind deaktiviert" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Language servers are disabled" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Los servidores de lenguaje están desactivados" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les serveurs de langage sont désactivés" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "言語サーバーは無効です" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "언어 서버가 비활성화되어 있습니다" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os servidores de linguagem estão desativados" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Языковые серверы отключены" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语言服务器已停用" } }
+      }
+    },
+    "problems.state.loading" : {
+      "comment" : "Problems state while a language server initializes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Diagnosen werden geladen…" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading diagnostics…" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cargando diagnósticos…" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Chargement des diagnostics…" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "診断を読み込み中…" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "진단을 불러오는 중…" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando diagnósticos…" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Загрузка диагностик…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在加载诊断…" } }
+      }
+    },
+    "problems.state.unavailable" : {
+      "comment" : "Problems state when the configured language server cannot run.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der Sprachserver ist nicht verfügbar" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The language server is unavailable" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "El servidor de lenguaje no está disponible" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Le serveur de langage est indisponible" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "言語サーバーを利用できません" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "언어 서버를 사용할 수 없습니다" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O servidor de linguagem não está disponível" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Языковой сервер недоступен" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语言服务器不可用" } }
+      }
+    },
+    "problems.state.unsupported" : {
+      "comment" : "Problems state when the active language has no diagnostic provider.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Für diese Sprache sind keine Diagnosen verfügbar" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No diagnostics are available for this language" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No hay diagnósticos disponibles para este lenguaje" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucun diagnostic n’est disponible pour ce langage" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "この言語では診断を利用できません" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "이 언어에는 사용 가능한 진단이 없습니다" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não há diagnósticos disponíveis para esta linguagem" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Для этого языка диагностика недоступна" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此语言没有可用的诊断" } }
+      }
+    },
+    "problems.warningCount.one" : {
+      "comment" : "Status bar summary for exactly one warning.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "1 Warnung" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 warning" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "1 advertencia" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "1 avertissement" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "1件の警告" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "1개 경고" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "1 aviso" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "1 предупреждение" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1个警告" } }
+      }
+    },
     "problems.noIssues": {
       "comment": "Label for the \"No problems detected\" message in the problems panel.",
       "extractionState": "extracted_with_value",

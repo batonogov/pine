@@ -544,11 +544,14 @@ extension ContentView {
 
     // MARK: - Problems panel navigation (#1236)
 
-    /// Opens the file at the given URL and navigates to the diagnostic's line
-    /// in the focused editor pane. Routes through `pendingGoToLine` so the
-    /// focused `PaneLeafView` performs the actual scroll/caret move.
-    func navigateToDiagnostic(url: URL, line: Int) {
-        activeTabManager.openTabAndGoToLine(url: url, line: line)
+    /// Navigates only when the diagnostic still belongs to this exact
+    /// project/pane/tab/revision. This avoids opening a stale URI in whichever
+    /// pane happens to be focused after the row was captured.
+    @discardableResult
+    func navigateToDiagnostic(
+        _ diagnostic: ProblemsFlatDiagnostic
+    ) -> Bool {
+        projectManager.navigateToProblem(diagnostic)
     }
 }
 

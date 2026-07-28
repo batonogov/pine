@@ -34,6 +34,14 @@ final class LSPManager {
         let url: URL
         let version: Int
         let text: String
+        let ownerID: UUID
+        let contentRevision: UInt64
+    }
+
+    private struct DocumentOwnerBuffer {
+        let ownerID: UUID
+        let text: String
+        let contentRevision: UInt64
     }
 
     /// Per-client state for each active language server.
@@ -56,6 +64,10 @@ final class LSPManager {
     /// needed when building the `CodeActionContext.diagnostics` array.
     private var rawDiagnosticsByURI: [String: [LSPDiagnostic]] = [:]
 
+    /// Diagnostics bound to the exact current editor revision. A supplied LSP
+    /// version must also match the current open-document version.
+    private var problemsDiagnosticsByURI: [String: LSPProblemsDiagnostics] = [:]
+
     /// Advances whenever pending editor buffers are announced to an
     /// initialized client generation. Structural consumers observe this to
     /// retry requests that can precede SwiftUI's `onAppear`/`didOpen`.
@@ -70,6 +82,10 @@ final class LSPManager {
     /// dictionary itself is not `Equatable` and tuples are not, so this token
     /// is the reliable change signal (issue #1236).
     private(set) var diagnosticsGeneration = 0
+
+    /// Languages whose configured server is missing, invalid, or failed to
+    /// initialize. Problems uses this to distinguish unavailable from clean.
+    private(set) var unavailableLanguages: Set<String> = []
 
     /// The single persisted source of truth for the global toggle.
     var enabled: Bool { settings.isEnabled }
@@ -104,6 +120,15 @@ final class LSPManager {
     /// Number of visible editor owners for each URL. The same file can be
     /// open in multiple panes, so only the final balanced close removes it.
     private var openDocumentOwnerCounts: [URL: Int] = [:]
+
+    /// Exact visible editor owners and their independent buffers. URL-level
+    /// counts alone cannot restore the surviving pane after another pane with
+    /// the same URL closes.
+    private var documentOwnerBuffers:
+        [URL: [UUID: DocumentOwnerBuffer]] = [:]
+
+    /// Stable most-recent-owner order for deterministic duplicate-URL resync.
+    private var documentOwnerOrder: [URL: [UUID]] = [:]
 
     /// Documents already announced to the current client generation.
     /// Prevents duplicate `didOpen` when enabling races a normal editor open.
@@ -161,12 +186,16 @@ final class LSPManager {
         stoppingClients.removeAll()
         diagnosticsByURI = [:]
         rawDiagnosticsByURI = [:]
+        problemsDiagnosticsByURI = [:]
         bumpDiagnosticsGeneration()
         openDocuments.removeAll()
         openDocumentOwnerCounts.removeAll()
+        documentOwnerBuffers.removeAll()
+        documentOwnerOrder.removeAll()
         openedDocumentsByLanguage.removeAll()
         restartingLanguages.removeAll()
         suspendedLanguages.removeAll()
+        unavailableLanguages.removeAll()
     }
 
     /// Applies one persisted settings change without disturbing unrelated
@@ -185,6 +214,7 @@ final class LSPManager {
             }
             diagnosticsByURI = [:]
             rawDiagnosticsByURI = [:]
+            problemsDiagnosticsByURI = [:]
             bumpDiagnosticsGeneration()
 
         case .enabled(true):
@@ -218,14 +248,64 @@ final class LSPManager {
     /// Lazily spawns the server for the file's language on first use.
     /// No-op when LSP is disabled, the file has no configured server, or the
     /// server binary is not installed.
-    func didOpen(url: URL, version: Int = 1, text: String) {
+    func didOpen(
+        url: URL,
+        ownerID suppliedOwnerID: UUID? = nil,
+        contentRevision: UInt64 = 0,
+        version: Int = 1,
+        text: String
+    ) {
         guard !isInvalidated else { return }
-        openDocumentOwnerCounts[url, default: 0] += 1
-        openDocuments[url] = OpenDocument(
-            url: url,
-            version: version,
-            text: text
-        )
+        let ownerID = suppliedOwnerID ?? UUID()
+        let previousOwner = documentOwnerBuffers[url]?[ownerID]
+        let alreadyOwned = previousOwner != nil
+        documentOwnerBuffers[url, default: [:]][ownerID] =
+            DocumentOwnerBuffer(
+                ownerID: ownerID,
+                text: text,
+                contentRevision: contentRevision
+            )
+        moveOwnerToEnd(ownerID, for: url)
+        let previousOwnerCount = openDocumentOwnerCounts[url, default: 0]
+        let ownerCount = documentOwnerBuffers[url]?.count ?? 0
+        openDocumentOwnerCounts[url] = ownerCount
+
+        let language = LanguageServerRegistry.server(for: url)?.language
+        let isAnnounced = language.flatMap {
+            openedDocumentsByLanguage[$0]?.contains(url)
+        } == true
+        if previousOwnerCount == 0 || !isAnnounced {
+            // Before didOpen reaches a client generation, the latest visible
+            // owner is the initial snapshot. Once announced, a duplicate owner
+            // must not reset the manager version back to 1.
+            openDocuments[url] = OpenDocument(
+                url: url,
+                version: previousOwnerCount == 0
+                    ? version
+                    : (openDocuments[url]?.version ?? version),
+                text: text,
+                ownerID: ownerID,
+                contentRevision: contentRevision
+            )
+        }
+        if alreadyOwned {
+            // SwiftUI may repeat onAppear for the same tab identity. Treat it as
+            // an owner refresh, not a second lifecycle owner.
+            if isAnnounced,
+               previousOwner?.text != text
+                || previousOwner?.contentRevision != contentRevision {
+                didChange(
+                    url: url,
+                    ownerID: ownerID,
+                    contentRevision: contentRevision,
+                    text: text
+                )
+            }
+            return
+        }
+        if previousOwnerCount > 0 {
+            clearDiagnostics(for: url)
+        }
         guard enabled else { return }
         guard let serverConfig = LanguageServerRegistry.server(for: url) else { return }
 
@@ -236,17 +316,37 @@ final class LSPManager {
     }
 
     /// Notifies the appropriate language server that a document changed.
-    func didChange(url: URL, text: String) {
+    func didChange(
+        url: URL,
+        ownerID suppliedOwnerID: UUID? = nil,
+        contentRevision: UInt64 = 0,
+        text: String
+    ) {
         guard !isInvalidated else { return }
-        guard openDocumentOwnerCounts[url, default: 0] > 0 else {
+        guard let ownerID = resolveOwnerID(
+            suppliedOwnerID,
+            for: url
+        ) else {
             return
         }
-        let version = openDocuments[url]?.version ?? 1
+        documentOwnerBuffers[url, default: [:]][ownerID] =
+            DocumentOwnerBuffer(
+                ownerID: ownerID,
+                text: text,
+                contentRevision: contentRevision
+            )
+        moveOwnerToEnd(ownerID, for: url)
+        let version = (openDocuments[url]?.version ?? 0) + 1
         openDocuments[url] = OpenDocument(
             url: url,
             version: version,
-            text: text
+            text: text,
+            ownerID: ownerID,
+            contentRevision: contentRevision
         )
+        // Existing diagnostics describe the previous buffer revision. Clear
+        // every surface until the server publishes this exact version.
+        clearDiagnostics(for: url)
         guard enabled else { return }
         // Resolve via URL extension so a .ts file reaches the typescript server, etc.
         guard let serverConfig = LanguageServerRegistry.server(for: url) else { return }
@@ -260,22 +360,35 @@ final class LSPManager {
     }
 
     /// Notifies the appropriate language server that a document was closed.
-    func didClose(url: URL) {
+    func didClose(url: URL, ownerID suppliedOwnerID: UUID? = nil) {
         guard !isInvalidated else { return }
-        guard let ownerCount = openDocumentOwnerCounts[url] else {
+        guard let ownerID = resolveOwnerID(
+            suppliedOwnerID,
+            for: url
+        ), documentOwnerBuffers[url]?.removeValue(forKey: ownerID) != nil else {
             return
         }
-        if ownerCount > 1 {
-            openDocumentOwnerCounts[url] = ownerCount - 1
+        documentOwnerOrder[url]?.removeAll { $0 == ownerID }
+        let remainingCount = documentOwnerBuffers[url]?.count ?? 0
+        if remainingCount > 0 {
+            openDocumentOwnerCounts[url] = remainingCount
+            clearDiagnostics(for: url)
+            // Re-synchronize whenever an exact sole owner emerges, and also if
+            // the disappearing pane owned the current server mirror. This
+            // advances the LSP version so a delayed publish from the removed
+            // buffer cannot be attributed to the survivor.
+            if remainingCount == 1 || openDocuments[url]?.ownerID == ownerID {
+                synchronizeMostRecentOwner(for: url)
+            }
             return
         }
         openDocumentOwnerCounts[url] = nil
+        documentOwnerBuffers[url] = nil
+        documentOwnerOrder[url] = nil
         openDocuments[url] = nil
         guard let serverConfig = LanguageServerRegistry.server(for: url) else { return }
         let uri = url.absoluteString
-        diagnosticsByURI[uri] = nil
-        rawDiagnosticsByURI[uri] = nil
-        bumpDiagnosticsGeneration()
+        clearDiagnostics(for: url)
         guard openedDocumentsByLanguage[serverConfig.language]?.remove(
             url
         ) != nil else {
@@ -564,7 +677,13 @@ final class LSPManager {
             // Update the tab content directly — the edit is already computed.
             tabManager.tabs[change.tabIndex].content = change.newText
             // Notify the LSP server of the change.
-            didChange(url: change.fileURL, text: change.newText)
+            let tab = tabManager.tabs[change.tabIndex]
+            didChange(
+                url: change.fileURL,
+                ownerID: tab.id,
+                contentRevision: tab.contentVersion,
+                text: change.newText
+            )
         }
 
         for write in diskWrites {
@@ -599,6 +718,16 @@ final class LSPManager {
         diagnosticsByURI
             .filter { !$0.value.isEmpty }
             .map { (uri: $0.key, diagnostics: $0.value) }
+            .sorted { $0.uri < $1.uri }
+    }
+
+    /// Revision-bound diagnostics suitable for project-wide Problems routing.
+    /// Stale, closed-document, and ambiguous multi-owner results never enter
+    /// this store. Versionless server notifications retain `nil` as their LSP
+    /// version and are invalidated by the next editor lifecycle transition.
+    var allProblemsDiagnostics: [LSPProblemsDiagnostics] {
+        problemsDiagnosticsByURI.values
+            .filter { !$0.diagnostics.isEmpty }
             .sorted { $0.uri < $1.uri }
     }
 
@@ -640,6 +769,8 @@ final class LSPManager {
             serverOverride: settings.serverOverride(for: config.language)
         )
         guard let launch = resolution.launchConfiguration else {
+            unavailableLanguages.insert(config.language)
+            bumpDiagnosticsGeneration()
             switch resolution {
             case .notFound(let command):
                 Logger.lsp.info(
@@ -666,6 +797,8 @@ final class LSPManager {
             state: .uninitialized
         )
         servers[config.language] = entry
+        unavailableLanguages.remove(config.language)
+        bumpDiagnosticsGeneration()
 
         // Wire diagnostics callback before starting so nothing is lost.
         client.onDiagnostics = { [weak self] notification in
@@ -678,6 +811,8 @@ final class LSPManager {
             )
         }
 
+        servers[config.language]?.state = .initializing
+        bumpDiagnosticsGeneration()
         let started = await client.startForManager(
             command: launch.executablePath,
             arguments: launch.arguments,
@@ -698,11 +833,14 @@ final class LSPManager {
 
         if started {
             servers[config.language]?.state = .initialized
+            unavailableLanguages.remove(config.language)
             Logger.lsp.info("LSP server ready for \(config.language, privacy: .public)")
         } else {
             servers[config.language]?.state = .failed
+            unavailableLanguages.insert(config.language)
             Logger.lsp.error("LSP server failed to start for \(config.language, privacy: .public)")
         }
+        bumpDiagnosticsGeneration()
         return started
     }
 
@@ -716,12 +854,29 @@ final class LSPManager {
         guard enabled,
               serverGenerations[language, default: 0] == generation,
               let current = servers[language],
-              ObjectIdentifier(current.client) == clientID else {
+              ObjectIdentifier(current.client) == clientID,
+              let url = URL(string: notification.uri),
+              openDocumentOwnerCounts[url, default: 0] > 0,
+              let document = openDocuments[url] else {
+            return
+        }
+        if let version = notification.version,
+           version != document.version {
             return
         }
         let mapped = DiagnosticMapper.map(notification)
         diagnosticsByURI[notification.uri] = mapped
         rawDiagnosticsByURI[notification.uri] = notification.diagnostics
+        if openDocumentOwnerCounts[url] == 1 {
+            problemsDiagnosticsByURI[notification.uri] = LSPProblemsDiagnostics(
+                uri: notification.uri,
+                documentVersion: notification.version,
+                contentRevision: document.contentRevision,
+                diagnostics: mapped
+            )
+        } else {
+            problemsDiagnosticsByURI[notification.uri] = nil
+        }
         bumpDiagnosticsGeneration()
     }
 
@@ -794,6 +949,57 @@ final class LSPManager {
         foldingRefreshGeneration &+= 1
     }
 
+    private func resolveOwnerID(
+        _ suppliedOwnerID: UUID?,
+        for url: URL
+    ) -> UUID? {
+        if let suppliedOwnerID {
+            guard documentOwnerBuffers[url]?[suppliedOwnerID] != nil else {
+                return nil
+            }
+            return suppliedOwnerID
+        }
+        return documentOwnerOrder[url]?.last
+    }
+
+    private func moveOwnerToEnd(_ ownerID: UUID, for url: URL) {
+        documentOwnerOrder[url, default: []].removeAll { $0 == ownerID }
+        documentOwnerOrder[url, default: []].append(ownerID)
+    }
+
+    private func synchronizeMostRecentOwner(for url: URL) {
+        guard let ownerID = documentOwnerOrder[url]?.last,
+              let owner = documentOwnerBuffers[url]?[ownerID] else {
+            return
+        }
+        let version = (openDocuments[url]?.version ?? 0) + 1
+        openDocuments[url] = OpenDocument(
+            url: url,
+            version: version,
+            text: owner.text,
+            ownerID: owner.ownerID,
+            contentRevision: owner.contentRevision
+        )
+        guard enabled,
+              let config = LanguageServerRegistry.server(for: url),
+              openedDocumentsByLanguage[config.language]?.contains(url)
+                == true else {
+            return
+        }
+        servers[config.language]?.client.didChange(
+            uri: url.absoluteString,
+            text: owner.text
+        )
+    }
+
+    private func clearDiagnostics(for url: URL) {
+        let uri = url.absoluteString
+        diagnosticsByURI[uri] = nil
+        rawDiagnosticsByURI[uri] = nil
+        problemsDiagnosticsByURI[uri] = nil
+        bumpDiagnosticsGeneration()
+    }
+
     private func hasOpenDocuments(for language: String) -> Bool {
         openDocuments.values.contains {
             LanguageServerRegistry.server(for: $0.url)?.language == language
@@ -817,6 +1023,9 @@ final class LSPManager {
             languageForURI($0.key) != language
         }
         rawDiagnosticsByURI = rawDiagnosticsByURI.filter {
+            languageForURI($0.key) != language
+        }
+        problemsDiagnosticsByURI = problemsDiagnosticsByURI.filter {
             languageForURI($0.key) != language
         }
         bumpDiagnosticsGeneration()

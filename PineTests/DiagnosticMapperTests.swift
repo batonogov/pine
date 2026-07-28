@@ -136,6 +136,25 @@ struct DiagnosticMapperTests {
         #expect(results.isEmpty)
     }
 
+    @Test("Publish diagnostics parses an exact document version")
+    func notificationVersionParsed() throws {
+        let notification = try #require(LSPDiagnosticsNotification(params: [
+            "uri": "file:///test.swift",
+            "version": 7,
+            "diagnostics": []
+        ]))
+        #expect(notification.version == 7)
+    }
+
+    @Test("Publish diagnostics without version remains unverified")
+    func notificationWithoutVersionIsUnverified() throws {
+        let notification = try #require(LSPDiagnosticsNotification(params: [
+            "uri": "file:///test.swift",
+            "diagnostics": []
+        ]))
+        #expect(notification.version == nil)
+    }
+
     // MARK: - Message preservation
 
     @Test("Message is preserved through mapping")

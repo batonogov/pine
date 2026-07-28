@@ -194,6 +194,9 @@ final class ProjectManager {
         paneManager.configureEditorTabManager = { [weak self] tabManager in
             self?.configureEditorTabManager(tabManager)
         }
+        problemsController.configureDocumentStatesProvider { [weak self] in
+            self?.problemsDocumentStates ?? []
+        }
         // Wire TerminalManager to PaneManager (lazy wiring)
         terminal.paneManager = paneManager
     }
@@ -225,8 +228,71 @@ final class ProjectManager {
     private func configureEditorTabManager(_ tabManager: TabManager) {
         tabManager.recoveryManager = recoveryManager
         tabManager.onEditorContextChanged = { [weak self] in
-            self?.updateEditorContext()
+            guard let self else { return }
+            self.updateEditorContext()
+            self.problemsController.refreshDocumentOwnership()
         }
+    }
+
+    /// Visible editor documents with exact project/pane/tab/revision
+    /// ownership. Config validators and LSP views exist only for active tabs,
+    /// so inactive tabs intentionally do not validate an old panel record.
+    private var problemsDocumentStates: [ProblemsDocumentState] {
+        paneManager.root.leafIDs.compactMap { paneID in
+            guard paneManager.root.content(for: paneID) == .editor,
+                  let tabManager = paneManager.tabManager(for: paneID) else {
+                return nil
+            }
+            guard let tab = tabManager.activeTab else { return nil }
+            return ProblemsDocumentState(
+                owner: problemsController.documentOwner(
+                    paneID: paneID,
+                    tabID: tab.id,
+                    uri: tab.url.absoluteString
+                ),
+                contentRevision: tab.contentVersion,
+                isFocusedPane: paneManager.activePaneID == paneID
+            )
+        }
+    }
+
+    /// Routes a Problems row to the editor instance that produced it. The
+    /// controller proves freshness first, then this final check confirms the
+    /// live pane/tab/URL/content revision before changing focus.
+    @discardableResult
+    func navigateToProblem(
+        _ diagnostic: ProblemsFlatDiagnostic
+    ) -> Bool {
+        guard let target = problemsController.navigationTarget(
+            for: diagnostic
+        ),
+        let tabManager = paneManager.tabManager(for: target.owner.paneID),
+        let tab = tabManager.activeTab,
+        tab.id == target.owner.tabID,
+        tab.url.absoluteString == target.owner.uri else {
+            return false
+        }
+
+        let expectedContentRevision: UInt64
+        switch target.revision {
+        case .editor(let revision):
+            expectedContentRevision = revision
+        case .lsp(_, let contentRevision):
+            expectedContentRevision = contentRevision
+        }
+        guard tab.contentVersion == expectedContentRevision,
+              paneManager.selectEditorTab(
+                  target.owner.tabID,
+                  in: target.owner.paneID
+              ) else {
+            return false
+        }
+
+        tabManager.pendingGoToLocation = EditorNavigationLocation(
+            line: target.line,
+            column: target.column
+        )
+        return true
     }
 
     /// Persists current session (project + open file tabs) to UserDefaults.

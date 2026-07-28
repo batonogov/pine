@@ -8,6 +8,13 @@
 import os
 import SwiftUI
 
+/// One-based editor destination. Keeping line and column in one value prevents
+/// a route from observing a new line with a stale column (or vice versa).
+nonisolated struct EditorNavigationLocation: Equatable, Sendable {
+    let line: Int
+    let column: Int?
+}
+
 /// Manages the set of open editor tabs and the active selection.
 ///
 /// Thin facade that delegates to focused helpers in `Pine/Tabs/`:
@@ -50,7 +57,16 @@ final class TabManager {
     /// same tab receives a fresh identity, so a queued completion from an
     /// earlier drag cannot consume it.
     private(set) var pendingFocusRequestID: UUID?
-    var pendingGoToLine: Int?
+    var pendingGoToLocation: EditorNavigationLocation?
+    /// Compatibility facade for existing line-only navigation call sites.
+    var pendingGoToLine: Int? {
+        get { pendingGoToLocation?.line }
+        set {
+            pendingGoToLocation = newValue.map {
+                EditorNavigationLocation(line: $0, column: nil)
+            }
+        }
+    }
     var recoveryManager: RecoveryManager?
     var onEditorContextChanged: (() -> Void)?
     var onActiveTabChanged: ((UUID?) -> Void)?
@@ -119,8 +135,19 @@ final class TabManager {
     }
 
     func openTabAndGoToLine(url: URL, line: Int) {
+        openTabAndGoToLocation(url: url, line: line, column: nil)
+    }
+
+    func openTabAndGoToLocation(
+        url: URL,
+        line: Int,
+        column: Int?
+    ) {
         openTab(url: url)
-        pendingGoToLine = line
+        pendingGoToLocation = EditorNavigationLocation(
+            line: line,
+            column: column
+        )
     }
 
     func openTab(url: URL, syntaxHighlightingDisabled: Bool) {

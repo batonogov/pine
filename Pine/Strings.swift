@@ -1560,6 +1560,75 @@ enum Strings {
         String(localized: "menu.previousDiagnostic", defaultValue: "Previous Diagnostic")
     }
 
+    static func problemsErrorCount(_ count: Int) -> String {
+        guard count == 1 else { return validationErrorCount(count) }
+        return String(
+            localized: "problems.errorCount.one",
+            defaultValue: "1 error"
+        )
+    }
+
+    static func problemsWarningCount(_ count: Int) -> String {
+        guard count == 1 else { return validationWarningCount(count) }
+        return String(
+            localized: "problems.warningCount.one",
+            defaultValue: "1 warning"
+        )
+    }
+
+    static var problemsSeverityFilter: String {
+        String(
+            localized: "problems.filter.severity",
+            defaultValue: "Severity"
+        )
+    }
+
+    static var problemsSourceFilter: String {
+        String(localized: "problems.filter.source", defaultValue: "Source")
+    }
+
+    static var problemsAllSeverities: String {
+        String(
+            localized: "problems.filter.allSeverities",
+            defaultValue: "All Severities"
+        )
+    }
+
+    static var problemsAllSources: String {
+        String(
+            localized: "problems.filter.allSources",
+            defaultValue: "All Sources"
+        )
+    }
+
+    static var problemsDisabled: String {
+        String(
+            localized: "problems.state.disabled",
+            defaultValue: "Language servers are disabled"
+        )
+    }
+
+    static var problemsUnsupported: String {
+        String(
+            localized: "problems.state.unsupported",
+            defaultValue: "No diagnostics are available for this language"
+        )
+    }
+
+    static var problemsLoading: String {
+        String(
+            localized: "problems.state.loading",
+            defaultValue: "Loading diagnostics…"
+        )
+    }
+
+    static var problemsUnavailable: String {
+        String(
+            localized: "problems.state.unavailable",
+            defaultValue: "The language server is unavailable"
+        )
+    }
+
     // MARK: - Accessibility (#1003)
     //
     // VoiceOver labels / hints for custom controls. These are resolved into

@@ -11,7 +11,7 @@ import Foundation
 ///
 /// - Important: Callers must ensure each `PaneID` is unique within a `PaneNode` tree.
 ///   Duplicate IDs lead to undefined behavior in queries and mutations.
-struct PaneID: Hashable, Codable, Identifiable, Sendable {
+nonisolated struct PaneID: Hashable, Codable, Identifiable, Sendable {
     let id: UUID
 
     init() { self.id = UUID() }

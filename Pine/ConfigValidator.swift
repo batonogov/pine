@@ -50,6 +50,16 @@ final class ConfigValidator {
     /// Current diagnostics for the active file.
     private(set) var diagnostics: [ValidationDiagnostic] = []
 
+    /// Exact editor content revision that produced `diagnostics`. `nil` means
+    /// the caller did not supply a revision or no current result exists.
+    private(set) var diagnosticsRevision: UInt64?
+
+    /// Advances whenever a validation result is committed, including an empty
+    /// result identical to the preceding one. Observing the diagnostics array
+    /// alone misses that case and can leave an old revision attributed to new
+    /// content in the project-wide Problems panel.
+    private(set) var diagnosticsResultGeneration: UInt64 = 0
+
     /// Whether validation is currently running.
     private(set) var isValidating = false
 
@@ -78,8 +88,9 @@ final class ConfigValidator {
     /// - Parameters:
     ///   - url: The file URL (used for extension detection and temp file creation).
     ///   - content: The current file content.
-    func validate(url: URL, content: String) {
+    func validate(url: URL, content: String, revision: UInt64? = nil) {
         debounceTask?.cancel()
+        let currentGen = nextGeneration()
 
         let ext = url.pathExtension.lowercased()
         let name = url.lastPathComponent.lowercased()
@@ -92,22 +103,29 @@ final class ConfigValidator {
 
         guard let validator else {
             diagnostics = []
+            diagnosticsRevision = revision
+            diagnosticsResultGeneration &+= 1
             activeValidator = nil
             toolAvailable = false
+            isValidating = false
             return
         }
 
         // Map to ValidatorKind for backward-compatible activeValidator display
         activeValidator = ValidatorDetector.detect(for: url)
 
-        let currentGen = nextGeneration()
-
         debounceTask = Task { [weak self] in
             // Debounce
             try? await Task.sleep(for: .seconds(Self.debounceInterval))
             guard !Task.isCancelled, let self else { return }
 
-            self.runValidation(url: url, content: content, validator: validator, expectedGen: currentGen)
+            self.runValidation(
+                url: url,
+                content: content,
+                revision: revision,
+                validator: validator,
+                expectedGen: currentGen
+            )
         }
     }
 
@@ -116,6 +134,8 @@ final class ConfigValidator {
         debounceTask?.cancel()
         _ = nextGeneration()
         diagnostics = []
+        diagnosticsRevision = nil
+        diagnosticsResultGeneration &+= 1
         activeValidator = nil
         toolAvailable = false
         isValidating = false
@@ -126,6 +146,7 @@ final class ConfigValidator {
     private func runValidation(
         url: URL,
         content: String,
+        revision: UInt64?,
         validator: LanguageValidator,
         expectedGen: UInt64
     ) {
@@ -141,6 +162,8 @@ final class ConfigValidator {
             await MainActor.run { [weak self] in
                 guard let self, self.generation == capturedGen else { return }
                 self.diagnostics = result.diagnostics
+                self.diagnosticsRevision = revision
+                self.diagnosticsResultGeneration &+= 1
                 self.toolAvailable = result.toolAvailable
                 self.isValidating = false
             }

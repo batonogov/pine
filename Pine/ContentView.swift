@@ -257,11 +257,11 @@ struct ContentView: View {
             // backward compatibility.
             projectManager.saveSession()
         }
-        .onChange(of: projectManager.lspManager.diagnosticsGeneration) { _, _ in
-            // Refresh the Problems panel when LSP diagnostics change so stale
-            // cached state (selection, summary) is invalidated (issue #1236).
-            projectManager.problemsController.refreshFromLSPDiagnostics()
-        }
+        .modifier(ProblemsPanelRefreshObserver(
+            diagnosticsGeneration: projectManager.lspManager.diagnosticsGeneration,
+            activePaneID: paneManager.activePaneID,
+            controller: projectManager.problemsController
+        ))
         .modifier(GitAndNotificationObserver(
             lineDiffs: $lineDiffs,
             columnVisibility: $columnVisibility,
@@ -302,8 +302,8 @@ struct ContentView: View {
             if projectManager.problemsController.isPanelVisible {
                 ProblemsPanelChrome(
                     controller: projectManager.problemsController,
-                    onSelect: { url, line in
-                        navigateToDiagnostic(url: url, line: line)
+                    onSelect: { diagnostic in
+                        navigateToDiagnostic(diagnostic)
                     },
                     onClose: {
                         projectManager.problemsController.isPanelVisible = false
@@ -367,9 +367,8 @@ struct ContentView: View {
                 isKeyWindow: controlActiveState == .key
             ) else { return }
             DispatchQueue.main.async {
-                if let diag = projectManager.problemsController.nextDiagnostic(),
-                   let url = URL(string: diag.uri) {
-                    self.navigateToDiagnostic(url: url, line: diag.diagnostic.line)
+                if let diagnostic = projectManager.problemsController.nextDiagnostic() {
+                    self.navigateToDiagnostic(diagnostic)
                 }
             }
         }
@@ -380,9 +379,8 @@ struct ContentView: View {
                 isKeyWindow: controlActiveState == .key
             ) else { return }
             DispatchQueue.main.async {
-                if let diag = projectManager.problemsController.previousDiagnostic(),
-                   let url = URL(string: diag.uri) {
-                    self.navigateToDiagnostic(url: url, line: diag.diagnostic.line)
+                if let diagnostic = projectManager.problemsController.previousDiagnostic() {
+                    self.navigateToDiagnostic(diagnostic)
                 }
             }
         }
@@ -516,6 +514,27 @@ private struct CommandPalettePresenter: ViewModifier {
                 DispatchQueue.main.async {
                     isPresented = true
                 }
+            }
+    }
+}
+
+/// Keeps the Problems panel synchronized without adding more generic closure
+/// layers to `ContentView.body`, which is already close to SwiftUI's
+/// type-checking complexity limit.
+private struct ProblemsPanelRefreshObserver: ViewModifier {
+    let diagnosticsGeneration: Int
+    let activePaneID: PaneID
+    let controller: ProblemsPanelController
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: diagnosticsGeneration) { _, _ in
+                // Refresh the Problems panel when LSP diagnostics change so
+                // stale cached state (selection, summary) is invalidated.
+                controller.refreshFromLSPDiagnostics()
+            }
+            .onChange(of: activePaneID) { _, _ in
+                controller.refreshDocumentOwnership()
             }
     }
 }
