@@ -1148,6 +1148,27 @@ enum Strings {
         String(localized: "userTask.openOutput", defaultValue: "Open Output")
     }
 
+    /// Short status summaries for a task run (issue #1246).
+    nonisolated static let userTaskRunStatusPending: String =
+        String(localized: "userTask.run.status.pending", defaultValue: "Pending")
+    nonisolated static let userTaskRunStatusRunning: String =
+        String(localized: "userTask.run.status.running", defaultValue: "Running")
+    nonisolated static let userTaskRunStatusSucceeded: String =
+        String(localized: "userTask.run.status.succeeded", defaultValue: "Succeeded")
+    nonisolated static let userTaskRunStatusTimedOut: String =
+        String(localized: "userTask.run.status.timedOut", defaultValue: "Timed out")
+    nonisolated static let userTaskRunStatusFailed: String =
+        String(localized: "userTask.run.status.failed", defaultValue: "Failed")
+    nonisolated static let userTaskRunStatusCancelled: String =
+        String(localized: "userTask.run.status.cancelled", defaultValue: "Cancelled")
+
+    nonisolated static func userTaskRunStatusExitCode(_ code: Int) -> String {
+        String(
+            localized: "userTask.run.status.exitCode",
+            defaultValue: "Exit \(code)"
+        )
+    }
+
     // MARK: - Quick Open
 
     static let menuQuickOpen: LocalizedStringKey = "menu.quickOpen"
