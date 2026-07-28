@@ -41,7 +41,7 @@ nonisolated enum AgentHistoryContentHash {
         )
         let raw = indexResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
         var indexURL: URL
-        if indexResult.exitCode == 0, !raw.isEmpty {
+        if indexResult.succeeded, !raw.isEmpty {
             indexURL = URL(
                 fileURLWithPath: raw,
                 relativeTo: repositoryRoot
@@ -68,7 +68,7 @@ nonisolated enum AgentHistoryContentHash {
     /// the repository has no commits yet.
     static func headOID(in repositoryRoot: URL) -> String {
         let result = GitCommand.run(["rev-parse", "HEAD"], at: repositoryRoot)
-        guard result.exitCode == 0 else { return "" }
+        guard result.succeeded else { return "" }
         return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

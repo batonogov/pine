@@ -40,7 +40,7 @@ final class GitStatusProvider {
     func setup(repositoryURL: URL) {
         self.repositoryURL = repositoryURL
         let result = Self.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
-        let detected = result.exitCode == 0
+        let detected = result.succeeded
         if detected {
             gitRootPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
             let fetched = Self.fetchAllInParallel(at: repositoryURL)
@@ -115,7 +115,7 @@ final class GitStatusProvider {
         // nonisolated-check:ignore -- closure body only calls nonisolated static helpers; tracked in #720
         let (isRepo, rootPath, branch, statuses, ignored, branchList) = await runOnBackground {
             let result = GitCommand.run(["rev-parse", "--show-toplevel"], at: repositoryURL)
-            let isRepo = result.exitCode == 0
+            let isRepo = result.succeeded
             guard isRepo else {
                 return (false, nil as String?, "", [:] as [String: GitFileStatus], Set<String>(), [String]())
             }
@@ -206,7 +206,10 @@ final class GitStatusProvider {
             && fetched.branches.isEmpty
             && (!self.currentBranch.isEmpty || !self.branches.isEmpty)
         if looksUnreachable {
-            let stillRepo = Self.runGit(["rev-parse", "--show-toplevel"], at: url).exitCode == 0
+            let stillRepo = Self.runGit(
+                ["rev-parse", "--show-toplevel"],
+                at: url
+            ).succeeded
             if !stillRepo {
                 applyEmptyState()
             }
@@ -276,10 +279,10 @@ final class GitStatusProvider {
     func diffForFile(at url: URL) -> [GitLineDiff] {
         guard isGitRepository, let repoURL = repositoryURL else { return [] }
         let headCheck = Self.runGit(["rev-parse", "HEAD"], at: repoURL)
-        guard headCheck.exitCode == 0 else { return [] }
+        guard headCheck.succeeded else { return [] }
 
         let result = Self.runGit(["diff", "HEAD", "--unified=0", "--", url.path], at: repoURL)
-        guard result.exitCode == 0, !result.output.isEmpty else { return [] }
+        guard result.succeeded, !result.output.isEmpty else { return [] }
         return GitParser.parseDiff(result.output)
     }
 
@@ -287,17 +290,19 @@ final class GitStatusProvider {
         guard isGitRepository, let repoURL = repositoryURL else { return [] }
         let filePath = url.path
 
-        // nonisolated-check:ignore -- closure body only calls nonisolated static helpers; tracked in #720
-        return await runOnBackground {
-            let headCheck = GitCommand.run(["rev-parse", "HEAD"], at: repoURL)
-            guard headCheck.exitCode == 0 else { return [] }
-            let result = GitCommand.run(
-                ["diff", "HEAD", "--unified=0", "--", filePath],
-                at: repoURL
-            )
-            guard result.exitCode == 0, !result.output.isEmpty else { return [] }
-            return GitParser.parseDiff(result.output)
-        }
+        let headCheck = await GitCommand.runAsync(
+            ["rev-parse", "HEAD"],
+            at: repoURL
+        )
+        guard !Task.isCancelled, headCheck.succeeded else { return [] }
+        let result = await GitCommand.runAsync(
+            ["diff", "HEAD", "--unified=0", "--", filePath],
+            at: repoURL
+        )
+        guard !Task.isCancelled,
+              result.succeeded,
+              !result.output.isEmpty else { return [] }
+        return GitParser.parseDiff(result.output)
     }
 
     // MARK: - Private Helpers
@@ -348,9 +353,28 @@ final class GitStatusProvider {
     nonisolated static func runGit(
         _ arguments: [String],
         at directory: URL,
-        timeout: TimeInterval = defaultGitTimeout
-    ) -> (output: String, errorOutput: String, exitCode: Int32) {
-        let result = GitCommand.run(arguments, at: directory, timeout: timeout)
-        return (result.output, result.errorOutput, result.exitCode)
+        timeout: TimeInterval = defaultGitTimeout,
+        captureLimit: Int = GitCommand.defaultCaptureLimit
+    ) -> GitCommandResult {
+        GitCommand.run(
+            arguments,
+            at: directory,
+            timeout: timeout,
+            captureLimit: captureLimit
+        )
+    }
+
+    nonisolated static func runGitAsync(
+        _ arguments: [String],
+        at directory: URL,
+        timeout: TimeInterval = defaultGitTimeout,
+        captureLimit: Int = GitCommand.defaultCaptureLimit
+    ) async -> GitCommandResult {
+        await GitCommand.runAsync(
+            arguments,
+            at: directory,
+            timeout: timeout,
+            captureLimit: captureLimit
+        )
     }
 }

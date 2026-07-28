@@ -15,7 +15,7 @@ extension GitStatusProvider {
     func checkoutBranch(_ branch: String) -> (success: Bool, error: String) {
         guard let url = repositoryURL else { return (false, "No repository") }
         let result = GitCommand.run(["switch", branch], at: url)
-        if result.exitCode == 0 {
+        if result.completedSuccessfully {
             refresh()
             return (true, "")
         }
@@ -33,7 +33,7 @@ extension GitStatusProvider {
             GitCommand.run(["switch", branch], at: url)
         }
 
-        guard result.exitCode == 0 else {
+        guard result.completedSuccessfully else {
             if let progressID { self.progressTracker?.endOperation(progressID) }
             return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
         }

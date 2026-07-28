@@ -287,16 +287,19 @@ nonisolated enum InlineDiffProvider {
     /// Fetches diff hunks for a file asynchronously.
     /// Returns full `git diff HEAD` output parsed into hunks.
     static func fetchHunks(for fileURL: URL, repoURL: URL) async -> [DiffHunk] {
-        await runOnBackground {
-            let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
-            guard headCheck.exitCode == 0 else { return [] }
-            let result = GitStatusProvider.runGit(
-                ["diff", "HEAD", "--unified=1", "--", fileURL.path],
-                at: repoURL
-            )
-            guard result.exitCode == 0, !result.output.isEmpty else { return [] }
-            return parseHunks(result.output)
-        }
+        let headCheck = await GitStatusProvider.runGitAsync(
+            ["rev-parse", "HEAD"],
+            at: repoURL
+        )
+        guard !Task.isCancelled, headCheck.succeeded else { return [] }
+        let result = await GitStatusProvider.runGitAsync(
+            ["diff", "HEAD", "--unified=1", "--", fileURL.path],
+            at: repoURL
+        )
+        guard !Task.isCancelled,
+              result.succeeded,
+              !result.output.isEmpty else { return [] }
+        return parseHunks(result.output)
     }
 
     // MARK: - Accept (stage) a hunk
@@ -318,7 +321,7 @@ nonisolated enum InlineDiffProvider {
     static func acceptAllHunks(fileURL: URL, repoURL: URL) async -> Bool {
         await runOnBackground {
             let result = GitStatusProvider.runGit(["add", "--", fileURL.path], at: repoURL)
-            return result.exitCode == 0
+            return result.completedSuccessfully
         }
     }
 
@@ -344,7 +347,7 @@ nonisolated enum InlineDiffProvider {
                 ["checkout", "HEAD", "--", fileURL.path],
                 at: repoURL
             )
-            guard result.exitCode == 0 else { return nil }
+            guard result.completedSuccessfully else { return nil }
             return try? String(contentsOf: fileURL, encoding: .utf8)
         }
     }

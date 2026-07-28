@@ -56,7 +56,7 @@ nonisolated enum GitFetcher {
 
     static func fetchBranch(at url: URL) -> String {
         let result = GitCommand.run(["rev-parse", "--abbrev-ref", "HEAD"], at: url)
-        return result.exitCode == 0
+        return result.succeeded
             ? result.output.trimmingCharacters(in: .whitespacesAndNewlines)
             : ""
     }
@@ -68,7 +68,7 @@ nonisolated enum GitFetcher {
             ["--no-optional-locks", "status", "--ignored", "--porcelain"],
             at: url
         )
-        guard result.exitCode == 0 else { return ([:], []) }
+        guard result.succeeded else { return ([:], []) }
         return (
             GitParser.parseStatusOutput(result.output),
             GitParser.parseIgnoredOutput(result.output)
@@ -80,7 +80,7 @@ nonisolated enum GitFetcher {
             ["branch", "--sort=-committerdate", "--format=%(refname:short)"],
             at: url
         )
-        guard result.exitCode == 0 else { return [] }
+        guard result.succeeded else { return [] }
         return result.output
             .components(separatedBy: "\n")
             .filter { !$0.isEmpty }

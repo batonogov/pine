@@ -38,7 +38,7 @@ nonisolated enum GitFileRevert {
             let result = GitCommand.run(["checkout", "--", path], at: repositoryRoot)
             return GitFileRevertResult(
                 relativePath: path,
-                success: result.exitCode == 0,
+                success: result.completedSuccessfully,
                 errorOutput: result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }

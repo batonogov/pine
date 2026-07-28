@@ -371,7 +371,7 @@ final class WorkspaceManager {
     /// from any thread / `Task.detached` context.
     nonisolated private static func fetchGitInfo(at url: URL) -> GitLoadSnapshot {
         let topLevel = GitStatusProvider.runGit(["rev-parse", "--show-toplevel"], at: url)
-        guard topLevel.exitCode == 0 else {
+        guard topLevel.succeeded else {
             return GitLoadSnapshot(
                 repositoryURL: url,
                 gitRootPath: nil,
