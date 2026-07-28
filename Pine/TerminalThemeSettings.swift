@@ -62,6 +62,7 @@ final class TerminalThemeSettings {
     }
 
     private let defaults: UserDefaults
+    private let notificationCenter: NotificationCenter
 
     /// Stable identifier of the selected built-in theme.
     var selectedThemeID: String {
@@ -87,8 +88,12 @@ final class TerminalThemeSettings {
         TerminalTheme.theme(forID: selectedThemeID)
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        notificationCenter: NotificationCenter = .default
+    ) {
         self.defaults = defaults
+        self.notificationCenter = notificationCenter
 
         let storedID = defaults.string(forKey: Keys.themeID)
         if let storedID, !storedID.isEmpty {
@@ -160,7 +165,7 @@ final class TerminalThemeSettings {
 
     /// Posts the change notification so live terminal sessions repaint.
     private func notifyChanged() {
-        NotificationCenter.default.post(name: .terminalThemeChanged, object: self)
+        notificationCenter.post(name: .terminalThemeChanged, object: self)
     }
 }
 
