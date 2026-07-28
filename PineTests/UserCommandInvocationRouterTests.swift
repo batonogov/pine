@@ -50,6 +50,7 @@ struct UserCommandInvocationRouterTests {
 
         let projectManager = ProjectManager()
         projectManager.activeTabManager.openTab(url: file)
+        let projectIdentifier = ObjectIdentifier(projectManager)
         let center = NotificationCenter()
         let probe = NotificationProbe()
         let token = center.addObserver(
@@ -57,7 +58,11 @@ struct UserCommandInvocationRouterTests {
             object: nil,
             queue: nil
         ) { notification in
-            probe.record(notification.userInfo?["action"] as? String ?? "")
+            let target = (notification.object as AnyObject?).map(
+                ObjectIdentifier.init
+            )
+            let action = notification.userInfo?["action"] as? String ?? ""
+            probe.record("\(action):\(target == projectIdentifier)")
         }
         defer { center.removeObserver(token) }
 
@@ -67,7 +72,7 @@ struct UserCommandInvocationRouterTests {
             notificationCenter: center
         )
 
-        #expect(probe.values == ["unfoldAll"])
+        #expect(probe.values == ["unfoldAll:true"])
     }
 
     @Test("Unavailable command does not dispatch")
@@ -92,8 +97,8 @@ struct UserCommandInvocationRouterTests {
         #expect(probe.values.isEmpty)
     }
 
-    @Test("Targeted palette requests only match their owning project")
-    func commandPaletteTargeting() {
+    @Test("Targeted overlay requests only match their owning project")
+    func overlayTargeting() {
         let currentProject = ProjectManager()
         let otherProject = ProjectManager()
 
@@ -117,6 +122,62 @@ struct UserCommandInvocationRouterTests {
             currentProject: currentProject,
             isKeyWindow: false
         ))
+    }
+
+    @Test("All overlay commands post their owning project")
+    func overlayCommandsPostProjectTarget() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "pine-overlay-router-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("main.swift")
+        try Data("func main() {}".utf8).write(to: file)
+
+        let projectManager = ProjectManager()
+        projectManager.workspace.loadDirectory(url: directory)
+        projectManager.activeTabManager.openTab(url: file)
+        let projectIdentifier = ObjectIdentifier(projectManager)
+        let center = NotificationCenter()
+        let probe = NotificationProbe()
+        let commands: [(UserCommand, Notification.Name)] = [
+            (.quickOpen, .showQuickOpen),
+            (.commandPalette, .showCommandPalette),
+            (.symbolNavigator, .showSymbolNavigator),
+            (.goToLine, .goToLine)
+        ]
+        let tokens = commands.map { _, name in
+            center.addObserver(
+                forName: name,
+                object: nil,
+                queue: nil
+            ) { notification in
+                let target = notification.object as AnyObject?
+                let isTargeted = target.map { ObjectIdentifier($0) }
+                    == projectIdentifier
+                probe.record("\(name.rawValue):\(isTargeted)")
+            }
+        }
+        defer {
+            tokens.forEach { center.removeObserver($0) }
+        }
+
+        for (command, _) in commands {
+            UserCommandInvocationRouter.dispatch(
+                command,
+                projectManager: projectManager,
+                notificationCenter: center
+            )
+        }
+
+        #expect(probe.values == commands.map {
+            "\($0.1.rawValue):true"
+        })
     }
 }
 

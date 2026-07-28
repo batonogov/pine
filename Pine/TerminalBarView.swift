@@ -243,13 +243,21 @@ struct TerminalSearchBarContainer: View {
 /// Handles debounced search, case-sensitivity changes, and tab switching.
 struct TerminalSearchObserver: ViewModifier {
     var terminalState: TerminalPaneState
+    let paneID: PaneID
+    @Environment(ProjectManager.self) private var projectManager
+    @Environment(PaneManager.self) private var paneManager
     @Environment(\.controlActiveState) private var controlActiveState
     @State private var searchTask: Task<Void, Never>?
 
     func body(content: Content) -> some View {
         content
-            .onReceive(NotificationCenter.default.publisher(for: .findInTerminal)) { _ in
-                guard controlActiveState == .key else { return }
+            .onReceive(NotificationCenter.default.publisher(for: .findInTerminal)) { notification in
+                guard paneManager.activePaneID == paneID,
+                      ContentView.shouldHandleTargetedCommand(
+                    notificationObject: notification.object,
+                    currentProject: projectManager,
+                    isKeyWindow: controlActiveState == .key
+                ) else { return }
                 // Defer to break reentrancy (#1051): `.findInTerminal` is posted
                 // synchronously from the Terminal menu ButtonAction callstack
                 // (PineAppMenuCommands.swift). Mutating the @Observable

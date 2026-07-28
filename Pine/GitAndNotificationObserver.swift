@@ -75,7 +75,12 @@ struct GitAndNotificationObserver: ViewModifier {
                 onRefreshLineDiffs()
                 onRefreshBlame()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { notification in
+                guard ContentView.shouldHandleTargetedCommand(
+                    notificationObject: notification.object,
+                    currentProject: projectManager,
+                    isKeyWindow: controlActiveState == .key
+                ) else { return }
                 handleCloseTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
@@ -135,11 +140,16 @@ struct GitAndNotificationObserver: ViewModifier {
                 let result = projectManager.checkExternalChanges()
                 onHandleExternalChanges(result)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { notification in
+                guard ContentView.shouldHandleTargetedCommand(
+                    notificationObject: notification.object,
+                    currentProject: projectManager,
+                    isKeyWindow: controlActiveState == .key
+                ) else { return }
                 handleShowProjectSearch()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .goToLine)) { _ in
-                handleGoToLine()
+            .onReceive(NotificationCenter.default.publisher(for: .goToLine)) { notification in
+                handleGoToLine(notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFileAtLine)) { notification in
                 handleOpenFileAtLine(notification)
@@ -218,8 +228,12 @@ struct GitAndNotificationObserver: ViewModifier {
         }
     }
 
-    func handleGoToLine() {
-        guard controlActiveState == .key,
+    func handleGoToLine(_ notification: Notification) {
+        guard ContentView.shouldHandleTargetedCommand(
+            notificationObject: notification.object,
+            currentProject: projectManager,
+            isKeyWindow: controlActiveState == .key
+        ),
               activeTabManager.activeTab != nil else { return }
         DispatchQueue.main.async {
             self.onPresentGoToLine()
@@ -242,9 +256,14 @@ struct GitAndNotificationObserver: ViewModifier {
     /// does not have to solve payload parsing inside the long modifier chain
     /// (issue #1133).
     func handleNavigateChange(_ notification: Notification) {
+        guard ContentView.shouldHandleTargetedCommand(
+            notificationObject: notification.object,
+            currentProject: projectManager,
+            isKeyWindow: controlActiveState == .key
+        ) else { return }
         guard let direction = Self.resolveChangeDirection(
             from: notification,
-            isKeyWindow: controlActiveState == .key
+            isKeyWindow: true
         ) else { return }
         onNavigateToChange(direction)
     }
@@ -253,9 +272,14 @@ struct GitAndNotificationObserver: ViewModifier {
     /// Leaving this payload cast inline merely moved Xcode 27's type-checking
     /// failure to the next modifier (issue #1133).
     func handleInlineDiffAction(_ notification: Notification) {
+        guard ContentView.shouldHandleTargetedCommand(
+            notificationObject: notification.object,
+            currentProject: projectManager,
+            isKeyWindow: controlActiveState == .key
+        ) else { return }
         guard let action = Self.resolveInlineDiffAction(
             from: notification,
-            isKeyWindow: controlActiveState == .key
+            isKeyWindow: true
         ) else { return }
         onInlineDiffAction(action)
     }

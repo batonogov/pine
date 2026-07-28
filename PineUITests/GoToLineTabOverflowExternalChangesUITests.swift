@@ -33,7 +33,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
 
     // MARK: - Helpers
 
-    /// Opens Go to Line via Edit menu and returns the sheet element.
+    /// Opens Go to Line via Edit menu and returns its command panel.
     @discardableResult
     private func openGoToLine() -> XCUIElement {
         clickMenuBarItem("Edit")
@@ -41,9 +41,12 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(goToLineItem, timeout: 5))
         goToLineItem.click()
 
-        let sheet = app.sheets.firstMatch
-        XCTAssertTrue(waitForExistence(sheet, timeout: 5), "Go to Line sheet should appear")
-        return sheet
+        let overlay = commandOverlay("goToLineOverlay")
+        XCTAssertTrue(
+            waitForExistence(overlay, timeout: 5),
+            "Go to Line command panel should appear"
+        )
+        return overlay
     }
 
     // MARK: - Go to Line: opens via menu
@@ -93,14 +96,14 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         openFile("main.swift")
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
 
-        let sheet = openGoToLine()
+        let overlay = openGoToLine()
 
         // Press Escape to dismiss
         app.typeKey(.escape, modifierFlags: [])
 
         XCTAssertTrue(
-            sheet.waitForNonExistence(timeout: 5),
-            "Go to Line sheet should dismiss on Escape"
+            overlay.waitForNonExistence(timeout: 5),
+            "Go to Line command panel should dismiss on Escape"
         )
     }
 
@@ -115,10 +118,10 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         openFile("main.swift")
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
 
-        let sheet = openGoToLine()
+        let overlay = openGoToLine()
 
         // The view shows "1-N" as a hint for the valid range
-        let rangeHint = sheet.staticTexts.element(matching: NSPredicate(
+        let rangeHint = overlay.staticTexts.element(matching: NSPredicate(
             format: "value CONTAINS '1'"
         ))
         XCTAssertTrue(
@@ -138,14 +141,11 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         openFile("main.swift")
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
 
-        let sheet = openGoToLine()
+        let overlay = openGoToLine()
 
-        // Find the text field anywhere in the app hierarchy
-        let textField = app.textFields["goToLineField"].firstMatch
+        let textField = overlay.textFields["goToLineField"].firstMatch
         guard waitForExistence(textField, timeout: 5) else {
-            // If the SwiftUI TextField is not accessible, just verify sheet opens/closes
-            // by pressing Escape (already tested above). Skip this test.
-            XCTSkip("GoToLine text field not accessible via XCUITest")
+            XCTFail("GoToLine text field should be accessible in command panel")
             return
         }
         textField.click()
@@ -153,8 +153,8 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         textField.typeKey(.return, modifierFlags: [])
 
         XCTAssertTrue(
-            sheet.waitForNonExistence(timeout: 5),
-            "Go to Line sheet should dismiss after accepting valid input"
+            overlay.waitForNonExistence(timeout: 5),
+            "Go to Line command panel should dismiss after valid input"
         )
     }
 
@@ -169,22 +169,22 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         openFile("main.swift")
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
 
-        let sheet = openGoToLine()
+        let overlay = openGoToLine()
 
-        let textField = app.textFields["goToLineField"].firstMatch
+        let textField = overlay.textFields["goToLineField"].firstMatch
         guard waitForExistence(textField, timeout: 5) else {
-            XCTSkip("GoToLine text field not accessible via XCUITest")
+            XCTFail("GoToLine text field should be accessible in command panel")
             return
         }
         textField.click()
         textField.typeText("abc")
         textField.typeKey(.return, modifierFlags: [])
 
-        // Sheet should remain open (invalid input)
+        // The command panel should remain open for invalid input.
         sleep(1)
         XCTAssertTrue(
-            sheet.exists,
-            "Go to Line sheet should stay open for invalid input"
+            overlay.exists,
+            "Go to Line command panel should stay open for invalid input"
         )
     }
 

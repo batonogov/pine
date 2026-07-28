@@ -143,32 +143,11 @@ struct ContentView: View {
             router: commandOverlayRouter,
             projectManager: projectManager
         ))
-        .onReceive(NotificationCenter.default.publisher(for: .showQuickOpen)) { _ in
-            // Defer to break reentrancy (#1051): mutating @State
-            // synchronously from a menu→notification callstack collides with
-            // the button-action's exclusive access to SwiftUI storage →
-            // exclusivity abort.
-            DispatchQueue.main.async {
-                commandOverlayRouter.present(.quickOpen)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showCommandPalette)) { notification in
-            guard Self.shouldHandleTargetedCommand(
-                notificationObject: notification.object,
-                currentProject: projectManager,
-                isKeyWindow: controlActiveState == .key
-            ) else { return }
-            DispatchQueue.main.async {
-                commandOverlayRouter.present(.commandPalette)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showSymbolNavigator)) { _ in
-            guard activeTabManager.activeTab != nil else { return }
-            // Defer to break reentrancy (#1051).
-            DispatchQueue.main.async {
-                commandOverlayRouter.present(.symbolNavigator)
-            }
-        }
+        .modifier(CommandOverlayNotificationObserver(
+            router: commandOverlayRouter,
+            projectManager: projectManager,
+            isKeyWindow: controlActiveState == .key
+        ))
         .sheet(isPresented: $isBranchSwitcherPresented) {
             BranchSwitcherView(
                 gitProvider: workspace.gitProvider,
@@ -189,23 +168,9 @@ struct ContentView: View {
                 isBranchSwitcherPresented = true
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .symbolNavigate)) { notification in
-            guard let offset = notification.userInfo?["offset"] as? Int,
-                  let tab = activeTabManager.activeTab else { return }
-            // Defer to break reentrancy (#1051): pendingGoToLine is an
-            // @Observable mutation on TabManager.
-            DispatchQueue.main.async {
-                // Convert the symbol's UTF-16 offset to a 1-based line and route
-                // through `pendingGoToLine` on the active pane's TabManager so
-                // the focused `PaneLeafView` performs the actual navigation.
-                // The previous implementation wrote a `GoToRequest` into root
-                // `ContentView` state that no `PaneLeafView` ever consumed.
-                let line = Self.lineNumber(forOffset: offset, in: tab.content)
-                activeTabManager.pendingGoToLine = line
-            }
-        }
         .modifier(AgentActivityPresenter(
             isPresented: $isAgentActivityPresented,
+            projectManager: projectManager,
             store: projectManager.agentActivity,
             onSelect: { url in
                 isAgentActivityPresented = false
@@ -214,6 +179,7 @@ struct ContentView: View {
         ))
         .modifier(AgentHistoryPresenter(
             isPresented: $isAgentHistoryPresented,
+            projectManager: projectManager,
             store: projectManager.agentHistory
         ))
         .onChange(of: workspace.rootURL) { _, _ in
@@ -274,7 +240,12 @@ struct ContentView: View {
             onNavigateToChange: { navigateToChange(direction: $0) },
             onInlineDiffAction: { handleInlineDiffAction($0) }
         ))
-        .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { notification in
+            guard Self.shouldHandleTargetedCommand(
+                notificationObject: notification.object,
+                currentProject: projectManager,
+                isKeyWindow: controlActiveState == .key
+            ) else { return }
             handleToggleWordWrap()
         }
         .onReceive(NotificationCenter.default.publisher(for: .revealInSidebar)) { notification in
@@ -471,13 +442,6 @@ struct ContentView: View {
             return false
         }
         return targetProject === currentProject
-    }
-
-    private func invokeCommandPaletteItem(_ item: CommandPaletteItem) {
-        CommandPaletteInvocationRouter.invoke(
-            item,
-            projectManager: projectManager
-        )
     }
 
     // MARK: - Subview builders

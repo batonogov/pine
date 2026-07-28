@@ -29,17 +29,29 @@ final class CommandOverlayPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [
+                .borderless,
+                .nonactivatingPanel,
+                .titled,
+                .fullSizeContentView
+            ],
             backing: .buffered,
             defer: false
         )
+        // A titled style is required for a borderless NSPanel to become key on
+        // macOS 26. Hide the titlebar chrome while preserving key-window
+        // eligibility for the hosted search field.
+        self.titleVisibility = .hidden
+        self.titlebarAppearsTransparent = true
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = true
         self.isMovable = false
         self.hidesOnDeactivate = false
-        self.level = .floating
-        self.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
+        self.isReleasedWhenClosed = false
+        // This is a document child, not a global utility panel. Joining every
+        // Space would expose one project's overlay above unrelated windows.
+        self.collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
         // The panel becomes key so the hosted search field can receive
         // keyboard focus, but does not activate the app away from the
         // document window that owns it.
@@ -48,6 +60,21 @@ final class CommandOverlayPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+/// Resolves the document window while a command panel owns key focus.
+///
+/// User keybindings are dispatched from an AppDelegate event monitor that
+/// normally identifies the active project through the key window's
+/// `CloseDelegate`. A command panel has its own coordinator delegate, so the
+/// monitor must unwrap this specific child-window type to its document owner.
+@MainActor
+enum CommandOverlayOwnerResolver {
+    static func documentWindow(for keyWindow: NSWindow?) -> NSWindow? {
+        guard let keyWindow else { return nil }
+        guard keyWindow is CommandOverlayPanel else { return keyWindow }
+        return keyWindow.parent
+    }
 }
 
 /// Bridges a SwiftUI overlay view into a `CommandOverlayPanel` window.
@@ -115,18 +142,25 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
 
             let wrapper = ContentWrapper(
                 content: content(),
-                containerIdentifier: parent.containerIdentifier
+                containerIdentifier: parent.containerIdentifier,
+                onDismiss: { [weak self] in
+                    self?.parent.isPresented = false
+                }
             )
             let controller = NSHostingController(rootView: wrapper)
-            controller.view.frame = NSRect(x: 0, y: 0, width: 520, height: 380)
+            let panelSize = targetSize(
+                for: controller,
+                ownerWindow: ownerWindow
+            )
+            controller.view.frame = NSRect(origin: .zero, size: panelSize)
             self.hostingController = controller
 
             let panel = CommandOverlayPanel(
                 contentRect: controller.view.bounds
             )
+            panel.level = ownerWindow.level
             panel.contentViewController = controller
             panel.delegate = self
-            panel.contentView = controller.view
             self.panel = panel
 
             position(panel: panel, above: ownerWindow)
@@ -138,17 +172,58 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
             guard let controller = hostingController else { return }
             controller.rootView = ContentWrapper(
                 content: content(),
-                containerIdentifier: parent.containerIdentifier
+                containerIdentifier: parent.containerIdentifier,
+                onDismiss: { [weak self] in
+                    self?.parent.isPresented = false
+                }
             )
+            guard let panel, let ownerWindow else { return }
+            let panelSize = targetSize(
+                for: controller,
+                ownerWindow: ownerWindow
+            )
+            panel.setContentSize(panelSize)
+            controller.view.frame = NSRect(origin: .zero, size: panelSize)
+            position(panel: panel, above: ownerWindow)
         }
 
         func dismiss() {
             guard let panel else { return }
+            // Clear the delegate before ordering out. A resign-key callback
+            // from an obsolete panel must not dismiss a newer presentation.
+            panel.delegate = nil
             panel.parent?.removeChildWindow(panel)
             panel.orderOut(nil)
-            panel.delegate = nil
+            panel.contentViewController = nil
+            panel.close()
             self.panel = nil
             hostingController = nil
+        }
+
+        private func targetSize(
+            for controller: NSHostingController<ContentWrapper>,
+            ownerWindow: NSWindow
+        ) -> NSSize {
+            let ownerSize = ownerWindow.contentLayoutRect.size
+            let maximumSize = NSSize(
+                width: max(1, ownerSize.width - 32),
+                height: max(1, ownerSize.height - 48)
+            )
+            let fittingSize = controller.sizeThatFits(in: maximumSize)
+            let minimumSize = NSSize(
+                width: min(240, maximumSize.width),
+                height: min(140, maximumSize.height)
+            )
+            return NSSize(
+                width: min(
+                    maximumSize.width,
+                    max(minimumSize.width, fittingSize.width)
+                ),
+                height: min(
+                    maximumSize.height,
+                    max(minimumSize.height, fittingSize.height)
+                )
+            )
         }
 
         private func position(panel: NSPanel, above ownerWindow: NSWindow) {
@@ -159,10 +234,15 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
             let centerX = ownerFrame.midX - panelSize.width / 2
             let centerY = ownerFrame.midY - panelSize.height / 2
                 + ownerFrame.height * 0.12
+            let minimumY = ownerFrame.minY + 20
+            let maximumY = max(
+                minimumY,
+                ownerFrame.maxY - panelSize.height - 20
+            )
             panel.setFrame(
                 NSRect(
                     x: centerX,
-                    y: max(ownerFrame.minY + 20, centerY),
+                    y: min(maximumY, max(minimumY, centerY)),
                     width: panelSize.width,
                     height: panelSize.height
                 ),
@@ -187,18 +267,15 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
     struct ContentWrapper: View {
         let content: Content
         let containerIdentifier: String
+        let onDismiss: () -> Void
 
         var body: some View {
             ZStack {
                 Color.primary.opacity(0.15)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        NotificationCenter.default.post(
-                            name: .commandOverlayDismissRequested,
-                            object: nil
-                        )
-                    }
+                    .onTapGesture(perform: onDismiss)
+                    .accessibilityHidden(true)
 
                 content
                     .background {
@@ -207,18 +284,12 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
                             .shadow(color: .black.opacity(0.2), radius: 24, y: 6)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(10)
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(containerIdentifier)
             .accessibilityAddTraits(.isModal)
+            .onExitCommand(perform: onDismiss)
         }
     }
-}
-
-extension Notification.Name {
-    /// Posted by the overlay's backdrop tap so the router can dismiss without
-    /// mutating document state. Observed by `CommandOverlayContainer`.
-    static let commandOverlayDismissRequested = Notification.Name(
-        "commandOverlayDismissRequested"
-    )
 }

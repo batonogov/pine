@@ -131,7 +131,14 @@ struct SymbolNavigatorView: View {
             Divider()
             resultsList
         }
-        .frame(width: 500, height: 360)
+        .frame(
+            minWidth: 300,
+            idealWidth: 500,
+            maxWidth: 500,
+            minHeight: 220,
+            idealHeight: 360,
+            maxHeight: 360
+        )
         .onAppear {
             loadSymbols()
         }
@@ -190,6 +197,11 @@ struct SymbolNavigatorView: View {
                                 )
                                 .id(index)
                                 .onTapGesture {
+                                    selectedIndex = index
+                                    navigateToSymbol(entry)
+                                }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityAction {
                                     selectedIndex = index
                                     navigateToSymbol(entry)
                                 }
@@ -440,7 +452,7 @@ struct SymbolNavigatorView: View {
         )
         NotificationCenter.default.post(
             name: .symbolNavigate,
-            object: nil,
+            object: projectManager,
             userInfo: ["offset": offset]
         )
         isPresented = false

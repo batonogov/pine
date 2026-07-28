@@ -35,7 +35,14 @@ struct CommandPaletteView: View {
             Divider()
             resultsList
         }
-        .frame(width: 560, height: 400)
+        .frame(
+            minWidth: 320,
+            idealWidth: 560,
+            maxWidth: 560,
+            minHeight: 240,
+            idealHeight: 400,
+            maxHeight: 400
+        )
         .onChange(of: searchText) { _, _ in
             selectedIndex = 0
         }
@@ -72,6 +79,13 @@ struct CommandPaletteView: View {
                                         selectedIndex = index
                                         invoke(item)
                                     }
+                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityAction {
+                                        guard item.isEnabled else { return }
+                                        selectedIndex = index
+                                        invoke(item)
+                                    }
+                                    .disabled(!item.isEnabled)
                             }
                         }
                     }
@@ -168,8 +182,13 @@ struct CommandPaletteView: View {
     }
 
     private func invoke(_ item: CommandPaletteItem) {
-        isPresented = false
         onInvoke(item)
+        // `onInvoke` may synchronously replace Command Palette with another
+        // shared overlay. Re-read the binding before dismissing so this stale
+        // view cannot tear down its replacement.
+        if isPresented {
+            isPresented = false
+        }
     }
 }
 

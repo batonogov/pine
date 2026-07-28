@@ -35,7 +35,30 @@ struct CommandPaletteHostedInteractionTests {
         drainMainRunLoop()
 
         #expect(state.invoked == [.task("second")])
+        #expect(state.presentationAtInvocation == [.commandPalette])
         #expect(state.isPresented == false)
+    }
+
+    @Test("Invocation can replace Command Palette without stale dismissal")
+    func replacementSurvivesInvocation() throws {
+        let state = HostedState()
+        state.replacementOnInvoke = .quickOpen
+        let hosted = hostPalette(state: state, items: makeItems())
+        let field = try #require(findTextField(in: hosted))
+        let coordinator = try #require(
+            field.delegate as? QuickOpenSearchField.Coordinator
+        )
+
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        drainMainRunLoop()
+
+        #expect(state.invoked == [.builtIn(.quickOpen)])
+        #expect(state.presentationAtInvocation == [.commandPalette])
+        #expect(state.activePresentation == .quickOpen)
     }
 
     @Test("Escape dismisses without invoking a command")
@@ -143,8 +166,21 @@ struct CommandPaletteHostedInteractionTests {
 
 @MainActor
 private final class HostedState {
-    var isPresented = true
+    var activePresentation: CommandOverlayPresentation? = .commandPalette
+    var replacementOnInvoke: CommandOverlayPresentation?
     var invoked: [CommandPaletteItemID] = []
+    var presentationAtInvocation: [CommandOverlayPresentation?] = []
+
+    var isPresented: Bool {
+        get { activePresentation == .commandPalette }
+        set {
+            if newValue {
+                activePresentation = .commandPalette
+            } else if activePresentation == .commandPalette {
+                activePresentation = nil
+            }
+        }
+    }
 }
 
 private struct HostedHarness: View {
@@ -158,7 +194,15 @@ private struct HostedHarness: View {
                 set: { state.isPresented = $0 }
             ),
             items: items,
-            onInvoke: { state.invoked.append($0.id) }
+            onInvoke: {
+                state.presentationAtInvocation.append(
+                    state.activePresentation
+                )
+                state.invoked.append($0.id)
+                if let replacement = state.replacementOnInvoke {
+                    state.activePresentation = replacement
+                }
+            }
         )
     }
 }

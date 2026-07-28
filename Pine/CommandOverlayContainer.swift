@@ -15,9 +15,6 @@ import SwiftUI
 
 /// View modifier that observes a `CommandOverlayRouter` and presents its active
 /// flow inside a `CommandOverlayWindow` panel.
-///
-/// Observes `.commandOverlayDismissRequested` (backdrop tap) to cancel the
-/// overlay without mutating document state.
 struct CommandOverlayContainer: ViewModifier {
 
     let router: CommandOverlayRouter
@@ -30,13 +27,6 @@ struct CommandOverlayContainer: ViewModifier {
                     .frame(width: 0, height: 0)
                     .opacity(0)
             }
-            .onReceive(
-                NotificationCenter.default.publisher(
-                    for: .commandOverlayDismissRequested
-                )
-            ) { _ in
-                router.dismiss()
-            }
     }
 
     /// The window-backed overlay. Hidden as a background so it never affects
@@ -48,7 +38,9 @@ struct CommandOverlayContainer: ViewModifier {
                 isPresented: Binding(
                     get: { router.activePresentation != nil },
                     set: { newValue in
-                        if !newValue { router.dismiss() }
+                        if !newValue {
+                            router.dismiss(ifMatching: presentation)
+                        }
                     }
                 ),
                 containerIdentifier: presentation.containerIdentifier
@@ -135,13 +127,107 @@ struct CommandOverlayContainer: ViewModifier {
                     )
                 ),
                 onInvoke: { item in
-                    router.dismiss(ifMatching: .commandPalette)
                     CommandPaletteInvocationRouter.invoke(
                         item,
-                        projectManager: projectManager
+                        projectManager: projectManager,
+                        overlayRouter: router
                     )
                 }
             )
+        }
+    }
+}
+
+/// Owns the four overlay notification subscriptions outside `ContentView`.
+///
+/// Keeping these publishers in a dedicated modifier gives Xcode 27's SwiftUI
+/// type-checker a substantially smaller generic expression to solve. Targeted
+/// notification objects also keep independent project windows from presenting
+/// or navigating each other's overlays.
+struct CommandOverlayNotificationObserver: ViewModifier {
+    let router: CommandOverlayRouter
+    let projectManager: ProjectManager
+    let isKeyWindow: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(
+                NotificationCenter.default.publisher(for: .showQuickOpen)
+            ) { notification in
+                present(
+                    .quickOpen,
+                    for: notification,
+                    requiresActiveTab: false
+                )
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: .showCommandPalette
+                )
+            ) { notification in
+                present(
+                    .commandPalette,
+                    for: notification,
+                    requiresActiveTab: false
+                )
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: .showSymbolNavigator
+                )
+            ) { notification in
+                present(
+                    .symbolNavigator,
+                    for: notification,
+                    requiresActiveTab: true
+                )
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(for: .symbolNavigate)
+            ) { notification in
+                navigate(to: notification)
+            }
+    }
+
+    private func present(
+        _ presentation: CommandOverlayPresentation,
+        for notification: Notification,
+        requiresActiveTab: Bool
+    ) {
+        guard ContentView.shouldHandleTargetedCommand(
+            notificationObject: notification.object,
+            currentProject: projectManager,
+            isKeyWindow: isKeyWindow
+        ) else { return }
+        guard !requiresActiveTab
+                || projectManager.activeTabManager.activeTab != nil else {
+            return
+        }
+        // NotificationCenter delivers menu notifications synchronously.
+        // Defer observable mutation until the command action has unwound to
+        // avoid the exclusivity conflict documented in #1051.
+        DispatchQueue.main.async {
+            router.present(presentation)
+        }
+    }
+
+    private func navigate(to notification: Notification) {
+        guard ContentView.shouldHandleTargetedCommand(
+            notificationObject: notification.object,
+            currentProject: projectManager,
+            isKeyWindow: isKeyWindow
+        ),
+        let offset = notification.userInfo?["offset"] as? Int,
+        let tab = projectManager.activeTabManager.activeTab else {
+            return
+        }
+        let tabManager = projectManager.activeTabManager
+        let line = ContentView.lineNumber(
+            forOffset: offset,
+            in: tab.content
+        )
+        DispatchQueue.main.async {
+            tabManager.pendingGoToLine = line
         }
     }
 }
@@ -167,7 +253,7 @@ nonisolated enum GoToLineLineCountProvider {
     }
 
     /// Routes a Go-to-Line result to the active pane's TabManager via
-    /// `pendingGoToLine`, matching the previous `.sheet` wiring.
+    /// `pendingGoToLine`.
     @MainActor static func navigate(
         line: Int,
         column: Int?,
@@ -186,21 +272,61 @@ nonisolated enum GoToLineLineCountProvider {
 enum CommandPaletteInvocationRouter {
     static func invoke(
         _ item: CommandPaletteItem,
-        projectManager: ProjectManager
+        projectManager: ProjectManager,
+        overlayRouter: CommandOverlayRouter,
+        notificationCenter: NotificationCenter = .default
     ) {
         switch item.id {
         case .builtIn(let command):
-            UserCommandInvocationRouter.dispatch(
-                command,
-                projectManager: projectManager
-            )
+            if let replacement = overlayPresentation(for: command) {
+                // Replace in-place. `CommandOverlayRouter.present` preserves
+                // the responder captured before Command Palette opened.
+                overlayRouter.present(replacement)
+            } else {
+                dismissThenDispatch(overlayRouter: overlayRouter) {
+                    UserCommandInvocationRouter.dispatch(
+                        command,
+                        projectManager: projectManager,
+                        notificationCenter: notificationCenter
+                    )
+                }
+            }
         case .task(let id):
             guard let task = ExtensibilityManager.shared.tasks.task(forID: id)
             else { return }
-            UserTaskInvocationController.invoke(
-                task,
-                projectManager: projectManager
-            )
+            dismissThenDispatch(overlayRouter: overlayRouter) {
+                UserTaskInvocationController.invoke(
+                    task,
+                    projectManager: projectManager
+                )
+            }
+        }
+    }
+
+    private static func dismissThenDispatch(
+        overlayRouter: CommandOverlayRouter,
+        action: @escaping @MainActor () -> Void
+    ) {
+        overlayRouter.dismiss(
+            ifMatching: .commandPalette,
+            then: action
+        )
+    }
+
+    private static func overlayPresentation(
+        for command: UserCommand
+    ) -> CommandOverlayPresentation? {
+        switch command {
+        case .quickOpen:
+            .quickOpen
+        case .symbolNavigator:
+            .symbolNavigator
+        case .goToLine:
+            .goToLine
+        case .commandPalette:
+            .commandPalette
+        default:
+            nil
         }
     }
 }

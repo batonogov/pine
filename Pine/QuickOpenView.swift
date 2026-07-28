@@ -32,7 +32,14 @@ struct QuickOpenView: View {
             Divider()
             resultsList
         }
-        .frame(width: 500, height: 360)
+        .frame(
+            minWidth: 300,
+            idealWidth: 500,
+            maxWidth: 500,
+            minHeight: 220,
+            idealHeight: 360,
+            maxHeight: 360
+        )
         .onAppear {
             provider.buildIndex(
                 from: projectManager.rootNodes,
@@ -61,6 +68,11 @@ struct QuickOpenView: View {
                                 resultRow(result, isSelected: index == selectedIndex)
                                     .id(index)
                                     .onTapGesture {
+                                        selectedIndex = index
+                                        openFile(result.url)
+                                    }
+                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityAction {
                                         selectedIndex = index
                                         openFile(result.url)
                                     }

@@ -229,6 +229,49 @@ struct NotificationObserverScopingTests {
         coordinator.handleFoldCode(notification)
     }
 
+    @Test("Coordinator accepts only its owning project's targeted commands")
+    func coordinatorTargetedCommandGuard() {
+        let owner = ProjectManager()
+        let other = ProjectManager()
+        let activeEditorView = CodeEditorView(
+            text: .constant("hello"),
+            contentVersion: 0,
+            language: "txt",
+            fileName: "test.txt",
+            commandTarget: owner,
+            canHandleCommands: { true },
+            foldState: .constant(FoldState())
+        )
+        let inactiveEditorView = CodeEditorView(
+            text: .constant("other"),
+            contentVersion: 0,
+            language: "txt",
+            fileName: "other.txt",
+            commandTarget: owner,
+            canHandleCommands: { false },
+            foldState: .constant(FoldState())
+        )
+        let activeCoordinator = CodeEditorView.Coordinator(
+            parent: activeEditorView
+        )
+        let inactiveCoordinator = CodeEditorView.Coordinator(
+            parent: inactiveEditorView
+        )
+        let targeted = Notification(name: .findInFile, object: owner)
+
+        #expect(activeCoordinator.shouldHandleCommand(
+            Notification(name: .findInFile)
+        ))
+        #expect(activeCoordinator.shouldHandleCommand(targeted))
+        #expect(!inactiveCoordinator.shouldHandleCommand(targeted))
+        #expect(!activeCoordinator.shouldHandleCommand(
+            Notification(name: .findInFile, object: other)
+        ))
+        #expect(!activeCoordinator.shouldHandleCommand(
+            Notification(name: .findInFile, object: NSObject())
+        ))
+    }
+
     // MARK: - Multiple observers isolation
 
     @Test("Two LineNumberViews do not interfere with each other's scroll notifications")
