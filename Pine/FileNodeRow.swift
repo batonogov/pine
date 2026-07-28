@@ -13,6 +13,10 @@ import SwiftUI
 struct FileNodeRow: View {
     private static let logger = Logger.editor
     var node: FileNode
+    var isExpanded = false
+    var isActiveFile = false
+    var isTransientPreview = false
+    var isMissing = false
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
     @Environment(PaneManager.self) var paneManager
@@ -56,15 +60,19 @@ struct FileNodeRow: View {
             if isEditing {
                 inlineEditor
             } else {
-                Label {
-                    Text(node.name)
-                        .foregroundStyle(gitStatus?.color ?? .primary)
-                        .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
-                } icon: {
-                    Image(systemName: iconName)
-                        .foregroundStyle(iconColor)
-                        .frame(width: SidebarIconMetrics.iconSlotWidth, alignment: .center)
-                }
+                SidebarRowLabel(
+                    name: node.name,
+                    iconName: iconName,
+                    iconColor: iconColor,
+                    textColor: gitStatus?.color ?? .primary,
+                    isDirectory: node.isDirectory,
+                    state: SidebarRowVisualState(
+                        isActiveFile: isActiveFile,
+                        isTransientPreview: isTransientPreview,
+                        isExpanded: isExpanded,
+                        isMissing: isMissing
+                    )
+                )
                 .opacity(isGitIgnored ? 0.5 : 1.0)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -94,10 +102,22 @@ struct FileNodeRow: View {
     @ViewBuilder
     private var inlineEditor: some View {
         @Bindable var state = editState
-        // Use Label (same structure as the non-editing branch) so SwiftUI's
-        // List/OutlineGroup applies identical leading insets and the row does
-        // not visually jump on commit. See #736.
-        Label {
+        // Use the exact same leading structure as the non-editing branch so
+        // the row does not visually jump on commit. See #736.
+        HStack(spacing: 4) {
+            SidebarDisclosureIndicator(
+                isDirectory: node.isDirectory,
+                isExpanded: isExpanded
+            )
+
+            Image(systemName: iconName)
+                .foregroundStyle(iconColor)
+                .frame(
+                    width: SidebarIconMetrics.iconSlotWidth,
+                    alignment: .center
+                )
+                .accessibilityHidden(true)
+
             TextField("", text: $state.editingText)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier(AccessibilityID.inlineRenameTextField)
@@ -122,10 +142,6 @@ struct FileNodeRow: View {
                     guard !focused, editState.renamingURL?.path == node.url.path else { return }
                     commitRename()
                 }
-        } icon: {
-            Image(systemName: iconName)
-                .foregroundStyle(iconColor)
-                .frame(width: SidebarIconMetrics.iconSlotWidth, alignment: .center)
         }
     }
 
@@ -285,6 +301,10 @@ struct FileNodeRow: View {
             } else {
                 try FileManager.default.moveItem(at: oldURL, to: newURL)
             }
+            // Preserve sidebar selection across the FileNode replacement
+            // performed by the refresh below. SidebarView resolves this URL
+            // to the fresh node before scrolling it into view.
+            editState.scrollToNodeID = newURL
             editState.clear()
             workspace.refreshFileTree()
             NotificationCenter.default.post(
@@ -306,6 +326,7 @@ struct FileNodeRow: View {
         let wasNewlyCreated = editState.isNewlyCreated
         let url = editState.renamingURL
         editState.clear()
+        editState.requestSidebarFocusRestoration()
 
         // Delete placeholder item if creation was cancelled
         if wasNewlyCreated, let url {

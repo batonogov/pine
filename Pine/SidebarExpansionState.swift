@@ -19,11 +19,11 @@ import Foundation
 final class SidebarExpansionState {
     /// Paths of folders currently expanded in the sidebar.
     ///
-    /// We key on filesystem paths rather than `URL` because URLs returned by
-    /// `FileManager.contentsOfDirectory` carry a trailing slash for directories
-    /// while URLs built via `appendingPathComponent` do not — the same logical
-    /// folder would otherwise compare unequal. `FileNodeRow` makes the same
-    /// trade-off when checking rename state.
+    /// We key on normalized lexical paths rather than `URL` because URLs
+    /// returned by `FileManager.contentsOfDirectory` can carry a trailing slash
+    /// while URLs built via `appendingPathComponent` do not. Expansion is read
+    /// for every rendered row on the main actor, so identity must not resolve
+    /// symlinks or otherwise perform file-system I/O.
     private(set) var expandedPaths: Set<String> = []
 
     /// Per-folder timestamp of the last accepted toggle, used to debounce a
@@ -46,11 +46,7 @@ final class SidebarExpansionState {
     }
 
     private static func key(for url: URL) -> String {
-        // Resolve symlinks so that `/var/folders/...` and `/private/var/folders/...`
-        // (which macOS produces depending on the API used) collapse to the same key.
-        // Also normalises trailing slashes that `contentsOfDirectory` adds for
-        // directories but `appendingPathComponent` does not.
-        url.resolvingSymlinksInPath().path
+        SidebarPathIdentity(url).path
     }
 
     func isExpanded(_ url: URL) -> Bool {

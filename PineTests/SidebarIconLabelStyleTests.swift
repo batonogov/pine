@@ -96,26 +96,33 @@ struct SidebarIconMetricsTests {
 
     // MARK: - Source-parser regression guards
 
-    private func fileNodeRowSource() throws -> String {
+    private func source(named relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // PineTests
             .deletingLastPathComponent()  // repo root
-            .appendingPathComponent("Pine/FileNodeRow.swift")
+            .appendingPathComponent(relativePath)
         return try String(contentsOf: url, encoding: .utf8)
     }
 
     @Test("FileNodeRow icon uses fixed-width frame in BOTH the normal and rename branches")
     func fileNodeRowUsesFixedWidthFrameInBothBranches() throws {
-        let src = try fileNodeRowSource()
-        // Both call sites must reference the metric so entering rename
-        // does not visually jump (#736 + #763).
-        let occurrences = src.components(separatedBy: "SidebarIconMetrics.iconSlotWidth").count - 1
+        let rowSource = try source(named: "Pine/FileNodeRow.swift")
+        let sharedLabelSource = try source(named: "Pine/SidebarRowChrome.swift")
+        // The normal branch now delegates to SidebarRowLabel while the rename
+        // branch remains inline. Both paths must still use the same metric so
+        // entering rename does not visually jump (#736 + #763).
+        #expect(rowSource.contains("SidebarRowLabel("))
+        let occurrences = [rowSource, sharedLabelSource].reduce(into: 0) {
+            $0 += $1.components(
+                separatedBy: "SidebarIconMetrics.iconSlotWidth"
+            ).count - 1
+        }
         #expect(
             occurrences >= 2,
             """
-            Expected SidebarIconMetrics.iconSlotWidth to be used in BOTH the \
-            normal and inlineEditor branches of FileNodeRow (so entering \
-            rename does not visually jump — see #736). \
+            Expected SidebarIconMetrics.iconSlotWidth to be used by BOTH the \
+            shared normal-row label and FileNodeRow's inlineEditor branch (so \
+            entering rename does not visually jump — see #736). \
             Found \(occurrences) usage(s).
             """
         )
@@ -123,7 +130,7 @@ struct SidebarIconMetricsTests {
 
     @Test("FileNodeRow does NOT reintroduce a custom LabelStyle HStack wrapper")
     func doesNotReintroduceLabelStyleWrapper() throws {
-        let src = try fileNodeRowSource()
+        let src = try source(named: "Pine/FileNodeRow.swift")
         // PRs #766, #770, #775v1 wrapped the Label in a custom LabelStyle
         // or HStack. All were reverted because they inflated vertical
         // rhythm and broke alignment. Guard against re-introduction.

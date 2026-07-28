@@ -12,10 +12,29 @@ final class SidebarFolderClickTests: PineUITestCase {
 
     private var projectURL: URL!
 
+    private func waitForSelection(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == true"),
+            object: element
+        )
+        return XCTWaiter.wait(
+            for: [expectation],
+            timeout: timeout
+        ) == .completed
+    }
+
     override func setUpWithError() throws {
         try super.setUpWithError()
         projectURL = try createTempProject(
             files: [
+                "-flags": "flags\n",
+                ".env": "KEY=value\n",
+                "_config": "config\n",
+                "Éclair.swift": "// Unicode\n",
+                "😀notes.md": "# Emoji\n",
                 "root-file.swift": "// Root\n",
                 "alpha/inside-alpha.swift": "// alpha\n",
                 "beta/inside-beta.txt": "beta\n"
@@ -126,6 +145,119 @@ final class SidebarFolderClickTests: PineUITestCase {
         XCTAssertFalse(
             betaChild.exists,
             "Right-click should not expand the folder"
+        )
+    }
+
+    // MARK: - Finder-style keyboard and VoiceOver matrix (#1238)
+
+    func testKeyboardNavigationTypeSelectAndOutlineSemantics() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.scrollViews["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+        let alpha = app.sidebarNodes["fileNode_alpha"]
+        let child = app.sidebarNodes["fileNode_inside-alpha.swift"]
+        XCTAssertTrue(waitForExistence(alpha, timeout: 5))
+
+        // Native row role, disclosure value, selection, Left/Right, and
+        // parent navigation all travel through the shared transition model.
+        XCTAssertEqual(alpha.elementType, .outlineRow)
+        XCTAssertEqual(alpha.value as? String, "collapsed")
+        alpha.click()
+        XCTAssertTrue(child.waitForExistence(timeout: 3))
+        XCTAssertTrue(alpha.isSelected)
+        XCTAssertEqual(alpha.value as? String, "expanded")
+
+        app.typeKey(.leftArrow, modifierFlags: [])
+        XCTAssertTrue(child.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(alpha.isSelected)
+
+        app.typeKey(.rightArrow, modifierFlags: [])
+        XCTAssertTrue(child.waitForExistence(timeout: 3))
+        app.typeKey(.rightArrow, modifierFlags: [])
+        XCTAssertTrue(child.isSelected, "Right on an expanded folder enters its first child")
+        app.typeKey(.leftArrow, modifierFlags: [])
+        XCTAssertTrue(alpha.isSelected, "Left on a child returns to its parent")
+        app.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertTrue(child.isSelected)
+        app.typeKey(.upArrow, modifierFlags: [])
+        XCTAssertTrue(alpha.isSelected)
+
+        // Home/End/Page remain handled by the sidebar and always leave one
+        // row selected.
+        app.typeKey(.end, modifierFlags: [])
+        XCTAssertEqual(
+            sidebar.descendants(matching: .outlineRow)
+                .matching(NSPredicate(format: "isSelected == true")).count,
+            1
+        )
+        app.typeKey(.home, modifierFlags: [])
+        XCTAssertTrue(alpha.isSelected)
+        app.typeKey(.pageDown, modifierFlags: [])
+        XCTAssertEqual(
+            sidebar.descendants(matching: .outlineRow)
+                .matching(NSPredicate(format: "isSelected == true")).count,
+            1
+        )
+        app.typeKey(.pageUp, modifierFlags: [])
+        XCTAssertEqual(
+            sidebar.descendants(matching: .outlineRow)
+                .matching(NSPredicate(format: "isSelected == true")).count,
+            1
+        )
+
+        // Type-select does not open a file. Command-Return does, then a
+        // pointer click explicitly restores sidebar focus for the next matrix.
+        app.typeText("r")
+        let rootFile = app.sidebarNodes["fileNode_root-file.swift"]
+        XCTAssertTrue(waitForSelection(rootFile))
+        let rootTab = app.buttons["editorTab_root-file.swift"]
+        XCTAssertFalse(rootTab.exists)
+        app.typeKey(.return, modifierFlags: .command)
+        XCTAssertTrue(rootTab.waitForExistence(timeout: 5))
+        rootFile.click()
+
+        // Space opens a transient preview and preserves sidebar focus. The
+        // following punctuation selection is therefore also a focus-transfer
+        // assertion, not just a matching assertion.
+        app.typeText("_")
+        XCTAssertTrue(
+            waitForSelection(app.sidebarNodes["fileNode__config"])
+        )
+        let configTab = app.buttons["editorTab__config"]
+        XCTAssertFalse(configTab.exists)
+        app.typeKey(.space, modifierFlags: [])
+        XCTAssertTrue(configTab.waitForExistence(timeout: 5))
+        app.typeText(".")
+        XCTAssertTrue(
+            waitForSelection(app.sidebarNodes["fileNode_.env"])
+        )
+
+        rootFile.click()
+        // The first "e" legitimately matches empty-folder. The second
+        // character makes the prefix unambiguous and proves that "ec"
+        // matches the diacritic filename "Éclair".
+        app.typeText("ec")
+        XCTAssertTrue(
+            waitForSelection(app.sidebarNodes["fileNode_Éclair.swift"])
+        )
+
+        // Cancelling inline rename must restore the sidebar responder while
+        // preserving the edited row's selection. Alpha is still expanded
+        // from the earlier matrix; collapse it with the pointer, cancel
+        // Return-to-rename, then prove Right still targets Alpha.
+        alpha.click()
+        XCTAssertTrue(child.waitForNonExistence(timeout: 3))
+        app.typeKey(.return, modifierFlags: [])
+        let renameField = app.textFields["inlineRenameTextField"]
+        XCTAssertTrue(renameField.waitForExistence(timeout: 3))
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(renameField.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(alpha.isSelected)
+        app.typeKey(.rightArrow, modifierFlags: [])
+        XCTAssertTrue(
+            child.waitForExistence(timeout: 3),
+            "Right should expand the still-selected row after rename cancel"
         )
     }
 }
