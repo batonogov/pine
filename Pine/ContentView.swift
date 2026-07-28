@@ -394,14 +394,20 @@ struct ContentView: View {
         return AnyView(
             CommandOverlayView(isPresented: $showAgentAttention) {
                 AgentAttentionOverlay(
-                    summaries: AgentStatusSummary.activeSummaries(in: paneManager)
-                ) { paneID, tabID in
-                    paneManager.activePaneID = paneID
-                    paneManager.terminalState(for: paneID)?.activeTerminalID = tabID
-                    withAnimation(PineAnimation.overlay) {
-                        showAgentAttention = false
+                    summaries: AgentStatusSummary.activeSummaries(in: paneManager),
+                    onNavigate: { paneID, tabID in
+                        paneManager.activePaneID = paneID
+                        paneManager.terminalState(for: paneID)?.activeTerminalID = tabID
+                        withAnimation(PineAnimation.overlay) {
+                            showAgentAttention = false
+                        }
+                    },
+                    onDismiss: {
+                        withAnimation(PineAnimation.overlay) {
+                            showAgentAttention = false
+                        }
                     }
-                }
+                )
             }
         )
     }
