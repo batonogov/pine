@@ -163,6 +163,13 @@ enum UserTaskInvocationController {
         return response == .alertFirstButtonReturn
     }
 
+    /// Snapshot of the active tab captured before a task runs, used to detect
+    /// whether the buffer changed while the task was executing.
+    struct CapturedTab: Equatable {
+        let id: UUID?
+        let content: String?
+    }
+
     private static func presentOutcome(
         _ outcome: UserTaskOutcome,
         cancelled: Bool,
@@ -202,8 +209,8 @@ enum UserTaskInvocationController {
             }
             let tabManager = projectManager.activeTabManager
             if canApplyReplacement(
-                capturedTabID: capturedTabID,
-                capturedContent: capturedContent,
+                capturedTabID: snapshot.tabID,
+                capturedContent: snapshot.content,
                 currentTabID: tabManager.activeTab?.id,
                 currentContent: tabManager.activeTab?.content
             ) {

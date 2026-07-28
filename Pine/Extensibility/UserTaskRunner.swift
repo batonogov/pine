@@ -205,9 +205,13 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             } else {
                 let exitCode = outcome.exitCode
                 let timedOut = outcome.timedOut
+                let stderr = outcome.stderr
                 Logger.task.error(
-                    "Task '\(task.id, privacy: .public)' finished (exit \(exitCode), timedOut: \(timedOut), cancelled: \(didCancel)): \(outcome.stderr, privacy: .public)"
+                    "Task '\(task.id, privacy: .public)' exit \(exitCode), timedOut: \(timedOut), cancelled: \(didCancel)"
                 )
+                if !stderr.isEmpty {
+                    Logger.task.error("stderr: \(stderr, privacy: .public)")
+                }
             }
 
             DispatchQueue.main.async {
