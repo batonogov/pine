@@ -75,8 +75,11 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem {
                     Button {
-                        if let url = registry.openProjectViaPanel() {
-                            openWindow(value: url)
+                        let context = DialogPresenter.forProject(projectManager)
+                        Task { @MainActor in
+                            if let url = await registry.openProjectViaPanel(context: context) {
+                                openWindow(value: url)
+                            }
                         }
                     } label: {
                         Image(systemName: "folder.badge.plus")
@@ -100,7 +103,8 @@ struct ContentView: View {
         .background {
             BranchSubtitleClickHandler(
                 gitProvider: workspace.gitProvider,
-                isGitRepository: workspace.gitProvider.isGitRepository
+                isGitRepository: workspace.gitProvider.isGitRepository,
+                projectManager: projectManager
             )
             DocumentEditedTracker(isEdited: projectManager.hasUnsavedChanges)
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
@@ -163,7 +167,8 @@ struct ContentView: View {
         .sheet(isPresented: $isBranchSwitcherPresented) {
             BranchSwitcherView(
                 gitProvider: workspace.gitProvider,
-                isPresented: $isBranchSwitcherPresented
+                isPresented: $isBranchSwitcherPresented,
+                projectManager: projectManager
             )
             .padding(12)
         }
@@ -325,12 +330,36 @@ struct ContentView: View {
                     } else {
                         // Warn before stopping tabs with foreground processes.
                         // Presented as a window-scoped sheet (issue #1241).
+                        let context = DialogPresenter.forProject(projectManager)
+                        let targetPaneIDs = Set(paneManager.terminalPaneIDs)
+                        let targetTabs = terminal.allTerminalTabs
+                        let targetTabIDs = Set(targetTabs.map(\.id))
+                        let authorizedForegroundProcesses =
+                            TabCloseHelper.foregroundProcessSnapshot(
+                                for: targetTabs
+                            )
                         Task { @MainActor in
                             guard await TabCloseHelper.confirmTerminalProcessStop(
-                                tabs: terminal.allTerminalTabs
+                                tabs: targetTabs,
+                                context: context
                             ) else { return }
+                            let currentPaneIDs = Set(paneManager.terminalPaneIDs)
+                            let currentTabs = terminal.allTerminalTabs
+                            let currentTabIDs = Set(currentTabs.map(\.id))
+                            let currentForegroundProcesses =
+                                TabCloseHelper.foregroundProcessSnapshot(
+                                    for: currentTabs
+                                )
+                            guard currentPaneIDs.isSubset(of: targetPaneIDs),
+                                  currentTabIDs.isSubset(of: targetTabIDs),
+                                  TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+                                      currentForegroundProcesses,
+                                      by: authorizedForegroundProcesses
+                                  ) else {
+                                return
+                            }
                             // Hide all terminal panes
-                            for paneID in paneManager.terminalPaneIDs {
+                            for paneID in targetPaneIDs {
                                 if let state = paneManager.terminalState(for: paneID) {
                                     for tab in state.terminalTabs { tab.stop() }
                                 }

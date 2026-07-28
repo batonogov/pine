@@ -475,7 +475,7 @@ struct LSPSettingsView: View {
             }
         }
         self.executablePicker = picker
-        picker.present()
+        picker.present(context: DialogPresenter.forKeyWindow())
     }
 
     // MARK: - Resolution + display helpers
@@ -557,7 +557,7 @@ private struct LSPSettingsDraft {
 
 /// Presents an `NSOpenPanel` restricted to executable files so the user can
 /// pick a language-server binary without typing an error-prone path. Runs on
-/// the main thread (modal), as AppKit requires. Issue #1242.
+/// the main actor as a sheet owned by the Settings window. Issue #1242.
 @MainActor
 private final class ExecutablePicker: NSObject, NSOpenSavePanelDelegate {
     private let completion: (URL) -> Void
@@ -566,7 +566,7 @@ private final class ExecutablePicker: NSObject, NSOpenSavePanelDelegate {
         self.completion = completion
     }
 
-    func present() {
+    func present(context: DialogPresentationContext) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -577,8 +577,8 @@ private final class ExecutablePicker: NSObject, NSOpenSavePanelDelegate {
         // selections with a sheet-level error.
         panel.delegate = self
         panel.prompt = "Choose"
-        panel.level = .modalPanel
-        panel.begin { [weak self] response in
+        Task { @MainActor [weak self] in
+            let response = await panel.runSheet(on: context)
             guard response == .OK,
                   let url = panel.url else {
                 return

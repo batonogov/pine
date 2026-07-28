@@ -3,6 +3,7 @@
 //  PineTests
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Pine
@@ -627,6 +628,78 @@ struct TabManagerEdgeTests {
         let url = try tempFile(in: dir, content: "line1\nline2\nline3")
         manager.openTabAndGoToLine(url: url, line: 2)
         #expect(manager.pendingGoToLine == 2)
+    }
+
+    @Test func openTabAndGoToLine_cancelledLargeFileDoesNotRouteLine() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = makeTabManager()
+        let content = String(
+            repeating: "a",
+            count: TabManager.largeFileThreshold + 1
+        )
+        let url = try tempFile(in: dir, content: content)
+        manager.pendingGoToLine = 99
+
+        manager.openTabAndGoToLine(
+            url: url,
+            line: 2,
+            context: DialogPresentationContext.unscoped
+        )
+        for _ in 0..<5 {
+            await Task.yield()
+        }
+
+        #expect(manager.tabs.isEmpty)
+        #expect(manager.pendingGoToLine == nil)
+    }
+
+    @Test func explicitLargeFileOpenUpgradesQueuedPreviewAndRoutesLine() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = makeTabManager()
+        let content = String(
+            repeating: "a",
+            count: TabManager.largeFileThreshold + 1
+        )
+        let url = try tempFile(in: dir, content: content)
+        let (responses, responseContinuation) = AsyncStream.makeStream(
+            of: NSApplication.ModalResponse.self
+        )
+        var presentationCount = 0
+        manager.largeFileAlertPresenter = { _, _, _ in
+            presentationCount += 1
+            for await response in responses {
+                return response
+            }
+            return .abort
+        }
+
+        manager.openTabAsPreview(
+            url: url,
+            context: DialogPresentationContext.unscoped
+        )
+        manager.openTabAndGoToLine(
+            url: url,
+            line: 7,
+            context: DialogPresentationContext.unscoped
+        )
+
+        #expect(manager.tabs.isEmpty)
+        #expect(manager.pendingGoToLine == nil)
+        responseContinuation.yield(.alertSecondButtonReturn)
+        responseContinuation.finish()
+        for _ in 0..<50 {
+            if !manager.tabs.isEmpty { break }
+            await Task.yield()
+        }
+
+        #expect(manager.tabs.count == 1)
+        #expect(manager.activeTab?.url == url)
+        #expect(manager.activeTab?.isTransientPreview == false)
+        #expect(manager.activeTab?.syntaxHighlightingDisabled == false)
+        #expect(manager.pendingGoToLine == 7)
+        #expect(presentationCount == 1)
     }
 
     // MARK: - Auto-save

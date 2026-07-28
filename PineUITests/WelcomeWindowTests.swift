@@ -68,6 +68,28 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(welcomeWindow.exists, "Welcome should remain after cancelling Open Folder")
     }
 
+    func testOpenFolderPanelCancelsWithCommandPeriod() throws {
+        launchClean()
+
+        let openFolderButton = app.buttons["welcomeOpenFolderButton"]
+        XCTAssertTrue(waitForExistence(openFolderButton))
+        openFolderButton.click()
+
+        let openPanel = app.sheets.firstMatch
+        XCTAssertTrue(
+            openPanel.waitForExistence(timeout: 5),
+            "Open panel should be attached to the Welcome window"
+        )
+
+        app.typeKey(".", modifierFlags: .command)
+
+        XCTAssertTrue(
+            openPanel.waitForNonExistence(timeout: 5),
+            "Command-. should cancel the attached panel"
+        )
+        XCTAssertTrue(app.windows["welcome"].exists)
+    }
+
     // MARK: - P0: Recent project click → project opens
 
     func testClickRecentProjectOpensProject() throws {

@@ -117,4 +117,28 @@ struct TerminalProcessConfirmationTests {
         #expect(result == true)
         #expect(alertCalled == false)
     }
+
+    @Test func foregroundAuthorizationUsesProcessGroupGeneration() {
+        let tabID = UUID()
+        let authorized: Set<TerminalForegroundProcessIdentity> = [
+            .init(tabID: tabID, processGroupID: 101),
+        ]
+
+        #expect(TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+            [.init(tabID: tabID, processGroupID: 101)],
+            by: authorized
+        ))
+        #expect(!TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+            [.init(tabID: tabID, processGroupID: 202)],
+            by: authorized
+        ))
+        #expect(!TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+            [.init(tabID: UUID(), processGroupID: 101)],
+            by: authorized
+        ))
+        #expect(TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+            [],
+            by: authorized
+        ))
+    }
 }

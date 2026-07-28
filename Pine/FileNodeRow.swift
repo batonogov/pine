@@ -20,6 +20,7 @@ struct FileNodeRow: View {
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
     @Environment(PaneManager.self) var paneManager
+    @Environment(ProjectManager.self) var projectManager
     @Environment(SidebarEditState.self) var editState
     @Environment(\.undoManager) private var undoManager
     @FocusState private var isTextFieldFocused: Bool
@@ -201,7 +202,8 @@ struct FileNodeRow: View {
             in: node.url,
             isDirectory: isDirectory,
             workspace: workspace,
-            undoManager: undoManager
+            undoManager: undoManager,
+            context: DialogPresenter.forProject(projectManager)
         )
     }
 
@@ -210,7 +212,8 @@ struct FileNodeRow: View {
             at: node.url,
             isDirectory: node.isDirectory,
             workspace: workspace,
-            tabManager: tabManager
+            tabManager: tabManager,
+            context: DialogPresenter.forProject(projectManager)
         )
     }
 
@@ -259,7 +262,10 @@ struct FileNodeRow: View {
             oldURL: oldURL,
             existingNames: siblingNames(of: oldURL)
         ) {
-            SidebarEditState.showFileError(validationError)
+            SidebarEditState.showFileError(
+                validationError,
+                context: DialogPresenter.forProject(projectManager)
+            )
             return
         }
 
@@ -268,7 +274,10 @@ struct FileNodeRow: View {
         if let root = workspace.rootURL,
            !FileNode.isWithinProjectRoot(oldURL, projectRoot: root)
             || !FileNode.isWithinProjectRoot(newURL, projectRoot: root) {
-            SidebarEditState.showFileError(Strings.operationOutsideProject)
+            SidebarEditState.showFileError(
+                Strings.operationOutsideProject,
+                context: DialogPresenter.forProject(projectManager)
+            )
             editState.clear()
             return
         }
@@ -318,7 +327,10 @@ struct FileNodeRow: View {
             }
         } catch {
             // Keep editing so the user can try a different name
-            SidebarEditState.showFileError(error.localizedDescription)
+            SidebarEditState.showFileError(
+                error.localizedDescription,
+                context: DialogPresenter.forProject(projectManager)
+            )
         }
     }
 
@@ -343,7 +355,10 @@ struct FileNodeRow: View {
         let deletedURL = node.url
 
         if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(deletedURL, projectRoot: root) {
-            SidebarEditState.showFileError(Strings.operationOutsideProject)
+            SidebarEditState.showFileError(
+                Strings.operationOutsideProject,
+                context: DialogPresenter.forProject(projectManager)
+            )
             return
         }
 
@@ -360,7 +375,10 @@ struct FileNodeRow: View {
                 userInfo: ["url": deletedURL]
             )
         } catch {
-            SidebarEditState.showFileError(error.localizedDescription)
+            SidebarEditState.showFileError(
+                error.localizedDescription,
+                context: DialogPresenter.forProject(projectManager)
+            )
         }
     }
 }

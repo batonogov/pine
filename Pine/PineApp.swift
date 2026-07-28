@@ -155,7 +155,7 @@ private struct ProjectWindowView: View {
 
 /// Installs an NSWindowDelegate on the hosting window to intercept close
 /// and prompt for unsaved changes before the window actually closes.
-private struct WindowCloseInterceptor: NSViewRepresentable {
+struct WindowCloseInterceptor: NSViewRepresentable {
     let projectManager: ProjectManager
     let registry: ProjectRegistry
     let projectURL: URL
@@ -177,9 +177,11 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: InterceptorView, context: Context) {
-        // Install delegate if makeNSView's viewDidMoveToWindow fired before
-        // the coordinator was fully wired (defensive — belt and suspenders).
-        if context.coordinator.closeDelegate == nil, let window = nsView.window {
+        // SwiftUI may replace NSWindow.delegate while keeping the same
+        // representable, or move this sentinel to a replacement NSWindow.
+        // Reconcile identity on every update instead of treating the first
+        // installation as permanent.
+        if let window = nsView.window {
             context.coordinator.installDelegate(
                 on: window,
                 projectManager: projectManager,
@@ -211,23 +213,66 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
         var closeDelegate: CloseDelegate?
         // Strong reference to keep the original delegate alive
         var originalDelegate: (any NSWindowDelegate)?
+        weak var installedWindow: NSWindow?
+        private var lifecycleObservers: [Any] = []
 
         func installDelegate(
             on window: NSWindow,
             projectManager: ProjectManager,
             registry: ProjectRegistry,
             projectURL: URL,
-            appDelegate: AppDelegate
+            appDelegate: AppDelegate,
+            presentAlert: CloseDelegate.CloseAlertPresenter? = nil,
+            saveAll: CloseDelegate.CloseSaveAll? = nil
         ) {
-            // Guard against double installation
-            guard closeDelegate == nil else { return }
-            let original = window.delegate
+            if installedWindow !== window {
+                retireCurrentInstallation(restoringOriginal: true)
+                installedWindow = window
+                observeDelegateLifecycle(
+                    on: window,
+                    projectManager: projectManager,
+                    registry: registry,
+                    projectURL: projectURL,
+                    appDelegate: appDelegate
+                )
+            } else if let closeDelegate,
+                      window.delegate === closeDelegate {
+                return
+            } else if closeDelegate != nil {
+                // Same owner, new delegate generation. Do not restore the old
+                // original over SwiftUI's replacement; retire only our stale
+                // observer/dialog authority before wrapping the live delegate.
+                retireCurrentInstallation(restoringOriginal: false)
+                installedWindow = window
+                observeDelegateLifecycle(
+                    on: window,
+                    projectManager: projectManager,
+                    registry: registry,
+                    projectURL: projectURL,
+                    appDelegate: appDelegate
+                )
+            }
+
+            var original = window.delegate
+            if let existing = original as? CloseDelegate {
+                if existing.projectManager === projectManager {
+                    closeDelegate = existing
+                    originalDelegate = existing.original
+                    existing.observeWindowClose(window)
+                    return
+                }
+                let existingOriginal = existing.original
+                existing.detachFromWindow()
+                original = existingOriginal
+            }
             let delegate = CloseDelegate(
                 projectManager: projectManager,
                 registry: registry,
                 projectURL: projectURL,
                 appDelegate: appDelegate,
-                original: original
+                original: original,
+                presentAlert: presentAlert,
+                saveAll: saveAll
             )
             closeDelegate = delegate
             originalDelegate = original
@@ -235,6 +280,74 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
             // Fallback: observe willCloseNotification in case SwiftUI
             // replaces the window delegate after our installation (#138).
             delegate.observeWindowClose(window)
+        }
+
+        private func observeDelegateLifecycle(
+            on window: NSWindow,
+            projectManager: ProjectManager,
+            registry: ProjectRegistry,
+            projectURL: URL,
+            appDelegate: AppDelegate
+        ) {
+            removeLifecycleObservers()
+            for name in [
+                NSWindow.didBecomeKeyNotification,
+                NSWindow.didBecomeMainNotification,
+                NSWindow.didUpdateNotification,
+            ] {
+                lifecycleObservers.append(
+                    NotificationCenter.default.addObserver(
+                        forName: name,
+                        object: window,
+                        queue: .main
+                    ) { [weak self, weak window, weak projectManager,
+                         weak registry, weak appDelegate] _ in
+                        MainActor.assumeIsolated {
+                            guard let self,
+                                  let window,
+                                  let projectManager,
+                                  let registry,
+                                  let appDelegate else {
+                                return
+                            }
+                            self.installDelegate(
+                                on: window,
+                                projectManager: projectManager,
+                                registry: registry,
+                                projectURL: projectURL,
+                                appDelegate: appDelegate
+                            )
+                        }
+                    }
+                )
+            }
+        }
+
+        private func retireCurrentInstallation(restoringOriginal: Bool) {
+            removeLifecycleObservers()
+            if restoringOriginal,
+               let installedWindow,
+               let closeDelegate,
+               installedWindow.delegate === closeDelegate {
+                installedWindow.delegate = originalDelegate
+            }
+            closeDelegate?.detachFromWindow()
+            closeDelegate = nil
+            originalDelegate = nil
+            installedWindow = nil
+        }
+
+        private func removeLifecycleObservers() {
+            for observer in lifecycleObservers {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            lifecycleObservers.removeAll()
+        }
+
+        deinit {
+            for observer in lifecycleObservers {
+                NotificationCenter.default.removeObserver(observer)
+            }
         }
     }
 
@@ -246,6 +359,17 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
 /// windowShouldClose always closes the entire window (red close button path).
 /// Cmd+W is intercepted earlier by AppDelegate's local event monitor.
 class CloseDelegate: NSObject, NSWindowDelegate {
+    typealias CloseAlertPresenter = @MainActor (
+        AlertTemplate,
+        DialogPresentationContext,
+        String,
+        String
+    ) async -> NSApplication.ModalResponse
+    typealias CloseSaveAll = @MainActor (
+        ProjectManager,
+        DialogPresentationContext
+    ) async -> Bool
+
     let projectManager: ProjectManager
     let registry: ProjectRegistry
     let projectURL: URL
@@ -262,25 +386,55 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     /// nonisolated(unsafe): accessed from deinit (nonisolated) to remove observer.
     /// CloseDelegate is always deallocated on the main thread.
     nonisolated(unsafe) private var closeObserver: Any?
+    private weak var ownerWindow: NSWindow?
+    private(set) var dialogContext = DialogPresentationContext.unscoped
+    private var closeDecisionTask: Task<Void, Never>?
+    private weak var approvedCloseWindow: NSWindow?
+    private let closeAlertPresenter: CloseAlertPresenter?
+    private let closeSaveAll: CloseSaveAll?
+
+    private enum WindowCloseDecision {
+        case cancel
+        case approve(discard: DirtyEditorContentAuthorization?)
+    }
 
     init(
         projectManager: ProjectManager,
         registry: ProjectRegistry,
         projectURL: URL,
         appDelegate: AppDelegate,
-        original: (any NSWindowDelegate)?
+        original: (any NSWindowDelegate)?,
+        presentAlert: CloseAlertPresenter? = nil,
+        saveAll: CloseSaveAll? = nil
     ) {
         self.projectManager = projectManager
         self.registry = registry
         self.projectURL = projectURL
         self.appDelegate = appDelegate
         self.original = original
+        self.closeAlertPresenter = presentAlert
+        self.closeSaveAll = saveAll
         super.init()
     }
 
     /// Installs a NotificationCenter observer as a fallback for windowWillClose.
     /// If SwiftUI later replaces the window delegate, the notification still fires.
     func observeWindowClose(_ window: NSWindow) {
+        if let closeObserver {
+            NotificationCenter.default.removeObserver(closeObserver)
+            self.closeObserver = nil
+        }
+        if let previousWindow = ownerWindow, previousWindow !== window {
+            closeDecisionTask?.cancel()
+            closeDecisionTask = nil
+            approvedCloseWindow = nil
+            DialogPresenter.ownerDidClose(previousWindow)
+        }
+        ownerWindow = window
+        dialogContext = DialogPresenter.register(
+            window: window,
+            projectManager: projectManager
+        )
         closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
@@ -308,8 +462,15 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         case .terminal:
             guard let state = pane.terminalState(for: activePaneID),
                   let tab = state.activeTab else { return }
+            let context = dialogContext
             Task { @MainActor in
-                guard await TabCloseHelper.confirmTerminalProcessStop(tabs: [tab]) else { return }
+                guard await TabCloseHelper.confirmTerminalProcessStop(
+                    tabs: [tab],
+                    context: context
+                ) else { return }
+                guard state.terminalTabs.contains(where: { $0 === tab }) else {
+                    return
+                }
                 state.removeTab(id: tab.id)
                 if state.terminalTabs.isEmpty {
                     pane.removePane(activePaneID)
@@ -319,55 +480,161 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         case .editor, nil:
             let activeTM = projectManager.activeTabManager
             guard let tab = activeTM.activeTab else { return }
-            let closed = TabCloseHelper.closeTab(
-                tab, in: activeTM,
-                gitProvider: projectManager.workspace.gitProvider
-            )
-            if closed && activeTM.tabs.isEmpty {
-                pane.removePane(activePaneID)
+            let context = dialogContext
+            Task { @MainActor in
+                let closed = await TabCloseHelper.closeTab(
+                    tab,
+                    in: activeTM,
+                    gitProvider: projectManager.workspace.gitProvider,
+                    context: context
+                )
+                if closed && activeTM.tabs.isEmpty {
+                    pane.removePane(activePaneID)
+                }
             }
         }
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // Application-level termination already completed the same dirty-tab
+        // and terminal decisions before setting `isTerminating`.
+        if appDelegate?.isTerminating == true {
+            return true
+        }
+        if approvedCloseWindow === sender {
+            approvedCloseWindow = nil
+            return true
+        }
+
+        guard closeDecisionTask == nil else { return false }
+
         // Forward to original delegate first — respect its veto if any
         if let original, original.responds(to: #selector(NSWindowDelegate.windowShouldClose(_:))) {
             guard original.windowShouldClose?(sender) != false else { return false }
         }
 
-        // 1. Check dirty editor tabs
+        let context = DialogPresenter.context(for: sender)
+        closeDecisionTask = Task { @MainActor [weak self, weak sender] in
+            guard let self else { return }
+            let decision = await confirmWindowClose(context: context)
+            closeDecisionTask = nil
+            guard !Task.isCancelled,
+                  let sender,
+                  !didHandleClose else { return }
+            let discardAuthorization: DirtyEditorContentAuthorization?
+            switch decision {
+            case .cancel:
+                return
+            case .approve(let discard):
+                discardAuthorization = discard
+            }
+            // Commit destructive editor mutation only after every prompt and
+            // terminal revalidation has succeeded.
+            if let discardAuthorization,
+               !projectManager.commitDiscard(
+                   discardAuthorization,
+                   postReloadNotifications: false
+               ) {
+                return
+            }
+            approvedCloseWindow = sender
+            sender.performClose(nil)
+            // `performClose` normally re-enters `windowShouldClose`
+            // synchronously and consumes this approval. If the window became
+            // non-closable while the decision was pending, do not leak an
+            // approval into a later close attempt.
+            if approvedCloseWindow === sender {
+                approvedCloseWindow = nil
+            }
+        }
+        return false
+    }
+
+    private func confirmWindowClose(
+        context: DialogPresentationContext
+    ) async -> WindowCloseDecision {
+        var discardAuthorization: DirtyEditorContentAuthorization?
         let dirty = projectManager.allDirtyTabs
         if !dirty.isEmpty {
             let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
-            let response = AlertTemplate.unsavedChangesBulk.runModal(
-                messageText: Strings.unsavedChangesTitle,
-                informativeText: Strings.unsavedChangesListMessage(fileList)
-            )
+            let message = Strings.unsavedChangesListMessage(fileList)
+            let response = if let closeAlertPresenter {
+                await closeAlertPresenter(
+                    .unsavedChangesBulk,
+                    context,
+                    Strings.unsavedChangesTitle,
+                    message
+                )
+            } else {
+                await AlertTemplate.unsavedChangesBulk.runSheet(
+                    on: context,
+                    messageText: Strings.unsavedChangesTitle,
+                    informativeText: message
+                )
+            }
             switch response {
             case .alertFirstButtonReturn:
-                guard projectManager.saveAllPaneTabs() else {
-                    return false // Save failed — abort close
+                let didSave = if let closeSaveAll {
+                    await closeSaveAll(projectManager, context)
+                } else {
+                    await projectManager.saveAllPaneTabs(context: context)
+                }
+                guard didSave else {
+                    return .cancel
                 }
             case .alertSecondButtonReturn:
-                break // Don't save — allow close
+                discardAuthorization = DirtyEditorContentAuthorization(
+                    tabs: dirty
+                )
             default:
-                return false // Cancel — abort close
+                return .cancel
             }
         }
 
-        // 2. Warn about active terminal processes before closing
-        let terminalTabs = projectManager.terminal.allTerminalTabs
-        if terminalTabs.contains(where: { $0.hasForegroundProcess }) {
-            let response = AlertTemplate.terminalTabCloseWarning.runModal(
-                messageText: Strings.terminalTabCloseWarningTitle,
-                informativeText: Strings.terminalTabCloseWarningMessage
+        let authorizedTerminalProcesses =
+            TabCloseHelper.foregroundProcessSnapshot(
+                for: projectManager.terminal.allTerminalTabs
             )
-            guard response == .alertFirstButtonReturn else {
-                return false
+        if !authorizedTerminalProcesses.isEmpty {
+            let terminalResponse = if let closeAlertPresenter {
+                await closeAlertPresenter(
+                    .terminalTabCloseWarning,
+                    context,
+                    Strings.terminalTabCloseWarningTitle,
+                    Strings.terminalTabCloseWarningMessage
+                )
+            } else {
+                await AlertTemplate.terminalTabCloseWarning.runSheet(
+                    on: context,
+                    messageText: Strings.terminalTabCloseWarningTitle,
+                    informativeText: Strings.terminalTabCloseWarningMessage
+                )
+            }
+            guard terminalResponse == .alertFirstButtonReturn else {
+                return .cancel
             }
         }
 
-        return true
+        let currentDirtyTabs = projectManager.allDirtyTabs
+        let currentTerminalProcesses =
+            TabCloseHelper.foregroundProcessSnapshot(
+                for: projectManager.terminal.allTerminalTabs
+            )
+        guard TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+            currentTerminalProcesses,
+            by: authorizedTerminalProcesses
+        ) else {
+            return .cancel
+        }
+        if let discardAuthorization {
+            guard discardAuthorization.covers(currentDirtyTabs) else {
+                return .cancel
+            }
+            return .approve(discard: discardAuthorization)
+        }
+        return currentDirtyTabs.isEmpty
+            ? .approve(discard: nil)
+            : .cancel
     }
 
     // Forward other delegate calls to the original
@@ -381,9 +648,32 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     private func handleWindowClose() {
         guard !didHandleClose else { return }
         didHandleClose = true
+        closeDecisionTask?.cancel()
+        closeDecisionTask = nil
+        approvedCloseWindow = nil
+        if let ownerWindow {
+            DialogPresenter.ownerDidClose(ownerWindow)
+        }
         appDelegate?.handleProjectWindowDisappear(
             projectURL: projectURL, registry: registry
         )
+    }
+
+    /// Retires interception without treating the owner as user-closed. Used
+    /// when SwiftUI replaces the delegate or moves the representable.
+    func detachFromWindow() {
+        if let closeObserver {
+            NotificationCenter.default.removeObserver(closeObserver)
+            self.closeObserver = nil
+        }
+        closeDecisionTask?.cancel()
+        closeDecisionTask = nil
+        approvedCloseWindow = nil
+        if let ownerWindow {
+            DialogPresenter.ownerDidClose(ownerWindow)
+        }
+        ownerWindow = nil
+        dialogContext = .unscoped
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -398,6 +688,16 @@ class CloseDelegate: NSObject, NSWindowDelegate {
 // MARK: - AppDelegate
 
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
+    typealias TerminationAlertPresenter = @MainActor (
+        AlertTemplate,
+        DialogPresentationContext,
+        String,
+        String
+    ) async -> NSApplication.ModalResponse
+    typealias TerminationSaveAll = @MainActor (
+        ProjectManager,
+        DialogPresentationContext
+    ) async -> Bool
     /// Sparkle updater controller — `startingUpdater: true` enables automatic
     /// background checks respecting `SUScheduledCheckInterval`.
     lazy var updaterController = SPUStandardUpdaterController(
@@ -445,6 +745,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// Set to true once applicationShouldTerminate is called, so onDisappear
     /// handlers know not to clear the saved session during app quit.
     private(set) var isTerminating = false
+    private var terminationDecisionTask: Task<Void, Never>?
 
     /// Closure to open a named SwiftUI window, set by PineApp on launch.
     var openNamedWindow: ((String) -> Void)?
@@ -491,10 +792,78 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
     }
 
+    /// Waits for SwiftUI/AppKit to capture a real visible Welcome owner.
+    /// This follows multiple lifecycle turns with a strict bound instead of
+    /// assuming one fixed delay is sufficient on every macOS/CI machine.
+    func awaitVisibleWelcomeWindow(
+        maximumAttempts: Int = 40,
+        waitForNextAttempt: (@MainActor () async -> Void)? = nil
+    ) async -> NSWindow? {
+        let wait = waitForNextAttempt ?? {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        for _ in 0..<maximumAttempts {
+            if let window = visibleWelcomeWindow() {
+                return window
+            }
+            guard !Task.isCancelled else { return nil }
+            await wait()
+        }
+        return visibleWelcomeWindow()
+    }
+
+    /// No-window Open Folder path. A missing Welcome owner fails closed and
+    /// returns false; the panel is never promoted to an application-modal UI.
+    @discardableResult
+    func openFolderFromWelcomeOwner(
+        maximumAttempts: Int = 40,
+        waitForNextAttempt: (@MainActor () async -> Void)? = nil,
+        presentPanel: (@MainActor (DialogPresentationContext) async -> URL?)? = nil
+    ) async -> Bool {
+        showWelcome()
+        guard let window = await awaitVisibleWelcomeWindow(
+            maximumAttempts: maximumAttempts,
+            waitForNextAttempt: waitForNextAttempt
+        ) else {
+            return false
+        }
+        let context = DialogPresenter.context(for: window)
+        let selectedURL: URL?
+        if let presentPanel {
+            selectedURL = await presentPanel(context)
+        } else {
+            selectedURL = await registry.openProjectViaPanel(context: context)
+        }
+        guard let selectedURL else { return false }
+        openProjectWindow?(selectedURL)
+        return true
+    }
+
+    private func visibleWelcomeWindow() -> NSWindow? {
+        if let welcomeWindow,
+           welcomeWindow.isVisible,
+           !welcomeWindow.isMiniaturized {
+            return welcomeWindow
+        }
+        guard let liveWindow = NSApp.windows.first(where: {
+            $0.identifier?.rawValue == "welcome"
+                && $0.contentView != nil
+                && $0.isVisible
+                && !$0.isMiniaturized
+        }) else {
+            return nil
+        }
+        welcomeWindow = liveWindow
+        return liveWindow
+    }
+
     /// Guarantees the Welcome window is visible, creating it via AppKit if needed.
     private func ensureWelcomeVisible() {
         // Check if any welcome window is already on screen
         if let window = welcomeWindow, window.isVisible {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
             window.makeKeyAndOrderFront(nil)
             NSApp.activate()
             return
@@ -505,6 +874,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             $0.identifier?.rawValue == "welcome" && $0.contentView != nil
         }) {
             welcomeWindow = liveWindow
+            if liveWindow.isMiniaturized {
+                liveWindow.deminiaturize(nil)
+            }
             liveWindow.makeKeyAndOrderFront(nil)
             NSApp.activate()
             return
@@ -512,6 +884,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Nothing worked — create from scratch via AppKit
         createWelcomeWindowViaAppKit()
+    }
+
+    /// Makes one app-owned window suitable for a native Quit sheet. A
+    /// miniaturized window is visible according to AppKit but cannot provide
+    /// discoverable sheet UI from the Dock, so restore it first.
+    func prepareApplicationDialogOwner(
+        windows suppliedWindows: [NSWindow]? = nil
+    ) {
+        let windows = suppliedWindows ?? NSApp.windows
+        if NSApp.isHidden {
+            NSApp.unhide(nil)
+        }
+        if windows.contains(where: {
+            DialogPresenter.isEligibleApplicationOwner($0)
+        }) {
+            return
+        }
+        if let miniaturized = windows.first(where: {
+            $0.isVisible && $0.isMiniaturized
+        }) {
+            miniaturized.deminiaturize(nil)
+            miniaturized.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+        ensureWelcomeVisible()
     }
 
     /// Creates the Welcome window via AppKit when SwiftUI's scene lifecycle
@@ -634,8 +1032,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             MainActor.assumeIsolated {
                 guard NSApp.windows.allSatisfy({ !$0.isVisible }) else { return }
                 guard let self else { return }
-                if let url = self.registry.openProjectViaPanel() {
-                    self.openProjectWindow?(url)
+                Task { @MainActor [weak self] in
+                    _ = await self?.openFolderFromWelcomeOwner()
                 }
             }
         }
@@ -866,44 +1264,195 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        isTerminating = true
+        beginApplicationTermination { shouldTerminate in
+            sender.reply(toApplicationShouldTerminate: shouldTerminate)
+        }
+    }
 
-        // Check for unsaved files
-        for (_, pm) in registry.openProjects {
-            let dirty = pm.allDirtyTabs
+    /// Starts the asynchronous AppKit termination handshake. Kept as a
+    /// separate, internal seam so the `.terminateLater`/single-reply contract
+    /// can be tested without constructing a second `NSApplication` singleton.
+    func beginApplicationTermination(
+        reply: @escaping @MainActor (Bool) -> Void
+    ) -> NSApplication.TerminateReply {
+        if isTerminating { return .terminateNow }
+        guard terminationDecisionTask == nil else { return .terminateLater }
+        terminationDecisionTask = Task { @MainActor [weak self] in
+            guard let self else {
+                reply(false)
+                return
+            }
+            let shouldTerminate = await confirmApplicationTermination()
+            terminationDecisionTask = nil
+            isTerminating = shouldTerminate
+            reply(shouldTerminate)
+        }
+        return .terminateLater
+    }
+
+    /// Runs all quit decisions asynchronously on their owning project
+    /// windows. Background projects fall back to one captured visible
+    /// application window (normally Welcome); with no live owner, native
+    /// presentation returns `.abort` and cancels Quit. Save failures also
+    /// cancel Quit.
+    func confirmApplicationTermination(
+        presentAlert: TerminationAlertPresenter? = nil,
+        saveAll: TerminationSaveAll? = nil,
+        applicationContext: DialogPresentationContext? = nil
+    ) async -> Bool {
+        let projects = registry.openProjects
+            .sorted { $0.key.path.localizedStandardCompare($1.key.path) == .orderedAscending }
+            .map(\.value)
+        let needsNativeDecision = presentAlert == nil
+            && projects.contains {
+                !$0.allDirtyTabs.isEmpty || $0.terminal.hasActiveProcesses
+            }
+        if applicationContext == nil, needsNativeDecision {
+            // Quit can arrive from the Dock while Pine is hidden or every
+            // project is miniaturized. Restore/create a discoverable owner
+            // before capturing the fallback context.
+            prepareApplicationDialogOwner()
+        }
+        let fallbackContext = applicationContext
+            ?? DialogPresenter.forApplicationWindow()
+        var discardAuthorizations: [
+            ObjectIdentifier: DirtyEditorContentAuthorization
+        ] = [:]
+        var authorizedTerminalProcesses: [
+            ObjectIdentifier: Set<TerminalForegroundProcessIdentity>
+        ] = [:]
+
+        for projectManager in projects {
+            guard registry.openProjects.values.contains(where: {
+                $0 === projectManager
+            }) else {
+                continue
+            }
+            let projectContext = DialogPresenter.forProject(projectManager)
+            let hasEligibleProjectOwner = projectContext.nsWindow.map {
+                DialogPresenter.isEligibleApplicationOwner($0)
+            } ?? false
+            let context = hasEligibleProjectOwner
+                ? projectContext
+                : fallbackContext
+            let dirty = projectManager.allDirtyTabs
             guard !dirty.isEmpty else { continue }
 
             let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
-            let response = AlertTemplate.unsavedChangesBulk.runModal(
-                messageText: Strings.unsavedChangesTitle,
-                informativeText: Strings.unsavedChangesListMessage(fileList)
-            )
+            let message = Strings.unsavedChangesListMessage(fileList)
+            let response = if let presentAlert {
+                await presentAlert(
+                    .unsavedChangesBulk,
+                    context,
+                    Strings.unsavedChangesTitle,
+                    message
+                )
+            } else {
+                await AlertTemplate.unsavedChangesBulk.runSheet(
+                    on: context,
+                    messageText: Strings.unsavedChangesTitle,
+                    informativeText: message
+                )
+            }
             switch response {
             case .alertFirstButtonReturn:
-                guard pm.saveAllPaneTabs() else {
-                    isTerminating = false
-                    return .terminateCancel
+                let didSave = if let saveAll {
+                    await saveAll(projectManager, context)
+                } else {
+                    await projectManager.saveAllPaneTabs(context: context)
+                }
+                guard didSave else {
+                    return false
                 }
             case .alertSecondButtonReturn:
+                discardAuthorizations[ObjectIdentifier(projectManager)] =
+                    DirtyEditorContentAuthorization(tabs: dirty)
                 continue
             default:
-                isTerminating = false
-                return .terminateCancel
+                return false
             }
         }
 
-        // Check for active terminal processes
-        let hasActiveProcesses = registry.openProjects.values.contains { $0.terminal.hasActiveProcesses }
-        if hasActiveProcesses {
-            if AlertTemplate.terminalActiveProcessWarning.runModal(
-                messageText: Strings.terminalActiveProcessWarningTitle,
-                informativeText: Strings.terminalActiveProcessWarningMessage
-            ) != .alertFirstButtonReturn {
-                isTerminating = false
-                return .terminateCancel
+        for projectManager in projects where projectManager.terminal.hasActiveProcesses {
+            guard registry.openProjects.values.contains(where: {
+                $0 === projectManager
+            }) else {
+                continue
+            }
+            let activeTerminalProcesses =
+                TabCloseHelper.foregroundProcessSnapshot(
+                    for: projectManager.terminal.allTerminalTabs
+            )
+            let projectContext = DialogPresenter.forProject(projectManager)
+            let hasEligibleProjectOwner = projectContext.nsWindow.map {
+                DialogPresenter.isEligibleApplicationOwner($0)
+            } ?? false
+            let context = hasEligibleProjectOwner
+                ? projectContext
+                : fallbackContext
+            let response = if let presentAlert {
+                await presentAlert(
+                    .terminalActiveProcessWarning,
+                    context,
+                    Strings.terminalActiveProcessWarningTitle,
+                    Strings.terminalActiveProcessWarningMessage
+                )
+            } else {
+                await AlertTemplate.terminalActiveProcessWarning.runSheet(
+                    on: context,
+                    messageText: Strings.terminalActiveProcessWarningTitle,
+                    informativeText: Strings.terminalActiveProcessWarningMessage
+                )
+            }
+            guard response == .alertFirstButtonReturn else {
+                return false
+            }
+            authorizedTerminalProcesses[ObjectIdentifier(projectManager)] =
+                activeTerminalProcesses
+        }
+
+        // Other project windows stay interactive while each sheet is open.
+        // Revalidate every destructive authorization immediately before
+        // committing Quit so no new buffer edit or foreground process is
+        // silently covered by an earlier answer.
+        for projectManager in registry.openProjects.values {
+            let identifier = ObjectIdentifier(projectManager)
+            let currentDirtyTabs = projectManager.allDirtyTabs
+            if let authorization = discardAuthorizations[identifier] {
+                guard authorization.covers(currentDirtyTabs) else {
+                    return false
+                }
+            } else if !currentDirtyTabs.isEmpty {
+                return false
+            }
+
+            let allowedTerminalProcesses =
+                authorizedTerminalProcesses[identifier] ?? []
+            let currentTerminalProcesses =
+                TabCloseHelper.foregroundProcessSnapshot(
+                    for: projectManager.terminal.allTerminalTabs
+                )
+            guard TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+                currentTerminalProcesses,
+                by: allowedTerminalProcesses
+            ) else {
+                return false
             }
         }
 
-        return .terminateNow
+        // Two-phase destructive commit: no project is mutated until every
+        // project and terminal authorization above has passed.
+        for projectManager in registry.openProjects.values {
+            let identifier = ObjectIdentifier(projectManager)
+            if let authorization = discardAuthorizations[identifier],
+               !projectManager.commitDiscard(
+                   authorization,
+                   postReloadNotifications: false
+               ) {
+                return false
+            }
+        }
+
+        return true
     }
 }

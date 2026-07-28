@@ -55,10 +55,11 @@ final class SidebarEditState {
         in parentURL: URL,
         isDirectory: Bool,
         workspace: WorkspaceManager,
-        undoManager: UndoManager? = nil
+        undoManager: UndoManager? = nil,
+        context: DialogPresentationContext = .unscoped
     ) {
         if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(parentURL, projectRoot: root) {
-            Self.showFileError(Strings.operationOutsideProject)
+            Self.showFileError(Strings.operationOutsideProject, context: context)
             return
         }
 
@@ -72,14 +73,14 @@ final class SidebarEditState {
             if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
             } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
-                Self.showFileError(Strings.fileCreateError(name))
+                Self.showFileError(Strings.fileCreateError(name), context: context)
                 return
             }
             workspace.refreshFileTree()
             startNewItem(url: newURL)
             scrollToNodeID = newURL
         } catch {
-            Self.showFileError(error.localizedDescription)
+            Self.showFileError(error.localizedDescription, context: context)
         }
     }
 
@@ -88,10 +89,11 @@ final class SidebarEditState {
         at url: URL,
         isDirectory: Bool,
         workspace: WorkspaceManager,
-        tabManager: TabManager
+        tabManager: TabManager,
+        context: DialogPresentationContext = .unscoped
     ) {
         if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(url, projectRoot: root) {
-            Self.showFileError(Strings.operationOutsideProject)
+            Self.showFileError(Strings.operationOutsideProject, context: context)
             return
         }
 
@@ -110,7 +112,7 @@ final class SidebarEditState {
                 tabManager.openTab(url: copyURL)
             }
         } catch {
-            Self.showFileError(error.localizedDescription)
+            Self.showFileError(error.localizedDescription, context: context)
         }
     }
 
@@ -125,11 +127,17 @@ final class SidebarEditState {
     }
 
     /// Shows an AppKit error alert for file operations.
-    static func showFileError(_ message: String) {
-        AlertTemplate.fileOperationErrorWarning.runModal(
-            messageText: Strings.fileOperationErrorTitle,
-            informativeText: message
-        )
+    static func showFileError(
+        _ message: String,
+        context: DialogPresentationContext = .unscoped
+    ) {
+        Task { @MainActor in
+            _ = await AlertTemplate.fileOperationErrorWarning.runSheet(
+                on: context,
+                messageText: Strings.fileOperationErrorTitle,
+                informativeText: message
+            )
+        }
     }
 }
 
@@ -565,6 +573,7 @@ struct SidebarView: View {
     let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
     @Environment(WorkspaceManager.self) private var workspace
     @Environment(PaneManager.self) private var paneManager
+    @Environment(ProjectManager.self) private var projectManager
     @Environment(ProjectRegistry.self) private var registry
     @Environment(\.openWindow) var openWindow
     @Environment(\.undoManager) private var undoManager
@@ -717,7 +726,8 @@ struct SidebarView: View {
                                     in: rootURL,
                                     isDirectory: false,
                                     workspace: workspace,
-                                    undoManager: undoManager
+                                    undoManager: undoManager,
+                                    context: DialogPresenter.forProject(projectManager)
                                 )
                             } label: {
                                 Label(Strings.contextNewFile, systemImage: MenuIcons.newFile)
@@ -729,7 +739,8 @@ struct SidebarView: View {
                                     in: rootURL,
                                     isDirectory: true,
                                     workspace: workspace,
-                                    undoManager: undoManager
+                                    undoManager: undoManager,
+                                    context: DialogPresenter.forProject(projectManager)
                                 )
                             } label: {
                                 Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
@@ -806,8 +817,11 @@ struct SidebarView: View {
 
     /// Opens a new project via folder picker in a new window.
     private func openNewProject() {
-        guard let url = registry.openProjectViaPanel() else { return }
-        openWindow(value: url)
+        let context = DialogPresenter.forProject(projectManager)
+        Task { @MainActor in
+            guard let url = await registry.openProjectViaPanel(context: context) else { return }
+            openWindow(value: url)
+        }
     }
 
     /// A sidebar action supersedes any older destination-focus request. The

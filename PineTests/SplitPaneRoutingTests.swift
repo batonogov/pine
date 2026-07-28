@@ -487,7 +487,7 @@ struct SplitPaneRoutingTests {
     }
 
     @Test("closeTabWithConfirmation closes only the active pane's tab")
-    func closeTabRoutesToActivePaneOnly() throws {
+    func closeTabRoutesToActivePaneOnly() async throws {
         let f = try makeSplitWithTwoPanes()
         let pm = f.pm
         let firstTM = f.firstTM
@@ -498,7 +498,11 @@ struct SplitPaneRoutingTests {
             return
         }
         let provider = GitStatusProvider()
-        let closed = TabCloseHelper.closeTab(activeTab, in: pm.activeTabManager, gitProvider: provider)
+        let closed = await TabCloseHelper.closeTab(
+            activeTab,
+            in: pm.activeTabManager,
+            gitProvider: provider
+        )
 
         #expect(closed)
         #expect(secondTM.tabs.isEmpty, "the active pane's tab must be closed")

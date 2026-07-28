@@ -35,14 +35,32 @@ struct KeyBindingsTasksSettingsView: View {
                 title: Strings.settingsKeyBindingsKeybindings,
                 fileURL: UserConfigurationPaths.userKeybindingsFile,
                 count: ExtensibilityManager.shared.keybindings.count,
-                openAction: { Task { await UserConfigurationEditor.openKeybindings() } }
+                openAction: {
+                    let presenter = AppKitUserConfigurationAlertPresenter(
+                        context: DialogPresenter.forKeyWindow()
+                    )
+                    Task {
+                        await UserConfigurationEditor.openKeybindings(
+                            alertPresenter: presenter
+                        )
+                    }
+                }
             )
 
             configSection(
                 title: Strings.settingsKeyBindingsTasks,
                 fileURL: UserConfigurationPaths.userTasksFile,
                 count: ExtensibilityManager.shared.tasks.count,
-                openAction: { Task { await UserConfigurationEditor.openTasks() } }
+                openAction: {
+                    let presenter = AppKitUserConfigurationAlertPresenter(
+                        context: DialogPresenter.forKeyWindow()
+                    )
+                    Task {
+                        await UserConfigurationEditor.openTasks(
+                            alertPresenter: presenter
+                        )
+                    }
+                }
             )
 
             effectiveBindings

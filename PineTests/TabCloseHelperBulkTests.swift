@@ -121,6 +121,57 @@ struct TabCloseHelperBulkTests {
         #expect(fixture.tabManager.tabs.first?.isDirty == true)
     }
 
+    @Test("Discard never covers a tab dirtied while the sheet is visible")
+    func staleDiscardPreservesNewDirtyTab() async {
+        guard let fixture = makeDirtyPane() else { return }
+        let newlyDirty = EditorTab(
+            url: URL(
+                fileURLWithPath: "/tmp/pine-new-dirty-\(UUID().uuidString).swift"
+            ),
+            content: "clean",
+            savedContent: "clean"
+        )
+        fixture.tabManager.tabs.append(newlyDirty)
+
+        let didClose = await TabCloseHelper.closeAllTabs(
+            in: fixture.tabManager,
+            gitProvider: GitStatusProvider(),
+            presentAlert: {
+                fixture.tabManager.tabs[1].content = "changed during sheet"
+                return .alertSecondButtonReturn
+            }
+        )
+
+        #expect(!didClose)
+        #expect(fixture.tabManager.tabs.count == 2)
+        #expect(fixture.tabManager.tabs[0].isDirty)
+        #expect(fixture.tabManager.tabs[1].isDirty)
+    }
+
+    @Test("Close All preserves a clean tab created while the sheet is visible")
+    func closeAllPreservesNewCleanTab() async {
+        guard let fixture = makeDirtyPane() else { return }
+        let newTab = EditorTab(
+            url: URL(
+                fileURLWithPath: "/tmp/pine-new-clean-\(UUID().uuidString).swift"
+            ),
+            content: "clean",
+            savedContent: "clean"
+        )
+
+        let didClose = await TabCloseHelper.closeAllTabs(
+            in: fixture.tabManager,
+            gitProvider: GitStatusProvider(),
+            presentAlert: {
+                fixture.tabManager.tabs.append(newTab)
+                return .alertSecondButtonReturn
+            }
+        )
+
+        #expect(didClose)
+        #expect(fixture.tabManager.tabs.map(\.id) == [newTab.id])
+    }
+
     @Test("Save failure aborts close-all and keeps every tab accessible")
     func saveFailurePreservesPaneAndDirtyTabs() async {
         guard let fixture = makeDirtyPane() else { return }
@@ -153,6 +204,39 @@ struct TabCloseHelperBulkTests {
         #expect(fixture.tabManager.tabs.count == 2)
         #expect(fixture.tabManager.tabs[0].isDirty == false)
         #expect(fixture.tabManager.tabs[1].isDirty == true)
+    }
+
+    @Test("Save All rejects a target edited again during a later save")
+    func saveAllRejectsRedirtiedEarlierTarget() async {
+        guard let fixture = makeDirtyPane() else { return }
+        let secondTab = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/pine-bulk-close-\(UUID().uuidString).swift"),
+            content: "second modified",
+            savedContent: "second original"
+        )
+        fixture.tabManager.tabs.append(secondTab)
+        var saveAttempts = 0
+
+        let didClose = await TabCloseHelper.closeAllTabs(
+            in: fixture.tabManager,
+            gitProvider: GitStatusProvider(),
+            presentAlert: { .alertFirstButtonReturn },
+            saveTab: { index in
+                saveAttempts += 1
+                let savedContent = fixture.tabManager.tabs[index].content
+                fixture.tabManager.tabs[index].savedContent = savedContent
+                if saveAttempts == 2 {
+                    fixture.tabManager.tabs[0].content = "edited after first save"
+                }
+                return true
+            }
+        )
+
+        #expect(!didClose)
+        #expect(saveAttempts == 2)
+        #expect(fixture.tabManager.tabs.count == 2)
+        #expect(fixture.tabManager.tabs[0].isDirty)
+        #expect(!fixture.tabManager.tabs[1].isDirty)
     }
 
     @Test("Clean close-all skips the alert and reports completion")

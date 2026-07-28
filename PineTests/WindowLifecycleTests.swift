@@ -12,6 +12,11 @@ import Testing
 @Suite("Window Lifecycle Tests")
 @MainActor
 struct WindowLifecycleTests {
+    private func settle() async {
+        for _ in 0..<8 {
+            await Task.yield()
+        }
+    }
 
     private func makeTempDirectory() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
@@ -131,40 +136,210 @@ struct WindowLifecycleTests {
         #expect(session2?.existingFileURLs.count == 1)
     }
 
-    // MARK: - windowShouldClose (CloseDelegate)
-
-    @Test func windowShouldCloseReturnsTrueWhenNoTabs() throws {
-        let dir = try makeTempDirectory()
-        defer { cleanup(dir) }
-
-        let registry = ProjectRegistry()
-        let pm = try #require(registry.projectManager(for: dir))
-        let delegate = AppDelegate()
-        let window = NSWindow()
-
-        let closeDelegate = Pine.CloseDelegate(
-            projectManager: pm,
-            registry: registry,
-            projectURL: dir,
-            appDelegate: delegate,
-            original: nil
-        )
-
-        // No tabs open — window should close
-        #expect(closeDelegate.windowShouldClose(window))
-    }
-
-    @Test func windowShouldCloseReturnsTrueWithCleanTabs() throws {
+    @Test func asyncTerminationFailsClosedWhenSaveFails() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
 
         let registry = ProjectRegistry()
-        let pm = try #require(registry.projectManager(for: dir))
-        pm.primaryTabManager.openTab(url: file)
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        project.primaryTabManager.updateContent("// dirty")
 
         let delegate = AppDelegate()
+        delegate.registry = registry
+        var presentedTemplates: [AlertTemplate] = []
+        var saveAttempts = 0
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                return .alertFirstButtonReturn
+            },
+            saveAll: { _, _ in
+                saveAttempts += 1
+                return false
+            }
+        )
+
+        #expect(!result)
+        #expect(presentedTemplates == [.unsavedChangesBulk])
+        #expect(saveAttempts == 1)
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func asyncTerminationCancelNeverAttemptsSave() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        project.primaryTabManager.updateContent("// dirty")
+
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var saveAttempts = 0
+        let fallbackWindow = NSWindow()
+        let fallbackContext = DialogPresentationContext(window: fallbackWindow)
+        defer { DialogPresenter.ownerDidClose(fallbackWindow) }
+        var presentedOwner: NSWindow?
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { _, context, _, _ in
+                presentedOwner = context.nsWindow
+                return .alertThirdButtonReturn
+            },
+            saveAll: { _, _ in
+                saveAttempts += 1
+                return true
+            },
+            applicationContext: fallbackContext
+        )
+
+        #expect(!result)
+        #expect(saveAttempts == 0)
+        #expect(project.hasUnsavedChanges)
+        #expect(presentedOwner === fallbackWindow)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func asyncTerminationRejectsStaleDiscardAuthorization() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        project.primaryTabManager.updateContent("// first dirty state")
+
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .unsavedChangesBulk)
+                project.primaryTabManager.updateContent(
+                    "// changed while quit sheet was visible"
+                )
+                return .alertSecondButtonReturn
+            }
+        )
+
+        #expect(!result)
+        #expect(project.hasUnsavedChanges)
+        #expect(project.primaryTabManager.activeTab?.content ==
+                "// changed while quit sheet was visible")
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func quitDiscardCommitsCleanStateAndDeletesRecovery() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        project.primaryTabManager.updateContent("// discarded")
+        project.recoveryManager?.snapshotDirtyTabs(project.allTabs)
+        #expect(project.recoveryManager?.pendingRecoveryEntries().isEmpty == false)
+        let delegate = AppDelegate()
+        delegate.registry = registry
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .unsavedChangesBulk)
+                return .alertSecondButtonReturn
+            }
+        )
+
+        #expect(result)
+        #expect(!project.hasUnsavedChanges)
+        #expect(project.primaryTabManager.activeTab?.content == "// test.swift")
+        #expect(project.recoveryManager?.pendingRecoveryEntries().isEmpty == true)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func laterQuitCancelDoesNotCommitEarlierDiscard() async throws {
+        let firstDirectory = try makeTempDirectory()
+        let secondDirectory = try makeTempDirectory()
+        defer {
+            cleanup(firstDirectory)
+            cleanup(secondDirectory)
+        }
+        let firstFile = try makeTempFile(in: firstDirectory, name: "first.swift")
+        let secondFile = try makeTempFile(in: secondDirectory, name: "second.swift")
+        let registry = ProjectRegistry()
+        let firstProject = try #require(
+            registry.projectManager(for: firstDirectory)
+        )
+        let secondProject = try #require(
+            registry.projectManager(for: secondDirectory)
+        )
+        firstProject.primaryTabManager.openTab(url: firstFile)
+        secondProject.primaryTabManager.openTab(url: secondFile)
+        firstProject.primaryTabManager.updateContent("// first dirty")
+        secondProject.primaryTabManager.updateContent("// second dirty")
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var promptCount = 0
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .unsavedChangesBulk)
+                promptCount += 1
+                return promptCount == 1
+                    ? .alertSecondButtonReturn
+                    : .alertThirdButtonReturn
+            }
+        )
+
+        #expect(!result)
+        #expect(promptCount == 2)
+        #expect(firstProject.hasUnsavedChanges)
+        #expect(firstProject.primaryTabManager.activeTab?.content == "// first dirty")
+        #expect(secondProject.hasUnsavedChanges)
+        #expect(secondProject.primaryTabManager.activeTab?.content == "// second dirty")
+        await firstProject.workspace.waitForLoadingComplete()
+        await secondProject.workspace.waitForLoadingComplete()
+    }
+
+    @Test func terminationHandshakeDefersAndRepliesExactlyOnce() async {
+        let delegate = AppDelegate()
+        var replies: [Bool] = []
+
+        let initialReply = delegate.beginApplicationTermination {
+            replies.append($0)
+        }
+        #expect(initialReply == .terminateLater)
+        for _ in 0..<50 {
+            if !replies.isEmpty { break }
+            await Task.yield()
+        }
+
+        #expect(replies == [true])
+        #expect(delegate.isTerminating)
+        let committedReply = delegate.beginApplicationTermination { _ in
+            Issue.record("Committed termination must not reply a second time")
+        }
+        #expect(committedReply == .terminateNow)
+        await settle()
+        #expect(replies == [true])
+    }
+
+    // MARK: - windowShouldClose (CloseDelegate)
+
+    @Test func windowShouldCloseDefersWhenNoTabs() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let registry = ProjectRegistry()
+        let pm = ProjectManager()
+        let delegate = AppDelegate()
         let window = NSWindow()
+        defer { DialogPresenter.ownerDidClose(window) }
 
         let closeDelegate = Pine.CloseDelegate(
             projectManager: pm,
@@ -174,25 +349,53 @@ struct WindowLifecycleTests {
             original: nil
         )
 
-        // Clean tabs — window should close (not close tab one by one)
-        #expect(closeDelegate.windowShouldClose(window))
-        // Tabs should NOT have been closed individually
-        #expect(pm.primaryTabManager.tabs.count == 1)
+        // Every close is approved asynchronously, then re-entered through
+        // performClose so no delegate callback blocks on modal UI.
+        #expect(!closeDelegate.windowShouldClose(window))
+        await settle()
     }
 
-    @Test func windowShouldCloseDoesNotCloseIndividualCleanTab() throws {
+    @Test func windowShouldCloseDefersWithCleanTabs() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+
+        let registry = ProjectRegistry()
+        let pm = ProjectManager()
+        pm.primaryTabManager.openTab(url: file)
+
+        let delegate = AppDelegate()
+        let window = NSWindow()
+        defer { DialogPresenter.ownerDidClose(window) }
+
+        let closeDelegate = Pine.CloseDelegate(
+            projectManager: pm,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: delegate,
+            original: nil
+        )
+
+        #expect(!closeDelegate.windowShouldClose(window))
+        // Tabs should NOT have been closed individually
+        #expect(pm.primaryTabManager.tabs.count == 1)
+        await settle()
+    }
+
+    @Test func windowShouldCloseDoesNotCloseIndividualCleanTab() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file1 = try makeTempFile(in: dir, name: "a.swift")
         let file2 = try makeTempFile(in: dir, name: "b.swift")
 
         let registry = ProjectRegistry()
-        let pm = try #require(registry.projectManager(for: dir))
+        let pm = ProjectManager()
         pm.primaryTabManager.openTab(url: file1)
         pm.primaryTabManager.openTab(url: file2)
 
         let delegate = AppDelegate()
         let window = NSWindow()
+        defer { DialogPresenter.ownerDidClose(window) }
 
         let closeDelegate = Pine.CloseDelegate(
             projectManager: pm,
@@ -204,8 +407,9 @@ struct WindowLifecycleTests {
 
         // With multiple clean tabs, should close window (return true)
         // and NOT close tabs one by one
-        #expect(closeDelegate.windowShouldClose(window))
+        #expect(!closeDelegate.windowShouldClose(window))
         #expect(pm.primaryTabManager.tabs.count == 2)
+        await settle()
     }
 
     // MARK: - showWelcome
@@ -220,5 +424,69 @@ struct WindowLifecycleTests {
         delegate.showWelcome()
 
         #expect(openedWindowID == "welcome")
+    }
+
+    @Test func openFolderWaitsForDelayedWelcomeCapture() async {
+        let delegate = AppDelegate()
+        delegate.openNamedWindow = { _ in }
+        var attempts = 0
+        var capturedWindow: NSWindow?
+        var presentedOwner: NSWindow?
+        var openedURL: URL?
+        let selectedURL = URL(fileURLWithPath: "/tmp/pine-delayed-welcome")
+        delegate.openProjectWindow = { openedURL = $0 }
+
+        let didOpen = await delegate.openFolderFromWelcomeOwner(
+            maximumAttempts: 6,
+            waitForNextAttempt: {
+                attempts += 1
+                if attempts == 3 {
+                    let window = NSWindow()
+                    window.identifier = .init("welcome")
+                    window.orderFront(nil)
+                    capturedWindow = window
+                    delegate.welcomeWindow = window
+                }
+                await Task.yield()
+            },
+            presentPanel: { context in
+                presentedOwner = context.nsWindow
+                return selectedURL
+            }
+        )
+        defer {
+            if let capturedWindow {
+                DialogPresenter.ownerDidClose(capturedWindow)
+                capturedWindow.orderOut(nil)
+            }
+        }
+
+        #expect(didOpen)
+        #expect(attempts == 3)
+        #expect(presentedOwner === capturedWindow)
+        #expect(openedURL == selectedURL)
+    }
+
+    @Test func openFolderFailsClosedWhenWelcomeOwnerNeverAppears() async {
+        let delegate = AppDelegate()
+        delegate.openNamedWindow = { _ in }
+        var waitCount = 0
+        var panelCount = 0
+
+        let didOpen = await delegate.openFolderFromWelcomeOwner(
+            maximumAttempts: 3,
+            waitForNextAttempt: {
+                waitCount += 1
+                await Task.yield()
+            },
+            presentPanel: { _ in
+                panelCount += 1
+                return URL(fileURLWithPath: "/tmp/should-not-open")
+            }
+        )
+
+        #expect(!didOpen)
+        #expect(waitCount == 3)
+        #expect(panelCount == 0)
     }
 }

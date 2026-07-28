@@ -80,7 +80,9 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     /// Opens a project via folder picker. Returns the project URL if opened.
     @discardableResult
-    func openProjectViaPanel() -> URL? {
+    func openProjectViaPanel(
+        context: DialogPresentationContext
+    ) async -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -88,7 +90,8 @@ final class ProjectRegistry: LSPSettingsObserver {
         panel.message = Strings.openPanelMessage
         panel.prompt = Strings.openPanelPrompt
 
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        guard await panel.runSheet(on: context) == .OK,
+              let url = panel.url else { return nil }
         let canonical = url.resolvingSymlinksInPath()
         guard projectManager(for: canonical) != nil else { return nil }
         return canonical

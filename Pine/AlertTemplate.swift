@@ -2,21 +2,18 @@
 //  AlertTemplate.swift
 //  Pine
 //
-//  A single enum + factory that replaces all direct NSAlert() constructions
-//  across the codebase. Each case encodes button labels, alert style,
-//  destructive-button position, and button roles so every call site is one
-//  line.
+//  Shared templates for recurring Pine alerts. Each case encodes button
+//  labels, style, destructive-button position, and button roles so call
+//  sites stay consistent.
 //
-//  Two presentation paths are supported (issue #1241):
-//    • `runSheet(on:)`  — async, attaches the alert as a sheet to an
-//      NSWindow. Only blocks that window; other project windows stay live.
-//    • `runModal(…)`    — synchronous fallback for contexts without a
-//      window (headless tests, background dispatch).
+//  Alerts are presented only as queued, window-owned sheets. A missing or
+//  closed owner returns `.abort`; Pine never falls back to application-modal
+//  UI that can block unrelated project windows.
 //
 
 import AppKit
 
-/// Templates for all NSAlert dialogs used in Pine.
+/// Templates for recurring `NSAlert` dialogs used in Pine.
 ///
 /// Usage (window-scoped sheet, preferred):
 /// ```swift
@@ -27,14 +24,7 @@ import AppKit
 /// )
 /// ```
 ///
-/// Usage (application-modal fallback):
-/// ```swift
-/// let response = AlertTemplate.unsavedChangesSingle.runModal(
-///     messageText: Strings.unsavedChangesTitle,
-///     informativeText: Strings.unsavedChangesMessage
-/// )
-/// ```
-enum AlertTemplate: Sendable {
+enum AlertTemplate: Sendable, Equatable {
     // MARK: - Unsaved changes
 
     /// Save / Don't Save / Cancel  — single file close confirmation.
@@ -80,10 +70,6 @@ enum AlertTemplate: Sendable {
     /// Revert All / Cancel  — confirm reverting all changes in a file.
     case revertAllConfirmation
 
-    // MARK: - CLI Installer
-
-    /// OK only, `.informational` style  — CLI install/uninstall notification.
-    case cliInstallerInfo
 }
 
 // MARK: - Factory
@@ -99,7 +85,7 @@ extension AlertTemplate {
     /// - Parameters:
     ///   - messageText: The primary message (bold title).
     ///   - informativeText: Optional secondary message. Pass `nil` to omit.
-    /// - Returns: A configured `NSAlert` ready for sheet or modal presentation.
+    /// - Returns: A configured `NSAlert` ready for queued sheet presentation.
     @MainActor
     func makeAlert(messageText: String, informativeText: String? = nil) -> NSAlert {
         let alert = NSAlert()
@@ -110,45 +96,48 @@ extension AlertTemplate {
         alert.alertStyle = style
 
         let roles = buttonRoles
+        var buttons: [NSButton] = []
         for (index, buttonTitle) in buttonTitles.enumerated() {
             let role = roles[index]
             let button = alert.addButton(withTitle: buttonTitle)
-            switch role {
-            case .destructive:
+            // `NSAlert` implicitly assigns Return to its first button. Clear
+            // every implicit equivalent first; the semantic roles below are
+            // the only keyboard authority.
+            button.keyEquivalent = ""
+            if role.contains(.destructive) {
                 button.hasDestructiveAction = true
-            case .cancel:
-                button.keyEquivalent = "\u{1b}" // Escape
-            case .default:
-                break
             }
+            if role.contains(.cancel) {
+                button.keyEquivalent = "\u{1b}" // Escape
+            }
+            buttons.append(button)
+        }
+
+        let defaultIndices = roles.indices.filter {
+            roles[$0].contains(.default)
+        }
+        assert(
+            defaultIndices.count == 1,
+            "Every alert template must declare exactly one default button"
+        )
+        if let defaultIndex = defaultIndices.first,
+           buttons.indices.contains(defaultIndex),
+           let defaultCell = buttons[defaultIndex].cell as? NSButtonCell {
+            // `defaultButtonCell` gives Return/Enter native default-button
+            // behavior without stealing Escape from a safe button that is
+            // deliberately both `.default` and `.cancel`.
+            alert.window.defaultButtonCell = defaultCell
         }
 
         return alert
-    }
-
-    /// Creates and runs a modal alert for this template.
-    ///
-    /// Application-modal fallback used when no owning window is available
-    /// (headless tests, background dispatch). Prefer ``runSheet(on:)``
-    /// whenever a project window can be resolved.
-    ///
-    /// - Parameters:
-    ///   - messageText: The primary message (bold title).
-    ///   - informativeText: Optional secondary message.
-    /// - Returns: The modal response from the alert.
-    @discardableResult
-    @MainActor
-    func runModal(messageText: String, informativeText: String? = nil) -> NSApplication.ModalResponse {
-        makeAlert(messageText: messageText, informativeText: informativeText).runModal()
     }
 
     /// Presents this alert as a sheet attached to the window resolved from
     /// `context`. The sheet blocks only that window — other project windows
     /// remain fully interactive (issue #1241).
     ///
-    /// When `context` has no attached window (`.unscoped`), falls back to
-    /// application-modal `runModal()` so behavior is preserved in headless
-    /// contexts (tests, background dispatch without a window).
+    /// When `context` has no live owner, the request fails closed with
+    /// `.abort` and no detached dialog is shown.
     ///
     /// Escape and ⌘-. cancel the sheet, resolving to the cancel-button
     /// response (`.alertThirdButtonReturn` for three-button templates,
@@ -167,24 +156,10 @@ extension AlertTemplate {
         messageText: String,
         informativeText: String? = nil
     ) async -> NSApplication.ModalResponse {
-        let alert = makeAlert(messageText: messageText, informativeText: informativeText)
-
-        // Fall back to application-modal when no owning window is available.
-        guard let window = context.nsWindow else {
-            return alert.runModal()
-        }
-
-        // A closed window mid-flow cannot host a sheet; fall back to modal
-        // so the user still sees the alert instead of silently dropping it.
-        guard window.isVisible else {
-            return alert.runModal()
-        }
-
-        return await withCheckedContinuation { continuation in
-            alert.beginSheetModal(for: window) { response in
-                continuation.resume(returning: response)
-            }
-        }
+        await makeAlert(
+            messageText: messageText,
+            informativeText: informativeText
+        ).runSheet(on: context)
     }
 }
 
@@ -196,8 +171,6 @@ extension AlertTemplate {
         switch self {
         case .fileOperationErrorCritical:
             return .critical
-        case .cliInstallerInfo:
-            return .informational
         case .unsavedChangesSingle, .unsavedChangesBulk,
              .terminalTabCloseWarning, .terminalActiveProcessWarning,
              .externalModifyConflict, .fileDeletedSaveAs,
@@ -234,14 +207,12 @@ extension AlertTemplate {
             return [Strings.branchUncommittedChangesSwitch, Strings.dialogCancel]
         case .revertAllConfirmation:
             return [Strings.revertAllButton, Strings.dialogCancel]
-        case .cliInstallerInfo:
-            return [Strings.dialogOK]
         }
     }
 
     /// Per-button roles, parallel to ``buttonTitles``.
     ///
-    /// `.default`    — the non-destructive primary action (Save, Reload, …).
+    /// `.default`    — the Return/Enter action (Save, Keep, Cancel, …).
     /// `.cancel`     — Escape / ⌘-. target (Cancel, Keep). A single-button
     ///                 OK alert uses `.default` since there is nothing to cancel.
     /// `.destructive`— Don't Save / Discard / Quit — confirmed data loss.
@@ -250,31 +221,34 @@ extension AlertTemplate {
         case .unsavedChangesSingle, .unsavedChangesBulk:
             return [.default, .destructive, .cancel]
         case .terminalTabCloseWarning:
-            return [.destructive, .cancel]
+            return [.destructive, [.default, .cancel]]
         case .terminalActiveProcessWarning:
-            return [.destructive, .cancel]
+            return [.destructive, [.default, .cancel]]
         case .externalModifyConflict:
             // Reload discards local edits (destructive); Keep is the safe default.
-            return [.destructive, .cancel]
+            return [.destructive, [.default, .cancel]]
         case .fileDeletedSaveAs:
             return [.default, .destructive, .cancel]
-        case .fileOperationErrorCritical, .fileOperationErrorWarning, .cliInstallerInfo:
+        case .fileOperationErrorCritical, .fileOperationErrorWarning:
             return [.default]
         case .largeFileWarning:
-            return [.default, .default, .cancel]
+            return [.default, [], .cancel]
         case .branchUncommittedChanges:
-            return [.destructive, .cancel]
+            return [.destructive, [.default, .cancel]]
         case .revertAllConfirmation:
-            return [.destructive, .cancel]
+            return [.destructive, [.default, .cancel]]
         }
     }
 }
 
 // MARK: - Alert button role bridging
 
-/// Semantic role for an alert button.
-enum AlertButtonRole: Sendable, Equatable {
-    case `default`
-    case cancel
-    case destructive
+/// Semantic roles for an alert button. A safe secondary action can be both
+/// the Return default and the Escape cancellation target.
+struct AlertButtonRole: OptionSet, Sendable, Equatable {
+    let rawValue: UInt8
+
+    static let `default` = AlertButtonRole(rawValue: 1 << 0)
+    static let cancel = AlertButtonRole(rawValue: 1 << 1)
+    static let destructive = AlertButtonRole(rawValue: 1 << 2)
 }

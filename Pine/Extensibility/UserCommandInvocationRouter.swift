@@ -36,7 +36,8 @@ enum UserCommandInvocationRouter {
         case .duplicate:
             guard let projectManager else { return }
             projectManager.activeTabManager.duplicateActiveTab(
-                projectRoot: projectManager.workspace.rootURL
+                projectRoot: projectManager.workspace.rootURL,
+                context: DialogPresenter.forProject(projectManager)
             )
 
         case .toggleAutoSave:
@@ -148,19 +149,49 @@ enum UserCommandInvocationRouter {
             projectManager?.paneManager.toggleMaximizeOnActiveTerminalPane()
 
         case .editKeybindings:
+            let presentationContext = if let projectManager {
+                DialogPresenter.forProject(projectManager)
+            } else {
+                DialogPresenter.forKeyWindow()
+            }
+            let presenter = AppKitUserConfigurationAlertPresenter(
+                context: presentationContext
+            )
             Task { @MainActor in
-                await UserConfigurationEditor.openKeybindings()
+                await UserConfigurationEditor.openKeybindings(
+                    alertPresenter: presenter
+                )
             }
 
         case .editTasks:
+            let presentationContext = if let projectManager {
+                DialogPresenter.forProject(projectManager)
+            } else {
+                DialogPresenter.forKeyWindow()
+            }
+            let presenter = AppKitUserConfigurationAlertPresenter(
+                context: presentationContext
+            )
             Task { @MainActor in
-                await UserConfigurationEditor.openTasks()
+                await UserConfigurationEditor.openTasks(
+                    alertPresenter: presenter
+                )
             }
 
         case .reloadUserConfiguration:
+            let presentationContext = if let projectManager {
+                DialogPresenter.forProject(projectManager)
+            } else {
+                DialogPresenter.forKeyWindow()
+            }
+            let presenter = AppKitUserConfigurationAlertPresenter(
+                context: presentationContext
+            )
             Task { @MainActor in
                 await PineAppMenuCommands
-                    .reloadAndPresentConfigurationDiagnostics()
+                    .reloadAndPresentConfigurationDiagnostics(
+                        alertPresenter: presenter
+                    )
             }
 
         case .showProblems:
@@ -200,27 +231,25 @@ enum UserCommandInvocationRouter {
     private static func saveAs(projectManager: ProjectManager) {
         let tabManager = projectManager.activeTabManager
         guard let activeTab = tabManager.activeTab else { return }
-
-        let panel = NSSavePanel()
-        panel.title = Strings.saveAsPanelTitle
-        panel.nameFieldStringValue = activeTab.fileName
-        panel.directoryURL = activeTab.url.deletingLastPathComponent()
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        // Keep the file mutation outside the originating menu/key-event
-        // call stack to avoid the #1058 Swift exclusivity-abort family.
-        DispatchQueue.main.async {
+        let context = DialogPresenter.forProject(projectManager)
+        Task { @MainActor in
+            let panel = NSSavePanel()
+            panel.title = Strings.saveAsPanelTitle
+            panel.nameFieldStringValue = activeTab.fileName
+            panel.directoryURL = activeTab.url.deletingLastPathComponent()
+            guard await panel.runSheet(on: context) == .OK,
+                  let url = panel.url else { return }
+            guard tabManager.activeTabID == activeTab.id else { return }
             do {
                 try tabManager.saveActiveTabAs(to: url)
-                Task {
-                    await projectManager.workspace.gitProvider.refreshAsync()
-                    NotificationCenter.default.post(
-                        name: .refreshLineDiffs,
-                        object: nil
-                    )
-                }
+                await projectManager.workspace.gitProvider.refreshAsync()
+                NotificationCenter.default.post(
+                    name: .refreshLineDiffs,
+                    object: nil
+                )
             } catch {
-                AlertTemplate.fileOperationErrorCritical.runModal(
+                _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                    on: context,
                     messageText: Strings.fileOperationErrorTitle,
                     informativeText: error.localizedDescription
                 )

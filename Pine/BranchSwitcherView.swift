@@ -8,6 +8,7 @@ import SwiftUI
 struct BranchSwitcherView: View {
     var gitProvider: GitStatusProvider
     @Binding var isPresented: Bool
+    var projectManager: ProjectManager? = nil
     @State private var searchText = ""
     @State private var errorMessage = ""
 
@@ -74,14 +75,29 @@ struct BranchSwitcherView: View {
             return
         }
 
+        let context = if let projectManager {
+            DialogPresenter.forProject(projectManager)
+        } else {
+            DialogPresentationContext.unscoped
+        }
         Task { @MainActor in
+            guard context.nsWindow?.isVisible == true else { return }
             if gitProvider.hasUncommittedChanges {
-                let context = DialogPresenter.forKeyProject()
+                // A native alert cannot attach while this switcher itself is
+                // a SwiftUI sheet. Dismiss the switcher first; the per-window
+                // coordinator will start the alert after AppKit reports that
+                // the framework-owned sheet has ended.
+                isPresented = false
                 guard await AlertTemplate.branchUncommittedChanges.runSheet(
                     on: context,
                     messageText: Strings.branchUncommittedChangesTitle,
                     informativeText: Strings.branchUncommittedChangesMessage(branch)
                 ) == .alertFirstButtonReturn else { return }
+                guard context.nsWindow?.isVisible == true else { return }
+            } else {
+                // Keep checkout failures presentable as native sheets without
+                // nesting beneath the switcher's framework-owned sheet.
+                isPresented = false
             }
 
             let result = await gitProvider.checkoutBranchAsync(branch)
@@ -90,6 +106,11 @@ struct BranchSwitcherView: View {
                 isPresented = false
             } else {
                 errorMessage = result.error
+                _ = await AlertTemplate.fileOperationErrorWarning.runSheet(
+                    on: context,
+                    messageText: Strings.branchSwitchErrorTitle,
+                    informativeText: result.error
+                )
             }
         }
     }

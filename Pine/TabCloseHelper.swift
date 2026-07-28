@@ -6,13 +6,20 @@
 //  Also provides the shared terminal foreground-process confirmation used by
 //  the status bar toggle, window close, tab close, and pane close paths.
 //
-//  Dialogs attach to the owning project window as sheets (issue #1241) so a
-//  close confirmation in one project does not block unrelated project windows.
-//  When no window context is supplied the application-modal `runModal()`
-//  fallback is used, preserving behavior in headless/test contexts.
+//  Dialogs attach to a captured owning window and are queued per window.
+//  Missing or closed owners cancel the operation instead of falling back to
+//  a detached application-modal alert.
 //
 
 import AppKit
+
+/// Exact foreground job identity covered by a destructive terminal prompt.
+/// A new process group in the same terminal tab is a new authorization
+/// generation and must not be covered by the previous answer.
+struct TerminalForegroundProcessIdentity: Hashable, Sendable {
+    let tabID: UUID
+    let processGroupID: Int32
+}
 
 @MainActor
 enum TabCloseHelper {
@@ -29,39 +36,82 @@ enum TabCloseHelper {
         _ tab: EditorTab,
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = DialogPresenter.forKeyProject()
-    ) -> Bool {
-        guard tab.isDirty else {
-            tabManager.closeTab(id: tab.id)
+        context: DialogPresentationContext = .unscoped,
+        presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil,
+        saveTab: (@MainActor (Int) async -> Bool)? = nil
+    ) async -> Bool {
+        // Callers commonly create the Task from a SwiftUI value snapshot.
+        // Re-resolve identity at async entry so a clean captured value cannot
+        // bypass a prompt after the live tab becomes dirty (and a disappeared
+        // tab cannot produce a false "closed" result).
+        guard let entryTab = tabManager.tabs.first(where: {
+            $0.id == tab.id
+        }) else {
+            return false
+        }
+        let tabID = entryTab.id
+        let entryContent = entryTab.content
+        guard entryTab.isDirty else {
+            tabManager.closeTab(id: tabID)
             return true
         }
 
-        Task { @MainActor in
-            let response = await AlertTemplate.unsavedChangesSingle.runSheet(
+        let response: NSApplication.ModalResponse
+        if let presentAlert {
+            response = await presentAlert()
+        } else {
+            response = await AlertTemplate.unsavedChangesSingle.runSheet(
                 on: context,
                 messageText: Strings.unsavedChangesTitle,
                 informativeText: Strings.unsavedChangesMessage
             )
-            switch response {
-            case .alertFirstButtonReturn:
-                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-                guard tabManager.saveTabSync(at: index) else { return }
-                Task { await gitProvider.refreshAsync() }
-                tabManager.closeTab(id: tab.id)
-            case .alertSecondButtonReturn:
-                tabManager.closeTab(id: tab.id)
-            default:
-                return
-            }
         }
-        return true
+        switch response {
+        case .alertFirstButtonReturn:
+            guard let index = tabManager.tabs.firstIndex(where: { $0.id == tabID }) else {
+                return false
+            }
+            let didSave: Bool
+            if let saveTab {
+                didSave = await saveTab(index)
+            } else {
+                didSave = await tabManager.saveTab(at: index, context: context)
+            }
+            guard didSave else {
+                return false
+            }
+            // An async/injected saver can suspend. Never let the original
+            // Save decision close content dirtied after that save completed.
+            guard let currentTab = tabManager.tabs.first(where: {
+                $0.id == tabID
+            }), !currentTab.isDirty else {
+                return false
+            }
+            Task { await gitProvider.refreshAsync() }
+            tabManager.closeTab(id: tabID)
+            return true
+        case .alertSecondButtonReturn:
+            guard let currentTab = tabManager.tabs.first(where: { $0.id == tabID }) else {
+                return false
+            }
+            // The sheet suspends this task. If background work changed the
+            // dirty buffer while it was visible, the user's earlier discard
+            // decision no longer covers the current content.
+            guard !currentTab.isDirty || currentTab.content == entryContent else {
+                return false
+            }
+            tabManager.closeTab(id: tabID)
+            return true
+        default:
+            return false
+        }
     }
 
     /// Shows a confirmation dialog for bulk close operations when there are dirty tabs.
     ///
     /// `presentAlert` is invoked to produce the modal response. Production
     /// callers pass a closure that runs the window-scoped sheet; tests inject
-    /// a synchronous stub. Returns `true` if the operation should proceed.
+    /// an async stub. Returns `true` if the operation should proceed.
     ///
     /// - Parameters:
     ///   - presentAlert: Async closure that presents the confirmation alert
@@ -72,12 +122,18 @@ enum TabCloseHelper {
         dirtyTabs: [EditorTab],
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
+        context: DialogPresentationContext = .unscoped,
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil,
-        saveTab: ((Int) -> Bool)? = nil
+        saveTab: (@MainActor (Int) async -> Bool)? = nil,
+        targetTabIDs: Set<UUID>? = nil
     ) async -> Bool {
         guard !dirtyTabs.isEmpty else { return true }
 
+        let displayedDirtyContent = Dictionary(
+            dirtyTabs.map { ($0.id, $0.content) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        let targetTabIDs = targetTabIDs ?? Set(dirtyTabs.map(\.id))
         let fileList = dirtyTabs.map { "  \u{2022} \($0.fileName)" }.joined(separator: "\n")
         let response: NSApplication.ModalResponse
         if let presentAlert {
@@ -91,14 +147,42 @@ enum TabCloseHelper {
         }
         switch response {
         case .alertFirstButtonReturn:
-            for tab in dirtyTabs {
+            // Save the latest dirty state, including a tab that became dirty
+            // while the sheet was visible. Saving is non-destructive and
+            // therefore does not need a second confirmation.
+            let currentDirtyTabs = tabManager.tabs.filter {
+                targetTabIDs.contains($0.id) && $0.isDirty
+            }
+            for tab in currentDirtyTabs {
                 guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { continue }
-                let didSave = saveTab?(index) ?? tabManager.saveTabSync(at: index)
+                let didSave: Bool
+                if let saveTab {
+                    didSave = await saveTab(index)
+                } else {
+                    didSave = await tabManager.saveTab(at: index, context: context)
+                }
                 guard didSave else { return false }
+            }
+            // A previously saved target can be edited again while a later
+            // save or error sheet is suspended. Do not force-close it.
+            guard !tabManager.tabs.contains(where: {
+                targetTabIDs.contains($0.id) && $0.isDirty
+            }) else {
+                return false
             }
             Task { await gitProvider.refreshAsync() }
             return true
         case .alertSecondButtonReturn:
+            // Do not apply "Don't Save" to a new or changed dirty buffer that
+            // was not represented by the sheet the user answered.
+            let currentDirtyTabs = tabManager.tabs.filter {
+                targetTabIDs.contains($0.id) && $0.isDirty
+            }
+            guard currentDirtyTabs.allSatisfy({
+                displayedDirtyContent[$0.id] == $0.content
+            }) else {
+                return false
+            }
             return true
         default:
             return false
@@ -112,10 +196,15 @@ enum TabCloseHelper {
         keeping tabID: UUID,
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
+        context: DialogPresentationContext = .unscoped,
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil,
-        saveTab: ((Int) -> Bool)? = nil
+        saveTab: (@MainActor (Int) async -> Bool)? = nil
     ) async -> Bool {
+        let targetTabIDs = Set(
+            tabManager.tabs
+                .filter { $0.id != tabID && !$0.isPinned }
+                .map(\.id)
+        )
         let dirty = tabManager.dirtyTabsForCloseOthers(keeping: tabID)
         guard await confirmBulkClose(
             dirtyTabs: dirty,
@@ -123,9 +212,14 @@ enum TabCloseHelper {
             gitProvider: gitProvider,
             context: context,
             presentAlert: presentAlert,
-            saveTab: saveTab
+            saveTab: saveTab,
+            targetTabIDs: targetTabIDs
         ) else { return false }
-        tabManager.closeOtherTabs(keeping: tabID, force: true)
+        guard tabManager.tabs.contains(where: { $0.id == tabID }) else {
+            return false
+        }
+        closeTabs(withIDs: targetTabIDs, in: tabManager)
+        tabManager.activeTabID = tabID
         return true
     }
 
@@ -136,10 +230,20 @@ enum TabCloseHelper {
         of tabID: UUID,
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
+        context: DialogPresentationContext = .unscoped,
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil,
-        saveTab: ((Int) -> Bool)? = nil
+        saveTab: (@MainActor (Int) async -> Bool)? = nil
     ) async -> Bool {
+        let targetTabIDs: Set<UUID>
+        if let index = tabManager.tabs.firstIndex(where: { $0.id == tabID }) {
+            targetTabIDs = Set(
+                tabManager.tabs[(index + 1)...]
+                    .filter { !$0.isPinned }
+                    .map(\.id)
+            )
+        } else {
+            targetTabIDs = []
+        }
         let dirty = tabManager.dirtyTabsForCloseRight(of: tabID)
         guard await confirmBulkClose(
             dirtyTabs: dirty,
@@ -147,9 +251,13 @@ enum TabCloseHelper {
             gitProvider: gitProvider,
             context: context,
             presentAlert: presentAlert,
-            saveTab: saveTab
+            saveTab: saveTab,
+            targetTabIDs: targetTabIDs
         ) else { return false }
-        tabManager.closeTabsToTheRight(of: tabID, force: true)
+        guard tabManager.tabs.contains(where: { $0.id == tabID }) else {
+            return false
+        }
+        closeTabs(withIDs: targetTabIDs, in: tabManager)
         return true
     }
 
@@ -159,10 +267,11 @@ enum TabCloseHelper {
     static func closeAllTabs(
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
+        context: DialogPresentationContext = .unscoped,
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil,
-        saveTab: ((Int) -> Bool)? = nil
+        saveTab: (@MainActor (Int) async -> Bool)? = nil
     ) async -> Bool {
+        let targetTabIDs = Set(tabManager.tabs.map(\.id))
         let dirty = tabManager.dirtyTabsForCloseAll()
         guard await confirmBulkClose(
             dirtyTabs: dirty,
@@ -170,10 +279,23 @@ enum TabCloseHelper {
             gitProvider: gitProvider,
             context: context,
             presentAlert: presentAlert,
-            saveTab: saveTab
+            saveTab: saveTab,
+            targetTabIDs: targetTabIDs
         ) else { return false }
-        tabManager.closeAllTabs(force: true)
+        // A tab created while the sheet was visible was not part of this
+        // close authorization and must survive.
+        closeTabs(withIDs: targetTabIDs, in: tabManager)
         return true
+    }
+
+    private static func closeTabs(
+        withIDs tabIDs: Set<UUID>,
+        in tabManager: TabManager
+    ) {
+        tabManager.tabs
+            .filter { tabIDs.contains($0.id) }
+            .map(\.id)
+            .forEach { tabManager.closeTab(id: $0, force: true) }
     }
 
     // MARK: - Terminal foreground-process confirmation
@@ -192,17 +314,21 @@ enum TabCloseHelper {
     ///     or the user confirmed. `false` to abort the stop/close.
     static func confirmTerminalStop(
         hasForegroundProcess: Bool,
-        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
-        presentAlert: @MainActor () async -> NSApplication.ModalResponse = {
-            await AlertTemplate.terminalTabCloseWarning.runSheet(
-                on: DialogPresenter.forKeyProject(),
+        context: DialogPresentationContext = .unscoped,
+        presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil
+    ) async -> Bool {
+        guard hasForegroundProcess else { return true }
+        let response: NSApplication.ModalResponse
+        if let presentAlert {
+            response = await presentAlert()
+        } else {
+            response = await AlertTemplate.terminalTabCloseWarning.runSheet(
+                on: context,
                 messageText: Strings.terminalTabCloseWarningTitle,
                 informativeText: Strings.terminalTabCloseWarningMessage
             )
         }
-    ) async -> Bool {
-        guard hasForegroundProcess else { return true }
-        return await presentAlert() == .alertFirstButtonReturn
+        return response == .alertFirstButtonReturn
     }
 
     /// Convenience overload that checks the foreground-process predicate on
@@ -217,19 +343,39 @@ enum TabCloseHelper {
     ///     user confirmed. `false` to abort.
     static func confirmTerminalProcessStop(
         tabs: [TerminalTab],
-        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
-        presentAlert: @MainActor () async -> NSApplication.ModalResponse = {
-            await AlertTemplate.terminalTabCloseWarning.runSheet(
-                on: DialogPresenter.forKeyProject(),
-                messageText: Strings.terminalTabCloseWarningTitle,
-                informativeText: Strings.terminalTabCloseWarningMessage
-            )
-        }
+        context: DialogPresentationContext = .unscoped,
+        presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil
     ) async -> Bool {
-        await confirmTerminalStop(
-            hasForegroundProcess: tabs.contains { $0.hasForegroundProcess },
+        let authorizedProcesses = foregroundProcessSnapshot(for: tabs)
+        guard !authorizedProcesses.isEmpty else { return true }
+        guard await confirmTerminalStop(
+            hasForegroundProcess: true,
             context: context,
             presentAlert: presentAlert
-        )
+        ) else {
+            return false
+        }
+        return foregroundProcessSnapshot(for: tabs)
+            .isSubset(of: authorizedProcesses)
+    }
+
+    static func foregroundProcessSnapshot(
+        for tabs: [TerminalTab]
+    ) -> Set<TerminalForegroundProcessIdentity> {
+        Set(tabs.compactMap { tab in
+            let processGroupID = tab.foregroundProcessID
+            guard processGroupID > 0 else { return nil }
+            return TerminalForegroundProcessIdentity(
+                tabID: tab.id,
+                processGroupID: processGroupID
+            )
+        })
+    }
+
+    nonisolated static func foregroundProcessSnapshotIsAuthorized(
+        _ current: Set<TerminalForegroundProcessIdentity>,
+        by authorized: Set<TerminalForegroundProcessIdentity>
+    ) -> Bool {
+        current.isSubset(of: authorized)
     }
 }

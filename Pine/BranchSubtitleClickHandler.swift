@@ -13,6 +13,7 @@ import SwiftUI
 struct BranchSubtitleClickHandler: NSViewRepresentable {
     var gitProvider: GitStatusProvider
     var isGitRepository: Bool
+    var projectManager: ProjectManager
 
     final class Coordinator: NSObject, NSPopoverDelegate {
         var parent: BranchSubtitleClickHandler
@@ -41,7 +42,8 @@ struct BranchSubtitleClickHandler: NSViewRepresentable {
 
             let content = BranchSwitcherView(
                 gitProvider: parent.gitProvider,
-                isPresented: isPresented
+                isPresented: isPresented,
+                projectManager: parent.projectManager
             )
 
             let hostingController = NSHostingController(rootView: content)

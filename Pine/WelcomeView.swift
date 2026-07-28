@@ -249,9 +249,14 @@ struct WelcomeView: View {
     }
 
     private func openFolder() {
-        if let url = registry.openProjectViaPanel() {
-            openProjectWindow(url)
-            closeWelcome()
+        let context = DialogPresenter.context(
+            for: appDelegate?.welcomeWindow ?? NSApp.keyWindow
+        )
+        Task { @MainActor in
+            if let url = await registry.openProjectViaPanel(context: context) {
+                openProjectWindow(url)
+                closeWelcome()
+            }
         }
     }
 

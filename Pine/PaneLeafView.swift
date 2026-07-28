@@ -668,35 +668,51 @@ struct PaneLeafView: View {
     // MARK: - Tab close with dirty confirmation
 
     private func closeTabWithConfirmation(_ tab: EditorTab, tabManager: TabManager) {
-        let didClose = TabCloseHelper.closeTab(
-            tab, in: tabManager, gitProvider: workspace.gitProvider
-        )
-        if didClose && tabManager.tabs.isEmpty {
-            paneManager.removePane(paneID)
+        let context = DialogPresenter.forProject(projectManager)
+        Task { @MainActor in
+            let didClose = await TabCloseHelper.closeTab(
+                tab,
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context
+            )
+            if didClose && tabManager.tabs.isEmpty {
+                paneManager.removePane(paneID)
+            }
         }
     }
 
     private func closeOtherTabsWithConfirmation(keeping tabID: UUID, tabManager: TabManager) {
+        let context = DialogPresenter.forProject(projectManager)
         Task { @MainActor in
             _ = await TabCloseHelper.closeOtherTabs(
-                keeping: tabID, in: tabManager, gitProvider: workspace.gitProvider
+                keeping: tabID,
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context
             )
         }
     }
 
     private func closeTabsToTheRightWithConfirmation(of tabID: UUID, tabManager: TabManager) {
+        let context = DialogPresenter.forProject(projectManager)
         Task { @MainActor in
             _ = await TabCloseHelper.closeTabsToTheRight(
-                of: tabID, in: tabManager, gitProvider: workspace.gitProvider
+                of: tabID,
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context
             )
         }
     }
 
     private func closeAllTabsWithConfirmation(tabManager: TabManager) {
+        let context = DialogPresenter.forProject(projectManager)
         Task { @MainActor in
             let didClose = await TabCloseHelper.closeAllTabs(
                 in: tabManager,
-                gitProvider: workspace.gitProvider
+                gitProvider: workspace.gitProvider,
+                context: context
             )
             if didClose && tabManager.tabs.isEmpty {
                 paneManager.removePane(paneID)
