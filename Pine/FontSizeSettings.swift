@@ -17,8 +17,17 @@ final class FontSizeSettings {
     private static let userDefaultsKey = "editorFontSize"
     private let defaults: UserDefaults
 
-    private(set) var fontSize: CGFloat {
+    /// Current editor font size, always clamped to
+    /// [`minSize`, `maxSize`]. Publicly settable so the Settings slider can
+    /// bind to it directly (issue #337); the `didSet` persists the value and
+    /// re-clamps so direct assignment cannot escape the valid range.
+    var fontSize: CGFloat {
         didSet {
+            let clamped = min(max(fontSize, Self.minSize), Self.maxSize)
+            if clamped != fontSize {
+                fontSize = clamped
+                return
+            }
             defaults.set(Double(fontSize), forKey: Self.userDefaultsKey)
         }
     }
@@ -51,5 +60,11 @@ final class FontSizeSettings {
 
     func reset() {
         fontSize = Self.defaultSize
+    }
+
+    /// Sets an explicit size, clamped to the valid range. Used by callers
+    /// that prefer a method over direct assignment.
+    func setFontSize(_ size: CGFloat) {
+        fontSize = min(max(size, Self.minSize), Self.maxSize)
     }
 }
