@@ -431,6 +431,8 @@ enum Strings {
     static let agentHistoryEmptyMessage: LocalizedStringKey = "agentHistory.emptyMessage"
     static let agentHistoryRevertedBadge: LocalizedStringKey = "agentHistory.revertedBadge"
     static let agentHistoryRevertButton: LocalizedStringKey = "agentHistory.revertButton"
+    static let agentHistoryReviewChangesButton: LocalizedStringKey =
+        "agentHistory.reviewChangesButton"
     static let agentHistoryUndoUnavailable: LocalizedStringKey = "agentHistory.undoUnavailable"
     static let agentHistoryUndoUnavailableReason: LocalizedStringKey = "agentHistory.undoUnavailableReason"
     static let agentHistoryRevertConfirmTitle: LocalizedStringKey = "agentHistory.revertConfirmTitle"
@@ -458,6 +460,72 @@ enum Strings {
     }
     static func agentHistoryRetainedRecoveryFile(_ path: String) -> String {
         String(localized: "agentHistory.retainedRecoveryFile \(path)")
+    }
+
+    // Verified undo review — #1237.
+    static let agentHistoryUndoReviewTitle: LocalizedStringKey =
+        "agentHistory.undoReview.title"
+    static let agentHistoryUndoReviewPreparing: LocalizedStringKey =
+        "agentHistory.undoReview.preparing"
+    static let agentHistoryUndoReviewVerified: LocalizedStringKey =
+        "agentHistory.undoReview.verified"
+    static let agentHistoryUndoReviewTechnicalDetails: LocalizedStringKey =
+        "agentHistory.undoReview.technicalDetails"
+    static let agentHistoryUndoReviewExpected: LocalizedStringKey =
+        "agentHistory.undoReview.expected"
+    static let agentHistoryUndoReviewResult: LocalizedStringKey =
+        "agentHistory.undoReview.result"
+    static let agentHistoryUndoReviewApply: LocalizedStringKey =
+        "agentHistory.undoReview.apply"
+    static let agentHistoryUndoReviewRevalidated: LocalizedStringKey =
+        "agentHistory.undoReview.revalidated"
+    static let agentHistoryUndoReviewStaleTitle: LocalizedStringKey =
+        "agentHistory.undoReview.staleTitle"
+    static let agentHistoryUndoReviewKindRestore: LocalizedStringKey =
+        "agentHistory.undoReview.kind.restore"
+    static let agentHistoryUndoReviewKindRemove: LocalizedStringKey =
+        "agentHistory.undoReview.kind.remove"
+    static let agentHistoryUndoReviewKindRecreate: LocalizedStringKey =
+        "agentHistory.undoReview.kind.recreate"
+    static let agentHistoryUndoReviewDetailRestore: LocalizedStringKey =
+        "agentHistory.undoReview.detail.restore"
+    static let agentHistoryUndoReviewDetailRemove: LocalizedStringKey =
+        "agentHistory.undoReview.detail.remove"
+    static let agentHistoryUndoReviewDetailRecreate: LocalizedStringKey =
+        "agentHistory.undoReview.detail.recreate"
+    nonisolated static let undoFailEntryNotFound: String =
+        String(localized: "agentHistory.undoReview.failure.entryNotFound")
+    nonisolated static let undoFailAlreadyReverted: String =
+        String(localized: "agentHistory.undoReview.failure.alreadyReverted")
+    nonisolated static let undoFailNotEligible: String =
+        String(localized: "agentHistory.undoReview.failure.notEligible")
+    nonisolated static let undoFailAuthorityMissing: String =
+        String(localized: "agentHistory.undoReview.failure.authorityMissing")
+    nonisolated static let undoFailAuthorityConsumed: String =
+        String(localized: "agentHistory.undoReview.failure.authorityConsumed")
+    nonisolated static let undoFailWorkspaceChanged: String =
+        String(localized: "agentHistory.undoReview.failure.workspaceChanged")
+    nonisolated static let undoFailProjectionTampered: String =
+        String(localized: "agentHistory.undoReview.failure.projectionTampered")
+    nonisolated static let undoFailPayloadMissing: String =
+        String(localized: "agentHistory.undoReview.failure.payloadMissing")
+    nonisolated static let undoFailPreviewFailed: String =
+        String(localized: "agentHistory.undoReview.failure.previewFailed")
+    nonisolated static let agentHistoryUndoReviewNextClose: String =
+        String(localized: "agentHistory.undoReview.next.close")
+    nonisolated static let agentHistoryUndoReviewNextNoAction: String =
+        String(localized: "agentHistory.undoReview.next.noAction")
+    nonisolated static let agentHistoryUndoReviewNextRefresh: String =
+        String(localized: "agentHistory.undoReview.next.refresh")
+    nonisolated static let agentHistoryUndoReviewNextManualReview: String =
+        String(localized: "agentHistory.undoReview.next.manualReview")
+
+    nonisolated static func undoFailContentDiverged(
+        _ path: String
+    ) -> String {
+        String(
+            localized: "agentHistory.undoReview.failure.contentDiverged \\(path)"
+        )
     }
 
     // MARK: - Prepared inverse review (#933)
@@ -795,6 +863,24 @@ enum Strings {
         String(localized: "userTask.missingFile.message")
     }
 
+    /// Toast shown when a user task completes successfully (issue #1246).
+    static func userTaskToastSucceeded(_ label: String) -> String {
+        String(
+            localized: "userTask.toast.succeeded",
+            defaultValue: "Task “\(label)” completed"
+        )
+    }
+
+    /// Copy the captured stdout to the pasteboard (issue #1246).
+    static var userTaskCopyOutput: String {
+        String(localized: "userTask.copyOutput", defaultValue: "Copy Output")
+    }
+
+    /// Reveal the task output surface for inspection (issue #1246).
+    static var userTaskOpenOutput: String {
+        String(localized: "userTask.openOutput", defaultValue: "Open Output")
+    }
+
     // MARK: - Quick Open
 
     static let menuQuickOpen: LocalizedStringKey = "menu.quickOpen"
@@ -1002,6 +1088,10 @@ enum Strings {
 
     static var dialogCancel: String {
         String(localized: "dialog.unsavedChanges.cancel")
+    }
+
+    static var dialogClose: String {
+        String(localized: "dialog.close", defaultValue: "Close")
     }
 
     static var dialogSaveAll: String {

@@ -193,6 +193,19 @@ nonisolated enum AccessibilityID {
         "agentHistoryRecoveryRevealPath_\(path)"
     }
 
+    // MARK: - Verified undo review (#1237)
+    static let agentHistoryUndoReviewSummary =
+        "agentHistoryUndoReviewSummary"
+    static let agentHistoryUndoReviewStale =
+        "agentHistoryUndoReviewStale"
+    static let agentHistoryUndoReviewApply =
+        "agentHistoryUndoReviewApply"
+    static func agentHistoryUndoReviewOperation(
+        _ path: String
+    ) -> String {
+        "agentHistoryUndoReviewOperation_\(path)"
+    }
+
     // MARK: - Prepared inverse review (#933)
     static let verifiedDiffPreview = "verifiedDiffPreview"
     static let verifiedDiffStalenessNotice =
