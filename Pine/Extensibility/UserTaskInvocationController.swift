@@ -27,8 +27,7 @@ enum UserTaskInvocationController {
 
         Task { @MainActor in
             if task.effectiveRequireConfirmation(),
-               !(await presentConfirmation(for: task))
-            {
+               !(await presentConfirmation(for: task)) {
                 return
             }
 
@@ -61,7 +60,7 @@ enum UserTaskInvocationController {
         alert.informativeText = Strings.userTaskConfirmationMessage(task.command)
         alert.alertStyle = .warning
         alert.addButton(withTitle: Strings.userTaskRun)
-        alert.addButton(withTitle: Strings.dialogCancel, role: .cancel)
+        alert.addButton(withTitle: Strings.dialogCancel)
         let response = await alert.runSheet(on: context)
         return response == .alertFirstButtonReturn
     }

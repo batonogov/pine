@@ -308,10 +308,12 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         case .terminal:
             guard let state = pane.terminalState(for: activePaneID),
                   let tab = state.activeTab else { return }
-            guard TabCloseHelper.confirmTerminalProcessStop(tabs: [tab]) else { return }
-            state.removeTab(id: tab.id)
-            if state.terminalTabs.isEmpty {
-                pane.removePane(activePaneID)
+            Task { @MainActor in
+                guard await TabCloseHelper.confirmTerminalProcessStop(tabs: [tab]) else { return }
+                state.removeTab(id: tab.id)
+                if state.terminalTabs.isEmpty {
+                    pane.removePane(activePaneID)
+                }
             }
 
         case .editor, nil:
@@ -354,10 +356,15 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         }
 
         // 2. Warn about active terminal processes before closing
-        guard TabCloseHelper.confirmTerminalProcessStop(
-            tabs: projectManager.terminal.allTerminalTabs
-        ) else {
-            return false
+        let terminalTabs = projectManager.terminal.allTerminalTabs
+        if terminalTabs.contains(where: { $0.hasForegroundProcess }) {
+            let response = AlertTemplate.terminalTabCloseWarning.runModal(
+                messageText: Strings.terminalTabCloseWarningTitle,
+                informativeText: Strings.terminalTabCloseWarningMessage
+            )
+            guard response == .alertFirstButtonReturn else {
+                return false
+            }
         }
 
         return true

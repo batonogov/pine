@@ -278,14 +278,3 @@ enum AlertButtonRole: Sendable, Equatable {
     case cancel
     case destructive
 }
-
-/// Maps a role to the `NSAlert.Button.Variant` used by
-/// `addButton(withTitle:variant:role:)`. `.default` → `.standard`,
-/// `.cancel` → `.cancel`, `.destructive` → `.destructive`.
-func nsAlertVariant(for role: AlertButtonRole) -> NSAlert.Button.Variant {
-    switch role {
-    case .default: return .standard
-    case .cancel: return .cancel
-    case .destructive: return .destructive
-    }
-}

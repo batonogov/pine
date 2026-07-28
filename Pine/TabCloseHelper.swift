@@ -29,8 +29,8 @@ enum TabCloseHelper {
         _ tab: EditorTab,
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = .forKeyProject()
-    ) {
+        context: DialogPresentationContext = DialogPresenter.forKeyProject()
+    ) -> Bool {
         guard tab.isDirty else {
             tabManager.closeTab(id: tab.id)
             return true
@@ -45,7 +45,7 @@ enum TabCloseHelper {
             switch response {
             case .alertFirstButtonReturn:
                 guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-                guard tabManager.saveTab(at: index, context: context) else { return }
+                guard tabManager.saveTabSync(at: index) else { return }
                 Task { await gitProvider.refreshAsync() }
                 tabManager.closeTab(id: tab.id)
             case .alertSecondButtonReturn:
@@ -72,7 +72,7 @@ enum TabCloseHelper {
         dirtyTabs: [EditorTab],
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = .forKeyProject(),
+        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil,
         saveTab: ((Int) -> Bool)? = nil
     ) async -> Bool {
@@ -93,7 +93,7 @@ enum TabCloseHelper {
         case .alertFirstButtonReturn:
             for tab in dirtyTabs {
                 guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { continue }
-                let didSave = saveTab?(index) ?? tabManager.saveTab(at: index, context: context)
+                let didSave = saveTab?(index) ?? tabManager.saveTabSync(at: index)
                 guard didSave else { return false }
             }
             Task { await gitProvider.refreshAsync() }
@@ -112,7 +112,7 @@ enum TabCloseHelper {
         keeping tabID: UUID,
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = .forKeyProject(),
+        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil,
         saveTab: ((Int) -> Bool)? = nil
     ) async -> Bool {
@@ -136,7 +136,7 @@ enum TabCloseHelper {
         of tabID: UUID,
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = .forKeyProject(),
+        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil,
         saveTab: ((Int) -> Bool)? = nil
     ) async -> Bool {
@@ -159,7 +159,7 @@ enum TabCloseHelper {
     static func closeAllTabs(
         in tabManager: TabManager,
         gitProvider: GitStatusProvider,
-        context: DialogPresentationContext = .forKeyProject(),
+        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil,
         saveTab: ((Int) -> Bool)? = nil
     ) async -> Bool {
@@ -192,7 +192,7 @@ enum TabCloseHelper {
     ///     or the user confirmed. `false` to abort the stop/close.
     static func confirmTerminalStop(
         hasForegroundProcess: Bool,
-        context: DialogPresentationContext = .forKeyProject(),
+        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
         presentAlert: @MainActor () async -> NSApplication.ModalResponse = {
             await AlertTemplate.terminalTabCloseWarning.runSheet(
                 on: DialogPresenter.forKeyProject(),
@@ -217,7 +217,7 @@ enum TabCloseHelper {
     ///     user confirmed. `false` to abort.
     static func confirmTerminalProcessStop(
         tabs: [TerminalTab],
-        context: DialogPresentationContext = .forKeyProject(),
+        context: DialogPresentationContext = DialogPresenter.forKeyProject(),
         presentAlert: @MainActor () async -> NSApplication.ModalResponse = {
             await AlertTemplate.terminalTabCloseWarning.runSheet(
                 on: DialogPresenter.forKeyProject(),
