@@ -171,6 +171,10 @@ final class ProjectManager {
     }
 
     let toastManager = ToastManager()
+    /// Tracks active and recent user-task runs for the task execution UI
+    /// (issue #1246). Owned by the project window so the output surface,
+    /// toast, and Cancel button all share one source of truth.
+    let taskRunStore = UserTaskRunStore()
     /// Recovery snapshots and their lifecycle are owned by the main actor.
     private(set) var recoveryManager: RecoveryManager?
 
