@@ -13,6 +13,9 @@ nonisolated enum AccessibilityID {
         "agentHandoffReadOnlyContextToggle"
     static let agentHandoffStatus = "agentHandoffStatus"
 
+    // MARK: - Terminal theme settings
+    static let terminalAppearancePicker = "terminalAppearancePicker"
+
     // MARK: - Welcome window
     static let welcomeOpenFolderButton = "welcomeOpenFolderButton"
     static let welcomeRecentProjectsList = "welcomeRecentProjectsList"

@@ -11,6 +11,8 @@ enum Strings {
         "settings.tab.languageServers"
     static let settingsAgentHandoffTab: LocalizedStringKey =
         "settings.tab.agentHandoff"
+    static let settingsTerminalTab: LocalizedStringKey =
+        "settings.tab.terminal"
     static let agentHandoffSettingsTitle: LocalizedStringKey =
         "settings.agentHandoff.title"
     static let agentHandoffReadOnlyContext: LocalizedStringKey =
@@ -179,6 +181,21 @@ enum Strings {
     static let hideTerminalShortcut: LocalizedStringKey = "terminal.hideShortcut"
     static let showTerminalShortcut: LocalizedStringKey = "terminal.showShortcut"
     static let toggleTerminal: LocalizedStringKey = "terminal.toggle"
+
+    // MARK: - Terminal theme settings (#1244)
+
+    static let terminalThemeSettingsTitle: LocalizedStringKey =
+        "settings.terminal.theme.title"
+    static let terminalThemeSettingsSubtitle: LocalizedStringKey =
+        "settings.terminal.theme.subtitle"
+    static let terminalThemeSelectionLabel: LocalizedStringKey =
+        "settings.terminal.theme.selectionLabel"
+    static let terminalAppearanceLabel: LocalizedStringKey =
+        "settings.terminal.appearance.label"
+    static let terminalAppearanceHelp: LocalizedStringKey =
+        "settings.terminal.appearance.help"
+    static let terminalThemePreviewLabel: LocalizedStringKey =
+        "settings.terminal.theme.previewLabel"
 
     // MARK: - Status bar (agent awareness, #952)
 

@@ -60,7 +60,7 @@ import SwiftTerm
 /// 8-bit RGB triple used to describe a single ANSI palette entry in
 /// human-readable form. Converted to SwiftTerm's 16-bit `Color` at install
 /// time. Public for unit-testing.
-struct TerminalPaletteEntry: Equatable {
+struct TerminalPaletteEntry: Equatable, Hashable {
     let red: UInt8
     let green: UInt8
     let blue: UInt8
