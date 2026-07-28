@@ -365,34 +365,34 @@ enum Strings {
         "agentHistory.undoReview.detail.remove"
     static let agentHistoryUndoReviewDetailRecreate: LocalizedStringKey =
         "agentHistory.undoReview.detail.recreate"
-    static let undoFailEntryNotFound: String =
+    nonisolated static let undoFailEntryNotFound: String =
         String(localized: "agentHistory.undoReview.failure.entryNotFound")
-    static let undoFailAlreadyReverted: String =
+    nonisolated static let undoFailAlreadyReverted: String =
         String(localized: "agentHistory.undoReview.failure.alreadyReverted")
-    static let undoFailNotEligible: String =
+    nonisolated static let undoFailNotEligible: String =
         String(localized: "agentHistory.undoReview.failure.notEligible")
-    static let undoFailAuthorityMissing: String =
+    nonisolated static let undoFailAuthorityMissing: String =
         String(localized: "agentHistory.undoReview.failure.authorityMissing")
-    static let undoFailAuthorityConsumed: String =
+    nonisolated static let undoFailAuthorityConsumed: String =
         String(localized: "agentHistory.undoReview.failure.authorityConsumed")
-    static let undoFailWorkspaceChanged: String =
+    nonisolated static let undoFailWorkspaceChanged: String =
         String(localized: "agentHistory.undoReview.failure.workspaceChanged")
-    static let undoFailProjectionTampered: String =
+    nonisolated static let undoFailProjectionTampered: String =
         String(localized: "agentHistory.undoReview.failure.projectionTampered")
-    static let undoFailPayloadMissing: String =
+    nonisolated static let undoFailPayloadMissing: String =
         String(localized: "agentHistory.undoReview.failure.payloadMissing")
-    static let undoFailPreviewFailed: String =
+    nonisolated static let undoFailPreviewFailed: String =
         String(localized: "agentHistory.undoReview.failure.previewFailed")
-    static let agentHistoryUndoReviewNextClose: String =
+    nonisolated static let agentHistoryUndoReviewNextClose: String =
         String(localized: "agentHistory.undoReview.next.close")
-    static let agentHistoryUndoReviewNextNoAction: String =
+    nonisolated static let agentHistoryUndoReviewNextNoAction: String =
         String(localized: "agentHistory.undoReview.next.noAction")
-    static let agentHistoryUndoReviewNextRefresh: String =
+    nonisolated static let agentHistoryUndoReviewNextRefresh: String =
         String(localized: "agentHistory.undoReview.next.refresh")
-    static let agentHistoryUndoReviewNextManualReview: String =
+    nonisolated static let agentHistoryUndoReviewNextManualReview: String =
         String(localized: "agentHistory.undoReview.next.manualReview")
 
-    static func undoFailContentDiverged(
+    nonisolated static func undoFailContentDiverged(
         _ path: String
     ) -> String {
         String(
@@ -732,6 +732,24 @@ enum Strings {
 
     static var userTaskMissingFileMessage: String {
         String(localized: "userTask.missingFile.message")
+    }
+
+    /// Toast shown when a user task completes successfully (issue #1246).
+    static func userTaskToastSucceeded(_ label: String) -> String {
+        String(
+            localized: "userTask.toast.succeeded",
+            defaultValue: "Task “\(label)” completed"
+        )
+    }
+
+    /// Copy the captured stdout to the pasteboard (issue #1246).
+    static var userTaskCopyOutput: String {
+        String(localized: "userTask.copyOutput", defaultValue: "Copy Output")
+    }
+
+    /// Reveal the task output surface for inspection (issue #1246).
+    static var userTaskOpenOutput: String {
+        String(localized: "userTask.openOutput", defaultValue: "Open Output")
     }
 
     // MARK: - Quick Open
