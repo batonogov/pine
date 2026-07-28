@@ -17,17 +17,20 @@ import SwiftUI
 struct TerminalSettingsView: View {
     @Bindable var shell: ShellSettings
     @Bindable var theme: TerminalThemeSettings
+    @Bindable var quickTerminal: QuickTerminalSettings
     @State private var customArgsText: String
-    private let locale: Locale
+    private let viewportHeight: CGFloat
 
     init(
         shell: ShellSettings,
         theme: TerminalThemeSettings = .shared,
-        locale: Locale = .current
+        quickTerminal: QuickTerminalSettings = .shared,
+        viewportHeight: CGFloat = 500
     ) {
         self.shell = shell
         self.theme = theme
-        self.locale = locale
+        self.quickTerminal = quickTerminal
+        self.viewportHeight = viewportHeight
         _customArgsText = State(
             initialValue: shell.shellArgs.joined(separator: "\n")
         )
@@ -51,8 +54,8 @@ struct TerminalSettingsView: View {
             }
             .padding(20)
         }
-        .frame(width: 720, height: 500)
-        .environment(\.locale, locale)
+        .accessibilityIdentifier(AccessibilityID.terminalSettingsScrollView)
+        .frame(width: 720, height: viewportHeight)
     }
 
     private var shellSettings: some View {
@@ -80,7 +83,12 @@ struct TerminalSettingsView: View {
                     .textFieldStyle(.roundedBorder)
                 }
 
-                (Text(Strings.settingsTerminalResolvedPrefix) + Text(verbatim: shell.resolvedShellPath))
+                Text(
+                    """
+                    \(Text(Strings.settingsTerminalResolvedPrefix))\
+                    \(Text(verbatim: shell.resolvedShellPath))
+                    """
+                )
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -141,7 +149,9 @@ struct TerminalSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .accessibilityIdentifier(AccessibilityID.terminalAppearancePicker)
+                .accessibilityIdentifier(
+                    AccessibilityID.terminalAppearancePicker
+                )
 
                 Text(Strings.terminalAppearanceHelp)
                     .font(.caption)
@@ -170,6 +180,7 @@ struct TerminalSettingsView: View {
                         themeRow(terminalTheme)
                     }
                 }
+                .accessibilityIdentifier(AccessibilityID.terminalThemeGrid)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
@@ -178,19 +189,11 @@ struct TerminalSettingsView: View {
 
     private var quickTerminalSettings: some View {
         GroupBox(Strings.settingsTerminalQuickTerminal) {
-            VStack(alignment: .leading, spacing: 10) {
-                Label(
-                    Strings.settingsTerminalQuickTerminalHotkey,
-                    systemImage: "keyboard"
-                )
-                .foregroundStyle(.secondary)
-                Text(Strings.settingsTerminalQuickTerminalHelp)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            QuickTerminalSettingsControls(settings: quickTerminal)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
         }
+        .accessibilityIdentifier(AccessibilityID.quickTerminalSettingsSection)
     }
 
     private func themeRow(_ terminalTheme: TerminalTheme) -> some View {
@@ -235,7 +238,10 @@ struct TerminalSettingsView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("terminal-theme-row-\(terminalTheme.id)")
+        .accessibilityIdentifier(
+            AccessibilityID.terminalThemeRow(terminalTheme.id)
+        )
+        .accessibilityLabel(Text(LocalizedStringKey(terminalTheme.nameKey)))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 

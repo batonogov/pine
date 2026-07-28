@@ -55,10 +55,6 @@ enum Strings {
         "settings.terminal.resetArgs"
     static let settingsTerminalQuickTerminal: LocalizedStringKey =
         "settings.terminal.quickTerminal"
-    static let settingsTerminalQuickTerminalHotkey: LocalizedStringKey =
-        "settings.terminal.quickTerminalHotkey"
-    static let settingsTerminalQuickTerminalHelp: LocalizedStringKey =
-        "settings.terminal.quickTerminalHelp"
 
     static let settingsKeyBindingsTitle: LocalizedStringKey =
         "settings.keyBindings.title"
@@ -141,6 +137,8 @@ enum Strings {
         "settings.quickTerminal.hotkey.help"
     static let quickTerminalRecordingHotkey: LocalizedStringKey =
         "settings.quickTerminal.hotkey.recording"
+    static let quickTerminalHotkeyModifierRequired: LocalizedStringKey =
+        "settings.quickTerminal.hotkey.modifierRequired"
     static let quickTerminalScreenEdge: LocalizedStringKey =
         "settings.quickTerminal.screenEdge"
     static let quickTerminalEdgeTop: LocalizedStringKey =
@@ -163,6 +161,8 @@ enum Strings {
         "settings.quickTerminal.hideOnFocusLoss"
     static let quickTerminalHideOnFocusLossHelp: LocalizedStringKey =
         "settings.quickTerminal.hideOnFocusLoss.help"
+    static let quickTerminalReset: LocalizedStringKey =
+        "settings.quickTerminal.reset"
 
     // MARK: - Editor
 

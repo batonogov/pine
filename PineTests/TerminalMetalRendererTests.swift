@@ -7,6 +7,7 @@
 
 import Testing
 import AppKit
+import Foundation
 import MetalKit
 import SwiftTerm
 @testable import Pine
@@ -89,6 +90,63 @@ struct TerminalMetalRendererTests {
 
         #expect(view != nil)
         #expect(redrawRequests == 1)
+    }
+
+    @Test("Theme changes repaint through the CoreGraphics bridge")
+    func themeChangeRepaintsCoreGraphics() async throws {
+        let settings = try makeThemeSettings()
+        settings.appearancePolicy = .alwaysDark
+        let tab = TerminalTab(name: "theme-core-graphics", themeSettings: settings)
+        let view = try #require(tab.terminalView as? PineTerminalView)
+        view.metalRendererDisabledForTesting = true
+        var redrawRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        settings.setTheme(id: TerminalTheme.dracula.id)
+        let repainted = await waitForThemeRepaint {
+            redrawRequests == 1
+        }
+
+        #expect(repainted)
+        #expect(view.isUsingMetalRenderer == false)
+        #expect(
+            view.nativeBackgroundColor
+                == TerminalTheme.dracula.dark.backgroundColor()
+        )
+        #expect(redrawRequests == 1)
+    }
+
+    @Test("Theme changes repaint through the Metal compatibility bridge")
+    func themeChangeRepaintsMetal() async throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let settings = try makeThemeSettings()
+        settings.appearancePolicy = .alwaysDark
+        let tab = TerminalTab(name: "theme-metal", themeSettings: settings)
+        let view = try #require(tab.terminalView as? PineTerminalView)
+        let window = makeWindow(containing: view)
+        defer { window.contentView = nil }
+        guard view.isUsingMetalRenderer else { return }
+
+        // Drain attachment retries so only the settings-driven repaint is
+        // counted below.
+        try? await Task.sleep(for: .milliseconds(450))
+        var redrawRequests = 0
+        var metalBridgeRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+        view.metalRedrawBridgeObserver = { metalBridgeRequests += 1 }
+
+        settings.setTheme(id: TerminalTheme.dracula.id)
+        let repainted = await waitForThemeRepaint {
+            redrawRequests == 1 && metalBridgeRequests == 1
+        }
+
+        #expect(repainted)
+        #expect(
+            view.nativeBackgroundColor
+                == TerminalTheme.dracula.dark.backgroundColor()
+        )
+        #expect(redrawRequests == 1)
+        #expect(metalBridgeRequests == 1)
     }
 
     @Test("Metal redraw uses the nested MTKView compatibility bridge")
@@ -609,5 +667,28 @@ struct TerminalMetalRendererTests {
     private func feed(_ text: String, to view: PineTerminalView) {
         let bytes = Array(text.utf8)
         view.dataReceived(slice: bytes[...])
+    }
+
+    private func makeThemeSettings() throws -> TerminalThemeSettings {
+        let suiteName = "TerminalMetalThemeTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        return TerminalThemeSettings(
+            defaults: defaults,
+            notificationCenter: NotificationCenter()
+        )
+    }
+
+    private func waitForThemeRepaint(
+        timeout: Duration = .seconds(2),
+        _ condition: @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
     }
 }

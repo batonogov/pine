@@ -13,9 +13,27 @@ struct PineSettingsView: View {
     let handoffSettings: AgentHandoffSettings
     let shellSettings: ShellSettings
     let editorSettings: EditorSettings
+    let terminalThemeSettings: TerminalThemeSettings
+    let quickTerminalSettings: QuickTerminalSettings
 
     /// Persists the last-selected pane across sessions (issue #337).
     @AppStorage(Self.selectedPaneKey) private var selectedPane: SettingsPane.SettingsPaneID = .general
+
+    init(
+        lspSettings: LSPSettings,
+        handoffSettings: AgentHandoffSettings,
+        shellSettings: ShellSettings,
+        editorSettings: EditorSettings,
+        terminalThemeSettings: TerminalThemeSettings = .shared,
+        quickTerminalSettings: QuickTerminalSettings = .shared
+    ) {
+        self.lspSettings = lspSettings
+        self.handoffSettings = handoffSettings
+        self.shellSettings = shellSettings
+        self.editorSettings = editorSettings
+        self.terminalThemeSettings = terminalThemeSettings
+        self.quickTerminalSettings = quickTerminalSettings
+    }
 
     var body: some View {
         TabView(selection: $selectedPane) {
@@ -28,7 +46,11 @@ struct PineSettingsView: View {
             }
             .tag(SettingsPane.SettingsPaneID.general)
 
-            TerminalSettingsView(shell: shellSettings)
+            TerminalSettingsView(
+                shell: shellSettings,
+                theme: terminalThemeSettings,
+                quickTerminal: quickTerminalSettings
+            )
             .tabItem {
                 Label(Strings.settingsTabTerminal, systemImage: "terminal")
             }

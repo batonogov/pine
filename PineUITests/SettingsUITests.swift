@@ -1,0 +1,254 @@
+//
+//  SettingsUITests.swift
+//  PineUITests
+//
+
+import XCTest
+
+final class SettingsUITests: PineUITestCase {
+    private var settingsSuiteName = ""
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        settingsSuiteName = "PineUITests.Settings.\(UUID().uuidString)"
+        app.launchEnvironment["PINE_UI_TEST_SETTINGS_SUITE"] = settingsSuiteName
+    }
+
+    override func tearDownWithError() throws {
+        app?.terminate()
+        if let defaults = UserDefaults(suiteName: settingsSuiteName) {
+            defaults.removePersistentDomain(forName: settingsSuiteName)
+        }
+        try super.tearDownWithError()
+    }
+
+    func testTerminalPaneExposesThemeAndQuickTerminalControls() throws {
+        launchClean()
+
+        let appMenu = app.menuBars.menuBarItems["Pine"]
+        XCTAssertTrue(
+            appMenu.waitForExistence(timeout: 10),
+            "Pine application menu should be available"
+        )
+        appMenu.click()
+        let settingsItem = app.menuItems["Settings…"].firstMatch
+        XCTAssertTrue(
+            settingsItem.waitForExistence(timeout: 5),
+            "Application menu should expose Settings"
+        )
+        settingsItem.click()
+
+        let terminalTab = app.buttons["Terminal"].firstMatch
+        XCTAssertTrue(
+            terminalTab.waitForExistence(timeout: 10),
+            "The consolidated Settings scene should expose Terminal"
+        )
+        terminalTab.click()
+
+        let appearance = app.descendants(matching: .any)[
+            "terminalAppearancePicker"
+        ].firstMatch
+        XCTAssertTrue(
+            appearance.waitForExistence(timeout: 5),
+            "Terminal appearance policy should be reachable"
+        )
+
+        let scrollView = app.scrollViews["terminalSettingsScrollView"].firstMatch
+        XCTAssertTrue(scrollView.exists, "Terminal settings should be scrollable")
+        let selectedTheme = app.descendants(matching: .any)[
+            "terminalThemeRow_solarized"
+        ].firstMatch
+        for _ in 0..<2 where selectedTheme.isHittable == false {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(
+            selectedTheme.waitForExistence(timeout: 5),
+            "Terminal theme rows should be reachable"
+        )
+        XCTAssertTrue(
+            selectedTheme.isHittable,
+            "Solarized theme row should be hittable before mutation"
+        )
+        selectedTheme.click()
+        XCTAssertTrue(
+            selectedTheme.isSelected,
+            "Clicking Solarized should update the selected accessibility trait"
+        )
+
+        let enabledToggle = app.descendants(matching: .any)[
+            "quickTerminalEnabledToggle"
+        ].firstMatch
+        for _ in 0..<5 where enabledToggle.isHittable == false {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(
+            enabledToggle.waitForExistence(timeout: 5),
+            "Quick Terminal controls should be embedded in Terminal Settings"
+        )
+        XCTAssertTrue(enabledToggle.isHittable)
+
+        let recorder = app.descendants(matching: .any)[
+            "quickTerminalHotkeyRecorder"
+        ].firstMatch
+        let edgePicker = app.descendants(matching: .any)[
+            "quickTerminalScreenEdgePicker"
+        ].firstMatch
+        let sizeSlider = app.descendants(matching: .any)[
+            "quickTerminalSizeSlider"
+        ].firstMatch
+        let displayPicker = app.descendants(matching: .any)[
+            "quickTerminalTargetDisplayPicker"
+        ].firstMatch
+        let focusToggle = app.descendants(matching: .any)[
+            "quickTerminalHideOnFocusLossToggle"
+        ].firstMatch
+        let resetButton = app.descendants(matching: .any)[
+            "quickTerminalResetButton"
+        ].firstMatch
+
+        for control in [
+            recorder,
+            edgePicker,
+            sizeSlider,
+            displayPicker,
+            focusToggle,
+            resetButton,
+        ] {
+            XCTAssertTrue(
+                control.waitForExistence(timeout: 5),
+                "\(control.identifier) should be reachable"
+            )
+        }
+
+        if recorder.isEnabled == false {
+            enabledToggle.click()
+        }
+        XCTAssertTrue(recorder.isEnabled)
+
+        for _ in 0..<4 where recorder.isHittable == false {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(
+            recorder.isHittable,
+            "The hotkey recorder should be keyboard-focusable and clickable"
+        )
+        let idleRecorderValue = String(describing: recorder.value)
+        recorder.click()
+        XCTAssertNotEqual(
+            String(describing: recorder.value),
+            idleRecorderValue,
+            "Starting capture should expose its recording state accessibly"
+        )
+        recorder.click()
+
+        for _ in 0..<4 where edgePicker.isHittable == false {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(edgePicker.isHittable)
+        edgePicker.click()
+        // Tahoe renders SwiftUI picker menus in
+        // ThemeWidgetControlViewService, outside Pine's query tree. Drive the
+        // open menu through its selected row instead of matching an unrelated
+        // system "Left" menu item.
+        app.typeKey(.downArrow, modifierFlags: [])
+        app.typeKey(.downArrow, modifierFlags: [])
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(
+            String(describing: edgePicker.value).contains("Left"),
+            "Selecting an edge should mutate the final Settings scene"
+        )
+
+        for _ in 0..<4 where sizeSlider.isHittable == false {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(sizeSlider.isHittable)
+        let originalSize = String(describing: sizeSlider.value)
+        sizeSlider.adjust(toNormalizedSliderPosition: 0.75)
+        XCTAssertNotEqual(
+            String(describing: sizeSlider.value),
+            originalSize,
+            "Adjusting the size slider should update its accessible value"
+        )
+
+        for _ in 0..<4 where displayPicker.isHittable == false {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(displayPicker.isHittable)
+        displayPicker.click()
+        app.typeKey(.downArrow, modifierFlags: [])
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(
+            String(describing: displayPicker.value).contains("Main Display"),
+            "Selecting a display should mutate the shared settings"
+        )
+
+        for _ in 0..<4 where focusToggle.isHittable == false {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(focusToggle.isHittable)
+        let originalFocusPolicy = String(describing: focusToggle.value)
+        focusToggle.click()
+        XCTAssertNotEqual(
+            String(describing: focusToggle.value),
+            originalFocusPolicy,
+            "The focus-loss policy should be mutable"
+        )
+
+        for _ in 0..<4 where enabledToggle.isHittable == false {
+            scrollView.swipeDown()
+        }
+        XCTAssertTrue(
+            enabledToggle.isHittable,
+            "The master toggle should be hittable before disabling controls"
+        )
+        let enabledValue = String(describing: enabledToggle.value)
+        enabledToggle.click()
+        XCTAssertNotEqual(
+            String(describing: enabledToggle.value),
+            enabledValue,
+            "The master toggle should mutate immediate settings state"
+        )
+        XCTAssertTrue(
+            recorder.isEnabled,
+            "The recorder must remain available to recover from a conflicting hotkey"
+        )
+        XCTAssertFalse(edgePicker.isEnabled)
+        XCTAssertFalse(sizeSlider.isEnabled)
+        XCTAssertFalse(displayPicker.isEnabled)
+        XCTAssertFalse(focusToggle.isEnabled)
+
+        enabledToggle.click()
+        for _ in 0..<3 where resetButton.isHittable == false {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(
+            resetButton.isHittable,
+            "Reset should be hittable after scrolling to Quick Terminal"
+        )
+        resetButton.click()
+        XCTAssertTrue(
+            String(describing: edgePicker.value).contains("Top"),
+            "Reset should restore the default screen edge"
+        )
+        XCTAssertTrue(
+            String(describing: displayPicker.value).contains("Active Display"),
+            "Reset should restore the default target display"
+        )
+        for _ in 0..<5 where selectedTheme.isHittable == false {
+            scrollView.swipeDown()
+        }
+        let pineTheme = app.descendants(matching: .any)[
+            "terminalThemeRow_pine"
+        ].firstMatch
+        XCTAssertTrue(pineTheme.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            pineTheme.isHittable,
+            "Pine theme row should be hittable before restoring the default"
+        )
+        pineTheme.click()
+        XCTAssertTrue(
+            pineTheme.isSelected,
+            "Clicking Pine should restore the selected accessibility trait"
+        )
+    }
+}

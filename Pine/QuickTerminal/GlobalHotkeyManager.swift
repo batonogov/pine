@@ -21,6 +21,11 @@ private let carbonOption: UInt32 = UInt32(optionKey)
 private let carbonCommand: UInt32 = UInt32(cmdKey)
 private let carbonShift: UInt32 = UInt32(shiftKey)
 
+nonisolated struct GlobalHotkeyShortcut: Equatable, Sendable {
+    let keyCode: UInt32
+    let modifiers: UInt32
+}
+
 /// Owner of one system-wide hotkey. `nonisolated` because the Carbon event
 /// handler runs off the main thread (the handler main-hops internally); the
 /// stored `onTrigger` is set before `register(...)` is called and never
@@ -50,17 +55,26 @@ nonisolated final class GlobalHotkeyManager {
     /// whether to remove it. Mutated only alongside `register`/`unregister`,
     /// which are called from the main thread.
     private var handlerInstalled = false
+    private var nextHotKeyID: UInt32 = 1
+    private(set) var registeredShortcut: GlobalHotkeyShortcut?
 
     deinit { unregister() }
 
     /// Registers the hotkey. Returns `true` on success.
     /// `keyCode` is a Carbon virtual key code (e.g. `kVK_Space` = 49);
     /// `carbonModifiers` is a bitwise-OR of `controlKey` / `optionKey` /
-    /// `cmdKey` / `shiftKey`. Calling twice without ``unregister()`` is a
-    /// no-op (the second call unregisters first).
+    /// `cmdKey` / `shiftKey`. A replacement is registered before the previous
+    /// hotkey is removed. If Carbon rejects the candidate, the working
+    /// shortcut remains active.
     @discardableResult
     func register(keyCode: UInt32, carbonModifiers: UInt32) -> Bool {
-        unregister()
+        let candidate = GlobalHotkeyShortcut(
+            keyCode: keyCode,
+            modifiers: carbonModifiers
+        )
+        if hotKeyRef != nil, registeredShortcut == candidate {
+            return true
+        }
 
         // 1. Install a Carbon keyboard event handler on the application
         //    target, if one is not already installed. The handler receives
@@ -85,19 +99,38 @@ nonisolated final class GlobalHotkeyManager {
             handlerInstalled = true
         }
 
-        // 2. Register the actual hotkey. The signature is the FourCharCode
-        //    'PINE' (0x50494E45) — opaque identifier Carbon uses to find the
-        //    hotkey for `UnregisterEventHotKey`.
-        let hotKeyID = EventHotKeyID(signature: OSType(0x50494E45), id: 1)
+        // 2. Register the candidate before releasing the working hotkey. A
+        //    unique ID lets Carbon keep both registrations during handover.
+        var candidateRef: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(
+            signature: OSType(0x50494E45),
+            id: nextHotKeyID
+        )
+        nextHotKeyID = nextHotKeyID == UInt32.max ? 1 : nextHotKeyID + 1
         let regErr = RegisterEventHotKey(
             keyCode,
             carbonModifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             OptionBits(kEventHotKeyNoOptions),
-            &hotKeyRef
+            &candidateRef
         )
-        return regErr == noErr
+        guard regErr == noErr, let candidateRef else {
+            removeHandlerIfUnused()
+            return false
+        }
+
+        let previousRef = hotKeyRef
+        if let previousRef {
+            let removeErr = UnregisterEventHotKey(previousRef)
+            guard removeErr == noErr else {
+                UnregisterEventHotKey(candidateRef)
+                return false
+            }
+        }
+        hotKeyRef = candidateRef
+        registeredShortcut = candidate
+        return true
     }
 
     /// Unregisters the hotkey and removes the Carbon event handler. Safe to
@@ -107,14 +140,20 @@ nonisolated final class GlobalHotkeyManager {
             UnregisterEventHotKey(hotKeyRef)
             self.hotKeyRef = nil
         }
-        if handlerInstalled, let eventHandler {
-            RemoveEventHandler(eventHandler)
-            self.eventHandler = nil
-            handlerInstalled = false
-        }
+        registeredShortcut = nil
+        removeHandlerIfUnused()
     }
 
     var isRegistered: Bool { hotKeyRef != nil }
+
+    private func removeHandlerIfUnused() {
+        guard hotKeyRef == nil, handlerInstalled, let eventHandler else {
+            return
+        }
+        RemoveEventHandler(eventHandler)
+        self.eventHandler = nil
+        handlerInstalled = false
+    }
 
     // MARK: - Carbon callback
 
@@ -151,11 +190,32 @@ extension GlobalHotkeyManager {
     /// (typically `quickTerminalCoordinator.toggle()`). This method only
     /// reflects the enabled flag + key code + modifiers.
     @MainActor
-    func applyQuickTerminalSettings(_ settings: QuickTerminalSettings) {
+    @discardableResult
+    func applyQuickTerminalSettings(_ settings: QuickTerminalSettings) -> Bool {
         guard settings.enabled else {
             unregister()
-            return
+            return true
         }
-        register(keyCode: settings.keyCode, carbonModifiers: settings.modifiers)
+
+        let previousShortcut = registeredShortcut
+        guard register(
+            keyCode: settings.keyCode,
+            carbonModifiers: settings.modifiers
+        ) else {
+            // A rejected replacement leaves the previous Carbon registration
+            // active and rolls the visible preference back. On first launch
+            // there is no previous registration, so disable the master switch;
+            // the recorder remains enabled for recovery.
+            if let previousShortcut {
+                settings.setHotkey(
+                    keyCode: previousShortcut.keyCode,
+                    modifiers: previousShortcut.modifiers
+                )
+            } else {
+                settings.enabled = false
+            }
+            return false
+        }
+        return true
     }
 }
