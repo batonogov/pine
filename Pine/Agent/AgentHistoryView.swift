@@ -162,6 +162,7 @@ struct AgentHistoryRowView: View {
 /// Sheet wrapper that binds to the live `AgentHistoryStore`, computes rows,
 /// and opens the verified undo review before any mutation (#1237).
 struct AgentHistoryView: View {
+    @Environment(\.locale) private var locale
     @Bindable var store: AgentHistoryStore
     @Binding var isPresented: Bool
     @State private var reviewTarget: AgentHistoryEntry?
@@ -256,14 +257,24 @@ struct AgentHistoryView: View {
                     : Strings.agentHistoryRevertPartialFailure
                 )
                 if let recoveryBackupPath = result.recoveryBackupPath {
-                    Text(Strings.agentHistoryRecoveryBackup(recoveryBackupPath))
+                    Text(
+                        verbatim: Strings.agentHistoryRecoveryBackup(
+                            recoveryBackupPath,
+                            locale: locale
+                        )
+                    )
                         .textSelection(.enabled)
                 }
                 ForEach(
                     result.recoveryQuarantinePaths,
                     id: \.self
                 ) { path in
-                    Text(Strings.agentHistoryRetainedRecoveryFile(path))
+                    Text(
+                        verbatim: Strings.agentHistoryRetainedRecoveryFile(
+                            path,
+                            locale: locale
+                        )
+                    )
                         .textSelection(.enabled)
                 }
             }
@@ -279,6 +290,7 @@ struct AgentHistoryView: View {
 /// checked undo. Deliberately offers no restore action: discovery must never
 /// turn stale or corrupt backup data into automatic workspace mutations.
 struct AgentHistoryRecoveryNoticeList: View {
+    @Environment(\.locale) private var locale
     let records: [AgentHistoryRecoveryRecord]
 
     var body: some View {
@@ -323,7 +335,8 @@ struct AgentHistoryRecoveryNoticeList: View {
                 .foregroundStyle(.orange)
             recoveryPathRow(
                 text: Strings.agentHistoryRecoveryBackup(
-                    record.directoryPath
+                    record.directoryPath,
+                    locale: locale
                 ),
                 path: record.directoryPath,
                 isValidated: record.validatedPaths.contains(
@@ -332,7 +345,10 @@ struct AgentHistoryRecoveryNoticeList: View {
             )
             ForEach(record.recoveryPaths.prefix(8), id: \.self) { path in
                 recoveryPathRow(
-                    text: Strings.agentHistoryRetainedRecoveryFile(path),
+                    text: Strings.agentHistoryRetainedRecoveryFile(
+                        path,
+                        locale: locale
+                    ),
                     path: path,
                     isValidated: record.validatedPaths.contains(path)
                 )

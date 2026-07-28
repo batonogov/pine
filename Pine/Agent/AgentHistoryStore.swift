@@ -38,6 +38,9 @@ nonisolated struct AgentHistoryRevertResult: Sendable, Equatable {
     /// Per-file outcomes of a checked inverse apply (verified entries).
     /// Empty unless a verified change set reached the apply step.
     let checkedOutcomes: [AgentHistoryFileUndoOutcome]
+    /// Structured checked-engine refusal retained for the review sheet. The
+    /// public availability mapping remains coarse for legacy callers.
+    let checkedConflict: AgentHistoryEngineBlockReason?
     /// Owner-private backup retained for manual recovery after an incomplete
     /// rollback/cleanup. `nil` when no durable recovery artifact remains.
     let recoveryBackupPath: String?
@@ -50,6 +53,7 @@ nonisolated struct AgentHistoryRevertResult: Sendable, Equatable {
         fileResults: [GitFileRevertResult],
         blockedReason: AgentHistoryUndoUnavailableReason? = nil,
         checkedOutcomes: [AgentHistoryFileUndoOutcome] = [],
+        checkedConflict: AgentHistoryEngineBlockReason? = nil,
         recoveryBackupPath: String? = nil,
         recoveryQuarantinePaths: [String] = []
     ) {
@@ -57,6 +61,7 @@ nonisolated struct AgentHistoryRevertResult: Sendable, Equatable {
         self.fileResults = fileResults
         self.blockedReason = blockedReason
         self.checkedOutcomes = checkedOutcomes
+        self.checkedConflict = checkedConflict
         self.recoveryBackupPath = recoveryBackupPath
         self.recoveryQuarantinePaths = recoveryQuarantinePaths
     }
@@ -656,8 +661,10 @@ final class AgentHistoryStore {
                 entry: current,
                 changeSet: changeSet,
                 payload: payload,
-                root: root,
-                manifest: manifest
+                context: AgentHistoryUndoPreviewContext(
+                    root: root,
+                    manifest: manifest
+                )
             )
         }
     }
@@ -666,7 +673,8 @@ final class AgentHistoryStore {
     /// Undo. Returns `.available` only if the workspace still matches the
     /// recorded state; any race fails closed and disables the Undo button.
     func revalidateVerifiedUndoPreview(
-        for entry: AgentHistoryEntry
+        for entry: AgentHistoryEntry,
+        expectedPreview: AgentHistoryUndoPreviewModel
     ) async -> AgentHistoryUndoPreviewResult {
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else {
             return .unavailable(.entryNotFound)
@@ -685,11 +693,25 @@ final class AgentHistoryStore {
                     .authorityRecordMissing
                 )
             }
+            guard let payload = privateStore.loadPayload(
+                blobID: changeSet.inversePayload.blobID,
+                expectedSHA256: changeSet.inversePayload.sha256,
+                expectedByteCount: changeSet.inversePayload.byteCount,
+                expectedFormatVersion: changeSet.inversePayload.formatVersion
+            ) else {
+                return AgentHistoryUndoPreviewResult.unavailable(
+                    .inversePayloadMissing
+                )
+            }
             return AgentHistoryUndoPreview.revalidate(
                 entry: current,
                 changeSet: changeSet,
-                root: root,
-                manifest: manifest
+                payload: payload,
+                expectedPreview: expectedPreview,
+                context: AgentHistoryUndoPreviewContext(
+                    root: root,
+                    manifest: manifest
+                )
             )
         }
     }
@@ -759,7 +781,8 @@ final class AgentHistoryStore {
                         return AgentHistoryRevertResult(
                             allSucceeded: false,
                             fileResults: [],
-                            blockedReason: .authorityRecordMissing
+                            blockedReason: .authorityRecordMissing,
+                            checkedConflict: .authorityRecordMissing
                         )
                     }
                     if let blocked = AgentHistoryCheckedUndoEngine.preflight(
@@ -771,7 +794,8 @@ final class AgentHistoryStore {
                         return AgentHistoryRevertResult(
                             allSucceeded: false,
                             fileResults: [],
-                            blockedReason: Self.mapEngineBlock(blocked)
+                            blockedReason: Self.mapEngineBlock(blocked),
+                            checkedConflict: blocked
                         )
                     }
                     guard let payload = privateStore.loadPayload(
@@ -783,7 +807,8 @@ final class AgentHistoryStore {
                         return AgentHistoryRevertResult(
                             allSucceeded: false,
                             fileResults: [],
-                            blockedReason: .inversePayloadMissing
+                            blockedReason: .inversePayloadMissing,
+                            checkedConflict: .inversePayloadMissing
                         )
                     }
                     guard let backup = try? privateStore.createRecoveryBackup(
@@ -810,6 +835,7 @@ final class AgentHistoryStore {
                         fileResults: [],
                         blockedReason: checked.blockedReason.map(Self.mapEngineBlock),
                         checkedOutcomes: checked.outcomes,
+                        checkedConflict: checked.blockedReason,
                         recoveryBackupPath: checked.recoveryBackupPath,
                         recoveryQuarantinePaths:
                             checked.recoveryQuarantinePaths
@@ -849,7 +875,8 @@ final class AgentHistoryStore {
         case .workspaceRootMismatch, .workspaceGitStateChanged: .workspaceChanged
         case .projectionTampered: .invalidVerifiedReversibleChangeSet
         case .currentContentDiverged: .currentContentDiverged
-        case .inversePayloadMissing: .inversePayloadMissing
+        case .inversePayloadMissing, .inversePayloadInvalid:
+            .inversePayloadMissing
         case .fileSystemError, .applyFailed: .currentContentDiverged
         }
     }

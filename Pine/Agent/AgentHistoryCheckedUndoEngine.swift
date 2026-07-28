@@ -40,6 +40,9 @@ nonisolated enum AgentHistoryEngineBlockReason: Equatable, Sendable {
     case workspaceGitStateChanged
     case currentContentDiverged(path: String)
     case inversePayloadMissing
+    case inversePayloadInvalid(
+        AgentHistoryPayloadFailure
+    )
     case fileSystemError(String)
     case applyFailed(path: String)
 }
@@ -226,13 +229,17 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
         let manifest = context.manifest
         let privateStore = context.privateStore
         var workspaceForRollback: AgentHistorySafeWorkspace?
-        guard let entriesByPath = validatedPayloadEntries(
+        let validatedPayload: AgentHistoryValidatedInversePayload
+        switch AgentHistoryInversePayloadValidator.validate(
             changeSet: changeSet,
             payload: payload
-        ) else {
+        ) {
+        case .success(let payload):
+            validatedPayload = payload
+        case .failure(let failure):
             return blockedApplyResult(
                 changeSet: changeSet,
-                reason: .inversePayloadMissing,
+                reason: .inversePayloadInvalid(failure),
                 detail: "inverse payload does not exactly match the verified contract"
             )
         }
@@ -247,7 +254,10 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
             )
             workspaceForRollback = workspace
             let snapshots = try changeSet.changes.map {
-                try workspace.snapshot(relativePath: $0.relativePath)
+                try workspace.snapshot(
+                    relativePath: $0.relativePath,
+                    expectedByteCount: expectedCurrentByteCount(for: $0)
+                )
             }
             guard zip(changeSet.changes, snapshots).allSatisfy({
                 currentSnapshot($0.1, matches: $0.0)
@@ -281,7 +291,7 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
                         change.relativePath
                     )
                 }
-                guard let entry = entriesByPath[change.relativePath] else {
+                guard let entry = validatedPayload[change.relativePath] else {
                     throw AgentHistoryCheckedUndoError.missingBeforeContent(
                         change.relativePath
                     )
@@ -467,7 +477,7 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
             }
             if cleanupSucceeded {
                 for change in changeSet.changes {
-                    guard let entry = entriesByPath[change.relativePath],
+                    guard let entry = validatedPayload[change.relativePath],
                           inverseStateMatches(
                             change: change,
                             entry: entry,
@@ -620,47 +630,7 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
 
     // MARK: - Payload and transaction helpers
 
-    private static func validatedPayloadEntries(
-        changeSet: VerifiedAgentChangeSet,
-        payload: AgentHistoryInversePayload
-    ) -> [String: AgentHistoryInverseFileEntry]? {
-        guard payload.formatVersion == AgentHistoryInversePayload.currentFormatVersion,
-              payload.entries.count == changeSet.changes.count else {
-            return nil
-        }
-        var entries: [String: AgentHistoryInverseFileEntry] = [:]
-        for entry in payload.entries {
-            guard entries[entry.relativePath] == nil else { return nil }
-            entries[entry.relativePath] = entry
-        }
-        for change in changeSet.changes {
-            guard let entry = entries[change.relativePath],
-                  entry.operation == change.operation else {
-                return nil
-            }
-            switch change.operation {
-            case .modify, .delete:
-                guard let before = change.before,
-                      let content = entry.beforeContent,
-                      entry.permissions == before.permissions,
-                      UInt64(content.count) == before.byteCount,
-                      AgentHistoryContentHash.sha256Hex(content)
-                        == before.contentSHA256 else {
-                    return nil
-                }
-            case .create:
-                guard entry.beforeContent == nil,
-                      entry.permissions == nil else {
-                    return nil
-                }
-            case .rename, .symlink, .unsupported:
-                return nil
-            }
-        }
-        return entries
-    }
-
-    private static func currentSnapshot(
+    static func currentSnapshot(
         _ snapshot: AgentHistorySafeFileSnapshot,
         matches change: AgentHistoryRecordedFileChange
     ) -> Bool {
@@ -686,7 +656,11 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
         workspace: AgentHistorySafeWorkspace
     ) -> Bool {
         guard let snapshot = try? workspace.snapshot(
-            relativePath: change.relativePath
+            relativePath: change.relativePath,
+            expectedByteCount: expectedInverseByteCount(
+                change: change,
+                entry: entry
+            )
         ) else {
             return false
         }
@@ -714,6 +688,29 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
         zip(changes, snapshots).first {
             !currentSnapshot($0.1, matches: $0.0)
         }?.0.relativePath ?? ""
+    }
+
+    private static func expectedCurrentByteCount(
+        for change: AgentHistoryRecordedFileChange
+    ) -> UInt64? {
+        switch change.operation {
+        case .modify, .create:
+            change.after?.byteCount
+        case .delete, .rename, .symlink, .unsupported:
+            nil
+        }
+    }
+
+    private static func expectedInverseByteCount(
+        change: AgentHistoryRecordedFileChange,
+        entry: AgentHistoryInverseFileEntry
+    ) -> UInt64? {
+        switch change.operation {
+        case .modify, .delete:
+            entry.beforeContent.map { UInt64($0.count) }
+        case .create, .rename, .symlink, .unsupported:
+            nil
+        }
     }
 
     private static func workspaceGitStateMatches(

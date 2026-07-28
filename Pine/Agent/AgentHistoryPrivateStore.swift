@@ -103,6 +103,7 @@ nonisolated final class AgentHistoryPrivateStore: @unchecked Sendable {
 
     private static let maximumRecoveryRecordCount = 256
     private static let maximumRecoveryEntryCount = 4_096
+    private static let maximumAuthorityManifestByteCount = 1_048_576
     private static let maximumRecoveryManifestByteCount = 1_048_576
     private static let maximumRecoveryMarkerByteCount = 16_384
     private static let maximumRecoveryMetadataByteCount = 262_144
@@ -307,9 +308,10 @@ nonisolated final class AgentHistoryPrivateStore: @unchecked Sendable {
             return nil
         }
         defer { close(directory) }
-        guard let data = try? readOwnerOnlyRegularFile(
+        guard let data = try? readExactOwnerOnlyRegularFile(
             named: payloadFileName(blobID),
-            directory: directory
+            directory: directory,
+            expectedByteCount: expectedByteCount
         ),
         !data.isEmpty,
         UInt64(data.count) == expectedByteCount,
@@ -1202,15 +1204,10 @@ nonisolated final class AgentHistoryPrivateStore: @unchecked Sendable {
               UInt64(info.st_size) <= UInt64(maximumByteCount) else {
             throw AgentHistoryPrivateStoreError.untrustedStorage
         }
-        let handle = FileHandle(
-            fileDescriptor: descriptor,
-            closeOnDealloc: false
+        return try AgentHistoryBoundedFileReader.readExact(
+            descriptor: descriptor,
+            expectedByteCount: UInt64(info.st_size)
         )
-        let data = try handle.read(upToCount: maximumByteCount + 1) ?? Data()
-        guard data.count <= maximumByteCount else {
-            throw AgentHistoryPrivateStoreError.untrustedStorage
-        }
-        return data
     }
 
     private func isSafeFileName(_ name: String) -> Bool {
@@ -1405,9 +1402,10 @@ nonisolated final class AgentHistoryPrivateStore: @unchecked Sendable {
         recordID: UUID,
         directory: Int32
     ) -> AgentHistoryAuthorityManifest? {
-        guard let data = try? readOwnerOnlyRegularFile(
+        guard let data = try? readBoundedOwnerOnlyRegularFile(
             named: authorityFileName(recordID),
-            directory: directory
+            directory: directory,
+            maximumByteCount: Self.maximumAuthorityManifestByteCount
         ),
         !data.isEmpty,
         let manifest = try? AgentHistoryStore.makeDecoder().decode(
@@ -1497,9 +1495,10 @@ nonisolated final class AgentHistoryPrivateStore: @unchecked Sendable {
         succeeded = true
     }
 
-    private func readOwnerOnlyRegularFile(
+    private func readExactOwnerOnlyRegularFile(
         named name: String,
-        directory: Int32
+        directory: Int32,
+        expectedByteCount: UInt64
     ) throws -> Data {
         let descriptor = openat(
             directory,
@@ -1511,8 +1510,10 @@ nonisolated final class AgentHistoryPrivateStore: @unchecked Sendable {
         }
         defer { close(descriptor) }
         try validateOwnerOnlyRegularFile(descriptor)
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
-        return try handle.readToEnd() ?? Data()
+        return try AgentHistoryBoundedFileReader.readExact(
+            descriptor: descriptor,
+            expectedByteCount: expectedByteCount
+        )
     }
 
     private func writeAll(_ data: Data, descriptor: Int32) throws {
@@ -1691,12 +1692,10 @@ nonisolated final class AgentHistoryRecoveryBackup: @unchecked Sendable {
               isDurablyLinked() else {
             return .failed(retainedPath)
         }
-        let handle = FileHandle(
-            fileDescriptor: descriptor,
-            closeOnDealloc: false
-        )
-        guard let data = try? handle.readToEnd(),
-              UInt64(data.count) == expectedByteCount,
+        guard let data = try? AgentHistoryBoundedFileReader.readExact(
+            descriptor: descriptor,
+            expectedByteCount: expectedByteCount
+        ),
               AgentHistoryContentHash.sha256Hex(data)
                 == expectedContentSHA256 else {
             return .failed(retainedPath)
