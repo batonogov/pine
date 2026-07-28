@@ -134,11 +134,17 @@ final class SidebarEditState {
 /// SwiftUI key handler first responder. Keeping a real NSView target gives
 /// row clicks the same synchronous responder semantics as NSOutlineView.
 @MainActor
+@Observable
 final class SidebarKeyboardFocusController {
     private weak var responderView: SidebarKeyboardResponderView?
+    private(set) var isFocused = false
 
     func attach(_ responderView: SidebarKeyboardResponderView) {
         self.responderView = responderView
+        responderView.onFocusChange = { [weak self] focused in
+            self?.updateFocus(focused)
+        }
+        updateFocus(responderView.window?.firstResponder === responderView)
     }
 
     @discardableResult
@@ -148,6 +154,11 @@ final class SidebarKeyboardFocusController {
         }
         return window.makeFirstResponder(responderView)
             && window.firstResponder === responderView
+    }
+
+    private func updateFocus(_ focused: Bool) {
+        guard isFocused != focused else { return }
+        isFocused = focused
     }
 }
 
@@ -164,10 +175,83 @@ enum SidebarKeyboardFocusPolicy {
     }
 }
 
+/// Navigation commands shared by SwiftUI key presses, physical AppKit events,
+/// and the standard key-binding selectors used by Full Keyboard Access and
+/// Accessibility-driven input.
+enum SidebarKeyboardCommand: Equatable, Sendable {
+    case up
+    case down
+    case left
+    case right
+    case home
+    case end
+    case pageUp
+    case pageDown
+
+    init?(keyCode: UInt16) {
+        switch keyCode {
+        case 123:
+            self = .left
+        case 124:
+            self = .right
+        case 125:
+            self = .down
+        case 126:
+            self = .up
+        case 115:
+            self = .home
+        case 119:
+            self = .end
+        case 116:
+            self = .pageUp
+        case 121:
+            self = .pageDown
+        default:
+            return nil
+        }
+    }
+
+    init?(selector: Selector) {
+        switch NSStringFromSelector(selector) {
+        case "moveUp:":
+            self = .up
+        case "moveDown:":
+            self = .down
+        case "moveLeft:":
+            self = .left
+        case "moveRight:":
+            self = .right
+        case "moveToBeginningOfDocument:",
+             "scrollToBeginningOfDocument:":
+            self = .home
+        case "moveToEndOfDocument:",
+             "scrollToEndOfDocument:":
+            self = .end
+        case "pageUp:",
+             "scrollPageUp:":
+            self = .pageUp
+        case "pageDown:",
+             "scrollPageDown:":
+            self = .pageDown
+        default:
+            return nil
+        }
+    }
+}
+
 /// Invisible responder embedded in the sidebar hierarchy.
 @MainActor
 final class SidebarKeyboardResponderView: NSView {
-    var onKeyDown: ((NSEvent) -> Bool)?
+    var onCommand: ((SidebarKeyboardCommand) -> Bool)?
+    var onPrintableText: ((String) -> Bool)?
+    var onReturn: ((SidebarKeyboardModifiers) -> Bool)?
+    var onSpace: (() -> Bool)?
+    var onFocusChange: ((Bool) -> Void)?
+    /// Injectable only so hosted tests can prove selector trust boundaries.
+    var currentEventProvider: () -> NSEvent? = { NSApp.currentEvent }
+    private var isForwardingNavigationKey = false
+    private var isForwardingReturnKey = false
+    private var isForwardingSpaceKey = false
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -178,35 +262,196 @@ final class SidebarKeyboardResponderView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if onKeyDown?(event) == true {
+        let modifiers = SidebarKeyboardModifiers(event.modifierFlags)
+        if Self.isReturnEvent(event) {
+            routePhysicalReturn(event, modifiers: modifiers)
+            return
+        }
+        if Self.isSpaceEvent(event) {
+            routePhysicalSpace(event, modifiers: modifiers)
+            return
+        }
+        if let command = SidebarKeyboardCommand(keyCode: event.keyCode) {
+            if modifiers.isEmpty, onCommand?(command) == true {
+                return
+            }
+            forwardUnclaimedNavigationKey(event)
+            return
+        }
+        if let character = SidebarTypeSelectInput.printableCharacter(
+            from: event.characters,
+            modifiers: modifiers
+        ), onPrintableText?(character) == true {
             return
         }
         if event.keyCode == 48 {
-            if event.modifierFlags.contains(.shift) {
-                window?.selectPreviousKeyView(self)
-            } else {
+            switch SidebarTabTraversalDirection.resolve(
+                modifiers: modifiers
+            ) {
+            case .next:
                 window?.selectNextKeyView(self)
+                return
+            case .previous:
+                window?.selectPreviousKeyView(self)
+                return
+            case nil:
+                break
             }
-            return
         }
         super.keyDown(with: event)
+    }
+
+    /// AppKit's key-binding machinery routes interpreted printable input here.
+    /// XCUITest and accessibility input can use this path without emitting the
+    /// `keyDown` event seen for a physical keyboard.
+    override func insertText(_ insertString: Any) {
+        guard let text = Self.plainText(from: insertString) else {
+            super.insertText(insertString)
+            return
+        }
+        if text == " ", !isForwardingSpaceKey {
+            let modifiers = currentSpaceEventModifiers() ?? []
+            if SidebarSpaceAction.accepts(modifiers: modifiers),
+               onSpace?() == true {
+                return
+            }
+        }
+        if let character = SidebarTypeSelectInput.printableCharacter(
+            from: text,
+            modifiers: []
+        ),
+           onPrintableText?(character) == true {
+            return
+        }
+        super.insertText(insertString)
+    }
+
+    /// Accessibility and Full Keyboard Access can route movement through
+    /// AppKit's standard key-binding selectors instead of delivering an
+    /// `NSEvent`. Keep that path on the same command callback as `keyDown`.
+    override func doCommand(by selector: Selector) {
+        if !isForwardingReturnKey,
+           NSStringFromSelector(selector) == "insertNewline:",
+           let event = currentEventProvider(),
+           Self.isReturnEvent(event) {
+            let modifiers = SidebarKeyboardModifiers(event.modifierFlags)
+            if modifiers == [.command],
+               onReturn?(modifiers) == true {
+                return
+            }
+        }
+        if !isForwardingNavigationKey,
+           let command = SidebarKeyboardCommand(selector: selector),
+           onCommand?(command) == true {
+            return
+        }
+        super.doCommand(by: selector)
+    }
+
+    private func routePhysicalReturn(
+        _ event: NSEvent,
+        modifiers: SidebarKeyboardModifiers
+    ) {
+        if SidebarReturnAction.accepts(modifiers: modifiers),
+           onReturn?(modifiers) == true {
+            return
+        }
+        isForwardingReturnKey = true
+        defer { isForwardingReturnKey = false }
+        super.keyDown(with: event)
+    }
+
+    private func routePhysicalSpace(
+        _ event: NSEvent,
+        modifiers: SidebarKeyboardModifiers
+    ) {
+        if SidebarSpaceAction.accepts(modifiers: modifiers),
+           onSpace?() == true {
+            return
+        }
+        isForwardingSpaceKey = true
+        defer { isForwardingSpaceKey = false }
+        super.keyDown(with: event)
+    }
+
+    /// Let modified or otherwise-unclaimed movement continue through AppKit
+    /// without re-entering our selector-only accessibility command path.
+    private func forwardUnclaimedNavigationKey(_ event: NSEvent) {
+        isForwardingNavigationKey = true
+        defer { isForwardingNavigationKey = false }
+        super.keyDown(with: event)
+    }
+
+    private static func plainText(from value: Any) -> String? {
+        if let string = value as? String {
+            return string
+        }
+        return (value as? NSAttributedString)?.string
+    }
+
+    private func currentSpaceEventModifiers() -> SidebarKeyboardModifiers? {
+        guard let event = currentEventProvider(),
+              Self.isSpaceEvent(event) else {
+            return nil
+        }
+        return SidebarKeyboardModifiers(event.modifierFlags)
+    }
+
+    private static func isReturnEvent(_ event: NSEvent) -> Bool {
+        event.type == .keyDown
+            && (
+                event.keyCode == 36
+                    || event.keyCode == 76
+                    || event.characters == "\r"
+                    || event.characters == "\n"
+            )
+    }
+
+    private static func isSpaceEvent(_ event: NSEvent) -> Bool {
+        event.type == .keyDown
+            && (event.keyCode == 49 || event.characters == " ")
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted {
+            onFocusChange?(true)
+        }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned {
+            onFocusChange?(false)
+        }
+        return resigned
     }
 }
 
 /// Keeps the AppKit responder attached to SwiftUI's sidebar lifecycle.
 struct SidebarKeyboardFocusBridge: NSViewRepresentable {
     let controller: SidebarKeyboardFocusController
-    let onKeyDown: (NSEvent) -> Bool
+    let onCommand: (SidebarKeyboardCommand) -> Bool
+    let onPrintableText: (String) -> Bool
+    let onReturn: (SidebarKeyboardModifiers) -> Bool
+    let onSpace: () -> Bool
 
     func makeNSView(context: Context) -> SidebarKeyboardResponderView {
         let view = SidebarKeyboardResponderView()
-        view.onKeyDown = onKeyDown
+        view.onCommand = onCommand
+        view.onPrintableText = onPrintableText
+        view.onReturn = onReturn
+        view.onSpace = onSpace
         controller.attach(view)
         return view
     }
 
     func updateNSView(_ nsView: SidebarKeyboardResponderView, context: Context) {
-        nsView.onKeyDown = onKeyDown
+        nsView.onCommand = onCommand
+        nsView.onPrintableText = onPrintableText
+        nsView.onReturn = onReturn
+        nsView.onSpace = onSpace
         controller.attach(nsView)
     }
 }
@@ -215,42 +460,95 @@ struct SidebarKeyboardFocusBridge: NSViewRepresentable {
 
 private struct SidebarKeyboardNavigationModifier: ViewModifier {
     var actions: SidebarKeyboardActions
+    var isEnabled: Bool
 
     func body(content: Content) -> some View {
         content
-            .onKeyPress(.upArrow) { actions.onUp(); return .handled }
-            .onKeyPress(.downArrow) { actions.onDown(); return .handled }
-            .onKeyPress(.leftArrow) { actions.onLeft(); return .handled }
-            .onKeyPress(.rightArrow) { actions.onRight(); return .handled }
-            .onKeyPress(.home) { actions.onHome(); return .handled }
-            .onKeyPress(.end) { actions.onEnd(); return .handled }
-            .onKeyPress(.pageUp) { actions.onPageUp(); return .handled }
-            .onKeyPress(.pageDown) { actions.onPageDown(); return .handled }
+            .onKeyPress(.upArrow, phases: .down) { press in
+                handleNavigation(press, command: .up)
+            }
+            .onKeyPress(.downArrow, phases: .down) { press in
+                handleNavigation(press, command: .down)
+            }
+            .onKeyPress(.leftArrow, phases: .down) { press in
+                handleNavigation(press, command: .left)
+            }
+            .onKeyPress(.rightArrow, phases: .down) { press in
+                handleNavigation(press, command: .right)
+            }
+            .onKeyPress(.home, phases: .down) { press in
+                handleNavigation(press, command: .home)
+            }
+            .onKeyPress(.end, phases: .down) { press in
+                handleNavigation(press, command: .end)
+            }
+            .onKeyPress(.pageUp, phases: .down) { press in
+                handleNavigation(press, command: .pageUp)
+            }
+            .onKeyPress(.pageDown, phases: .down) { press in
+                handleNavigation(press, command: .pageDown)
+            }
             .onKeyPress(phases: .down) { press in
-                guard let char = press.characters.first else { return .ignored }
-                actions.onCharacters(String(char))
+                guard isEnabled,
+                      let character = SidebarTypeSelectInput.printableCharacter(
+                        from: press.characters,
+                        modifiers: SidebarKeyboardModifiers(press.modifiers)
+                      ) else {
+                    return .ignored
+                }
+                actions.onCharacters(character)
                 return .handled
             }
     }
+
+    private func handleNavigation(
+        _ press: KeyPress,
+        command: SidebarKeyboardCommand
+    ) -> KeyPress.Result {
+        let modifiers = SidebarKeyboardModifiers(press.modifiers)
+        guard isEnabled, modifiers.isEmpty else { return .ignored }
+        actions.onCommand(command)
+        return .handled
+    }
 }
 
-/// Groups sidebar keyboard-navigation callbacks to stay under SwiftLint's
-/// 5-parameter limit.
+/// Groups navigation and type-selection callbacks for the keyboard modifier.
 struct SidebarKeyboardActions {
-    var onUp: () -> Void
-    var onDown: () -> Void
-    var onLeft: () -> Void
-    var onRight: () -> Void
-    var onHome: () -> Void
-    var onEnd: () -> Void
-    var onPageUp: () -> Void
-    var onPageDown: () -> Void
+    var onCommand: (SidebarKeyboardCommand) -> Void
     var onCharacters: (String) -> Void
 }
 
 extension View {
-    func sidebarKeyboardNavigation(_ actions: SidebarKeyboardActions) -> some View {
-        modifier(SidebarKeyboardNavigationModifier(actions: actions))
+    func sidebarKeyboardNavigation(
+        _ actions: SidebarKeyboardActions,
+        isEnabled: Bool
+    ) -> some View {
+        modifier(
+            SidebarKeyboardNavigationModifier(
+                actions: actions,
+                isEnabled: isEnabled
+            )
+        )
+    }
+}
+
+private extension SidebarKeyboardModifiers {
+    init(_ modifiers: EventModifiers) {
+        var result: SidebarKeyboardModifiers = []
+        if modifiers.contains(.command) { result.insert(.command) }
+        if modifiers.contains(.control) { result.insert(.control) }
+        if modifiers.contains(.option) { result.insert(.option) }
+        if modifiers.contains(.shift) { result.insert(.shift) }
+        self = result
+    }
+
+    init(_ modifiers: NSEvent.ModifierFlags) {
+        var result: SidebarKeyboardModifiers = []
+        if modifiers.contains(.command) { result.insert(.command) }
+        if modifiers.contains(.control) { result.insert(.control) }
+        if modifiers.contains(.option) { result.insert(.option) }
+        if modifiers.contains(.shift) { result.insert(.shift) }
+        self = result
     }
 }
 
@@ -262,6 +560,8 @@ struct SidebarView: View {
     @Environment(ProjectRegistry.self) private var registry
     @Environment(\.openWindow) var openWindow
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.controlActiveState) private var controlActiveState
     @State private var editState = SidebarEditState()
     @State private var expansion = SidebarExpansionState()
     @State private var keyboardFocusController = SidebarKeyboardFocusController()
@@ -310,6 +610,8 @@ struct SidebarView: View {
                                 treeRevision: workspace.rootNodesRevision,
                                 selection: $selectedFile,
                                 onFileOpen: onFileOpen,
+                                isKeyboardFocused: keyboardFocusController.isFocused
+                                    && controlActiveState == .key,
                                 onKeyboardFocusRequested: {
                                     claimSidebarKeyboardFocus()
                                 }
@@ -321,7 +623,10 @@ struct SidebarView: View {
                     .background(alignment: .topLeading) {
                         SidebarKeyboardFocusBridge(
                             controller: keyboardFocusController,
-                            onKeyDown: handleSidebarKeyDown
+                            onCommand: handleSidebarCommand,
+                            onPrintableText: handleSidebarPrintableText,
+                            onReturn: handleSidebarReturn,
+                            onSpace: handleSidebarSpace
                         )
                         .frame(width: 1, height: 1)
                     }
@@ -345,37 +650,57 @@ struct SidebarView: View {
                         // Drop expanded entries for folders that disappeared
                         // (e.g. after delete) so the set stays bounded.
                         expansion.prune(toMatch: workspace.rootNodes)
+                        reconcileSelectionAfterReload()
                     }
                     .onAppear {
                         // Wire the ScrollViewReader proxy so selection
                         // changes can keep the selected row visible.
-                        navigation.scrollToNode = { id in
+                        navigation.scrollMotion = .resolve(
+                            reduceMotion: reduceMotion
+                        )
+                        navigation.scrollToNode = { id, motion in
                             DispatchQueue.main.async {
-                                withAnimation {
+                                if motion == .animated {
+                                    withAnimation {
+                                        scrollProxy.scrollTo(
+                                            id,
+                                            anchor: .center
+                                        )
+                                    }
+                                } else {
                                     scrollProxy.scrollTo(id, anchor: .center)
                                 }
                             }
                         }
                     }
-                    .sidebarKeyboardNavigation(SidebarKeyboardActions(
-                        onUp: { handleArrow(delta: -1) },
-                        onDown: { handleArrow(delta: 1) },
-                        onLeft: { handleLeftArrow() },
-                        onRight: { handleRightArrow() },
-                        onHome: { handleHome() },
-                        onEnd: { handleEnd() },
-                        onPageUp: { handlePageUp() },
-                        onPageDown: { handlePageDown() },
-                        onCharacters: { handleTypedCharacters($0) }
-                    ))
+                    .onChange(of: reduceMotion) { _, newValue in
+                        navigation.scrollMotion = .resolve(
+                            reduceMotion: newValue
+                        )
+                    }
+                    .sidebarKeyboardNavigation(
+                        SidebarKeyboardActions(
+                            onCommand: { _ = handleSidebarCommand($0) },
+                            onCharacters: { handleTypedCharacters($0) }
+                        ),
+                        isEnabled: editState.renamingURL == nil
+                    )
                     .onKeyPress(.return, phases: .down) { press in
                         handleSidebarReturn(
-                            commandPressed: press.modifiers.contains(.command),
-                            hasAnyModifiers: !press.modifiers.isEmpty
+                            modifiers: SidebarKeyboardModifiers(press.modifiers)
                         ) ? .handled : .ignored
                     }
-                    .onKeyPress(.space) {
-                        handleSidebarSpace() ? .handled : .ignored
+                    .onKeyPress(.space, phases: .down) { press in
+                        let modifiers = SidebarKeyboardModifiers(
+                            press.modifiers
+                        )
+                        guard SidebarSpaceAction.accepts(
+                            modifiers: modifiers
+                        ),
+                              editState.renamingURL == nil else {
+                            return .ignored
+                        }
+                        return handleSidebarSpace() ? .handled : .ignored
                     }
                     .contextMenu {
                         if let rootURL = workspace.rootURL {
@@ -414,16 +739,26 @@ struct SidebarView: View {
                     }
                     .navigationTitle(workspace.projectName)
                     .onChange(of: editState.renamingURL) { _, newURL in
-                        if newURL != nil {
+                        if let newURL {
                             // Context-menu rename/new/duplicate paths do not
                             // necessarily pass through a row focus claim.
                             // Claim the AppKit responder before the inline
                             // TextField takes focus so both explicit retries
                             // and implicit editor creation are superseded.
+                            navigation.resetTypeAhead()
                             claimSidebarKeyboardFocus()
-                            // Defer to avoid modifying state during view update
+                            // Keep the edited row selected. Deferring avoids
+                            // mutating the binding during the view update, and
+                            // also lets a synchronous create/duplicate refresh
+                            // install the fresh FileNode first.
                             DispatchQueue.main.async {
-                                selectedFile = nil
+                                if case .present(let node) =
+                                    SidebarTreeFlattener.lookup(
+                                        newURL,
+                                        rootNodes: workspace.rootNodes
+                                    ) {
+                                    selectedFile = node
+                                }
                             }
                         }
                     }
@@ -431,6 +766,13 @@ struct SidebarView: View {
                         guard let targetID else { return }
                         // Defer scroll to next run loop so the file tree has time to update.
                         DispatchQueue.main.async {
+                            if case .present(let node) =
+                                SidebarTreeFlattener.lookup(
+                                    targetID,
+                                    rootNodes: workspace.rootNodes
+                                ) {
+                                selectedFile = node
+                            }
                             withAnimation {
                                 scrollProxy.scrollTo(targetID, anchor: .center)
                             }
@@ -458,99 +800,75 @@ struct SidebarView: View {
         keyboardFocusController.requestFocus()
     }
 
-    /// Handles real AppKit events when the sidebar was focused by a row click.
-    /// Routes arrow, Home/End, Page Up/Down, and type-ahead characters
-    /// through the same ``SidebarTreeNavigation`` model as the SwiftUI
-    /// `.onKeyPress` handlers so both focus paths stay in sync (#1238).
-    private func handleSidebarKeyDown(_ event: NSEvent) -> Bool {
-        // While renaming, let the TextField consume all key events.
+    private func handleSidebarPrintableText(_ text: String) -> Bool {
+        guard editState.renamingURL == nil else { return false }
+        handleTypedCharacters(text)
+        return true
+    }
+
+    /// One production dispatch point for SwiftUI key presses, physical
+    /// `NSEvent` navigation, and AppKit standard key-binding selectors.
+    private func handleSidebarCommand(
+        _ command: SidebarKeyboardCommand
+    ) -> Bool {
         guard editState.renamingURL == nil else { return false }
 
-        let modifiers = event.modifierFlags.intersection([
-            .command, .option, .control, .shift
-        ])
-        // Arrow / Home / End / Page navigation only fires with no modifiers
-        // so Shift-, Cmd-, etc. keep their standard behaviour.
-        let plainModifiers = modifiers.isEmpty
-
-        switch event.keyCode {
-        case 36, 76: // Return and keypad Enter
-            return handleSidebarReturn(
-                commandPressed: modifiers.contains(.command),
-                hasAnyModifiers: !modifiers.isEmpty
-            )
-        case 49: // Space
-            return handleSidebarSpace()
-        case 123: // Left arrow
-            guard plainModifiers else { return false }
-            handleLeftArrow()
-            return true
-        case 124: // Right arrow
-            guard plainModifiers else { return false }
-            handleRightArrow()
-            return true
-        case 125: // Down arrow
-            guard plainModifiers else { return false }
-            handleArrow(delta: 1)
-            return true
-        case 126: // Up arrow
-            guard plainModifiers else { return false }
+        switch command {
+        case .up:
             handleArrow(delta: -1)
-            return true
-        case 115: // Home
-            guard plainModifiers else { return false }
+        case .down:
+            handleArrow(delta: 1)
+        case .left:
+            handleLeftArrow()
+        case .right:
+            handleRightArrow()
+        case .home:
             handleHome()
-            return true
-        case 119: // End
-            guard plainModifiers else { return false }
+        case .end:
             handleEnd()
-            return true
-        case 116: // Page Up
-            guard plainModifiers else { return false }
+        case .pageUp:
             handlePageUp()
-            return true
-        case 121: // Page Down
-            guard plainModifiers else { return false }
+        case .pageDown:
             handlePageDown()
-            return true
-        default:
-            // Type-to-select: plain printable characters only.
-            guard plainModifiers,
-                  let first = event.characters?.first,
-                  let scalar = first.unicodeScalars.first,
-                  CharacterSet.alphanumerics.contains(scalar)
-            else { return false }
-            handleTypedCharacters(String(first))
-            return true
         }
+        return true
     }
 
     /// Finder-style Return: rename in place. Command-Return is an explicit
     /// open and moves focus into the editor.
     private func handleSidebarReturn(
-        commandPressed: Bool,
-        hasAnyModifiers: Bool
+        modifiers: SidebarKeyboardModifiers
     ) -> Bool {
-        if commandPressed,
-           let selected = selectedFile,
-           !selected.isDirectory {
-            onFileOpen(selected, .permanent)
-            return true
-        }
-        guard !hasAnyModifiers,
-              editState.renamingURL == nil,
-              let selected = selectedFile else {
+        guard editState.renamingURL == nil,
+              let selected = selectedFile,
+              let action = SidebarReturnAction.resolve(
+                modifiers: modifiers,
+                isRenaming: false,
+                selectedIsDirectory: selected.isDirectory
+              ) else {
             return false
         }
-        paneManager.cancelPendingFocusForActivePane()
-        editState.startRename(for: selected)
-        return true
+
+        switch action {
+        case .open:
+            navigation.resetTypeAhead()
+            onFileOpen(selected, .permanent)
+            return true
+        case .rename:
+            navigation.resetTypeAhead()
+            paneManager.cancelPendingFocusForActivePane()
+            editState.startRename(for: selected)
+            return true
+        }
     }
 
     private func handleSidebarSpace() -> Bool {
-        guard let selected = selectedFile, !selected.isDirectory else {
+        guard editState.renamingURL == nil,
+              let selected = selectedFile,
+              !selected.isDirectory else {
             return false
         }
+        navigation.resetTypeAhead()
         claimSidebarKeyboardFocus()
         onFileOpen(selected, .transientPreview)
         return true
@@ -629,11 +947,35 @@ struct SidebarView: View {
     /// Type-to-select with repeated-character cycling and Unicode support.
     private func handleTypedCharacters(_ characters: String) {
         let rows = visibleRows
-        guard !rows.isEmpty, let first = characters.first else { return }
-        // Ignore modifiers that aren't part of a plain typed character.
-        guard let scalar = first.unicodeScalars.first,
-              CharacterSet.alphanumerics.contains(scalar) else { return }
-        navigate(to: navigation.typeSelect(character: String(first), current: selectedFile, rows: rows))
+        guard !rows.isEmpty else { return }
+        navigate(
+            to: navigation.typeSelect(
+                character: characters,
+                current: selectedFile,
+                rows: rows
+            )
+        )
+    }
+
+    private func reconcileSelectionAfterReload() {
+        let rows = visibleRows
+        let reconciled = navigation.reconciledSelection(
+            current: selectedFile,
+            rootNodes: workspace.rootNodes,
+            rows: rows
+        )
+        selectedFile = reconciled
+        if let reconciled {
+            navigation.scroll(to: reconciled)
+        }
+
+        if let renamingURL = editState.renamingURL,
+           !SidebarTreeFlattener.contains(
+               renamingURL,
+               rootNodes: workspace.rootNodes
+           ) {
+            editState.clear()
+        }
     }
 }
 

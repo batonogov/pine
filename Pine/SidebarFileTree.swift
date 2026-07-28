@@ -59,6 +59,7 @@ struct SidebarFileTree: View {
     let treeRevision: Int
     @Binding var selection: FileNode?
     let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
+    let isKeyboardFocused: Bool
     let onKeyboardFocusRequested: () -> Void
 
     var body: some View {
@@ -68,6 +69,8 @@ struct SidebarFileTree: View {
                 treeRevision: treeRevision,
                 selection: $selection,
                 onFileOpen: onFileOpen,
+                isKeyboardFocused: isKeyboardFocused,
+                depth: 0,
                 onKeyboardFocusRequested: onKeyboardFocusRequested
             )
         }
@@ -80,10 +83,15 @@ private struct SidebarFileTreeNode: View {
     let treeRevision: Int
     @Binding var selection: FileNode?
     let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
+    let isKeyboardFocused: Bool
+    let depth: Int
     let onKeyboardFocusRequested: () -> Void
     @Environment(SidebarExpansionState.self) private var expansion
     @Environment(SidebarEditState.self) private var editState
+    @Environment(SidebarTreeNavigation.self) private var navigation
+    @Environment(PaneManager.self) private var paneManager
     @State private var fontSettings = FontSizeSettings.shared
+    @State private var isHovered = false
     @State private var isLoadingDeferredChildren = false
     @State private var loadedChildrenRevision = 0
     /// Monotonic generation token for in-flight deferred loads. Bumps on
@@ -116,6 +124,8 @@ private struct SidebarFileTreeNode: View {
                                 treeRevision: treeRevision,
                                 selection: $selection,
                                 onFileOpen: onFileOpen,
+                                isKeyboardFocused: isKeyboardFocused,
+                                depth: depth + 1,
                                 onKeyboardFocusRequested: onKeyboardFocusRequested
                             )
                         }
@@ -167,66 +177,136 @@ private struct SidebarFileTreeNode: View {
     @ViewBuilder
     private func row(isFolder: Bool) -> some View {
         let fontSize = fontSettings.fontSize
-        let isSelected = selection?.id == node.id
+        let nodeIdentity = SidebarPathIdentity(node.url)
+        let isSelected = selection.map {
+            SidebarPathIdentity($0.url)
+        } == nodeIdentity
+        let isExpanded = isFolder && expansion.isExpanded(node.url)
+        let activeTab = paneManager.activeEditorTabManager?.activeTab
+        let isActiveFile = activeTab.map {
+            SidebarPathIdentity($0.url)
+        } == nodeIdentity
+        let isTransientPreview = isActiveFile
+            && (activeTab?.isTransientPreview ?? false)
+        let visualState = SidebarRowVisualState(
+            isSelected: isSelected,
+            isKeyboardFocused: isSelected && isKeyboardFocused,
+            isHovered: isHovered,
+            isActiveFile: isActiveFile,
+            isTransientPreview: isTransientPreview,
+            isExpanded: isExpanded,
+            isMissing: false
+        )
         let rowHeight = max(SidebarRowMetrics.minRowHeight, fontSize + SidebarRowMetrics.rowVerticalPadding)
-        let rowContent = FileNodeRow(node: node)
-            .font(.system(size: fontSize))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: rowHeight)
-            .padding(.horizontal, SidebarRowMetrics.rowHorizontalPadding)
-            .background(
-                RoundedRectangle(cornerRadius: SidebarRowMetrics.selectionCornerRadius, style: .continuous)
-                    .fill(Color.accentColor.opacity(isSelected ? SidebarRowMetrics.selectionOpacity : 0))
-                    .padding(.horizontal, SidebarRowMetrics.selectionHorizontalInset)
+        let rowContent = SidebarRowChrome(
+            state: visualState,
+            rowHeight: rowHeight
+        ) {
+            FileNodeRow(
+                node: node,
+                isExpanded: isExpanded,
+                isActiveFile: isActiveFile,
+                isTransientPreview: isTransientPreview
             )
-            .contentShape(Rectangle())
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .font(.system(size: fontSize))
+        }
             .id(node.id)
+            .onHover { hovering in
+                isHovered = hovering
+            }
 
-        if isFolder {
+        if isRenamingThisNode {
+            // Keep the inline TextField as its own accessibility element.
+            // Combining or replacing the row while renaming hides
+            // `inlineRenameTextField` from VoiceOver and XCUITest.
+            rowContent
+        } else if isFolder {
             rowContent.onTapGesture {
                 handleFolderTap()
             }
-            // VoiceOver: expose disclosure state and actions so folder rows
-            // behave like an NSOutlineView disclosure triangle (#1238).
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text(node.name))
-            .accessibilityValue(Text(expansion.isExpanded(node.url) ? Strings.a11ySidebarDisclosureExpanded : Strings.a11ySidebarDisclosureCollapsed))
-            .accessibilityHint(Strings.a11ySidebarFolderHint)
-            .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
-            .accessibilityAction(named: Text(expansion.isExpanded(node.url) ? Strings.a11ySidebarCollapseAction : Strings.a11ySidebarExpandAction)) {
-                expansion.toggleDebounced(node.url)
+            .accessibilityHidden(true)
+            .background {
+                SidebarAccessibilityRow(
+                    configuration: accessibilityConfiguration(
+                        isFolder: true,
+                        isExpanded: isExpanded,
+                        isSelected: isSelected
+                    ),
+                    onPress: {
+                        activateFolder(
+                            debounced: false,
+                            requestKeyboardFocus: true
+                        )
+                        return true
+                    },
+                    onCustomAction: {
+                        setFolderExpanded(!isExpanded)
+                        return true
+                    }
+                )
             }
-        } else if isRenamingThisNode {
-            // Keep the inline TextField as its own accessibility element.
-            // Combining the row's children is useful for a normal file row,
-            // but while renaming it hides `inlineRenameTextField` from
-            // VoiceOver and XCUITest and makes the editor unreachable.
-            rowContent
         } else {
             rowContent
                 .onTapGesture {
                     openFile(.pointerClick(count: NSApp.currentEvent?.clickCount ?? 1))
                 }
-                // Expose one labeled element with a stable identifier.
-                // The default action deliberately gives file rows an
-                // actionable accessibility role, while the named action
-                // keeps transient preview available to VoiceOver users.
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(Text(node.name))
-                .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
-                .accessibilityHint(Strings.a11ySidebarFileOpenHint)
-                .accessibilityAction(.default) {
-                    openFile(.permanent)
-                }
-                .accessibilityAction(named: Text(Strings.a11ySidebarOpenPreview)) {
-                    openFile(.transientPreview)
+                .accessibilityHidden(true)
+                .background {
+                    SidebarAccessibilityRow(
+                        configuration: accessibilityConfiguration(
+                            isFolder: false,
+                            isExpanded: false,
+                            isSelected: isSelected
+                        ),
+                        onPress: {
+                            openFile(.permanent)
+                            return true
+                        },
+                        onCustomAction: {
+                            openFile(
+                                .transientPreview,
+                                requestKeyboardFocus: false
+                            )
+                            return true
+                        }
+                    )
                 }
         }
     }
 
+    private func accessibilityConfiguration(
+        isFolder: Bool,
+        isExpanded: Bool,
+        isSelected: Bool
+    ) -> SidebarAccessibilityRowConfiguration {
+        SidebarAccessibilityRowConfiguration(
+            label: node.name,
+            identifier: AccessibilityID.fileNode(node.name),
+            level: depth,
+            isSelected: isSelected,
+            isFocused: isSelected && isKeyboardFocused,
+            isFolder: isFolder,
+            isExpanded: isExpanded,
+            value: isFolder
+                ? (isExpanded
+                    ? Strings.a11ySidebarDisclosureExpanded
+                    : Strings.a11ySidebarDisclosureCollapsed)
+                : nil,
+            help: isFolder
+                ? Strings.a11ySidebarFolderHint
+                : Strings.a11ySidebarFileOpenHint,
+            customActionName: isFolder
+                ? (isExpanded
+                    ? Strings.a11ySidebarCollapseAction
+                    : Strings.a11ySidebarExpandAction)
+                : Strings.a11ySidebarOpenPreview
+        )
+    }
+
     private var isRenamingThisNode: Bool {
-        editState.renamingURL?.path == node.url.path
+        editState.renamingURL.map {
+            SidebarPathIdentity($0)
+        } == SidebarPathIdentity(node.url)
     }
 
     /// Single tap handler for both files and folders. Sets selection and
@@ -239,18 +319,49 @@ private struct SidebarFileTreeNode: View {
     /// watcher updates that previously reset a row-local `@State`.
     private func handleFolderTap() {
         guard !isRenamingThisNode else { return }
+        activateFolder(debounced: true, requestKeyboardFocus: true)
+    }
+
+    private func activateFolder(
+        debounced: Bool,
+        requestKeyboardFocus: Bool
+    ) {
         selection = node
-        onKeyboardFocusRequested()
+        if requestKeyboardFocus {
+            onKeyboardFocusRequested()
+        }
+        navigation.resetTypeAhead()
         if !expansion.isExpanded(node.url) {
             loadDeferredChildrenIfNeeded()
         }
-        expansion.toggleDebounced(node.url)
+        navigation.toggleDisclosure(
+            node,
+            expansion: expansion,
+            debounced: debounced
+        )
     }
 
-    private func openFile(_ disposition: SidebarFileOpenDisposition) {
+    private func setFolderExpanded(_ expanded: Bool) {
+        selection = node
+        navigation.resetTypeAhead()
+        if expanded {
+            loadDeferredChildrenIfNeeded()
+        }
+        navigation.setDisclosure(
+            node,
+            expanded: expanded,
+            expansion: expansion
+        )
+    }
+
+    private func openFile(
+        _ disposition: SidebarFileOpenDisposition,
+        requestKeyboardFocus: Bool = true
+    ) {
         guard !isRenamingThisNode else { return }
         selection = node
-        if disposition == .transientPreview {
+        navigation.resetTypeAhead()
+        if disposition == .transientPreview, requestKeyboardFocus {
             onKeyboardFocusRequested()
         }
         onFileOpen(node, disposition)
