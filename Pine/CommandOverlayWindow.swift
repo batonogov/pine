@@ -26,7 +26,15 @@ import SwiftUI
 @MainActor
 final class CommandOverlayPanel: NSPanel {
 
-    init(contentRect: NSRect) {
+    /// The document window that owns this command overlay.
+    ///
+    /// Keep this explicit instead of relying solely on `parent`: AppKit can
+    /// clear the child-window relationship while the outgoing panel is still
+    /// key and event routing still needs to resolve the originating document.
+    private(set) weak var documentOwner: NSWindow?
+
+    init(contentRect: NSRect, documentOwner: NSWindow?) {
+        self.documentOwner = documentOwner
         super.init(
             contentRect: contentRect,
             styleMask: [
@@ -58,6 +66,15 @@ final class CommandOverlayPanel: NSPanel {
         self.becomesKeyOnlyIfNeeded = false
     }
 
+    /// Updates the explicit owner used by command routing.
+    ///
+    /// The coordinator normally establishes this relationship at creation.
+    /// Keeping the binding independent from AppKit's child-window relationship
+    /// also makes owner resolution deterministic while a panel is closing.
+    func bindDocumentOwner(_ owner: NSWindow?) {
+        documentOwner = owner
+    }
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
@@ -72,8 +89,10 @@ final class CommandOverlayPanel: NSPanel {
 enum CommandOverlayOwnerResolver {
     static func documentWindow(for keyWindow: NSWindow?) -> NSWindow? {
         guard let keyWindow else { return nil }
-        guard keyWindow is CommandOverlayPanel else { return keyWindow }
-        return keyWindow.parent
+        guard let panel = keyWindow as? CommandOverlayPanel else {
+            return keyWindow
+        }
+        return panel.documentOwner ?? panel.parent
     }
 }
 
@@ -156,7 +175,8 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
             self.hostingController = controller
 
             let panel = CommandOverlayPanel(
-                contentRect: controller.view.bounds
+                contentRect: controller.view.bounds,
+                documentOwner: ownerWindow
             )
             panel.level = ownerWindow.level
             panel.contentViewController = controller

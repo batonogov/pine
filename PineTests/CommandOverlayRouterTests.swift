@@ -51,7 +51,7 @@ struct CommandOverlayRouterTests {
     }
 
     @Test("Replacement restores an arbitrary original AppKit responder")
-    func replacementPreservesOriginalResponder() throws {
+    func replacementPreservesOriginalResponder() async throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
             styleMask: [.titled],
@@ -79,9 +79,14 @@ struct CommandOverlayRouterTests {
         #expect(router.capturedResponder === original)
 
         router.dismiss()
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        let wasRestored = await waitUntil {
+            window.firstResponder === original
+        }
+        try #require(
+            wasRestored,
+            "Timed out waiting for the original responder to be restored"
+        )
 
-        #expect(window.firstResponder === original)
         #expect(router.capturedResponder == nil)
     }
 
@@ -100,7 +105,7 @@ struct CommandOverlayRouterTests {
     }
 
     @Test("Palette document command is targeted after dismissal")
-    func paletteDocumentCommandDismissesThenDispatches() throws {
+    func paletteDocumentCommandDismissesThenDispatches() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(
                 "pine-command-overlay-\(UUID().uuidString)",
@@ -113,7 +118,10 @@ struct CommandOverlayRouterTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let projectManager = ProjectManager()
-        projectManager.workspace.loadDirectory(url: directory)
+        // This test only needs project availability. Starting a real workspace
+        // load would launch an unrelated detached file-tree/git task that can
+        // outlive the test and race temporary-directory cleanup.
+        projectManager.workspace.rootURL = directory
         let router = CommandOverlayRouter()
         router.present(.commandPalette)
 
@@ -139,7 +147,13 @@ struct CommandOverlayRouterTests {
         #expect(router.activePresentation == nil)
         #expect(probe.values.isEmpty)
 
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        let wasDelivered = await waitUntil {
+            !probe.values.isEmpty
+        }
+        try #require(
+            wasDelivered,
+            "Timed out waiting for post-dismiss command delivery"
+        )
 
         let target = try #require(probe.values.first)
         #expect(target == projectIdentifier)
@@ -149,7 +163,8 @@ struct CommandOverlayRouterTests {
     @Test("Command panel is key-capable and document scoped")
     func panelConfiguration() {
         let panel = CommandOverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240)
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            documentOwner: nil
         )
         defer { panel.close() }
 
@@ -163,27 +178,22 @@ struct CommandOverlayRouterTests {
 
     @Test("A key command panel resolves to its document owner")
     func panelResolvesDocumentOwner() {
-        let owner = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
         let panel = CommandOverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240)
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            documentOwner: nil
         )
-        defer {
-            owner.removeChildWindow(panel)
-            panel.close()
-            owner.close()
-        }
-        owner.addChildWindow(panel, ordered: .above)
+        defer { panel.close() }
 
         #expect(
-            CommandOverlayOwnerResolver.documentWindow(for: panel) === owner
+            CommandOverlayOwnerResolver.documentWindow(for: panel) == nil
         )
+
+        // Exercise explicit owner routing without constructing a second
+        // NSWindow. The former `panel.parent` implementation cannot satisfy
+        // this assertion.
+        panel.bindDocumentOwner(panel)
         #expect(
-            CommandOverlayOwnerResolver.documentWindow(for: owner) === owner
+            CommandOverlayOwnerResolver.documentWindow(for: panel) === panel
         )
         #expect(
             CommandOverlayOwnerResolver.documentWindow(for: nil) == nil
@@ -205,6 +215,21 @@ struct CommandOverlayRouterTests {
             ),
             isEnabled: true
         )
+    }
+
+    /// Waits without blocking the main actor so the router's deliberately
+    /// deferred AppKit restoration and command delivery can complete.
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        condition: @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return true
     }
 }
 

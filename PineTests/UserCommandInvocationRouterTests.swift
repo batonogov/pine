@@ -140,7 +140,10 @@ struct UserCommandInvocationRouterTests {
         try Data("func main() {}".utf8).write(to: file)
 
         let projectManager = ProjectManager()
-        projectManager.workspace.loadDirectory(url: directory)
+        // Routing only depends on the project URL and active file. Avoid
+        // launching a detached workspace/git load that could outlive this
+        // test and race temporary-directory cleanup.
+        projectManager.workspace.rootURL = directory
         projectManager.activeTabManager.openTab(url: file)
         let projectIdentifier = ObjectIdentifier(projectManager)
         let center = NotificationCenter()
