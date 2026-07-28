@@ -197,12 +197,11 @@ final class UpdateCoordinator {
     /// The user chose "Restart to Update" (install). Routes through the
     /// dirty-tab / session-save safeguard before telling Sparkle to install.
     func installAndRelaunch() {
-        guard let pendingReply else { return }
+        guard let reply = pendingReply else { return }
         // Offer to save dirty work and persist sessions before Sparkle sends
         // the quit event. If the user cancels the save dialog, abort the
         // install — do NOT call the reply closure.
         guard prepareForQuit() else { return }
-        let reply = pendingReply
         pendingReply = nil
         reply(.install)
     }
@@ -210,9 +209,8 @@ final class UpdateCoordinator {
     /// The user chose "Later" (dismiss). The update remains available and
     /// Sparkle may remind the user later.
     func dismissUpdate() {
-        guard let pendingReply else { return }
+        guard let reply = pendingReply else { return }
         didDismissCurrentOffer = true
-        let reply = pendingReply
         pendingReply = nil
         isPopoverPresented = false
         reply(.dismiss)
@@ -221,8 +219,7 @@ final class UpdateCoordinator {
     /// The user chose "Skip this version". Sparkle will not remind them again
     /// for this version unless they manually check.
     func skipVersion() {
-        guard let pendingReply else { return }
-        let reply = pendingReply
+        guard let reply = pendingReply else { return }
         pendingReply = nil
         isPopoverPresented = false
         reply(.skip)
@@ -338,8 +335,8 @@ final class UpdateCoordinator {
         // indicates the user is already on the latest version, we show the
         // friendly toast; otherwise surface the localized description.
         let nsError = error as NSError
-        let isUpToDate = nsError.domain == SUSparkleErrorDomain
-            && nsError.code == SPUNoUpdateFoundError
+        let isUpToDate = nsError.domain == "org.sparkle-project.Sparkle.Error"
+            && nsError.code == 1
 
         if isUpToDate {
             showToast?(Self.upToDateMessage)
