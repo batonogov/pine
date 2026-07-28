@@ -553,25 +553,25 @@ extension AgentHistoryUndoPreviewFailure {
     var explanation: String {
         switch self {
         case .entryNotFound:
-            Strings.agentHistoryUndoReviewFailureEntryNotFound
+            Strings.undoFailEntryNotFound
         case .alreadyReverted:
-            Strings.agentHistoryUndoReviewFailureAlreadyReverted
+            Strings.undoFailAlreadyReverted
         case .notEligible:
-            Strings.agentHistoryUndoReviewFailureNotEligible
+            Strings.undoFailNotEligible
         case .authorityRecordMissing:
-            Strings.agentHistoryUndoReviewFailureAuthorityMissing
+            Strings.undoFailAuthorityMissing
         case .authorityConsumed:
-            Strings.agentHistoryUndoReviewFailureAuthorityConsumed
+            Strings.undoFailAuthorityConsumed
         case .workspaceChanged:
-            Strings.agentHistoryUndoReviewFailureWorkspaceChanged
+            Strings.undoFailWorkspaceChanged
         case .projectionTampered:
-            Strings.agentHistoryUndoReviewFailureProjectionTampered
+            Strings.undoFailProjectionTampered
         case .inversePayloadMissing:
-            Strings.agentHistoryUndoReviewFailurePayloadMissing
+            Strings.undoFailPayloadMissing
         case .currentContentDiverged(let path):
-            Strings.agentHistoryUndoReviewFailureContentDiverged(path)
+            Strings.undoFailContentDiverged(path)
         case .previewEncodingFailed:
-            Strings.agentHistoryUndoReviewFailurePreviewFailed
+            Strings.undoFailPreviewFailed
         }
     }
 

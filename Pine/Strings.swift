@@ -365,34 +365,34 @@ enum Strings {
         "agentHistory.undoReview.detail.remove"
     static let agentHistoryUndoReviewDetailRecreate: LocalizedStringKey =
         "agentHistory.undoReview.detail.recreate"
-    static let agentHistoryUndoReviewFailureEntryNotFound: LocalizedStringKey =
-        "agentHistory.undoReview.failure.entryNotFound"
-    static let agentHistoryUndoReviewFailureAlreadyReverted: LocalizedStringKey =
-        "agentHistory.undoReview.failure.alreadyReverted"
-    static let agentHistoryUndoReviewFailureNotEligible: LocalizedStringKey =
-        "agentHistory.undoReview.failure.notEligible"
-    static let agentHistoryUndoReviewFailureAuthorityMissing: LocalizedStringKey =
-        "agentHistory.undoReview.failure.authorityMissing"
-    static let agentHistoryUndoReviewFailureAuthorityConsumed: LocalizedStringKey =
-        "agentHistory.undoReview.failure.authorityConsumed"
-    static let agentHistoryUndoReviewFailureWorkspaceChanged: LocalizedStringKey =
-        "agentHistory.undoReview.failure.workspaceChanged"
-    static let agentHistoryUndoReviewFailureProjectionTampered: LocalizedStringKey =
-        "agentHistory.undoReview.failure.projectionTampered"
-    static let agentHistoryUndoReviewFailurePayloadMissing: LocalizedStringKey =
-        "agentHistory.undoReview.failure.payloadMissing"
-    static let agentHistoryUndoReviewFailurePreviewFailed: LocalizedStringKey =
-        "agentHistory.undoReview.failure.previewFailed"
-    static let agentHistoryUndoReviewNextClose: LocalizedStringKey =
-        "agentHistory.undoReview.next.close"
-    static let agentHistoryUndoReviewNextNoAction: LocalizedStringKey =
-        "agentHistory.undoReview.next.noAction"
-    static let agentHistoryUndoReviewNextRefresh: LocalizedStringKey =
-        "agentHistory.undoReview.next.refresh"
-    static let agentHistoryUndoReviewNextManualReview: LocalizedStringKey =
-        "agentHistory.undoReview.next.manualReview"
+    static let undoFailEntryNotFound: String =
+        String(localized: "agentHistory.undoReview.failure.entryNotFound")
+    static let undoFailAlreadyReverted: String =
+        String(localized: "agentHistory.undoReview.failure.alreadyReverted")
+    static let undoFailNotEligible: String =
+        String(localized: "agentHistory.undoReview.failure.notEligible")
+    static let undoFailAuthorityMissing: String =
+        String(localized: "agentHistory.undoReview.failure.authorityMissing")
+    static let undoFailAuthorityConsumed: String =
+        String(localized: "agentHistory.undoReview.failure.authorityConsumed")
+    static let undoFailWorkspaceChanged: String =
+        String(localized: "agentHistory.undoReview.failure.workspaceChanged")
+    static let undoFailProjectionTampered: String =
+        String(localized: "agentHistory.undoReview.failure.projectionTampered")
+    static let undoFailPayloadMissing: String =
+        String(localized: "agentHistory.undoReview.failure.payloadMissing")
+    static let undoFailPreviewFailed: String =
+        String(localized: "agentHistory.undoReview.failure.previewFailed")
+    static let agentHistoryUndoReviewNextClose: String =
+        String(localized: "agentHistory.undoReview.next.close")
+    static let agentHistoryUndoReviewNextNoAction: String =
+        String(localized: "agentHistory.undoReview.next.noAction")
+    static let agentHistoryUndoReviewNextRefresh: String =
+        String(localized: "agentHistory.undoReview.next.refresh")
+    static let agentHistoryUndoReviewNextManualReview: String =
+        String(localized: "agentHistory.undoReview.next.manualReview")
 
-    static func agentHistoryUndoReviewFailureContentDiverged(
+    static func undoFailContentDiverged(
         _ path: String
     ) -> String {
         String(
