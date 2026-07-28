@@ -300,8 +300,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                         forName: name,
                         object: window,
                         queue: .main
-                    ) { [weak self, weak window, weak projectManager,
-                         weak registry, weak appDelegate] _ in
+                    ) { [weak self, weak window, weak projectManager, weak registry, weak appDelegate] _ in
                         MainActor.assumeIsolated {
                             guard let self,
                                   let window,
