@@ -153,7 +153,7 @@ private struct TerminalThemeSettingsFixture {
     }
 }
 
-private final class NotificationCounter: @unchecked Sendable {
+nonisolated private final class NotificationCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
 
@@ -163,5 +163,67 @@ private final class NotificationCounter: @unchecked Sendable {
 
     func increment() {
         lock.withLock { count += 1 }
+    }
+}
+
+@Suite("Terminal theme localization")
+struct TerminalThemeLocalizationTests {
+    private static let languages = [
+        "de", "en", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans",
+    ]
+    private static let keys = [
+        "settings.terminal.appearance.help",
+        "settings.terminal.appearance.label",
+        "settings.terminal.theme.previewLabel",
+        "settings.terminal.theme.selectionLabel",
+        "settings.terminal.theme.subtitle",
+        "settings.terminal.theme.title",
+        "terminal.appearance.alwaysDark",
+        "terminal.appearance.alwaysLight",
+        "terminal.appearance.followSystem",
+        "terminal.theme.dracula.name",
+        "terminal.theme.github.name",
+        "terminal.theme.nord.name",
+        "terminal.theme.pine.name",
+        "terminal.theme.solarized.name",
+    ]
+
+    @Test("Every terminal theme string is translated in all supported languages")
+    func completeCatalogCoverage() throws {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let projectRoot = testURL.deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let catalogURL = projectRoot.appendingPathComponent(
+            "Pine/Localizable.xcstrings"
+        )
+        let data = try Data(contentsOf: catalogURL)
+        let root = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let catalog = try #require(root["strings"] as? [String: Any])
+
+        for key in Self.keys {
+            let entry = try #require(catalog[key] as? [String: Any])
+            let localizations = try #require(
+                entry["localizations"] as? [String: Any]
+            )
+            #expect(Set(localizations.keys) == Set(Self.languages))
+
+            for language in Self.languages {
+                let localization = try #require(
+                    localizations[language] as? [String: Any]
+                )
+                let unit = try #require(
+                    localization["stringUnit"] as? [String: Any]
+                )
+                #expect(unit["state"] as? String == "translated")
+                let value = try #require(unit["value"] as? String)
+                #expect(
+                    !value.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ).isEmpty
+                )
+            }
+        }
     }
 }
