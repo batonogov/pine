@@ -16,15 +16,15 @@ import Foundation
 
 /// Carbon modifiers (the `RegisterEventHotKey` API uses the legacy modifier
 /// bit-field, not `NSEvent.ModifierFlags`). See <Events.h>.
-private let carbonControl: UInt32 = UInt32(controlKey)
-private let carbonOption: UInt32 = UInt32(optionKey)
-private let carbonCommand: UInt32 = UInt32(cmdKey)
-private let carbonShift: UInt32 = UInt32(shiftKey)
-private let carbonSupportedModifiers =
+nonisolated private let carbonControl: UInt32 = UInt32(controlKey)
+nonisolated private let carbonOption: UInt32 = UInt32(optionKey)
+nonisolated private let carbonCommand: UInt32 = UInt32(cmdKey)
+nonisolated private let carbonShift: UInt32 = UInt32(shiftKey)
+nonisolated private let carbonSupportedModifiers =
     carbonControl | carbonOption | carbonCommand | carbonShift
-private let carbonPrimaryModifiers =
+nonisolated private let carbonPrimaryModifiers =
     carbonControl | carbonOption | carbonCommand
-private let maxCarbonVirtualKeyCode = UInt32(kVK_UpArrow)
+nonisolated private let maxCarbonVirtualKeyCode = UInt32(kVK_UpArrow)
 
 nonisolated struct GlobalHotkeyShortcut: Equatable, Sendable {
     let keyCode: UInt32
