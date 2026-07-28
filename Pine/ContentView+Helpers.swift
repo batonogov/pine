@@ -413,7 +413,7 @@ extension ContentView {
                 for tab in dirtyTabs {
                     let panel = NSSavePanel()
                     panel.nameFieldStringValue = tab.fileName
-                    _ = panel.runSheet(on: context)
+                    _ = await panel.runSheet(on: context)
                     guard let saveURL = panel.url else { return }
                     do {
                         try tab.content.write(to: saveURL, atomically: true, encoding: .utf8)
