@@ -226,8 +226,9 @@ private struct SidebarKeyboardNavigationModifier: ViewModifier {
             .onKeyPress(.end) { actions.onEnd(); return .handled }
             .onKeyPress(.pageUp) { actions.onPageUp(); return .handled }
             .onKeyPress(.pageDown) { actions.onPageDown(); return .handled }
-            .onKeyPress(.characters) { press in
-                actions.onCharacters(press.characters)
+            .onKeyPress(phases: .down) { press in
+                guard let char = press.characters.first else { return .ignored }
+                actions.onCharacters(String(char))
                 return .handled
             }
     }
