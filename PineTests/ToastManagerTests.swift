@@ -180,7 +180,10 @@ struct ToastManagerTests {
         manager.show(ToastItem(message: "Saved"))
 
         #expect(announcements.values.count == 1)
-        #expect(announcements.values[0] == "Notification: Saved")
+        #expect(
+            announcements.values[0]
+                == "\(Strings.a11yToastAnnouncementPrefix) Saved"
+        )
     }
 
     @Test("No announcement when queueing a toast behind a visible one")
