@@ -12,6 +12,20 @@ final class SidebarFolderClickTests: PineUITestCase {
 
     private var projectURL: URL!
 
+    private func waitForSelection(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == true"),
+            object: element
+        )
+        return XCTWaiter.wait(
+            for: [expectation],
+            timeout: timeout
+        ) == .completed
+    }
+
     override func setUpWithError() throws {
         try super.setUpWithError()
         projectURL = try createTempProject(
@@ -196,7 +210,7 @@ final class SidebarFolderClickTests: PineUITestCase {
         // pointer click explicitly restores sidebar focus for the next matrix.
         app.typeText("r")
         let rootFile = app.sidebarNodes["fileNode_root-file.swift"]
-        XCTAssertTrue(rootFile.isSelected)
+        XCTAssertTrue(waitForSelection(rootFile))
         let rootTab = app.buttons["editorTab_root-file.swift"]
         XCTAssertFalse(rootTab.exists)
         app.typeKey(.return, modifierFlags: .command)
@@ -207,17 +221,26 @@ final class SidebarFolderClickTests: PineUITestCase {
         // following punctuation selection is therefore also a focus-transfer
         // assertion, not just a matching assertion.
         app.typeText("_")
-        XCTAssertTrue(app.sidebarNodes["fileNode__config"].isSelected)
+        XCTAssertTrue(
+            waitForSelection(app.sidebarNodes["fileNode__config"])
+        )
         let configTab = app.buttons["editorTab__config"]
         XCTAssertFalse(configTab.exists)
         app.typeKey(.space, modifierFlags: [])
         XCTAssertTrue(configTab.waitForExistence(timeout: 5))
         app.typeText(".")
-        XCTAssertTrue(app.sidebarNodes["fileNode_.env"].isSelected)
+        XCTAssertTrue(
+            waitForSelection(app.sidebarNodes["fileNode_.env"])
+        )
 
         rootFile.click()
-        app.typeText("e")
-        XCTAssertTrue(app.sidebarNodes["fileNode_Éclair.swift"].isSelected)
+        // The first "e" legitimately matches empty-folder. The second
+        // character makes the prefix unambiguous and proves that "ec"
+        // matches the diacritic filename "Éclair".
+        app.typeText("ec")
+        XCTAssertTrue(
+            waitForSelection(app.sidebarNodes["fileNode_Éclair.swift"])
+        )
 
         // Cancelling inline rename must restore the sidebar responder while
         // preserving the edited row's selection. Alpha is still expanded

@@ -326,6 +326,7 @@ struct FileNodeRow: View {
         let wasNewlyCreated = editState.isNewlyCreated
         let url = editState.renamingURL
         editState.clear()
+        editState.requestSidebarFocusRestoration()
 
         // Delete placeholder item if creation was cancelled
         if wasNewlyCreated, let url {

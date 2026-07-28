@@ -85,6 +85,18 @@ struct SidebarEditStateTests {
         #expect(editState.scrollToNodeID == nil)
     }
 
+    @Test("Sidebar focus restoration is an explicit monotonic request")
+    func sidebarFocusRestorationRequest() {
+        let editState = SidebarEditState()
+        #expect(editState.focusRestorationGeneration == 0)
+
+        editState.clear()
+        #expect(editState.focusRestorationGeneration == 0)
+
+        editState.requestSidebarFocusRestoration()
+        #expect(editState.focusRestorationGeneration == 1)
+    }
+
     @Test("duplicateItem sets scrollToNodeID")
     @MainActor
     func duplicateItemSetsScrollToNodeID() throws {

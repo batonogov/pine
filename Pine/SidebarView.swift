@@ -19,6 +19,10 @@ final class SidebarEditState {
     var isNewlyCreated: Bool = false
     /// URL of the newly created node to scroll to in the sidebar.
     var scrollToNodeID: URL?
+    /// Monotonic request consumed by `SidebarView` after Escape cancels an
+    /// inline rename. Keeping this separate from `clear()` avoids stealing
+    /// focus when editing ends because the user clicked another control.
+    private(set) var focusRestorationGeneration = 0
 
     func startRename(for node: FileNode) {
         renamingURL = node.url
@@ -36,6 +40,10 @@ final class SidebarEditState {
         renamingURL = nil
         editingText = ""
         isNewlyCreated = false
+    }
+
+    func requestSidebarFocusRestoration() {
+        focusRestorationGeneration &+= 1
     }
 
     /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
@@ -760,6 +768,16 @@ struct SidebarView: View {
                                     selectedFile = node
                                 }
                             }
+                        }
+                    }
+                    .onChange(
+                        of: editState.focusRestorationGeneration
+                    ) { _, _ in
+                        // Escape removes the TextField in the same update.
+                        // Reclaim first responder on the next run loop after
+                        // AppKit has detached its field editor.
+                        DispatchQueue.main.async {
+                            claimSidebarKeyboardFocus()
                         }
                     }
                     .onChange(of: editState.scrollToNodeID) { _, targetID in
