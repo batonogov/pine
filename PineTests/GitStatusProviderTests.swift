@@ -413,6 +413,33 @@ struct GitStatusProviderTests {
         #expect(provider.currentBranch == "test-branch")
     }
 
+    @Test("checkoutBranch honors a successful switch with truncated hook output")
+    func checkoutBranchNoisyHookSuccess() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try runShell("git branch test-branch", at: dir)
+        let hookURL = dir.appendingPathComponent(".git/hooks/post-checkout")
+        let outputSize = GitCommand.defaultCaptureLimit + 1_024
+        try """
+        #!/bin/sh
+        /usr/bin/yes pine-hook-output | /usr/bin/head -c \(outputSize)
+        """.write(to: hookURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: hookURL.path
+        )
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        let result = provider.checkoutBranch("test-branch")
+
+        #expect(result.success)
+        #expect(result.error.isEmpty)
+        #expect(provider.currentBranch == "test-branch")
+    }
+
     @Test("checkoutBranch fails for non-existent branch")
     func checkoutBranchFailure() throws {
         let dir = try makeGitRepo()
@@ -795,21 +822,56 @@ struct GitStatusProviderTests {
         #expect(diffs.isEmpty)
     }
 
-    // MARK: - runGit timeout
+    // MARK: - runGit process lifecycle
 
     @Test("runGit terminates process after timeout")
-    func runGitTimeout() {
-        // Use git hash-object --stdin which blocks waiting for input
-        let start = Date()
+    func runGitTimeout() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let result = GitStatusProvider.runGit(
+            ["-c", "alias.pine-hang=!sleep 30", "pine-hang"],
+            at: dir,
+            timeout: 0.2
+        )
+        let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+
+        #expect(result.timedOut)
+        #expect(result.succeeded == false)
+        #expect(result.exitCode != 0)
+        #expect(elapsed < 2)
+    }
+
+    @Test("runGit supplies EOF on standard input")
+    func runGitUsesNullStandardInput() {
+        let startedAt = ProcessInfo.processInfo.systemUptime
         let result = GitStatusProvider.runGit(
             ["hash-object", "--stdin"],
-            at: URL(fileURLWithPath: "/tmp"),
-            timeout: 1.0
+            at: FileManager.default.temporaryDirectory,
+            timeout: 1
         )
-        let elapsed = Date().timeIntervalSince(start)
-        // Process should be terminated by timeout, not hang for 30s+
-        #expect(elapsed < 5.0)
-        #expect(result.exitCode != 0)
+        let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+
+        #expect(result.succeeded)
+        #expect(result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+        #expect(elapsed < 2)
+    }
+
+    @Test("runGit propagates an incomplete capture as unsuccessful")
+    func runGitPropagatesTruncation() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let result = GitStatusProvider.runGit(
+            ["rev-parse", "HEAD"],
+            at: dir,
+            captureLimit: 8
+        )
+
+        #expect(result.exitCode == 0)
+        #expect(result.outputTruncated)
+        #expect(result.succeeded == false)
     }
 
     // MARK: - hasUncommittedChanges

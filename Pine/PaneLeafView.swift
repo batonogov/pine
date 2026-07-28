@@ -571,12 +571,12 @@ struct PaneLeafView: View {
         }
         let filePath = fileURL.path
         blameTask = Task.detached {
-            let result = GitStatusProvider.runGit(
+            let result = await GitStatusProvider.runGitAsync(
                 ["blame", "--porcelain", "--", filePath], at: repoURL
             )
             guard !Task.isCancelled else { return }
             let lines: [GitBlameLine]
-            if result.exitCode == 0, !result.output.isEmpty {
+            if result.succeeded, !result.output.isEmpty {
                 lines = GitStatusProvider.parseBlame(result.output)
             } else {
                 lines = []
