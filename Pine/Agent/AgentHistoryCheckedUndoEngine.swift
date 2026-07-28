@@ -40,6 +40,9 @@ nonisolated enum AgentHistoryEngineBlockReason: Equatable, Sendable {
     case workspaceGitStateChanged
     case currentContentDiverged(path: String)
     case inversePayloadMissing
+    case inversePayloadInvalid(
+        AgentHistoryPayloadFailure
+    )
     case fileSystemError(String)
     case applyFailed(path: String)
 }
@@ -226,13 +229,17 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
         let manifest = context.manifest
         let privateStore = context.privateStore
         var workspaceForRollback: AgentHistorySafeWorkspace?
-        guard let entriesByPath = validatedPayloadEntries(
+        let validatedPayload: AgentHistoryValidatedInversePayload
+        switch AgentHistoryInversePayloadValidator.validate(
             changeSet: changeSet,
             payload: payload
-        ) else {
+        ) {
+        case .success(let payload):
+            validatedPayload = payload
+        case .failure(let failure):
             return blockedApplyResult(
                 changeSet: changeSet,
-                reason: .inversePayloadMissing,
+                reason: .inversePayloadInvalid(failure),
                 detail: "inverse payload does not exactly match the verified contract"
             )
         }
@@ -281,7 +288,7 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
                         change.relativePath
                     )
                 }
-                guard let entry = entriesByPath[change.relativePath] else {
+                guard let entry = validatedPayload[change.relativePath] else {
                     throw AgentHistoryCheckedUndoError.missingBeforeContent(
                         change.relativePath
                     )
@@ -467,7 +474,7 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
             }
             if cleanupSucceeded {
                 for change in changeSet.changes {
-                    guard let entry = entriesByPath[change.relativePath],
+                    guard let entry = validatedPayload[change.relativePath],
                           inverseStateMatches(
                             change: change,
                             entry: entry,
@@ -620,47 +627,7 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
 
     // MARK: - Payload and transaction helpers
 
-    private static func validatedPayloadEntries(
-        changeSet: VerifiedAgentChangeSet,
-        payload: AgentHistoryInversePayload
-    ) -> [String: AgentHistoryInverseFileEntry]? {
-        guard payload.formatVersion == AgentHistoryInversePayload.currentFormatVersion,
-              payload.entries.count == changeSet.changes.count else {
-            return nil
-        }
-        var entries: [String: AgentHistoryInverseFileEntry] = [:]
-        for entry in payload.entries {
-            guard entries[entry.relativePath] == nil else { return nil }
-            entries[entry.relativePath] = entry
-        }
-        for change in changeSet.changes {
-            guard let entry = entries[change.relativePath],
-                  entry.operation == change.operation else {
-                return nil
-            }
-            switch change.operation {
-            case .modify, .delete:
-                guard let before = change.before,
-                      let content = entry.beforeContent,
-                      entry.permissions == before.permissions,
-                      UInt64(content.count) == before.byteCount,
-                      AgentHistoryContentHash.sha256Hex(content)
-                        == before.contentSHA256 else {
-                    return nil
-                }
-            case .create:
-                guard entry.beforeContent == nil,
-                      entry.permissions == nil else {
-                    return nil
-                }
-            case .rename, .symlink, .unsupported:
-                return nil
-            }
-        }
-        return entries
-    }
-
-    private static func currentSnapshot(
+    static func currentSnapshot(
         _ snapshot: AgentHistorySafeFileSnapshot,
         matches change: AgentHistoryRecordedFileChange
     ) -> Bool {

@@ -471,28 +471,30 @@ enum Strings {
         "agentHistory.undoReview.verified"
     static let agentHistoryUndoReviewTechnicalDetails: LocalizedStringKey =
         "agentHistory.undoReview.technicalDetails"
-    static let agentHistoryUndoReviewExpected: LocalizedStringKey =
-        "agentHistory.undoReview.expected"
-    static let agentHistoryUndoReviewResult: LocalizedStringKey =
-        "agentHistory.undoReview.result"
     static let agentHistoryUndoReviewApply: LocalizedStringKey =
         "agentHistory.undoReview.apply"
     static let agentHistoryUndoReviewRevalidated: LocalizedStringKey =
         "agentHistory.undoReview.revalidated"
     static let agentHistoryUndoReviewStaleTitle: LocalizedStringKey =
         "agentHistory.undoReview.staleTitle"
-    static let agentHistoryUndoReviewKindRestore: LocalizedStringKey =
-        "agentHistory.undoReview.kind.restore"
-    static let agentHistoryUndoReviewKindRemove: LocalizedStringKey =
-        "agentHistory.undoReview.kind.remove"
-    static let agentHistoryUndoReviewKindRecreate: LocalizedStringKey =
-        "agentHistory.undoReview.kind.recreate"
-    static let agentHistoryUndoReviewDetailRestore: LocalizedStringKey =
-        "agentHistory.undoReview.detail.restore"
-    static let agentHistoryUndoReviewDetailRemove: LocalizedStringKey =
-        "agentHistory.undoReview.detail.remove"
-    static let agentHistoryUndoReviewDetailRecreate: LocalizedStringKey =
-        "agentHistory.undoReview.detail.recreate"
+    static func agentHistoryUndoReviewBinary(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.content.binary",
+            fallback: "Binary content — line preview unavailable",
+            locale: locale
+        )
+    }
+    static func agentHistoryUndoReviewOmitted(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.content.omitted",
+            fallback: "Text preview omitted because the file is too large",
+            locale: locale
+        )
+    }
     nonisolated static let undoFailEntryNotFound: String =
         String(localized: "agentHistory.undoReview.failure.entryNotFound")
     nonisolated static let undoFailAlreadyReverted: String =
@@ -509,6 +511,8 @@ enum Strings {
         String(localized: "agentHistory.undoReview.failure.projectionTampered")
     nonisolated static let undoFailPayloadMissing: String =
         String(localized: "agentHistory.undoReview.failure.payloadMissing")
+    nonisolated static let undoFailPayloadInvalid: String =
+        String(localized: "agentHistory.undoReview.failure.payloadInvalid")
     nonisolated static let undoFailPreviewFailed: String =
         String(localized: "agentHistory.undoReview.failure.previewFailed")
     nonisolated static let agentHistoryUndoReviewNextClose: String =
@@ -520,12 +524,29 @@ enum Strings {
     nonisolated static let agentHistoryUndoReviewNextManualReview: String =
         String(localized: "agentHistory.undoReview.next.manualReview")
 
-    nonisolated static func undoFailContentDiverged(
-        _ path: String
+    static func undoFailContentDiverged(
+        _ path: String,
+        locale: Locale = .current
     ) -> String {
-        String(
-            localized: "agentHistory.undoReview.failure.contentDiverged \\(path)"
+        let format = localizedString(
+            forKey: "agentHistory.undoReview.failure.contentDiverged %@",
+            fallback: "The current file no longer matches the verified snapshot: %@",
+            locale: locale
         )
+        return String(format: format, locale: locale, path)
+    }
+
+    static func agentHistoryUndoReviewSummary(
+        fileCount: Int,
+        addedLineCount: Int,
+        removedLineCount: Int,
+        locale: Locale = .current
+    ) -> String {
+        let operations = verifiedDiffOperationCount(
+            fileCount,
+            locale: locale
+        )
+        return "\(operations) · +\(addedLineCount) −\(removedLineCount)"
     }
 
     // MARK: - Prepared inverse review (#933)

@@ -1403,6 +1403,136 @@ struct AgentHistoryCheckedUndoEngineTests {
 
     // MARK: - Effective availability
 
+    @Test("Review preparation, immediate revalidation, and apply complete successfully")
+    func reviewedUndoCompletes() async throws {
+        let env = try makeEnv()
+        defer { env.cleanup() }
+        try env.write(file: "App.swift", contents: "base\n")
+        try env.git(["add", "App.swift"])
+        try env.git(["commit", "-m", "initial"])
+        try env.write(file: "App.swift", contents: "base\nagent\n")
+        let entry = try await env.captureModify(
+            path: "App.swift",
+            before: "base\n",
+            after: "base\nagent\n"
+        )
+
+        let preview = await env.store.prepareVerifiedUndoPreview(
+            for: entry
+        )
+        guard case .available(let model) = preview else {
+            Issue.record("Verified review preview was unavailable")
+            return
+        }
+        #expect(model.operations.count == 1)
+        #expect(
+            model.operations[0].contentRepresentation == .textual
+        )
+
+        let validation = await env.store.revalidateVerifiedUndoPreview(
+            for: entry,
+            expectedPreview: model
+        )
+        guard case .available = validation else {
+            Issue.record("Verified review became stale without a mutation")
+            return
+        }
+        let result = await env.store.revert(entry: entry)
+        #expect(result.allSucceeded)
+        #expect(result.checkedConflict == nil)
+        #expect(try env.read(file: "App.swift") == "base\n")
+    }
+
+    @Test("Closing a prepared review performs no mutation or authority consumption")
+    func preparedReviewCancellationIsReadOnly() async throws {
+        let env = try makeEnv()
+        defer { env.cleanup() }
+        try env.write(file: "App.swift", contents: "base\n")
+        try env.git(["add", "App.swift"])
+        try env.git(["commit", "-m", "initial"])
+        try env.write(file: "App.swift", contents: "base\nagent\n")
+        let entry = try await env.captureModify(
+            path: "App.swift",
+            before: "base\n",
+            after: "base\nagent\n"
+        )
+        let changeSet = try #require(entry.verifiedChangeSet)
+
+        let preview = await env.store.prepareVerifiedUndoPreview(
+            for: entry
+        )
+        guard case .available = preview else {
+            Issue.record("Verified review preview was unavailable")
+            return
+        }
+
+        #expect(try env.read(file: "App.swift") == "base\nagent\n")
+        #expect(env.store.entries.first?.reverted == false)
+        #expect(env.privateStore.loadAuthority(
+            recordID: changeSet.authority.recordID
+        )?.consumed == false)
+    }
+
+    @Test("Revalidation rejects content and same-content inode drift")
+    func reviewedUndoRejectsPreviewDrift() async throws {
+        let env = try makeEnv()
+        defer { env.cleanup() }
+        try env.write(file: "App.swift", contents: "base\n")
+        try env.git(["add", "App.swift"])
+        try env.git(["commit", "-m", "initial"])
+        try env.write(file: "App.swift", contents: "base\nagent\n")
+        let entry = try await env.captureModify(
+            path: "App.swift",
+            before: "base\n",
+            after: "base\nagent\n"
+        )
+
+        let firstPreview = await env.store.prepareVerifiedUndoPreview(
+            for: entry
+        )
+        guard case .available(let firstModel) = firstPreview else {
+            Issue.record("Verified review preview was unavailable")
+            return
+        }
+        try FileManager.default.removeItem(at: env.url("App.swift"))
+        try env.write(file: "App.swift", contents: "base\nagent\n")
+        let identityDrift =
+            await env.store.revalidateVerifiedUndoPreview(
+                for: entry,
+                expectedPreview: firstModel
+            )
+        #expect(
+            identityDrift
+                == .unavailable(
+                    .currentContentDiverged(path: "App.swift")
+                )
+        )
+
+        let secondPreview = await env.store.prepareVerifiedUndoPreview(
+            for: entry
+        )
+        guard case .available(let secondModel) = secondPreview else {
+            Issue.record("Replacement preview was unavailable")
+            return
+        }
+        try env.write(
+            file: "App.swift",
+            contents: "base\nagent\nhuman\n"
+        )
+        let contentDrift =
+            await env.store.revalidateVerifiedUndoPreview(
+                for: entry,
+                expectedPreview: secondModel
+            )
+        #expect(
+            contentDrift
+                == .unavailable(
+                    .currentContentDiverged(path: "App.swift")
+                )
+        )
+        #expect(try env.read(file: "App.swift") == "base\nagent\nhuman\n")
+    }
+
     @Test("effectiveUndoAvailability reports available for a captured, unconsumed entry")
     func effectiveAvailabilityAvailable() async throws {
         let env = try makeEnv()

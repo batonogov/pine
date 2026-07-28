@@ -17,8 +17,8 @@
 //     and compares them to the recorded after-state.
 //  2. A stale or unverifiable preview is reported as a structured result; the
 //     engine never falls back to a heuristic.
-//  3. The UI must call `revalidate` immediately before enabling/applying Undo.
-//     A race between preview and apply fails closed inside the engine.
+//  3. One activation must call `revalidate` immediately before apply, without
+//     an intervening user decision. A race still fails closed in the engine.
 //
 
 import Foundation
@@ -36,8 +36,27 @@ nonisolated enum AgentHistoryUndoPreviewFailure:
     case workspaceChanged
     case projectionTampered
     case inversePayloadMissing
+    case inversePayloadInvalid(
+        AgentHistoryPayloadFailure
+    )
     case currentContentDiverged(path: String)
     case previewEncodingFailed
+}
+
+/// What the review can truthfully show for one inverse operation.
+nonisolated enum AgentHistoryUndoContentKind:
+    Equatable,
+    Sendable {
+    /// Both exact byte snapshots are UTF-8 and fit the bounded line diff.
+    case textual
+    /// At least one exact byte snapshot is not UTF-8.
+    case binary
+    /// Text was verified, but intentionally omitted from the bounded preview.
+    case omitted
+    /// Undo removes the complete file created by the agent.
+    case wholeFileRemoval
+    /// Undo recreates the complete file deleted by the agent.
+    case wholeFileRestore
 }
 
 /// One resolved file operation in a verified undo preview.
@@ -55,6 +74,7 @@ nonisolated struct AgentHistoryUndoPreviewOperation:
     let id: String
     let relativePath: String
     let kind: Kind
+    let contentRepresentation: AgentHistoryUndoContentKind
     /// Human-readable, sanitized diff hunks. Empty for whole-file
     /// create/delete operations that have no line-level delta to show.
     let hunks: [AgentHistoryUndoPreviewHunk]
@@ -69,6 +89,10 @@ nonisolated struct AgentHistoryUndoPreviewOperation:
     let resultContentSHA256: String?
     let resultByteCount: UInt64?
     let resultPermissions: UInt16?
+    /// Identity of the exact descriptor snapshot rendered by this review.
+    /// Revalidation refuses a same-looking path replacement before apply.
+    let previewDevice: UInt64?
+    let previewInode: UInt64?
 
     var addedLineCount: Int {
         hunks.reduce(0) { $0 + $1.addedLineCount }
@@ -94,6 +118,7 @@ nonisolated struct AgentHistoryUndoPreviewHunk:
         let id: Int
         let kind: LineKind
         let text: String
+        let lineEnding: VerifiedDiffLineEnding
     }
 
     let id: Int
@@ -133,6 +158,20 @@ nonisolated struct AgentHistoryUndoPreviewModel: Equatable, Sendable {
     }
 }
 
+/// Deterministic seams used to prove preview-time path swaps fail closed.
+/// Production uses `.none`.
+nonisolated struct AgentHistoryUndoPreviewHooks: Sendable {
+    var beforeSnapshot: (@Sendable (String) -> Void)?
+    var afterSnapshot: (@Sendable (String) -> Void)?
+
+    static let none = AgentHistoryUndoPreviewHooks()
+}
+
+nonisolated struct AgentHistoryUndoPreviewContext: Sendable {
+    let root: URL
+    let manifest: AgentHistoryAuthorityManifest
+}
+
 /// Pure preparation of a verified undo preview from an entry's change set,
 /// inverse payload, and the current workspace root. Performs read-only checks
 /// only — no filesystem mutation. `nonisolated` so it runs off the main actor.
@@ -140,6 +179,7 @@ nonisolated enum AgentHistoryUndoPreview {
     /// Maximum lines per file to include in the line-level diff. Whole-file
     /// create/delete operations are summarized without a diff regardless.
     private static let maximumDiffLines = 2_000
+    private static let maximumDiffCells = 4_000_000
 
     /// Prepares a verified undo preview for `entry`.
     ///
@@ -152,9 +192,11 @@ nonisolated enum AgentHistoryUndoPreview {
         entry: AgentHistoryEntry,
         changeSet: VerifiedAgentChangeSet,
         payload: AgentHistoryInversePayload,
-        root: URL,
-        manifest: AgentHistoryAuthorityManifest
+        context: AgentHistoryUndoPreviewContext,
+        hooks: AgentHistoryUndoPreviewHooks = .none
     ) -> AgentHistoryUndoPreviewResult {
+        let root = context.root
+        let manifest = context.manifest
         guard !entry.reverted else {
             return .unavailable(.alreadyReverted)
         }
@@ -173,18 +215,37 @@ nonisolated enum AgentHistoryUndoPreview {
         ) {
             return .unavailable(mapBlock(blocked))
         }
-        if let blocked = AgentHistoryCheckedUndoEngine.contentDivergence(
+        let validatedPayload: AgentHistoryValidatedInversePayload
+        switch AgentHistoryInversePayloadValidator.validate(
             changeSet: changeSet,
-            root: root,
-            manifest: manifest
+            payload: payload
         ) {
-            return .unavailable(mapBlock(blocked))
+        case .success(let payload):
+            validatedPayload = payload
+        case .failure(let failure):
+            return .unavailable(.inversePayloadInvalid(failure))
+        }
+        let snapshots: [AgentHistorySafeFileSnapshot]
+        switch validatedCurrentSnapshots(
+            changes: changeSet.changes,
+            root: root,
+            expectedRootDevice: manifest.rootDevice,
+            expectedRootInode: manifest.rootInode,
+            hooks: hooks
+        ) {
+        case .success(let captured):
+            snapshots = captured
+        case .failure(let failure):
+            return .unavailable(failure)
+        }
+        guard workspaceGitStateMatches(root: root, manifest: manifest) else {
+            return .unavailable(.workspaceChanged)
         }
         guard let model = buildModel(
             entry: entry,
             changeSet: changeSet,
-            payload: payload,
-            root: root
+            payload: validatedPayload,
+            snapshots: snapshots
         ) else {
             return .unavailable(.previewEncodingFailed)
         }
@@ -197,9 +258,12 @@ nonisolated enum AgentHistoryUndoPreview {
     static func revalidate(
         entry: AgentHistoryEntry,
         changeSet: VerifiedAgentChangeSet,
-        root: URL,
-        manifest: AgentHistoryAuthorityManifest
+        payload: AgentHistoryInversePayload,
+        expectedPreview: AgentHistoryUndoPreviewModel,
+        context: AgentHistoryUndoPreviewContext
     ) -> AgentHistoryUndoPreviewResult {
+        let root = context.root
+        let manifest = context.manifest
         guard !entry.reverted else {
             return .unavailable(.alreadyReverted)
         }
@@ -214,43 +278,119 @@ nonisolated enum AgentHistoryUndoPreview {
         ) {
             return .unavailable(mapBlock(blocked))
         }
-        if let blocked = AgentHistoryCheckedUndoEngine.contentDivergence(
-            changeSet: changeSet,
-            root: root,
-            manifest: manifest
-        ) {
-            return .unavailable(mapBlock(blocked))
+        if case .failure(let failure) =
+            AgentHistoryInversePayloadValidator.validate(
+                changeSet: changeSet,
+                payload: payload
+            ) {
+            return .unavailable(.inversePayloadInvalid(failure))
         }
-        // The payload is not needed for revalidation; preflight + divergence
-        // are sufficient to prove the workspace still matches. The engine
-        // re-checks the payload binding during apply.
+        let snapshots: [AgentHistorySafeFileSnapshot]
+        switch validatedCurrentSnapshots(
+            changes: changeSet.changes,
+            root: root,
+            expectedRootDevice: manifest.rootDevice,
+            expectedRootInode: manifest.rootInode
+        ) {
+        case .success(let current):
+            snapshots = current
+        case .failure(let failure):
+            return .unavailable(failure)
+        }
+        guard workspaceGitStateMatches(root: root, manifest: manifest) else {
+            return .unavailable(.workspaceChanged)
+        }
+        if let failure = previewIdentityFailure(
+            entry: entry,
+            changes: changeSet.changes,
+            snapshots: snapshots,
+            expectedPreview: expectedPreview
+        ) {
+            return .unavailable(failure)
+        }
+        // Returning an empty display model intentionally grants no mutation
+        // authority. The same payload binding and workspace state were checked
+        // above, and the engine repeats both checks during authoritative apply.
         return .available(AgentHistoryUndoPreviewModel(
             historyEntryID: entry.id,
             operations: []
         ))
     }
 
+    /// Captures each current file exactly once through `O_NOFOLLOW`
+    /// descriptor traversal, validates those exact bytes, and returns the
+    /// immutable snapshots used by model construction. No validated path is
+    /// reopened by name.
+    static func validatedCurrentSnapshots(
+        changes: [AgentHistoryRecordedFileChange],
+        root: URL,
+        expectedRootDevice: UInt64,
+        expectedRootInode: UInt64,
+        hooks: AgentHistoryUndoPreviewHooks = .none
+    ) -> Result<
+        [AgentHistorySafeFileSnapshot],
+        AgentHistoryUndoPreviewFailure
+    > {
+        let workspace: AgentHistorySafeWorkspace
+        do {
+            workspace = try AgentHistorySafeWorkspace(
+                root: root,
+                expectedDevice: expectedRootDevice,
+                expectedInode: expectedRootInode
+            )
+        } catch {
+            return .failure(.workspaceChanged)
+        }
+
+        var snapshots: [AgentHistorySafeFileSnapshot] = []
+        snapshots.reserveCapacity(changes.count)
+        for change in changes {
+            do {
+                hooks.beforeSnapshot?(change.relativePath)
+                let snapshot = try workspace.snapshot(
+                    relativePath: change.relativePath
+                )
+                guard AgentHistoryCheckedUndoEngine.currentSnapshot(
+                    snapshot,
+                    matches: change
+                ) else {
+                    return .failure(
+                        .currentContentDiverged(path: change.relativePath)
+                    )
+                }
+                snapshots.append(snapshot)
+                hooks.afterSnapshot?(change.relativePath)
+            } catch {
+                return .failure(
+                    .currentContentDiverged(path: change.relativePath)
+                )
+            }
+        }
+        guard workspace.isStillBoundToCanonicalPath() else {
+            return .failure(.workspaceChanged)
+        }
+        return .success(snapshots)
+    }
+
     // MARK: - Model construction
 
-    private static func buildModel(
+    static func buildModel(
         entry: AgentHistoryEntry,
         changeSet: VerifiedAgentChangeSet,
-        payload: AgentHistoryInversePayload,
-        root: URL
+        payload: AgentHistoryValidatedInversePayload,
+        snapshots: [AgentHistorySafeFileSnapshot]
     ) -> AgentHistoryUndoPreviewModel? {
-        let entriesByPath = Dictionary(
-            payload.entries.map { ($0.relativePath, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
+        guard snapshots.count == changeSet.changes.count else { return nil }
         var operations: [AgentHistoryUndoPreviewOperation] = []
-        for change in changeSet.changes {
-            guard let entry = entriesByPath[change.relativePath] else {
+        for (change, snapshot) in zip(changeSet.changes, snapshots) {
+            guard snapshot.relativePath == change.relativePath,
+                  let entry = payload[change.relativePath] else {
                 return nil
             }
             guard let op = buildOperation(
                 change: change,
                 entry: entry,
-                root: root
+                snapshot: snapshot
             ) else {
                 return nil
             }
@@ -265,7 +405,7 @@ nonisolated enum AgentHistoryUndoPreview {
     private static func buildOperation(
         change: AgentHistoryRecordedFileChange,
         entry: AgentHistoryInverseFileEntry,
-        root: URL
+        snapshot: AgentHistorySafeFileSnapshot
     ) -> AgentHistoryUndoPreviewOperation? {
         let path = change.relativePath
         let safePath = sanitize(path)
@@ -273,57 +413,64 @@ nonisolated enum AgentHistoryUndoPreview {
         case .modify:
             guard let before = change.before,
                   let after = change.after,
-                  let beforeContent = entry.beforeContent else {
+                  let beforeContent = entry.beforeContent,
+                  let currentContent = snapshot.data else {
                 return nil
             }
-            let currentContent = readCurrentBytes(
-                relativePath: path,
-                root: root
+            let diff = diffPreview(
+                before: beforeContent,
+                after: currentContent
             )
             return AgentHistoryUndoPreviewOperation(
                 id: path,
                 relativePath: safePath,
                 kind: .restoreModifiedFile,
-                hunks: diffHunks(
-                    before: beforeContent,
-                    after: currentContent
-                ),
+                contentRepresentation: diff.representation,
+                hunks: diff.hunks,
                 expectedContentSHA256: after.contentSHA256,
                 expectedByteCount: after.byteCount,
                 expectedPermissions: after.permissions,
                 resultContentSHA256: before.contentSHA256,
                 resultByteCount: before.byteCount,
-                resultPermissions: entry.permissions
+                resultPermissions: entry.permissions,
+                previewDevice: snapshot.device,
+                previewInode: snapshot.inode
             )
         case .create:
             return AgentHistoryUndoPreviewOperation(
                 id: path,
                 relativePath: safePath,
                 kind: .removeCreatedFile,
+                contentRepresentation: .wholeFileRemoval,
                 hunks: [],
                 expectedContentSHA256: change.after?.contentSHA256,
                 expectedByteCount: change.after?.byteCount,
                 expectedPermissions: change.after?.permissions,
                 resultContentSHA256: nil,
                 resultByteCount: nil,
-                resultPermissions: nil
+                resultPermissions: nil,
+                previewDevice: snapshot.device,
+                previewInode: snapshot.inode
             )
         case .delete:
             guard let before = change.before,
-                  let beforeContent = entry.beforeContent else {
+                  entry.beforeContent != nil else {
                 return nil
             }
             return AgentHistoryUndoPreviewOperation(
                 id: path,
                 relativePath: safePath,
                 kind: .restoreDeletedFile,
+                contentRepresentation: .wholeFileRestore,
                 hunks: [],
                 expectedContentSHA256: nil,
                 expectedByteCount: nil,
                 expectedPermissions: nil,
                 resultContentSHA256: before.contentSHA256,
                 resultByteCount: before.byteCount,
-                resultPermissions: entry.permissions ?? before.permissions
+                resultPermissions: entry.permissions ?? before.permissions,
+                previewDevice: snapshot.device,
+                previewInode: snapshot.inode
             )
         case .rename, .symlink, .unsupported:
             return nil
@@ -332,31 +479,46 @@ nonisolated enum AgentHistoryUndoPreview {
 
     // MARK: - Diff
 
-    /// Produces a single hunk with unified-style added/removed/context lines
-    /// by diffing the before (restored) bytes against the current (after)
-    /// bytes. Bounded to `maximumDiffLines` per side; larger files produce an
-    /// empty hunk list and rely on the operation summary instead.
-    private static func diffHunks(
+    private struct DiffPreview {
+        let representation: AgentHistoryUndoContentKind
+        let hunks: [AgentHistoryUndoPreviewHunk]
+    }
+
+    private struct DiffLine: Equatable {
+        let text: String
+        let lineEnding: VerifiedDiffLineEnding
+    }
+
+    private struct DiffRow {
+        let kind: AgentHistoryUndoPreviewHunk.LineKind
+        let line: DiffLine
+    }
+
+    /// Builds a bounded textual diff without conflating binary, oversized,
+    /// and empty textual content. Line terminators participate in equality, so
+    /// a CRLF/LF-only change remains visible and truthful.
+    private static func diffPreview(
         before: Data,
-        after current: Data?
-    ) -> [AgentHistoryUndoPreviewHunk] {
-        let beforeLines = splitLines(before)
-        // The undo restores `before`; the current workspace holds `after`.
-        // From the undo's perspective, `before` lines are *added* (restored)
-        // and `after` lines are *removed`.
-        let afterLines = current.map(splitLines) ?? []
+        after current: Data
+    ) -> DiffPreview {
+        guard let beforeLines = decodedLines(before),
+              let afterLines = decodedLines(current) else {
+            return DiffPreview(representation: .binary, hunks: [])
+        }
         guard beforeLines.count <= maximumDiffLines,
-              afterLines.count <= maximumDiffLines else {
-            return []
+              afterLines.count <= maximumDiffLines,
+              beforeLines.count * afterLines.count
+                <= maximumDiffCells else {
+            return DiffPreview(representation: .omitted, hunks: [])
         }
         let diff = lineDiff(before: beforeLines, after: afterLines)
         guard !diff.isEmpty else {
-            return []
+            return DiffPreview(representation: .textual, hunks: [])
         }
         let added = diff.lazy.filter { $0.kind == .add }.count
         let removed = diff.lazy.filter { $0.kind == .remove }.count
         let header = "@@ -1,\(afterLines.count) +1,\(beforeLines.count) @@"
-        return [
+        let hunks = [
             AgentHistoryUndoPreviewHunk(
                 id: 0,
                 header: header,
@@ -364,30 +526,61 @@ nonisolated enum AgentHistoryUndoPreview {
                     AgentHistoryUndoPreviewHunk.Line(
                         id: index,
                         kind: line.kind,
-                        text: line.text
+                        text: line.line.text,
+                        lineEnding: line.line.lineEnding
                     )
                 }
             )
         ].filter { _ in added > 0 || removed > 0 }
+        return DiffPreview(representation: .textual, hunks: hunks)
     }
 
-    /// Splits bytes into lines, preserving the terminator kind for display.
-    private static func splitLines(_ data: Data) -> [String] {
-        guard let text = String(data: data, encoding: .utf8) else {
-            // Non-UTF8 file: surface the raw byte count only.
-            return []
+    /// Splits exact UTF-8 bytes on LF while retaining LF, CRLF, and missing
+    /// final-newline identity. Empty data is valid text with zero lines.
+    private static func decodedLines(_ data: Data) -> [DiffLine]? {
+        guard String(data: data, encoding: .utf8) != nil else { return nil }
+        var lines: [DiffLine] = []
+        var start = data.startIndex
+        var index = start
+        while index < data.endIndex {
+            if data[index] == 0x0A {
+                let end = data.index(after: index)
+                let bytes = data[start..<end]
+                guard let line = VerifiedDiffDisplaySanitizer.sanitizedLine(
+                    Data(bytes)
+                ) else {
+                    return nil
+                }
+                lines.append(
+                    DiffLine(
+                        text: line.text,
+                        lineEnding: line.lineEnding
+                    )
+                )
+                start = end
+            }
+            index = data.index(after: index)
         }
-        return text.split(omittingEmptySubsequences: false, whereSeparator: { $0.isNewline })
-            .map { sanitize(String($0)) }
+        if start < data.endIndex {
+            guard let line = VerifiedDiffDisplaySanitizer.sanitizedLine(
+                Data(data[start..<data.endIndex])
+            ) else {
+                return nil
+            }
+            lines.append(
+                DiffLine(text: line.text, lineEnding: line.lineEnding)
+            )
+        }
+        return lines
     }
 
     /// A minimal longest-common-subsequence line diff. Returns a flat list of
     /// context/remove/add lines. `before` lines that differ become `.add`
     /// (the undo restores them); `after` lines that differ become `.remove`.
     private static func lineDiff(
-        before: [String],
-        after: [String]
-    ) -> [(kind: AgentHistoryUndoPreviewHunk.LineKind, text: String)] {
+        before: [DiffLine],
+        after: [DiffLine]
+    ) -> [DiffRow] {
         let m = before.count
         let n = after.count
         if m == 0 && n == 0 {
@@ -400,39 +593,44 @@ nonisolated enum AgentHistoryUndoPreview {
             repeating: Array(repeating: 0, count: n + 1),
             count: m + 1
         )
-        for i in stride(from: m - 1, through: 0, by: -1) {
-            for j in stride(from: n - 1, through: 0, by: -1) {
-                if before[i] == after[j] {
-                    lcs[i][j] = lcs[i + 1][j + 1] + 1
-                } else {
-                    lcs[i][j] = max(lcs[i + 1][j], lcs[i][j + 1])
+        if m > 0, n > 0 {
+            for i in stride(from: m - 1, through: 0, by: -1) {
+                for j in stride(from: n - 1, through: 0, by: -1) {
+                    if before[i] == after[j] {
+                        lcs[i][j] = lcs[i + 1][j + 1] + 1
+                    } else {
+                        lcs[i][j] = max(
+                            lcs[i + 1][j],
+                            lcs[i][j + 1]
+                        )
+                    }
                 }
             }
         }
-        var result: [(AgentHistoryUndoPreviewHunk.LineKind, String)] = []
+        var result: [DiffRow] = []
         var i = 0
         var j = 0
         while i < m && j < n {
             if before[i] == after[j] {
-                result.append((.context, before[i]))
+                result.append(DiffRow(kind: .context, line: before[i]))
                 i += 1
                 j += 1
             } else if lcs[i + 1][j] >= lcs[i][j + 1] {
                 // `before` line is not in `after` → the undo adds it.
-                result.append((.add, before[i]))
+                result.append(DiffRow(kind: .add, line: before[i]))
                 i += 1
             } else {
                 // `after` line is not in `before` → the undo removes it.
-                result.append((.remove, after[j]))
+                result.append(DiffRow(kind: .remove, line: after[j]))
                 j += 1
             }
         }
         while i < m {
-            result.append((.add, before[i]))
+            result.append(DiffRow(kind: .add, line: before[i]))
             i += 1
         }
         while j < n {
-            result.append((.remove, after[j]))
+            result.append(DiffRow(kind: .remove, line: after[j]))
             j += 1
         }
         return result
@@ -440,15 +638,42 @@ nonisolated enum AgentHistoryUndoPreview {
 
     // MARK: - Helpers
 
-    private static func readCurrentBytes(
-        relativePath: String,
-        root: URL
-    ) -> Data? {
-        let url = root.appendingPathComponent(
-            relativePath,
-            isDirectory: false
-        )
-        return try? Data(contentsOf: url)
+    private static func workspaceGitStateMatches(
+        root: URL,
+        manifest: AgentHistoryAuthorityManifest
+    ) -> Bool {
+        AgentHistoryContentHash.headOID(in: root)
+            == manifest.capturedHeadOID
+            && AgentHistoryContentHash.indexSHA256(in: root)
+                == manifest.capturedIndexSHA256
+    }
+
+    private static func previewIdentityFailure(
+        entry: AgentHistoryEntry,
+        changes: [AgentHistoryRecordedFileChange],
+        snapshots: [AgentHistorySafeFileSnapshot],
+        expectedPreview: AgentHistoryUndoPreviewModel
+    ) -> AgentHistoryUndoPreviewFailure? {
+        guard expectedPreview.historyEntryID == entry.id,
+              expectedPreview.operations.count == changes.count,
+              snapshots.count == changes.count else {
+            return .projectionTampered
+        }
+        for ((change, snapshot), operation) in zip(
+            zip(changes, snapshots),
+            expectedPreview.operations
+        ) {
+            guard operation.id == change.relativePath else {
+                return .projectionTampered
+            }
+            guard operation.previewDevice == snapshot.device,
+                  operation.previewInode == snapshot.inode else {
+                return .currentContentDiverged(
+                    path: change.relativePath
+                )
+            }
+        }
+        return nil
     }
 
     /// Escapes control/format scalars and backslashes so the preview can never
@@ -477,7 +702,7 @@ nonisolated enum AgentHistoryUndoPreview {
         }
     }
 
-    private static func mapBlock(
+    static func mapBlock(
         _ reason: AgentHistoryEngineBlockReason
     ) -> AgentHistoryUndoPreviewFailure {
         switch reason {
@@ -489,6 +714,8 @@ nonisolated enum AgentHistoryUndoPreview {
         case .currentContentDiverged(let path):
             .currentContentDiverged(path: path)
         case .inversePayloadMissing: .inversePayloadMissing
+        case .inversePayloadInvalid(let failure):
+            .inversePayloadInvalid(failure)
         case .fileSystemError, .applyFailed:
             .currentContentDiverged(path: "")
         }
