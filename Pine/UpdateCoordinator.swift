@@ -11,6 +11,7 @@
 //  transaction is never duplicated (#1250).
 //
 
+import Combine
 import Foundation
 import Observation
 import Sparkle
@@ -122,6 +123,9 @@ final class UpdateCoordinator {
     /// ``showUpdaterError`` — Sparkle requires this to be called.
     private var pendingAcknowledgement: (() -> Void)?
 
+    /// Combine subscription bag for KVO publishers.
+    private var cancellables: Set<AnyCancellable> = []
+
     // MARK: - Toast / notification bridge
 
     /// Closure used to surface a non-blocking "up to date" / error toast.
@@ -167,7 +171,10 @@ final class UpdateCoordinator {
         // Mirror Sparkle's canCheckForUpdates so the menu item can disable
         // itself before the updater is ready. KVO publisher is main-actor.
         updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: &$canCheckForUpdates)
+            .sink { [weak self] value in
+                self?.canCheckForUpdates = value
+            }
+            .store(in: &cancellables)
     }
 
     nonisolated static let startFailureMessage: String =
@@ -266,7 +273,7 @@ final class UpdateCoordinator {
         accumulatedDownloaded = 0
         expectedContentLength = 0
         // Informational-only updates cannot be installed.
-        if appcastItem.informationOnlyUpdate {
+        if appcastItem.isInformationOnlyUpdate {
             let message = String(
                 localized: "update.informational.message",
                 defaultValue: "A newer version is available. Visit the website to download it."
@@ -331,8 +338,8 @@ final class UpdateCoordinator {
         // indicates the user is already on the latest version, we show the
         // friendly toast; otherwise surface the localized description.
         let nsError = error as NSError
-        let isUpToDate = nsError.domain == SUErrorDomain
-            && nsError.code == SUNoUpdateFoundError
+        let isUpToDate = nsError.domain == SUSparkleErrorDomain
+            && nsError.code == SPUNoUpdateFoundError
 
         if isUpToDate {
             showToast?(Self.upToDateMessage)
