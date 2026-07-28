@@ -190,6 +190,65 @@ struct QuickTerminalTests {
         #expect(coordinator.paneState.activeTab?.workingDirectoryURL?.path == expected)
         coordinator.hide()
     }
+
+    @Test("Main display resolves to the menu-bar screen")
+    func mainDisplayUsesPrimaryScreen() {
+        let resolved = QuickTerminalController.resolveTargetScreen(
+            target: .main,
+            keyWindowScreen: "external",
+            focusedScreen: "external",
+            primaryScreen: "menu-bar"
+        )
+
+        #expect(resolved == "menu-bar")
+    }
+
+    @Test("Active display follows the key window and fallback chain")
+    func activeDisplayFallbacks() {
+        #expect(
+            QuickTerminalController.resolveTargetScreen(
+                target: .active,
+                keyWindowScreen: "key",
+                focusedScreen: "focused",
+                primaryScreen: "primary"
+            ) == "key"
+        )
+        #expect(
+            QuickTerminalController.resolveTargetScreen(
+                target: .active,
+                keyWindowScreen: nil,
+                focusedScreen: "focused",
+                primaryScreen: "primary"
+            ) == "focused"
+        )
+        #expect(
+            QuickTerminalController.resolveTargetScreen(
+                target: .active,
+                keyWindowScreen: nil,
+                focusedScreen: nil,
+                primaryScreen: "primary"
+            ) == "primary"
+        )
+    }
+
+    @Test("Main display and empty-state fallbacks are deterministic")
+    func mainDisplayFallbacks() {
+        #expect(
+            QuickTerminalController.resolveTargetScreen(
+                target: .main,
+                keyWindowScreen: "key",
+                focusedScreen: "focused",
+                primaryScreen: nil
+            ) == "focused"
+        )
+        let missing: String? = QuickTerminalController.resolveTargetScreen(
+            target: .main,
+            keyWindowScreen: nil,
+            focusedScreen: nil,
+            primaryScreen: nil
+        )
+        #expect(missing == nil)
+    }
 }
 
 @MainActor
@@ -208,6 +267,7 @@ private struct QuickTerminalControllerFixture {
             notificationCenter: NotificationCenter()
         )
         settings.enabled = true
+        settings.hideOnFocusLoss = false
         controller = QuickTerminalController(settings: settings)
     }
 

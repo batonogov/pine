@@ -433,6 +433,23 @@ struct QuickTerminalSettingsTests {
         #expect(restored.screenEdge == .top)
         #expect(restored.targetDisplay == .active)
         #expect(restored.heightFraction == 0.8)
+        #expect(
+            fixture.defaults.double(
+                forKey: "quickTerminal.heightFraction"
+            ) == 0.8
+        )
+
+        fixture.defaults.set(
+            Double.nan,
+            forKey: "quickTerminal.heightFraction"
+        )
+        let nonFinite = fixture.makeSettings()
+        #expect(nonFinite.heightFraction == 0.4)
+        #expect(
+            fixture.defaults.double(
+                forKey: "quickTerminal.heightFraction"
+            ) == 0.4
+        )
     }
 
     @Test("Corrupt or bare persisted hotkeys normalize without trapping")
@@ -474,7 +491,7 @@ struct QuickTerminalSettingsTests {
         #expect(shiftOnly.modifiers == QuickTerminalSettings.defaultModifiers)
     }
 
-    @Test("Panel size clamps writes at both boundaries")
+    @Test("Panel size normalizes bounds and non-finite writes")
     func sizeClampsWrites() throws {
         let fixture = try QuickTerminalSettingsFixture()
         let settings = fixture.settings
@@ -497,6 +514,16 @@ struct QuickTerminalSettingsTests {
         #expect(settings.heightFraction == 0.8)
         #expect(fixture.makeSettings().heightFraction == 0.8)
         #expect(counter.value == 2)
+
+        settings.heightFraction = Double.nan
+        #expect(settings.heightFraction == 0.4)
+        #expect(fixture.makeSettings().heightFraction == 0.4)
+        #expect(counter.value == 3)
+
+        settings.heightFraction = Double.infinity
+        #expect(settings.heightFraction == 0.4)
+        #expect(fixture.makeSettings().heightFraction == 0.4)
+        #expect(counter.value == 4)
     }
 
     @Test("Hotkey update persists atomically and notifies once")
@@ -677,6 +704,7 @@ struct QuickTerminalSettingsTests {
     @Test("Visible controller applies changes without replacing its session")
     func controllerAppliesSettingsLive() async throws {
         let fixture = try QuickTerminalSettingsFixture()
+        fixture.settings.hideOnFocusLoss = false
         let controller = QuickTerminalController(settings: fixture.settings)
         defer { controller.shutdown() }
         controller.show()

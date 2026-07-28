@@ -188,22 +188,30 @@ final class QuickTerminalController {
     }
 
     /// Resolves which `NSScreen` the panel should appear on, honoring the
-    /// `targetDisplay` preference. `.active` uses the screen that contains
-    /// the current key window (not `NSScreen.main`, which is only the menu-
-    /// bar display); `.main` pins to the main display.
+    /// `targetDisplay` preference. AppKit defines `NSScreen.main` as the
+    /// keyboard-focus screen; the menu-bar display is `NSScreen.screens[0]`.
     private func targetScreen() -> NSScreen? {
-        switch settings.targetDisplay {
+        Self.resolveTargetScreen(
+            target: settings.targetDisplay,
+            keyWindowScreen: NSApp.keyWindow?.screen,
+            focusedScreen: NSScreen.main,
+            primaryScreen: NSScreen.screens.first
+        )
+    }
+
+    /// Pure selection seam so display semantics can be tested without relying
+    /// on the test host's physical monitor configuration.
+    static func resolveTargetScreen<Screen>(
+        target: QuickTerminalTargetDisplay,
+        keyWindowScreen: Screen?,
+        focusedScreen: Screen?,
+        primaryScreen: Screen?
+    ) -> Screen? {
+        switch target {
         case .main:
-            return NSScreen.main ?? NSScreen.screens.first
+            primaryScreen ?? focusedScreen ?? keyWindowScreen
         case .active:
-            // Prefer the screen hosting the key Pine window — that's the
-            // display the user is currently looking at. Falls back to
-            // NSScreen.main when there is no key window (e.g. only the
-            // Welcome window or no windows at all).
-            if let keyWindow = NSApp.keyWindow {
-                return keyWindow.screen ?? NSScreen.main
-            }
-            return NSScreen.main ?? NSScreen.screens.first
+            keyWindowScreen ?? focusedScreen ?? primaryScreen
         }
     }
 

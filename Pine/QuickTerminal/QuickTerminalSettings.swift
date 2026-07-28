@@ -28,10 +28,10 @@ enum QuickTerminalScreenEdge: String, CaseIterable, Identifiable {
 
 /// Which display the panel appears on.
 enum QuickTerminalTargetDisplay: String, CaseIterable, Identifiable {
-    /// The display that contains the current key window (falls back to the
-    /// main display when Pine has no key window).
+    /// The display that contains Pine's key window, falling back to AppKit's
+    /// keyboard-focus screen and then the menu-bar display.
     case active
-    /// Always the main display (menu bar).
+    /// The primary display containing the menu bar.
     case main
 
     var id: String { rawValue }
@@ -64,6 +64,7 @@ final class QuickTerminalSettings {
     /// reach `RegisterEventHotKey`, which otherwise fails without a useful
     /// recovery path.
     private static let maxCarbonVirtualKeyCode = UInt32(kVK_UpArrow)
+    private static let defaultHeightFraction = 0.4
 
     private let defaults: UserDefaults
     /// Shared with runtime observers so isolated settings instances can drive
@@ -116,11 +117,13 @@ final class QuickTerminalSettings {
     /// left/right edges it is the width fraction.
     var heightFraction: Double {
         didSet {
-            // Clamp to a sane range so the panel is always usable.
-            let clamped = min(max(heightFraction, 0.2), 0.8)
-            if clamped != heightFraction {
-                defaults.set(clamped, forKey: Self.heightFractionKey)
-                heightFraction = clamped
+            // Clamp to a finite, sane range so AppKit never receives a frame
+            // containing NaN or infinity from corrupt defaults or callers.
+            let normalized = Self.normalizedHeightFraction(heightFraction)
+            if heightFraction.isFinite == false
+                || normalized != heightFraction {
+                defaults.set(normalized, forKey: Self.heightFractionKey)
+                heightFraction = normalized
                 return
             }
             guard heightFraction != oldValue else { return }
@@ -187,9 +190,13 @@ final class QuickTerminalSettings {
         }
 
         if let stored = defaults.object(forKey: Self.heightFractionKey) as? Double {
-            self.heightFraction = min(max(stored, 0.2), 0.8)
+            let normalized = Self.normalizedHeightFraction(stored)
+            self.heightFraction = normalized
+            if stored.isFinite == false || stored != normalized {
+                defaults.set(normalized, forKey: Self.heightFractionKey)
+            }
         } else {
-            self.heightFraction = 0.4
+            self.heightFraction = Self.defaultHeightFraction
         }
 
         if let raw = defaults.string(forKey: Self.targetDisplayKey),
@@ -247,7 +254,7 @@ final class QuickTerminalSettings {
             keyCode = Self.defaultKeyCode
             modifiers = Self.defaultModifiers
             screenEdge = .top
-            heightFraction = 0.4
+            heightFraction = Self.defaultHeightFraction
             targetDisplay = .active
             hideOnFocusLoss = true
         }
@@ -293,6 +300,11 @@ final class QuickTerminalSettings {
             return nil
         }
         return (keyCode, supportedModifiers)
+    }
+
+    private static func normalizedHeightFraction(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultHeightFraction }
+        return min(max(value, 0.2), 0.8)
     }
 }
 
