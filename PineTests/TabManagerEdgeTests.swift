@@ -640,18 +640,22 @@ struct TabManagerEdgeTests {
         )
         let url = try tempFile(in: dir, content: content)
         manager.pendingGoToLine = 99
+        var completionResult: TabManager.OpenRequestResult?
 
-        manager.openTabAndGoToLine(
+        let request = manager.openTabAndGoToLine(
             url: url,
             line: 2,
-            context: DialogPresentationContext.unscoped
+            context: DialogPresentationContext.unscoped,
+            completion: { completionResult = $0 }
         )
+        #expect(request == .pending)
         for _ in 0..<5 {
             await Task.yield()
         }
 
         #expect(manager.tabs.isEmpty)
         #expect(manager.pendingGoToLine == nil)
+        #expect(completionResult == .cancelled)
     }
 
     @Test func explicitLargeFileOpenUpgradesQueuedPreviewAndRoutesLine() async throws {
@@ -667,6 +671,7 @@ struct TabManagerEdgeTests {
             of: NSApplication.ModalResponse.self
         )
         var presentationCount = 0
+        var completionResults: [TabManager.OpenRequestResult] = []
         manager.largeFileAlertPresenter = { _, _, _ in
             presentationCount += 1
             for await response in responses {
@@ -675,16 +680,20 @@ struct TabManagerEdgeTests {
             return .abort
         }
 
-        manager.openTabAsPreview(
+        let previewRequest = manager.openTabAsPreview(
             url: url,
-            context: DialogPresentationContext.unscoped
+            context: DialogPresentationContext.unscoped,
+            completion: { completionResults.append($0) }
         )
-        manager.openTabAndGoToLine(
+        let explicitRequest = manager.openTabAndGoToLine(
             url: url,
             line: 7,
-            context: DialogPresentationContext.unscoped
+            context: DialogPresentationContext.unscoped,
+            completion: { completionResults.append($0) }
         )
 
+        #expect(previewRequest == .pending)
+        #expect(explicitRequest == .pending)
         #expect(manager.tabs.isEmpty)
         #expect(manager.pendingGoToLine == nil)
         responseContinuation.yield(.alertSecondButtonReturn)
@@ -694,12 +703,19 @@ struct TabManagerEdgeTests {
             await Task.yield()
         }
 
+        let openedTab = try #require(manager.activeTab)
         #expect(manager.tabs.count == 1)
-        #expect(manager.activeTab?.url == url)
-        #expect(manager.activeTab?.isTransientPreview == false)
-        #expect(manager.activeTab?.syntaxHighlightingDisabled == false)
+        #expect(openedTab.url == url)
+        #expect(openedTab.isTransientPreview == false)
+        #expect(openedTab.syntaxHighlightingDisabled == false)
         #expect(manager.pendingGoToLine == 7)
         #expect(presentationCount == 1)
+        #expect(
+            completionResults == [
+                .opened(tabID: openedTab.id),
+                .opened(tabID: openedTab.id)
+            ]
+        )
     }
 
     // MARK: - Auto-save

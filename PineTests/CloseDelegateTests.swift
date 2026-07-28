@@ -541,6 +541,112 @@ struct CloseDelegateTests {
         #expect(project.dialogOwnerWindow === secondWindow)
         #expect(secondInterceptor.dialogContext.nsWindow === secondWindow)
     }
+
+    @Test func interceptorDismantleRestoresDelegateAndRetiresDialogAuthority() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let project = ProjectManager()
+        let registry = ProjectRegistry()
+        let appDelegate = AppDelegate()
+        let window = NSWindow()
+        let original = CountingCloseDelegate(shouldApprove: true)
+        window.delegate = original
+        let coordinator = WindowCloseInterceptor.Coordinator()
+        let sentinel = WindowCloseInterceptor.InterceptorView()
+
+        coordinator.installDelegate(
+            on: window,
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate
+        )
+        let capturedContext = try #require(
+            window.delegate as? CloseDelegate
+        ).dialogContext
+        #expect(project.dialogOwnerWindow === window)
+
+        WindowCloseInterceptor.dismantleNSView(
+            sentinel,
+            coordinator: coordinator
+        )
+
+        #expect(window.delegate === original)
+        #expect(project.dialogOwnerWindow == nil)
+        #expect(capturedContext.nsWindow == nil)
+        let response = await capturedContext.present(
+            start: { _, completion in
+                completion(.alertFirstButtonReturn)
+            },
+            cancel: { _ in }
+        )
+        #expect(response == .abort)
+
+        // A second teardown must not disturb the restored delegate.
+        coordinator.detach()
+        #expect(window.delegate === original)
+    }
+
+    @Test func interceptorRearmsRetainedDelegateForReopenedWindowGeneration() async throws {
+        let dir = try makeTempDir()
+        let otherDir = try makeTempDir()
+        defer {
+            cleanup(dir)
+            cleanup(otherDir)
+        }
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        // Keep another project window logically open so closing `dir` does
+        // not schedule the global delayed Welcome fallback and contaminate
+        // otherwise unrelated window-lifecycle tests.
+        _ = try #require(registry.projectManager(for: otherDir))
+        let appDelegate = AppDelegate()
+        let window = CloseTrackingWindow()
+        let original = CountingCloseDelegate(shouldApprove: true)
+        window.delegate = original
+        let coordinator = WindowCloseInterceptor.Coordinator()
+
+        coordinator.installDelegate(
+            on: window,
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate
+        )
+        let interceptor = try #require(window.delegate as? CloseDelegate)
+        interceptor.windowWillClose(
+            Notification(name: NSWindow.willCloseNotification, object: window)
+        )
+        #expect(interceptor.didCompleteWindowLifecycle)
+        #expect(!registry.isWindowOpen(dir))
+        #expect(project.dialogOwnerWindow == nil)
+
+        #expect(registry.projectManager(for: dir) === project)
+        #expect(registry.isWindowOpen(dir))
+        coordinator.installDelegate(
+            on: window,
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate
+        )
+
+        #expect(window.delegate === interceptor)
+        #expect(!interceptor.didCompleteWindowLifecycle)
+        #expect(project.dialogOwnerWindow === window)
+        window.performClose(nil)
+        await settle()
+        #expect(window.approvedCloseCount == 1)
+
+        interceptor.windowWillClose(
+            Notification(name: NSWindow.willCloseNotification, object: window)
+        )
+        #expect(interceptor.didCompleteWindowLifecycle)
+        #expect(!registry.isWindowOpen(dir))
+        #expect(project.dialogOwnerWindow == nil)
+        coordinator.detach()
+        #expect(window.delegate === original)
+    }
 }
 
 @MainActor

@@ -192,6 +192,14 @@ struct WindowCloseInterceptor: NSViewRepresentable {
         }
     }
 
+    static func dismantleNSView(
+        _ nsView: InterceptorView,
+        coordinator: Coordinator
+    ) {
+        nsView.onMovedToWindow = nil
+        coordinator.detach()
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     /// Custom NSView that fires a callback synchronously when added to a window.
@@ -237,6 +245,13 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                 )
             } else if let closeDelegate,
                       window.delegate === closeDelegate {
+                if closeDelegate.didCompleteWindowLifecycle,
+                   registry.isWindowOpen(projectURL),
+                   registry.openProjects[
+                       projectURL.resolvingSymlinksInPath()
+                   ] === projectManager {
+                    closeDelegate.beginNewWindowLifecycle(on: window)
+                }
                 return
             } else if closeDelegate != nil {
                 // Same owner, new delegate generation. Do not restore the old
@@ -258,7 +273,15 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                 if existing.projectManager === projectManager {
                     closeDelegate = existing
                     originalDelegate = existing.original
-                    existing.observeWindowClose(window)
+                    if existing.didCompleteWindowLifecycle,
+                       registry.isWindowOpen(projectURL),
+                       registry.openProjects[
+                           projectURL.resolvingSymlinksInPath()
+                       ] === projectManager {
+                        existing.beginNewWindowLifecycle(on: window)
+                    } else if !existing.didCompleteWindowLifecycle {
+                        existing.observeWindowClose(window)
+                    }
                     return
                 }
                 let existingOriginal = existing.original
@@ -343,10 +366,15 @@ struct WindowCloseInterceptor: NSViewRepresentable {
             lifecycleObservers.removeAll()
         }
 
-        deinit {
-            for observer in lifecycleObservers {
-                NotificationCenter.default.removeObserver(observer)
-            }
+        /// Retires the live representable installation while its NSWindow may
+        /// remain alive. This is intentionally idempotent because SwiftUI
+        /// teardown and coordinator destruction can occur back-to-back.
+        func detach() {
+            retireCurrentInstallation(restoringOriginal: true)
+        }
+
+        isolated deinit {
+            retireCurrentInstallation(restoringOriginal: true)
         }
     }
 
@@ -380,6 +408,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     /// Tracks whether windowWillClose has already been handled, to prevent
     /// the NotificationCenter fallback from double-firing.
     private var didHandleClose = false
+    var didCompleteWindowLifecycle: Bool { didHandleClose }
 
     /// NotificationCenter observer token for the willClose fallback.
     /// nonisolated(unsafe): accessed from deinit (nonisolated) to remove observer.
@@ -658,6 +687,16 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         )
     }
 
+    /// Re-arms a retained delegate only after ProjectRegistry has explicitly
+    /// moved the same project out of its background state. Repeated
+    /// representable updates during one live window generation must never
+    /// reset the once-only close guard.
+    func beginNewWindowLifecycle(on window: NSWindow) {
+        guard didHandleClose else { return }
+        didHandleClose = false
+        observeWindowClose(window)
+    }
+
     /// Retires interception without treating the owner as user-closed. Used
     /// when SwiftUI replaces the delegate or moves the representable.
     func detachFromWindow() {
@@ -745,6 +784,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// handlers know not to clear the saved session during app quit.
     private(set) var isTerminating = false
     private var terminationDecisionTask: Task<Void, Never>?
+    private var welcomeVisibilityGeneration = 0
+    private var pendingWelcomeEnsureTask: Task<Void, Never>?
 
     /// Closure to open a named SwiftUI window, set by PineApp on launch.
     var openNamedWindow: ((String) -> Void)?
@@ -779,15 +820,53 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
     }
 
-    func showWelcome() {
+    func showWelcome(
+        waitBeforeEnsure: (@MainActor () async -> Void)? = nil,
+        ensureVisible: (@MainActor () -> Void)? = nil
+    ) {
+        welcomeVisibilityGeneration &+= 1
+        let generation = welcomeVisibilityGeneration
+        pendingWelcomeEnsureTask?.cancel()
+
         // Try SwiftUI first — may silently fail after repeated dismiss cycles
         // because the captured @Environment(\.openWindow) closure becomes stale.
         openNamedWindow?("welcome")
 
         // Give SwiftUI a moment to process, then verify and fallback via AppKit.
-        DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.short) { [weak self] in
-            guard let self else { return }
-            self.ensureWelcomeVisible()
+        let wait = waitBeforeEnsure ?? {
+            try? await Task.sleep(for: .seconds(UITimings.Delay.short))
+        }
+        pendingWelcomeEnsureTask = Task { @MainActor [weak self] in
+            await wait()
+            guard let self,
+                  !Task.isCancelled,
+                  self.welcomeVisibilityGeneration == generation else {
+                return
+            }
+            if let ensureVisible {
+                ensureVisible()
+            } else {
+                self.ensureWelcomeVisible()
+            }
+            if self.welcomeVisibilityGeneration == generation {
+                self.pendingWelcomeEnsureTask = nil
+            }
+        }
+    }
+
+    /// Cancels every stale Welcome visibility request before hiding all live
+    /// SwiftUI- and AppKit-owned Welcome windows. All successful project-open
+    /// paths use this helper so a delayed `showWelcome()` fallback cannot
+    /// resurrect the Welcome window over the new project.
+    func hideWelcome() {
+        welcomeVisibilityGeneration &+= 1
+        pendingWelcomeEnsureTask?.cancel()
+        pendingWelcomeEnsureTask = nil
+
+        welcomeWindow?.orderOut(nil)
+        for window in NSApp.windows
+            where window.identifier?.rawValue == "welcome" && window.isVisible {
+            window.orderOut(nil)
         }
     }
 
@@ -796,19 +875,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// assuming one fixed delay is sufficient on every macOS/CI machine.
     func awaitVisibleWelcomeWindow(
         maximumAttempts: Int = 40,
-        waitForNextAttempt: (@MainActor () async -> Void)? = nil
+        waitForNextAttempt: (@MainActor () async -> Void)? = nil,
+        resolveVisibleWindow: (@MainActor () -> NSWindow?)? = nil
     ) async -> NSWindow? {
         let wait = waitForNextAttempt ?? {
             try? await Task.sleep(for: .milliseconds(25))
         }
-        for _ in 0..<maximumAttempts {
-            if let window = visibleWelcomeWindow() {
+        let resolve = resolveVisibleWindow ?? {
+            self.visibleWelcomeWindow()
+        }
+        for _ in 0..<max(0, maximumAttempts) {
+            guard !Task.isCancelled else { return nil }
+            if let window = resolve() {
                 return window
             }
-            guard !Task.isCancelled else { return nil }
             await wait()
         }
-        return visibleWelcomeWindow()
+        guard !Task.isCancelled else { return nil }
+        return resolve()
     }
 
     /// No-window Open Folder path. A missing Welcome owner fails closed and
@@ -817,12 +901,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     func openFolderFromWelcomeOwner(
         maximumAttempts: Int = 40,
         waitForNextAttempt: (@MainActor () async -> Void)? = nil,
+        resolveVisibleWindow: (@MainActor () -> NSWindow?)? = nil,
         presentPanel: (@MainActor (DialogPresentationContext) async -> URL?)? = nil
     ) async -> Bool {
         showWelcome()
         guard let window = await awaitVisibleWelcomeWindow(
             maximumAttempts: maximumAttempts,
-            waitForNextAttempt: waitForNextAttempt
+            waitForNextAttempt: waitForNextAttempt,
+            resolveVisibleWindow: resolveVisibleWindow
         ) else {
             return false
         }
@@ -834,7 +920,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             selectedURL = await registry.openProjectViaPanel(context: context)
         }
         guard let selectedURL else { return false }
-        openProjectWindow?(selectedURL)
+        guard let openProjectWindow else { return false }
+        openProjectWindow(selectedURL)
+        hideWelcome()
         return true
     }
 
@@ -895,20 +983,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         if NSApp.isHidden {
             NSApp.unhide(nil)
         }
-        if windows.contains(where: {
-            DialogPresenter.isEligibleApplicationOwner($0)
-        }) {
-            return
+        let ownerStates = windows.map {
+            DialogPresenter.applicationOwnerState(
+                isVisible: $0.isVisible,
+                isMiniaturized: $0.isMiniaturized
+            )
         }
-        if let miniaturized = windows.first(where: {
-            $0.isVisible && $0.isMiniaturized
-        }) {
+        switch DialogPresenter.applicationOwnerPlan(for: ownerStates) {
+        case .keepExisting:
+            return
+        case let .restore(index):
+            guard windows.indices.contains(index) else {
+                ensureWelcomeVisible()
+                return
+            }
+            let miniaturized = windows[index]
             miniaturized.deminiaturize(nil)
             miniaturized.makeKeyAndOrderFront(nil)
             NSApp.activate()
-            return
+        case .showWelcome:
+            ensureWelcomeVisible()
         }
-        ensureWelcomeVisible()
     }
 
     /// Creates the Welcome window via AppKit when SwiftUI's scene lifecycle
@@ -1164,22 +1259,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             let canonical = dir.resolvingSymlinksInPath()
             guard registry.projectManager(for: canonical) != nil else { continue }
             openProjectWindow?(canonical)
-            welcomeWindow?.orderOut(nil)
+            hideWelcome()
         }
 
         // Open files: if a project window is active, add as tabs; otherwise open parent as project
         if !classified.files.isEmpty {
             if let activeProject = activeProjectManager() {
-                DropHandler.openFilesAsTabs(classified.files, in: activeProject.activeTabManager)
+                for file in classified.files {
+                    activeProject.paneManager.openFileInActiveEditor(url: file)
+                }
             } else if let firstFile = classified.files.first {
                 let projectDir = firstFile.deletingLastPathComponent().resolvingSymlinksInPath()
-                guard registry.projectManager(for: projectDir) != nil else { return }
+                guard let projectManager = registry.projectManager(for: projectDir) else { return }
                 openProjectWindow?(projectDir)
-                welcomeWindow?.orderOut(nil)
-                // Open files after project initializes
-                DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard) { [weak self] in
-                    guard let pm = self?.registry.openProjects[projectDir] else { return }
-                    DropHandler.openFilesAsTabs(classified.files, in: pm.activeTabManager)
+                hideWelcome()
+                Task { @MainActor [weak self, weak projectManager] in
+                    guard let self, let projectManager else { return }
+                    guard let owner = await projectManager.awaitDialogOwnerWindow(),
+                          projectManager.dialogOwnerWindow === owner,
+                          self.registry.openProjects[projectDir] === projectManager else {
+                        return
+                    }
+                    for file in classified.files {
+                        projectManager.paneManager.openFileInActiveEditor(url: file)
+                    }
                 }
             }
         }
@@ -1228,8 +1331,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
         guard registry.projectManager(for: canonical) != nil else { return }
         openProjectWindow?(canonical)
-        // Hide Welcome window if visible
-        welcomeWindow?.orderOut(nil)
+        hideWelcome()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

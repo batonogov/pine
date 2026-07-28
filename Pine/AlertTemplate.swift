@@ -107,9 +107,6 @@ extension AlertTemplate {
             if role.contains(.destructive) {
                 button.hasDestructiveAction = true
             }
-            if role.contains(.cancel) {
-                button.keyEquivalent = "\u{1b}" // Escape
-            }
             buttons.append(button)
         }
 
@@ -120,16 +117,70 @@ extension AlertTemplate {
             defaultIndices.count == 1,
             "Every alert template must declare exactly one default button"
         )
+        let cancelIndices = roles.indices.filter {
+            roles[$0].contains(.cancel)
+        }
+        assert(
+            cancelIndices.count <= 1,
+            "Every alert template may declare at most one cancel button"
+        )
+
+        // A single NSButtonCell cannot own both Return and Escape: assigning
+        // either key equivalent makes AppKit remove the other. Keep the
+        // visible safe button as the native default (including its blue
+        // appearance), and install zero-sized semantic proxies for any
+        // additional cancellation shortcuts. The proxies forward the exact
+        // NSAlert response tag and are excluded from accessibility.
         if let defaultIndex = defaultIndices.first,
            buttons.indices.contains(defaultIndex),
            let defaultCell = buttons[defaultIndex].cell as? NSButtonCell {
-            // `defaultButtonCell` gives Return/Enter native default-button
-            // behavior without stealing Escape from a safe button that is
-            // deliberately both `.default` and `.cancel`.
             alert.window.defaultButtonCell = defaultCell
+        }
+        if let cancelIndex = cancelIndices.first,
+           buttons.indices.contains(cancelIndex) {
+            let cancelButton = buttons[cancelIndex]
+            if cancelIndex == defaultIndices.first {
+                installShortcutProxy(
+                    for: cancelButton,
+                    keyEquivalent: "\u{1b}",
+                    modifierMask: [],
+                    in: alert
+                )
+            } else {
+                cancelButton.keyEquivalent = "\u{1b}"
+            }
+            installShortcutProxy(
+                for: cancelButton,
+                keyEquivalent: ".",
+                modifierMask: [.command],
+                in: alert
+            )
         }
 
         return alert
+    }
+
+    /// Adds an invisible keyboard-only button that forwards to an NSAlert
+    /// button. Keeping it outside `alert.buttons` preserves response indices,
+    /// layout, focus order, and VoiceOver output.
+    @MainActor
+    private func installShortcutProxy(
+        for button: NSButton,
+        keyEquivalent: String,
+        modifierMask: NSEvent.ModifierFlags,
+        in alert: NSAlert
+    ) {
+        let proxy = NSButton(frame: .zero)
+        proxy.target = button.target
+        proxy.action = button.action
+        proxy.tag = button.tag
+        proxy.keyEquivalent = keyEquivalent
+        proxy.keyEquivalentModifierMask = modifierMask
+        proxy.isBordered = false
+        proxy.isTransparent = true
+        proxy.focusRingType = .none
+        proxy.setAccessibilityElement(false)
+        alert.window.contentView?.addSubview(proxy)
     }
 
     /// Presents this alert as a sheet attached to the window resolved from
@@ -153,13 +204,17 @@ extension AlertTemplate {
     @MainActor
     func runSheet(
         on context: DialogPresentationContext,
+        deduplicationKey: DialogRequestKey? = nil,
         messageText: String,
         informativeText: String? = nil
     ) async -> NSApplication.ModalResponse {
         await makeAlert(
             messageText: messageText,
             informativeText: informativeText
-        ).runSheet(on: context)
+        ).runSheet(
+            on: context,
+            deduplicationKey: deduplicationKey
+        )
     }
 }
 

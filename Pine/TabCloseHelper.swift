@@ -16,7 +16,7 @@ import AppKit
 /// Exact foreground job identity covered by a destructive terminal prompt.
 /// A new process group in the same terminal tab is a new authorization
 /// generation and must not be covered by the previous answer.
-struct TerminalForegroundProcessIdentity: Hashable, Sendable {
+nonisolated struct TerminalForegroundProcessIdentity: Hashable, Sendable {
     let tabID: UUID
     let processGroupID: Int32
 }
@@ -62,6 +62,10 @@ enum TabCloseHelper {
         } else {
             response = await AlertTemplate.unsavedChangesSingle.runSheet(
                 on: context,
+                deduplicationKey: .editorTabs(
+                    tabManager: ObjectIdentifier(tabManager),
+                    tabIDs: [tabID]
+                ),
                 messageText: Strings.unsavedChangesTitle,
                 informativeText: Strings.unsavedChangesMessage
             )
@@ -141,6 +145,10 @@ enum TabCloseHelper {
         } else {
             response = await AlertTemplate.unsavedChangesBulk.runSheet(
                 on: context,
+                deduplicationKey: .editorTabs(
+                    tabManager: ObjectIdentifier(tabManager),
+                    tabIDs: targetTabIDs
+                ),
                 messageText: Strings.unsavedChangesTitle,
                 informativeText: Strings.unsavedChangesListMessage(fileList)
             )
@@ -315,6 +323,7 @@ enum TabCloseHelper {
     static func confirmTerminalStop(
         hasForegroundProcess: Bool,
         context: DialogPresentationContext = .unscoped,
+        deduplicationKey: DialogRequestKey? = nil,
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil
     ) async -> Bool {
         guard hasForegroundProcess else { return true }
@@ -324,6 +333,7 @@ enum TabCloseHelper {
         } else {
             response = await AlertTemplate.terminalTabCloseWarning.runSheet(
                 on: context,
+                deduplicationKey: deduplicationKey,
                 messageText: Strings.terminalTabCloseWarningTitle,
                 informativeText: Strings.terminalTabCloseWarningMessage
             )
@@ -351,6 +361,10 @@ enum TabCloseHelper {
         guard await confirmTerminalStop(
             hasForegroundProcess: true,
             context: context,
+            deduplicationKey: .terminalTabs(
+                tabIDs: Set(tabs.map(\.id)),
+                foregroundProcesses: authorizedProcesses
+            ),
             presentAlert: presentAlert
         ) else {
             return false

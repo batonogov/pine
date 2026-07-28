@@ -21,7 +21,7 @@ struct DialogPresentationCoordinatorTests {
     private func makeVisibleWindow() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
-            styleMask: [.titled, .closable],
+            styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
@@ -70,6 +70,59 @@ struct DialogPresentationCoordinatorTests {
         await settle()
         #expect(await first.value == .alertFirstButtonReturn)
         #expect(await second.value == .alertSecondButtonReturn)
+        #expect(coordinator.pendingRequestCount == 0)
+    }
+
+    @Test("duplicate destructive request is rejected until the original finishes")
+    func deduplicatesInFlightRequestKey() async {
+        let window = NSWindow()
+        let coordinator = WindowDialogCoordinator(ownerWindow: window)
+        let key = DialogRequestKey.editorTabs(
+            tabManager: ObjectIdentifier(window),
+            tabIDs: [UUID()]
+        )
+        var startCount = 0
+        var firstCompletion: ((NSApplication.ModalResponse) -> Void)?
+
+        let first = Task {
+            await coordinator.present(
+                deduplicationKey: key,
+                start: { _, completion in
+                    startCount += 1
+                    firstCompletion = completion
+                },
+                cancel: { _ in }
+            )
+        }
+        await settle()
+
+        let duplicate = await coordinator.present(
+            deduplicationKey: key,
+            start: { _, completion in
+                startCount += 1
+                completion(.alertFirstButtonReturn)
+            },
+            cancel: { _ in }
+        )
+
+        #expect(duplicate == .abort)
+        #expect(startCount == 1)
+        #expect(coordinator.pendingRequestCount == 1)
+
+        firstCompletion?(.alertSecondButtonReturn)
+        #expect(await first.value == .alertSecondButtonReturn)
+        await settle()
+
+        let next = await coordinator.present(
+            deduplicationKey: key,
+            start: { _, completion in
+                startCount += 1
+                completion(.alertFirstButtonReturn)
+            },
+            cancel: { _ in }
+        )
+        #expect(next == .alertFirstButtonReturn)
+        #expect(startCount == 2)
         #expect(coordinator.pendingRequestCount == 0)
     }
 
@@ -344,43 +397,54 @@ struct DialogPresentationCoordinatorTests {
         DialogPresenter.ownerDidClose(window)
     }
 
-    @Test("native adapters reject a miniaturized owner")
-    func miniaturizedOwnerFailsClosed() async {
-        let window = makeVisibleWindow()
-        window.miniaturize(nil)
-        let context = DialogPresentationContext(window: window)
-        let alert = NSAlert()
-        alert.messageText = "Miniaturized"
-        alert.addButton(withTitle: "OK")
-        defer {
-            DialogPresenter.ownerDidClose(window)
-            window.orderOut(nil)
-        }
-
-        #expect(window.isMiniaturized)
-        #expect(!DialogPresenter.isEligibleApplicationOwner(window))
-        let response = await alert.runSheet(on: context)
-
-        #expect(response == .abort)
-        #expect(window.attachedSheet == nil)
+    @Test("application owner eligibility rejects hidden and miniaturized states")
+    func applicationOwnerEligibility() {
+        #expect(
+            DialogPresenter.applicationOwnerState(
+                isVisible: true,
+                isMiniaturized: false
+            ) == .eligible
+        )
+        #expect(
+            DialogPresenter.applicationOwnerState(
+                isVisible: true,
+                isMiniaturized: true
+            ) == .miniaturized
+        )
+        #expect(
+            DialogPresenter.applicationOwnerState(
+                isVisible: false,
+                isMiniaturized: false
+            ) == .unavailable
+        )
+        #expect(
+            DialogPresenter.applicationOwnerState(
+                isVisible: false,
+                isMiniaturized: true
+            ) == .unavailable
+        )
     }
 
-    @Test("application dialog preparation restores an all-minimized owner set")
-    func applicationDialogPreparationRestoresMiniaturizedWindow() {
-        let window = makeVisibleWindow()
-        window.miniaturize(nil)
-        let appDelegate = AppDelegate()
-        defer {
-            DialogPresenter.ownerDidClose(window)
-            window.orderOut(nil)
-        }
-
-        #expect(window.isMiniaturized)
-        appDelegate.prepareApplicationDialogOwner(windows: [window])
-
-        #expect(!window.isMiniaturized)
-        #expect(window.isVisible)
-        #expect(DialogPresenter.isEligibleApplicationOwner(window))
+    @Test("application dialog owner plan keeps, restores, or creates deterministically")
+    func applicationDialogOwnerPlan() {
+        #expect(
+            DialogPresenter.applicationOwnerPlan(
+                for: [.miniaturized, .eligible, .unavailable]
+            ) == .keepExisting
+        )
+        #expect(
+            DialogPresenter.applicationOwnerPlan(
+                for: [.unavailable, .miniaturized, .miniaturized]
+            ) == .restore(index: 1)
+        )
+        #expect(
+            DialogPresenter.applicationOwnerPlan(
+                for: [.unavailable, .unavailable]
+            ) == .showWelcome
+        )
+        #expect(
+            DialogPresenter.applicationOwnerPlan(for: []) == .showWelcome
+        )
     }
 
     @Test("project lookup captures the matching window, not the key window")

@@ -449,6 +449,14 @@ struct WindowLifecycleTests {
                 }
                 await Task.yield()
             },
+            resolveVisibleWindow: {
+                guard let capturedWindow,
+                      capturedWindow.isVisible,
+                      !capturedWindow.isMiniaturized else {
+                    return nil
+                }
+                return capturedWindow
+            },
             presentPanel: { context in
                 presentedOwner = context.nsWindow
                 return selectedURL
@@ -465,6 +473,7 @@ struct WindowLifecycleTests {
         #expect(attempts == 3)
         #expect(presentedOwner === capturedWindow)
         #expect(openedURL == selectedURL)
+        #expect(capturedWindow?.isVisible == false)
     }
 
     @Test func openFolderFailsClosedWhenWelcomeOwnerNeverAppears() async {
@@ -479,6 +488,7 @@ struct WindowLifecycleTests {
                 waitCount += 1
                 await Task.yield()
             },
+            resolveVisibleWindow: { nil },
             presentPanel: { _ in
                 panelCount += 1
                 return URL(fileURLWithPath: "/tmp/should-not-open")
@@ -488,5 +498,29 @@ struct WindowLifecycleTests {
         #expect(!didOpen)
         #expect(waitCount == 3)
         #expect(panelCount == 0)
+    }
+
+    @Test func openFolderFailsClosedWithoutProjectWindowAction() async {
+        let delegate = AppDelegate()
+        delegate.openNamedWindow = { _ in }
+        let welcome = NSWindow()
+        welcome.identifier = .init("welcome")
+        welcome.orderFront(nil)
+        defer {
+            DialogPresenter.ownerDidClose(welcome)
+            welcome.orderOut(nil)
+        }
+
+        let didOpen = await delegate.openFolderFromWelcomeOwner(
+            maximumAttempts: 1,
+            waitForNextAttempt: { await Task.yield() },
+            resolveVisibleWindow: { welcome },
+            presentPanel: { _ in
+                URL(fileURLWithPath: "/tmp/pine-no-window-action")
+            }
+        )
+
+        #expect(!didOpen)
+        #expect(welcome.isVisible)
     }
 }

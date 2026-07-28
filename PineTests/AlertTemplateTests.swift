@@ -249,6 +249,20 @@ struct AlertTemplateTests {
         for expected in expectations {
             let alert = expected.template.makeAlert(messageText: "Test")
             let buttons = alert.buttons
+            var keyboardButtons = buttons
+            var seenButtons = Set(buttons.map(ObjectIdentifier.init))
+            func collectButtons(in view: NSView) {
+                if let button = view as? NSButton,
+                   seenButtons.insert(ObjectIdentifier(button)).inserted {
+                    keyboardButtons.append(button)
+                }
+                for subview in view.subviews {
+                    collectButtons(in: subview)
+                }
+            }
+            if let contentView = alert.window.contentView {
+                collectButtons(in: contentView)
+            }
             let defaultIndices = buttons.indices.filter {
                 alert.window.defaultButtonCell ===
                     (buttons[$0].cell as? NSButtonCell)
@@ -257,13 +271,36 @@ struct AlertTemplateTests {
                 defaultIndices == [expected.defaultIndex],
                 "Wrong Return default for \(expected.template)"
             )
-            let cancelIndices = buttons.indices.filter {
-                buttons[$0].keyEquivalent == "\u{1b}"
-            }
-            let expectedCancelIndices = expected.cancelIndex.map { [$0] } ?? []
+            let escapeTargetTags = Set(keyboardButtons.compactMap { button in
+                button.keyEquivalent == "\u{1b}" ? button.tag : nil
+            })
+            let commandPeriodTargetTags = Set(keyboardButtons.compactMap { button in
+                button.keyEquivalent == "."
+                    && button.keyEquivalentModifierMask.contains(.command)
+                    ? button.tag
+                    : nil
+            })
+            let expectedCancelTags = expected.cancelIndex.map {
+                Set([buttons[$0].tag])
+            } ?? []
             #expect(
-                cancelIndices == expectedCancelIndices,
+                escapeTargetTags == expectedCancelTags,
                 "Wrong Escape target for \(expected.template)"
+            )
+            #expect(
+                commandPeriodTargetTags == expectedCancelTags,
+                "Wrong Command-Period target for \(expected.template)"
+            )
+            let accessibilityShortcutProxies = keyboardButtons.filter { candidate in
+                !buttons.contains(where: { $0 === candidate })
+                    && (candidate.keyEquivalent == "\u{1b}"
+                        || candidate.keyEquivalent == ".")
+            }
+            #expect(
+                accessibilityShortcutProxies.allSatisfy {
+                    !$0.isAccessibilityElement()
+                },
+                "Keyboard proxies must stay out of VoiceOver for \(expected.template)"
             )
             let destructiveIndices = Set(buttons.indices.filter {
                 buttons[$0].hasDestructiveAction

@@ -7,6 +7,21 @@
 
 import AppKit
 
+/// Identity for an in-flight destructive dialog workflow. A repeated user
+/// gesture with the same key is rejected while the original request is active
+/// or queued, preventing a stale second sheet after the first workflow has
+/// already mutated its target.
+enum DialogRequestKey: Hashable {
+    case editorTabs(
+        tabManager: ObjectIdentifier,
+        tabIDs: Set<UUID>
+    )
+    case terminalTabs(
+        tabIDs: Set<UUID>,
+        foregroundProcesses: Set<TerminalForegroundProcessIdentity>
+    )
+}
+
 /// Serializes every native dialog belonging to one window.
 ///
 /// AppKit does not permit two sheets on the same window. More importantly,
@@ -24,13 +39,20 @@ final class WindowDialogCoordinator {
 
     private final class Request {
         let id: UUID
+        let deduplicationKey: DialogRequestKey?
         let start: Start
         let cancel: Cancel
         var continuation: CheckedContinuation<NSApplication.ModalResponse, Never>?
         private(set) var isResolved = false
 
-        init(id: UUID, start: @escaping Start, cancel: @escaping Cancel) {
+        init(
+            id: UUID,
+            deduplicationKey: DialogRequestKey?,
+            start: @escaping Start,
+            cancel: @escaping Cancel
+        ) {
             self.id = id
+            self.deduplicationKey = deduplicationKey
             self.start = start
             self.cancel = cancel
         }
@@ -128,6 +150,7 @@ final class WindowDialogCoordinator {
     /// Enqueues a native sheet. Missing/closed owners fail closed with
     /// `.abort`; a dialog is never promoted to an application-modal window.
     func present(
+        deduplicationKey: DialogRequestKey? = nil,
         start: @escaping Start,
         cancel: @escaping Cancel
     ) async -> NSApplication.ModalResponse {
@@ -137,12 +160,23 @@ final class WindowDialogCoordinator {
             ownerDidClose()
             return .abort
         }
+        if let deduplicationKey {
+            let isDuplicate = activeRequest?.deduplicationKey
+                == deduplicationKey
+                || queuedRequests.contains(where: {
+                    $0.deduplicationKey == deduplicationKey
+                })
+            if isDuplicate {
+                return .abort
+            }
+        }
 
         let requestID = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 let request = Request(
                     id: requestID,
+                    deduplicationKey: deduplicationKey,
                     start: start,
                     cancel: cancel
                 )
@@ -263,11 +297,16 @@ struct DialogPresentationContext {
     }
 
     func present(
+        deduplicationKey: DialogRequestKey? = nil,
         start: @escaping WindowDialogCoordinator.Start,
         cancel: @escaping WindowDialogCoordinator.Cancel
     ) async -> NSApplication.ModalResponse {
         guard let coordinator else { return .abort }
-        return await coordinator.present(start: start, cancel: cancel)
+        return await coordinator.present(
+            deduplicationKey: deduplicationKey,
+            start: start,
+            cancel: cancel
+        )
     }
 }
 
@@ -284,6 +323,18 @@ private extension WindowDialogCoordinator {
 
 @MainActor
 enum DialogPresenter {
+    enum ApplicationOwnerState: Equatable {
+        case eligible
+        case miniaturized
+        case unavailable
+    }
+
+    enum ApplicationOwnerPlan: Equatable {
+        case keepExisting
+        case restore(index: Int)
+        case showWelcome
+    }
+
     private final class ProjectBinding {
         weak var window: NSWindow?
         weak var projectManager: ProjectManager?
@@ -407,7 +458,30 @@ enum DialogPresenter {
     }
 
     static func isEligibleApplicationOwner(_ window: NSWindow) -> Bool {
-        window.isVisible && !window.isMiniaturized
+        applicationOwnerState(
+            isVisible: window.isVisible,
+            isMiniaturized: window.isMiniaturized
+        ) == .eligible
+    }
+
+    static func applicationOwnerState(
+        isVisible: Bool,
+        isMiniaturized: Bool
+    ) -> ApplicationOwnerState {
+        guard isVisible else { return .unavailable }
+        return isMiniaturized ? .miniaturized : .eligible
+    }
+
+    static func applicationOwnerPlan(
+        for states: [ApplicationOwnerState]
+    ) -> ApplicationOwnerPlan {
+        if states.contains(.eligible) {
+            return .keepExisting
+        }
+        if let index = states.firstIndex(of: .miniaturized) {
+            return .restore(index: index)
+        }
+        return .showWelcome
     }
 
     /// Captures the current project window. Welcome and Settings windows are
@@ -453,15 +527,18 @@ enum DialogPresenter {
 
 extension NSAlert {
     @discardableResult
-    func runSheet(on context: DialogPresentationContext) async -> NSApplication.ModalResponse {
+    func runSheet(
+        on context: DialogPresentationContext,
+        deduplicationKey: DialogRequestKey? = nil
+    ) async -> NSApplication.ModalResponse {
         guard let capturedOwner = context.nsWindow,
-              capturedOwner.isVisible,
-              !capturedOwner.isMiniaturized else {
+              DialogPresenter.isEligibleApplicationOwner(capturedOwner) else {
             return .abort
         }
         return await context.present(
+            deduplicationKey: deduplicationKey,
             start: { owner, completion in
-                guard owner.isVisible, !owner.isMiniaturized else {
+                guard DialogPresenter.isEligibleApplicationOwner(owner) else {
                     completion(.abort)
                     return
                 }
@@ -476,15 +553,18 @@ extension NSAlert {
 }
 
 extension NSSavePanel {
-    func runSheet(on context: DialogPresentationContext) async -> NSApplication.ModalResponse {
+    func runSheet(
+        on context: DialogPresentationContext,
+        deduplicationKey: DialogRequestKey? = nil
+    ) async -> NSApplication.ModalResponse {
         guard let capturedOwner = context.nsWindow,
-              capturedOwner.isVisible,
-              !capturedOwner.isMiniaturized else {
+              DialogPresenter.isEligibleApplicationOwner(capturedOwner) else {
             return .abort
         }
         return await context.present(
+            deduplicationKey: deduplicationKey,
             start: { owner, completion in
-                guard owner.isVisible, !owner.isMiniaturized else {
+                guard DialogPresenter.isEligibleApplicationOwner(owner) else {
                     completion(.abort)
                     return
                 }

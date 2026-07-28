@@ -61,6 +61,21 @@ final class TabManager {
         _ messageText: String,
         _ informativeText: String
     ) async -> NSApplication.ModalResponse
+    typealias OpenCompletion = @MainActor (OpenRequestResult) -> Void
+
+    /// Immediate state returned by an open request. Large-file decisions are
+    /// reported as ``pending`` and later deliver one terminal result through
+    /// `OpenCompletion`; ordinary opens deliver their terminal result both
+    /// synchronously and through the completion.
+    enum OpenRequestResult: Equatable {
+        case opened(tabID: UUID)
+        case pending
+        case cancelled
+
+        var wasAccepted: Bool {
+            self != .cancelled
+        }
+    }
 
     private static let logger = Logger.editor
 
@@ -122,7 +137,41 @@ final class TabManager {
         )
     }
     @ObservationIgnored
-    private var pendingLargeFileOpenIntents: [URL: LargeFileOpenIntent] = [:]
+    private var pendingLargeFileOpens: [URL: PendingLargeFileOpen] = [:]
+
+    private final class PendingLargeFileOpen {
+        var intent: LargeFileOpenIntent
+        var completions: [OpenCompletion]
+        private var didComplete = false
+
+        init(
+            intent: LargeFileOpenIntent,
+            completions: [OpenCompletion]
+        ) {
+            self.intent = intent
+            self.completions = completions
+        }
+
+        func merge(
+            intent newerIntent: LargeFileOpenIntent,
+            completion: OpenCompletion?
+        ) {
+            intent = intent.merging(newerIntent)
+            if let completion {
+                completions.append(completion)
+            }
+        }
+
+        func complete(with result: OpenRequestResult) {
+            guard !didComplete else { return }
+            didComplete = true
+            let completions = completions
+            self.completions.removeAll()
+            for completion in completions {
+                completion(result)
+            }
+        }
+    }
 
     private enum LargeFileOpenIntent {
         case regular(location: EditorNavigationLocation?)
@@ -199,74 +248,88 @@ final class TabManager {
 
     // MARK: - Open
 
+    @discardableResult
     func openTab(
         url: URL,
-        context: DialogPresentationContext? = nil
-    ) {
-        openTab(
+        context: DialogPresentationContext? = nil,
+        completion: OpenCompletion? = nil
+    ) -> OpenRequestResult {
+        return openTab(
             url: url,
             location: nil,
-            context: context ?? dialogContextProvider()
+            context: context ?? dialogContextProvider(),
+            completion: completion
         )
     }
 
+    @discardableResult
     func openTabAndGoToLine(
         url: URL,
         line: Int,
-        context: DialogPresentationContext? = nil
-    ) {
-        openTabAndGoToLocation(
+        context: DialogPresentationContext? = nil,
+        completion: OpenCompletion? = nil
+    ) -> OpenRequestResult {
+        return openTabAndGoToLocation(
             url: url,
             line: line,
             column: nil,
-            context: context
+            context: context,
+            completion: completion
         )
     }
 
+    @discardableResult
     func openTabAndGoToLocation(
         url: URL,
         line: Int,
         column: Int?,
-        context: DialogPresentationContext? = nil
-    ) {
+        context: DialogPresentationContext? = nil,
+        completion: OpenCompletion? = nil
+    ) -> OpenRequestResult {
         // A new navigation request supersedes any not-yet-consumed route for
         // the currently active tab. Install the destination only after the
         // file actually opens, including after a large-file decision.
         pendingGoToLocation = nil
-        openTab(
+        return openTab(
             url: url,
             location: EditorNavigationLocation(
                 line: line,
                 column: column
             ),
-            context: context ?? dialogContextProvider()
+            context: context ?? dialogContextProvider(),
+            completion: completion
         )
     }
 
+    @discardableResult
     private func openTab(
         url: URL,
         location: EditorNavigationLocation?,
-        context: DialogPresentationContext
-    ) {
+        context: DialogPresentationContext,
+        completion: OpenCompletion?
+    ) -> OpenRequestResult {
         guard TabPersistence.requiresLargeFileDecision(
             url: url,
             existingTabs: tabs,
             syntaxHighlightingDisabled: nil
         ) else {
-            if applyOpenDecision(TabPersistence.resolveOpen(
+            let result = applyOpenDecision(TabPersistence.resolveOpen(
                 url: url,
                 existingTabs: tabs,
                 syntaxHighlightingDisabled: nil
-            )), let location {
+            ))
+            if case .opened = result, let location {
                 pendingGoToLocation = location
             }
-            return
+            completion?(result)
+            return result
         }
 
-        requestLargeFileOpen(
+        return requestLargeFileOpen(
             url: url,
             intent: .regular(location: location),
-            context: context
+            context: context,
+            completion: completion
         )
     }
 
@@ -275,20 +338,22 @@ final class TabManager {
     }
 
     @discardableResult
-    private func applyOpenDecision(_ decision: TabPersistence.OpenDecision) -> Bool {
+    private func applyOpenDecision(
+        _ decision: TabPersistence.OpenDecision
+    ) -> OpenRequestResult {
         switch decision {
         case .activateExisting(let id):
             // A normal open is explicit. If the file was previously shown as
             // a transient preview, opening it normally promotes it in place.
             promoteTransientPreview(tabID: id)
             activeTabID = id
-            return true
+            return .opened(tabID: id)
         case .openNew(let tab):
             tabs.append(tab)
             activeTabID = tab.id
-            return true
+            return .opened(tabID: tab.id)
         case .cancel:
-            return false
+            return .cancelled
         }
     }
 
@@ -302,16 +367,20 @@ final class TabManager {
     ///
     /// Promotion triggers (defined in ``promoteTransientPreview``) upgrade a
     /// transient preview to a permanent tab.
+    @discardableResult
     func openTabAsPreview(
         url: URL,
-        context: DialogPresentationContext? = nil
-    ) {
+        context: DialogPresentationContext? = nil,
+        completion: OpenCompletion? = nil
+    ) -> OpenRequestResult {
         let context = context ?? dialogContextProvider()
         // If the file is already open as a permanent tab, just activate it.
         if let existing = tabs.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }),
            !existing.isTransientPreview {
             activeTabID = existing.id
-            return
+            let result = OpenRequestResult.opened(tabID: existing.id)
+            completion?(result)
+            return result
         }
 
         guard TabPersistence.requiresLargeFileDecision(
@@ -319,33 +388,45 @@ final class TabManager {
             existingTabs: tabs,
             syntaxHighlightingDisabled: nil
         ) else {
-            applyPreviewOpenDecision(TabPersistence.resolveOpen(
+            let result = applyPreviewOpenDecision(TabPersistence.resolveOpen(
                 url: url,
                 existingTabs: tabs,
                 syntaxHighlightingDisabled: nil
             ))
-            return
+            completion?(result)
+            return result
         }
 
-        requestLargeFileOpen(url: url, intent: .preview, context: context)
+        return requestLargeFileOpen(
+            url: url,
+            intent: .preview,
+            context: context,
+            completion: completion
+        )
     }
 
+    @discardableResult
     private func requestLargeFileOpen(
         url: URL,
         intent: LargeFileOpenIntent,
-        context: DialogPresentationContext
-    ) {
+        context: DialogPresentationContext,
+        completion: OpenCompletion?
+    ) -> OpenRequestResult {
         let requestURL = url.standardizedFileURL
-        if let pendingIntent = pendingLargeFileOpenIntents[requestURL] {
-            pendingLargeFileOpenIntents[requestURL] = pendingIntent.merging(intent)
-            return
+        if let pendingOpen = pendingLargeFileOpens[requestURL] {
+            pendingOpen.merge(intent: intent, completion: completion)
+            return .pending
         }
-        pendingLargeFileOpenIntents[requestURL] = intent
+        let pendingOpen = PendingLargeFileOpen(
+            intent: intent,
+            completions: completion.map { [$0] } ?? []
+        )
+        pendingLargeFileOpens[requestURL] = pendingOpen
 
         let sizeMB = Double(TabPersistence.fileSize(url: url) ?? 0)
             / Double(FileSizeConstants.oneMB)
         let presentAlert = largeFileAlertPresenter
-        Task { @MainActor [weak self] in
+        Task { @MainActor [weak self, pendingOpen] in
             let response = await presentAlert(
                 context,
                 Strings.largeFileWarningTitle,
@@ -354,33 +435,45 @@ final class TabManager {
                     sizeMB
                 )
             )
-            guard let self else { return }
-            guard let resolvedIntent = pendingLargeFileOpenIntents.removeValue(
-                forKey: requestURL
-            ) else { return }
+            guard let self else {
+                pendingOpen.complete(with: .cancelled)
+                return
+            }
+            guard pendingLargeFileOpens[requestURL] === pendingOpen else {
+                pendingOpen.complete(with: .cancelled)
+                return
+            }
+            pendingLargeFileOpens.removeValue(forKey: requestURL)
             let decision = TabPersistence.resolveOpen(
                 url: url,
                 existingTabs: tabs,
                 syntaxHighlightingDisabled: nil,
                 largeFileDecision: TabPersistence.largeFileDecision(for: response)
             )
-            switch resolvedIntent {
+            let result: OpenRequestResult
+            switch pendingOpen.intent {
             case .regular(let location):
-                if applyOpenDecision(decision), let location {
+                result = applyOpenDecision(decision)
+                if case .opened = result, let location {
                     pendingGoToLocation = location
                 }
             case .preview:
-                applyPreviewOpenDecision(decision)
+                result = applyPreviewOpenDecision(decision)
             }
+            pendingOpen.complete(with: result)
         }
+        return .pending
     }
 
-    private func applyPreviewOpenDecision(_ decision: TabPersistence.OpenDecision) {
+    private func applyPreviewOpenDecision(
+        _ decision: TabPersistence.OpenDecision
+    ) -> OpenRequestResult {
         switch decision {
         case .activateExisting(let id):
             activeTabID = id
+            return .opened(tabID: id)
         case .cancel:
-            break
+            return .cancelled
         case .openNew(var tab):
             tab.isTransientPreview = true
             // Replacement is pane-scoped, not selection-scoped. A user may
@@ -392,6 +485,7 @@ final class TabManager {
                 tabs.append(tab)
             }
             activeTabID = tab.id
+            return .opened(tabID: tab.id)
         }
     }
 

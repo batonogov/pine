@@ -287,6 +287,41 @@ final class ProjectManager {
         dialogOwnerWindow = nil
     }
 
+    /// Waits for the project window to become a valid native dialog owner.
+    /// Project scenes are created asynchronously, so launch/drop flows cannot
+    /// safely assume a fixed delay is enough before opening a large file.
+    ///
+    /// The retry loop is bounded and cancellation-aware. Tests can inject the
+    /// wait and eligibility predicate to exercise delayed binding without
+    /// depending on AppKit timing.
+    func awaitDialogOwnerWindow(
+        maximumAttempts: Int = 80,
+        waitForNextAttempt: (@MainActor () async -> Void)? = nil,
+        isEligible: (@MainActor (NSWindow) -> Bool)? = nil
+    ) async -> NSWindow? {
+        let wait = waitForNextAttempt ?? {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        let acceptsWindow = isEligible ?? {
+            DialogPresenter.isEligibleApplicationOwner($0)
+        }
+
+        for _ in 0..<max(0, maximumAttempts) {
+            guard !Task.isCancelled else { return nil }
+            if let window = dialogOwnerWindow, acceptsWindow(window) {
+                return window
+            }
+            await wait()
+        }
+
+        guard !Task.isCancelled,
+              let window = dialogOwnerWindow,
+              acceptsWindow(window) else {
+            return nil
+        }
+        return window
+    }
+
     /// Serializes stateful dialog workflows whose model snapshot must be
     /// recomputed only after an earlier decision finishes. The native sheet
     /// coordinator serializes presentation, while this queue prevents two
