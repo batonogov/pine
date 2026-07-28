@@ -322,7 +322,10 @@ struct TerminalThemeLocalizationTests {
     }
 }
 
-@Suite("Quick Terminal settings")
+// Controller tests create real NSPanels. Serial execution prevents one test's
+// panel from resigning another test's key window and exercising focus-loss
+// behavior instead of the setting under test.
+@Suite("Quick Terminal settings", .serialized)
 @MainActor
 struct QuickTerminalSettingsTests {
     @Test("UI test preference suites require reset-state and a safe namespace")
