@@ -92,12 +92,6 @@ final class UserTaskRunStore {
 
     // MARK: - Mutation
 
-    /// Marks an active run as cancelled. No-op for finished runs.
-    func cancelRun(id: UUID) {
-        guard let run = run(forID: id), run.state.isActive else { return }
-        run.markCancelled()
-    }
-
     /// Removes a finished run from the history (used by the output surface's
     /// Clear action). Active runs cannot be dismissed — cancel them first.
     func removeRun(id: UUID) {

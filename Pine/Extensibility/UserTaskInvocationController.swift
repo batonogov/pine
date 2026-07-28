@@ -137,7 +137,6 @@ enum UserTaskInvocationController {
                 )
                 presentOutcome(
                     outcome,
-                    cancelled: false,
                     task: task,
                     run: run,
                     projectManager: projectManager,
@@ -172,7 +171,6 @@ enum UserTaskInvocationController {
 
     private static func presentOutcome(
         _ outcome: UserTaskOutcome,
-        cancelled: Bool,
         task: UserTask,
         run: UserTaskRun,
         projectManager: ProjectManager,
@@ -191,7 +189,7 @@ enum UserTaskInvocationController {
 
         // A cancelled run needs no further UI — the output surface already
         // reflects the cancelled state.
-        if cancelled { return }
+        if run.state == .cancelled { return }
 
         // Fail closed for replacement-content tasks: only apply stdout when
         // the active tab is unchanged. When the buffer moved, keep the newer
@@ -203,7 +201,7 @@ enum UserTaskInvocationController {
                   !owner.isMiniaturized else {
                 return
             }
-            guard outcome.succeeded, !cancelled else {
+            guard outcome.succeeded, run.state != .cancelled else {
                 projectManager.taskRunStore.isOutputVisible = true
                 return
             }
