@@ -172,6 +172,8 @@ struct ContentView: View {
             isPresented: $isAgentActivityPresented,
             projectManager: projectManager,
             store: projectManager.agentActivity,
+            paneManager: paneManager,
+            terminalManager: terminal,
             onSelect: { url in
                 isAgentActivityPresented = false
                 openFileFromActivity(url)
@@ -337,6 +339,8 @@ struct ContentView: View {
                     projectManager.problemsController.togglePanel()
                 },
                 onShowAttention: {
+                    guard !showAgentAttention else { return }
+                    agentAttentionFocusCoordinator.capture(in: NSApp.keyWindow)
                     withAnimation(PineAnimation.overlay) {
                         showAgentAttention = true
                     }
@@ -392,24 +396,53 @@ struct ContentView: View {
     private var agentAttentionOverlay: AnyView {
         guard showAgentAttention else { return AnyView(EmptyView()) }
         return AnyView(
-            CommandOverlayView(isPresented: $showAgentAttention) {
+            CommandOverlayView(
+                isPresented: $showAgentAttention,
+                onDismiss: dismissAgentAttention
+            ) {
                 AgentAttentionOverlay(
                     summaries: AgentStatusSummary.activeSummaries(in: paneManager),
-                    onNavigate: { paneID, tabID in
-                        paneManager.activePaneID = paneID
-                        paneManager.terminalState(for: paneID)?.activeTerminalID = tabID
-                        withAnimation(PineAnimation.overlay) {
-                            showAgentAttention = false
-                        }
-                    },
-                    onDismiss: {
-                        withAnimation(PineAnimation.overlay) {
-                            showAgentAttention = false
-                        }
-                    }
+                    onNavigate: navigateFromAgentAttention,
+                    onDismiss: dismissAgentAttention
                 )
             }
         )
+    }
+
+    /// Cancels Agent Attention and restores whichever AppKit view owned
+    /// keyboard focus before the overlay appeared. Backdrop clicks, Escape in
+    /// the container, and Escape in the focused list all converge here.
+    private func dismissAgentAttention() {
+        let coordinator = agentAttentionFocusCoordinator
+        let captureID = coordinator.captureID
+        withAnimation(PineAnimation.overlay) {
+            showAgentAttention = false
+        }
+
+        // Wait until SwiftUI removes the focusable overlay. The capture token
+        // prevents this deferred cleanup from consuming a newer presentation.
+        guard let captureID else { return }
+        DispatchQueue.main.async {
+            coordinator.restore(matching: captureID)
+        }
+    }
+
+    /// Activates a highlighted request without restoring the old responder:
+    /// the selected terminal becomes the new destination and receives an
+    /// explicit pending focus request from `selectTerminalTab`.
+    private func navigateFromAgentAttention(
+        paneID: PaneID,
+        tabID: UUID
+    ) {
+        guard paneManager.selectTerminalTab(tabID, in: paneID) else {
+            dismissAgentAttention()
+            return
+        }
+        terminal.lastActiveTerminalPaneID = paneID
+        agentAttentionFocusCoordinator.discard()
+        withAnimation(PineAnimation.overlay) {
+            showAgentAttention = false
+        }
     }
 
     /// Branch subtitle as a plain String to avoid generating a localization key.

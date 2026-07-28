@@ -71,12 +71,12 @@ enum AgentActionStatus: Sendable, Equatable, CaseIterable {
     }
 }
 
-/// One live agent session that may be associated with an activity row.
+/// One agent-session identity that may be associated with an activity row.
 ///
 /// This is deliberately smaller than the trusted provenance envelope from
 /// #933: the Activity panel only needs enough identity to avoid assigning a
 /// heuristic file-system observation to the wrong agent. It grants no trust
-/// or mutation authority.
+/// or mutation authority, and it does not snapshot session liveness.
 struct AgentActionCandidate: Equatable, Sendable {
     let sessionID: UUID
     let agentType: AgentType
@@ -90,6 +90,9 @@ struct AgentActionCandidate: Equatable, Sendable {
 /// several sessions could have caused the same observation. An ambiguous
 /// action intentionally has no selected owner.
 enum AgentActionAttribution: Equatable, Sendable {
+    /// A structured event whose provenance was validated by Pine's trusted
+    /// agent-event pipeline.
+    case verified(AgentActionCandidate)
     case session(AgentActionCandidate)
     case inferred(AgentActionCandidate)
     case ambiguous(candidates: [AgentActionCandidate])
@@ -97,7 +100,9 @@ enum AgentActionAttribution: Equatable, Sendable {
     /// Every session that could be associated with the action.
     var candidates: [AgentActionCandidate] {
         switch self {
-        case .session(let candidate), .inferred(let candidate):
+        case .verified(let candidate),
+             .session(let candidate),
+             .inferred(let candidate):
             [candidate]
         case .ambiguous(let candidates):
             candidates
@@ -107,7 +112,9 @@ enum AgentActionAttribution: Equatable, Sendable {
     /// The single associated session, or `nil` when ownership is ambiguous.
     var unambiguousCandidate: AgentActionCandidate? {
         switch self {
-        case .session(let candidate), .inferred(let candidate):
+        case .verified(let candidate),
+             .session(let candidate),
+             .inferred(let candidate):
             candidate
         case .ambiguous:
             nil
@@ -144,14 +151,6 @@ struct AgentAction: Identifiable, Equatable, Sendable {
     /// Working directory the agent was operating in when the action happened,
     /// if known. Surfaced in the Activity detail view (#1245).
     let workingDirectory: URL?
-    /// Human-readable label for the terminal tab the action is associated
-    /// with (e.g. "claude — pane 2"), used by the "Go to Terminal" action and
-    /// the detail view. `nil` when no terminal link is available (#1245).
-    let relatedTerminalLabel: String?
-    /// Stable identifier of the terminal tab the action is associated with,
-    /// enabling keyboard "Go to Terminal" navigation without executing
-    /// anything. `nil` when the action has no terminal link (#1245).
-    let relatedTerminalID: UUID?
 
     /// Backwards-compatible single-session accessor. Returns `nil` for an
     /// ambiguous action instead of selecting one candidate as the owner.
@@ -167,13 +166,12 @@ struct AgentAction: Identifiable, Equatable, Sendable {
 
     /// Safe-to-copy text for the Activity detail view's Copy action (#1245).
     ///
-    /// Returns only non-sensitive, already-displayed metadata (kind, summary,
-    /// status, working directory). It deliberately excludes anything not shown
-    /// in the row — never command payloads, environment values, or tokens — so
-    /// a Copy can never leak a secret the user has not already seen.
+    /// The free-form summary is deliberately excluded. Command/tool summaries
+    /// can contain shell assignments, authorization headers, URLs with
+    /// credentials, or other secrets that cannot be reliably identified after
+    /// the fact. Copy therefore exports only bounded structured metadata.
     var copyableSummary: String {
         var lines: [String] = []
-        lines.append(summary)
         lines.append(Strings.agentActionDetailKindLabel + ": " + kind.displayName)
         lines.append(Strings.agentActionDetailStatusLabel + ": " + status.displayName)
         if let fileURL {
@@ -181,9 +179,6 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         }
         if let workingDirectory {
             lines.append(Strings.agentActionDetailWorkingDirectoryLabel + ": " + workingDirectory.path)
-        }
-        if let relatedTerminalLabel {
-            lines.append(Strings.agentActionDetailRelatedTerminalLabel + ": " + relatedTerminalLabel)
         }
         return lines.joined(separator: "\n")
     }
@@ -197,9 +192,7 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         timestamp: Date = Date(),
         fileURL: URL? = nil,
         summary: String,
-        workingDirectory: URL? = nil,
-        relatedTerminalLabel: String? = nil,
-        relatedTerminalID: UUID? = nil
+        workingDirectory: URL? = nil
     ) {
         self.id = id
         self.attribution = .session(
@@ -211,8 +204,6 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         self.fileURL = fileURL
         self.summary = summary
         self.workingDirectory = workingDirectory
-        self.relatedTerminalLabel = relatedTerminalLabel
-        self.relatedTerminalID = relatedTerminalID
     }
 
     init(
@@ -223,9 +214,7 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         timestamp: Date = Date(),
         fileURL: URL? = nil,
         summary: String,
-        workingDirectory: URL? = nil,
-        relatedTerminalLabel: String? = nil,
-        relatedTerminalID: UUID? = nil
+        workingDirectory: URL? = nil
     ) {
         self.id = id
         self.attribution = attribution
@@ -235,7 +224,5 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         self.fileURL = fileURL
         self.summary = summary
         self.workingDirectory = workingDirectory
-        self.relatedTerminalLabel = relatedTerminalLabel
-        self.relatedTerminalID = relatedTerminalID
     }
 }

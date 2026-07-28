@@ -617,6 +617,7 @@ final class ProjectManager {
         lspManager.setWorkspaceRoot(url)
         #if DEBUG
         seedAgentActivityUITestFixture(projectURL: url)
+        seedAgentAttentionUITestFixture(projectURL: url)
         #endif
     }
 
@@ -659,6 +660,9 @@ final class ProjectManager {
         let ambiguousActionID = UUID(
             uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3)
         )
+        let toolActionID = UUID(
+            uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4)
+        )
         let mainFile = projectURL.appendingPathComponent("main.swift")
 
         if seedAll {
@@ -669,8 +673,17 @@ final class ProjectManager {
                     agentType: .claudeCode,
                     kind: .command,
                     status: .completed,
-                    fileURL: mainFile,
                     summary: "UI fixture: session-linked"
+                )
+            )
+            agentActivity.record(
+                AgentAction(
+                    id: toolActionID,
+                    sessionID: secondSession,
+                    agentType: .codex,
+                    kind: .toolCall,
+                    status: .inProgress,
+                    summary: "UI fixture: tool"
                 )
             )
         }
@@ -708,6 +721,54 @@ final class ProjectManager {
                 summary: "UI fixture: ambiguous"
             )
         )
+    }
+
+    /// Creates two deterministic terminal-backed summaries for keyboard and
+    /// accessibility UI tests. Production and ordinary debug launches never
+    /// enter this path.
+    private func seedAgentAttentionUITestFixture(projectURL: URL) {
+        guard ProcessInfo.processInfo.arguments.contains(
+            "--ui-test-agent-attention"
+        ) else {
+            return
+        }
+        let paneID = paneManager.createTerminalPaneAtBottom(
+            workingDirectory: projectURL
+        )
+        guard let state = paneManager.terminalState(for: paneID),
+              let firstTab = state.activeTab else {
+            return
+        }
+        firstTab.name = "Waiting agent"
+        firstTab.agentSession = AgentSession(
+            id: UUID(
+                uuid: (
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 1
+                )
+            ),
+            agentType: .claudeCode,
+            state: .waitingInput
+        )
+
+        guard let secondTab = paneManager.addTerminalTab(
+            in: paneID,
+            workingDirectory: projectURL
+        ) else {
+            return
+        }
+        secondTab.name = "Executing agent"
+        secondTab.agentSession = AgentSession(
+            id: UUID(
+                uuid: (
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 2
+                )
+            ),
+            agentType: .codex,
+            state: .executing
+        )
+        state.activeTerminalID = firstTab.id
     }
     #endif
 

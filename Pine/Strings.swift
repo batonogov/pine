@@ -384,6 +384,9 @@ enum Strings {
     static var agentActivityAttributionInferred: String {
         String(localized: "agentActivity.attribution.inferred", defaultValue: "Inferred")
     }
+    static var agentActivityAttributionVerified: String {
+        String(localized: "agentActivity.attribution.verified", defaultValue: "Verified")
+    }
     static var agentActivityAttributionSessionLinked: String {
         String(
             localized: "agentActivity.attribution.sessionLinked",
@@ -392,6 +395,21 @@ enum Strings {
     }
     static var agentActivityAttributionAmbiguous: String {
         String(localized: "agentActivity.attribution.ambiguous", defaultValue: "Ambiguous")
+    }
+    static var agentActivityAttributionStale: String {
+        String(localized: "agentActivity.attribution.stale", defaultValue: "Stale")
+    }
+    static var agentActivityAttributionTerminated: String {
+        String(
+            localized: "agentActivity.attribution.terminated",
+            defaultValue: "Terminated"
+        )
+    }
+    static var agentActivityVerifiedHint: String {
+        String(
+            localized: "agentActivity.attribution.verifiedHint",
+            defaultValue: "Validated by Pine's trusted structured event pipeline"
+        )
     }
     static var agentActivitySessionLinkedHint: String {
         String(
@@ -413,6 +431,18 @@ enum Strings {
             defaultValue: "Multiple active sessions could match; no agent is identified as the owner"
         )
     }
+    static var agentActivityStaleHint: String {
+        String(
+            localized: "agentActivity.attribution.staleHint",
+            defaultValue: "The associated process has not been observed successfully recently"
+        )
+    }
+    static var agentActivityTerminatedHint: String {
+        String(
+            localized: "agentActivity.attribution.terminatedHint",
+            defaultValue: "The associated process is no longer running"
+        )
+    }
     static func agentActivityPossibleSessions(_ count: Int) -> String {
         String(localized: "agentActivity.possibleSessions \(count)")
     }
@@ -420,47 +450,22 @@ enum Strings {
         String(localized: "agentActivity.fileChanged \(name)")
     }
     static let agentActivityResetFilters: LocalizedStringKey = "agentActivity.resetFilters"
-    static let agentActivityAllAttributions: LocalizedStringKey = "agentActivity.allAttributions"
-    static var agentActivityAttributionVerified: String {
-        String(localized: "agentActivity.attribution.verified", defaultValue: "Verified")
+    static var agentActivityAllAttributions: String {
+        String(
+            localized: "agentActivity.allAttributions",
+            defaultValue: "All evidence"
+        )
+    }
+    static var agentActivityAllKinds: String {
+        String(localized: "agentActivity.allKinds", defaultValue: "All kinds")
+    }
+    static var agentActivityAllStatuses: String {
+        String(localized: "agentActivity.allStatuses", defaultValue: "All statuses")
     }
     static var agentActivityDetailCopied: LocalizedStringKey { "agentActivity.detail.copied" }
     static var agentActivityDetailCopy: LocalizedStringKey { "agentActivity.detail.copy" }
     static var agentActivityDetailGoToTerminal: LocalizedStringKey { "agentActivity.detail.goToTerminal" }
     static var agentActivityDetailOpenFile: LocalizedStringKey { "agentActivity.detail.openFile" }
-    static var agentEvidenceAmbiguousDesc: String {
-        String(
-            localized: "agentActivity.evidence.ambiguousExplanation",
-            defaultValue: """
-            This action could not be confidently attributed to a single agent session. \
-            Multiple active sessions could have produced it.
-            """
-        )
-    }
-    static var agentEvidenceVerifiedDesc: String {
-        String(
-            localized: "agentActivity.evidence.verifiedExplanation",
-            defaultValue: """
-            This action was verified against an active agent session through trusted process observation.
-            """
-        )
-    }
-    static var agentEvidenceLinkedDesc: String {
-        String(
-            localized: "agentActivity.evidence.sessionLinkedExplanation",
-            defaultValue: """
-            This action is linked to a session by legacy activity data; it is not a verified agent event.
-            """
-        )
-    }
-    static var agentEvidenceInferredDesc: String {
-        String(
-            localized: "agentActivity.evidence.inferredExplanation",
-            defaultValue: """
-            This action was inferred from file-system timing; no verified agent event is available.
-            """
-        )
-    }
     static var agentActivityRowInspectHint: String {
         String(localized: "agentActivity.rowInspectHint", defaultValue: "Inspect this action")
     }

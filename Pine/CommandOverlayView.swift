@@ -17,6 +17,9 @@ import SwiftUI
 /// content view retains full keyboard behavior (arrow keys, Enter, Escape).
 struct CommandOverlayView<Content: View>: View {
     @Binding var isPresented: Bool
+    /// Optional cleanup invoked by every container-owned dismissal path
+    /// (backdrop click and Escape) after the binding is cleared.
+    var onDismiss: () -> Void = {}
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -26,9 +29,7 @@ struct CommandOverlayView<Content: View>: View {
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    withAnimation(PineAnimation.overlay) {
-                        isPresented = false
-                    }
+                    dismiss()
                 }
 
             // Centered command content with Liquid Glass material background.
@@ -44,9 +45,18 @@ struct CommandOverlayView<Content: View>: View {
         .animation(PineAnimation.overlay, value: isPresented)
         .accessibilityAddTraits(.isModal)
         .onExitCommand {
-            withAnimation(PineAnimation.overlay) {
-                isPresented = false
-            }
+            dismiss()
         }
+    }
+
+    /// Keeps pointer and keyboard cancellation on the exact same path. The
+    /// guard also makes the cleanup one-shot if an Escape event bubbles from
+    /// focused content to this container.
+    func dismiss() {
+        guard isPresented else { return }
+        withAnimation(PineAnimation.overlay) {
+            isPresented = false
+        }
+        onDismiss()
     }
 }

@@ -26,10 +26,18 @@ import SwiftUI
 /// polling interval and shown with an xmark before the badge is removed.
 struct AgentTabBadge: View {
     let session: AgentSession
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
     private var isActive: Bool {
         session.liveness == .live && session.state.isActive
+    }
+
+    nonisolated static func shouldPulse(
+        isActive: Bool,
+        reduceMotion: Bool
+    ) -> Bool {
+        isActive && !reduceMotion
     }
 
     var body: some View {
@@ -47,10 +55,40 @@ struct AgentTabBadge: View {
                     .fill(Color(nsColor: session.agentType.color))
                     .frame(width: 7, height: 7)
                     .opacity(session.state == .idle ? 0.6 : 1.0)
-                    .scaleEffect(isActive && pulse ? 1.25 : 1.0)
-                    .animation(isActive ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: pulse)
-                    .onAppear { if isActive { pulse = true } }
-                    .onChange(of: isActive) { _, active in pulse = active }
+                    .scaleEffect(
+                        Self.shouldPulse(
+                            isActive: isActive && pulse,
+                            reduceMotion: reduceMotion
+                        ) ? 1.25 : 1.0
+                    )
+                    .animation(
+                        Self.shouldPulse(
+                            isActive: isActive,
+                            reduceMotion: reduceMotion
+                        )
+                            ? .easeInOut(duration: 0.8)
+                                .repeatForever(autoreverses: true)
+                            : nil,
+                        value: pulse
+                    )
+                    .onAppear {
+                        pulse = Self.shouldPulse(
+                            isActive: isActive,
+                            reduceMotion: reduceMotion
+                        )
+                    }
+                    .onChange(of: isActive) { _, active in
+                        pulse = Self.shouldPulse(
+                            isActive: active,
+                            reduceMotion: reduceMotion
+                        )
+                    }
+                    .onChange(of: reduceMotion) { _, shouldReduce in
+                        pulse = Self.shouldPulse(
+                            isActive: isActive,
+                            reduceMotion: shouldReduce
+                        )
+                    }
             }
         }
         .font(.system(size: 10))

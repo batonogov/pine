@@ -245,3 +245,28 @@ struct AgentModelsTests {
         #expect(a != b)
     }
 }
+
+@Suite("Agent badge motion")
+struct AgentBadgeMotionTests {
+    @Test("Reduce Motion disables indefinite active-state pulsing")
+    func reduceMotionDisablesPulse() {
+        #expect(
+            AgentTabBadge.shouldPulse(
+                isActive: true,
+                reduceMotion: false
+            )
+        )
+        #expect(
+            !AgentTabBadge.shouldPulse(
+                isActive: true,
+                reduceMotion: true
+            )
+        )
+        #expect(
+            !AgentTabBadge.shouldPulse(
+                isActive: false,
+                reduceMotion: false
+            )
+        )
+    }
+}

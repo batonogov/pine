@@ -7,6 +7,7 @@
 //  blocked / active / done (#1112, cf. agterm's attention list).
 //
 
+import AppKit
 import SwiftUI
 
 /// Flat list of agent sessions that need the user's eye, presented inside a
@@ -30,10 +31,11 @@ struct AgentAttentionOverlay: View {
     /// (Escape). The host restores the previous first responder (#1245).
     let onDismiss: () -> Void
 
-    /// Current keyboard selection index into `ranked`. `nil` while the list is
-    /// empty; otherwise seeded to the first row so Return is operable
-    /// immediately.
-    @State private var selectedIndex: Int? = 0
+    /// Stable keyboard selection identity. Keeping the UUID instead of an
+    /// array offset prevents a liveness update from silently retargeting
+    /// Return when `ranked` reorders.
+    @State private var selectedID: UUID?
+    @FocusState private var hasKeyboardFocus: Bool
 
     /// Live blocked sessions come first, then live active work. Uncertain and
     /// terminated evidence is demoted below actionable rows so stale logical
@@ -104,42 +106,165 @@ struct AgentAttentionOverlay: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 24)
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(ranked) { summary in
-                            Button {
-                                onNavigate(summary.paneID, summary.tabID)
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: glyph(summary))
-                                        .foregroundStyle(color(for: summary))
-                                        .frame(width: 16)
-                                    Text(verbatim: summary.agentType.displayName)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Text(verbatim: detailText(for: summary))
-                                        .foregroundStyle(.secondary)
-                                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
-                                }
-                                .contentShape(Rectangle())
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 6)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(
+                                Array(ranked.enumerated()),
+                                id: \.element.id
+                            ) { _, summary in
+                                row(
+                                    summary,
+                                    isSelected: selectedID == summary.id
+                                )
+                                .id(summary.id)
                             }
-                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 6)
+                    }
+                    .onChange(of: selectedID) { _, newID in
+                        guard let newID else { return }
+                        withAnimation(PineAnimation.quick) {
+                            proxy.scrollTo(newID, anchor: .center)
                         }
                     }
-                    .padding(.top, 6)
                 }
             }
         }
         .padding(16)
         .frame(width: 380, height: 320)
+        .focusable()
+        .focused($hasKeyboardFocus)
+        .onAppear {
+            synchronizeSelection(announce: true)
+            hasKeyboardFocus = true
+        }
+        .onChange(of: ranked.map(\.id)) { _, _ in
+            synchronizeSelection(announce: true)
+        }
+        .onKeyPress(.upArrow) {
+            moveSelection(by: -1)
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            moveSelection(by: 1)
+            return .handled
+        }
+        .onKeyPress(.return) {
+            activateSelection()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            onDismiss()
+            return .handled
+        }
         .accessibilityIdentifier(AccessibilityID.agentAttentionOverlay)
+    }
+
+    private func row(
+        _ summary: AgentStatusSummary,
+        isSelected: Bool
+    ) -> some View {
+        Button {
+            onNavigate(summary.paneID, summary.tabID)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: glyph(summary))
+                    .foregroundStyle(color(for: summary))
+                    .frame(width: 16)
+                Text(verbatim: summary.agentType.displayName)
+                    .lineLimit(1)
+                Spacer()
+                Text(verbatim: detailText(for: summary))
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
+            }
+            .contentShape(Rectangle())
+            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(
+                        isSelected
+                            ? Color.accentColor.opacity(0.18)
+                            : Color.clear
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        // The overlay itself owns keyboard focus so arrows and Return cannot
+        // be intercepted by an individual SwiftUI Button.
+        .focusable(false)
+        .accessibilityIdentifier(
+            AccessibilityID.agentAttentionRow(summary.id)
+        )
+        .accessibilityLabel(
+            Text(verbatim: Self.accessibilityAnnouncement(for: summary))
+        )
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func detailText(for summary: AgentStatusSummary) -> String {
         summary.liveness == .live
             ? summary.state.displayName
             : summary.liveness.displayName
+    }
+
+    private func synchronizeSelection(announce: Bool) {
+        let normalizedID = AgentKeyboardSelection.normalizeID(
+            selectedID,
+            ids: ranked.map(\.id)
+        )
+        selectedID = normalizedID
+        if announce, let normalizedID {
+            announceRow(id: normalizedID)
+        }
+    }
+
+    private func moveSelection(by delta: Int) {
+        let nextID = AgentKeyboardSelection.moveID(
+            from: selectedID,
+            by: delta,
+            ids: ranked.map(\.id)
+        )
+        guard nextID != selectedID else { return }
+        selectedID = nextID
+        if let nextID {
+            announceRow(id: nextID)
+        }
+    }
+
+    private func activateSelection() {
+        guard let selectedID = AgentKeyboardSelection.normalizeID(
+            selectedID,
+            ids: ranked.map(\.id)
+        ), let summary = ranked.first(where: { $0.id == selectedID }) else {
+            return
+        }
+        self.selectedID = selectedID
+        onNavigate(summary.paneID, summary.tabID)
+    }
+
+    private func announceRow(id: UUID) {
+        guard let summary = ranked.first(where: { $0.id == id }) else { return }
+        NSAccessibility.post(
+            element: NSApp.keyWindow ?? NSApplication.shared,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: Self.accessibilityAnnouncement(
+                    for: summary
+                ),
+            ]
+        )
+    }
+
+    /// Shared spoken label used by the row and explicit selection
+    /// announcements. Keeping it testable ensures VoiceOver identifies the
+    /// same request that Return will activate.
+    @MainActor
+    static func accessibilityAnnouncement(
+        for summary: AgentStatusSummary
+    ) -> String {
+        summary.detailText
     }
 }

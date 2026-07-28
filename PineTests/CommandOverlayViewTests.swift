@@ -32,6 +32,30 @@ struct CommandOverlayViewTests {
         #expect(isPresented == false)
     }
 
+    @Test("CommandOverlayView dismissal clears binding and runs cleanup once")
+    func dismissalIsUnifiedAndOneShot() {
+        var isPresented = true
+        var cleanupCount = 0
+        let binding = Binding<Bool>(
+            get: { isPresented },
+            set: { isPresented = $0 }
+        )
+        let overlay = CommandOverlayView(
+            isPresented: binding,
+            onDismiss: { cleanupCount += 1 },
+            content: { Text("test") }
+        )
+
+        overlay.dismiss()
+        #expect(!isPresented)
+        #expect(cleanupCount == 1)
+
+        // An Escape event that bubbles after the focused child already
+        // dismissed must not restore focus a second time.
+        overlay.dismiss()
+        #expect(cleanupCount == 1)
+    }
+
     // MARK: - GoToLineView accessibility
 
     @Test("GoToLineView has invalid message accessibility identifier")

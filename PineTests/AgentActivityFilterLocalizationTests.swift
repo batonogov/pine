@@ -14,14 +14,50 @@ struct AgentActivityFilterLocalizationTests {
         "en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans"
     ]
     private static let activityKeys = [
+        "agentAction.detail.evidenceLabel",
+        "agentAction.detail.fileLabel",
+        "agentAction.detail.kindLabel",
+        "agentAction.detail.relatedTerminalLabel",
+        "agentAction.detail.summaryLabel",
+        "agentAction.detail.statusLabel",
+        "agentAction.detail.timestampLabel",
+        "agentAction.detail.workingDirectoryLabel",
+        "agentAction.kind.command",
+        "agentAction.kind.fileRead",
+        "agentAction.kind.fileWrite",
+        "agentAction.kind.toolCall",
+        "agentAction.status.completed",
+        "agentAction.status.failed",
+        "agentAction.status.inProgress",
+        "agentAction.status.pending",
         "agentActivity.noMatches",
         "agentActivity.attribution.filterLabel",
+        "agentActivity.attribution.verified",
+        "agentActivity.attribution.verifiedHint",
         "agentActivity.attribution.sessionLinked",
         "agentActivity.attribution.sessionLinkedHint",
         "agentActivity.attribution.inferred",
         "agentActivity.attribution.inferredHint",
         "agentActivity.attribution.ambiguous",
-        "agentActivity.attribution.ambiguousHint"
+        "agentActivity.attribution.ambiguousHint",
+        "agentActivity.attribution.stale",
+        "agentActivity.attribution.staleHint",
+        "agentActivity.attribution.terminated",
+        "agentActivity.attribution.terminatedHint",
+        "agentActivity.rowInspectHint",
+        "agentActivity.resetFilters",
+        "agentActivity.allAttributions",
+        "agentActivity.allKinds",
+        "agentActivity.allStatuses",
+        "agentActivity.detail.copied",
+        "agentActivity.detail.copy",
+        "agentActivity.detail.goToTerminal",
+        "agentActivity.detail.openFile",
+        "agentState.idle",
+        "agentState.thinking",
+        "agentState.executing",
+        "agentState.waitingInput",
+        "agentState.done"
     ]
     /// Unrelated manual entries that must survive an xcstrings `ours` merge
     /// when this feature branch is brought up to date with main.
@@ -70,7 +106,7 @@ struct AgentActivityFilterLocalizationTests {
         return try #require(root["strings"] as? [String: Any])
     }
 
-    @Test("Every filter string is translated in all supported languages")
+    @Test("Every Activity evidence/status string is translated in all supported languages")
     func allLanguagesPresent() throws {
         let catalog = try stringsCatalog()
         try expectCompleteTranslations(
@@ -132,5 +168,8 @@ struct AgentActivityFilterLocalizationTests {
 
         #expect(unit["value"] as? String == "Session-linked")
         #expect(catalog["agentActivity.attribution.direct"] == nil)
+        #expect(catalog["agentActivity.attribution.verified"] != nil)
+        #expect(catalog["agentActivity.attribution.stale"] != nil)
+        #expect(catalog["agentActivity.attribution.terminated"] != nil)
     }
 }
