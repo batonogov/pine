@@ -14,7 +14,26 @@ nonisolated enum AccessibilityID {
     static let agentHandoffStatus = "agentHandoffStatus"
 
     // MARK: - Terminal theme settings
+    static let terminalSettingsScrollView = "terminalSettingsScrollView"
     static let terminalAppearancePicker = "terminalAppearancePicker"
+    static let terminalThemeGrid = "terminalThemeGrid"
+    static func terminalThemeRow(_ id: String) -> String {
+        "terminalThemeRow_\(id)"
+    }
+
+    // MARK: - Quick Terminal settings
+    static let quickTerminalSettingsSection = "quickTerminalSettingsSection"
+    static let quickTerminalEnabledToggle = "quickTerminalEnabledToggle"
+    static let quickTerminalHotkeyRecorder = "quickTerminalHotkeyRecorder"
+    static let quickTerminalHotkeyValidation = "quickTerminalHotkeyValidation"
+    static let quickTerminalScreenEdgePicker =
+        "quickTerminalScreenEdgePicker"
+    static let quickTerminalSizeSlider = "quickTerminalSizeSlider"
+    static let quickTerminalTargetDisplayPicker =
+        "quickTerminalTargetDisplayPicker"
+    static let quickTerminalHideOnFocusLossToggle =
+        "quickTerminalHideOnFocusLossToggle"
+    static let quickTerminalResetButton = "quickTerminalResetButton"
 
     // MARK: - Welcome window
     static let welcomeOpenFolderButton = "welcomeOpenFolderButton"

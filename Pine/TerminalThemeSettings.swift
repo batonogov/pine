@@ -54,7 +54,9 @@ enum TerminalAppearancePolicy: String, CaseIterable, Sendable {
 @MainActor
 @Observable
 final class TerminalThemeSettings {
-    static let shared = TerminalThemeSettings()
+    static let shared = TerminalThemeSettings(
+        defaults: PineSettingsDefaults.shared()
+    )
 
     enum Keys {
         static let themeID = "terminal.theme.id"
@@ -63,8 +65,13 @@ final class TerminalThemeSettings {
 
     private let defaults: UserDefaults
 
+    /// Delivery channel used by both the settings model and its terminal-tab
+    /// observers. Keeping the injected center visible inside the module makes
+    /// isolated tests exercise the same live-repaint path as production.
+    let notificationCenter: NotificationCenter
+
     /// Stable identifier of the selected built-in theme.
-    var selectedThemeID: String {
+    private(set) var selectedThemeID: String {
         didSet {
             guard selectedThemeID != oldValue else { return }
             defaults.set(selectedThemeID, forKey: Keys.themeID)
@@ -87,14 +94,22 @@ final class TerminalThemeSettings {
         TerminalTheme.theme(forID: selectedThemeID)
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        notificationCenter: NotificationCenter = .default
+    ) {
         self.defaults = defaults
+        self.notificationCenter = notificationCenter
 
         let storedID = defaults.string(forKey: Keys.themeID)
-        if let storedID, !storedID.isEmpty {
+        if let storedID,
+           TerminalTheme.builtIn.contains(where: { $0.id == storedID }) {
             self.selectedThemeID = storedID
         } else {
             self.selectedThemeID = TerminalTheme.defaultID
+            if storedID?.isEmpty == false {
+                defaults.set(TerminalTheme.defaultID, forKey: Keys.themeID)
+            }
         }
 
         if let storedPolicy = defaults.string(forKey: Keys.appearancePolicy),
@@ -145,9 +160,11 @@ final class TerminalThemeSettings {
         }
     }
 
-    /// Selects a theme by id and broadcasts the change.
+    /// Selects a theme by id and broadcasts the change. Unknown identifiers
+    /// normalize to the built-in default so the picker always has one selected
+    /// row, including after a theme is removed in a later Pine version.
     func setTheme(id: String) {
-        selectedThemeID = id
+        selectedThemeID = TerminalTheme.theme(forID: id).id
     }
 
     /// Resets both theme and appearance policy to their defaults.
@@ -160,7 +177,7 @@ final class TerminalThemeSettings {
 
     /// Posts the change notification so live terminal sessions repaint.
     private func notifyChanged() {
-        NotificationCenter.default.post(name: .terminalThemeChanged, object: self)
+        notificationCenter.post(name: .terminalThemeChanged, object: self)
     }
 }
 

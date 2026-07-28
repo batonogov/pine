@@ -25131,6 +25131,411 @@
         }
       }
     },
+    "settings.quickTerminal.hotkey.modifierRequired": {
+      "comment": "Validation shown when a shortcut lacks Command, Control, or Option; Shift alone is not sufficient.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Verwende mindestens eine der Tasten ⌘, ⌃ oder ⌥." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Include at least one of ⌘, ⌃, or ⌥." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Incluye al menos una de las teclas ⌘, ⌃ o ⌥." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajoutez au moins l’une des touches ⌘, ⌃ ou ⌥." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "⌘、⌃、⌥ のいずれかを1つ以上含めてください。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "⌘, ⌃, ⌥ 중 하나 이상을 포함하세요." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Inclua pelo menos uma das teclas ⌘, ⌃ ou ⌥." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Добавьте хотя бы одну из клавиш ⌘, ⌃ или ⌥." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请至少包含 ⌘、⌃ 或 ⌥ 中的一个。" } }
+      }
+    },
+    "settings.quickTerminal.reset": {
+      "comment": "Button that restores every Quick Terminal preference to its default.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Schnellterminal zurücksetzen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Reset Quick Terminal Settings" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Restablecer ajustes del terminal rápido" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Réinitialiser le terminal rapide" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "クイックターミナル設定をリセット" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "빠른 터미널 설정 재설정" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Redefinir ajustes do Terminal rápido" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сбросить настройки быстрого терминала" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "还原快速终端设置" } }
+      }
+    },
+    "settings.tab.terminal": {
+      "comment": "Title of the Terminal pane in the consolidated Settings window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ターミナル" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "터미널" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Терминал" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "终端" } }
+      }
+    },
+    "settings.terminal.appearance.help": {
+      "comment": "Explains how the terminal appearance policy selects a light or dark theme variant.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Legt fest, ob das Terminal der Systemdarstellung folgt oder immer die helle bzw. dunkle Variante verwendet." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Choose whether the terminal follows the system appearance or always uses the light or dark variant." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Elige si el terminal sigue la apariencia del sistema o usa siempre la variante clara u oscura." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisissez si le terminal suit l’apparence du système ou utilise toujours la variante claire ou sombre." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ターミナルがシステムの外観に従うか、常にライトまたはダークを使うかを選びます。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "터미널이 시스템 화면 모드를 따를지, 항상 라이트 또는 다크 변형을 사용할지 선택합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escolha se o terminal segue a aparência do sistema ou sempre usa a variante clara ou escura." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Выберите, следует ли терминал системному оформлению или всегда использует светлый либо тёмный вариант." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择终端是跟随系统外观，还是始终使用浅色或深色版本。" } }
+      }
+    },
+    "settings.terminal.appearance.label": {
+      "comment": "Heading and picker label for terminal appearance policy.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Darstellung" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Appearance" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Apariencia" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Apparence" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "外観" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "화면 모드" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Aparência" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Оформление" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "外观" } }
+      }
+    },
+    "settings.terminal.arguments": {
+      "comment": "Heading for terminal process arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Argumente" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Arguments" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Argumentos" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Arguments" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "引数" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "인수" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Argumentos" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Аргументы" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "参数" } }
+      }
+    },
+    "settings.terminal.argumentsHelp": {
+      "comment": "Explains that each terminal process argument occupies one line and is not shell-tokenized.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Ein wörtliches Argument pro Zeile." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Enter one literal argument per line." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Introduce un argumento literal por línea." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Saisissez un argument littéral par ligne." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "1行に1つの引数をそのまま入力します。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "한 줄에 하나의 리터럴 인수를 입력합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Insira um argumento literal por linha." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Введите по одному аргументу без обработки на строку." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "每行输入一个原样参数。" } }
+      }
+    },
+    "settings.terminal.quickTerminal": {
+      "comment": "Heading for Quick Terminal controls embedded in Terminal Settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Schnellterminal" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Quick Terminal" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Terminal rápido" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Terminal rapide" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "クイックターミナル" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "빠른 터미널" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Terminal rápido" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Быстрый терминал" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "快速终端" } }
+      }
+    },
+    "settings.terminal.resetArgs": {
+      "comment": "Button that restores the default terminal shell and launch arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Shell-Einstellungen zurücksetzen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Reset Shell Settings" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Restablecer ajustes del intérprete" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Réinitialiser les réglages du shell" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "シェル設定をリセット" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "셸 설정 재설정" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Redefinir ajustes do shell" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сбросить настройки оболочки" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "还原 Shell 设置" } }
+      }
+    },
+    "settings.terminal.resolvedPrefix": {
+      "comment": "Prefix before the resolved executable path for the selected terminal shell.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgelöst: " } },
+        "en": { "stringUnit": { "state": "translated", "value": "Resolved: " } },
+        "es": { "stringUnit": { "state": "translated", "value": "Ruta efectiva: " } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chemin résolu : " } },
+        "ja": { "stringUnit": { "state": "translated", "value": "解決されたパス: " } },
+        "ko": { "stringUnit": { "state": "translated", "value": "확인된 경로: " } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Caminho resolvido: " } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Итоговый путь: " } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "解析路径：" } }
+      }
+    },
+    "settings.terminal.shell": {
+      "comment": "Heading for the terminal shell executable settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Shell" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Shell" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Intérprete de comandos" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Shell" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "シェル" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "셸" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Shell" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Оболочка" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Shell" } }
+      }
+    },
+    "settings.terminal.shellOther": {
+      "comment": "Terminal shell picker option that reveals a custom executable path field.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Andere…" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Other…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Otro…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Autre…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "その他…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "기타…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Outro…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Другая…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "其他…" } }
+      }
+    },
+    "settings.terminal.shellPathPlaceholder": {
+      "comment": "Placeholder in the custom terminal shell executable path field.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pfad zur Shell" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Path to shell" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Ruta del intérprete" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chemin du shell" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "シェルのパス" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "셸 경로" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Caminho do shell" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Путь к оболочке" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Shell 路径" } }
+      }
+    },
+    "settings.terminal.shellPicker": {
+      "comment": "Label for the terminal shell executable picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Standard-Shell" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Shell" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Intérprete de comandos" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Shell" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "シェル" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "셸" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Shell" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Командная оболочка" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Shell" } }
+      }
+    },
+    "settings.terminal.theme.previewLabel": {
+      "comment": "Caption under a theme name explaining that its dark and light variants are previewed.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Dunkel · Hell" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Dark · Light" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Oscuro · Claro" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sombre · Clair" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ダーク・ライト" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "다크 · 라이트" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escuro · Claro" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Тёмная · светлая" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "深色 · 浅色" } }
+      }
+    },
+    "settings.terminal.theme.selectionLabel": {
+      "comment": "Heading for the terminal color theme picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Farbschema" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Theme" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Tema" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Thème" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "テーマ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "테마" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Tema" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Тема" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主题" } }
+      }
+    },
+    "settings.terminal.theme.subtitle": {
+      "comment": "Explains that every terminal theme includes light and dark variants.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wähle ein Farbschema. Die helle und die dunkle Variante werden als Vorschau gezeigt." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Choose a color theme. Both light and dark variants are previewed." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Elige un tema de color. Se muestran las variantes clara y oscura." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisissez un thème de couleurs. Les variantes claire et sombre sont affichées." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "カラーテーマを選択します。ライトとダークの両方をプレビューできます。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "색상 테마를 선택합니다. 라이트와 다크 변형을 모두 미리 볼 수 있습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escolha um tema de cores. As variantes clara e escura são exibidas." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Выберите цветовую тему. В предпросмотре показаны светлый и тёмный варианты." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择配色主题。此处会同时预览浅色和深色版本。" } }
+      }
+    },
+    "settings.terminal.theme.title": {
+      "comment": "Title for terminal theme settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Terminal-Farbschema" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Terminal Theme" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Tema del terminal" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Thème du terminal" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ターミナルテーマ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "터미널 테마" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Tema do terminal" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Тема терминала" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "终端主题" } }
+      }
+    },
+    "settings.terminal.title": {
+      "comment": "Title of the combined terminal settings pane.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ターミナル" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "터미널" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Терминал" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "终端" } }
+      }
+    },
+    "terminal.appearance.alwaysDark": {
+      "comment": "Terminal appearance policy that always uses the dark theme variant.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Immer dunkel" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Always Dark" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Siempre oscuro" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toujours sombre" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "常にダーク" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "항상 다크" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Sempre escuro" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Всегда тёмное" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "始终深色" } }
+      }
+    },
+    "terminal.appearance.alwaysLight": {
+      "comment": "Terminal appearance policy that always uses the light theme variant.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Immer hell" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Always Light" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Siempre claro" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toujours clair" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "常にライト" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "항상 라이트" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Sempre claro" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Всегда светлое" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "始终浅色" } }
+      }
+    },
+    "terminal.appearance.followSystem": {
+      "comment": "Terminal appearance policy that follows the system appearance.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "System folgen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Follow System" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Seguir el sistema" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Selon le système" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "システムに従う" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "시스템 설정 따르기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Seguir o sistema" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Как в системе" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "跟随系统" } }
+      }
+    },
+    "terminal.theme.dracula.name": {
+      "comment": "Display name of the built-in Dracula terminal theme.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Dracula" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Dracula" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Dracula" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dracula" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Dracula" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Dracula" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Dracula" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Dracula" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Dracula" } }
+      }
+    },
+    "terminal.theme.github.name": {
+      "comment": "Display name of the built-in GitHub terminal theme.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "GitHub" } },
+        "en": { "stringUnit": { "state": "translated", "value": "GitHub" } },
+        "es": { "stringUnit": { "state": "translated", "value": "GitHub" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "GitHub" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "GitHub" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "GitHub" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "GitHub" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "GitHub" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "GitHub" } }
+      }
+    },
+    "terminal.theme.nord.name": {
+      "comment": "Display name of the built-in Nord terminal theme.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Nord" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Nord" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Nord" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nord" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Nord" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Nord" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nord" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Nord" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Nord" } }
+      }
+    },
+    "terminal.theme.pine.name": {
+      "comment": "Display name of Pine's built-in default terminal theme.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pine" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pine" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine" } }
+      }
+    },
+    "terminal.theme.solarized.name": {
+      "comment": "Display name of the built-in Solarized terminal theme.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Solarized" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Solarized" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Solarized" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Solarized" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Solarized" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Solarized" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Solarized" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Solarized" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Solarized" } }
+      }
+    },
     "problems.noIssues": {
       "comment": "Label for the \"No problems detected\" message in the problems panel.",
       "extractionState": "extracted_with_value",

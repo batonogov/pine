@@ -12,6 +12,10 @@ import SwiftUI
 @Observable
 final class TerminalPaneState {
     var terminalTabs: [TerminalTab] = []
+    /// Theme source inherited by every tab created in this pane. Production
+    /// uses the shared settings; injection keeps project and Quick Terminal
+    /// repaint integration testable without touching global defaults.
+    private let themeSettings: TerminalThemeSettings
     /// The AppKit host currently presenting this pane's active terminal.
     ///
     /// SwiftUI may temporarily keep outgoing and incoming representables
@@ -53,6 +57,10 @@ final class TerminalPaneState {
 
     var tabCount: Int { terminalTabs.count }
 
+    init(themeSettings: TerminalThemeSettings = .shared) {
+        self.themeSettings = themeSettings
+    }
+
     /// Consumes the terminal result of a bounded AppKit focus request.
     ///
     /// Retryable lifecycle states stay inside `AppKitFocusRequestCoordinator`;
@@ -77,7 +85,10 @@ final class TerminalPaneState {
     func addTab(workingDirectory: URL?) -> TerminalTab {
         let number = nextTabNumber
         nextTabNumber += 1
-        let tab = TerminalTab(name: Strings.terminalNumberedName(number))
+        let tab = TerminalTab(
+            name: Strings.terminalNumberedName(number),
+            themeSettings: themeSettings
+        )
         tab.configure(workingDirectory: workingDirectory)
         terminalTabs.append(tab)
         activeTerminalID = tab.id

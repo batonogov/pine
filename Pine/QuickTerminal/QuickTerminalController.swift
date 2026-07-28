@@ -19,7 +19,7 @@ import SwiftUI
 final class QuickTerminalController {
     /// Per-pane state reused as the quick terminal's tab container. Holds
     /// exactly one `TerminalTab` for the quick-terminal session.
-    let paneState = TerminalPaneState()
+    let paneState: TerminalPaneState
 
     /// `true` while the quick-terminal window is on screen.
     private(set) var isVisible = false
@@ -31,9 +31,48 @@ final class QuickTerminalController {
 
     /// User-facing preferences (hotkey, geometry, display). Read live so
     /// the panel tracks the current edge / size / display on every show.
-    var settings = QuickTerminalSettings.shared
+    let settings: QuickTerminalSettings
 
     private var window: QuickTerminalWindow?
+    /// See `TerminalTab.themeChangeObserver`: the observer token is created
+    /// on the main actor and only removed from nonisolated `deinit`.
+    @ObservationIgnored
+    nonisolated(unsafe) private var settingsObserver: NSObjectProtocol?
+    @ObservationIgnored
+    nonisolated(unsafe) private var windowResignObserver: NSObjectProtocol?
+    private let settingsNotificationCenter: NotificationCenter
+    private let windowNotificationCenter = NotificationCenter.default
+
+    /// Read-only seam for geometry integration tests. Production callers use
+    /// `show`/`hide`; exposing the frame avoids reaching into the NSPanel.
+    var presentedFrame: NSRect? { window?.frame }
+
+    init(
+        settings: QuickTerminalSettings = .shared,
+        themeSettings: TerminalThemeSettings = .shared
+    ) {
+        self.settings = settings
+        self.paneState = TerminalPaneState(themeSettings: themeSettings)
+        self.settingsNotificationCenter = settings.notificationCenter
+        self.settingsObserver = settings.notificationCenter.addObserver(
+            forName: QuickTerminalSettings.didChangeNotification,
+            object: settings,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.applySettingsChange()
+            }
+        }
+    }
+
+    deinit {
+        if let settingsObserver {
+            settingsNotificationCenter.removeObserver(settingsObserver)
+        }
+        if let windowResignObserver {
+            windowNotificationCenter.removeObserver(windowResignObserver)
+        }
+    }
 
     // MARK: - Public
 
@@ -48,6 +87,10 @@ final class QuickTerminalController {
     }
 
     func show() {
+        guard settings.enabled else {
+            hide()
+            return
+        }
         ensureWindow()
         repositionDropDown()
         window?.makeKeyAndOrderFront(nil)
@@ -59,11 +102,35 @@ final class QuickTerminalController {
         isVisible = false
     }
 
+    /// Applies settings to an already-visible panel without recreating its
+    /// terminal view or process. Hiding on disable and frame updates therefore
+    /// preserve the keep-alive session and its scrollback.
+    private func applySettingsChange() {
+        guard settings.enabled else {
+            hide()
+            return
+        }
+        guard isVisible else { return }
+        repositionDropDown()
+    }
+
+    /// Applies the focus-loss policy after AppKit has completed the key-window
+    /// transition. Kept internal so the policy can be verified without asking
+    /// a unit test to steal focus from the developer's active application.
+    func handleWindowDidResignKey() {
+        guard isVisible, settings.hideOnFocusLoss else { return }
+        hide()
+    }
+
     /// Stops the terminal session and closes the window. Called at app
     /// termination so the PTY child does not outlive Pine, matching
     /// `registry.destroyAllProjects()` for project windows (#1113 review).
     func shutdown() {
         for tab in paneState.terminalTabs { tab.stop() }
+        if let windowResignObserver {
+            windowNotificationCenter.removeObserver(windowResignObserver)
+            self.windowResignObserver = nil
+        }
         window?.close()
         window = nil
         isVisible = false
@@ -87,6 +154,15 @@ final class QuickTerminalController {
         let rect = dropDownRect()
         let win = QuickTerminalWindow(contentRect: rect)
         win.onHide = { [weak self] in self?.hide() }
+        windowResignObserver = windowNotificationCenter.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: win,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleWindowDidResignKey()
+            }
+        }
 
         // Host the same NSView the in-window terminal panes use. Setting it
         // as contentView triggers `viewDidMoveToWindow` → observer install +
@@ -112,22 +188,30 @@ final class QuickTerminalController {
     }
 
     /// Resolves which `NSScreen` the panel should appear on, honoring the
-    /// `targetDisplay` preference. `.active` uses the screen that contains
-    /// the current key window (not `NSScreen.main`, which is only the menu-
-    /// bar display); `.main` pins to the main display.
+    /// `targetDisplay` preference. AppKit defines `NSScreen.main` as the
+    /// keyboard-focus screen; the menu-bar display is `NSScreen.screens[0]`.
     private func targetScreen() -> NSScreen? {
-        switch settings.targetDisplay {
+        Self.resolveTargetScreen(
+            target: settings.targetDisplay,
+            keyWindowScreen: NSApp.keyWindow?.screen,
+            focusedScreen: NSScreen.main,
+            primaryScreen: NSScreen.screens.first
+        )
+    }
+
+    /// Pure selection seam so display semantics can be tested without relying
+    /// on the test host's physical monitor configuration.
+    static func resolveTargetScreen<Screen>(
+        target: QuickTerminalTargetDisplay,
+        keyWindowScreen: Screen?,
+        focusedScreen: Screen?,
+        primaryScreen: Screen?
+    ) -> Screen? {
+        switch target {
         case .main:
-            return NSScreen.main ?? NSScreen.screens.first
+            primaryScreen ?? focusedScreen ?? keyWindowScreen
         case .active:
-            // Prefer the screen hosting the key Pine window — that's the
-            // display the user is currently looking at. Falls back to
-            // NSScreen.main when there is no key window (e.g. only the
-            // Welcome window or no windows at all).
-            if let keyWindow = NSApp.keyWindow {
-                return keyWindow.screen ?? NSScreen.main
-            }
-            return NSScreen.main ?? NSScreen.screens.first
+            keyWindowScreen ?? focusedScreen ?? primaryScreen
         }
     }
 

@@ -9,7 +9,7 @@
 //                       appearance: .light, named: "MyView.light")
 //
 //  Recording mode:
-//    Run tests with `PINE_RECORD_SNAPSHOTS=1` in environment to (re)write
+//    Pass `PINE_RECORD_SNAPSHOTS=1` as an xcodebuild setting to (re)write
 //    reference PNGs under `PineTests/SnapshotTests/__Snapshots__/`.
 //
 //  Diff strategy:

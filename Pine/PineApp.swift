@@ -412,6 +412,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// before any window opens.
     let quickTerminalCoordinator = QuickTerminalController()
     private let hotkeyManager = GlobalHotkeyManager()
+    private var hotkeySettingsBinding: QuickTerminalSettingsRuntimeBinding?
 
     /// `true` when the quick-terminal hotkey is explicitly disabled via the
     /// `--disable-quick-terminal` launch argument or `PINE_DISABLE_QUICK_TERMINAL`
@@ -576,20 +577,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 // Hop to MainActor: toggle touches @MainActor coordinator state.
                 Task { @MainActor in self?.quickTerminalCoordinator.toggle() }
             }
-            // Register from settings so a user-customized hotkey takes effect
-            // immediately on launch (#1243).
-            hotkeyManager.applyQuickTerminalSettings(QuickTerminalSettings.shared)
-
-            // Re-arm whenever the user changes the hotkey, modifiers, or the
-            // enabled flag in Settings.
-            NotificationCenter.default.addObserver(
-                forName: QuickTerminalSettings.didChangeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.hotkeyManager.applyQuickTerminalSettings(QuickTerminalSettings.shared)
-                }
+            // Apply the persisted shortcut immediately and retain the exact
+            // production subscription that re-arms it after every atomic
+            // settings change.
+            hotkeySettingsBinding = QuickTerminalSettingsRuntimeBinding(
+                settings: QuickTerminalSettings.shared
+            ) { [weak self] settings in
+                self?.hotkeyManager.applyQuickTerminalSettings(settings)
             }
         }
 
@@ -598,6 +592,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // responder chain see only events neither layer consumed. Keeping this
         // in one monitor avoids AppKit's unspecified ordering among monitors.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if QuickTerminalHotkeyCaptureRouter.shared.route(event) {
+                return nil
+            }
             let registry = ExtensibilityManager.shared.keybindings
             return UserKeybindingDispatcher.route(
                 event,
@@ -855,6 +852,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Pine (#1113 review). The session is keep-alive across toggles but
         // not across app launches.
         quickTerminalCoordinator.shutdown()
+
+        // Settings UI tests write only to their namespaced suite. Remove it
+        // from inside the app sandbox after the test runner terminates Pine.
+        PineSettingsDefaults.cleanUpUITestSuite()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

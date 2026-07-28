@@ -33,8 +33,12 @@ enum AboutInfo {
     }
 
     // GitHub repository URL.
-    // swiftlint:disable:next force_unwrapping
-    static let gitHubURL = URL(string: "https://github.com/batonogov/pine")!
+    static let gitHubURL: URL = {
+        guard let url = URL(string: "https://github.com/batonogov/pine") else {
+            preconditionFailure("The static GitHub URL must be valid")
+        }
+        return url
+    }()
 
     /// Options dictionary for `orderFrontStandardAboutPanel(options:)`.
     static var aboutPanelOptions: [NSApplication.AboutPanelOptionKey: Any] {

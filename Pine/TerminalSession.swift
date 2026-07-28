@@ -1650,11 +1650,15 @@ final class TerminalTab: Identifiable, Hashable {
     /// actor) and read only in `deinit`, which is implicitly `nonisolated` and
     /// therefore cannot touch a MainActor-isolated stored property. The token
     /// itself is a plain `NSObjectProtocol` value with no actor affinity.
+    @ObservationIgnored
     nonisolated(unsafe) private var themeChangeObserver: NSObjectProtocol?
 
     /// The theme/appearance settings source. Defaults to the shared singleton
     /// but is injectable so unit tests can drive resolution deterministically.
     private let themeSettings: TerminalThemeSettings
+    /// Stored separately so the nonisolated `deinit` can remove the observer
+    /// from the exact center that registered it.
+    private let themeNotificationCenter: NotificationCenter
 
     init(
         name: String,
@@ -1667,6 +1671,7 @@ final class TerminalTab: Identifiable, Hashable {
         self.shellSettings = shellSettings
         self.agentHandoffSettings = agentHandoffSettings
         self.themeSettings = themeSettings
+        self.themeNotificationCenter = themeSettings.notificationCenter
         self.terminalView = PineTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
         self.terminalView.setAccessibilityElement(true)
         self.terminalView.setAccessibilityRole(.textArea)
@@ -1698,9 +1703,9 @@ final class TerminalTab: Identifiable, Hashable {
 
         // Re-apply colors immediately when the user changes the selected
         // theme or appearance policy in Settings → Terminal (issue #1244).
-        themeChangeObserver = NotificationCenter.default.addObserver(
+        themeChangeObserver = themeNotificationCenter.addObserver(
             forName: .terminalThemeChanged,
-            object: nil,
+            object: themeSettings,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -1711,7 +1716,7 @@ final class TerminalTab: Identifiable, Hashable {
 
     deinit {
         if let themeChangeObserver {
-            NotificationCenter.default.removeObserver(themeChangeObserver)
+            themeNotificationCenter.removeObserver(themeChangeObserver)
         }
     }
 

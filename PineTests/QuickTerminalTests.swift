@@ -21,6 +21,31 @@ struct QuickTerminalTests {
         #expect(manager.isRegistered == false)
     }
 
+    @Test("register rejects unsafe shortcuts before calling Carbon")
+    func registerRejectsUnsafeShortcuts() {
+        let manager = GlobalHotkeyManager()
+
+        #expect(
+            manager.register(
+                keyCode: UInt32(kVK_ANSI_K),
+                carbonModifiers: 0
+            ) == false
+        )
+        #expect(
+            manager.register(
+                keyCode: UInt32(kVK_ANSI_K),
+                carbonModifiers: UInt32(shiftKey)
+            ) == false
+        )
+        #expect(
+            manager.register(
+                keyCode: UInt32(kVK_UpArrow) + 1,
+                carbonModifiers: UInt32(cmdKey)
+            ) == false
+        )
+        #expect(manager.isRegistered == false)
+    }
+
     @Test("register/unregister is safe and symmetric with a throwaway combo")
     func registerIsSafeAndSymmetric() {
         // Use a throwaway keyCode + modifiers unlikely to be claimed by any
@@ -43,19 +68,90 @@ struct QuickTerminalTests {
         #expect(manager.isRegistered == false)
     }
 
+    @Test("A conflicting replacement keeps and restores the working shortcut")
+    func conflictingReplacementRollsBack() throws {
+        let modifiers = UInt32(controlKey | optionKey | shiftKey)
+        let candidateKeyCodes = [
+            kVK_F13,
+            kVK_F14,
+            kVK_F15,
+            kVK_F16,
+            kVK_F17,
+            kVK_F18,
+            kVK_F19,
+            kVK_F20,
+        ].map(UInt32.init)
+        var reservations: [(manager: GlobalHotkeyManager, keyCode: UInt32)] = []
+
+        for keyCode in candidateKeyCodes where reservations.count < 2 {
+            let candidate = GlobalHotkeyManager()
+            if candidate.register(
+                keyCode: keyCode,
+                carbonModifiers: modifiers
+            ) {
+                reservations.append((candidate, keyCode))
+            }
+        }
+        #expect(
+            reservations.count == 2,
+            "The test requires two free throwaway function-key shortcuts"
+        )
+        let blocker = try #require(reservations.first)
+        let working = try #require(reservations.last)
+        defer {
+            working.manager.unregister()
+            blocker.manager.unregister()
+        }
+
+        let suiteName = "QuickTerminalHotkeyRollback-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = QuickTerminalSettings(
+            defaults: defaults,
+            notificationCenter: NotificationCenter()
+        )
+        #expect(settings.setHotkey(
+            keyCode: blocker.keyCode,
+            modifiers: modifiers
+        ))
+
+        #expect(working.manager.applyQuickTerminalSettings(settings) == false)
+        #expect(working.manager.isRegistered)
+        #expect(
+            working.manager.registeredShortcut == GlobalHotkeyShortcut(
+                keyCode: working.keyCode,
+                modifiers: modifiers
+            )
+        )
+        #expect(settings.keyCode == working.keyCode)
+        #expect(settings.modifiers == modifiers)
+
+        working.manager.unregister()
+        #expect(settings.setHotkey(
+            keyCode: blocker.keyCode,
+            modifiers: modifiers
+        ))
+        #expect(working.manager.applyQuickTerminalSettings(settings) == false)
+        #expect(working.manager.isRegistered == false)
+        #expect(settings.enabled == false)
+    }
+
     // MARK: - QuickTerminalController
 
     @Test("coordinator starts hidden with no tab")
-    func coordinatorInitialState() {
-        let coordinator = QuickTerminalController()
+    func coordinatorInitialState() throws {
+        let fixture = try QuickTerminalControllerFixture()
+        defer { fixture.cleanUp() }
+        let coordinator = fixture.controller
         #expect(coordinator.isVisible == false)
         #expect(coordinator.paneState.terminalTabs.isEmpty)
     }
 
     @Test("toggle flips visibility")
-    func toggleFlipsVisibility() {
-        let coordinator = QuickTerminalController()
-        defer { coordinator.shutdown() }
+    func toggleFlipsVisibility() throws {
+        let fixture = try QuickTerminalControllerFixture()
+        defer { fixture.cleanUp() }
+        let coordinator = fixture.controller
         // First toggle shows the window (keep-alive: created on first show).
         coordinator.toggle()
         #expect(coordinator.isVisible)
@@ -67,9 +163,10 @@ struct QuickTerminalTests {
     }
 
     @Test("hide after show keeps the keep-alive session")
-    func hideKeepsSessionAlive() {
-        let coordinator = QuickTerminalController()
-        defer { coordinator.shutdown() }
+    func hideKeepsSessionAlive() throws {
+        let fixture = try QuickTerminalControllerFixture()
+        defer { fixture.cleanUp() }
+        let coordinator = fixture.controller
         coordinator.show()
         let firstTabID = coordinator.paneState.activeTab?.id
         coordinator.hide()
@@ -79,9 +176,10 @@ struct QuickTerminalTests {
     }
 
     @Test("cwd resolves to most-recent project, else $HOME")
-    func cwdFallbackChain() {
-        let coordinator = QuickTerminalController()
-        defer { coordinator.shutdown() }
+    func cwdFallbackChain() throws {
+        let fixture = try QuickTerminalControllerFixture()
+        defer { fixture.cleanUp() }
+        let coordinator = fixture.controller
         let registry = ProjectRegistry()
         coordinator.registry = registry
         coordinator.show()
@@ -91,5 +189,90 @@ struct QuickTerminalTests {
         let expected = registry.recentProjects.first?.path ?? NSHomeDirectory()
         #expect(coordinator.paneState.activeTab?.workingDirectoryURL?.path == expected)
         coordinator.hide()
+    }
+
+    @Test("Main display resolves to the menu-bar screen")
+    func mainDisplayUsesPrimaryScreen() {
+        let resolved = QuickTerminalController.resolveTargetScreen(
+            target: .main,
+            keyWindowScreen: "external",
+            focusedScreen: "external",
+            primaryScreen: "menu-bar"
+        )
+
+        #expect(resolved == "menu-bar")
+    }
+
+    @Test("Active display follows the key window and fallback chain")
+    func activeDisplayFallbacks() {
+        #expect(
+            QuickTerminalController.resolveTargetScreen(
+                target: .active,
+                keyWindowScreen: "key",
+                focusedScreen: "focused",
+                primaryScreen: "primary"
+            ) == "key"
+        )
+        #expect(
+            QuickTerminalController.resolveTargetScreen(
+                target: .active,
+                keyWindowScreen: nil,
+                focusedScreen: "focused",
+                primaryScreen: "primary"
+            ) == "focused"
+        )
+        #expect(
+            QuickTerminalController.resolveTargetScreen(
+                target: .active,
+                keyWindowScreen: nil,
+                focusedScreen: nil,
+                primaryScreen: "primary"
+            ) == "primary"
+        )
+    }
+
+    @Test("Main display and empty-state fallbacks are deterministic")
+    func mainDisplayFallbacks() {
+        #expect(
+            QuickTerminalController.resolveTargetScreen(
+                target: .main,
+                keyWindowScreen: "key",
+                focusedScreen: "focused",
+                primaryScreen: nil
+            ) == "focused"
+        )
+        let missing: String? = QuickTerminalController.resolveTargetScreen(
+            target: .main,
+            keyWindowScreen: nil,
+            focusedScreen: nil,
+            primaryScreen: nil
+        )
+        #expect(missing == nil)
+    }
+}
+
+@MainActor
+private struct QuickTerminalControllerFixture {
+    let suiteName: String
+    let defaults: UserDefaults
+    let controller: QuickTerminalController
+
+    init() throws {
+        suiteName = "QuickTerminalControllerTests-\(UUID().uuidString)"
+        defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let settings = QuickTerminalSettings(
+            defaults: defaults,
+            notificationCenter: NotificationCenter()
+        )
+        settings.enabled = true
+        settings.hideOnFocusLoss = false
+        controller = QuickTerminalController(settings: settings)
+    }
+
+    func cleanUp() {
+        controller.shutdown()
+        defaults.removePersistentDomain(forName: suiteName)
     }
 }
