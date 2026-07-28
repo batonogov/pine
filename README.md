@@ -59,8 +59,7 @@ Pine keeps CLI agents in the terminal and the code in view. It reflects agent ac
 **Homebrew** (recommended):
 
 ```bash
-brew tap batonogov/tap
-brew install --cask pine-editor
+brew install --cask batonogov/tap/pine-editor
 ```
 
 **Direct download:** grab the latest `.dmg` from [Releases](https://github.com/batonogov/pine/releases/latest).
