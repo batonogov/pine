@@ -502,8 +502,37 @@ struct PineAppMenuCommands: Commands {
         }
 
         // MARK: - Terminal menu
-        // New Tab (Cmd+T), Find in Terminal (Cmd+F when terminal focused)
+        // New Tab (Cmd+T), Find in Terminal (Cmd+F when terminal focused),
+        // Quick Terminal (global drop-down, shows current shortcut).
         CommandMenu(Strings.menuTerminal) {
+            // Quick Terminal — global drop-down panel toggled by the
+            // system-wide hotkey. The menu item mirrors the hotkey so the
+            // shortcut is discoverable; the actual key event is handled by
+            // the Carbon hotkey, not this menu item. Shows the current
+            // shortcut as a trailing hint.
+            Button {
+                appDelegate.quickTerminalCoordinator.toggle()
+            } label: {
+                Label {
+                    if QuickTerminalSettings.shared.enabled {
+                        // Append the live shortcut so users can see/learn it,
+                        // e.g. "Quick Terminal    ⌃⌥Space".
+                        HStack(spacing: 4) {
+                            Text(Strings.menuQuickTerminal)
+                            Text(QuickTerminalSettings.shared.hotkeyLabel)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(Strings.menuQuickTerminal)
+                    }
+                } icon: {
+                    Image(systemName: MenuIcons.toggleTerminal)
+                }
+            }
+            .disabled(QuickTerminalSettings.shared.enabled == false)
+
+            Divider()
+
             Button {
                 guard let pm = focusedProject else { return }
                 pm.terminal.createTerminalTab(

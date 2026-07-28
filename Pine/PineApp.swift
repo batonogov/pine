@@ -568,10 +568,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 // Hop to MainActor: toggle touches @MainActor coordinator state.
                 Task { @MainActor in self?.quickTerminalCoordinator.toggle() }
             }
-            hotkeyManager.register(
-                keyCode: GlobalHotkeyManager.defaultQuickTerminalKeyCode,
-                carbonModifiers: GlobalHotkeyManager.defaultQuickTerminalModifiers
-            )
+            // Register from settings so a user-customized hotkey takes effect
+            // immediately on launch (#1243).
+            hotkeyManager.applyQuickTerminalSettings(QuickTerminalSettings.shared)
+
+            // Re-arm whenever the user changes the hotkey, modifiers, or the
+            // enabled flag in Settings.
+            NotificationCenter.default.addObserver(
+                forName: QuickTerminalSettings.didChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.hotkeyManager.applyQuickTerminalSettings(QuickTerminalSettings.shared)
+                }
+            }
         }
 
         // A single key-down monitor owns precedence. User overrides are routed

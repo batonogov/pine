@@ -14,13 +14,6 @@
 import AppKit
 import SwiftUI
 
-/// Drop-down geometry: the panel fills the screen width and covers this
-/// fraction of the screen height, anchored to the top edge (iTerm2 /
-/// Quake-style).
-private enum QuickTerminalLayout {
-    static let heightFraction: CGFloat = 0.4
-}
-
 @MainActor
 @Observable
 final class QuickTerminalController {
@@ -35,6 +28,10 @@ final class QuickTerminalController {
     /// open project → recent project → home). Weakly held; the registry
     /// outlives the coordinator (owned by AppDelegate).
     weak var registry: ProjectRegistry?
+
+    /// User-facing preferences (hotkey, geometry, display). Read live so
+    /// the panel tracks the current edge / size / display on every show.
+    var settings = QuickTerminalSettings.shared
 
     private var window: QuickTerminalWindow?
 
@@ -114,28 +111,106 @@ final class QuickTerminalController {
         window.setFrame(dropDownRect(), display: true)
     }
 
-    /// Full screen width, `heightFraction` of the screen height, top-anchored.
-    private func dropDownRect() -> NSRect {
-        let screen = NSScreen.main ?? NSScreen.screens.first
-        let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1000, height: 600)
-        let height = (screenFrame.height * QuickTerminalLayout.heightFraction).rounded()
-        return NSRect(
-            x: screenFrame.minX,
-            y: screenFrame.maxY - height,
-            width: screenFrame.width,
-            height: height
-        )
+    /// Resolves which `NSScreen` the panel should appear on, honoring the
+    /// `targetDisplay` preference. `.active` uses the screen that contains
+    /// the current key window (not `NSScreen.main`, which is only the menu-
+    /// bar display); `.main` pins to the main display.
+    private func targetScreen() -> NSScreen? {
+        switch settings.targetDisplay {
+        case .main:
+            return NSScreen.main ?? NSScreen.screens.first
+        case .active:
+            // Prefer the screen hosting the key Pine window — that's the
+            // display the user is currently looking at. Falls back to
+            // NSScreen.main when there is no key window (e.g. only the
+            // Welcome window or no windows at all).
+            if let keyWindow = NSApp.keyWindow {
+                return keyWindow.screen ?? NSScreen.main
+            }
+            return NSScreen.main ?? NSScreen.screens.first
+        }
     }
 
-    /// Working directory for the quick terminal: the root of the frontmost
-    /// open Pine project, else the most-recent project, else `$HOME`.
-    private func resolveCwd() -> URL? {
-        if let frontmost = registry?.openProjects.keys.first {
-            return frontmost
+    /// Panel frame derived from the selected screen, edge, and size fraction.
+    private func dropDownRect() -> NSRect {
+        let screen = targetScreen()
+        let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1000, height: 600)
+        let fraction = CGFloat(settings.heightFraction)
+
+        switch settings.screenEdge {
+        case .top:
+            let height = (screenFrame.height * fraction).rounded()
+            return NSRect(
+                x: screenFrame.minX,
+                y: screenFrame.maxY - height,
+                width: screenFrame.width,
+                height: height
+            )
+        case .bottom:
+            let height = (screenFrame.height * fraction).rounded()
+            return NSRect(
+                x: screenFrame.minX,
+                y: screenFrame.minY,
+                width: screenFrame.width,
+                height: height
+            )
+        case .left:
+            let width = (screenFrame.width * fraction).rounded()
+            return NSRect(
+                x: screenFrame.minX,
+                y: screenFrame.minY,
+                width: width,
+                height: screenFrame.height
+            )
+        case .right:
+            let width = (screenFrame.width * fraction).rounded()
+            return NSRect(
+                x: screenFrame.maxX - width,
+                y: screenFrame.minY,
+                width: width,
+                height: screenFrame.height
+            )
         }
+    }
+
+    /// Working directory for the quick terminal: the root of the **key
+    /// window's** open Pine project, else the most-recent project, else
+    /// `$HOME`.
+    ///
+    /// Resolving via the key window (rather than `openProjects.keys.first`,
+    /// whose order is unspecified) means the quick terminal opens in the
+    /// project the user is actually looking at, not an arbitrary one.
+    private func resolveCwd() -> URL? {
+        // 1. The key window's project root — the project the user is
+        //    currently working in. Resolved via the window delegate that
+        //    Pine installs on every project window (CloseDelegate).
+        if let keyProject = keyWindowProjectRoot() {
+            return keyProject
+        }
+        // 2. Fall back to the most-recent project.
         if let recent = registry?.recentProjects.first {
             return recent
         }
+        // 3. Last resort: home directory.
         return URL(fileURLWithPath: NSHomeDirectory())
+    }
+
+    /// Returns the project root URL associated with the current key window,
+    /// if any. Walks the window's delegate (Pine's `CloseDelegate`) to find
+    /// the `projectURL`, then confirms it is still in the open-projects map.
+    private func keyWindowProjectRoot() -> URL? {
+        guard let keyWindow = NSApp.keyWindow else { return nil }
+        // Pine's project windows carry their project URL on the delegate.
+        let candidate: URL?
+        if let closeDelegate = keyWindow.delegate as? CloseDelegate {
+            candidate = closeDelegate.projectURL.resolvingSymlinksInPath()
+        } else {
+            candidate = nil
+        }
+        guard let url = candidate else { return nil }
+        // Only return it if the project is actually open (not just a stale
+        // delegate reference on a closing window).
+        guard registry?.openProjects[url] != nil else { return nil }
+        return url
     }
 }
