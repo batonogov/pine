@@ -96,4 +96,12 @@ extension Notification.Name {
     // MARK: - Git
     static let showBranchSwitcher = Notification.Name("showBranchSwitcher")
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")
+
+    // MARK: - Problems panel (#1236)
+    /// Toggles (shows) the bottom Problems panel.
+    static let showProblems = Notification.Name("showProblems")
+    /// Navigates to the next diagnostic in the Problems panel (wrap-around).
+    static let nextDiagnostic = Notification.Name("nextDiagnostic")
+    /// Navigates to the previous diagnostic (wrap-around).
+    static let previousDiagnostic = Notification.Name("previousDiagnostic")
 }

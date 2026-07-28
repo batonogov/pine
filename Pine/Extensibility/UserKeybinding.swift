@@ -92,6 +92,10 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case editKeybindings
     case editTasks
     case reloadUserConfiguration
+    // Problems panel (#1236) — chrome wiring
+    case showProblems
+    case nextDiagnostic
+    case previousDiagnostic
 
     /// The string key for the `Notification.Name` posted when this command fires.
     /// Use `Notification.Name(rawValue:)` on the MainActor side to convert.
@@ -146,6 +150,9 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
         case .editKeybindings: "user.editKeybindings"
         case .editTasks: "user.editTasks"
         case .reloadUserConfiguration: "user.reloadUserConfiguration"
+        case .showProblems: "showProblems"
+        case .nextDiagnostic: "nextDiagnostic"
+        case .previousDiagnostic: "previousDiagnostic"
         }
     }
 

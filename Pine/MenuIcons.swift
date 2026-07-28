@@ -88,6 +88,12 @@ nonisolated enum MenuIcons {
     static let closeTab = "xmark"
     static let closeWindow = "xmark.rectangle"
 
+    // MARK: - Problems panel (#1236)
+    static let problems = "exclamationmark.bubble"
+    static let nextDiagnostic = "arrow.down"
+    static let previousDiagnostic = "arrow.up"
+    static let closeProblems = "xmark"
+
     // MARK: - Tab context menu
     static let closeOtherTabs = "xmark.square"
     static let closeTabsToTheRight = "xmark.rectangle"

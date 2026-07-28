@@ -162,6 +162,24 @@ enum UserCommandInvocationRouter {
                 await PineAppMenuCommands
                     .reloadAndPresentConfigurationDiagnostics()
             }
+
+        case .showProblems:
+            notificationCenter.post(
+                name: .showProblems,
+                object: projectManager
+            )
+
+        case .nextDiagnostic:
+            notificationCenter.post(
+                name: .nextDiagnostic,
+                object: projectManager
+            )
+
+        case .previousDiagnostic:
+            notificationCenter.post(
+                name: .previousDiagnostic,
+                object: projectManager
+            )
         }
     }
 

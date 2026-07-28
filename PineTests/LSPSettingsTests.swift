@@ -574,7 +574,11 @@ struct LSPSettingsLifecycleTests {
         }
         let url = URL(fileURLWithPath: "/project/App.swift")
 
-        manager.didOpen(url: url, text: "let value = 1")
+        manager.didOpen(
+            url: url,
+            contentRevision: 7,
+            text: "let value = 1"
+        )
         await waitUntil { manager.servers["swift"]?.state == .initialized }
 
         settings.setEnabled(false)
@@ -817,13 +821,13 @@ struct LSPSettingsLifecycleTests {
         manager.didClose(url: url)
         manager.didChange(url: url, text: "still open")
         #expect(client.closes.isEmpty)
-        #expect(client.changes.last?.text == "still open")
+        #expect(client.changes.map(\.text) == ["first", "still open"])
 
         manager.didClose(url: url)
         #expect(client.closes == [url.absoluteString])
 
         manager.didChange(url: url, text: "must be ignored")
-        #expect(client.changes.count == 1)
+        #expect(client.changes.count == 2)
     }
 
     @Test("Restart replays the last live edit for duplicate URL owners")
@@ -850,6 +854,100 @@ struct LSPSettingsLifecycleTests {
         let replacement = try #require(clients.last)
         #expect(replacement.opens.count == 1)
         #expect(replacement.opens.first?.text == "pane A latest")
+    }
+
+    @Test("Duplicate owner close resynchronizes the surviving buffer and version")
+    func duplicateOwnerCloseResynchronizesSurvivor() async throws {
+        let settings = makeSettings()
+        let client = RecordingLSPClient()
+        let manager = LSPManager(
+            settings: settings,
+            resolver: TestLSPResolver(executablePath: "/bin/echo")
+        ) { _ in client }
+        let url = URL(fileURLWithPath: "/project/App.swift")
+        let firstOwner = UUID()
+        let secondOwner = UUID()
+        let diagnostic = try #require(LSPDiagnostic(json: [
+            "range": [
+                "start": ["line": 0, "character": 0],
+                "end": ["line": 0, "character": 1]
+            ],
+            "severity": 1,
+            "message": "stale duplicate"
+        ]))
+
+        manager.didOpen(
+            url: url,
+            ownerID: firstOwner,
+            contentRevision: 1,
+            text: "pane A"
+        )
+        await waitUntil {
+            manager.servers["swift"]?.state == .initialized
+                && client.opens.count == 1
+        }
+        manager.didChange(
+            url: url,
+            ownerID: firstOwner,
+            contentRevision: 2,
+            text: "pane A current"
+        )
+        manager.didOpen(
+            url: url,
+            ownerID: secondOwner,
+            contentRevision: 10,
+            text: "pane B"
+        )
+        manager.didChange(
+            url: url,
+            ownerID: secondOwner,
+            contentRevision: 11,
+            text: "pane B current"
+        )
+
+        manager.didClose(url: url, ownerID: secondOwner)
+
+        #expect(client.opens.first?.version == 1)
+        #expect(client.changes.map(\.text) == [
+            "pane A current",
+            "pane B current",
+            "pane A current"
+        ])
+
+        client.onDiagnostics?(LSPDiagnosticsNotification(
+            uri: url.absoluteString,
+            version: 3,
+            diagnostics: [diagnostic]
+        ))
+        #expect(manager.allProblemsDiagnostics.isEmpty)
+
+        client.onDiagnostics?(LSPDiagnosticsNotification(
+            uri: url.absoluteString,
+            version: 4,
+            diagnostics: [diagnostic]
+        ))
+        #expect(manager.allProblemsDiagnostics.first?.documentVersion == 4)
+        #expect(manager.allProblemsDiagnostics.first?.contentRevision == 2)
+    }
+
+    @Test("Repeated didOpen for one owner is lifecycle-idempotent")
+    func repeatedDidOpenForSameOwnerIsIdempotent() async {
+        let settings = makeSettings()
+        let client = RecordingLSPClient()
+        let manager = LSPManager(
+            settings: settings,
+            resolver: TestLSPResolver(executablePath: "/bin/echo")
+        ) { _ in client }
+        let url = URL(fileURLWithPath: "/project/App.swift")
+        let owner = UUID()
+
+        manager.didOpen(url: url, ownerID: owner, text: "first")
+        manager.didOpen(url: url, ownerID: owner, text: "first")
+        await waitUntil { client.opens.count == 1 }
+        manager.didClose(url: url, ownerID: owner)
+
+        #expect(client.opens.count == 1)
+        #expect(client.closes == [url.absoluteString])
     }
 
     @Test("Inactive tabs do not become phantom owners after restart")
@@ -942,6 +1040,157 @@ struct LSPSettingsLifecycleTests {
         )
         #expect(closed == nil)
         #expect(client.foldingRequests.count == 2)
+    }
+
+    @Test("Problems diagnostics bind versioned and unversioned publishes to the editor revision")
+    func problemsDiagnosticsRequireCurrentVersion() async throws {
+        let settings = makeSettings()
+        let client = RecordingLSPClient()
+        let manager = LSPManager(
+            settings: settings,
+            resolver: TestLSPResolver(executablePath: "/bin/echo")
+        ) { _ in client }
+        let url = URL(fileURLWithPath: "/project/App.swift")
+        let diagnostic = try #require(LSPDiagnostic(json: [
+            "range": [
+                "start": ["line": 1, "character": 4],
+                "end": ["line": 1, "character": 8]
+            ],
+            "severity": 1,
+            "source": "sourcekit-lsp",
+            "message": "type mismatch"
+        ]))
+
+        manager.didOpen(
+            url: url,
+            contentRevision: 7,
+            text: "let value = 1"
+        )
+        await waitUntil {
+            manager.servers["swift"]?.state == .initialized
+                && client.opens.count == 1
+        }
+
+        client.onDiagnostics?(LSPDiagnosticsNotification(
+            uri: url.absoluteString,
+            version: 1,
+            diagnostics: [diagnostic]
+        ))
+        #expect(manager.allProblemsDiagnostics.count == 1)
+        #expect(
+            manager.allProblemsDiagnostics.first?.documentVersion == 1
+        )
+        #expect(
+            manager.allProblemsDiagnostics.first?.contentRevision == 7
+        )
+
+        manager.didChange(
+            url: url,
+            contentRevision: 8,
+            text: "let value = true"
+        )
+        #expect(manager.allProblemsDiagnostics.isEmpty)
+        #expect(manager.diagnostics(for: url).isEmpty)
+
+        client.onDiagnostics?(LSPDiagnosticsNotification(
+            uri: url.absoluteString,
+            version: 1,
+            diagnostics: [diagnostic]
+        ))
+        #expect(manager.allProblemsDiagnostics.isEmpty)
+        #expect(manager.diagnostics(for: url).isEmpty)
+
+        client.onDiagnostics?(LSPDiagnosticsNotification(
+            uri: url.absoluteString,
+            version: 2,
+            diagnostics: [diagnostic]
+        ))
+        #expect(
+            manager.allProblemsDiagnostics.first?.documentVersion == 2
+        )
+        #expect(manager.diagnostics(for: url).count == 1)
+
+        client.onDiagnostics?(LSPDiagnosticsNotification(
+            uri: url.absoluteString,
+            diagnostics: [diagnostic]
+        ))
+        #expect(manager.allProblemsDiagnostics.count == 1)
+        #expect(manager.allProblemsDiagnostics.first?.documentVersion == nil)
+        #expect(manager.allProblemsDiagnostics.first?.contentRevision == 8)
+        #expect(manager.diagnostics(for: url).count == 1)
+
+        manager.didClose(url: url)
+        #expect(manager.allProblemsDiagnostics.isEmpty)
+        #expect(manager.diagnostics(for: url).isEmpty)
+    }
+
+    @Test("Publish diagnostics flow through the project aggregate and stale rows expire")
+    func publishDiagnosticsIntegrationWithProblemsController() async throws {
+        let settings = makeSettings()
+        let client = RecordingLSPClient()
+        let manager = LSPManager(
+            settings: settings,
+            resolver: TestLSPResolver(executablePath: "/bin/echo")
+        ) { _ in client }
+        let controller = ProblemsPanelController(lspManager: manager)
+        let paneID = PaneID()
+        let tabID = UUID()
+        let url = URL(fileURLWithPath: "/project/App.swift")
+        let owner = controller.documentOwner(
+            paneID: paneID,
+            tabID: tabID,
+            uri: url.absoluteString
+        )
+        var revision: UInt64 = 3
+        controller.configureDocumentStatesProvider {
+            [
+                ProblemsDocumentState(
+                    owner: owner,
+                    contentRevision: revision,
+                    isFocusedPane: true
+                )
+            ]
+        }
+        let diagnostic = try #require(LSPDiagnostic(json: [
+            "range": [
+                "start": ["line": 2, "character": 5],
+                "end": ["line": 2, "character": 8]
+            ],
+            "severity": 1,
+            "source": "sourcekit-lsp",
+            "message": "type mismatch"
+        ]))
+
+        manager.didOpen(
+            url: url,
+            ownerID: tabID,
+            contentRevision: revision,
+            text: "let value = 1"
+        )
+        await waitUntil { client.opens.count == 1 }
+        client.onDiagnostics?(LSPDiagnosticsNotification(
+            uri: url.absoluteString,
+            version: 1,
+            diagnostics: [diagnostic]
+        ))
+
+        #expect(controller.flatDiagnostics.count == 1)
+        let captured = try #require(controller.flatDiagnostics.first)
+        #expect(controller.summary.errorCount == 1)
+        #expect(captured.diagnostic.line == 3)
+        #expect(captured.diagnostic.column == 6)
+
+        revision = 4
+        manager.didChange(
+            url: url,
+            ownerID: tabID,
+            contentRevision: revision,
+            text: "let value = true"
+        )
+        controller.refreshDocumentOwnership()
+
+        #expect(controller.summary.total == 0)
+        #expect(controller.navigationTarget(for: captured) == nil)
     }
 
     @Test("Document symbols require the exact synchronized snapshot")

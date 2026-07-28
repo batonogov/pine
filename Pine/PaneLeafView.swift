@@ -176,20 +176,21 @@ struct PaneLeafView: View {
                     refreshLineDiffs(tabManager: tabManager)
                     refreshBlame(tabManager: tabManager)
                 }
-                .onChange(of: tabManager.pendingGoToLine) { _, newLine in
+                .onChange(of: tabManager.pendingGoToLocation) { _, location in
                     // Per-pane go-to handler (issue #971). ContentView and
                     // SearchResultsView route line-based navigation requests
-                    // through `pendingGoToLine` on the focused pane's
-                    // TabManager; this observer converts the line to an offset
-                    // and feeds it to the local `goToLineOffset` consumed by
-                    // `CodeEditorView`. The previous architecture wrote
-                    // `GoToRequest`s into root `ContentView` state that no
-                    // `PaneLeafView` ever read.
-                    guard let line = newLine,
+                    // through the focused pane's `TabManager`; this observer
+                    // preserves an optional diagnostic column instead of
+                    // silently reducing every target to the start of its line.
+                    guard let location,
                           let tab = tabManager.activeTab else { return }
-                    tabManager.pendingGoToLine = nil
+                    tabManager.pendingGoToLocation = nil
                     goToLineOffset = GoToRequest(
-                        offset: ContentView.cursorOffset(forLine: line, in: tab.content)
+                        offset: ContentView.cursorOffset(
+                            forLine: location.line,
+                            column: location.column,
+                            in: tab.content
+                        )
                     )
                 }
                 .onChange(of: tabManager.activeTab?.contentVersion) { _, _ in
@@ -434,22 +435,69 @@ struct PaneLeafView: View {
         .accessibilityIdentifier(AccessibilityID.codeEditor)
         .onAppear {
             goToLineOffset = nil
-            configValidator.validate(url: tab.url, content: tab.content)
-            projectManager.lspManager.didOpen(url: tab.url, text: tab.content)
+            projectManager.problemsController.refreshDocumentOwnership()
+            configValidator.validate(
+                url: tab.url,
+                content: tab.content,
+                revision: tab.contentVersion
+            )
+            projectManager.lspManager.didOpen(
+                url: tab.url,
+                ownerID: tab.id,
+                contentRevision: tab.contentVersion,
+                text: tab.content
+            )
             installLSPUIEndpoint(tabManager: tabManager)
         }
         .onDisappear {
             configValidator.clear()
-            projectManager.lspManager.didClose(url: tab.url)
+            projectManager.lspManager.didClose(
+                url: tab.url,
+                ownerID: tab.id
+            )
+            projectManager.problemsController.removeConfigDiagnostics(
+                owner: problemsOwner(for: tab)
+            )
             clearLSPUIEndpoint()
         }
         .onChange(of: tab.content) { _, newValue in
-            configValidator.validate(url: tab.url, content: newValue)
-            projectManager.lspManager.didChange(url: tab.url, text: newValue)
+            // The prior result is stale as soon as contentVersion changes.
+            // Refreshing ownership makes it disappear before the debounced
+            // validator commits the replacement.
+            projectManager.problemsController.refreshDocumentOwnership()
+            configValidator.validate(
+                url: tab.url,
+                content: newValue,
+                revision: tab.contentVersion
+            )
+            projectManager.lspManager.didChange(
+                url: tab.url,
+                ownerID: tab.id,
+                contentRevision: tab.contentVersion,
+                text: newValue
+            )
+        }
+        .onChange(of: configValidator.diagnosticsResultGeneration) { _, _ in
+            guard let revision = configValidator.diagnosticsRevision else {
+                return
+            }
+            projectManager.problemsController.setConfigDiagnostics(
+                configValidator.diagnostics,
+                owner: problemsOwner(for: tab),
+                contentRevision: revision
+            )
         }
     }
 
     // MARK: - LSP UI endpoint installation
+
+    private func problemsOwner(for tab: EditorTab) -> ProblemsDocumentOwner {
+        projectManager.problemsController.documentOwner(
+            paneID: paneID,
+            tabID: tab.id,
+            uri: tab.url.absoluteString
+        )
+    }
 
     /// Installs the LSP UI endpoint handlers so the editor coordinator can
     /// route hover, definition, code action, and rename requests to this

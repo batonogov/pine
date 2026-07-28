@@ -541,6 +541,18 @@ extension ContentView {
               !text.isEmpty else { return nil }
         return text
     }
+
+    // MARK: - Problems panel navigation (#1236)
+
+    /// Navigates only when the diagnostic still belongs to this exact
+    /// project/pane/tab/revision. This avoids opening a stale URI in whichever
+    /// pane happens to be focused after the row was captured.
+    @discardableResult
+    func navigateToDiagnostic(
+        _ diagnostic: ProblemsFlatDiagnostic
+    ) -> Bool {
+        projectManager.navigateToProblem(diagnostic)
+    }
 }
 
 // MARK: - Agent Activity presenter (#1072)

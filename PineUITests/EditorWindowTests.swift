@@ -199,6 +199,45 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(duplicateItem.exists, "Duplicate menu item should exist")
     }
 
+    // MARK: - Problems panel chrome
+
+    func testProblemsPanelTogglesFromViewMenu() throws {
+        launchWithProject(projectURL)
+
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
+        XCTAssertTrue(
+            waitForExistence(mainFile, timeout: 10),
+            "main.swift should appear in the sidebar"
+        )
+        mainFile.click()
+        XCTAssertTrue(
+            waitForExistence(editorTab("main.swift"), timeout: 5),
+            "Opening a file should create an editor tab"
+        )
+
+        clickMenuBarItem("View")
+        let problemsItem = app.menuItems["Problems"]
+        XCTAssertTrue(
+            waitForExistence(problemsItem, timeout: 3),
+            "View menu should expose the Problems panel"
+        )
+        XCTAssertTrue(problemsItem.isEnabled)
+        problemsItem.click()
+
+        let panel = app.descendants(matching: .any)["problemsPanel"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(panel, timeout: 5),
+            "Problems should open in the editor chrome"
+        )
+
+        clickMenuBarItem("View")
+        app.menuItems["Problems"].click()
+        XCTAssertTrue(
+            panel.waitForNonExistence(timeout: 5),
+            "Toggling Problems again should close the panel"
+        )
+    }
+
     // MARK: - P1: Session restore highlights active file in sidebar
 
     func testSidebarHighlightsActiveFileAfterSessionRestore() throws {

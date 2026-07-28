@@ -592,13 +592,9 @@ struct SplitPaneRoutingTests {
 
     // MARK: - #971: Go-to-Line column-discard contract (review F5)
     //
-    // The onGoTo closure captures `column` then discards it (`_ = column`) and
-    // routes only `line` via pendingGoToLine (an Int, not a line+column pair).
-    // This is the documented behavior: navigation is line-based and lands at
-    // the line start. Below we (1) pin the line-only contract and (2) prove the
-    // column-aware helper exists and is correct, so a future re-wiring of
-    // onGoTo to `cursorOffset(forLine:column:)` would restore column precision
-    // — documenting the behavior change rather than leaving it silent.
+    // The Go-to-Line sheet still routes through the line-only compatibility
+    // facade. Revision-owned diagnostic navigation uses
+    // `pendingGoToLocation` and preserves its column independently.
 
     @Test("pendingGoToLine is line-only; column is discarded on go-to-line")
     func goToLineRoutesLineOnlyDiscardsColumn() throws {
@@ -606,14 +602,16 @@ struct SplitPaneRoutingTests {
         let pm = f.pm
         let secondTM = f.secondTM
 
-        // The onGoTo closure writes only `line`; there is no column channel.
+        // The onGoTo closure writes only `line`; the compatibility setter
+        // intentionally clears any previously pending column.
         pm.activeTabManager.pendingGoToLine = 9
         #expect(secondTM.pendingGoToLine == 9)
+        #expect(secondTM.pendingGoToLocation?.column == nil)
         #expect(secondTM.pendingGoToLine == Optional(9),
-                "pendingGoToLine is Int? — line-only, no column is carried")
+                "pendingGoToLine remains the line-only compatibility facade")
     }
 
-    @Test("cursorOffset(forLine:column:) honors column (capability currently unused by onGoTo)")
+    @Test("cursorOffset(forLine:column:) honors column")
     func cursorOffsetHonorsColumnCapability() {
         let content = "abcdef\nghijkl\n"
         // Line 2 starts at offset 7 ('g'); column 4 lands on 'j' (offset 10).
@@ -623,7 +621,7 @@ struct SplitPaneRoutingTests {
         #expect(lineStart == 7)
         #expect(withColumn == 10, "column-aware offset must point past the line start")
         #expect(withColumn != lineStart,
-                "proves column precision is achievable — onGoTo discards it today (F5)")
+                "proves the exact diagnostic route can preserve its column")
     }
 }
 

@@ -28,9 +28,15 @@ struct DiagnosticsSummary: Equatable {
     var description: String {
         switch (errorCount, warningCount) {
         case (0, 0): return ""
-        case (let e, 0) where e > 0: return "\(e) error\(e == 1 ? "" : "s")"
-        case (0, let w) where w > 0: return "\(w) warning\(w == 1 ? "" : "s")"
-        default: return "\(errorCount) error\(errorCount == 1 ? "" : "s"), \(warningCount) warning\(warningCount == 1 ? "" : "s")"
+        case (let errors, 0):
+            return Strings.problemsErrorCount(errors)
+        case (0, let warnings):
+            return Strings.problemsWarningCount(warnings)
+        default:
+            return [
+                Strings.problemsErrorCount(errorCount),
+                Strings.problemsWarningCount(warningCount)
+            ].joined(separator: ", ")
         }
     }
 }
@@ -44,16 +50,17 @@ struct DiagnosticsSummary: Equatable {
 /// jump to the location.
 struct ProblemsPanelView: View {
     /// Diagnostics grouped by URI, pre-sorted by file path.
-    let groups: [(uri: String, diagnostics: [ValidationDiagnostic])]
+    let groups: [ProblemsDiagnosticGroup]
+    let state: ProblemsPresentationState
+    let selectedDiagnosticID: ProblemsDiagnosticID?
 
-    /// Called when the user selects a diagnostic. The arguments are the file
-    /// URL and the 1-based line number to navigate to.
-    var onSelect: ((URL, Int) -> Void)?
+    /// Called with the exact project/pane/tab/revision-owned diagnostic.
+    var onSelect: ((ProblemsFlatDiagnostic) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if groups.isEmpty {
-                Text(Strings.problemsNoIssues)
+                Text(state.message)
                     .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -61,10 +68,11 @@ struct ProblemsPanelView: View {
                     .accessibilityIdentifier(AccessibilityID.problemsEmptyState)
             } else {
                 List {
-                    ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                    ForEach(groups) { group in
                         ProblemsFileSection(
                             uri: group.uri,
                             diagnostics: group.diagnostics,
+                            selectedDiagnosticID: selectedDiagnosticID,
                             onSelect: onSelect
                         )
                     }
@@ -81,8 +89,9 @@ struct ProblemsPanelView: View {
 /// (file name + count) and a list of diagnostic rows.
 private struct ProblemsFileSection: View {
     let uri: String
-    let diagnostics: [ValidationDiagnostic]
-    let onSelect: ((URL, Int) -> Void)?
+    let diagnostics: [ProblemsFlatDiagnostic]
+    let selectedDiagnosticID: ProblemsDiagnosticID?
+    let onSelect: ((ProblemsFlatDiagnostic) -> Void)?
 
     @State private var isExpanded = true
 
@@ -92,11 +101,12 @@ private struct ProblemsFileSection: View {
 
     var body: some View {
         Section(isExpanded: $isExpanded) {
-            ForEach(Array(diagnostics.enumerated()), id: \.offset) { _, diag in
-                ProblemsDiagnosticRow(diagnostic: diag) {
-                    if let url = URL(string: uri) {
-                        onSelect?(url, diag.line)
-                    }
+            ForEach(diagnostics) { entry in
+                ProblemsDiagnosticRow(
+                    diagnostic: entry.diagnostic,
+                    isSelected: entry.id == selectedDiagnosticID
+                ) {
+                    onSelect?(entry)
                 }
             }
         } header: {
@@ -117,6 +127,7 @@ private struct ProblemsFileSection: View {
 /// A single diagnostic row: severity icon, message, and line:column.
 private struct ProblemsDiagnosticRow: View {
     let diagnostic: ValidationDiagnostic
+    let isSelected: Bool
     let action: () -> Void
 
     private var severityColor: Color {
@@ -167,5 +178,114 @@ private struct ProblemsDiagnosticRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.16) : Color.clear
+        )
+    }
+}
+
+// MARK: - Chrome container (#1236)
+
+/// Editor-chrome wrapper around the existing `ProblemsPanelView`: a header bar
+/// (title + diagnostic count + close button) sitting above the panel content.
+/// The bottom pane's visibility is driven by `ProblemsPanelController`.
+struct ProblemsPanelChrome: View {
+    @Bindable var controller: ProblemsPanelController
+    /// Called when the user selects an exactly-owned diagnostic row.
+    var onSelect: ((ProblemsFlatDiagnostic) -> Void)?
+    /// Called when the user clicks the close button.
+    var onClose: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            ProblemsPanelView(
+                groups: controller.groupedDiagnostics,
+                state: controller.presentationState,
+                selectedDiagnosticID: controller.selectedDiagnosticID,
+                onSelect: { diagnostic in
+                    controller.select(diagnostic)
+                    onSelect?(diagnostic)
+                }
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.regularMaterial)
+        .accessibilityIdentifier(AccessibilityID.problemsPanel)
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: MenuIcons.problems)
+                .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                .foregroundStyle(.secondary)
+            Text(Strings.problemsPanelTitle)
+                .font(.system(size: LayoutMetrics.bodySmallFontSize, weight: .semibold))
+            Text(verbatim: "(\(controller.diagnosticCount))")
+                .font(.system(size: LayoutMetrics.captionFontSize))
+                .foregroundStyle(.secondary)
+            Picker(
+                Strings.problemsSeverityFilter,
+                selection: $controller.severityFilter
+            ) {
+                ForEach(ProblemsSeverityFilter.allCases) { filter in
+                    Text(filter.label).tag(filter)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .accessibilityLabel(Strings.problemsSeverityFilter)
+            Picker(
+                Strings.problemsSourceFilter,
+                selection: $controller.sourceFilter
+            ) {
+                Text(Strings.problemsAllSources)
+                    .tag(nil as String?)
+                ForEach(controller.availableSources, id: \.self) { source in
+                    Text(verbatim: source).tag(Optional(source))
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .accessibilityLabel(Strings.problemsSourceFilter)
+            Spacer()
+            Button {
+                onClose?()
+            } label: {
+                Image(systemName: MenuIcons.closeProblems)
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(Strings.problemsClose)
+            .accessibilityLabel(Strings.problemsClose)
+        }
+        .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
+        .frame(height: LayoutMetrics.problemsPanelHeaderHeight)
+        .background(.bar)
+    }
+}
+
+private extension ProblemsSeverityFilter {
+    var label: String {
+        switch self {
+        case .all: Strings.problemsAllSeverities
+        case .error: Strings.diagnosticSeverityError
+        case .warning: Strings.diagnosticSeverityWarning
+        case .info: Strings.diagnosticSeverityInfo
+        }
+    }
+}
+
+private extension ProblemsPresentationState {
+    var message: String {
+        switch self {
+        case .diagnostics, .empty: Strings.problemsNoIssues
+        case .disabled: Strings.problemsDisabled
+        case .unsupported: Strings.problemsUnsupported
+        case .loading: Strings.problemsLoading
+        case .unavailable: Strings.problemsUnavailable
+        }
     }
 }

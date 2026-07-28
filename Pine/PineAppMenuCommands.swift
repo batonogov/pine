@@ -421,6 +421,53 @@ struct PineAppMenuCommands: Commands {
             Divider()
 
             Button {
+                guard let pm = focusedProject else { return }
+                UserCommandInvocationRouter.dispatch(
+                    .showProblems,
+                    projectManager: pm
+                )
+            } label: {
+                Label(Strings.menuProblems, systemImage: MenuIcons.problems)
+            }
+            .keyboardShortcut("x", modifiers: [.command, .shift])
+            .disabled(focusedProject == nil)
+
+            Button {
+                guard let pm = focusedProject else { return }
+                UserCommandInvocationRouter.dispatch(
+                    .nextDiagnostic,
+                    projectManager: pm
+                )
+            } label: {
+                Label(
+                    Strings.menuNextDiagnostic,
+                    systemImage: MenuIcons.nextDiagnostic
+                )
+            }
+            .keyboardShortcut(KeyEquivalent("\u{F70B}"), modifiers: [])
+            .disabled(focusedProject == nil)
+
+            Button {
+                guard let pm = focusedProject else { return }
+                UserCommandInvocationRouter.dispatch(
+                    .previousDiagnostic,
+                    projectManager: pm
+                )
+            } label: {
+                Label(
+                    Strings.menuPreviousDiagnostic,
+                    systemImage: MenuIcons.previousDiagnostic
+                )
+            }
+            .keyboardShortcut(
+                KeyEquivalent("\u{F70B}"),
+                modifiers: .shift
+            )
+            .disabled(focusedProject == nil)
+
+            Divider()
+
+            Button {
                 focusedProject?.paneManager.moveActiveTab(.leading)
             } label: {
                 Label(Strings.tabMoveLeading, systemImage: "arrow.left")
