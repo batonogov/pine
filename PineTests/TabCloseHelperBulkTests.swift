@@ -45,11 +45,11 @@ struct TabCloseHelperBulkTests {
     }
 
     @Test("Don't Save completes close-all and permits empty-pane removal")
-    func confirmedDiscardRemovesPane() {
+    func confirmedDiscardRemovesPane() async {
         guard let fixture = makeDirtyPane() else { return }
         var saveAttempted = false
 
-        let didClose = TabCloseHelper.closeAllTabs(
+        let didClose = await TabCloseHelper.closeAllTabs(
             in: fixture.tabManager,
             gitProvider: GitStatusProvider(),
             presentAlert: { .alertSecondButtonReturn },
@@ -68,7 +68,7 @@ struct TabCloseHelperBulkTests {
     }
 
     @Test("Save All persists changes, completes close-all, and permits pane removal")
-    func saveSuccessRemovesPane() throws {
+    func saveSuccessRemovesPane() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-bulk-close-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -90,7 +90,7 @@ struct TabCloseHelperBulkTests {
         settings.formatOnSave = false
         fixture.tabManager.editorSettings = settings
 
-        let didClose = TabCloseHelper.closeAllTabs(
+        let didClose = await TabCloseHelper.closeAllTabs(
             in: fixture.tabManager,
             gitProvider: GitStatusProvider(),
             presentAlert: { .alertFirstButtonReturn }
@@ -104,10 +104,10 @@ struct TabCloseHelperBulkTests {
     }
 
     @Test("Cancel aborts close-all and keeps the dirty pane accessible")
-    func cancelPreservesPaneAndDirtyTab() {
+    func cancelPreservesPaneAndDirtyTab() async {
         guard let fixture = makeDirtyPane() else { return }
 
-        let didClose = TabCloseHelper.closeAllTabs(
+        let didClose = await TabCloseHelper.closeAllTabs(
             in: fixture.tabManager,
             gitProvider: GitStatusProvider(),
             presentAlert: { .alertThirdButtonReturn }
@@ -122,7 +122,7 @@ struct TabCloseHelperBulkTests {
     }
 
     @Test("Save failure aborts close-all and keeps every tab accessible")
-    func saveFailurePreservesPaneAndDirtyTabs() {
+    func saveFailurePreservesPaneAndDirtyTabs() async {
         guard let fixture = makeDirtyPane() else { return }
         let secondTab = EditorTab(
             url: URL(fileURLWithPath: "/tmp/pine-bulk-close-\(UUID().uuidString).swift"),
@@ -132,7 +132,7 @@ struct TabCloseHelperBulkTests {
         fixture.tabManager.tabs.append(secondTab)
         var saveAttempts = 0
 
-        let didClose = TabCloseHelper.closeAllTabs(
+        let didClose = await TabCloseHelper.closeAllTabs(
             in: fixture.tabManager,
             gitProvider: GitStatusProvider(),
             presentAlert: { .alertFirstButtonReturn },
@@ -156,7 +156,7 @@ struct TabCloseHelperBulkTests {
     }
 
     @Test("Clean close-all skips the alert and reports completion")
-    func cleanTabsCloseWithoutAlert() {
+    func cleanTabsCloseWithoutAlert() async {
         let tabManager = TabManager()
         let tab = EditorTab(
             url: URL(fileURLWithPath: "/tmp/pine-clean-close-\(UUID().uuidString).swift"),
@@ -167,7 +167,7 @@ struct TabCloseHelperBulkTests {
         tabManager.activeTabID = tab.id
         var alertPresented = false
 
-        let didClose = TabCloseHelper.closeAllTabs(
+        let didClose = await TabCloseHelper.closeAllTabs(
             in: tabManager,
             gitProvider: GitStatusProvider(),
             presentAlert: {
@@ -182,7 +182,7 @@ struct TabCloseHelperBulkTests {
     }
 
     @Test("Cancelled Close Others and Close Right report failure without mutation")
-    func cancelledScopedBulkClosesPreserveTabs() {
+    func cancelledScopedBulkClosesPreserveTabs() async {
         let tabManager = TabManager()
         let first = EditorTab(
             url: URL(fileURLWithPath: "/tmp/pine-keep-\(UUID().uuidString).swift"),
@@ -198,13 +198,13 @@ struct TabCloseHelperBulkTests {
         tabManager.activeTabID = second.id
         let provider = GitStatusProvider()
 
-        let closedOthers = TabCloseHelper.closeOtherTabs(
+        let closedOthers = await TabCloseHelper.closeOtherTabs(
             keeping: first.id,
             in: tabManager,
             gitProvider: provider,
             presentAlert: { .alertThirdButtonReturn }
         )
-        let closedRight = TabCloseHelper.closeTabsToTheRight(
+        let closedRight = await TabCloseHelper.closeTabsToTheRight(
             of: first.id,
             in: tabManager,
             gitProvider: provider,
