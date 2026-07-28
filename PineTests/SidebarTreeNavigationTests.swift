@@ -545,6 +545,29 @@ struct SidebarTreeNavigationTests {
         #expect(SidebarPathIdentity(link) != SidebarPathIdentity(target))
     }
 
+    @Test("Lexical identity canonicalizes Darwin root compatibility aliases")
+    func lexicalIdentityCanonicalizesDarwinRootAliases() {
+        for alias in ["var", "tmp", "etc"] {
+            let compatibilityPath = URL(
+                fileURLWithPath: "/\(alias)/pine/project"
+            )
+            let privatePath = URL(
+                fileURLWithPath: "/private/\(alias)/pine/project"
+            )
+            #expect(
+                SidebarPathIdentity(compatibilityPath)
+                    == SidebarPathIdentity(privatePath)
+            )
+        }
+
+        #expect(
+            SidebarPathIdentity(URL(fileURLWithPath: "/variant/project"))
+                != SidebarPathIdentity(
+                    URL(fileURLWithPath: "/private/variant/project")
+                )
+        )
+    }
+
     @Test("Deferred subtrees keep pending edits alive until the full reload")
     func membershipTreatsDeferredDescendantsAsIndeterminate() throws {
         let root = try makeTree(files: [

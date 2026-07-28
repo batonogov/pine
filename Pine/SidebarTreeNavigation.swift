@@ -33,7 +33,7 @@ struct SidebarPathIdentity: Hashable, Sendable {
     let path: String
 
     init(_ url: URL) {
-        path = Self.normalize(url.path)
+        path = Self.normalizeDarwinRootAlias(Self.normalize(url.path))
     }
 
     private init(normalizedPath: String) {
@@ -86,6 +86,23 @@ struct SidebarPathIdentity: Hashable, Sendable {
             return normalized.isEmpty ? "/" : "/" + normalized
         }
         return normalized.isEmpty ? "." : normalized
+    }
+
+    /// Foundation can spell children of Darwin's root-level compatibility
+    /// symlinks using their `/private` target even when the workspace URL was
+    /// opened through `/var`, `/tmp`, or `/etc`. Canonicalize only these
+    /// stable system aliases so identity remains lexical and never performs
+    /// file-system I/O or resolves user-controlled symlinks.
+    private static func normalizeDarwinRootAlias(_ path: String) -> String {
+        for alias in ["/var", "/tmp", "/etc"] {
+            if path == alias {
+                return "/private" + alias
+            }
+            if path.hasPrefix(alias + "/") {
+                return "/private" + path
+            }
+        }
+        return path
     }
 }
 
