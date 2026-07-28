@@ -12,6 +12,29 @@ struct ProjectSessionRestoreResult: Equatable, Sendable {
     let restoredTerminalPanes: Bool
 }
 
+/// Outcome of a session startup attempt (`ContentView.restoreSessionIfNeeded`).
+///
+/// Distinguishes the reasons restoration did not produce content so the
+/// startup path can decide whether to seed the workspace with a focused
+/// terminal (#1251): a project with no saved session and no recovery entries
+/// opens directly into a terminal instead of an empty editor canvas.
+///
+/// - deferred: `rootURL` was not yet available. Restoration is retried on the
+///   next eligible signal (e.g. the first `rootNodes` change). No content
+///   should be injected yet.
+/// - noSavedSession: No persisted session exists for this project root.
+///   Candidate for terminal seeding (subject to recovery discovery).
+/// - restored: A saved session was found and applied.
+/// - skipped: Real content (editor tabs or terminal tabs) already exists in
+///   the pane tree — overlaying a saved session would duplicate it, and a
+///   terminal seed would replace content the user or an extension added.
+enum SessionStartupDisposition: Equatable, Sendable {
+    case deferred
+    case noSavedSession
+    case restored(ProjectSessionRestoreResult)
+    case skipped
+}
+
 @MainActor
 enum ProjectSessionRestorer {
     private static let maximumRestoredTerminalTabsPerPane = 1_000

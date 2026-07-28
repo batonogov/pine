@@ -11,26 +11,45 @@ import SwiftUI
 
 extension ContentView {
 
-    /// Restores editor tabs, terminal state, and pinned state from the saved session.
-    /// Returns `true` when editor tabs were actually restored (used by callers to
-    /// trigger git diff / blame refresh that depends on an active tab existing).
+    /// Attempts session restoration for the current project root.
+    ///
+    /// Returns an explicit ``SessionStartupDisposition`` so the caller can
+    /// decide whether to seed the workspace with a focused terminal (#1251).
+    /// A project that has no saved session *and* no recovery entries should
+    /// open directly into a terminal instead of an empty editor canvas;
+    /// projects with a saved session restore normally and must not have a
+    /// terminal injected.
+    ///
+    /// Idempotent via the `didRestoreSession` guard except for the `deferred`
+    /// case, which clears the guard so restoration is retried once the
+    /// project root becomes available.
     @discardableResult
-    func restoreSessionIfNeeded() -> Bool {
-        guard !didRestoreSession else { return false }
+    func restoreSessionIfNeeded() -> SessionStartupDisposition {
+        guard !didRestoreSession else { return .skipped }
         didRestoreSession = true
 
         guard let rootURL = workspace.rootURL else {
-            didRestoreSession = false // Allow retry when rootURL becomes available
-            return false
+            // Allow retry when rootURL becomes available. The `deferred`
+            // disposition tells the caller that no content should be seeded
+            // yet — the workspace is not ready.
+            didRestoreSession = false
+            return .deferred
         }
-
-        guard let session = SessionState.load(for: rootURL) else { return false }
 
         // A partially populated pane tree must never be overlaid with a saved
         // session. This can occur when a delayed file-tree callback races with
-        // an explicit open during launch.
+        // an explicit open during launch, or when an extension/open-file path
+        // already created content. Seeding a terminal here would replace that
+        // real content, so report `skipped`.
         guard projectManager.allTabs.isEmpty,
-              projectManager.allTerminalTabs.isEmpty else { return false }
+              projectManager.allTerminalTabs.isEmpty else { return .skipped }
+
+        guard let session = SessionState.load(for: rootURL) else {
+            // No persisted session for this root — candidate for terminal
+            // seeding (subject to recovery discovery in the caller).
+            return .noSavedSession
+        }
+
         let result = ProjectSessionRestorer.restore(
             session,
             into: projectManager,
@@ -48,7 +67,7 @@ extension ContentView {
             terminal.ensureAgentDetectionStarted()
         }
 
-        return result.didRestoreEditorTabs
+        return .restored(result)
     }
 
     func checkForRecovery() {
@@ -56,6 +75,57 @@ extension ContentView {
               !entries.isEmpty else { return }
         recoveryEntries = entries
         showRecoveryDialog = true
+    }
+
+    /// Seeds the workspace with a focused terminal when a project opens with
+    /// no saved session and no pending crash-recovery entries (#1251).
+    ///
+    /// Replaces the untouched initial empty editor leaf with a terminal leaf
+    /// that fills the workspace. The terminal is created through the normal
+    /// `PaneManager`/`TerminalPaneState` ownership path (`addTerminalTab` →
+    /// `createTerminalTab` → `createTerminalPaneAtBottom` + `pruneEmptyEditorLeaves`),
+    /// so agent detection starts through the same coordinator path as a
+    /// manually created terminal and the shell is rooted in the project
+    /// directory via current `ShellSettings`.
+    ///
+    /// Guards:
+    ///   - Only seeds on `.noSavedSession`. `restored`, `skipped`, and
+    ///     `deferred` never inject a terminal.
+    ///   - A pending recovery dialog means the user may restore real editor
+    ///     content — do not replace the empty leaf until they decide.
+    ///   - Defends against the empty editor leaf having been touched between
+    ///     the restore attempt and this call (e.g. a rapid sidebar click).
+    func seedInitialTerminalIfNeeded(disposition: SessionStartupDisposition) {
+        guard case .noSavedSession = disposition else { return }
+        // UI tests pass `--disable-terminal-seeding` to preserve the legacy
+        // empty-editor behavior they were written against.
+        guard !CommandLine.arguments.contains("--disable-terminal-seeding") else { return }
+        // If recovery entries were discovered, the recovery dialog will be
+        // presented; let the user recover into the existing editor leaf.
+        guard !showRecoveryDialog, recoveryEntries.isEmpty else { return }
+        // Re-check the pane tree: if real content appeared between the restore
+        // attempt and now, the empty-leaf precondition no longer holds.
+        guard projectManager.allTabs.isEmpty,
+              projectManager.allTerminalTabs.isEmpty else { return }
+        guard workspace.rootURL != nil else { return }
+        // The sole editor leaf must be empty and untouched — this is the only
+        // leaf we are allowed to replace. `addTerminalTab` routes through the
+        // normal `PaneManager`/`TerminalPaneState` ownership path
+        // (`createTerminalTab` → `createTerminalPaneAtBottom` +
+        // `pruneEmptyEditorLeaves`), which collapses the redundant empty
+        // editor and leaves the terminal as the root leaf filling the
+        // workspace. Agent detection is booted on the same path
+        // (`ensureAgentDetectionStarted` inside `createTerminalTab`) and the
+        // shell is rooted in the project directory via current `ShellSettings`.
+        // `addTab` sets `pendingFocusTabID`, so the bounded AppKit focus
+        // coordinator requests first-responder once the terminal view attaches.
+        projectManager.addTerminalTab()
+        // Make the terminal pane the active pane so the focus request targets it.
+        if let terminalPaneID = paneManager.terminalPaneIDs.first {
+            paneManager.activePaneID = terminalPaneID
+            paneManager.terminalState(for: terminalPaneID)?.pendingFocusTabID =
+                paneManager.terminalState(for: terminalPaneID)?.activeTerminalID
+        }
     }
 
     func recoverTabs() {
