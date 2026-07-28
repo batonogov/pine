@@ -31,6 +31,10 @@ nonisolated struct AgentHistoryUndoReviewActionGate:
 
     private(set) var phase: Phase = .preparing
 
+    init(phase: Phase = .preparing) {
+        self.phase = phase
+    }
+
     var canApply: Bool { phase == .ready }
 
     /// Once activation starts, dismiss stays disabled until the complete
@@ -88,15 +92,56 @@ nonisolated struct AgentHistoryUndoReviewActionGate:
 /// the undo only after an immediate revalidation succeeds.
 struct AgentHistoryUndoReviewView: View {
     @Environment(\.locale) private var locale
-    @Bindable var store: AgentHistoryStore
-    let entry: AgentHistoryEntry
+    private let store: AgentHistoryStore?
+    private let entry: AgentHistoryEntry?
     @Binding var isPresented: Bool
-    var onComplete: (AgentHistoryRevertResult) -> Void
+    private let onComplete: (AgentHistoryRevertResult) -> Void
+    private let onApplyActivation: () -> Void
+    private let automaticallyLoadsPreview: Bool
 
     @State private var preparation: AgentHistoryUndoPreviewResult?
     @State private var revalidation: AgentHistoryUndoPreviewResult?
     @State private var applyResult: AgentHistoryRevertResult?
     @State private var actionGate = AgentHistoryUndoReviewActionGate()
+
+    init(
+        store: AgentHistoryStore,
+        entry: AgentHistoryEntry,
+        isPresented: Binding<Bool>,
+        onComplete: @escaping (AgentHistoryRevertResult) -> Void
+    ) {
+        self.store = store
+        self.entry = entry
+        _isPresented = isPresented
+        self.onComplete = onComplete
+        onApplyActivation = {}
+        automaticallyLoadsPreview = true
+    }
+
+    /// Deterministic presentation initializer for previews, hosted interaction
+    /// tests, and snapshots. It never owns a store and never starts workspace
+    /// preparation/apply tasks.
+    init(
+        previewResult: AgentHistoryUndoPreviewResult,
+        phase: AgentHistoryUndoReviewActionGate.Phase,
+        revalidation: AgentHistoryUndoPreviewResult? = nil,
+        applyResult: AgentHistoryRevertResult? = nil,
+        isPresented: Binding<Bool> = .constant(true),
+        onApplyActivation: @escaping () -> Void = {}
+    ) {
+        store = nil
+        entry = nil
+        _isPresented = isPresented
+        onComplete = { _ in }
+        self.onApplyActivation = onApplyActivation
+        automaticallyLoadsPreview = false
+        _preparation = State(initialValue: previewResult)
+        _revalidation = State(initialValue: revalidation)
+        _applyResult = State(initialValue: applyResult)
+        _actionGate = State(
+            initialValue: AgentHistoryUndoReviewActionGate(phase: phase)
+        )
+    }
 
     private var previewModel: AgentHistoryUndoPreviewModel? {
         if case .available(let model) = preparation {
@@ -135,9 +180,13 @@ struct AgentHistoryUndoReviewView: View {
         }
         .frame(minWidth: 560, minHeight: 420)
         .task {
+            guard automaticallyLoadsPreview else { return }
             await loadPreview()
         }
         .interactiveDismissDisabled(!actionGate.canDismiss)
+        .accessibilityIdentifier(
+            AccessibilityID.agentHistoryUndoReview
+        )
     }
 
     // MARK: - Header
@@ -154,6 +203,9 @@ struct AgentHistoryUndoReviewView: View {
             if isPreparing || isRevalidating || isApplying {
                 ProgressView()
                     .controlSize(.small)
+                    .accessibilityIdentifier(
+                        AccessibilityID.agentHistoryUndoReviewProgress
+                    )
             }
             Button {
                 isPresented = false
@@ -164,7 +216,12 @@ struct AgentHistoryUndoReviewView: View {
             }
             .buttonStyle(.plain)
             .disabled(!actionGate.canDismiss)
-            .accessibilityLabel(Strings.dialogCancel)
+            .accessibilityLabel(
+                Strings.dialogCancel(locale: locale)
+            )
+            .accessibilityIdentifier(
+                AccessibilityID.agentHistoryUndoReviewHeaderDismiss
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -501,7 +558,7 @@ struct AgentHistoryUndoReviewView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(failure.nextAction)
+            Text(verbatim: failure.nextAction(locale: locale))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -533,14 +590,19 @@ struct AgentHistoryUndoReviewView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(failure.nextAction)
+                Text(verbatim: failure.nextAction(locale: locale))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let backup = result.recoveryBackupPath {
-                Text(Strings.agentHistoryRecoveryBackup(backup))
+                Text(
+                    verbatim: Strings.agentHistoryRecoveryBackup(
+                        backup,
+                        locale: locale
+                    )
+                )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -549,7 +611,12 @@ struct AgentHistoryUndoReviewView: View {
                 result.recoveryQuarantinePaths,
                 id: \.self
             ) { path in
-                Text(Strings.agentHistoryRetainedRecoveryFile(path))
+                Text(
+                    verbatim: Strings.agentHistoryRetainedRecoveryFile(
+                        path,
+                        locale: locale
+                    )
+                )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -576,11 +643,17 @@ struct AgentHistoryUndoReviewView: View {
             Button {
                 isPresented = false
             } label: {
-                Text(applyResult != nil
-                    ? Strings.dialogClose : Strings.dialogCancel)
+                Text(
+                    verbatim: applyResult != nil
+                        ? Strings.dialogClose(locale: locale)
+                        : Strings.dialogCancel(locale: locale)
+                )
             }
             .keyboardShortcut(.cancelAction)
             .disabled(!actionGate.canDismiss)
+            .accessibilityIdentifier(
+                AccessibilityID.agentHistoryUndoReviewFooterDismiss
+            )
 
             if applyResult == nil && previewModel != nil {
                 Button {
@@ -603,6 +676,7 @@ struct AgentHistoryUndoReviewView: View {
     // MARK: - Actions
 
     private func loadPreview() async {
+        guard let store, let entry else { return }
         guard actionGate.phase == .preparing else { return }
         let result = await store.prepareVerifiedUndoPreview(for: entry)
         guard actionGate.phase == .preparing else { return }
@@ -614,6 +688,8 @@ struct AgentHistoryUndoReviewView: View {
     /// yield or a queued Cancel/Return event can run.
     private func beginApply() {
         guard let previewModel, actionGate.beginApply() else { return }
+        onApplyActivation()
+        guard store != nil, entry != nil else { return }
         Task {
             await applyUndo(previewModel: previewModel)
         }
@@ -622,6 +698,7 @@ struct AgentHistoryUndoReviewView: View {
     private func applyUndo(
         previewModel: AgentHistoryUndoPreviewModel
     ) async {
+        guard let store, let entry else { return }
         let validation = await store.revalidateVerifiedUndoPreview(
             for: entry,
             expectedPreview: previewModel
@@ -740,43 +817,43 @@ extension AgentHistoryUndoPreviewFailure {
     func explanation(locale: Locale) -> String {
         switch self {
         case .entryNotFound:
-            Strings.undoFailEntryNotFound
+            Strings.undoFailEntryNotFound(locale: locale)
         case .alreadyReverted:
-            Strings.undoFailAlreadyReverted
+            Strings.undoFailAlreadyReverted(locale: locale)
         case .notEligible:
-            Strings.undoFailNotEligible
+            Strings.undoFailNotEligible(locale: locale)
         case .authorityRecordMissing:
-            Strings.undoFailAuthorityMissing
+            Strings.undoFailAuthorityMissing(locale: locale)
         case .authorityConsumed:
-            Strings.undoFailAuthorityConsumed
+            Strings.undoFailAuthorityConsumed(locale: locale)
         case .workspaceChanged:
-            Strings.undoFailWorkspaceChanged
+            Strings.undoFailWorkspaceChanged(locale: locale)
         case .projectionTampered:
-            Strings.undoFailProjectionTampered
+            Strings.undoFailProjectionTampered(locale: locale)
         case .inversePayloadMissing:
-            Strings.undoFailPayloadMissing
+            Strings.undoFailPayloadMissing(locale: locale)
         case .inversePayloadInvalid:
-            Strings.undoFailPayloadInvalid
+            Strings.undoFailPayloadInvalid(locale: locale)
         case .currentContentDiverged(let path):
             Strings.undoFailContentDiverged(path, locale: locale)
         case .previewEncodingFailed:
-            Strings.undoFailPreviewFailed
+            Strings.undoFailPreviewFailed(locale: locale)
         }
     }
 
-    var nextAction: String {
+    func nextAction(locale: Locale) -> String {
         switch self {
         case .entryNotFound, .alreadyReverted, .authorityConsumed:
-            Strings.agentHistoryUndoReviewNextClose
+            Strings.agentHistoryUndoReviewNextClose(locale: locale)
         case .notEligible, .projectionTampered, .previewEncodingFailed,
              .inversePayloadInvalid:
-            Strings.agentHistoryUndoReviewNextNoAction
+            Strings.agentHistoryUndoReviewNextNoAction(locale: locale)
         case .authorityRecordMissing, .inversePayloadMissing:
-            Strings.agentHistoryUndoReviewNextNoAction
+            Strings.agentHistoryUndoReviewNextNoAction(locale: locale)
         case .workspaceChanged:
-            Strings.agentHistoryUndoReviewNextRefresh
+            Strings.agentHistoryUndoReviewNextRefresh(locale: locale)
         case .currentContentDiverged:
-            Strings.agentHistoryUndoReviewNextManualReview
+            Strings.agentHistoryUndoReviewNextManualReview(locale: locale)
         }
     }
 }

@@ -455,11 +455,27 @@ enum Strings {
         "agentHistory.recoveryNoticeFinalized"
     static let agentHistoryRecoveryNoticeCorrupt: LocalizedStringKey =
         "agentHistory.recoveryNoticeCorrupt"
-    static func agentHistoryRecoveryBackup(_ path: String) -> String {
-        String(localized: "agentHistory.recoveryBackup \(path)")
+    static func agentHistoryRecoveryBackup(
+        _ path: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentHistory.recoveryBackup %@",
+            fallback: "Recovery backup: %@",
+            locale: locale
+        )
+        return String(format: format, locale: locale, path)
     }
-    static func agentHistoryRetainedRecoveryFile(_ path: String) -> String {
-        String(localized: "agentHistory.retainedRecoveryFile \(path)")
+    static func agentHistoryRetainedRecoveryFile(
+        _ path: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentHistory.retainedRecoveryFile %@",
+            fallback: "Retained recovery file: %@",
+            locale: locale
+        )
+        return String(format: format, locale: locale, path)
     }
 
     // Verified undo review — #1237.
@@ -495,34 +511,132 @@ enum Strings {
             locale: locale
         )
     }
-    nonisolated static let undoFailEntryNotFound: String =
-        String(localized: "agentHistory.undoReview.failure.entryNotFound")
-    nonisolated static let undoFailAlreadyReverted: String =
-        String(localized: "agentHistory.undoReview.failure.alreadyReverted")
-    nonisolated static let undoFailNotEligible: String =
-        String(localized: "agentHistory.undoReview.failure.notEligible")
-    nonisolated static let undoFailAuthorityMissing: String =
-        String(localized: "agentHistory.undoReview.failure.authorityMissing")
-    nonisolated static let undoFailAuthorityConsumed: String =
-        String(localized: "agentHistory.undoReview.failure.authorityConsumed")
-    nonisolated static let undoFailWorkspaceChanged: String =
-        String(localized: "agentHistory.undoReview.failure.workspaceChanged")
-    nonisolated static let undoFailProjectionTampered: String =
-        String(localized: "agentHistory.undoReview.failure.projectionTampered")
-    nonisolated static let undoFailPayloadMissing: String =
-        String(localized: "agentHistory.undoReview.failure.payloadMissing")
-    nonisolated static let undoFailPayloadInvalid: String =
-        String(localized: "agentHistory.undoReview.failure.payloadInvalid")
-    nonisolated static let undoFailPreviewFailed: String =
-        String(localized: "agentHistory.undoReview.failure.previewFailed")
-    nonisolated static let agentHistoryUndoReviewNextClose: String =
-        String(localized: "agentHistory.undoReview.next.close")
-    nonisolated static let agentHistoryUndoReviewNextNoAction: String =
-        String(localized: "agentHistory.undoReview.next.noAction")
-    nonisolated static let agentHistoryUndoReviewNextRefresh: String =
-        String(localized: "agentHistory.undoReview.next.refresh")
-    nonisolated static let agentHistoryUndoReviewNextManualReview: String =
-        String(localized: "agentHistory.undoReview.next.manualReview")
+    static func undoFailEntryNotFound(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.entryNotFound",
+            fallback: "This history entry no longer exists.",
+            locale: locale
+        )
+    }
+
+    static func undoFailAlreadyReverted(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.alreadyReverted",
+            fallback: "This entry has already been undone.",
+            locale: locale
+        )
+    }
+
+    static func undoFailNotEligible(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.notEligible",
+            fallback: "This entry does not contain an eligible verified undo.",
+            locale: locale
+        )
+    }
+
+    static func undoFailAuthorityMissing(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.authorityMissing",
+            fallback: "The private undo authority is missing.",
+            locale: locale
+        )
+    }
+
+    static func undoFailAuthorityConsumed(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.authorityConsumed",
+            fallback: "This undo authority has already been used.",
+            locale: locale
+        )
+    }
+
+    static func undoFailWorkspaceChanged(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.workspaceChanged",
+            fallback:
+                "The workspace root, HEAD, or Git index changed after capture.",
+            locale: locale
+        )
+    }
+
+    static func undoFailProjectionTampered(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.projectionTampered",
+            fallback:
+                "The history projection no longer matches its private authority.",
+            locale: locale
+        )
+    }
+
+    static func undoFailPayloadMissing(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.payloadMissing",
+            fallback:
+                "The private inverse payload is missing or failed integrity validation.",
+            locale: locale
+        )
+    }
+
+    static func undoFailPayloadInvalid(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.payloadInvalid",
+            fallback:
+                "The inverse payload does not exactly match the verified change set.",
+            locale: locale
+        )
+    }
+
+    static func undoFailPreviewFailed(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.failure.previewFailed",
+            fallback:
+                "Pine could not construct a truthful preview from the verified data.",
+            locale: locale
+        )
+    }
+
+    static func agentHistoryUndoReviewNextClose(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.next.close",
+            fallback: "Close this review.",
+            locale: locale
+        )
+    }
+
+    static func agentHistoryUndoReviewNextNoAction(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.next.noAction",
+            fallback:
+                "No files were changed. Keep the current workspace and close this review.",
+            locale: locale
+        )
+    }
+
+    static func agentHistoryUndoReviewNextRefresh(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.next.refresh",
+            fallback:
+                "Close this review and inspect the current workspace state.",
+            locale: locale
+        )
+    }
+
+    static func agentHistoryUndoReviewNextManualReview(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentHistory.undoReview.next.manualReview",
+            fallback: "Keep the current file and review its changes manually.",
+            locale: locale
+        )
+    }
 
     static func undoFailContentDiverged(
         _ path: String,
@@ -1111,8 +1225,24 @@ enum Strings {
         String(localized: "dialog.unsavedChanges.cancel")
     }
 
+    static func dialogCancel(locale: Locale) -> String {
+        localizedString(
+            forKey: "dialog.unsavedChanges.cancel",
+            fallback: "Cancel",
+            locale: locale
+        )
+    }
+
     static var dialogClose: String {
         String(localized: "dialog.close", defaultValue: "Close")
+    }
+
+    static func dialogClose(locale: Locale) -> String {
+        localizedString(
+            forKey: "Close",
+            fallback: "Close",
+            locale: locale
+        )
     }
 
     static var dialogSaveAll: String {

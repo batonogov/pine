@@ -594,6 +594,131 @@ struct AgentHistoryUndoReviewTests {
         }
     }
 
+    @Test("Explicit locale selects failure, next-step, and recovery resources")
+    @MainActor
+    func explicitLocaleResolution() {
+        let expectations = [
+            (
+                locale: "en",
+                entryNotFound:
+                    "This history entry no longer exists.",
+                explanation:
+                    "The workspace root, HEAD, or Git index changed after capture.",
+                diverged:
+                    "The current file no longer matches the verified snapshot: /safe/file",
+                nextClose:
+                    "Close this review.",
+                nextNoAction:
+                    "No files were changed. Keep the current workspace and close this review.",
+                next:
+                    "Close this review and inspect the current workspace state.",
+                nextManual:
+                    "Keep the current file and review its changes manually.",
+                cancel: "Cancel",
+                close: "Close",
+                backup: "Recovery backup: /safe/backup",
+                retained: "Retained recovery file: /safe/file"
+            ),
+            (
+                locale: "ru",
+                entryNotFound:
+                    "Эта запись истории больше не существует.",
+                explanation:
+                    "После снимка изменились корень рабочей области, HEAD или индекс Git.",
+                diverged:
+                    "Текущий файл больше не совпадает с проверенным снимком: /safe/file",
+                nextClose:
+                    "Закройте это окно проверки.",
+                nextNoAction:
+                    "Файлы не изменены. Сохраните текущее состояние рабочей области и закройте проверку.",
+                next:
+                    "Закройте проверку и изучите текущее состояние рабочей области.",
+                nextManual:
+                    "Сохраните текущий файл и проверьте его изменения вручную.",
+                cancel: "Отмена",
+                close: "Закрыть",
+                backup:
+                    "Резервная копия для восстановления: /safe/backup",
+                retained:
+                    "Сохранённый файл восстановления: /safe/file"
+            ),
+            (
+                locale: "ja",
+                entryNotFound:
+                    "この履歴項目は存在しません。",
+                explanation:
+                    "取得後にワークスペースルート、HEAD、または Git インデックスが変更されました。",
+                diverged:
+                    "現在のファイルが検証済みスナップショットと一致しません: /safe/file",
+                nextClose:
+                    "この確認画面を閉じてください。",
+                nextNoAction:
+                    "ファイルは変更されていません。現在のワークスペースを保持して、この確認画面を閉じてください。",
+                next:
+                    "この確認画面を閉じて、現在のワークスペース状態を確認してください。",
+                nextManual:
+                    "現在のファイルを保持し、変更を手動で確認してください。",
+                cancel: "キャンセル",
+                close: "閉じる",
+                backup: "復旧用バックアップ: /safe/backup",
+                retained: "保持された復旧ファイル: /safe/file"
+            ),
+        ]
+
+        for expectation in expectations {
+            let locale = Locale(identifier: expectation.locale)
+            let failure = AgentHistoryUndoPreviewFailure.workspaceChanged
+            #expect(
+                AgentHistoryUndoPreviewFailure.entryNotFound.explanation(
+                    locale: locale
+                ) == expectation.entryNotFound
+            )
+            #expect(
+                failure.explanation(locale: locale)
+                    == expectation.explanation
+            )
+            #expect(
+                AgentHistoryUndoPreviewFailure.currentContentDiverged(
+                    path: "/safe/file"
+                ).explanation(locale: locale) == expectation.diverged
+            )
+            #expect(
+                AgentHistoryUndoPreviewFailure.entryNotFound.nextAction(
+                    locale: locale
+                ) == expectation.nextClose
+            )
+            #expect(
+                AgentHistoryUndoPreviewFailure.notEligible.nextAction(
+                    locale: locale
+                ) == expectation.nextNoAction
+            )
+            #expect(failure.nextAction(locale: locale) == expectation.next)
+            #expect(
+                AgentHistoryUndoPreviewFailure.currentContentDiverged(
+                    path: "/safe/file"
+                ).nextAction(locale: locale) == expectation.nextManual
+            )
+            #expect(
+                Strings.dialogCancel(locale: locale) == expectation.cancel
+            )
+            #expect(
+                Strings.dialogClose(locale: locale) == expectation.close
+            )
+            #expect(
+                Strings.agentHistoryRecoveryBackup(
+                    "/safe/backup",
+                    locale: locale
+                ) == expectation.backup
+            )
+            #expect(
+                Strings.agentHistoryRetainedRecoveryFile(
+                    "/safe/file",
+                    locale: locale
+                ) == expectation.retained
+            )
+        }
+    }
+
     @Test("Every undo-review key is translated in all supported locales")
     func localizationCoverage() throws {
         let testsDirectory = URL(fileURLWithPath: #filePath)
@@ -637,7 +762,9 @@ struct AgentHistoryUndoReviewTests {
             "agentHistory.undoReview.next.close",
             "agentHistory.undoReview.next.noAction",
             "agentHistory.undoReview.next.refresh",
-            "agentHistory.undoReview.next.manualReview"
+            "agentHistory.undoReview.next.manualReview",
+            "agentHistory.recoveryBackup %@",
+            "agentHistory.retainedRecoveryFile %@"
         ]
         for key in keys {
             let value = try #require(strings[key] as? [String: Any])

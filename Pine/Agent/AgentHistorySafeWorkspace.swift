@@ -127,7 +127,14 @@ nonisolated final class AgentHistorySafeWorkspace {
         )
     }
 
-    func snapshot(relativePath: String) throws -> AgentHistorySafeFileSnapshot {
+    /// Captures a file only up to its recorded size. A `nil` byte count means
+    /// the caller expects the path to be absent; if an entry exists, return
+    /// metadata-only presence so delete/create checks fail without reading an
+    /// attacker-controlled replacement.
+    func snapshot(
+        relativePath: String,
+        expectedByteCount: UInt64?
+    ) throws -> AgentHistorySafeFileSnapshot {
         try withParent(relativePath: relativePath) { parentDescriptor, leaf in
             var pathInfo = stat()
             if fstatat(
@@ -146,6 +153,17 @@ nonisolated final class AgentHistorySafeWorkspace {
                     )
                 }
                 throw AgentHistorySafeWorkspaceError.posixFailure(errno)
+            }
+            guard let expectedByteCount else {
+                return AgentHistorySafeFileSnapshot(
+                    relativePath: relativePath,
+                    data: Data(),
+                    permissions: (pathInfo.st_mode & S_IFMT) == S_IFREG
+                        ? UInt16(pathInfo.st_mode & 0o7777)
+                        : nil,
+                    device: UInt64(pathInfo.st_dev),
+                    inode: UInt64(pathInfo.st_ino)
+                )
             }
             guard (pathInfo.st_mode & S_IFMT) == S_IFREG,
                   pathInfo.st_nlink == 1 else {
@@ -171,8 +189,10 @@ nonisolated final class AgentHistorySafeWorkspace {
                 throw AgentHistorySafeWorkspaceError.pathChanged(relativePath)
             }
 
-            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
-            let data = try handle.readToEnd() ?? Data()
+            let data = try AgentHistoryBoundedFileReader.readExact(
+                descriptor: descriptor,
+                expectedByteCount: expectedByteCount
+            )
             return AgentHistorySafeFileSnapshot(
                 relativePath: relativePath,
                 data: data,
@@ -186,7 +206,10 @@ nonisolated final class AgentHistorySafeWorkspace {
     func matchesCurrentState(
         change: AgentHistoryRecordedFileChange
     ) throws -> Bool {
-        let current = try snapshot(relativePath: change.relativePath)
+        let current = try snapshot(
+            relativePath: change.relativePath,
+            expectedByteCount: expectedCurrentByteCount(for: change)
+        )
         switch change.operation {
         case .modify, .create:
             guard let after = change.after,
@@ -225,7 +248,8 @@ nonisolated final class AgentHistorySafeWorkspace {
                 let moved = try snapshotInParent(
                     parentDescriptor: parentDescriptor,
                     leaf: quarantine,
-                    relativePath: change.relativePath
+                    relativePath: change.relativePath,
+                    expectedByteCount: change.after?.byteCount
                 )
                 guard snapshot(moved, matches: change.after) else {
                     try restoreQuarantine(
@@ -784,7 +808,8 @@ nonisolated final class AgentHistorySafeWorkspace {
     private func snapshotInParent(
         parentDescriptor: Int32,
         leaf: String,
-        relativePath: String
+        relativePath: String,
+        expectedByteCount: UInt64?
     ) throws -> AgentHistorySafeFileSnapshot {
         let descriptor = openat(
             parentDescriptor,
@@ -801,8 +826,13 @@ nonisolated final class AgentHistorySafeWorkspace {
               info.st_nlink == 1 else {
             throw AgentHistorySafeWorkspaceError.notExclusiveRegularFile(relativePath)
         }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
-        let data = try handle.readToEnd() ?? Data()
+        guard let expectedByteCount else {
+            throw AgentHistorySafeWorkspaceError.pathChanged(relativePath)
+        }
+        let data = try AgentHistoryBoundedFileReader.readExact(
+            descriptor: descriptor,
+            expectedByteCount: expectedByteCount
+        )
         return AgentHistorySafeFileSnapshot(
             relativePath: relativePath,
             data: data,
@@ -881,7 +911,8 @@ nonisolated final class AgentHistorySafeWorkspace {
             let snapshot = try snapshotInParent(
                 parentDescriptor: parentDescriptor,
                 leaf: rollbackQuarantine,
-                relativePath: mutation.relativePath
+                relativePath: mutation.relativePath,
+                expectedByteCount: mutation.installedByteCount
             )
             guard snapshotMatchesInstalled(snapshot, mutation: mutation) else {
                 try restoreQuarantine(
@@ -942,7 +973,8 @@ nonisolated final class AgentHistorySafeWorkspace {
             let snapshot = try snapshotInParent(
                 parentDescriptor: parentDescriptor,
                 leaf: staged,
-                relativePath: mutation.relativePath
+                relativePath: mutation.relativePath,
+                expectedByteCount: mutation.quarantinedByteCount
             )
             guard snapshotMatchesQuarantined(snapshot, mutation: mutation) else {
                 if retainChangedContent {
@@ -957,13 +989,29 @@ nonisolated final class AgentHistorySafeWorkspace {
             }
             return staged
         } catch {
+            if retainChangedContent {
+                // Commit must preserve an inode that no longer matches the
+                // recorded size/hash (including an oversized late append).
+                // Returning the staged name lets owner-private retention move
+                // it without ever reading beyond the recorded byte ceiling.
+                return staged
+            }
+            var restored = true
             if pathExists(parentDescriptor: parentDescriptor, leaf: staged) {
-                _ = restoreOrRecord(
+                restored = restoreOrRecord(
                     parentDescriptor: parentDescriptor,
                     quarantine: staged,
                     leaf: quarantineName,
                     relativePath: mutation.relativePath
                 )
+            }
+            if let readError = error as? AgentHistoryBoundedFileReadError,
+               case .byteCountMismatch = readError,
+               restored {
+                // A size drift is the bounded-reader equivalent of a digest
+                // mismatch. Report it as an expected-content mismatch so the
+                // caller can safely put the installed inverse back.
+                return nil
             }
             throw error
         }
@@ -977,7 +1025,8 @@ nonisolated final class AgentHistorySafeWorkspace {
         guard let snapshot = try? snapshotInParent(
             parentDescriptor: parentDescriptor,
             leaf: leaf,
-            relativePath: mutation.relativePath
+            relativePath: mutation.relativePath,
+            expectedByteCount: mutation.installedByteCount
         ) else {
             return false
         }
@@ -1034,6 +1083,17 @@ nonisolated final class AgentHistorySafeWorkspace {
                 }
                 offset += count
             }
+        }
+    }
+
+    private func expectedCurrentByteCount(
+        for change: AgentHistoryRecordedFileChange
+    ) -> UInt64? {
+        switch change.operation {
+        case .modify, .create:
+            change.after?.byteCount
+        case .delete, .rename, .symlink, .unsupported:
+            nil
         }
     }
 }

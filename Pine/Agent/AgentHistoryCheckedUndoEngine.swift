@@ -254,7 +254,10 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
             )
             workspaceForRollback = workspace
             let snapshots = try changeSet.changes.map {
-                try workspace.snapshot(relativePath: $0.relativePath)
+                try workspace.snapshot(
+                    relativePath: $0.relativePath,
+                    expectedByteCount: expectedCurrentByteCount(for: $0)
+                )
             }
             guard zip(changeSet.changes, snapshots).allSatisfy({
                 currentSnapshot($0.1, matches: $0.0)
@@ -653,7 +656,11 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
         workspace: AgentHistorySafeWorkspace
     ) -> Bool {
         guard let snapshot = try? workspace.snapshot(
-            relativePath: change.relativePath
+            relativePath: change.relativePath,
+            expectedByteCount: expectedInverseByteCount(
+                change: change,
+                entry: entry
+            )
         ) else {
             return false
         }
@@ -681,6 +688,29 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
         zip(changes, snapshots).first {
             !currentSnapshot($0.1, matches: $0.0)
         }?.0.relativePath ?? ""
+    }
+
+    private static func expectedCurrentByteCount(
+        for change: AgentHistoryRecordedFileChange
+    ) -> UInt64? {
+        switch change.operation {
+        case .modify, .create:
+            change.after?.byteCount
+        case .delete, .rename, .symlink, .unsupported:
+            nil
+        }
+    }
+
+    private static func expectedInverseByteCount(
+        change: AgentHistoryRecordedFileChange,
+        entry: AgentHistoryInverseFileEntry
+    ) -> UInt64? {
+        switch change.operation {
+        case .modify, .delete:
+            entry.beforeContent.map { UInt64($0.count) }
+        case .create, .rename, .symlink, .unsupported:
+            nil
+        }
     }
 
     private static func workspaceGitStateMatches(

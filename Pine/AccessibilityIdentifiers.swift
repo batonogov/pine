@@ -194,12 +194,19 @@ nonisolated enum AccessibilityID {
     }
 
     // MARK: - Verified undo review (#1237)
+    static let agentHistoryUndoReview = "agentHistoryUndoReview"
     static let agentHistoryUndoReviewSummary =
         "agentHistoryUndoReviewSummary"
     static let agentHistoryUndoReviewStale =
         "agentHistoryUndoReviewStale"
     static let agentHistoryUndoReviewApply =
         "agentHistoryUndoReviewApply"
+    static let agentHistoryUndoReviewHeaderDismiss =
+        "agentHistoryUndoReviewHeaderDismiss"
+    static let agentHistoryUndoReviewFooterDismiss =
+        "agentHistoryUndoReviewFooterDismiss"
+    static let agentHistoryUndoReviewProgress =
+        "agentHistoryUndoReviewProgress"
     static func agentHistoryUndoReviewOperation(
         _ path: String
     ) -> String {

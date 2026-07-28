@@ -348,7 +348,8 @@ nonisolated enum AgentHistoryUndoPreview {
             do {
                 hooks.beforeSnapshot?(change.relativePath)
                 let snapshot = try workspace.snapshot(
-                    relativePath: change.relativePath
+                    relativePath: change.relativePath,
+                    expectedByteCount: expectedCurrentByteCount(for: change)
                 )
                 guard AgentHistoryCheckedUndoEngine.currentSnapshot(
                     snapshot,
@@ -646,6 +647,17 @@ nonisolated enum AgentHistoryUndoPreview {
             == manifest.capturedHeadOID
             && AgentHistoryContentHash.indexSHA256(in: root)
                 == manifest.capturedIndexSHA256
+    }
+
+    private static func expectedCurrentByteCount(
+        for change: AgentHistoryRecordedFileChange
+    ) -> UInt64? {
+        switch change.operation {
+        case .modify, .create:
+            change.after?.byteCount
+        case .delete, .rename, .symlink, .unsupported:
+            nil
+        }
     }
 
     private static func previewIdentityFailure(
