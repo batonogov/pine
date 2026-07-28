@@ -244,6 +244,105 @@ struct LSPSettingsTests {
         )
     }
 
+    @Test("Setting a valid override then an invalid one leaves only the valid one persisted")
+    func validThenInvalidOverridePersistence() throws {
+        let defaults = makeDefaults()
+        let settings = LSPSettings(defaults: defaults)
+
+        // First, persist a valid override.
+        try settings.setServerOverride(
+            language: "swift",
+            executablePath: "/bin/echo",
+            arguments: ["--stdio"]
+        )
+        #expect(
+            settings.serverOverride(for: "swift")
+                == LanguageServerOverride(
+                    executablePath: "/bin/echo",
+                    arguments: ["--stdio"]
+                )
+        )
+
+        // An invalid attempt must NOT overwrite the valid persisted state.
+        #expect(throws: LSPSettingsValidationError.pathMustBeAbsolute) {
+            try settings.setServerOverride(
+                language: "swift",
+                executablePath: "relative/path",
+                arguments: nil
+            )
+        }
+        // The valid override survives — invalid input is non-destructive.
+        #expect(
+            settings.serverOverride(for: "swift")
+                == LanguageServerOverride(
+                    executablePath: "/bin/echo",
+                    arguments: ["--stdio"]
+                )
+        )
+
+        // Relaunch sees only the valid override.
+        let relaunched = LSPSettings(defaults: defaults)
+        #expect(
+            relaunched.serverOverride(for: "swift")
+                == LanguageServerOverride(
+                    executablePath: "/bin/echo",
+                    arguments: ["--stdio"]
+                )
+        )
+    }
+
+    @Test("Blanking all fields removes the override so defaults are inherited")
+    func blankingFieldsRemovesOverride() throws {
+        let defaults = makeDefaults()
+        let settings = LSPSettings(defaults: defaults)
+
+        try settings.setServerOverride(
+            language: "swift",
+            executablePath: "/bin/echo",
+            arguments: ["--stdio"]
+        )
+        #expect(settings.serverOverride(for: "swift") != nil)
+
+        // Passing nil/blank for both fields normalizes to no override.
+        try settings.setServerOverride(
+            language: "swift",
+            executablePath: "   ",
+            arguments: nil
+        )
+        #expect(settings.serverOverride(for: "swift") == nil)
+    }
+
+    @Test("Each language override is persisted independently")
+    func perLanguageIndependence() throws {
+        let defaults = makeDefaults()
+        let settings = LSPSettings(defaults: defaults)
+
+        try settings.setServerOverride(
+            language: "swift",
+            executablePath: "/bin/echo",
+            arguments: nil
+        )
+        try settings.setServerOverride(
+            language: "python",
+            executablePath: "/usr/bin/true",
+            arguments: ["--stdio"]
+        )
+
+        #expect(
+            settings.serverOverride(for: "swift")?.executablePath
+                == "/bin/echo"
+        )
+        #expect(
+            settings.serverOverride(for: "python")?.arguments
+                == ["--stdio"]
+        )
+
+        // Resetting one does not affect the other.
+        settings.resetServerOverride(language: "swift")
+        #expect(settings.serverOverride(for: "swift") == nil)
+        #expect(settings.serverOverride(for: "python") != nil)
+    }
+
 }
 
 nonisolated private struct TestLSPResolver: LanguageServerResolving {
