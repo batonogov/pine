@@ -20,6 +20,11 @@ private let carbonControl: UInt32 = UInt32(controlKey)
 private let carbonOption: UInt32 = UInt32(optionKey)
 private let carbonCommand: UInt32 = UInt32(cmdKey)
 private let carbonShift: UInt32 = UInt32(shiftKey)
+private let carbonSupportedModifiers =
+    carbonControl | carbonOption | carbonCommand | carbonShift
+private let carbonPrimaryModifiers =
+    carbonControl | carbonOption | carbonCommand
+private let maxCarbonVirtualKeyCode = UInt32(kVK_UpArrow)
 
 nonisolated struct GlobalHotkeyShortcut: Equatable, Sendable {
     let keyCode: UInt32
@@ -63,11 +68,17 @@ nonisolated final class GlobalHotkeyManager {
     /// Registers the hotkey. Returns `true` on success.
     /// `keyCode` is a Carbon virtual key code (e.g. `kVK_Space` = 49);
     /// `carbonModifiers` is a bitwise-OR of `controlKey` / `optionKey` /
-    /// `cmdKey` / `shiftKey`. A replacement is registered before the previous
-    /// hotkey is removed. If Carbon rejects the candidate, the working
-    /// shortcut remains active.
+    /// `cmdKey` / `shiftKey` and must include Command, Control, or Option.
+    /// A replacement is registered before the previous hotkey is removed. If
+    /// validation or Carbon rejects the candidate, the working shortcut
+    /// remains active.
     @discardableResult
     func register(keyCode: UInt32, carbonModifiers: UInt32) -> Bool {
+        guard keyCode <= maxCarbonVirtualKeyCode,
+              carbonModifiers & ~carbonSupportedModifiers == 0,
+              carbonModifiers & carbonPrimaryModifiers != 0 else {
+            return false
+        }
         let candidate = GlobalHotkeyShortcut(
             keyCode: keyCode,
             modifiers: carbonModifiers

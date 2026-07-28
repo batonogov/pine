@@ -85,7 +85,7 @@ final class QuickTerminalSettings {
     }
 
     /// Carbon virtual-key code for the global hotkey (e.g. `kVK_Space` = 49).
-    var keyCode: UInt32 {
+    private(set) var keyCode: UInt32 {
         didSet {
             guard keyCode != oldValue else { return }
             defaults.set(Int(keyCode), forKey: Self.keyCodeKey)
@@ -94,7 +94,7 @@ final class QuickTerminalSettings {
     }
 
     /// Carbon modifier bit-field (`controlKey | optionKey` etc.).
-    var modifiers: UInt32 {
+    private(set) var modifiers: UInt32 {
         didSet {
             guard modifiers != oldValue else { return }
             defaults.set(Int(modifiers), forKey: Self.modifiersKey)

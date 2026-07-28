@@ -21,6 +21,31 @@ struct QuickTerminalTests {
         #expect(manager.isRegistered == false)
     }
 
+    @Test("register rejects unsafe shortcuts before calling Carbon")
+    func registerRejectsUnsafeShortcuts() {
+        let manager = GlobalHotkeyManager()
+
+        #expect(
+            manager.register(
+                keyCode: UInt32(kVK_ANSI_K),
+                carbonModifiers: 0
+            ) == false
+        )
+        #expect(
+            manager.register(
+                keyCode: UInt32(kVK_ANSI_K),
+                carbonModifiers: UInt32(shiftKey)
+            ) == false
+        )
+        #expect(
+            manager.register(
+                keyCode: UInt32(kVK_UpArrow) + 1,
+                carbonModifiers: UInt32(cmdKey)
+            ) == false
+        )
+        #expect(manager.isRegistered == false)
+    }
+
     @Test("register/unregister is safe and symmetric with a throwaway combo")
     func registerIsSafeAndSymmetric() {
         // Use a throwaway keyCode + modifiers unlikely to be claimed by any
