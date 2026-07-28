@@ -62,6 +62,19 @@ final class PaneManager {
     /// reordering the MRU list while a keyboard cycle is in progress.
     private var isPerformingGlobalTabSwitch = false
 
+    /// The live visual MRU switcher session (`nil` unless Control-Tab overlay
+    /// is up). Created by `beginGlobalTabSwitcherSession()`, torn down on commit
+    /// (Control release) or cancellation (Escape). Observed by the overlay view.
+    /// The MRU order itself (`globalTabSwitchOrder`) remains the source of
+    /// truth; the session only captures a frozen snapshot for deterministic
+    /// cycling while the overlay is shown (#1239).
+    private(set) var globalTabSwitcherSession: GlobalTabSwitcherSession?
+
+    /// `true` while the visual Control-Tab overlay is being driven. The
+    /// keyboard handler uses this to distinguish the *first* Control-Tab press
+    /// (open the overlay) from subsequent presses (cycle it).
+    var isGlobalTabSwitcherActive: Bool { globalTabSwitcherSession != nil }
+
     /// Records a tab activation in the global MRU switch order. Called by
     /// every path that activates an editor or terminal tab: selection, open,
     /// transfer, and split. Move-to-front with dedup so each identity appears
@@ -176,6 +189,180 @@ final class PaneManager {
         terminalState.activeTerminalID = identity.tabID
         terminalState.pendingFocusTabID = identity.tabID
         return true
+    }
+
+    // MARK: - Visual MRU switcher session (#1239)
+
+    /// Begins a visual Control-Tab switching session: freezes the current
+    /// valid MRU order, records the starting tab so Escape can restore it, and
+    /// arms the overlay. The overlay view observes `globalTabSwitcherSession`
+    /// and renders while it is non-`nil`.
+    ///
+    /// Safe to call repeatedly: if a session is already active, this is a
+    /// no-op (the existing session keeps its frozen order). Returns `true` if a
+    /// session is now active (newly or already).
+    @discardableResult
+    func beginGlobalTabSwitcherSession() -> Bool {
+        if globalTabSwitcherSession != nil { return true }
+        let order = validGlobalTabSwitchOrder()
+        guard order.count >= 2 else { return false }
+        let original = currentGlobalTabIdentity()
+        // Anchor the cursor on the current tab if it is in the list; otherwise
+        // (no active tab or active tab not eligible) start at the MRU head so
+        // the first Control-Tab advances to the second-most-recent tab.
+        let startIndex = original.flatMap { original in
+            order.firstIndex(of: original)
+        } ?? 0
+        globalTabSwitcherSession = GlobalTabSwitcherSession(
+            identities: order,
+            originalIdentity: original,
+            selectedIndex: startIndex
+        )
+        return true
+    }
+
+    /// Advances the overlay cursor by `offset` (+1 forward via Control-Tab,
+    /// −1 backward via Shift-Control-Tab), wrapping around the frozen order.
+    /// No-op (and does not create a session) if no session is active or the
+    /// frozen order is empty.
+    ///
+    /// Does NOT record the activation in the MRU list: cycling must not pollute
+    /// the switch order (same invariant as `switchGlobalTab`). The selected tab
+    /// is only surfaced visually; the real activation happens on `commit`.
+    func advanceGlobalTabSwitcher(offset: Int) {
+        guard let session = globalTabSwitcherSession,
+              !session.identities.isEmpty else { return }
+        let count = session.identities.count
+        let newIndex = (session.selectedIndex + offset % count + count) % count
+        globalTabSwitcherSession?.selectedIndex = newIndex
+    }
+
+    /// Commits the current switcher selection: activates the highlighted tab
+    /// and tears down the session. This is the ONLY step during the cycle that
+    /// moves real focus. The selected tab is recorded as the most-recently-used
+    /// only through the normal activation path, so the MRU list updates once,
+    /// at the moment the user committed.
+    func commitGlobalTabSwitcher() {
+        guard let session = globalTabSwitcherSession else { return }
+        defer { globalTabSwitcherSession = nil }
+        guard let target = session.selectedIdentity else { return }
+        // Activate through the same path used by organic selection so the
+        // committed tab is promoted to the MRU head exactly once.
+        isPerformingGlobalTabSwitch = false
+        _ = activateAndRecordGlobalTab(target)
+    }
+
+    /// Cancels the switcher session, restoring the tab that was active when it
+    /// began (Escape). If no original tab was recorded (or it has since become
+    /// invalid), the active pane/tab state is left untouched.
+    func cancelGlobalTabSwitcher() {
+        guard let session = globalTabSwitcherSession else { return }
+        defer { globalTabSwitcherSession = nil }
+        guard let original = session.originalIdentity else { return }
+        // Best-effort restore: if the original tab is still valid, surface it;
+        // otherwise leave whatever is currently active (the user's last view).
+        _ = activateGlobalTab(original)
+    }
+
+    /// Activate a global tab AND record it in the MRU list. Mirrors
+    /// `activateGlobalTab` but promotes the target to the MRU head, used by the
+    /// commit path so the committed tab is treated like an organic activation.
+    @discardableResult
+    private func activateAndRecordGlobalTab(_ identity: GlobalTabIdentity) -> Bool {
+        guard activateGlobalTab(identity) else { return false }
+        recordTabActivation(
+            paneID: identity.paneID,
+            tabID: identity.tabID,
+            contentType: identity.contentType
+        )
+        return true
+    }
+
+    /// Builds the presentation rows for the active switcher session, in the
+    /// frozen session order. Titles are read live so they stay current (e.g. a
+    /// shell-reported terminal title), while the *order* follows the snapshot
+    /// captured at session start. Stale identities (closed/stale since the
+    /// snapshot) are dropped defensively.
+    ///
+    /// `projectRoot` is used to derive project-relative paths for editor tabs;
+    /// pass `nil` when no project is open.
+    func globalTabSwitcherEntries(
+        projectRoot: URL?
+    ) -> [GlobalTabSwitcherEntry] {
+        guard let session = globalTabSwitcherSession else { return [] }
+        // Pane position labels are stable for the session (derived from the
+        // visible tree). Use persistableRoot so hidden-maximized siblings are
+        // still counted in their true positions, not the collapsed single leaf.
+        let panePositions = paneContextLabels()
+        return session.identities.compactMap { identity in
+            entry(for: identity, panePositions: panePositions, projectRoot: projectRoot)
+        }
+    }
+
+    /// Resolves a single identity to a presentation entry. Returns `nil` for
+    /// identities that have become invalid since the session snapshot (closed
+    /// tab, removed pane, or content-type drift).
+    private func entry(
+        for identity: GlobalTabIdentity,
+        panePositions: [PaneID: String],
+        projectRoot: URL?
+    ) -> GlobalTabSwitcherEntry? {
+        let paneContext = panePositions[identity.paneID] ?? Strings.paneGenericLabel
+        if identity.contentType == .editor {
+            guard let tabManager = tabManagers[identity.paneID],
+                  let tab = tabManager.tabs.first(where: { $0.id == identity.tabID }) else {
+                return nil
+            }
+            let fileName = tab.fileName
+            return GlobalTabSwitcherEntry(
+                id: identity,
+                title: fileName,
+                symbolName: FileIconMapper.iconForFile(fileName),
+                symbolColor: FileIconMapper.colorForFile(fileName),
+                paneContext: paneContext,
+                relativePath: Self.relativePath(
+                    from: tab.url,
+                    root: projectRoot
+                )
+            )
+        }
+        guard let terminalState = terminalStates[identity.paneID],
+              let tab = terminalState.terminalTabs.first(where: { $0.id == identity.tabID }) else {
+            return nil
+        }
+        return GlobalTabSwitcherEntry(
+            id: identity,
+            title: tab.name,
+            symbolName: "terminal",
+            symbolColor: .secondary,
+            paneContext: paneContext,
+            relativePath: nil
+        )
+    }
+
+    /// Maps each leaf pane to a 1-based position label (left-to-right,
+    /// top-to-bottom). Uses `persistableRoot` so hidden-maximized siblings keep
+    /// their true positions rather than collapsing to "Pane 1".
+    private func paneContextLabels() -> [PaneID: String] {
+        var labels: [PaneID: String] = [:]
+        for (index, paneID) in persistableRoot.leafIDs.enumerated() {
+            labels[paneID] = Strings.panePositionLabel(index + 1)
+        }
+        return labels
+    }
+
+    /// Project-relative path for `url` under `root`, or `nil` when `url` is not
+    /// under `root` (or when either is absent). Resolves symlinks on both sides
+    /// so a file opened via a symlinked path still matches the resolved root.
+    static func relativePath(from url: URL?, root: URL?) -> String? {
+        guard let url, let root else { return nil }
+        let rootPath = root.resolvingSymlinksInPath().path
+        let urlPath = url.resolvingSymlinksInPath().path
+        guard urlPath == rootPath || urlPath.hasPrefix(rootPath + "/") else {
+            return nil
+        }
+        if urlPath == rootPath { return "" }
+        return String(urlPath.dropFirst(rootPath.count + 1))
     }
 
     /// The single owner of tab-drag session, preview, validation, and commit.

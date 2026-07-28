@@ -1285,4 +1285,33 @@ enum Strings {
         String(localized: "a11y.gitStatus.added", defaultValue: "Added")
     static let a11yGitStatusUntracked: String =
         String(localized: "a11y.gitStatus.untracked", defaultValue: "Untracked")
+
+    // MARK: - Global Tab Switcher overlay (#1239)
+
+    /// Title shown at the top of the Control-Tab overlay.
+    static let globalTabSwitcherTitle: String =
+        String(localized: "globalTabSwitcher.title", defaultValue: "Switch Tab")
+
+    /// Footnote hint beneath the list, e.g. "Tab to cycle, release Control to switch".
+    static let globalTabSwitcherHint: String =
+        String(
+            localized: "globalTabSwitcher.hint",
+            defaultValue: "Tab cycles · Release Control to switch · Esc cancels"
+        )
+
+    /// Generic pane label fallback used when a pane position cannot be derived.
+    static let paneGenericLabel: String =
+        String(localized: "pane.genericLabel", defaultValue: "Pane")
+
+    /// 1-based pane position label, e.g. "Pane 2".
+    static func panePositionLabel(_ position: Int) -> String {
+        "Pane \(position)"
+    }
+
+    /// VoiceOver description for the currently highlighted row.
+    static func globalTabSwitcherAnnouncement(
+        title: String, paneContext: String, position: Int, total: Int
+    ) -> String {
+        "\(title), \(paneContext), \(position) of \(total)"
+    }
 }

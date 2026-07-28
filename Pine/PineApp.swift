@@ -420,6 +420,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             || ProcessInfo.processInfo.environment["PINE_DISABLE_QUICK_TERMINAL"] != nil
     }
 
+    // MARK: - Visual MRU tab switcher (#1239)
+
+    /// Owns the Control-Tab / flags-changed monitors driving the visual MRU
+    /// switcher overlay. Installed once in `applicationDidFinishLaunching`.
+    private let tabSwitcherKeyController = GlobalTabSwitcherKeyController()
+
     // MARK: - SPUUpdaterDelegate
 
     nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
