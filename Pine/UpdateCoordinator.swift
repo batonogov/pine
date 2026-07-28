@@ -258,7 +258,7 @@ final class UpdateCoordinator {
     /// An update was found. Capture its details and move to `.available`.
     func handleShowUpdateFound(
         appcastItem: SUAppcastItem,
-        state: updateState,
+        state: SPUUserUpdateState,
         reply: @escaping (SPUUserUpdateChoice) -> Void
     ) {
         // Reset download accounting in case Sparkle resumes a background
@@ -304,7 +304,7 @@ final class UpdateCoordinator {
         didDismissCurrentOffer = false
         // If the update was already downloaded in the background, jump
         // straight to ready-to-install.
-        if updateState.stage == .downloaded || updateState.stage == .installing {
+        if state.stage == .downloaded || state.stage == .installing {
             self.state = .readyToInstall
         }
         self.isPopoverPresented = true
