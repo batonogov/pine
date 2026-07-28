@@ -82,6 +82,12 @@ nonisolated enum MenuIcons {
     static let rename = "pencil"
     static let delete = "trash"
 
+    // MARK: - File / Window menu (#1240)
+    static let openFile = "folder"
+    static let clearMenu = "eraser"
+    static let closeTab = "xmark"
+    static let closeWindow = "xmark.rectangle"
+
     // MARK: - Tab context menu
     static let closeOtherTabs = "xmark.square"
     static let closeTabsToTheRight = "xmark.rectangle"

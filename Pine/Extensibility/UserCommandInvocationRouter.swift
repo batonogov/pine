@@ -57,7 +57,9 @@ enum UserCommandInvocationRouter {
              .findInProject, .goToLine,
              .symbolNavigator, .quickOpen, .openFolder,
              .toggleWordWrap, .showAgentActivity, .showAgentHistory,
-             .findInTerminal, .sendToTerminal:
+             .findInTerminal, .sendToTerminal,
+             .newFile, .openFile, .clearRecentProjects,
+             .closeTab, .closeWindow:
             notificationCenter.post(
                 name: Notification.Name(command.notificationKey),
                 object: nil

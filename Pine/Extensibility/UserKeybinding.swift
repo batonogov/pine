@@ -38,6 +38,11 @@ nonisolated struct UserKeybindingsDocument: Codable, Sendable, Equatable {
 /// pressed. This keeps the keybinding surface fully decoupled from the rest
 /// of the app — no protocol surface to maintain.
 nonisolated enum UserCommand: String, Sendable, CaseIterable {
+    case newFile
+    case openFile
+    case clearRecentProjects
+    case closeTab
+    case closeWindow
     case save
     case saveAll
     case saveAs
@@ -92,6 +97,11 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     /// Use `Notification.Name(rawValue:)` on the MainActor side to convert.
     var notificationKey: String {
         switch self {
+        case .newFile: "newFile"
+        case .openFile: "openFile"
+        case .clearRecentProjects: "clearRecentProjects"
+        case .closeTab: "closeTab"
+        case .closeWindow: "closeWindow"
         case .save: "user.save"
         case .saveAll: "user.saveAll"
         case .saveAs: "user.saveAs"

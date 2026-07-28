@@ -14,6 +14,16 @@ import Foundation
 nonisolated extension UserCommand {
     var localizedTitle: String {
         switch self {
+        case .newFile:
+            String(localized: "menu.newFile")
+        case .openFile:
+            String(localized: "menu.open")
+        case .clearRecentProjects:
+            String(localized: "menu.clearMenu")
+        case .closeTab:
+            String(localized: "menu.closeTab")
+        case .closeWindow:
+            String(localized: "menu.closeWindow")
         case .save:
             String(localized: "menu.save")
         case .saveAll:
@@ -119,6 +129,8 @@ nonisolated extension UserCommand {
         switch self {
         case .save, .saveAll, .saveAs, .duplicate, .toggleAutoSave,
              .toggleFormatOnSave, .toggleSmartListContinuation,
+             .newFile, .openFile, .clearRecentProjects,
+             .closeTab, .closeWindow,
              .openFolder, .quickOpen, .symbolNavigator, .commandPalette:
             .file
         case .toggleComment, .findInFile, .findAndReplace,
@@ -145,6 +157,16 @@ nonisolated extension UserCommand {
 
     var iconName: String {
         switch self {
+        case .newFile:
+            MenuIcons.newFile
+        case .openFile:
+            MenuIcons.openFile
+        case .clearRecentProjects:
+            MenuIcons.clearMenu
+        case .closeTab:
+            MenuIcons.closeTab
+        case .closeWindow:
+            MenuIcons.closeWindow
         case .save:
             MenuIcons.save
         case .saveAll:
@@ -244,12 +266,14 @@ nonisolated extension UserCommand {
 
     var availabilityRequirement: CommandAvailabilityRequirement {
         switch self {
-        case .openFolder, .increaseFontSize, .decreaseFontSize,
+        case .newFile, .openFile, .openFolder, .clearRecentProjects,
+             .increaseFontSize, .decreaseFontSize,
              .resetFontSize, .editKeybindings, .editTasks,
              .reloadUserConfiguration:
             .always
         case .quickOpen, .commandPalette, .saveAll, .toggleAutoSave,
              .toggleFormatOnSave, .toggleSmartListContinuation,
+             .closeTab, .closeWindow,
              .findInProject, .toggleTerminal, .newTerminalTab,
              .toggleMinimap, .toggleBlame, .toggleWordWrap,
              .revealProjectInFinder, .showAgentActivity, .showAgentHistory:
@@ -362,6 +386,9 @@ nonisolated extension UserCommand {
         case .toggleTerminalZoom:
             value = "cmd+option+return"
         case .editKeybindings, .editTasks, .reloadUserConfiguration:
+            value = nil
+        case .newFile, .openFile, .clearRecentProjects,
+             .closeTab, .closeWindow:
             value = nil
         }
         return value.flatMap(UserKeybindingRegistry.parse)
