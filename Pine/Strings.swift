@@ -1130,6 +1130,23 @@ enum Strings {
         String(localized: "userTask.missingFile.message")
     }
 
+    static var userTaskReplacementUnavailableTitle: String {
+        String(
+            localized: "userTask.replacementUnavailable.title",
+            defaultValue: "Task Cannot Replace This Editor"
+        )
+    }
+
+    static var userTaskReplacementUnavailableMessage: String {
+        String(
+            localized: "userTask.replacementUnavailable.message",
+            defaultValue: """
+            Replacement tasks require an active, fully loaded text file and \
+            cannot run with project scope or a preview tab.
+            """
+        )
+    }
+
     /// Toast shown when a user task completes successfully (issue #1246).
     static func userTaskToastSucceeded(_ label: String) -> String {
         String(
@@ -1138,7 +1155,7 @@ enum Strings {
         )
     }
 
-    /// Copy the captured stdout to the pasteboard (issue #1246).
+    /// Copy captured task output to the pasteboard (issue #1246).
     static var userTaskCopyOutput: String {
         String(localized: "userTask.copyOutput", defaultValue: "Copy Output")
     }
@@ -1147,6 +1164,122 @@ enum Strings {
     static var userTaskOpenOutput: String {
         String(localized: "userTask.openOutput", defaultValue: "Open Output")
     }
+
+    /// Short status summaries for a task run (issue #1246).
+    nonisolated static let userTaskRunStatusPending: String =
+        String(localized: "userTask.run.status.pending", defaultValue: "Pending")
+    nonisolated static let userTaskRunStatusRunning: String =
+        String(localized: "userTask.run.status.running", defaultValue: "Running")
+    nonisolated static let userTaskRunStatusCancelling: String =
+        String(
+            localized: "userTask.run.status.cancelling",
+            defaultValue: "Cancelling"
+        )
+    nonisolated static let userTaskRunStatusSucceeded: String =
+        String(localized: "userTask.run.status.succeeded", defaultValue: "Succeeded")
+    nonisolated static let userTaskRunStatusTimedOut: String =
+        String(localized: "userTask.run.status.timedOut", defaultValue: "Timed out")
+    nonisolated static let userTaskRunStatusFailed: String =
+        String(localized: "userTask.run.status.failed", defaultValue: "Failed")
+    nonisolated static let userTaskRunStatusCancelled: String =
+        String(localized: "userTask.run.status.cancelled", defaultValue: "Cancelled")
+
+    nonisolated static func userTaskRunStatusExitCode(_ code: Int) -> String {
+        String(
+            localized: "userTask.run.status.exitCode",
+            defaultValue: "Exit \(code)"
+        )
+    }
+
+    /// Live or final elapsed duration for a task run (issue #1246).
+    nonisolated static func userTaskElapsed(_ duration: String) -> String {
+        String(
+            localized: "userTask.run.elapsed",
+            defaultValue: "Elapsed \(duration)"
+        )
+    }
+
+    static var userTaskOutputTitle: String {
+        String(localized: "userTask.output.title", defaultValue: "Task Output")
+    }
+
+    static var userTaskOutputEmpty: String {
+        String(
+            localized: "userTask.output.empty",
+            defaultValue: "No task history"
+        )
+    }
+
+    static var userTaskOutputPreviewTruncated: String {
+        String(
+            localized: "userTask.output.previewTruncated",
+            defaultValue: """
+            Preview truncated. Copy Output includes the complete captured output.
+            """
+        )
+    }
+
+    static var userTaskClearFinished: String {
+        String(
+            localized: "userTask.output.clearFinished",
+            defaultValue: "Clear Finished"
+        )
+    }
+
+    static var userTaskCloseOutput: String {
+        String(
+            localized: "userTask.output.close",
+            defaultValue: "Close Task Output"
+        )
+    }
+
+    static var userTaskShowOutput: String {
+        String(
+            localized: "userTask.output.show",
+            defaultValue: "Task Output"
+        )
+    }
+
+    static var userTaskCancel: String {
+        String(localized: "userTask.cancel", defaultValue: "Cancel")
+    }
+
+    nonisolated static let userTaskBlocked = String(
+        localized: "userTask.diagnostic.blocked",
+        defaultValue: "Task blocked by Pine’s safety policy."
+    )
+
+    nonisolated static func userTaskLaunchFailed(_ reason: String) -> String {
+        String(
+            localized: "userTask.diagnostic.launchFailed",
+            defaultValue: "Task failed to launch: \(reason)"
+        )
+    }
+
+    nonisolated static let userTaskDiagnosticBackgroundReaper = String(
+        localized: "userTask.diagnostic.backgroundReaper",
+        defaultValue: "Pine handed the task shell to its background reaper."
+    )
+    nonisolated static let userTaskDiagnosticSubprocessCleanup = String(
+        localized: "userTask.diagnostic.subprocessCleanup",
+        defaultValue: "Pine could not terminate every observed task subprocess."
+    )
+    nonisolated static let userTaskDiagnosticOutputDeadline = String(
+        localized: "userTask.diagnostic.outputDeadline",
+        defaultValue: "Pine stopped waiting for task output at its hard deadline."
+    )
+    nonisolated static let userTaskDiagnosticOutputTruncated = String(
+        localized: "userTask.diagnostic.outputTruncated",
+        defaultValue: "Task output exceeded Pine's capture limit and was truncated."
+    )
+    nonisolated static let userTaskDiagnosticInvalidUTF8 = String(
+        localized: "userTask.diagnostic.invalidUTF8",
+        defaultValue: "Task output contained invalid UTF-8 and was rejected."
+    )
+    nonisolated static let userTaskDiagnosticInputIncomplete = String(
+        localized: "userTask.diagnostic.inputIncomplete",
+        defaultValue: "The task stopped before Pine finished writing standard input."
+    )
 
     // MARK: - Quick Open
 

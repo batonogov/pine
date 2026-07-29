@@ -1,0 +1,813 @@
+//
+//  UserTaskRunStoreTests.swift
+//  PineTests
+//
+
+import Darwin
+import Foundation
+import Testing
+
+@testable import Pine
+
+@Suite("User task run store lifecycle")
+@MainActor
+struct UserTaskRunStoreTests {
+    @Test("Cancel before handle arrival forwards cancellation exactly once")
+    func cancelBeforeHandleArrival() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let counter = CancellationCounter()
+
+        store.cancelRun(id: run.id)
+        #expect(run.state == .pending)
+        #expect(store.cancellationHandleCount == 0)
+        #expect(store.pendingCancellationCount == 1)
+
+        store.registerCancellation(
+            makeCancellation(counter: counter),
+            forRunID: run.id
+        )
+        #expect(counter.value == 1)
+        #expect(run.state == .cancelling)
+        #expect(run.state.isActive)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(store.pendingCancellationCount == 0)
+
+        #expect(store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: SIGTERM, stdout: "partial"),
+            cancelled: true
+        ))
+        #expect(run.state == .cancelled)
+        #expect(run.stdout == "partial")
+        #expect(counter.value == 1)
+        #expect(store.cancellationHandleCount == 0)
+        #expect(!store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: 9, stdout: "late"),
+            cancelled: true
+        ))
+        #expect(run.stdout == "partial")
+    }
+
+    @Test("Normal finish releases its handle without cancelling it")
+    func normalFinishReleasesHandle() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let counter = CancellationCounter()
+        store.registerCancellation(
+            makeCancellation(counter: counter),
+            forRunID: run.id
+        )
+        #expect(store.cancellationHandleCount == 1)
+
+        #expect(store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: 0, stdout: "complete"),
+            cancelled: false
+        ))
+
+        #expect(run.state == .succeeded)
+        #expect(run.stdout == "complete")
+        #expect(counter.value == 0)
+        #expect(store.cancellationHandleCount == 0)
+        #expect(!store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: 9, stdout: "late"),
+            cancelled: false
+        ))
+        #expect(run.state == .succeeded)
+        #expect(run.stdout == "complete")
+    }
+
+    @Test("Rejected late cancellation preserves the completed outcome")
+    func rejectedLateCancellationPreservesOutcome() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let counter = CancellationCounter()
+
+        store.cancelRun(id: run.id)
+        #expect(store.pendingCancellationCount == 1)
+        store.registerCancellation(
+            makeCancellation(counter: counter, accepted: false),
+            forRunID: run.id
+        )
+
+        #expect(counter.value == 1)
+        #expect(run.state == .pending)
+        #expect(store.pendingCancellationCount == 0)
+
+        store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: 0, stdout: "complete"),
+            cancelled: false
+        )
+        #expect(run.state == .succeeded)
+        #expect(run.stdout == "complete")
+    }
+
+    @Test("Late handle for a normally finished run is discarded")
+    func lateHandleAfterFinishIsDiscarded() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let counter = CancellationCounter()
+        store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: 0),
+            cancelled: false
+        )
+
+        store.registerCancellation(
+            makeCancellation(counter: counter),
+            forRunID: run.id
+        )
+
+        #expect(run.state == .succeeded)
+        #expect(counter.value == 0)
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("Clear all cancels every retained handle without dropping ownership")
+    func clearAllCancelsHandles() {
+        let store = UserTaskRunStore()
+        let first = store.start(makeRun(taskID: "first"))
+        let second = store.start(makeRun(taskID: "second"))
+        let counter = CancellationCounter()
+        store.registerCancellation(
+            makeCancellation(counter: counter),
+            forRunID: first.id
+        )
+        store.registerCancellation(
+            makeCancellation(counter: counter),
+            forRunID: second.id
+        )
+        #expect(store.cancellationHandleCount == 2)
+
+        store.clearAll()
+
+        #expect(store.runs.isEmpty)
+        #expect(store.cancellationHandleCount == 2)
+        #expect(store.pendingCancellationCount == 0)
+        #expect(counter.value == 2)
+        #expect(store.hasOutstandingExecutionOwnership)
+
+        #expect(!store.finishRun(
+            id: first.id,
+            outcome: outcome(exitCode: SIGTERM),
+            cancelled: true
+        ))
+        #expect(!store.finishRun(
+            id: second.id,
+            outcome: outcome(exitCode: SIGTERM),
+            cancelled: true
+        ))
+        #expect(store.cancellationHandleCount == 0)
+        #expect(!store.hasOutstandingExecutionOwnership)
+    }
+
+    @Test("Clear all forwards cancellation to a handle that arrives later")
+    func clearAllCancelsLateHandle() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let counter = CancellationCounter()
+
+        store.clearAll()
+        #expect(store.runs.isEmpty)
+        #expect(store.pendingCancellationCount == 1)
+
+        store.registerCancellation(
+            makeCancellation(counter: counter),
+            forRunID: run.id
+        )
+        #expect(counter.value == 1)
+        #expect(store.pendingCancellationCount == 0)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(!store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: SIGTERM),
+            cancelled: true
+        ))
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("Accepted cancellation remains active until cleanup outcome")
+    func cancellingRemainsActiveUntilFinish() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let counter = CancellationCounter()
+        store.registerCancellation(
+            makeCancellation(counter: counter),
+            forRunID: run.id
+        )
+
+        store.cancelRun(id: run.id)
+
+        #expect(run.state == .cancelling)
+        #expect(store.hasActiveRuns)
+        #expect(store.cancellationHandleCount == 1)
+
+        #expect(store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: SIGTERM),
+            cancelled: true
+        ))
+        #expect(run.state == .cancelled)
+        #expect(!store.hasActiveRuns)
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("Cleanup failure is visible failure even after cancellation")
+    func cleanupFailureOverridesCancelledPresentation() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let counter = CancellationCounter()
+        let cleanupGate = ShutdownWaitGate()
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: {
+                    counter.increment()
+                    return true
+                },
+                waitForCompletion: { deadline in
+                    cleanupGate.waitForRelease(until: deadline)
+                }
+            ),
+            forRunID: run.id
+        )
+        store.cancelRun(id: run.id)
+        store.isOutputVisible = false
+
+        #expect(store.finishRun(
+            id: run.id,
+            outcome: UserTaskOutcome(
+                taskID: "task",
+                stdout: "",
+                stderr: "cleanup failed",
+                exitCode: -1,
+                timedOut: false,
+                cleanupSucceeded: false
+            ),
+            cancelled: true
+        ))
+
+        #expect(run.state == .failed)
+        #expect(store.isOutputVisible)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(store.hasOutstandingExecutionOwnership)
+
+        cleanupGate.release()
+        #expect(!store.hasOutstandingExecutionOwnership)
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("Removing failed cleanup history preserves execution ownership")
+    func removeRunPreservesUnresolvedCleanup() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let cleanupGate = ShutdownWaitGate()
+        registerUnresolvedCleanup(
+            in: store,
+            run: run,
+            cleanupGate: cleanupGate
+        )
+
+        store.removeRun(id: run.id)
+
+        #expect(store.runs.isEmpty)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(store.hasOutstandingExecutionOwnership)
+        cleanupGate.release()
+        #expect(!store.hasOutstandingExecutionOwnership)
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("Clearing failed cleanup history preserves execution ownership")
+    func clearFinishedPreservesUnresolvedCleanup() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let cleanupGate = ShutdownWaitGate()
+        registerUnresolvedCleanup(
+            in: store,
+            run: run,
+            cleanupGate: cleanupGate
+        )
+
+        store.clearFinished()
+
+        #expect(store.runs.isEmpty)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(store.hasOutstandingExecutionOwnership)
+        cleanupGate.release()
+        #expect(!store.hasOutstandingExecutionOwnership)
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("History trimming preserves unresolved cleanup ownership")
+    func trimmingPreservesUnresolvedCleanup() {
+        let store = UserTaskRunStore(maximumRuns: 0)
+        let run = store.start(makeRun())
+        let cleanupGate = ShutdownWaitGate()
+        registerUnresolvedCleanup(
+            in: store,
+            run: run,
+            cleanupGate: cleanupGate
+        )
+
+        #expect(store.runs.isEmpty)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(store.hasOutstandingExecutionOwnership)
+        cleanupGate.release()
+        #expect(!store.hasOutstandingExecutionOwnership)
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("Terminal transitions trim count while preserving active runs")
+    func terminalTrimCount() {
+        let store = UserTaskRunStore(
+            maximumRuns: 2,
+            maximumRetainedOutputBytes: 1_024
+        )
+        let active = store.start(makeRun(taskID: "active"))
+        let first = store.start(makeRun(taskID: "first"))
+        let second = store.start(makeRun(taskID: "second"))
+        let third = store.start(makeRun(taskID: "third"))
+
+        for run in [first, second, third] {
+            #expect(store.finishRun(
+                id: run.id,
+                outcome: outcome(exitCode: 0, stdout: run.taskID),
+                cancelled: false
+            ))
+        }
+
+        #expect(store.runs.count == 3)
+        #expect(store.run(forID: active.id) != nil)
+        #expect(store.run(forID: third.id) != nil)
+        #expect(store.run(forID: second.id) != nil)
+        #expect(store.run(forID: first.id) == nil)
+    }
+
+    @Test("Terminal transitions enforce retained UTF-8 byte budget")
+    func terminalTrimByteBudget() {
+        let store = UserTaskRunStore(
+            maximumRuns: 10,
+            maximumRetainedOutputBytes: 8
+        )
+        let first = store.start(makeRun(taskID: "first"))
+        let second = store.start(makeRun(taskID: "second"))
+
+        store.finishRun(
+            id: first.id,
+            outcome: outcome(exitCode: 0, stdout: "123456"),
+            cancelled: false
+        )
+        store.finishRun(
+            id: second.id,
+            outcome: outcome(exitCode: 0, stdout: "abcdef"),
+            cancelled: false
+        )
+
+        #expect(store.run(forID: first.id) == nil)
+        #expect(store.run(forID: second.id) != nil)
+        #expect(store.retainedOutputByteCount == 6)
+    }
+
+    @Test("Shutdown cancels and waits on every registered active handle")
+    func shutdownCancelsAndWaits() async {
+        let store = UserTaskRunStore()
+        let first = store.start(makeRun(taskID: "first"))
+        let second = store.start(makeRun(taskID: "second"))
+        let counter = CancellationCounter()
+        let waits = CancellationCounter()
+        let handle = {
+            UserTaskCancellation(
+                terminate: {
+                    counter.increment()
+                    return true
+                },
+                waitForCompletion: { _ in
+                    waits.increment()
+                    return true
+                }
+            )
+        }
+        store.registerCancellation(handle(), forRunID: first.id)
+        store.registerCancellation(handle(), forRunID: second.id)
+
+        let didShutdown = await store.shutdownAll(until: .now() + 1)
+        #expect(didShutdown)
+        #expect(counter.value == 2)
+        #expect(waits.value == 2)
+        #expect(store.runs.isEmpty)
+    }
+
+    @Test("Shutdown timeout retains cancelling run and its handle")
+    func shutdownTimeoutRetainsOwnership() async {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let counter = CancellationCounter()
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: {
+                    counter.increment()
+                    return true
+                },
+                waitForCompletion: { _ in false }
+            ),
+            forRunID: run.id
+        )
+
+        let didShutdown = await store.shutdownAll(until: .now())
+        #expect(!didShutdown)
+        #expect(run.state == .cancelling)
+        #expect(store.run(forID: run.id)?.id == run.id)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(counter.value == 1)
+    }
+
+    @Test("Failed wait cannot become successful when finish removes the handle")
+    func shutdownWaitFailureStaysFailClosedAcrossFinishRace() async {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let gate = ShutdownWaitGate()
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    _ = gate.waitForRelease(until: deadline)
+                    return false
+                }
+            ),
+            forRunID: run.id
+        )
+
+        let shutdown = Task { @MainActor in
+            await store.shutdownAll(until: .now() + 2)
+        }
+        defer { gate.release() }
+
+        for _ in 0..<200 where !gate.didStartWaiting {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(gate.didStartWaiting)
+
+        #expect(store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: 0),
+            cancelled: false
+        ))
+        gate.release()
+
+        let didShutdown = await shutdown.value
+        #expect(!didShutdown)
+        #expect(!store.runs.isEmpty)
+    }
+
+    @Test("Shutdown process waits do not block the main actor")
+    func shutdownWaitDoesNotBlockMainActor() async {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let gate = ShutdownWaitGate()
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    gate.waitForRelease(until: deadline)
+                }
+            ),
+            forRunID: run.id
+        )
+
+        let shutdown = Task { @MainActor in
+            await store.shutdownAll(until: .now() + 2)
+        }
+        defer { gate.release() }
+
+        for _ in 0..<200 where !gate.didStartWaiting {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(gate.didStartWaiting)
+
+        // This task cannot run until `shutdownAll` suspends the main actor.
+        let heartbeat = Task { @MainActor in true }
+        let mainActorResponded = await heartbeat.value
+        #expect(mainActorResponded)
+
+        gate.release()
+        let didShutdown = await shutdown.value
+        #expect(didShutdown)
+        #expect(store.runs.isEmpty)
+    }
+
+    @Test("A run started during shutdown is retained and fails shutdown closed")
+    func runStartedDuringShutdownIsNotDiscarded() async {
+        let store = UserTaskRunStore()
+        let first = store.start(makeRun(taskID: "first"))
+        let gate = ShutdownWaitGate()
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    gate.waitForRelease(until: deadline)
+                }
+            ),
+            forRunID: first.id
+        )
+        let shutdown = Task { @MainActor in
+            await store.shutdownAll(until: .now() + 2)
+        }
+        defer { gate.release() }
+
+        for _ in 0..<200 where !gate.didStartWaiting {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let lateRun = store.start(makeRun(taskID: "late"))
+        store.registerCancellation(.noop, forRunID: lateRun.id)
+        gate.release()
+
+        let didShutdown = await shutdown.value
+        #expect(!didShutdown)
+        #expect(store.run(forID: first.id) != nil)
+        #expect(store.run(forID: lateRun.id) === lateRun)
+        #expect(lateRun.state == .pending)
+        #expect(store.hasOutstandingExecutionOwnership)
+    }
+
+    @Test("Elapsed time advances while active and freezes at completion")
+    func elapsedTimeLifecycle() {
+        let startedAt = Date(timeIntervalSinceReferenceDate: 1_000)
+        let run = makeRun(startedAt: startedAt)
+
+        #expect(run.elapsedSeconds(at: startedAt - 10) == 0)
+        #expect(run.elapsedText(at: startedAt + 65.9) == "1:05")
+
+        run.markRunning()
+        run.applyOutcome(
+            UserTaskOutcome(
+                taskID: "elapsed",
+                stdout: "",
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            ),
+            cancelled: false,
+            finishedAt: startedAt + 3_661.9
+        )
+
+        #expect(run.state == .succeeded)
+        #expect(run.elapsedText(at: startedAt + 10_000) == "1:01:01")
+        #expect(
+            abs(run.elapsedSeconds(at: startedAt + 10_000) - 3_661.9)
+                < 0.001
+        )
+    }
+
+    @Test("Elapsed formatter covers minute and hour boundaries")
+    func elapsedFormatterBoundaries() {
+        #expect(UserTaskRun.formatElapsedDuration(0) == "0:00")
+        #expect(UserTaskRun.formatElapsedDuration(59.999) == "0:59")
+        #expect(UserTaskRun.formatElapsedDuration(60) == "1:00")
+        #expect(UserTaskRun.formatElapsedDuration(3_599) == "59:59")
+        #expect(UserTaskRun.formatElapsedDuration(3_600) == "1:00:00")
+        #expect(UserTaskRun.formatElapsedDuration(90_061) == "25:01:01")
+    }
+
+    @Test("Copy payload exactly preserves the captured combined output")
+    func outputCopyPayload() {
+        let stdoutOnly = makeRun(taskID: "stdout")
+        stdoutOnly.applyOutcome(
+            UserTaskOutcome(
+                taskID: "stdout",
+                stdout: "standard output",
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            ),
+            cancelled: false
+        )
+        #expect(stdoutOnly.outputCopyPayload == "standard output")
+
+        let stderrOnly = makeRun(taskID: "stderr")
+        stderrOnly.applyOutcome(
+            UserTaskOutcome(
+                taskID: "stderr",
+                stdout: "",
+                stderr: "standard error",
+                exitCode: 7,
+                timedOut: false
+            ),
+            cancelled: false
+        )
+        #expect(stderrOnly.outputCopyPayload == "standard error")
+
+        let combined = makeRun(taskID: "combined")
+        combined.applyOutcome(
+            UserTaskOutcome(
+                taskID: "combined",
+                stdout: "standard output",
+                stderr: "standard error",
+                exitCode: 7,
+                timedOut: false
+            ),
+            cancelled: false
+        )
+        #expect(
+            combined.outputCopyPayload
+                == "standard output\nstandard error"
+        )
+        #expect(combined.outputCopyPayload == combined.combinedOutput)
+    }
+
+    @Test("Output preview bounds bytes and preserves exact Copy payload")
+    func outputPreviewByteBoundaries() {
+        let limit = UserTaskOutputPreview.maximumUTF8Bytes
+        let exactText = String(repeating: "x", count: limit)
+        let exact = UserTaskOutcome(
+            taskID: "exact-preview",
+            stdout: exactText,
+            stderr: "",
+            exitCode: 0,
+            timedOut: false
+        )
+        #expect(exact.outputPreview.text == exactText)
+        #expect(!exact.outputPreview.wasTruncated)
+
+        let overLimitText = exactText + "y"
+        let overLimit = UserTaskOutcome(
+            taskID: "truncated-preview",
+            stdout: overLimitText,
+            stderr: "",
+            exitCode: 0,
+            timedOut: false
+        )
+        #expect(overLimit.outputPreview.text == exactText)
+        #expect(overLimit.outputPreview.wasTruncated)
+
+        let run = makeRun(taskID: "truncated-preview")
+        run.applyOutcome(overLimit, cancelled: false)
+        #expect(run.displayOutputPreview == exactText)
+        #expect(run.displayOutputPreviewWasTruncated)
+        #expect(run.outputCopyPayload == overLimitText)
+    }
+
+    @Test("Output preview accounts for stream separator and line boundary")
+    func outputPreviewStreamAndLineBoundaries() {
+        let byteLimit = UserTaskOutputPreview.maximumUTF8Bytes
+        let stdout = String(repeating: "x", count: byteLimit - 1)
+        let splitStreams = UserTaskOutputPreview.make(
+            stdout: stdout,
+            stderr: "z"
+        )
+        #expect(
+            splitStreams.text
+                == "z\n" + String(repeating: "x", count: byteLimit - 2)
+        )
+        #expect(splitStreams.wasTruncated)
+
+        let lineLimit = UserTaskOutputPreview.maximumLines
+        let lines = Array(
+            repeating: "line",
+            count: lineLimit + 1
+        ).joined(separator: "\n")
+        let lineBounded = UserTaskOutputPreview.make(
+            stdout: lines,
+            stderr: ""
+        )
+        #expect(lineBounded.text.split(
+            separator: "\n",
+            omittingEmptySubsequences: false
+        ).count == lineLimit)
+        #expect(lineBounded.wasTruncated)
+    }
+
+    @Test("Bounded output preview prioritizes stderr diagnostics")
+    func outputPreviewPrioritizesStderr() {
+        let stdout = String(
+            repeating: "noisy output",
+            count: UserTaskOutputPreview.maximumUTF8Bytes
+        )
+        let stderr = "actionable failure"
+        let preview = UserTaskOutputPreview.make(
+            stdout: stdout,
+            stderr: stderr
+        )
+
+        #expect(preview.text.hasPrefix(stderr + "\n"))
+        #expect(preview.wasTruncated)
+    }
+
+    @Test("Output preview never publishes partial UTF-8 scalars")
+    func outputPreviewUTF8Boundary() {
+        let limit = UserTaskOutputPreview.maximumUTF8Bytes
+        let prefix = String(repeating: "a", count: limit - 1)
+        let fullOutput = prefix + "🙂"
+        let preview = UserTaskOutputPreview.make(
+            stdout: fullOutput,
+            stderr: ""
+        )
+
+        #expect(preview.text == prefix)
+        #expect(preview.wasTruncated)
+        #expect(!preview.text.contains("\u{FFFD}"))
+    }
+
+    private func makeRun(
+        taskID: String = "task",
+        startedAt: Date = Date()
+    ) -> UserTaskRun {
+        UserTaskRun(
+            taskID: taskID,
+            taskLabel: taskID,
+            command: "printf done",
+            replacesFileContent: false,
+            startedAt: startedAt
+        )
+    }
+
+    private func makeCancellation(
+        counter: CancellationCounter,
+        accepted: Bool = true
+    ) -> UserTaskCancellation {
+        UserTaskCancellation {
+            counter.increment()
+            return accepted
+        }
+    }
+
+    private func registerUnresolvedCleanup(
+        in store: UserTaskRunStore,
+        run: UserTaskRun,
+        cleanupGate: ShutdownWaitGate
+    ) {
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    cleanupGate.waitForRelease(until: deadline)
+                }
+            ),
+            forRunID: run.id
+        )
+        #expect(store.finishRun(
+            id: run.id,
+            outcome: UserTaskOutcome(
+                taskID: run.taskID,
+                stdout: "",
+                stderr: "cleanup failed",
+                exitCode: -1,
+                timedOut: false,
+                cleanupSucceeded: false
+            ),
+            cancelled: false
+        ))
+    }
+
+    private func outcome(
+        exitCode: Int32,
+        stdout: String = ""
+    ) -> UserTaskOutcome {
+        UserTaskOutcome(
+            taskID: "task",
+            stdout: stdout,
+            stderr: "",
+            exitCode: exitCode,
+            timedOut: false
+        )
+    }
+}
+
+nonisolated private final class CancellationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = 0
+
+    var value: Int {
+        lock.withLock { storage }
+    }
+
+    func increment() {
+        lock.withLock {
+            storage += 1
+        }
+    }
+}
+
+nonisolated private final class ShutdownWaitGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+    private var startedWaiting = false
+
+    var didStartWaiting: Bool {
+        lock.withLock { startedWaiting }
+    }
+
+    func waitForRelease(until deadline: DispatchTime) -> Bool {
+        lock.withLock {
+            startedWaiting = true
+        }
+        return releaseSemaphore.wait(timeout: deadline) == .success
+    }
+
+    func release() {
+        releaseSemaphore.signal()
+    }
+}

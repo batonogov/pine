@@ -91,6 +91,7 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             ToastOverlay()
         }
+        .modifier(UserTaskRunPresenter(store: projectManager.taskRunStore))
         .modifier(ProjectSearchModifier(
             projectManager: projectManager,
             isSearchPresented: $isSearchPresented

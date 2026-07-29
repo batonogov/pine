@@ -143,6 +143,36 @@ nonisolated enum AccessibilityID {
     // MARK: - Toast notifications
     static let toastNotification = "toastNotification"
 
+    // MARK: - User tasks
+    static let userTaskOutputPanel = "userTaskOutputPanel"
+    static let userTaskClearFinishedButton = "userTaskClearFinishedButton"
+    static let userTaskCloseOutputButton = "userTaskCloseOutputButton"
+    static let userTaskShowOutputButton = "userTaskShowOutputButton"
+    static func userTaskRun(_ id: UUID) -> String {
+        "userTaskRun_\(id.uuidString)"
+    }
+    static func userTaskStatusLabel(_ id: UUID) -> String {
+        "userTaskStatus_\(id.uuidString)"
+    }
+    static func userTaskElapsedLabel(_ id: UUID) -> String {
+        "userTaskElapsed_\(id.uuidString)"
+    }
+    static func userTaskCopyOutputButton(_ id: UUID) -> String {
+        "userTaskCopyOutput_\(id.uuidString)"
+    }
+    static func userTaskOutputText(_ id: UUID) -> String {
+        "userTaskOutputText_\(id.uuidString)"
+    }
+    static func userTaskOutputTruncationNotice(_ id: UUID) -> String {
+        "userTaskOutputTruncation_\(id.uuidString)"
+    }
+    static func userTaskCancelButton(_ id: UUID) -> String {
+        "userTaskCancel_\(id.uuidString)"
+    }
+    static func userTaskProgressIndicator(_ id: UUID) -> String {
+        "userTaskProgress_\(id.uuidString)"
+    }
+
     // MARK: - Context menu
     static let contextMenuNewFile = "contextMenuNewFile"
     static let contextMenuNewFolder = "contextMenuNewFolder"

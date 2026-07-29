@@ -508,7 +508,7 @@ jobs:
           fi
           echo "All $(echo "$ACTUAL" | wc -l | tr -d ' ') UI test classes are sharded."
 
-  # UI test shards — 7 parallel jobs, 27-29 tests each (delta 2).
+  # UI test shards — 7 parallel jobs, 28-30 tests each (delta 2).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -520,12 +520,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Terminal (27 tests)
+          # Shard 1 — Terminal (29 tests)
           - shard-name: "Terminal"
             test-classes: >-
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
-          # Shard 2 — Welcome & Session (28 tests)
+              -only-testing:PineUITests/AgentAttentionKeyboardUITests
+          # Shard 2 — Welcome & Session (29 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
@@ -547,13 +548,14 @@ jobs:
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/CheckForUpdatesTests
               -only-testing:PineUITests/SplitPaneRoutingUITests
-          # Shard 5 — Files & Save (27 tests)
+          # Shard 5 — Files & Save (30 tests)
           - shard-name: "Files & Save"
             test-classes: >-
               -only-testing:PineUITests/EditorSaveFlowTests
               -only-testing:PineUITests/DeleteTests
               -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests
+              -only-testing:PineUITests/UserTaskExecutionUITests
           # Shard 6 — Search & Panes (28 tests)
           - shard-name: "Search & Panes"
             test-classes: >-
@@ -574,7 +576,6 @@ jobs:
               -only-testing:PineUITests/BlameViewTests
               -only-testing:PineUITests/HCLFormatOnSaveTests
               -only-testing:PineUITests/ToggleCommentTests
-              -only-testing:PineUITests/AgentAttentionKeyboardUITests
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 

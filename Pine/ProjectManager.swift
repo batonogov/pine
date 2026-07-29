@@ -252,6 +252,10 @@ final class ProjectManager {
     }
 
     let toastManager = ToastManager()
+    /// Tracks active and recent user-task runs for the task execution UI
+    /// (issue #1246). Owned by the project window so the output surface,
+    /// toast, and Cancel button all share one source of truth.
+    let taskRunStore = UserTaskRunStore()
     /// Recovery snapshots and their lifecycle are owned by the main actor.
     private(set) var recoveryManager: RecoveryManager?
 
@@ -944,5 +948,24 @@ final class ProjectManager {
     /// survives (acceptance criterion #1010). Safe to call multiple times.
     func shutdownLanguageServers() {
         lspManager.shutdownAll()
+    }
+
+    /// Requests cancellation without waiting. Closing a project window does
+    /// not call this: background projects intentionally keep both terminals
+    /// and tasks alive.
+    func requestUserTaskShutdown() {
+        taskRunStore.requestShutdown()
+    }
+
+    /// Waits for project-owned user tasks only until the shared absolute
+    /// deadline, requesting cancellation first when needed.
+    @discardableResult
+    func shutdownUserTasks(until deadline: DispatchTime) async -> Bool {
+        await taskRunStore.shutdownAll(until: deadline)
+    }
+
+    /// `true` while destroying this project would drop task cleanup ownership.
+    var hasOutstandingUserTaskExecution: Bool {
+        taskRunStore.hasOutstandingExecutionOwnership
     }
 }

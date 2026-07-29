@@ -23,12 +23,11 @@ enum UserTaskInvocationController {
         URL?,
         URL?,
         String?,
-        @escaping @Sendable (UserTaskOutcome) -> Void
-    ) -> Void
+        UserTaskProgress
+    ) -> UserTaskCancellation
 
     private struct InvocationSnapshot {
-        let tabID: UUID?
-        let content: String?
+        let tab: CapturedTab
         let context: DialogPresentationContext
     }
 
@@ -45,13 +44,13 @@ enum UserTaskInvocationController {
                 presentConfirmation: { task, context in
                     await presentConfirmation(for: task, context: context)
                 },
-                runTask: { task, fileURL, projectRootURL, fileContent, completion in
+                runTask: { task, fileURL, projectRootURL, fileContent, progress in
                     UserTaskRunner.shared.run(
                         task: task,
                         fileURL: fileURL,
                         projectRootURL: projectRootURL,
                         fileContent: fileContent,
-                        completion: completion
+                        progress: progress
                     )
                 }
             )
@@ -75,12 +74,22 @@ enum UserTaskInvocationController {
             return false
         }
 
-        let initialActiveTab = projectManager.activeTabManager.activeTab
-        if task.scope == .activeFile, initialActiveTab == nil {
-            presentMissingActiveFile(context: context)
+        let activeTab = projectManager.activeTabManager.activeTab
+        if task.scope == .activeFile, activeTab == nil {
+            await presentMissingActiveFile(context: context)
+            return false
+        }
+        if task.replacesFileContent,
+           !replacementTargetIsEligible(
+               scope: task.scope,
+               isText: activeTab?.kind == .text,
+               isTruncated: activeTab?.isTruncated
+           ) {
+            await presentIneligibleReplacement(context: context)
             return false
         }
 
+        let capturedTab = capture(activeTab)
         if task.effectiveRequireConfirmation(),
            !(await presentConfirmation(task, context)) {
             return false
@@ -92,40 +101,63 @@ enum UserTaskInvocationController {
             return false
         }
 
-        let currentActiveTab = projectManager.activeTabManager.activeTab
         if task.scope == .activeFile {
             // The confirmation authorized the exact active-file intent that
             // existed when it appeared. Switching tabs, closing the file, or
             // editing its buffer while suspended must not retarget the task.
-            guard let initialActiveTab,
-                  let currentActiveTab,
-                  currentActiveTab.id == initialActiveTab.id,
-                  currentActiveTab.url == initialActiveTab.url,
-                  currentActiveTab.content == initialActiveTab.content else {
+            guard capturedTab == capture(
+                projectManager.activeTabManager.activeTab
+            ) else {
                 return false
             }
         }
 
         let snapshot = InvocationSnapshot(
-            tabID: currentActiveTab?.id,
-            content: currentActiveTab?.content,
+            tab: capturedTab,
             context: context
         )
-        runTask(
+        let runStore = projectManager.taskRunStore
+        let run = runStore.start(
+            UserTaskRun(
+                taskID: task.id,
+                taskLabel: task.label,
+                command: task.command,
+                replacesFileContent: task.replacesFileContent
+            )
+        )
+
+        let cancellation = runTask(
             task,
-            currentActiveTab?.url,
+            capturedTab.url,
             projectManager.workspace.rootURL,
-            snapshot.content
-        ) { outcome in
-            Task { @MainActor in
-                presentOutcome(
-                    outcome,
-                    task: task,
-                    projectManager: projectManager,
-                    snapshot: snapshot
-                )
-            }
-        }
+            capturedTab.content,
+            UserTaskProgress(
+                onStart: { @Sendable in
+                    Task { @MainActor in
+                        run.markRunning()
+                    }
+                },
+                onFinish: { @Sendable outcome, cancelled in
+                    Task { @MainActor in
+                        guard runStore.finishRun(
+                            id: run.id,
+                            outcome: outcome,
+                            cancelled: cancelled
+                        ) else { return }
+                        presentOutcome(
+                            outcome,
+                            task: task,
+                            run: run,
+                            projectManager: projectManager,
+                            snapshot: snapshot
+                        )
+                    }
+                }
+            )
+        )
+        // Registration is synchronous, eliminating the cancel-before-handle
+        // gap while preserving the runner's callback API for other clients.
+        runStore.registerCancellation(cancellation, forRunID: run.id)
         return true
     }
 
@@ -144,57 +176,141 @@ enum UserTaskInvocationController {
         return response == .alertFirstButtonReturn
     }
 
+    /// Snapshot of the active tab captured before a task runs, used to detect
+    /// whether the buffer changed while the task was executing.
+    nonisolated struct CapturedTab: Equatable, Sendable {
+        let id: UUID?
+        let url: URL?
+        let content: String?
+        let contentVersion: UInt64?
+        let isEligibleForReplacement: Bool
+    }
+
+    private static func capture(_ tab: EditorTab?) -> CapturedTab {
+        CapturedTab(
+            id: tab?.id,
+            url: tab?.url.standardizedFileURL,
+            content: tab?.content,
+            contentVersion: tab?.contentVersion,
+            isEligibleForReplacement:
+                tab?.kind == .text && tab?.isTruncated == false
+        )
+    }
+
     private static func presentOutcome(
         _ outcome: UserTaskOutcome,
         task: UserTask,
+        run: UserTaskRun,
         projectManager: ProjectManager,
         snapshot: InvocationSnapshot
     ) {
-        guard outcome.succeeded else {
+        // Always log for diagnostics (parity with the previous behaviour).
+        if outcome.succeeded, run.state != .cancelled {
+            Logger.extensibility.info(
+                "Task '\(task.label)' completed successfully"
+            )
+        } else {
             Logger.extensibility.error(
                 "Task '\(task.label)' failed (exit \(outcome.exitCode)): \(outcome.stderr)"
+            )
+        }
+
+        // Fail closed for replacement-content tasks: only apply stdout when
+        // the process completed successfully and the active tab is unchanged.
+        // Failed, timed-out, spawn-failed, and cancelled runs may contain
+        // partial stdout, which must never overwrite the editor buffer.
+        if task.replacesFileContent {
+            guard let owner = snapshot.context.nsWindow,
+                  owner.isVisible,
+                  !owner.isMiniaturized else {
+                return
+            }
+            let tabManager = projectManager.activeTabManager
+            if canApplyReplacement(
+                outcome: outcome,
+                cancelled: run.state == .cancelled,
+                captured: snapshot.tab,
+                current: capture(tabManager.activeTab)
+            ) {
+                tabManager.updateContent(outcome.stdout)
+                // Simple success: brief, accessible toast. The output surface
+                // is kept available but not force-shown for a clean apply.
+                if outcome.succeeded {
+                    projectManager.toastManager.show(
+                        ToastItem(message: Strings.userTaskToastSucceeded(task.label))
+                    )
+                }
+                return
+            }
+
+            // Process failures are already durable in the run model. Reveal
+            // that output without presenting the edit-conflict recovery
+            // dialog, because no replacement is eligible to apply.
+            guard outcome.succeeded, run.state != .cancelled else {
+                projectManager.taskRunStore.isOutputVisible = true
+                return
+            }
+
+            // Conflict: fail closed. Surface the output panel with Copy/Open
+            // actions so the user can recover stdout without losing edits.
+            presentReplacementConflict(
+                run: run,
+                projectManager: projectManager,
+                context: snapshot.context
             )
             return
         }
 
-        Logger.extensibility.info(
-            "Task '\(task.label)' completed successfully"
-        )
-        guard task.replacesFileContent else { return }
-        guard let owner = snapshot.context.nsWindow,
-              owner.isVisible,
-              !owner.isMiniaturized else {
-            return
-        }
+        // A cancelled non-replacement run needs no further UI — the output
+        // surface already reflects the cancelled state.
+        if run.state == .cancelled { return }
 
-        // Fail closed if the user switched tabs or edited the file while the
-        // process ran. Applying stdout to a different/newer buffer would lose
-        // unrelated work and violate the task's active-file contract.
-        let tabManager = projectManager.activeTabManager
-        guard canApplyReplacement(
-            capturedTabID: snapshot.tabID,
-            capturedContent: snapshot.content,
-            currentTabID: tabManager.activeTab?.id,
-            currentContent: tabManager.activeTab?.content
-        ) else {
-            presentReplacementConflict(context: snapshot.context)
-            return
+        // Non-replacement tasks: a clean success with no output is reported
+        // via a brief toast; failures or any captured output are routed to
+        // the durable output surface for inspection.
+        if outcome.succeeded && !run.hasOutput {
+            projectManager.toastManager.show(
+                ToastItem(message: Strings.userTaskToastSucceeded(task.label))
+            )
+        } else {
+            // Make sure the output surface is visible so the user sees the
+            // failure / captured output.
+            projectManager.taskRunStore.isOutputVisible = true
         }
-        tabManager.updateContent(outcome.stdout)
     }
 
     nonisolated static func canApplyReplacement(
-        capturedTabID: UUID?,
-        capturedContent: String?,
-        currentTabID: UUID?,
-        currentContent: String?
+        outcome: UserTaskOutcome,
+        cancelled: Bool,
+        captured: CapturedTab,
+        current: CapturedTab
     ) -> Bool {
-        guard let capturedTabID, let capturedContent else { return false }
-        return currentTabID == capturedTabID
-            && currentContent == capturedContent
+        guard outcome.succeeded, !cancelled else { return false }
+        guard captured.id != nil,
+              captured.url != nil,
+              captured.content != nil,
+              captured.contentVersion != nil,
+              captured.isEligibleForReplacement,
+              current.isEligibleForReplacement else {
+            return false
+        }
+        return current.id == captured.id
+            && current.url == captured.url
+            && current.contentVersion == captured.contentVersion
+            && current.content == captured.content
+    }
+
+    nonisolated static func replacementTargetIsEligible(
+        scope: UserTask.Scope,
+        isText: Bool,
+        isTruncated: Bool?
+    ) -> Bool {
+        scope == .activeFile && isText && isTruncated == false
     }
 
     private static func presentReplacementConflict(
+        run: UserTaskRun,
+        projectManager: ProjectManager,
         context: DialogPresentationContext
     ) {
         Task { @MainActor in
@@ -202,21 +318,68 @@ enum UserTaskInvocationController {
             alert.alertStyle = .warning
             alert.messageText = Strings.userTaskOutputConflictTitle
             alert.informativeText = Strings.userTaskOutputConflictMessage
+            // Offer safe recovery actions: Copy the captured stdout to the
+            // pasteboard, and reveal the output surface for inspection.
+            alert.addButton(withTitle: Strings.userTaskCopyOutput)
+            alert.addButton(withTitle: Strings.userTaskOpenOutput)
             alert.addButton(withTitle: Strings.dialogOK)
-            _ = await alert.runSheet(on: context)
+            let response = await alert.runSheet(on: context)
+            applyReplacementConflictResponse(
+                response,
+                run: run,
+                projectManager: projectManager,
+                context: context
+            )
+        }
+    }
+
+    /// Applies a recovery choice from the replacement-conflict sheet.
+    ///
+    /// Kept as an internal seam so the safe Copy/Open actions can be hosted
+    /// against a real owner window without automating an `NSAlert`.
+    static func applyReplacementConflictResponse(
+        _ response: NSApplication.ModalResponse,
+        run: UserTaskRun,
+        projectManager: ProjectManager,
+        context: DialogPresentationContext,
+        copyOutput: (String) -> Void = {
+            UserTaskOutputClipboard.copy($0)
+        }
+    ) {
+        guard let owner = context.nsWindow,
+              owner.isVisible,
+              !owner.isMiniaturized else {
+            return
+        }
+        switch response {
+        case .alertFirstButtonReturn:
+            copyOutput(run.stdout)
+        case .alertSecondButtonReturn:
+            projectManager.taskRunStore.isOutputVisible = true
+        default:
+            break
         }
     }
 
     private static func presentMissingActiveFile(
         context: DialogPresentationContext
-    ) {
-        Task { @MainActor in
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = Strings.userTaskMissingFileTitle
-            alert.informativeText = Strings.userTaskMissingFileMessage
-            alert.addButton(withTitle: Strings.dialogOK)
-            _ = await alert.runSheet(on: context)
-        }
+    ) async {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = Strings.userTaskMissingFileTitle
+        alert.informativeText = Strings.userTaskMissingFileMessage
+        alert.addButton(withTitle: Strings.dialogOK)
+        _ = await alert.runSheet(on: context)
+    }
+
+    private static func presentIneligibleReplacement(
+        context: DialogPresentationContext
+    ) async {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = Strings.userTaskReplacementUnavailableTitle
+        alert.informativeText = Strings.userTaskReplacementUnavailableMessage
+        alert.addButton(withTitle: Strings.dialogOK)
+        _ = await alert.runSheet(on: context)
     }
 }

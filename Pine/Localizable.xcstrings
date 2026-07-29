@@ -22290,6 +22290,441 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "运行此任务前请先打开文件。" } }
       }
     },
+    "userTask.replacementUnavailable.title": {
+      "comment": "Title shown when a replacement task cannot safely target the active editor.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgabe kann diese Datei nicht ersetzen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Task Cannot Replace This Editor" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La tarea no puede reemplazar este archivo" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La tâche ne peut pas remplacer ce fichier" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスクはこのファイルを置き換えられません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업이 이 파일을 대체할 수 없음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A tarefa não pode substituir este arquivo" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Задача не может заменить этот файл" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "任务无法替换此文件" } }
+      }
+    },
+    "userTask.replacementUnavailable.message": {
+      "comment": "Explains that replacement tasks require a complete text file in the active editor.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Ersetzungsaufgaben erfordern eine vollständige Textdatei im aktiven Editor." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Replacement tasks require an active, fully loaded text file and cannot run with project scope or a preview tab." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Las tareas de reemplazo requieren un archivo de texto completo en el editor activo." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les tâches de remplacement nécessitent un fichier texte complet dans l’éditeur actif." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "置換タスクには、アクティブなエディタで完全なテキストファイルを開く必要があります。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "대체 작업을 실행하려면 활성 편집기에 전체 텍스트 파일이 필요합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "As tarefas de substituição exigem um arquivo de texto completo no editor ativo." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Для задачи с заменой нужен полностью загруженный текстовый файл в активном редакторе." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "替换任务需要活动编辑器中完整加载的文本文件。" } }
+      }
+    },
+    "userTask.toast.succeeded": {
+      "comment": "Toast shown after a task succeeds. %@ is the task label.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgabe „%@“ erfolgreich" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Task “%@” completed" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La tarea «%@» se completó correctamente" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La tâche « %@ » a réussi" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスク「%@」が成功しました" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "“%@” 작업 성공" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A tarefa “%@” foi concluída" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Задача «%@» выполнена" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "任务“%@”已成功" } }
+      }
+    },
+    "userTask.copyOutput": {
+      "comment": "Button that copies a task's captured output.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Ausgabe kopieren" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Output" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Copiar salida" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier la sortie" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "出力をコピー" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "출력 복사" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Copiar saída" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Скопировать вывод" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制输出" } }
+      }
+    },
+    "userTask.openOutput": {
+      "comment": "Button that opens the task output surface.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Ausgabe öffnen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Open Output" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Abrir salida" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir la sortie" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "出力を開く" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "출력 열기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir saída" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Открыть вывод" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "打开输出" } }
+      }
+    },
+    "userTask.run.status.pending": {
+      "comment": "Status label for a task waiting to start.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Ausstehend" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pending" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pendiente" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "保留中" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "대기 중" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pendente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Ожидание" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "等待中" } }
+      }
+    },
+    "userTask.run.status.running": {
+      "comment": "Status label for a running task.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wird ausgeführt" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Running" } },
+        "es": { "stringUnit": { "state": "translated", "value": "En ejecución" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En cours" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "実行中" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실행 중" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Em execução" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Выполняется" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在运行" } }
+      }
+    },
+    "userTask.run.status.cancelling": {
+      "comment": "Status label while task cancellation and cleanup are in progress.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wird abgebrochen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Cancelling" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Cancelando" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Annulation" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "キャンセル中" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "취소 중" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cancelando" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Отмена" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在取消" } }
+      }
+    },
+    "userTask.run.status.succeeded": {
+      "comment": "Status label for a successful task.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Erfolgreich" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Succeeded" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Correcta" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Réussie" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "成功" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "성공" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Concluída" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Выполнена" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "成功" } }
+      }
+    },
+    "userTask.run.status.timedOut": {
+      "comment": "Status label for a task that exceeded its deadline.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Zeitüberschreitung" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Timed out" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Tiempo agotado" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Délai dépassé" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タイムアウト" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "시간 초과" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Tempo esgotado" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Истекло время" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已超时" } }
+      }
+    },
+    "userTask.run.status.failed": {
+      "comment": "Status label for a failed task without an exit code.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Fehlgeschlagen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Failed" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Fallida" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Échouée" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "失敗" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실패" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Falhou" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Ошибка" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "失败" } }
+      }
+    },
+    "userTask.run.status.cancelled": {
+      "comment": "Status label for a cancelled task.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Abgebrochen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Cancelled" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Cancelada" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Annulée" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "キャンセル済み" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "취소됨" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cancelada" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Отменена" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已取消" } }
+      }
+    },
+    "userTask.run.status.exitCode": {
+      "comment": "Status label for a failed task. %lld is its process exit code.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Exit-Code %lld" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Exit %lld" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Código de salida %lld" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Code de sortie %lld" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "終了コード %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "종료 코드 %lld" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Código de saída %lld" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Код завершения %lld" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "退出代码 %lld" } }
+      }
+    },
+    "userTask.run.elapsed": {
+      "comment": "Elapsed duration for a task run. %@ is a formatted duration.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Vergangen %@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Elapsed %@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Transcurrido %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écoulé %@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "経過 %@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "경과 %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Decorrido %@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Прошло %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已用 %@" } }
+      }
+    },
+    "userTask.output.title": {
+      "comment": "Title of the task output surface.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgabenausgabe" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Task Output" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Salida de tareas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sortie des tâches" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスク出力" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업 출력" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Saída das tarefas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Вывод задач" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "任务输出" } }
+      }
+    },
+    "userTask.output.empty": {
+      "comment": "Empty state for the task output history.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Noch keine Aufgabenläufe" } },
+        "en": { "stringUnit": { "state": "translated", "value": "No task history" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Aún no hay ejecuciones de tareas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune exécution de tâche" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスクの実行履歴はまだありません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "아직 실행한 작업이 없음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ainda não há execuções de tarefas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Запусков задач пока нет" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "尚无任务运行记录" } }
+      }
+    },
+    "userTask.output.previewTruncated": {
+      "comment": "Notice that only a bounded task-output preview is shown.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Vorschau gekürzt. „Ausgabe kopieren“ enthält die vollständige erfasste Ausgabe." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Preview truncated. Copy Output includes the complete captured output." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Vista previa truncada. Copiar salida incluye toda la salida capturada." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aperçu tronqué. Copier la sortie inclut toute la sortie capturée." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プレビューは省略されています。「出力をコピー」には取得した出力全体が含まれます。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "미리보기가 잘렸습니다. 출력 복사에는 캡처된 전체 출력이 포함됩니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Prévia truncada. Copiar saída inclui toda a saída capturada." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Предпросмотр сокращён. Команда «Скопировать вывод» включает весь сохранённый вывод." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "预览已截断。“复制输出”包含全部捕获的输出。" } }
+      }
+    },
+    "userTask.output.clearFinished": {
+      "comment": "Button that removes completed task runs from output history.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Beendete löschen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Clear Finished" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Borrar finalizadas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Effacer les tâches terminées" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "完了済みを消去" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "완료 항목 지우기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Limpar concluídas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Очистить завершённые" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "清除已完成项" } }
+      }
+    },
+    "userTask.output.close": {
+      "comment": "Accessibility label for closing the task output surface.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgabenausgabe schließen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Close Task Output" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Cerrar salida de tareas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fermer la sortie des tâches" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスク出力を閉じる" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업 출력 닫기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Fechar saída das tarefas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Закрыть вывод задач" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关闭任务输出" } }
+      }
+    },
+    "userTask.output.show": {
+      "comment": "Button that reveals the task output surface.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgabenausgabe" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Task Output" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Salida de tareas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sortie des tâches" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスク出力" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업 출력" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Saída das tarefas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Вывод задач" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "任务输出" } }
+      }
+    },
+    "userTask.cancel": {
+      "comment": "Button that cancels an active task run.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Abbrechen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Cancel" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Cancelar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Annuler" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "キャンセル" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "취소" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cancelar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Отменить" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "取消" } }
+      }
+    },
+    "userTask.diagnostic.blocked": {
+      "comment": "Diagnostic shown when task validation blocks execution.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgabe durch Sicherheitsprüfung blockiert." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Task blocked by Pine’s safety policy." } },
+        "es": { "stringUnit": { "state": "translated", "value": "La validación de seguridad bloqueó la tarea." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tâche bloquée par la validation de sécurité." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "安全性検証によりタスクがブロックされました。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "안전성 검사에서 작업이 차단되었습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Tarefa bloqueada pela validação de segurança." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Задача заблокирована проверкой безопасности." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "任务被安全验证阻止。" } }
+      }
+    },
+    "userTask.diagnostic.launchFailed": {
+      "comment": "Diagnostic shown when a task cannot launch. %@ is the underlying reason.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgabe konnte nicht gestartet werden: %@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Task failed to launch: %@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudo iniciar la tarea: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Impossible de lancer la tâche : %@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスクを起動できませんでした: %@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업을 시작할 수 없습니다: %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Não foi possível iniciar a tarefa: %@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Не удалось запустить задачу: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法启动任务：%@" } }
+      }
+    },
+    "userTask.diagnostic.backgroundReaper": {
+      "comment": "Diagnostic shown when task cleanup continues in a background reaper.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Prozessbereinigung wird im Hintergrund fortgesetzt." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine handed the task shell to its background reaper." } },
+        "es": { "stringUnit": { "state": "translated", "value": "La limpieza del proceso continúa en segundo plano." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le nettoyage du processus se poursuit en arrière-plan." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロセスのクリーンアップはバックグラウンドで続行中です。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "프로세스 정리가 백그라운드에서 계속됩니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A limpeza do processo continua em segundo plano." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Очистка процесса продолжается в фоновом режиме." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "进程清理正在后台继续。" } }
+      }
+    },
+    "userTask.diagnostic.subprocessCleanup": {
+      "comment": "Diagnostic shown when task subprocess cleanup is incomplete.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Unterprozessbereinigung wurde nicht abgeschlossen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine could not terminate every observed task subprocess." } },
+        "es": { "stringUnit": { "state": "translated", "value": "La limpieza de subprocesos no se completó." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le nettoyage des sous-processus ne s’est pas terminé." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "サブプロセスのクリーンアップが完了しませんでした。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "하위 프로세스 정리가 완료되지 않았습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A limpeza dos subprocessos não foi concluída." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Очистка дочерних процессов не завершена." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "子进程清理未完成。" } }
+      }
+    },
+    "userTask.diagnostic.outputDeadline": {
+      "comment": "Diagnostic shown when output collection reaches its deadline.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Zeitlimit für die Ausgabenerfassung erreicht." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine stopped waiting for task output at its hard deadline." } },
+        "es": { "stringUnit": { "state": "translated", "value": "La recopilación de salida alcanzó su límite de tiempo." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La collecte de la sortie a atteint son délai limite." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "出力収集が期限に達しました。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "출력 수집 시간이 초과되었습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A coleta da saída atingiu o limite de tempo." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Истекло время сбора вывода." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "输出收集已到截止时间。" } }
+      }
+    },
+    "userTask.diagnostic.outputTruncated": {
+      "comment": "Diagnostic shown when captured task output was truncated.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Die erfasste Ausgabe wurde gekürzt." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Task output exceeded Pine's capture limit and was truncated." } },
+        "es": { "stringUnit": { "state": "translated", "value": "La salida capturada se truncó." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La sortie capturée a été tronquée." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "取得した出力は切り詰められました。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "캡처된 출력이 잘렸습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A saída capturada foi truncada." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сохранённый вывод был сокращён." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "捕获的输出已截断。" } }
+      }
+    },
+    "userTask.diagnostic.invalidUTF8": {
+      "comment": "Diagnostic shown when task output contains invalid UTF-8.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Die Ausgabe enthielt ungültigen UTF-8-Text." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Task output contained invalid UTF-8 and was rejected." } },
+        "es": { "stringUnit": { "state": "translated", "value": "La salida contenía texto UTF-8 no válido." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La sortie contenait du texte UTF-8 non valide." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "出力に無効な UTF-8 テキストが含まれていました。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "출력에 잘못된 UTF-8 텍스트가 포함되어 있습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A saída continha texto UTF-8 inválido." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Вывод содержал некорректный текст UTF-8." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "输出包含无效的 UTF-8 文本。" } }
+      }
+    },
+    "userTask.diagnostic.inputIncomplete": {
+      "comment": "Diagnostic shown when task standard input could not be delivered completely.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Die Standardeingabe wurde nicht vollständig übermittelt." } },
+        "en": { "stringUnit": { "state": "translated", "value": "The task stopped before Pine finished writing standard input." } },
+        "es": { "stringUnit": { "state": "translated", "value": "La entrada estándar no se entregó por completo." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L’entrée standard n’a pas été transmise entièrement." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "標準入力を完全に送信できませんでした。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "표준 입력이 완전히 전달되지 않았습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A entrada padrão não foi entregue por completo." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Стандартный ввод передан не полностью." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "标准输入未完整传递。" } }
+      }
+    },
     "userConfig.diagnostic.duplicateCommand": {
       "comment": "Diagnostic: duplicate command id. %1$@ is the id, %2$lld is the first entry number.",
       "extractionState": "manual",
