@@ -737,6 +737,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         DialogPresentationContext
     ) async -> Bool
 
+    /// Pure feed configuration shared by the Sparkle delegate callback and
+    /// tests. Keeping this seam independent from `updaterController` prevents
+    /// tests from starting a second Sparkle runtime inside the app host.
+    nonisolated static let configuredFeedURLString =
+        SparkleConstants.appcastURLString
+
     /// Pine's single app-scoped update runtime. The nil custom-user-driver
     /// delegate is intentional: Sparkle's standard driver owns permission,
     /// update, cancellation, and relaunch UI instead of silently accepting
@@ -783,7 +789,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     // MARK: - SPUUpdaterDelegate
 
     nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
-        SparkleConstants.appcastURLString
+        Self.configuredFeedURLString
     }
 
     /// Set to true once applicationShouldTerminate is called, so onDisappear

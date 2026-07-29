@@ -5,7 +5,6 @@
 
 import Testing
 import Foundation
-import Sparkle
 @testable import Pine
 
 @Suite("Sparkle Updater Tests")
@@ -49,23 +48,12 @@ struct SparkleUpdaterTests {
         #expect(decoded?.count == 32, "Ed25519 public key must be 32 bytes")
     }
 
-    // MARK: - AppDelegate SPUUpdaterDelegate
+    // MARK: - AppDelegate Sparkle configuration
 
-    @MainActor
-    @Test func feedURLStringReturnsAppcastURL() {
-        let delegate = AppDelegate()
-        let feedURL = delegate.feedURLString(for: delegate.updaterController.updater)
-        #expect(feedURL == SparkleConstants.appcastURLString)
-    }
-
-    @MainActor
-    @Test func updaterRuntimeIsAppScoped() {
-        let delegate = AppDelegate()
-
-        #expect(delegate.updaterController === delegate.updaterController)
+    @Test func configuredFeedURLMatchesAppcastURL() {
         #expect(
-            delegate.checkForUpdatesViewModel
-                === delegate.checkForUpdatesViewModel
+            AppDelegate.configuredFeedURLString
+                == SparkleConstants.appcastURLString
         )
     }
 
@@ -103,6 +91,12 @@ struct SparkleUpdaterTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let sourceRoot = repositoryRoot.appendingPathComponent("Pine")
+        let testSourceRoot = repositoryRoot.appendingPathComponent("PineTests")
+        let productionSource = try swiftSource(in: sourceRoot)
+        let testSource = try swiftSource(
+            in: testSourceRoot,
+            excluding: URL(fileURLWithPath: #filePath)
+        )
         let appSource = try String(
             contentsOf: sourceRoot.appendingPathComponent("PineApp.swift"),
             encoding: .utf8
@@ -115,11 +109,24 @@ struct SparkleUpdaterTests {
         )
 
         #expect(
-            appSource.components(
+            productionSource.components(
                 separatedBy: "SPUStandardUpdaterController("
             ).count - 1 == 1
         )
+        #expect(!productionSource.contains("SPU" + "Updater("))
+        #expect(!testSource.contains("SPU" + "Updater("))
+        #expect(!testSource.contains("SPU" + "StandardUpdaterController("))
+        #expect(!testSource.contains(".updater" + "Controller"))
+        #expect(appSource.contains(
+            "lazy var updaterController = SPUStandardUpdaterController("
+        ))
+        #expect(appSource.contains("startingUpdater: true"))
+        #expect(appSource.contains("updaterDelegate: self"))
         #expect(appSource.contains("userDriverDelegate: nil"))
+        #expect(appSource.contains(
+            "lazy var checkForUpdatesViewModel = CheckForUpdatesViewModel("
+        ))
+        #expect(appSource.contains("updater: updaterController.updater"))
         #expect(menuSource.contains(
             "CheckForUpdatesView("
                 + "viewModel: appDelegate.checkForUpdatesViewModel"
@@ -134,6 +141,30 @@ struct SparkleUpdaterTests {
                 .appendingPathComponent("PineUserDriver.swift")
                 .path
         ))
+    }
+
+    private func swiftSource(
+        in sourceRoot: URL,
+        excluding excludedFile: URL? = nil
+    ) throws -> String {
+        guard let enumerator = FileManager.default.enumerator(
+            at: sourceRoot,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        var source = ""
+        for case let fileURL as URL in enumerator
+        where fileURL.pathExtension == "swift" {
+            guard fileURL.standardizedFileURL
+                != excludedFile?.standardizedFileURL else {
+                continue
+            }
+            source += try String(contentsOf: fileURL, encoding: .utf8)
+        }
+        return source
     }
 }
 
