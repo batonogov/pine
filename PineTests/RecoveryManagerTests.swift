@@ -3,8 +3,9 @@
 //  PineTests
 //
 
-import Testing
+import AppKit
 import Foundation
+import Testing
 @testable import Pine
 
 @MainActor
@@ -19,6 +20,19 @@ struct RecoveryManagerTests {
 
     private func cleanup(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
+    }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(2),
+        _ condition: @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
     }
 
     private func makeDirtyTab(
@@ -131,6 +145,457 @@ struct RecoveryManagerTests {
         // Simulate save — TabManager calls deleteRecoveryFile after trySaveTab
         manager.deleteRecoveryFile(for: tab.id)
         #expect(manager.pendingRecoveryEntries().isEmpty)
+    }
+
+    @Test func restoreWaitsForLargeFileOpenBeforeApplyingAndDeleting() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        let file = dir.appendingPathComponent("large.swift")
+        let diskContent = String(
+            repeating: "d",
+            count: TabManager.largeFileThreshold + 1
+        )
+        try diskContent.write(to: file, atomically: true, encoding: .utf8)
+        let recoveredContent = "recovered unsaved content"
+        let crashedTab = makeDirtyTab(
+            url: file,
+            content: recoveredContent,
+            savedContent: diskContent,
+            encoding: .utf16
+        )
+        manager.snapshotDirtyTabs([crashedTab])
+        let entries = manager.pendingRecoveryEntries()
+        let tabManager = TabManager()
+        let (responses, responseContinuation) = AsyncStream.makeStream(
+            of: NSApplication.ModalResponse.self
+        )
+        var presentationCount = 0
+        tabManager.largeFileAlertPresenter = { _, _, _ in
+            presentationCount += 1
+            for await response in responses {
+                return response
+            }
+            return .abort
+        }
+
+        let restoreTask = Task { @MainActor in
+            await manager.restorePendingEntries(
+                entries,
+                in: tabManager,
+                context: .unscoped
+            )
+        }
+        #expect(await waitUntil { presentationCount == 1 })
+        #expect(tabManager.tabs.isEmpty)
+        #expect(manager.pendingRecoveryEntries().map(\.0) == [crashedTab.id])
+
+        responseContinuation.yield(.alertSecondButtonReturn)
+        responseContinuation.finish()
+        let retained = await restoreTask.value
+
+        let restoredTab = try #require(tabManager.activeTab)
+        #expect(retained.isEmpty)
+        #expect(tabManager.tabs.count == 2)
+        let baselineTab = try #require(tabManager.tabs.first)
+        #expect(baselineTab.id != restoredTab.id)
+        #expect(baselineTab.content == diskContent)
+        #expect(baselineTab.savedContent == diskContent)
+        #expect(restoredTab.content == recoveredContent)
+        #expect(restoredTab.savedContent == diskContent)
+        #expect(restoredTab.encoding == .utf16)
+        #expect(restoredTab.isDirty)
+        let currentSnapshots = manager.pendingRecoveryEntries()
+        #expect(currentSnapshots.map(\.0) == [restoredTab.id])
+        #expect(currentSnapshots.first?.1.content == recoveredContent)
+    }
+
+    @Test func cancelledLargeFileRecoveryRetainsSnapshot() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        let file = dir.appendingPathComponent("cancelled-large.swift")
+        let diskContent = String(
+            repeating: "d",
+            count: TabManager.largeFileThreshold + 1
+        )
+        try diskContent.write(to: file, atomically: true, encoding: .utf8)
+        let crashedTab = makeDirtyTab(
+            url: file,
+            content: "keep this recovery",
+            savedContent: diskContent
+        )
+        manager.snapshotDirtyTabs([crashedTab])
+        let entries = manager.pendingRecoveryEntries()
+        let tabManager = TabManager()
+        tabManager.largeFileAlertPresenter = { _, _, _ in .abort }
+
+        let retained = await manager.restorePendingEntries(
+            entries,
+            in: tabManager,
+            context: .unscoped
+        )
+
+        #expect(retained.map(\.0) == [crashedTab.id])
+        #expect(tabManager.tabs.isEmpty)
+        #expect(manager.pendingRecoveryEntries().map(\.0) == [crashedTab.id])
+    }
+
+    @Test func partialRestoreRetainsOnlyCancelledEntryAndSelectiveDiscard() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        let restoredURL = dir.appendingPathComponent("restored.swift")
+        let restoredDiskContent = "let disk = true"
+        try restoredDiskContent.write(
+            to: restoredURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let cancelledURL = dir.appendingPathComponent("cancelled.swift")
+        let cancelledDiskContent = String(
+            repeating: "c",
+            count: TabManager.largeFileThreshold + 1
+        )
+        try cancelledDiskContent.write(
+            to: cancelledURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let restoredCrashTab = makeDirtyTab(
+            url: restoredURL,
+            content: "let recovered = true",
+            savedContent: restoredDiskContent
+        )
+        let cancelledCrashTab = makeDirtyTab(
+            url: cancelledURL,
+            content: "retain cancelled recovery",
+            savedContent: cancelledDiskContent
+        )
+        manager.snapshotDirtyTabs([
+            restoredCrashTab,
+            cancelledCrashTab
+        ])
+        let tabManager = TabManager()
+        tabManager.largeFileAlertPresenter = { _, _, _ in .abort }
+
+        let retained = await manager.restorePendingEntries(
+            manager.pendingRecoveryEntries(),
+            in: tabManager,
+            context: .unscoped
+        )
+
+        #expect(retained.map(\.0) == [cancelledCrashTab.id])
+        let recoveredTab = try #require(tabManager.tabs.first(where: {
+            $0.content == "let recovered = true"
+        }))
+        #expect(recoveredTab.id != restoredCrashTab.id)
+        #expect(recoveredTab.isDirty)
+        #expect(
+            Set(manager.pendingRecoveryEntries().map(\.0)) ==
+                Set([cancelledCrashTab.id, recoveredTab.id])
+        )
+
+        manager.deleteRecoveryFiles(for: retained.map(\.0))
+
+        #expect(
+            manager.pendingRecoveryEntries().map(\.0) ==
+                [recoveredTab.id]
+        )
+        #expect(
+            manager.pendingRecoveryEntries().first?.1.content ==
+                "let recovered = true"
+        )
+    }
+
+    @Test func duplicateURLRecoveryKeepsEveryDivergentBuffer() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let recoveryManager = RecoveryManager(recoveryDirectory: dir)
+        let file = dir.appendingPathComponent("duplicate.swift")
+        let diskContent = "let value = \"disk\""
+        try diskContent.write(to: file, atomically: true, encoding: .utf8)
+        let firstRecoveredContent = "let value = \"first 🧪\"\n\u{0}"
+        let secondRecoveredContent = "let value = \"second\""
+        let firstCrashTab = makeDirtyTab(
+            url: file,
+            content: firstRecoveredContent,
+            savedContent: diskContent,
+            encoding: .utf16
+        )
+        let secondCrashTab = makeDirtyTab(
+            url: file,
+            content: secondRecoveredContent,
+            savedContent: diskContent,
+            encoding: .ascii
+        )
+        recoveryManager.snapshotDirtyTabs([
+            firstCrashTab,
+            secondCrashTab
+        ])
+
+        let tabManager = TabManager()
+        tabManager.openTab(url: file)
+        let existingID = try #require(tabManager.activeTabID)
+        tabManager.tabs[0].content = "live unsaved buffer"
+        tabManager.tabs[0].recomputeContentCaches()
+
+        let retained = await recoveryManager.restorePendingEntries(
+            recoveryManager.pendingRecoveryEntries(),
+            in: tabManager,
+            context: .unscoped
+        )
+
+        #expect(retained.isEmpty)
+        #expect(tabManager.tabs.count == 3)
+        let existing = try #require(tabManager.tabs.first(where: {
+            $0.id == existingID
+        }))
+        #expect(existing.content == "live unsaved buffer")
+        #expect(existing.savedContent == diskContent)
+
+        let recoveredTabs = tabManager.tabs.filter { $0.id != existingID }
+        #expect(Set(recoveredTabs.map(\.content)) == Set([
+            firstRecoveredContent,
+            secondRecoveredContent
+        ]))
+        #expect(
+            recoveredTabs.first(where: {
+                $0.content == firstRecoveredContent
+            })?.encoding == .utf16
+        )
+        #expect(
+            recoveredTabs.first(where: {
+                $0.content == secondRecoveredContent
+            })?.encoding == .ascii
+        )
+        let allRecoveredTabsShareBaseline = recoveredTabs.allSatisfy {
+            $0.savedContent == diskContent
+        }
+        #expect(allRecoveredTabsShareBaseline)
+        let allRecoveredTabsAreDirty = recoveredTabs.allSatisfy {
+            $0.isDirty
+        }
+        #expect(allRecoveredTabsAreDirty)
+        #expect(Set(tabManager.tabs.map(\.id)).count == 3)
+        #expect(
+            Set(recoveryManager.pendingRecoveryEntries().map(\.1.content)) ==
+                Set([firstRecoveredContent, secondRecoveredContent])
+        )
+        #expect(
+            Set(recoveryManager.pendingRecoveryEntries().map(\.0))
+                .isDisjoint(with: [firstCrashTab.id, secondCrashTab.id])
+        )
+    }
+
+    @Test func maxTabsRecoveryIsRetainedWithoutOverwritingExistingTab() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let recoveryManager = RecoveryManager(recoveryDirectory: dir)
+        let file = dir.appendingPathComponent("full.swift")
+        let baseline = "baseline"
+        try baseline.write(to: file, atomically: true, encoding: .utf8)
+        let crashTab = makeDirtyTab(
+            url: file,
+            content: "must remain recoverable",
+            savedContent: baseline
+        )
+        recoveryManager.snapshotDirtyTabs([crashTab])
+
+        let tabManager = TabManager()
+        tabManager.tabs = [EditorTab(
+            url: file,
+            content: baseline,
+            savedContent: baseline
+        )]
+        for index in 1..<TabManager.maxTabs {
+            tabManager.tabs.append(EditorTab(
+                url: dir.appendingPathComponent("filler-\(index).swift"),
+                content: "",
+                savedContent: ""
+            ))
+        }
+        let existingID = tabManager.tabs[0].id
+
+        let retained = await recoveryManager.restorePendingEntries(
+            recoveryManager.pendingRecoveryEntries(),
+            in: tabManager,
+            context: .unscoped
+        )
+
+        #expect(retained.map(\.0) == [crashTab.id])
+        #expect(tabManager.tabs.count == TabManager.maxTabs)
+        #expect(tabManager.tabs[0].id == existingID)
+        #expect(tabManager.tabs[0].content == baseline)
+        #expect(
+            recoveryManager.pendingRecoveryEntries().map(\.0) ==
+                [crashTab.id]
+        )
+    }
+
+    @Test func unopenedRecoveryNeedsRoomForBaselineAndRecoveredTabs() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let recoveryManager = RecoveryManager(recoveryDirectory: dir)
+        let file = dir.appendingPathComponent("needs-two-slots.swift")
+        try "disk".write(to: file, atomically: true, encoding: .utf8)
+        let crashTab = makeDirtyTab(
+            url: file,
+            content: "recovered",
+            savedContent: "disk"
+        )
+        recoveryManager.snapshotDirtyTabs([crashTab])
+
+        let tabManager = TabManager()
+        for index in 0..<(TabManager.maxTabs - 1) {
+            tabManager.tabs.append(EditorTab(
+                url: dir.appendingPathComponent("filler-\(index).swift")
+            ))
+        }
+        let originalIDs = tabManager.tabs.map(\.id)
+
+        let retained = await recoveryManager.restorePendingEntries(
+            recoveryManager.pendingRecoveryEntries(),
+            in: tabManager,
+            context: .unscoped
+        )
+
+        #expect(retained.map(\.0) == [crashTab.id])
+        #expect(tabManager.tabs.map(\.id) == originalIDs)
+        #expect(!tabManager.tabs.contains { $0.url == file })
+        #expect(
+            recoveryManager.pendingRecoveryEntries().map(\.0) ==
+                [crashTab.id]
+        )
+    }
+
+    @Test func cleanRecoveredContentConsumesOldSnapshotWithoutCreatingNewOne() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let recoveryManager = RecoveryManager(recoveryDirectory: dir)
+        let file = dir.appendingPathComponent("clean.swift")
+        let diskContent = "already on disk"
+        try diskContent.write(to: file, atomically: true, encoding: .utf8)
+        let crashTab = makeDirtyTab(
+            url: file,
+            content: diskContent,
+            savedContent: "older baseline"
+        )
+        recoveryManager.snapshotDirtyTabs([crashTab])
+        let tabManager = TabManager()
+
+        let retained = await recoveryManager.restorePendingEntries(
+            recoveryManager.pendingRecoveryEntries(),
+            in: tabManager,
+            context: .unscoped
+        )
+
+        #expect(retained.isEmpty)
+        #expect(tabManager.tabs.count == 2)
+        #expect(tabManager.tabs.allSatisfy { $0.content == diskContent })
+        #expect(tabManager.tabs.allSatisfy { !$0.isDirty })
+        #expect(Set(tabManager.tabs.map(\.id)).count == 2)
+        #expect(recoveryManager.pendingRecoveryEntries().isEmpty)
+    }
+
+    @Test func failedRuntimeSnapshotKeepsOldUntilLaterSnapshotSucceeds() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        let oldTab = makeDirtyTab(content: "old durable recovery")
+        manager.snapshotDirtyTabs([oldTab])
+        let runtimeTab = makeDirtyTab(
+            content: "runtime recovered content"
+        )
+        let blockingDestination = dir.appendingPathComponent(
+            "\(runtimeTab.id.uuidString).json"
+        )
+        try FileManager.default.createDirectory(
+            at: blockingDestination,
+            withIntermediateDirectories: false
+        )
+
+        #expect(
+            manager.migrateRecoverySnapshot(
+                from: oldTab.id,
+                to: runtimeTab
+            ) == false
+        )
+        #expect(
+            manager.pendingRecoveryEntries().map(\.0) == [oldTab.id]
+        )
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(
+            atPath: blockingDestination.path,
+            isDirectory: &isDirectory
+        ))
+        #expect(isDirectory.boolValue)
+
+        try FileManager.default.removeItem(at: blockingDestination)
+        manager.snapshotDirtyTabs([runtimeTab])
+
+        let entries = manager.pendingRecoveryEntries()
+        #expect(entries.map(\.0) == [runtimeTab.id])
+        #expect(entries.first?.1.content == "runtime recovered content")
+    }
+
+    @Test func failedRuntimeSnapshotOldIDIsAlsoCleanedAfterSave() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        let oldTab = makeDirtyTab(content: "old durable recovery")
+        manager.snapshotDirtyTabs([oldTab])
+        let documentURL = dir.appendingPathComponent("saved.swift")
+        try "disk baseline".write(
+            to: documentURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let runtimeTab = makeDirtyTab(
+            url: documentURL,
+            content: "now saved elsewhere",
+            savedContent: "disk baseline"
+        )
+        let blockingDestination = dir.appendingPathComponent(
+            "\(runtimeTab.id.uuidString).json"
+        )
+        try FileManager.default.createDirectory(
+            at: blockingDestination,
+            withIntermediateDirectories: false
+        )
+        #expect(
+            !manager.migrateRecoverySnapshot(
+                from: oldTab.id,
+                to: runtimeTab
+            )
+        )
+
+        let tabManager = TabManager()
+        tabManager.recoveryManager = manager
+        tabManager.tabs = [runtimeTab]
+        tabManager.activeTabID = runtimeTab.id
+        #expect(tabManager.saveActiveTab())
+
+        #expect(manager.pendingRecoveryEntries().isEmpty)
+        #expect(!FileManager.default.fileExists(
+            atPath: blockingDestination.path
+        ))
+    }
+
+    @Test func sameIDMigrationKeepsNewlyReplacedSnapshot() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        var tab = makeDirtyTab(content: "older recovery")
+        manager.snapshotDirtyTabs([tab])
+        tab.content = "newer recovery under same ID"
+
+        #expect(manager.migrateRecoverySnapshot(from: tab.id, to: tab))
+
+        let entries = manager.pendingRecoveryEntries()
+        #expect(entries.count == 1)
+        #expect(entries.first?.0 == tab.id)
+        #expect(entries.first?.1.content == "newer recovery under same ID")
     }
 
     // MARK: - Delete recovery file

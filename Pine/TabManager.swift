@@ -77,6 +77,18 @@ final class TabManager {
         }
     }
 
+    /// Result of the deliberately narrow crash-recovery append path.
+    ///
+    /// Normal opens preserve the pane-local one-file/one-tab invariant.
+    /// Recovery is the sole exception: it must keep an already-open buffer
+    /// untouched while exposing a second, independently identified buffer
+    /// for the same URL.
+    enum RecoveryAppendResult: Equatable {
+        case appended(tabID: UUID)
+        case capacityReached
+        case sourceMissing
+    }
+
     private static let logger = Logger.editor
 
     nonisolated static let maxTabs = 1_000
@@ -355,6 +367,51 @@ final class TabManager {
         case .cancel:
             return .cancelled
         }
+    }
+
+    /// Whether recovery can keep the disk/current buffer and append a
+    /// separately identified recovered buffer without exceeding `maxTabs`.
+    ///
+    /// A URL that is not open yet needs two slots: the ordinary open supplies
+    /// the baseline buffer and ``appendRecoveredTab`` supplies the crash
+    /// buffer. An already-open URL needs only the latter.
+    func canRestoreRecoveryEntry(for url: URL) -> Bool {
+        let hasBaseline = tabs.contains(where: { $0.url == url })
+        let requiredSlots = hasBaseline ? 1 : 2
+        return tabs.count <= Self.maxTabs - requiredSlots
+    }
+
+    /// Appends recovered content as a new tab while preserving the source tab
+    /// exactly as it was. This is intentionally not part of the ordinary open
+    /// path: duplicate URLs inside one pane are allowed only when retaining
+    /// divergent crash-recovery buffers would otherwise lose user data.
+    ///
+    /// `savedContent` and file metadata come from the source tab, so dirty
+    /// state is computed against the same baseline that the user can inspect
+    /// in the separately retained source tab.
+    func appendRecoveredTab(
+        basedOn sourceTabID: UUID,
+        content: String,
+        encoding: String.Encoding
+    ) -> RecoveryAppendResult {
+        guard tabs.count < Self.maxTabs else {
+            return .capacityReached
+        }
+        guard let source = tabs.first(where: { $0.id == sourceTabID }) else {
+            return .sourceMissing
+        }
+
+        var recovered = EditorTab.reidentified(from: source)
+        recovered.kind = .text
+        recovered.content = content
+        recovered.encoding = encoding
+        recovered.cachedHighlightResult = nil
+        recovered.isPinned = false
+        recovered.isTransientPreview = false
+        recovered.recomputeContentCaches()
+        tabs.append(recovered)
+        activeTabID = recovered.id
+        return .appended(tabID: recovered.id)
     }
 
     // MARK: - Transient preview tabs

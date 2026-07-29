@@ -49,6 +49,19 @@ struct TabManagerEdgeTests {
         try? FileManager.default.removeItem(at: dir)
     }
 
+    private func waitUntil(
+        timeout: Duration = .seconds(2),
+        _ condition: @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
+    }
+
     // MARK: - Tab navigation
 
     @Test func selectTab_validIndex() throws {
@@ -649,9 +662,7 @@ struct TabManagerEdgeTests {
             completion: { completionResult = $0 }
         )
         #expect(request == .pending)
-        for _ in 0..<5 {
-            await Task.yield()
-        }
+        #expect(await waitUntil { completionResult != nil })
 
         #expect(manager.tabs.isEmpty)
         #expect(manager.pendingGoToLine == nil)
@@ -698,10 +709,7 @@ struct TabManagerEdgeTests {
         #expect(manager.pendingGoToLine == nil)
         responseContinuation.yield(.alertSecondButtonReturn)
         responseContinuation.finish()
-        for _ in 0..<50 {
-            if !manager.tabs.isEmpty { break }
-            await Task.yield()
-        }
+        #expect(await waitUntil { !manager.tabs.isEmpty })
 
         let openedTab = try #require(manager.activeTab)
         #expect(manager.tabs.count == 1)
@@ -715,6 +723,189 @@ struct TabManagerEdgeTests {
                 .opened(tabID: openedTab.id),
                 .opened(tabID: openedTab.id)
             ]
+        )
+    }
+
+    @Test func lspLargeFileNavigationWaitsForOpenAndPreservesLocation() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = makeTabManager()
+        let sourceURL = try tempFile(
+            in: dir,
+            name: "source.swift",
+            content: "let source = true"
+        )
+        manager.openTab(url: sourceURL)
+        let sourceTabID = try #require(manager.activeTabID)
+        let targetLine = "😀target\n"
+        let targetURL = try tempFile(
+            in: dir,
+            name: "definition.swift",
+            content: String(
+                repeating: targetLine,
+                count: (TabManager.largeFileThreshold / 11) + 1
+            )
+        )
+        let (responses, responseContinuation) = AsyncStream.makeStream(
+            of: NSApplication.ModalResponse.self
+        )
+        var completionResult: TabManager.OpenRequestResult?
+        manager.largeFileAlertPresenter = { _, _, _ in
+            for await response in responses {
+                return response
+            }
+            return .abort
+        }
+
+        let request = PaneLeafView.openLSPFile(
+            url: targetURL,
+            line: 0,
+            character: 2,
+            in: manager,
+            completion: { completionResult = $0 }
+        )
+
+        #expect(request == .pending)
+        #expect(manager.activeTabID == sourceTabID)
+        #expect(manager.pendingGoToLocation == nil)
+
+        responseContinuation.yield(.alertSecondButtonReturn)
+        responseContinuation.finish()
+        #expect(await waitUntil { completionResult != nil })
+
+        let targetTabID = try #require(manager.activeTabID)
+        #expect(manager.activeTab?.url == targetURL)
+        #expect(
+            manager.pendingGoToLocation ==
+                EditorNavigationLocation(line: 1, column: 3)
+        )
+        #expect(completionResult == .opened(tabID: targetTabID))
+        #expect(
+            ContentView.cursorOffset(
+                forLine: 1,
+                column: 3,
+                in: manager.activeTab?.content ?? ""
+            ) == 2
+        )
+    }
+
+    @Test func lspImmediateNavigationUsesUTF16CharacterOffsets() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = makeTabManager()
+        let content = "😀x\nsecond"
+        let url = try tempFile(
+            in: dir,
+            name: "emoji.swift",
+            content: content
+        )
+
+        let result = PaneLeafView.openLSPFile(
+            url: url,
+            line: 0,
+            character: 2,
+            in: manager
+        )
+
+        let activeTabID = try #require(manager.activeTabID)
+        #expect(result == .opened(tabID: activeTabID))
+        #expect(
+            manager.pendingGoToLocation ==
+                EditorNavigationLocation(line: 1, column: 3)
+        )
+        #expect(
+            ContentView.cursorOffset(
+                forLine: 1,
+                column: 3,
+                in: content
+            ) == 2
+        )
+    }
+
+    @Test func lspCancelledLargeFileDoesNotRouteOrChangeSelection() async throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = makeTabManager()
+        let sourceURL = try tempFile(
+            in: dir,
+            name: "source.swift",
+            content: "let source = true"
+        )
+        manager.openTab(url: sourceURL)
+        let sourceTabID = try #require(manager.activeTabID)
+        let targetURL = try tempFile(
+            in: dir,
+            name: "cancelled.swift",
+            content: String(
+                repeating: "x",
+                count: TabManager.largeFileThreshold + 1
+            )
+        )
+        let (responses, responseContinuation) = AsyncStream.makeStream(
+            of: NSApplication.ModalResponse.self
+        )
+        var presentationCount = 0
+        var completionResult: TabManager.OpenRequestResult?
+        manager.largeFileAlertPresenter = { _, _, _ in
+            presentationCount += 1
+            for await response in responses {
+                return response
+            }
+            return .abort
+        }
+
+        let result = PaneLeafView.openLSPFile(
+            url: targetURL,
+            line: 4,
+            character: 7,
+            in: manager,
+            completion: { completionResult = $0 }
+        )
+
+        #expect(result == .pending)
+        #expect(await waitUntil { presentationCount == 1 })
+        #expect(manager.activeTabID == sourceTabID)
+        #expect(manager.pendingGoToLocation == nil)
+
+        responseContinuation.yield(.abort)
+        responseContinuation.finish()
+        #expect(await waitUntil { completionResult != nil })
+        #expect(completionResult == .cancelled)
+        #expect(manager.activeTabID == sourceTabID)
+        #expect(manager.pendingGoToLocation == nil)
+        #expect(!manager.tabs.contains { $0.url == targetURL })
+    }
+
+    @Test func lspCoordinatesClampNegativeAndSaturateAtIntMax() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = makeTabManager()
+        let url = try tempFile(
+            in: dir,
+            name: "extreme.swift",
+            content: "value"
+        )
+
+        _ = PaneLeafView.openLSPFile(
+            url: url,
+            line: .max,
+            character: .max,
+            in: manager
+        )
+        #expect(
+            manager.pendingGoToLocation ==
+                EditorNavigationLocation(line: .max, column: .max)
+        )
+
+        _ = PaneLeafView.openLSPFile(
+            url: url,
+            line: -1,
+            character: .min,
+            in: manager
+        )
+        #expect(
+            manager.pendingGoToLocation ==
+                EditorNavigationLocation(line: 1, column: 1)
         )
     }
 

@@ -132,26 +132,35 @@ extension ContentView {
         // Recover into the focused editor pane (issue #971): the user is
         // looking at the active pane, so recovered tabs should appear there,
         // not in the possibly-orphaned primary TabManager.
-        let target = activeTabManager
-        for (_, entry) in recoveryEntries {
-            guard !entry.originalPath.isEmpty else { continue }
-
-            let url = URL(fileURLWithPath: entry.originalPath)
-            target.openTab(url: url)
-
-            if let index = target.tabs.firstIndex(where: { $0.url == url }) {
-                target.tabs[index].content = entry.content
-                target.tabs[index].encoding = entry.encoding
-                target.tabs[index].recomputeContentCaches()
-            }
+        guard let recoveryManager = projectManager.recoveryManager else {
+            return
         }
-        projectManager.recoveryManager?.deleteAllRecoveryFiles()
+        let target = activeTabManager
+        let entries = recoveryEntries
+        let context = DialogPresenter.forProject(projectManager)
+
+        // Dismiss the SwiftUI recovery sheet before presenting a native
+        // large-file sheet on the same window. The restorer keeps cancelled
+        // snapshots on disk, so closing this list cannot lose their content.
         showRecoveryDialog = false
         recoveryEntries = []
+
+        Task { @MainActor in
+            let retained = await recoveryManager.restorePendingEntries(
+                entries,
+                in: target,
+                context: context
+            )
+            guard !Task.isCancelled else { return }
+            recoveryEntries = retained
+            showRecoveryDialog = !retained.isEmpty
+        }
     }
 
     func discardRecovery() {
-        projectManager.recoveryManager?.deleteAllRecoveryFiles()
+        projectManager.recoveryManager?.deleteRecoveryFiles(
+            for: recoveryEntries.map(\.0)
+        )
         showRecoveryDialog = false
         recoveryEntries = []
     }
