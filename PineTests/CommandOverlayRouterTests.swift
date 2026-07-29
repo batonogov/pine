@@ -190,6 +190,52 @@ struct CommandOverlayRouterTests {
         #expect(router.capturedResponder == nil)
     }
 
+    @Test("Successful Agent Attention navigation consumes old focus")
+    func agentAttentionCompletionDoesNotRestoreCapturedResponder() async throws {
+        let originalResponder = NSResponder()
+        let terminalResponder = NSResponder()
+        let host = CommandOverlayResponderHostSpy(
+            firstResponder: originalResponder
+        )
+        let router = CommandOverlayRouter(responderHostProvider: { host })
+
+        router.present(.agentAttention)
+        host.firstResponder = terminalResponder
+        router.complete(ifMatching: .agentAttention)
+        try await Task.sleep(for: .milliseconds(20))
+
+        #expect(router.activePresentation == nil)
+        #expect(host.firstResponder === terminalResponder)
+        #expect(host.restoreCallCount == 0)
+        #expect(router.capturedResponder == nil)
+    }
+
+    @Test("A stale Agent Attention completion cannot dismiss a replacement")
+    func staleAgentAttentionCompletionIsIgnored() {
+        let router = makeRouterWithoutResponderHost()
+        router.present(.agentAttention)
+        router.present(.quickOpen)
+
+        router.complete(ifMatching: .agentAttention)
+
+        #expect(router.activePresentation == .quickOpen)
+    }
+
+    @Test("Announcements use only the captured document owner")
+    func announcementsUseCapturedOwner() {
+        let owner = CommandOverlayResponderHostSpy(firstResponder: nil)
+        let unrelated = CommandOverlayResponderHostSpy(firstResponder: nil)
+        let router = makeRouterWithoutResponderHost()
+
+        router.present(.agentAttention)
+        #expect(!router.announce("Waiting"))
+        router.preparePresentation(in: owner)
+
+        #expect(router.announce("Waiting"))
+        #expect(owner.announcements == ["Waiting"])
+        #expect(unrelated.announcements.isEmpty)
+    }
+
     @Test("Replacement restores an arbitrary original AppKit responder")
     func replacementPreservesOriginalResponder() async throws {
         let original = NSResponder()
@@ -422,6 +468,7 @@ private final class CommandOverlayResponderHostSpy:
     var firstResponder: NSResponder?
     private(set) var restoreCallCount = 0
     private(set) weak var lastRestoredResponder: NSResponder?
+    private(set) var announcements: [String] = []
 
     var commandOverlayFirstResponder: NSResponder? {
         firstResponder
@@ -435,6 +482,10 @@ private final class CommandOverlayResponderHostSpy:
         firstResponder = responder
         lastRestoredResponder = responder
         restoreCallCount += 1
+    }
+
+    func postCommandOverlayAnnouncement(_ announcement: String) {
+        announcements.append(announcement)
     }
 }
 

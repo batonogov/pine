@@ -11,7 +11,6 @@
 //  stays snapshot-testable without a live window.
 //
 
-import AppKit
 import Foundation
 
 /// Pure keyboard-selection helpers for Agent Attention and any future overlay
@@ -96,73 +95,5 @@ nonisolated enum AgentKeyboardSelection {
         guard count > 0 else { return nil }
         if let current, (0..<count).contains(current) { return current }
         return 0
-    }
-}
-
-/// Captures and restores AppKit focus around the Agent Attention overlay.
-///
-/// The coordinator keeps weak references so presenting an overlay can never
-/// extend the lifetime of a project window or editor/terminal view. A capture
-/// is one-shot: either ``restore()`` or ``discard()`` consumes it, preventing
-/// a delayed dismissal from stealing focus after a newer presentation.
-@MainActor
-final class AgentAttentionFocusCoordinator {
-    private weak var capturedWindow: NSWindow?
-    private weak var capturedResponder: NSResponder?
-
-    private(set) var captureID: UUID?
-    var hasCapture: Bool { captureID != nil }
-
-    /// Records the current first responder immediately before presentation.
-    @discardableResult
-    func capture(in window: NSWindow?) -> UUID? {
-        discard()
-        guard let window else { return nil }
-        let captureID = UUID()
-        capturedWindow = window
-        capturedResponder = window.firstResponder
-        self.captureID = captureID
-        return captureID
-    }
-
-    /// Restores the captured responder and consumes the capture.
-    ///
-    /// A responder view that has moved to another window is deliberately not
-    /// restored. This can happen when a tab/window closes while the overlay is
-    /// visible; sending focus back to it would cross project-window scope.
-    @discardableResult
-    func restore() -> Bool {
-        guard let captureID else { return false }
-        return restore(matching: captureID)
-    }
-
-    /// Restores only when `captureID` still identifies the current
-    /// presentation. This keeps an asynchronously scheduled dismissal from
-    /// consuming the focus capture of a newer overlay.
-    @discardableResult
-    func restore(matching captureID: UUID) -> Bool {
-        guard self.captureID == captureID,
-              let window = capturedWindow else {
-            if self.captureID == captureID {
-                discard()
-            }
-            return false
-        }
-
-        let responder = capturedResponder
-        discard()
-
-        if let responderView = responder as? NSView,
-           responderView.window !== window {
-            return false
-        }
-        return window.makeFirstResponder(responder)
-    }
-
-    /// Consumes the capture without changing focus.
-    func discard() {
-        capturedWindow = nil
-        capturedResponder = nil
-        captureID = nil
     }
 }

@@ -7,6 +7,28 @@
 
 import Foundation
 
+/// Canonical pane-and-tab activation shared by every agent surface.
+///
+/// Callers may perform stronger identity validation first (Activity rechecks
+/// session ownership); the final selection and terminal-manager bookkeeping
+/// still flow through this single primitive.
+@MainActor
+enum AgentTerminalNavigationRouter {
+    @discardableResult
+    static func route(
+        paneID: PaneID,
+        tabID: UUID,
+        paneManager: PaneManager,
+        terminalManager: TerminalManager
+    ) -> Bool {
+        guard paneManager.selectTerminalTab(tabID, in: paneID) else {
+            return false
+        }
+        terminalManager.lastActiveTerminalPaneID = paneID
+        return true
+    }
+}
+
 /// One currently verified terminal destination for an Activity action.
 ///
 /// Pane and tab identity are intentionally atomic: a tab UUID alone cannot
@@ -88,11 +110,14 @@ enum AgentActivityTerminalRouter {
               let tab = state.terminalTabs.first(where: { $0.id == target.tabID }),
               let session = tab.agentSession,
               session.id == target.sessionID,
-              session.agentType == target.agentType,
-              paneManager.selectTerminalTab(target.tabID, in: target.paneID) else {
+              session.agentType == target.agentType else {
             return false
         }
-        terminalManager.lastActiveTerminalPaneID = target.paneID
-        return true
+        return AgentTerminalNavigationRouter.route(
+            paneID: target.paneID,
+            tabID: target.tabID,
+            paneManager: paneManager,
+            terminalManager: terminalManager
+        )
     }
 }

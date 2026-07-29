@@ -43,17 +43,10 @@ struct ContentView: View {
     @State var isBranchSwitcherPresented = false
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
-    /// Agent attention-list overlay (#1112).
-    @State var showAgentAttention = false
     /// Shared command-overlay router (#975). Owns the single active navigation
-    /// overlay (Quick Open / Symbol Navigator / Go to Line / Command Palette)
+    /// overlay (including Agent Attention)
     /// and captures/restores the previous AppKit first responder.
     @State var commandOverlayRouter = CommandOverlayRouter()
-    /// Weak bridge to this exact project window. Agent Attention uses it for
-    /// VoiceOver announcements even if another project becomes key while the
-    /// overlay is open. Focus ownership remains in `commandOverlayRouter`.
-    @State var agentAttentionWindowContext =
-        AgentAttentionWindowContext()
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
     @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
@@ -113,9 +106,6 @@ struct ContentView: View {
             )
             DocumentEditedTracker(isEdited: projectManager.hasUnsavedChanges)
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
-            AgentAttentionWindowReader(
-                windowContext: agentAttentionWindowContext
-            )
         }
         .task {
             let disposition = restoreSessionIfNeeded()
@@ -141,7 +131,6 @@ struct ContentView: View {
                 onDiscard: { discardRecovery() }
             )
         }
-        .overlay { agentAttentionOverlay }
         // MARK: - Command overlays (#975)
         // Quick Open, Symbol Navigator, Go to Line, and Command Palette route
         // through a single document-scoped router so at most one overlay is
@@ -347,17 +336,7 @@ struct ContentView: View {
                     projectManager.problemsController.togglePanel()
                 },
                 onShowAttention: {
-                    guard !showAgentAttention,
-                          let ownerWindow = agentAttentionWindowContext.window
-                    else {
-                        return
-                    }
-                    agentAttentionFocusCoordinator.capture(
-                        in: ownerWindow
-                    )
-                    withAnimation(PineAnimation.overlay) {
-                        showAgentAttention = true
-                    }
+                    commandOverlayRouter.present(.agentAttention)
                 }
             )
         }
@@ -397,66 +376,6 @@ struct ContentView: View {
                     self.navigateToDiagnostic(diagnostic)
                 }
             }
-        }
-    }
-
-    /// Agent attention-list overlay (#1112). Broken out into its own
-    /// computed property so the SwiftUI type-checker can resolve `body` in
-    /// reasonable time — an inline `.overlay { CommandOverlayView { … } }`
-    /// pushes the already-large `body` past the type-checker's budget.
-    /// Returns `AnyView` to erase the `CommandOverlayView<…>` generic from the
-    /// call site (the body modifier chain is already near the inference
-    /// limit); the cost is negligible since the overlay is rarely shown.
-    private var agentAttentionOverlay: AnyView {
-        guard showAgentAttention else { return AnyView(EmptyView()) }
-        return AnyView(
-            CommandOverlayView(
-                isPresented: $showAgentAttention,
-                onDismiss: dismissAgentAttention
-            ) {
-                AgentAttentionOverlay(
-                    summaries: AgentStatusSummary.activeSummaries(in: paneManager),
-                    windowContext: agentAttentionWindowContext,
-                    onNavigate: navigateFromAgentAttention,
-                    onDismiss: dismissAgentAttention
-                )
-            }
-        )
-    }
-
-    /// Cancels Agent Attention and restores whichever AppKit view owned
-    /// keyboard focus before the overlay appeared. Backdrop clicks, Escape in
-    /// the container, and Escape in the focused list all converge here.
-    private func dismissAgentAttention() {
-        let coordinator = agentAttentionFocusCoordinator
-        let captureID = coordinator.captureID
-        withAnimation(PineAnimation.overlay) {
-            showAgentAttention = false
-        }
-
-        // Wait until SwiftUI removes the focusable overlay. The capture token
-        // prevents this deferred cleanup from consuming a newer presentation.
-        guard let captureID else { return }
-        DispatchQueue.main.async {
-            coordinator.restore(matching: captureID)
-        }
-    }
-
-    /// Activates a highlighted request without restoring the old responder:
-    /// the selected terminal becomes the new destination and receives an
-    /// explicit pending focus request from `selectTerminalTab`.
-    private func navigateFromAgentAttention(
-        paneID: PaneID,
-        tabID: UUID
-    ) {
-        guard paneManager.selectTerminalTab(tabID, in: paneID) else {
-            dismissAgentAttention()
-            return
-        }
-        terminal.lastActiveTerminalPaneID = paneID
-        agentAttentionFocusCoordinator.discard()
-        withAnimation(PineAnimation.overlay) {
-            showAgentAttention = false
         }
     }
 

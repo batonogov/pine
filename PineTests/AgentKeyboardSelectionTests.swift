@@ -2,11 +2,10 @@
 //  AgentKeyboardSelectionTests.swift
 //  PineTests
 //
-//  Unit coverage for Agent Attention keyboard selection and AppKit focus
-//  restoration (#1245).
+//  Unit coverage for Agent Attention keyboard selection (#1245).
 //
 
-import AppKit
+import Foundation
 import Testing
 
 @testable import Pine
@@ -133,107 +132,4 @@ struct AgentKeyboardSelectionTests {
         )
     }
 
-    @Test("Cancel restores the captured responder exactly once")
-    func focusCaptureRestoresOnce() throws {
-        let fixture = makeFocusFixture()
-        #expect(fixture.window.makeFirstResponder(fixture.original))
-
-        let coordinator = AgentAttentionFocusCoordinator()
-        let captureID = try #require(
-            coordinator.capture(in: fixture.window)
-        )
-        #expect(coordinator.captureID == captureID)
-        #expect(fixture.window.makeFirstResponder(fixture.overlay))
-
-        #expect(coordinator.restore(matching: captureID))
-        #expect(fixture.window.firstResponder === fixture.original)
-        #expect(!coordinator.hasCapture)
-        #expect(!coordinator.restore(matching: captureID))
-    }
-
-    @Test("Activation can discard focus restoration")
-    func focusCaptureCanBeDiscarded() {
-        let fixture = makeFocusFixture()
-        #expect(fixture.window.makeFirstResponder(fixture.original))
-
-        let coordinator = AgentAttentionFocusCoordinator()
-        coordinator.capture(in: fixture.window)
-        #expect(fixture.window.makeFirstResponder(fixture.overlay))
-        coordinator.discard()
-
-        #expect(!coordinator.restore())
-        #expect(fixture.window.firstResponder === fixture.overlay)
-    }
-
-    @Test("A stale deferred dismissal cannot consume a newer capture")
-    func staleCaptureTokenCannotRestore() throws {
-        let fixture = makeFocusFixture()
-        #expect(fixture.window.makeFirstResponder(fixture.original))
-
-        let coordinator = AgentAttentionFocusCoordinator()
-        let staleID = try #require(coordinator.capture(in: fixture.window))
-
-        #expect(fixture.window.makeFirstResponder(fixture.overlay))
-        let currentID = try #require(coordinator.capture(in: fixture.window))
-        #expect(staleID != currentID)
-        #expect(fixture.window.makeFirstResponder(fixture.destination))
-
-        #expect(!coordinator.restore(matching: staleID))
-        #expect(coordinator.captureID == currentID)
-        #expect(fixture.window.firstResponder === fixture.destination)
-
-        #expect(coordinator.restore(matching: currentID))
-        #expect(fixture.window.firstResponder === fixture.overlay)
-    }
-
-    @Test("A responder detached while the overlay is open is not restored")
-    func detachedResponderIsNotRestored() throws {
-        let fixture = makeFocusFixture()
-        #expect(fixture.window.makeFirstResponder(fixture.original))
-
-        let coordinator = AgentAttentionFocusCoordinator()
-        let captureID = try #require(coordinator.capture(in: fixture.window))
-        #expect(fixture.window.makeFirstResponder(fixture.overlay))
-        fixture.original.removeFromSuperview()
-
-        #expect(!coordinator.restore(matching: captureID))
-        #expect(fixture.window.firstResponder === fixture.overlay)
-        #expect(!coordinator.hasCapture)
-    }
-
-    @Test("Capture without a window is a safe no-op")
-    func nilWindowDoesNotCapture() {
-        let coordinator = AgentAttentionFocusCoordinator()
-
-        #expect(coordinator.capture(in: nil) == nil)
-        #expect(!coordinator.hasCapture)
-        #expect(!coordinator.restore())
-    }
-
-    private func makeFocusFixture() -> (
-        window: NSWindow,
-        original: FocusableTestView,
-        overlay: FocusableTestView,
-        destination: FocusableTestView
-    ) {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        let contentView = NSView(frame: window.contentLayoutRect)
-        let original = FocusableTestView(frame: .zero)
-        let overlay = FocusableTestView(frame: .zero)
-        let destination = FocusableTestView(frame: .zero)
-        contentView.addSubview(original)
-        contentView.addSubview(overlay)
-        contentView.addSubview(destination)
-        window.contentView = contentView
-        return (window, original, overlay, destination)
-    }
-}
-
-private final class FocusableTestView: NSView {
-    override var acceptsFirstResponder: Bool { true }
 }
