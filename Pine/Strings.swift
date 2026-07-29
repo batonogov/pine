@@ -1467,6 +1467,8 @@ enum Strings {
     static let tabMoveTrailing: LocalizedStringKey = "tab.moveTrailing"
     static let tabMoveToPreviousPane: LocalizedStringKey = "tab.moveToPreviousPane"
     static let tabMoveToNextPane: LocalizedStringKey = "tab.moveToNextPane"
+    static let tabSwitchNext: LocalizedStringKey = "tab.switchNext"
+    static let tabSwitchPrevious: LocalizedStringKey = "tab.switchPrevious"
 
     // MARK: - Unsaved Changes Dialog (AppKit)
 
@@ -1986,29 +1988,77 @@ enum Strings {
     // MARK: - Global Tab Switcher overlay (#1239)
 
     /// Title shown at the top of the Control-Tab overlay.
-    static let globalTabSwitcherTitle: String =
-        String(localized: "globalTabSwitcher.title", defaultValue: "Switch Tab")
+    static var globalTabSwitcherTitle: String {
+        globalTabSwitcherTitle(locale: .current)
+    }
+
+    static func globalTabSwitcherTitle(locale: Locale) -> String {
+        localizedString(
+            forKey: "globalTabSwitcher.title",
+            fallback: "Switch Tab",
+            locale: locale
+        )
+    }
 
     /// Footnote hint beneath the list, e.g. "Tab to cycle, release Control to switch".
-    static let globalTabSwitcherHint: String =
-        String(
-            localized: "globalTabSwitcher.hint",
-            defaultValue: "Tab cycles · Release Control to switch · Esc cancels"
+    static var globalTabSwitcherHint: String {
+        globalTabSwitcherHint(locale: .current)
+    }
+
+    static func globalTabSwitcherHint(locale: Locale) -> String {
+        localizedString(
+            forKey: "globalTabSwitcher.hint",
+            fallback: "Tab cycles · Release Control to switch · Esc cancels",
+            locale: locale
         )
+    }
 
     /// Generic pane label fallback used when a pane position cannot be derived.
-    static let paneGenericLabel: String =
-        String(localized: "pane.genericLabel", defaultValue: "Pane")
+    static var paneGenericLabel: String {
+        paneGenericLabel(locale: .current)
+    }
+
+    static func paneGenericLabel(locale: Locale) -> String {
+        localizedString(
+            forKey: "pane.genericLabel",
+            fallback: "Pane",
+            locale: locale
+        )
+    }
 
     /// 1-based pane position label, e.g. "Pane 2".
-    static func panePositionLabel(_ position: Int) -> String {
-        "Pane \(position)"
+    static func panePositionLabel(
+        _ position: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "pane.positionLabel",
+            fallback: "Pane %lld",
+            locale: locale
+        )
+        return String(format: format, locale: locale, position)
     }
 
     /// VoiceOver description for the currently highlighted row.
     static func globalTabSwitcherAnnouncement(
-        title: String, paneContext: String, position: Int, total: Int
+        title: String,
+        paneContext: String,
+        position: Int,
+        total: Int,
+        locale: Locale = .current
     ) -> String {
-        "\(title), \(paneContext), \(position) of \(total)"
+        let format = localizedString(
+            forKey: "globalTabSwitcher.announcement",
+            fallback: "%1$@, %2$@, %3$lld of %4$lld",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            title,
+            paneContext,
+            position,
+            total
+        )
     }
 }

@@ -29,6 +29,7 @@ struct ContentView: View {
     @Environment(\.openWindow) var openWindow
 
     @Environment(\.controlActiveState) var controlActiveState
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     // MARK: - State (internal for cross-file extension access in ContentView+Helpers)
 
@@ -132,6 +133,26 @@ struct ContentView: View {
                 onDiscard: { discardRecovery() }
             )
         }
+        .overlay {
+            // The controller pins every gesture to the key project window and
+            // discards it when that window resigns. Mirror that ownership in
+            // the render gate so a shared/stale scene can never show another
+            // window's switcher session.
+            if paneManager.isGlobalTabSwitcherActive,
+               controlActiveState == .key {
+                GlobalTabSwitcherOverlay()
+                    .transition(
+                        reduceMotion
+                            ? .identity
+                            : .opacity.combined(with: .scale(scale: 0.96))
+                    )
+                    .zIndex(100)
+            }
+        }
+        .animation(
+            reduceMotion ? nil : PineAnimation.overlay,
+            value: paneManager.isGlobalTabSwitcherActive
+        )
         // MARK: - Command overlays (#975)
         // Quick Open, Symbol Navigator, Go to Line, and Command Palette route
         // through a single document-scoped router so at most one overlay is

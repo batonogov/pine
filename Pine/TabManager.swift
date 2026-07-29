@@ -131,6 +131,10 @@ final class TabManager {
     var recoveryManager: RecoveryManager?
     var onEditorContextChanged: (() -> Void)?
     var onActiveTabChanged: ((UUID?) -> Void)?
+    /// Called after the set of tab identities changes. PaneManager uses this
+    /// to reconcile a live global switcher without depending on a SwiftUI
+    /// render pass noticing the mutation.
+    var onTabInventoryChanged: (() -> Void)?
     var editorSettings: EditorSettings = .shared
     var fileFormatters: FileFormatterRegistry = .default
     /// Project wiring replaces this fallback for every pane-owned manager,
@@ -363,6 +367,7 @@ final class TabManager {
         case .openNew(let tab):
             tabs.append(tab)
             activeTabID = tab.id
+            onTabInventoryChanged?()
             return .opened(tabID: tab.id)
         case .cancel:
             return .cancelled
@@ -542,6 +547,7 @@ final class TabManager {
                 tabs.append(tab)
             }
             activeTabID = tab.id
+            onTabInventoryChanged?()
             return .opened(tabID: tab.id)
         }
     }
@@ -580,6 +586,7 @@ final class TabManager {
         if wasActive {
             activeTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id
         }
+        onTabInventoryChanged?()
     }
 
     func dirtyTabsForCloseOthers(keeping tabID: UUID) -> [EditorTab] {
@@ -836,6 +843,7 @@ final class TabManager {
         if activeTabID == id {
             activeTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id
         }
+        onTabInventoryChanged?()
 
         return ExtractedTab(
             tab: tab,
@@ -882,6 +890,7 @@ final class TabManager {
         tabs.insert(tab, at: insertionIndex)
         activeTabID = tab.id
         pendingFocusTabID = tab.id
+        onTabInventoryChanged?()
         return true
     }
 
@@ -912,6 +921,7 @@ final class TabManager {
         let index = min(extraction.originalIndex, tabs.count)
         tabs.insert(extraction.tab, at: index)
         activeTabID = extraction.previousActiveTabID
+        onTabInventoryChanged?()
         if extraction.shouldResumeAutoSave {
             scheduleAutoSave(for: extraction.tab.id)
         }
@@ -1013,7 +1023,10 @@ final class TabManager {
             editorSettings: editorSettings, fileFormatters: fileFormatters,
             projectRoot: projectRoot
         )
-        if let newID { activeTabID = newID }
+        if let newID {
+            activeTabID = newID
+            onTabInventoryChanged?()
+        }
         return newID != nil
     }
 

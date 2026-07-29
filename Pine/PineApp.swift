@@ -732,7 +732,8 @@ class CloseDelegate: NSObject, NSWindowDelegate {
 
 // MARK: - AppDelegate
 
-class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
+                   GlobalTabSwitcherKeyControllerDelegate {
     typealias TerminationAlertPresenter = @MainActor (
         AlertTemplate,
         DialogPresentationContext,
@@ -1083,6 +1084,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
 
+        // The key-down half is routed through the single precedence monitor
+        // below; this installs Control-release and owner-window cancellation.
+        tabSwitcherKeyController.delegate = self
+        tabSwitcherKeyController.install()
+
         // Clean up stale recovery files older than 7 days across all projects
         RecoveryManager.cleanupAllStaleEntries(olderThan: 7)
 
@@ -1123,7 +1129,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                         projectManager: self?.activeProjectManager()
                     )
                 },
-                dispatchBuiltIn: Self.handleBuiltInKeyDown
+                dispatchBuiltIn: { [weak self] event in
+                    self?.handleBuiltInKeyDown(event) ?? false
+                }
             )
         }
 
@@ -1155,7 +1163,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// Handles Pine shortcuts that require physical key codes or focused
     /// AppKit state. Called only after user overrides decline the event.
     /// Returns `true` when the event was consumed.
-    private static func handleBuiltInKeyDown(_ event: NSEvent) -> Bool {
+    private func handleBuiltInKeyDown(_ event: NSEvent) -> Bool {
+        if tabSwitcherKeyController.handleKeyDownEvent(event) {
+            return true
+        }
         let documentWindow = CommandOverlayOwnerResolver.documentWindow(
             for: NSApp.keyWindow
         )
@@ -1205,12 +1216,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             return true
         }
 
-        // Ctrl+Tab / Ctrl+Shift+Tab cycle editor tabs.
+        // Immediate fallback retained for call paths where the visual
+        // controller is not installed (notably synthetic test harnesses that
+        // invoke the built-in dispatcher directly).
         if event.keyCode == 48,
            let window = documentWindow,
            let closeDelegate = window.delegate as? CloseDelegate {
-            let modifiers = event.modifierFlags.intersection(
-                .deviceIndependentFlagsMask
+            let modifiers = KeyboardShortcutMatcher.normalizedModifiers(
+                event.modifierFlags
             )
             if modifiers == .control {
                 closeDelegate.projectManager.paneManager.switchToNextTabGlobally()
@@ -1240,6 +1253,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
 
         return false
+    }
+
+    /// Atomically resolves the project that owns the current key window.
+    var globalTabSwitcherTarget: GlobalTabSwitcherTarget? {
+        guard let window = CommandOverlayOwnerResolver.documentWindow(
+            for: NSApp.keyWindow
+        ),
+              let closeDelegate = window.delegate as? CloseDelegate else {
+            return nil
+        }
+        return GlobalTabSwitcherTarget(
+            window: window,
+            paneManager: closeDelegate.projectManager.paneManager
+        )
     }
 
     /// Called when the user clicks the dock icon with no visible windows.

@@ -2,133 +2,231 @@
 //  GlobalTabSwitcherKeyController.swift
 //  Pine
 //
-//  Keyboard controller for the visual MRU tab switcher (issue #1239).
-//
-//  Owns the three NSEvent monitors that drive the Control-Tab overlay session:
-//    1. key-down (Control-Tab)         → begin or advance the session
-//    2. flags-changed (Control release) → commit the highlighted selection
-//    3. key-down (Escape)              → cancel and restore the original tab
-//
-//  The MRU model itself lives on `PaneManager`; this controller only orchestrates
-//  session begin / advance / commit / cancel in response to physical key events.
-//  It resolves the key window's `ProjectManager` (via its `CloseDelegate`) so
-//  the overlay targets the project the user is actually looking at.
-//
-//  Why a dedicated monitor (instead of folding into the existing key-down
-//  handler): Control-release detection needs `flagsChanged`, which the existing
-//  single key-down monitor does not watch. Keeping the lifecycle in one object
-//  also makes it unit-testable via injected closures.
+//  Window-owned keyboard lifecycle for the visual MRU switcher.
 //
 
 import AppKit
 
-/// Resolves the `PaneManager` for the current key window, plus a way to drive
-/// the session directly. Abstracted so the controller is testable without a
-/// live `NSWindow` / `CloseDelegate`.
+/// A single, atomically-resolved switcher target. Keeping the window and pane
+/// manager together prevents a key-window change between two delegate reads
+/// from pairing the wrong window with a project.
 @MainActor
-protocol GlobalTabSwitcherKeyControllerDelegate: AnyObject {
-    /// The pane manager whose session should be driven, or `nil` when no
-    /// eligible project window is key.
-    var paneManagerForTabSwitcher: PaneManager? { get }
+struct GlobalTabSwitcherTarget {
+    let window: NSWindow
+    let paneManager: PaneManager
 }
 
-/// Owns the NSEvent monitors that drive the Control-Tab overlay.
+@MainActor
+protocol GlobalTabSwitcherKeyControllerDelegate: AnyObject {
+    var globalTabSwitcherTarget: GlobalTabSwitcherTarget? { get }
+}
+
+/// Drives one Control-Tab gesture from its first key-down through release.
 ///
-/// Installed once at app launch (`install()`) and torn down on `deinit`. All
-/// real work is dispatched to the resolved `PaneManager` so this class holds no
-/// state of its own beyond the monitor tokens.
+/// Key-down remains in AppDelegate's single precedence-ordered local monitor:
+/// user keybindings must get first refusal. This controller installs the
+/// companion flags-changed monitor plus lifecycle observers, then pins the
+/// gesture to the project window that started it.
 @MainActor
 final class GlobalTabSwitcherKeyController {
     weak var delegate: GlobalTabSwitcherKeyControllerDelegate?
 
-    // Monitor tokens. `nonisolated(unsafe)` only so `deinit` (which is
-    // nonisolated even on a @MainActor class) can remove them; every real
-    // read/write happens on the main thread inside the monitor closures.
-    nonisolated(unsafe) private var keyDownMonitor: Any?
-    nonisolated(unsafe) private var flagsChangedMonitor: Any?
-
-    /// Whether the monitors are currently installed. Used to make `install()`
-    /// idempotent and to guard `deinit`.
+    private let notificationCenter: NotificationCenter
+    private let observesSystemEvents: Bool
+    private weak var ownerWindow: NSWindow?
+    private weak var ownerPaneManager: PaneManager?
     private var isInstalled = false
 
+    // Monitor/observer tokens are only marked unsafe for nonisolated deinit.
+    // All installation and callbacks happen on the main thread.
+    nonisolated(unsafe) private var flagsChangedMonitor: Any?
+    nonisolated(unsafe) private var lifecycleObservers: [NSObjectProtocol] = []
+
+    init(
+        notificationCenter: NotificationCenter = .default,
+        observesSystemEvents: Bool = true
+    ) {
+        self.notificationCenter = notificationCenter
+        self.observesSystemEvents = observesSystemEvents
+    }
+
     deinit {
-        if let keyDownMonitor {
-            NSEvent.removeMonitor(keyDownMonitor)
-        }
         if let flagsChangedMonitor {
             NSEvent.removeMonitor(flagsChangedMonitor)
         }
+        for observer in lifecycleObservers {
+            notificationCenter.removeObserver(observer)
+        }
     }
 
-    /// Installs the key-down and flags-changed monitors. Idempotent.
+    /// Installs the release monitor and cancellation observers once.
     func install() {
         guard !isInstalled else { return }
         isInstalled = true
 
-        // Key-down: Control-Tab begins/advances; Escape cancels. We watch
-        // .keyDown broadly and filter inside, so a single monitor owns both.
-        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            self?.handleKeyDown(event) ?? event
-        }
-
-        // Flags-changed: commit when Control is released. This is the canonical
-        // macOS Cmd-Tab / Control-Tab "release to switch" gesture.
-        flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
-            self?.handleFlagsChanged(event) ?? event
-        }
-    }
-
-    // MARK: - Event handling
-
-    /// Physical key code for Tab (layout-independent).
-    private static let tabKeyCode: UInt16 = 48
-    /// Physical key code for Escape.
-    private static let escapeKeyCode: UInt16 = 53
-
-    private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
-        guard let paneManager = delegate?.paneManagerForTabSwitcher else {
-            return event
-        }
-
-        // Escape cancels an active session (and otherwise falls through).
-        if event.keyCode == Self.escapeKeyCode, paneManager.isGlobalTabSwitcherActive {
-            paneManager.cancelGlobalTabSwitcher()
-            return nil
-        }
-
-        // Control-Tab (forward) and Shift-Control-Tab (reverse).
-        guard event.keyCode == Self.tabKeyCode else { return event }
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let isControl = modifiers.contains(.control)
-        guard isControl else { return event }
-        let reverse = modifiers.contains(.shift)
-
-        if paneManager.isGlobalTabSwitcherActive {
-            // Subsequent press while held: cycle without moving real focus.
-            paneManager.advanceGlobalTabSwitcher(offset: reverse ? -1 : 1)
-        } else {
-            // First press: open the overlay, then advance once so the very
-            // first Control-Tab surfaces the second-most-recent tab (the most
-            // recent is the one the user is already on).
-            if paneManager.beginGlobalTabSwitcherSession() {
-                paneManager.advanceGlobalTabSwitcher(offset: reverse ? -1 : 1)
+        if observesSystemEvents {
+            flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.flagsChanged]
+            ) { [weak self] event in
+                MainActor.assumeIsolated {
+                    _ = self?.handleModifierFlagsChanged(event.modifierFlags)
+                }
+                return event
             }
         }
-        return nil
+
+        let applicationObserver = notificationCenter.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.discardOwnedSession()
+            }
+        }
+        lifecycleObservers.append(applicationObserver)
+
+        for name in [
+            NSWindow.didResignKeyNotification,
+            NSWindow.willCloseNotification
+        ] {
+            let observer = notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                // Extract only a Sendable identity before entering the main
+                // actor; moving Notification itself across the boundary is a
+                // Swift 6 data-race error.
+                let windowIdentifier = (notification.object as? NSWindow)
+                    .map(ObjectIdentifier.init)
+                MainActor.assumeIsolated {
+                    self?.discardIfOwnerWindow(
+                        identifiedBy: windowIdentifier
+                    )
+                }
+            }
+            lifecycleObservers.append(observer)
+        }
     }
 
-    private func handleFlagsChanged(_ event: NSEvent) -> NSEvent? {
-        guard let paneManager = delegate?.paneManagerForTabSwitcher,
-              paneManager.isGlobalTabSwitcherActive else {
-            return event
+    /// Handles Control-Tab and Escape after user keybindings decline the
+    /// event. Returns `true` only when the visual switcher consumed it.
+    func handleKeyDownEvent(_ event: NSEvent) -> Bool {
+        guard isInstalled else { return false }
+
+        if event.keyCode == UInt16(KeyboardShortcutMatcher.PhysicalKey.tab) {
+            let modifiers = KeyboardShortcutMatcher.normalizedModifiers(
+                event.modifierFlags
+            )
+            if modifiers == .control {
+                return handleControlTab(reverse: false)
+            }
+            if modifiers == [.control, .shift] {
+                return handleControlTab(reverse: true)
+            }
+            return false
         }
-        // Commit when Control is no longer held. Checking
-        // `event.modifierFlags.contains(.control)` is the reliable signal that
-        // the Control key has just been released (the event reports the
-        // *new* modifier state).
-        if !event.modifierFlags.contains(.control) {
-            paneManager.commitGlobalTabSwitcher()
+
+        // Escape is consumed only for the gesture's pinned owner.
+        guard event.keyCode == 53,
+              ownerPaneManager?.isGlobalTabSwitcherActive == true else {
+            return false
         }
-        return event
+        cancelOwnedSession()
+        return true
+    }
+
+    /// Testable semantic entry point for a forward/reverse Control-Tab press.
+    @discardableResult
+    func handleControlTab(reverse: Bool) -> Bool {
+        guard isInstalled else { return false }
+        guard let target = delegate?.globalTabSwitcherTarget else {
+            // If focus left every project window before its lifecycle
+            // notification reached us, never leave an invisible owner armed.
+            discardOwnedSession()
+            return false
+        }
+
+        if let ownerPaneManager {
+            // A gesture never migrates between project windows. Discard the
+            // old owner's preview without sending focus back into its outgoing
+            // window, then allow the new key window to start its own session.
+            if ownerWindow !== target.window
+                || ownerPaneManager !== target.paneManager {
+                discardOwnedSession()
+            } else if ownerPaneManager.isGlobalTabSwitcherActive {
+                ownerPaneManager.advanceGlobalTabSwitcher(
+                    offset: reverse ? -1 : 1
+                )
+                return true
+            } else {
+                clearOwner()
+            }
+        }
+
+        guard target.paneManager.beginGlobalTabSwitcherSession(
+            initialOffset: reverse ? -1 : 1
+        ) else {
+            return false
+        }
+        ownerWindow = target.window
+        ownerPaneManager = target.paneManager
+        return true
+    }
+
+    /// Commits the pinned owner's selection when Control is released.
+    @discardableResult
+    func handleModifierFlagsChanged(
+        _ modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        guard ownerPaneManager?.isGlobalTabSwitcherActive == true else {
+            clearOwner()
+            return false
+        }
+        guard ownerWindow != nil else {
+            // A weak owner can disappear before a delayed lifecycle
+            // notification is delivered. Never commit focus into a window
+            // that no longer exists.
+            discardOwnedSession()
+            return false
+        }
+        guard !modifierFlags.contains(.control) else { return false }
+        commitOwnedSession()
+        return true
+    }
+
+    func cancelOwnedSession() {
+        let owner = ownerPaneManager
+        clearOwner()
+        owner?.cancelGlobalTabSwitcher()
+    }
+
+    private func discardOwnedSession() {
+        let owner = ownerPaneManager
+        clearOwner()
+        owner?.discardGlobalTabSwitcherSession()
+    }
+
+    private func commitOwnedSession() {
+        let owner = ownerPaneManager
+        clearOwner()
+        owner?.commitGlobalTabSwitcher()
+    }
+
+    private func discardIfOwnerWindow(
+        identifiedBy windowIdentifier: ObjectIdentifier?
+    ) {
+        guard let ownerWindow,
+              let windowIdentifier,
+              ObjectIdentifier(ownerWindow) == windowIdentifier else {
+            return
+        }
+        discardOwnedSession()
+    }
+
+    private func clearOwner() {
+        ownerWindow = nil
+        ownerPaneManager = nil
     }
 }

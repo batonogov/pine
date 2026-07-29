@@ -7,11 +7,44 @@
 //
 
 import SwiftUI
+
+/// Exact work counters for the global-switcher inventory projection. These
+/// counters make the hot-path complexity test deterministic without relying
+/// on wall-clock timing from a loaded CI host.
+struct GlobalTabInventoryMetrics: Equatable {
+    var paneVisits = 0
+    var tabVisits = 0
+    var orderLookups = 0
+    var entryLookups = 0
+
+    var totalOperations: Int {
+        paneVisits + tabVisits + orderLookups + entryLookups
+    }
+}
+
 /// Manages the split pane layout for the editor area.
 /// Each leaf node in the PaneNode tree has its own `TabManager`.
 @MainActor
 @Observable
 final class PaneManager {
+    private enum GlobalTabInventoryItem {
+        case editor(fileName: String, url: URL)
+        case terminal(
+            name: String,
+            stableLabel: String,
+            workingDirectory: URL?
+        )
+    }
+
+    private struct GlobalTabInventory {
+        var items: [GlobalTabIdentity: GlobalTabInventoryItem] = [:]
+        var deterministicOrder: [GlobalTabIdentity] = []
+        var metrics = GlobalTabInventoryMetrics()
+
+        var validIdentities: Set<GlobalTabIdentity> {
+            Set(items.keys)
+        }
+    }
 
     /// The root of the pane layout tree.
     private(set) var root: PaneNode
@@ -44,6 +77,13 @@ final class PaneManager {
     /// The root to use when persisting session state.
     /// Returns the full layout even when a single pane is maximized.
     var persistableRoot: PaneNode { savedRootBeforeMaximize ?? root }
+
+    /// Last exact inventory work count, excluded from observation so rendering
+    /// the overlay cannot cause a feedback loop. Kept internal for deterministic
+    /// linear-complexity regression tests and diagnostics.
+    @ObservationIgnored
+    private(set) var lastGlobalTabInventoryMetrics =
+        GlobalTabInventoryMetrics()
 
     /// The currently focused pane.
     var activePaneID: PaneID
@@ -95,23 +135,95 @@ final class PaneManager {
     /// makes restoration deterministic without requiring explicit cleanup
     /// on every structural mutation.
     func validGlobalTabSwitchOrder() -> [GlobalTabIdentity] {
-        globalTabSwitchOrder.filter { identity in
-            guard let content = root.content(for: identity.paneID),
-                  content == identity.contentType else { return false }
-            if identity.contentType == .editor {
-                return tabManagers[identity.paneID]?.tabs
-                    .contains(where: { $0.id == identity.tabID }) == true
+        var inventory = makeGlobalTabInventory()
+        let order = validGlobalTabSwitchOrder(in: &inventory)
+        lastGlobalTabInventoryMetrics = inventory.metrics
+        return order
+    }
+
+    /// Builds one O(n) pane/tab projection for validation and presentation.
+    /// Keeping metadata in an identity dictionary avoids repeatedly scanning
+    /// every pane's tab array for each MRU identity.
+    private func makeGlobalTabInventory() -> GlobalTabInventory {
+        var inventory = GlobalTabInventory()
+
+        func collect(_ node: PaneNode) {
+            inventory.metrics.paneVisits += 1
+            switch node {
+            case .leaf(let paneID, let content):
+                switch content {
+                case .editor:
+                    for tab in tabManagers[paneID]?.tabs ?? [] {
+                        inventory.metrics.tabVisits += 1
+                        let identity = GlobalTabIdentity(
+                            paneID: paneID,
+                            tabID: tab.id,
+                            contentType: .editor
+                        )
+                        inventory.items[identity] = .editor(
+                            fileName: tab.fileName,
+                            url: tab.url
+                        )
+                        inventory.deterministicOrder.append(identity)
+                    }
+                case .terminal:
+                    for tab in terminalStates[paneID]?.terminalTabs ?? [] {
+                        inventory.metrics.tabVisits += 1
+                        let identity = GlobalTabIdentity(
+                            paneID: paneID,
+                            tabID: tab.id,
+                            contentType: .terminal
+                        )
+                        inventory.items[identity] = .terminal(
+                            name: tab.name,
+                            stableLabel: tab.stableLabel,
+                            workingDirectory: tab.workingDirectoryURL
+                        )
+                        inventory.deterministicOrder.append(identity)
+                    }
+                }
+            case .split(_, let first, let second, _):
+                collect(first)
+                collect(second)
             }
-            return terminalStates[identity.paneID]?.terminalTabs
-                .contains(where: { $0.id == identity.tabID }) == true
         }
+
+        // A maximized pane is only a presentation projection. Hidden siblings
+        // remain eligible for the all-pane switcher.
+        collect(persistableRoot)
+        return inventory
+    }
+
+    private func validGlobalTabSwitchOrder(
+        in inventory: inout GlobalTabInventory
+    ) -> [GlobalTabIdentity] {
+        let validIdentities = inventory.validIdentities
+        return globalTabSwitchOrder.filter { identity in
+            inventory.metrics.orderLookups += 1
+            return validIdentities.contains(identity)
+        }
+    }
+
+    /// Reconciles a frozen switcher snapshot through the same identity set
+    /// used by both presentation and commit. Counting the set probes keeps
+    /// the deterministic complexity diagnostics representative of this path.
+    private func reconciledGlobalTabSwitcherSession(
+        _ session: GlobalTabSwitcherSession,
+        in inventory: inout GlobalTabInventory
+    ) -> GlobalTabSwitcherSession? {
+        inventory.metrics.orderLookups += session.identities.count
+        return session.reconciled(
+            keeping: inventory.validIdentities
+        )
     }
 
     /// The identity of the currently active tab in the active pane, if any.
     /// Used as the anchor for forward/backward MRU cycling.
     private func currentGlobalTabIdentity() -> GlobalTabIdentity? {
         let paneID = activePaneID
-        guard let content = root.content(for: paneID) else { return nil }
+        guard let content = persistableRoot.content(for: paneID) else {
+            return nil
+        }
         let tabID: UUID?
         if content == .editor {
             tabID = tabManagers[paneID]?.activeTabID
@@ -176,6 +288,7 @@ final class PaneManager {
                   tabManager.tabs.contains(where: { $0.id == identity.tabID }) else {
                 return false
             }
+            surfaceMaximizedPaneIfNeeded(identity)
             activePaneID = identity.paneID
             tabManager.activeTabID = identity.tabID
             tabManager.pendingFocusTabID = identity.tabID
@@ -185,10 +298,22 @@ final class PaneManager {
               terminalState.terminalTabs.contains(where: { $0.id == identity.tabID }) else {
             return false
         }
+        surfaceMaximizedPaneIfNeeded(identity)
         activePaneID = identity.paneID
         terminalState.activeTerminalID = identity.tabID
         terminalState.pendingFocusTabID = identity.tabID
         return true
+    }
+
+    /// Switching from one hidden sibling to another while zoomed keeps zoom
+    /// active but swaps the projected leaf, so the committed target is visible.
+    private func surfaceMaximizedPaneIfNeeded(
+        _ identity: GlobalTabIdentity
+    ) {
+        guard savedRootBeforeMaximize != nil,
+              maximizedPaneID != identity.paneID else { return }
+        root = .leaf(identity.paneID, identity.contentType)
+        maximizedPaneID = identity.paneID
     }
 
     // MARK: - Visual MRU switcher session (#1239)
@@ -198,21 +323,27 @@ final class PaneManager {
     /// arms the overlay. The overlay view observes `globalTabSwitcherSession`
     /// and renders while it is non-`nil`.
     ///
+    /// `initialOffset` applies the first forward/reverse gesture atomically.
+    /// When there is no current tab in the MRU snapshot, a forward gesture
+    /// starts at the head and a reverse gesture starts at the tail.
+    ///
     /// Safe to call repeatedly: if a session is already active, this is a
     /// no-op (the existing session keeps its frozen order). Returns `true` if a
     /// session is now active (newly or already).
     @discardableResult
-    func beginGlobalTabSwitcherSession() -> Bool {
+    func beginGlobalTabSwitcherSession(initialOffset: Int = 0) -> Bool {
         if globalTabSwitcherSession != nil { return true }
         let order = validGlobalTabSwitchOrder()
         guard order.count >= 2 else { return false }
         let original = currentGlobalTabIdentity()
-        // Anchor the cursor on the current tab if it is in the list; otherwise
-        // (no active tab or active tab not eligible) start at the MRU head so
-        // the first Control-Tab advances to the second-most-recent tab.
-        let startIndex = original.flatMap { original in
-            order.firstIndex(of: original)
-        } ?? 0
+        let startIndex: Int
+        if let currentIndex = original.flatMap({ order.firstIndex(of: $0) }) {
+            startIndex = (
+                currentIndex + initialOffset % order.count + order.count
+            ) % order.count
+        } else {
+            startIndex = initialOffset < 0 ? order.count - 1 : 0
+        }
         globalTabSwitcherSession = GlobalTabSwitcherSession(
             identities: order,
             originalIdentity: original,
@@ -230,8 +361,8 @@ final class PaneManager {
     /// the switch order (same invariant as `switchGlobalTab`). The selected tab
     /// is only surfaced visually; the real activation happens on `commit`.
     func advanceGlobalTabSwitcher(offset: Int) {
-        guard let session = globalTabSwitcherSession,
-              !session.identities.isEmpty else { return }
+        guard reconcileGlobalTabSwitcherSession(),
+              let session = globalTabSwitcherSession else { return }
         let count = session.identities.count
         let newIndex = (session.selectedIndex + offset % count + count) % count
         globalTabSwitcherSession?.selectedIndex = newIndex
@@ -243,25 +374,68 @@ final class PaneManager {
     /// only through the normal activation path, so the MRU list updates once,
     /// at the moment the user committed.
     func commitGlobalTabSwitcher() {
-        guard let session = globalTabSwitcherSession else { return }
+        guard reconcileGlobalTabSwitcherSession(),
+              let session = globalTabSwitcherSession else { return }
         defer { globalTabSwitcherSession = nil }
         guard let target = session.selectedIdentity else { return }
         // Activate through the same path used by organic selection so the
         // committed tab is promoted to the MRU head exactly once.
-        isPerformingGlobalTabSwitch = false
         _ = activateAndRecordGlobalTab(target)
     }
 
     /// Cancels the switcher session, restoring the tab that was active when it
-    /// began (Escape). If no original tab was recorded (or it has since become
-    /// invalid), the active pane/tab state is left untouched.
+    /// began only if an organic action changed the real active tab while the
+    /// overlay was open. Preview cycling never moves focus, so re-activating an
+    /// unchanged original would manufacture a duplicate pending-focus request.
+    /// If no original tab was recorded (or it has since become invalid), the
+    /// active pane/tab state is left untouched.
     func cancelGlobalTabSwitcher() {
         guard let session = globalTabSwitcherSession else { return }
-        defer { globalTabSwitcherSession = nil }
-        guard let original = session.originalIdentity else { return }
+        globalTabSwitcherSession = nil
+        guard let original = session.originalIdentity,
+              currentGlobalTabIdentity() != original else { return }
         // Best-effort restore: if the original tab is still valid, surface it;
         // otherwise leave whatever is currently active (the user's last view).
         _ = activateGlobalTab(original)
+    }
+
+    /// Tears down a gesture without changing pane, tab, or first-responder
+    /// state. Window/app lifecycle loss and owner migration use this path:
+    /// restoring focus into an outgoing or closing window is unsafe.
+    func discardGlobalTabSwitcherSession() {
+        globalTabSwitcherSession = nil
+    }
+
+    /// Reconciles a live switcher session against the current pane/tab
+    /// inventory. Returns `false` after ending a session that no longer has at
+    /// least two eligible tabs.
+    @discardableResult
+    func reconcileGlobalTabSwitcherSession() -> Bool {
+        guard let session = globalTabSwitcherSession else { return false }
+        var inventory = makeGlobalTabInventory()
+        defer {
+            lastGlobalTabInventoryMetrics = inventory.metrics
+        }
+        guard let reconciled = reconciledGlobalTabSwitcherSession(
+            session,
+            in: &inventory
+        ) else {
+            globalTabSwitcherSession = nil
+            return false
+        }
+        if reconciled != session {
+            globalTabSwitcherSession = reconciled
+        }
+        return true
+    }
+
+    /// Child tab owners call this only after completing an identity-set
+    /// mutation, so reconciliation never re-enters a live array `inout`
+    /// access. The early guard keeps ordinary tab operations O(1) when the
+    /// visual switcher is not open.
+    private func reconcileGlobalTabSwitcherAfterInventoryChange() {
+        guard globalTabSwitcherSession != nil else { return }
+        _ = reconcileGlobalTabSwitcherSession()
     }
 
     /// Activate a global tab AND record it in the MRU list. Mirrors
@@ -269,7 +443,13 @@ final class PaneManager {
     /// commit path so the committed tab is treated like an organic activation.
     @discardableResult
     private func activateAndRecordGlobalTab(_ identity: GlobalTabIdentity) -> Bool {
-        guard activateGlobalTab(identity) else { return false }
+        // Suppress the pane-local activation callback while focus changes,
+        // then perform the single explicit MRU promotion below.
+        let wasPerformingGlobalTabSwitch = isPerformingGlobalTabSwitch
+        isPerformingGlobalTabSwitch = true
+        let activated = activateGlobalTab(identity)
+        isPerformingGlobalTabSwitch = wasPerformingGlobalTabSwitch
+        guard activated else { return false }
         recordTabActivation(
             paneID: identity.paneID,
             tabID: identity.tabID,
@@ -287,82 +467,208 @@ final class PaneManager {
     /// `projectRoot` is used to derive project-relative paths for editor tabs;
     /// pass `nil` when no project is open.
     func globalTabSwitcherEntries(
-        projectRoot: URL?
+        projectRoot: URL?,
+        locale: Locale = .current
     ) -> [GlobalTabSwitcherEntry] {
-        guard let session = globalTabSwitcherSession else { return [] }
+        globalTabSwitcherPresentation(
+            projectRoot: projectRoot,
+            locale: locale
+        ).entries
+    }
+
+    /// Builds rows and cursor from one reconciled snapshot so a stale identity
+    /// cannot make the overlay highlight one tab and commit another.
+    func globalTabSwitcherPresentation(
+        projectRoot: URL?,
+        locale: Locale = .current
+    ) -> GlobalTabSwitcherPresentation {
+        guard let session = globalTabSwitcherSession else {
+            return .empty
+        }
+        var inventory = makeGlobalTabInventory()
+        defer {
+            lastGlobalTabInventoryMetrics = inventory.metrics
+        }
+        guard let reconciled = reconciledGlobalTabSwitcherSession(
+            session,
+            in: &inventory
+        ) else {
+            return .empty
+        }
         // Pane position labels are stable for the session (derived from the
         // visible tree). Use persistableRoot so hidden-maximized siblings are
         // still counted in their true positions, not the collapsed single leaf.
-        let panePositions = paneContextLabels()
-        return session.identities.compactMap { identity in
-            entry(for: identity, panePositions: panePositions, projectRoot: projectRoot)
+        let panePositions = paneContextLabels(locale: locale)
+        let entries: [GlobalTabSwitcherEntry] =
+            reconciled.identities.compactMap { identity -> GlobalTabSwitcherEntry? in
+                inventory.metrics.entryLookups += 1
+                guard let item = inventory.items[identity] else { return nil }
+                return entry(
+                    for: identity,
+                    item: item,
+                    panePositions: panePositions,
+                    projectRoot: projectRoot,
+                    locale: locale
+                )
+            }
+        guard entries.count == reconciled.identities.count else {
+            return .empty
         }
+        return GlobalTabSwitcherPresentation(
+            entries: entries,
+            selectedIndex: reconciled.selectedIndex
+        )
     }
 
-    /// Resolves a single identity to a presentation entry. Returns `nil` for
-    /// identities that have become invalid since the session snapshot (closed
-    /// tab, removed pane, or content-type drift).
+    /// Resolves inventory metadata to one presentation entry. Callers perform
+    /// the O(1) validity lookup before invoking this formatter.
     private func entry(
         for identity: GlobalTabIdentity,
+        item: GlobalTabInventoryItem,
         panePositions: [PaneID: String],
-        projectRoot: URL?
-    ) -> GlobalTabSwitcherEntry? {
-        let paneContext = panePositions[identity.paneID] ?? Strings.paneGenericLabel
-        if identity.contentType == .editor {
-            guard let tabManager = tabManagers[identity.paneID],
-                  let tab = tabManager.tabs.first(where: { $0.id == identity.tabID }) else {
-                return nil
-            }
-            let fileName = tab.fileName
+        projectRoot: URL?,
+        locale: Locale
+    ) -> GlobalTabSwitcherEntry {
+        let paneContext = panePositions[identity.paneID]
+            ?? Strings.paneGenericLabel(locale: locale)
+        switch item {
+        case .editor(let fileName, let url):
             return GlobalTabSwitcherEntry(
                 id: identity,
                 title: fileName,
                 symbolName: FileIconMapper.iconForFile(fileName),
                 symbolColor: FileIconMapper.colorForFile(fileName),
                 paneContext: paneContext,
-                relativePath: Self.relativePath(
-                    from: tab.url,
+                detail: Self.editorDetail(
+                    from: url,
                     root: projectRoot
                 )
             )
+        case .terminal(let name, let stableLabel, let workingDirectory):
+            return GlobalTabSwitcherEntry(
+                id: identity,
+                title: name,
+                symbolName: "terminal",
+                symbolColor: .secondary,
+                paneContext: paneContext,
+                detail: Self.terminalDetail(
+                    stableLabel: stableLabel,
+                    workingDirectory: workingDirectory,
+                    projectRoot: projectRoot
+                )
+            )
         }
-        guard let terminalState = terminalStates[identity.paneID],
-              let tab = terminalState.terminalTabs.first(where: { $0.id == identity.tabID }) else {
-            return nil
-        }
-        return GlobalTabSwitcherEntry(
-            id: identity,
-            title: tab.name,
-            symbolName: "terminal",
-            symbolColor: .secondary,
-            paneContext: paneContext,
-            relativePath: nil
-        )
     }
 
     /// Maps each leaf pane to a 1-based position label (left-to-right,
     /// top-to-bottom). Uses `persistableRoot` so hidden-maximized siblings keep
     /// their true positions rather than collapsing to "Pane 1".
-    private func paneContextLabels() -> [PaneID: String] {
+    private func paneContextLabels(locale: Locale) -> [PaneID: String] {
         var labels: [PaneID: String] = [:]
         for (index, paneID) in persistableRoot.leafIDs.enumerated() {
-            labels[paneID] = Strings.panePositionLabel(index + 1)
+            labels[paneID] = Strings.panePositionLabel(
+                index + 1,
+                locale: locale
+            )
         }
         return labels
     }
 
     /// Project-relative path for `url` under `root`, or `nil` when `url` is not
-    /// under `root` (or when either is absent). Resolves symlinks on both sides
-    /// so a file opened via a symlinked path still matches the resolved root.
+    /// under `root` (or when either is absent). Normalization is purely lexical:
+    /// the Control-Tab main-thread path must never perform filesystem I/O.
     static func relativePath(from url: URL?, root: URL?) -> String? {
         guard let url, let root else { return nil }
-        let rootPath = root.resolvingSymlinksInPath().path
-        let urlPath = url.resolvingSymlinksInPath().path
+        let rootPath = lexicallyNormalizedPath(root.path)
+        let urlPath = lexicallyNormalizedPath(url.path)
+        guard !rootPath.isEmpty, !urlPath.isEmpty else { return nil }
+        if rootPath == "/" {
+            return urlPath == "/" ? "" : String(urlPath.dropFirst())
+        }
         guard urlPath == rootPath || urlPath.hasPrefix(rootPath + "/") else {
             return nil
         }
         if urlPath == rootPath { return "" }
         return String(urlPath.dropFirst(rootPath.count + 1))
+    }
+
+    /// Secondary editor label: project-relative path when possible, otherwise
+    /// the external parent directory so equal file names remain distinguishable.
+    private static func editorDetail(from url: URL, root: URL?) -> String? {
+        if let relativePath = relativePath(from: url, root: root),
+           !relativePath.isEmpty {
+            return relativePath
+        }
+        let path = lexicallyNormalizedPath(url.path)
+        guard !path.isEmpty else { return nil }
+        let parent = lexicallyNormalizedPath(
+            (path as NSString).deletingLastPathComponent
+        )
+        return parent.isEmpty ? "/" : abbreviatedDisplayPath(parent)
+    }
+
+    /// Secondary terminal label keeps duplicate dynamic shell titles distinct
+    /// through the tab's stable creation label and current working directory.
+    private static func terminalDetail(
+        stableLabel: String,
+        workingDirectory: URL?,
+        projectRoot: URL?
+    ) -> String {
+        guard let workingDirectory else { return stableLabel }
+        let directory: String
+        if let relative = relativePath(
+            from: workingDirectory,
+            root: projectRoot
+        ) {
+            directory = relative.isEmpty
+                ? (projectRoot?.lastPathComponent ?? workingDirectory.path)
+                : relative
+        } else {
+            directory = abbreviatedDisplayPath(
+                lexicallyNormalizedPath(workingDirectory.path)
+            )
+        }
+        guard !directory.isEmpty, directory != stableLabel else {
+            return stableLabel
+        }
+        return "\(stableLabel) · \(directory)"
+    }
+
+    /// Uses `~` for the current home directory without resolving symlinks or
+    /// touching disk, keeping external-path details concise and less revealing.
+    private static func abbreviatedDisplayPath(_ path: String) -> String {
+        let home = lexicallyNormalizedPath(NSHomeDirectory())
+        guard home != "/", !home.isEmpty else { return path }
+        if path == home { return "~" }
+        guard path.hasPrefix(home + "/") else { return path }
+        return "~/" + String(path.dropFirst(home.count + 1))
+    }
+
+    /// Removes `.` and `..` components without consulting the filesystem.
+    /// File URLs are absolute in Pine, but preserving relative input makes the
+    /// helper total and straightforward to exercise in unit tests.
+    private static func lexicallyNormalizedPath(_ path: String) -> String {
+        let isAbsolute = path.hasPrefix("/")
+        var components: [Substring] = []
+        for component in path.split(separator: "/", omittingEmptySubsequences: true) {
+            switch component {
+            case ".":
+                continue
+            case "..":
+                if let last = components.last, last != ".." {
+                    components.removeLast()
+                } else if !isAbsolute {
+                    components.append(component)
+                }
+            default:
+                components.append(component)
+            }
+        }
+        let joined = components.joined(separator: "/")
+        if isAbsolute {
+            return joined.isEmpty ? "/" : "/\(joined)"
+        }
+        return joined
     }
 
     /// The single owner of tab-drag session, preview, validation, and commit.
@@ -751,6 +1057,7 @@ final class PaneManager {
             if activePaneID == paneID {
                 activePaneID = root.firstLeafID ?? activePaneID
             }
+            reconcileGlobalTabSwitcherAfterInventoryChange()
         }
     }
 
@@ -860,6 +1167,7 @@ final class PaneManager {
             tabManagers[newID] = makeEditorTabManager(for: newID)
             root = .leaf(newID, .editor)
             activePaneID = newID
+            reconcileGlobalTabSwitcherAfterInventoryChange()
             return
         }
 
@@ -874,6 +1182,7 @@ final class PaneManager {
         if activePaneID == paneID {
             activePaneID = root.firstLeafID ?? activePaneID
         }
+        reconcileGlobalTabSwitcherAfterInventoryChange()
     }
 
     /// Updates the split ratio for a divider adjacent to a pane.
@@ -1211,6 +1520,7 @@ final class PaneManager {
             removePane(sourceID)
         }
         recordTabActivation(paneID: targetID, tabID: tabID, contentType: .terminal)
+        reconcileGlobalTabSwitcherAfterInventoryChange()
         return true
     }
 
@@ -1250,6 +1560,7 @@ final class PaneManager {
         }
 
         recordTabActivation(paneID: newID, tabID: tab.id, contentType: .terminal)
+        reconcileGlobalTabSwitcherAfterInventoryChange()
         return newID
     }
 
@@ -1298,6 +1609,7 @@ final class PaneManager {
         newState.pendingFocusTabID = tab.id
         activePaneID = newID
         recordTabActivation(paneID: newID, tabID: tab.id, contentType: .terminal)
+        reconcileGlobalTabSwitcherAfterInventoryChange()
         return true
     }
 
@@ -1309,6 +1621,10 @@ final class PaneManager {
         savedRootBeforeMaximize = root
         root = .leaf(paneID, content)
         maximizedPaneID = paneID
+        // The projected leaf is now the only visible pane. Keep the focus
+        // model aligned even when the maximize button consumed the click
+        // before PaneFocusDetector could mark this pane active.
+        activePaneID = paneID
     }
 
     func restoreFromMaximize() {
@@ -1349,6 +1665,11 @@ final class PaneManager {
               Set(leafIDs).count == leafIDs.count else {
             return false
         }
+
+        // A wholesale layout restore replaces the pane/tab identity space and
+        // resets MRU below. A live gesture cannot be meaningfully reconciled
+        // across that transaction, so tear it down without moving focus.
+        discardGlobalTabSwitcherSession()
 
         var newTabManagers: [PaneID: TabManager] = [:]
         var newTerminalStates: [PaneID: TerminalPaneState] = [:]
@@ -1412,23 +1733,24 @@ final class PaneManager {
     /// pane-order/tab-order so the switcher always has a complete,
     /// deterministic cycle.
     func restoreGlobalTabSwitchOrder(_ restored: [GlobalTabIdentity]) {
+        let inventory = makeGlobalTabInventory()
         var result: [GlobalTabIdentity] = []
         var seen = Set<GlobalTabIdentity>()
 
         func appendIfValid(_ identity: GlobalTabIdentity) {
             guard seen.insert(identity).inserted,
-                  isValidGlobalTabIdentity(identity) else { return }
+                  inventory.items[identity] != nil else { return }
             result.append(identity)
         }
 
         restored.forEach(appendIfValid)
 
-        let deterministicOrder = deterministicGlobalTabOrder()
         if result.isEmpty, let current = currentGlobalTabIdentity() {
             appendIfValid(current)
         }
-        deterministicOrder.forEach(appendIfValid)
+        inventory.deterministicOrder.forEach(appendIfValid)
         globalTabSwitchOrder = result
+        lastGlobalTabInventoryMetrics = inventory.metrics
     }
 
     /// Invalidates a destination-focus request that predates a source control
@@ -1467,35 +1789,6 @@ final class PaneManager {
             state.pendingFocusTabID = tabID
         case nil:
             break
-        }
-    }
-
-    private func deterministicGlobalTabOrder() -> [GlobalTabIdentity] {
-        root.leafIDs.flatMap { paneID -> [GlobalTabIdentity] in
-            switch root.content(for: paneID) {
-            case .editor:
-                return tabManagers[paneID]?.tabs.map {
-                    GlobalTabIdentity(paneID: paneID, tabID: $0.id, contentType: .editor)
-                } ?? []
-            case .terminal:
-                return terminalStates[paneID]?.terminalTabs.map {
-                    GlobalTabIdentity(paneID: paneID, tabID: $0.id, contentType: .terminal)
-                } ?? []
-            case nil:
-                return []
-            }
-        }
-    }
-
-    private func isValidGlobalTabIdentity(_ identity: GlobalTabIdentity) -> Bool {
-        guard root.content(for: identity.paneID) == identity.contentType else { return false }
-        switch identity.contentType {
-        case .editor:
-            return tabManagers[identity.paneID]?.tabs
-                .contains(where: { $0.id == identity.tabID }) == true
-        case .terminal:
-            return terminalStates[identity.paneID]?.terminalTabs
-                .contains(where: { $0.id == identity.tabID }) == true
         }
     }
 
@@ -1962,6 +2255,12 @@ final class PaneManager {
                 contentType: .editor
             )
         }
+        tabManager.onTabInventoryChanged = { [weak self, weak tabManager] in
+            guard let self,
+                  let tabManager,
+                  self.tabManagers[paneID] === tabManager else { return }
+            self.reconcileGlobalTabSwitcherAfterInventoryChange()
+        }
     }
 
     private func trackTerminalActivations(
@@ -1979,6 +2278,12 @@ final class PaneManager {
                 tabID: tabID,
                 contentType: .terminal
             )
+        }
+        terminalState.onTabInventoryChanged = { [weak self, weak terminalState] in
+            guard let self,
+                  let terminalState,
+                  self.terminalStates[paneID] === terminalState else { return }
+            self.reconcileGlobalTabSwitcherAfterInventoryChange()
         }
     }
 

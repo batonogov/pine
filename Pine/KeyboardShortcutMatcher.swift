@@ -32,7 +32,7 @@ nonisolated enum KeyboardShortcutMatcher {
     /// Strips device-specific noise (caps-lock LED, function-key state, etc.) from
     /// raw modifier flags, leaving only the meaningful logical modifiers.
     static func normalizedModifiers(_ flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
-        flags.intersection(.deviceIndependentFlagsMask)
+        flags.intersection([.command, .option, .control, .shift])
     }
 
     /// Returns true when the physical key code and modifier flags both match exactly.

@@ -197,8 +197,13 @@ nonisolated enum AccessibilityID {
     // MARK: - Global Tab Switcher overlay (#1239)
     static let globalTabSwitcherOverlay = "globalTabSwitcherOverlay"
     static let globalTabSwitcherList = "globalTabSwitcherList"
-    static func globalTabSwitcherItem(_ title: String) -> String {
-        "globalTabSwitcherItem_\(title)"
+    static func globalTabSwitcherItem(_ identity: GlobalTabIdentity) -> String {
+        [
+            "globalTabSwitcherItem",
+            identity.contentType.rawValue,
+            identity.paneID.id.uuidString,
+            identity.tabID.uuidString,
+        ].joined(separator: "_")
     }
 
     // MARK: - LSP / Problems panel (#1010)
