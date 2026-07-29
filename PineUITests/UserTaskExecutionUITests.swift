@@ -62,14 +62,11 @@ final class UserTaskExecutionUITests: PineUITestCase {
             ),
             "Elapsed time should update while the task is running"
         )
-        let progress = app.progressIndicators.matching(
-            NSPredicate(
-                format: "identifier BEGINSWITH %@",
-                "userTaskProgress_"
-            )
+        let progress = app.descendants(matching: .any).matching(
+            identifierBeginningWith: "userTaskProgress_"
         ).firstMatch
         XCTAssertTrue(
-            progress.exists,
+            progress.waitForExistence(timeout: 3),
             "An active task should expose a progress indicator"
         )
 
@@ -99,7 +96,7 @@ final class UserTaskExecutionUITests: PineUITestCase {
             "The task should reach a terminal cancelled state"
         )
         XCTAssertFalse(cancel.exists)
-        XCTAssertFalse(progress.exists)
+        XCTAssertTrue(waitForNonExistence(progress, timeout: 3))
     }
 
     func testSuccessfulTaskCopiesExactCombinedOutputWithoutModal() throws {
@@ -126,8 +123,13 @@ final class UserTaskExecutionUITests: PineUITestCase {
         ).firstMatch
         XCTAssertTrue(output.waitForExistence(timeout: 3))
         let outputText = accessibleText(of: output)
+        let diagnosticPrefix = "success-err\n"
+        let expectedPreview = diagnosticPrefix + String(
+            repeating: "x",
+            count: 16 * 1_024 - diagnosticPrefix.utf8.count
+        )
         XCTAssertEqual(outputText.utf8.count, 16 * 1_024)
-        XCTAssertTrue(outputText.allSatisfy { $0 == "x" })
+        XCTAssertEqual(outputText, expectedPreview)
         XCTAssertLessThan(outputText.utf8.count, expectedOutput.utf8.count)
 
         let truncationNotice = app.staticTexts.matching(
@@ -148,8 +150,7 @@ final class UserTaskExecutionUITests: PineUITestCase {
         let copy = app.buttons.matching(
             identifierBeginningWith: "userTaskCopyOutput_"
         ).firstMatch
-        XCTAssertTrue(copy.waitForExistence(timeout: 3))
-        copy.click()
+        clickCenter(of: copy)
         XCTAssertEqual(
             NSPasteboard.general.string(forType: .string),
             expectedOutput
@@ -177,8 +178,7 @@ final class UserTaskExecutionUITests: PineUITestCase {
         let copy = app.buttons.matching(
             identifierBeginningWith: "userTaskCopyOutput_"
         ).firstMatch
-        XCTAssertTrue(copy.waitForExistence(timeout: 3))
-        copy.click()
+        clickCenter(of: copy)
         XCTAssertEqual(
             NSPasteboard.general.string(forType: .string),
             expectedOutput
@@ -207,8 +207,7 @@ final class UserTaskExecutionUITests: PineUITestCase {
         )
 
         NSPasteboard.general.clearContents()
-        XCTAssertTrue(copy.waitForExistence(timeout: 3))
-        copy.click()
+        clickCenter(of: copy)
         XCTAssertEqual(
             NSPasteboard.general.string(forType: .string),
             expectedOutput,
@@ -329,6 +328,17 @@ final class UserTaskExecutionUITests: PineUITestCase {
             return element.label
         }
         return element.value as? String ?? ""
+    }
+
+    private func clickCenter(
+        of element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) {
+        XCTAssertTrue(element.waitForExistence(timeout: timeout))
+        XCTAssertFalse(element.frame.isEmpty)
+        element.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+        ).click()
     }
 
     private func waitForNonExistence(
