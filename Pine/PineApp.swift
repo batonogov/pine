@@ -28,7 +28,13 @@ struct PineApp: App {
         .defaultSize(width: 1280, height: 800)
         .defaultLaunchBehavior(.suppressed)
         .commands {
-            PineAppMenuCommands(appDelegate: appDelegate)
+            PineAppMenuCommands(
+                checkForUpdatesViewModel:
+                    appDelegate.checkForUpdatesViewModel,
+                toggleQuickTerminal: { [weak appDelegate] in
+                    appDelegate?.quickTerminalCoordinator.toggle()
+                }
+            )
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {

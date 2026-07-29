@@ -117,6 +117,9 @@ struct SparkleUpdaterTests {
         #expect(!testSource.contains("SPU" + "Updater("))
         #expect(!testSource.contains("SPU" + "StandardUpdaterController("))
         #expect(!testSource.contains(".updater" + "Controller"))
+        #expect(!testSource.contains(
+            ".checkForUpdates" + "ViewModel"
+        ))
         #expect(appSource.contains(
             "lazy var updaterController = SPUStandardUpdaterController("
         ))
@@ -129,7 +132,7 @@ struct SparkleUpdaterTests {
         #expect(appSource.contains("updater: updaterController.updater"))
         #expect(menuSource.contains(
             "CheckForUpdatesView("
-                + "viewModel: appDelegate.checkForUpdatesViewModel"
+                + "viewModel: checkForUpdatesViewModel"
         ))
         #expect(!FileManager.default.fileExists(
             atPath: sourceRoot

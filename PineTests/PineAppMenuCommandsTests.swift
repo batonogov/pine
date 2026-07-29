@@ -12,16 +12,23 @@ import Foundation
 
 @MainActor
 struct PineAppMenuCommandsTests {
-    /// Smoke-test: instantiate the Commands struct with a live AppDelegate
+    /// Smoke-test: instantiate the Commands struct with inert dependencies
     /// and ensure it does not crash when `focusedProject` is `nil`. Also
     /// verify that accessing `body` evaluates without throwing — this
     /// exercises the generic expansion of every `CommandGroup`/`CommandMenu`
     /// and is the cheapest way to catch typos or mis-wired `@FocusedValue`
-    /// access paths after future edits.
+    /// access paths after future edits. The inert updater seam is deliberate:
+    /// constructing a temporary AppDelegate here would start a second real
+    /// Sparkle runtime inside Pine's already-running test host.
     @Test
     func instantiationWithNilFocusedProjectDoesNotCrash() {
-        let delegate = AppDelegate()
-        let commands = PineAppMenuCommands(appDelegate: delegate)
+        let commands = PineAppMenuCommands(
+            checkForUpdatesViewModel: CheckForUpdatesViewModel(
+                canCheckForUpdates: false,
+                checkForUpdatesAction: {}
+            ),
+            toggleQuickTerminal: {}
+        )
         // `body` is `some Commands` — we can't introspect it, but forcing
         // evaluation verifies the view-builder closure compiles and runs
         // without preconditions failing for the default (no focused project)
