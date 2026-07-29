@@ -133,13 +133,17 @@ private struct ProjectWindowView: View {
             // Hidden windows from closed projects still get re-rendered by SwiftUI;
             // calling projectManager(for:) would silently re-add the closed project
             // to openProjects, breaking the "show Welcome when last project closes" logic.
-            // Must canonicalize with the same method used to store the key —
-            // canonicalProjectURL appends a trailing slash (isDirectory: true) and
-            // resolves prefix symlinks (/tmp → /private/tmp), which
-            // resolvingSymlinksInPath() alone does not, causing a key mismatch.
             if let pm = registry.openProjects[
                 registry.canonicalProjectURL(projectURL)
-            ] {
+            ] ?? {
+                // Fallback: the project may have been opened through a path
+                // that canonicalizes differently (e.g. before the AppDelegate
+                // bridge wired openProjectWindow). Try a direct registry lookup
+                // as a last resort so the window always shows content.
+                registry.projectManager(
+                    for: registry.canonicalProjectURL(projectURL)
+                )
+            }() {
                 ContentView()
                     .id(ObjectIdentifier(pm))
                     .environment(pm)
