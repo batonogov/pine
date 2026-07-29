@@ -9,7 +9,7 @@ import Testing
 
 @testable import Pine
 
-@Suite("Command overlay router")
+@Suite("Command overlay router", .serialized)
 @MainActor
 struct CommandOverlayRouterTests {
 
@@ -17,7 +17,7 @@ struct CommandOverlayRouterTests {
     func replacementIsDeterministic() {
         let router = CommandOverlayRouter()
 
-        router.present(.quickOpen)
+        router.present(.quickOpen, in: nil)
         router.present(.commandPalette)
 
         #expect(router.activePresentation == .commandPalette)
@@ -27,7 +27,7 @@ struct CommandOverlayRouterTests {
     @Test("An obsolete flow cannot dismiss its replacement")
     func staleDismissIsIgnored() {
         let router = CommandOverlayRouter()
-        router.present(.quickOpen)
+        router.present(.quickOpen, in: nil)
         router.present(.symbolNavigator)
 
         router.dismiss(ifMatching: .quickOpen)
@@ -41,8 +41,8 @@ struct CommandOverlayRouterTests {
     func routersAreIndependent() {
         let first = CommandOverlayRouter()
         let second = CommandOverlayRouter()
-        first.present(.quickOpen)
-        second.present(.goToLine)
+        first.present(.quickOpen, in: nil)
+        second.present(.goToLine, in: nil)
 
         first.dismiss()
 
@@ -93,7 +93,7 @@ struct CommandOverlayRouterTests {
     @Test("Palette overlay command replaces the panel in the same session")
     func paletteOverlayCommandReplacesInPlace() {
         let router = CommandOverlayRouter()
-        router.present(.commandPalette)
+        router.present(.commandPalette, in: nil)
 
         let didReplace = CommandPaletteInvocationRouter
             .replaceOverlayIfNeeded(
@@ -108,7 +108,7 @@ struct CommandOverlayRouterTests {
     @Test("Non-overlay palette commands leave replacement routing untouched")
     func nonOverlayCommandDoesNotReplaceInPlace() {
         let router = CommandOverlayRouter()
-        router.present(.commandPalette)
+        router.present(.commandPalette, in: nil)
 
         let didReplace = CommandPaletteInvocationRouter
             .replaceOverlayIfNeeded(
@@ -158,7 +158,7 @@ struct CommandOverlayRouterTests {
         // outlive the test and race temporary-directory cleanup.
         projectManager.workspace.rootURL = directory
         let router = CommandOverlayRouter()
-        router.present(.commandPalette)
+        router.present(.commandPalette, in: nil)
 
         let center = NotificationCenter()
         let probe = CommandOverlayNotificationProbe()
@@ -197,42 +197,40 @@ struct CommandOverlayRouterTests {
 
     @Test("Command panel is key-capable and document scoped")
     func panelConfiguration() {
-        let panel = CommandOverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
-            documentOwner: nil
-        )
-        defer { panel.close() }
+        let configuration = CommandOverlayPanelConfiguration.overlay
 
-        #expect(panel.canBecomeKey)
-        #expect(!panel.canBecomeMain)
-        #expect(panel.styleMask.contains(.titled))
-        #expect(panel.styleMask.contains(.nonactivatingPanel))
-        #expect(!panel.collectionBehavior.contains(.canJoinAllSpaces))
-        #expect(panel.collectionBehavior.contains(.ignoresCycle))
+        #expect(configuration.canBecomeKey)
+        #expect(!configuration.canBecomeMain)
+        #expect(configuration.styleMask.contains(.titled))
+        #expect(configuration.styleMask.contains(.nonactivatingPanel))
+        #expect(
+            !configuration.collectionBehavior.contains(.canJoinAllSpaces)
+        )
+        #expect(configuration.collectionBehavior.contains(.ignoresCycle))
     }
 
-    @Test("A key command panel resolves to its document owner")
+    @Test("Explicit document owner wins over the transient parent")
     func panelResolvesDocumentOwner() {
-        let panel = CommandOverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
-            documentOwner: nil
-        )
-        defer { panel.close() }
+        let explicitOwner = NSObject()
+        let parent = NSObject()
 
-        #expect(
-            CommandOverlayOwnerResolver.documentWindow(for: panel) == nil
+        let resolved = CommandOverlayOwnerResolver.preferredDocumentOwner(
+            explicitOwner: explicitOwner,
+            parent: parent
         )
+        #expect(resolved === explicitOwner)
 
-        // Exercise explicit owner routing without constructing a second
-        // NSWindow. The former `panel.parent` implementation cannot satisfy
-        // this assertion.
-        panel.bindDocumentOwner(panel)
-        #expect(
-            CommandOverlayOwnerResolver.documentWindow(for: panel) === panel
+        let fallback = CommandOverlayOwnerResolver.preferredDocumentOwner(
+            explicitOwner: Optional<NSObject>.none,
+            parent: parent
         )
-        #expect(
-            CommandOverlayOwnerResolver.documentWindow(for: nil) == nil
+        #expect(fallback === parent)
+
+        let missing = CommandOverlayOwnerResolver.preferredDocumentOwner(
+            explicitOwner: Optional<NSObject>.none,
+            parent: nil
         )
+        #expect(missing == nil)
     }
 
     private func paletteItem(

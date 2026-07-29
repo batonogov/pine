@@ -47,11 +47,20 @@ final class CommandOverlayRouter {
     /// capture (including the valid "no responder" result) so focus restoration
     /// never targets an intermediate overlay.
     ///
-    /// The explicit window is a deterministic seam for hosted tests. Production
-    /// callers omit it and route through the current key window.
+    /// Production entry point. The current key window is captured only when a
+    /// new overlay session begins; replacements keep the original responder.
+    func present(_ presentation: CommandOverlayPresentation) {
+        present(presentation, in: NSApp.keyWindow)
+    }
+
+    /// Presents from an explicitly supplied document window.
+    ///
+    /// Passing `nil` intentionally captures no AppKit state. Keeping this
+    /// distinct from the production entry point gives model-level tests a
+    /// deterministic seam and avoids consulting unrelated global key windows.
     func present(
         _ presentation: CommandOverlayPresentation,
-        in window: NSWindow? = nil
+        in window: NSWindow?
     ) {
         if activePresentation == nil {
             captureResponder(in: window)
@@ -99,8 +108,8 @@ final class CommandOverlayRouter {
 
     // MARK: - First responder capture/restore
 
-    private func captureResponder(in preferredWindow: NSWindow?) {
-        guard let window = preferredWindow ?? NSApp.keyWindow else { return }
+    private func captureResponder(in window: NSWindow?) {
+        guard let window else { return }
         capturedWindow = window
         // Preserve the actual responder, not only Cocoa text controls.
         // SwiftTerm's LocalProcessTerminalView and several Pine keyboard

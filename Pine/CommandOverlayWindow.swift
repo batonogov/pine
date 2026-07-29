@@ -20,6 +20,29 @@
 import AppKit
 import SwiftUI
 
+/// Immutable configuration shared by `CommandOverlayPanel` construction and
+/// model-level tests. Keeping this value separate lets tests validate the
+/// macOS 26 key-window requirements without repeatedly constructing NSPanel
+/// instances inside the Swift Testing host.
+struct CommandOverlayPanelConfiguration {
+    let styleMask: NSWindow.StyleMask
+    let collectionBehavior: NSWindow.CollectionBehavior
+    let canBecomeKey: Bool
+    let canBecomeMain: Bool
+
+    static let overlay = CommandOverlayPanelConfiguration(
+        styleMask: [
+            .borderless,
+            .nonactivatingPanel,
+            .titled,
+            .fullSizeContentView
+        ],
+        collectionBehavior: [.fullScreenAuxiliary, .ignoresCycle],
+        canBecomeKey: true,
+        canBecomeMain: false
+    )
+}
+
 /// A borderless, non-activating-but-key `NSPanel` used to present command
 /// overlays. Mimics `.sheet`'s accessibility guarantees without stealing the
 /// document window or blocking interaction behind a modal stack.
@@ -34,15 +57,11 @@ final class CommandOverlayPanel: NSPanel {
     private(set) weak var documentOwner: NSWindow?
 
     init(contentRect: NSRect, documentOwner: NSWindow?) {
+        let configuration = CommandOverlayPanelConfiguration.overlay
         self.documentOwner = documentOwner
         super.init(
             contentRect: contentRect,
-            styleMask: [
-                .borderless,
-                .nonactivatingPanel,
-                .titled,
-                .fullSizeContentView
-            ],
+            styleMask: configuration.styleMask,
             backing: .buffered,
             defer: false
         )
@@ -59,7 +78,7 @@ final class CommandOverlayPanel: NSPanel {
         self.isReleasedWhenClosed = false
         // This is a document child, not a global utility panel. Joining every
         // Space would expose one project's overlay above unrelated windows.
-        self.collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
+        self.collectionBehavior = configuration.collectionBehavior
         // The panel becomes key so the hosted search field can receive
         // keyboard focus, but does not activate the app away from the
         // document window that owns it.
@@ -75,8 +94,13 @@ final class CommandOverlayPanel: NSPanel {
         documentOwner = owner
     }
 
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        CommandOverlayPanelConfiguration.overlay.canBecomeKey
+    }
+
+    override var canBecomeMain: Bool {
+        CommandOverlayPanelConfiguration.overlay.canBecomeMain
+    }
 }
 
 /// Resolves the document window while a command panel owns key focus.
@@ -92,7 +116,20 @@ enum CommandOverlayOwnerResolver {
         guard let panel = keyWindow as? CommandOverlayPanel else {
             return keyWindow
         }
-        return panel.documentOwner ?? panel.parent
+        return preferredDocumentOwner(
+            explicitOwner: panel.documentOwner,
+            parent: panel.parent
+        )
+    }
+
+    /// Pure owner-precedence seam. The generic form avoids constructing AppKit
+    /// windows merely to verify that the explicit document owner wins over
+    /// AppKit's transient child-window parent relationship.
+    static func preferredDocumentOwner<Window: AnyObject>(
+        explicitOwner: Window?,
+        parent: Window?
+    ) -> Window? {
+        explicitOwner ?? parent
     }
 }
 
