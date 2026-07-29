@@ -110,9 +110,9 @@ nonisolated final class UserTaskCancellation: @unchecked Sendable {
 /// Progress callbacks for a running task (issue #1246).
 ///
 /// Each closure is invoked on the main thread so `@MainActor` UI models can
-/// be updated directly. All are optional; `onStart` fires when the process
-/// has been spawned, `onFinish` after bounded lifecycle cleanup, and
-/// `onCancellationReady` supplies the handle used by Cancel.
+/// be updated directly. All are optional; `onStart` fires after the process
+/// and its I/O workers are ready, `onFinish` after bounded lifecycle cleanup,
+/// and `onCancellationReady` supplies the handle used by Cancel.
 nonisolated struct UserTaskProgress: Sendable {
     let onStart: (@Sendable () -> Void)?
     let onFinish: (@Sendable (UserTaskOutcome, Bool) -> Void)?
@@ -129,6 +129,29 @@ nonisolated struct UserTaskProgress: Sendable {
         self.onFinish = onFinish
         self.onCancellationReady = onCancellationReady
     }
+}
+
+/// Schedules the blocking workers that own a task's stdin/stdout/stderr
+/// handles. The injectable implementation lets tests hold workers before
+/// their entry point without suspending a process-wide dispatch queue.
+nonisolated protocol UserTaskIOWorkerScheduling: Sendable {
+    func schedule(_ operation: @escaping @Sendable () -> Void)
+}
+
+nonisolated struct UserTaskDispatchIOWorkerScheduler:
+    UserTaskIOWorkerScheduling,
+    @unchecked Sendable {
+    let queue: DispatchQueue
+
+    func schedule(_ operation: @escaping @Sendable () -> Void) {
+        queue.async(execute: operation)
+    }
+}
+
+nonisolated struct UserTaskIOExecutionPolicy: Sendable {
+    let workerScheduler: any UserTaskIOWorkerScheduling
+    let startupDeadline: TimeInterval
+    let shutdownDeadline: TimeInterval
 }
 
 /// Runs `UserTask`s on a background queue.
@@ -149,6 +172,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
     private static let descendantSnapshotInterval: TimeInterval = 0.025
     private static let terminationReapDeadline: TimeInterval = 2.0
     private static let overallDeadlineLeeway: TimeInterval = 3.0
+    private static let ioStartupDeadline: TimeInterval = 2.0
     private static let ioShutdownDeadline: TimeInterval = 0.5
 
     /// Per-task timeout. Matches the formatter default; generous enough for
@@ -157,13 +181,27 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
     /// Injectable for deterministic spawn-failure coverage. Production always
     /// uses the system POSIX shell.
     private let shellExecutableURL: URL
+    private let ioExecutionPolicy: UserTaskIOExecutionPolicy
+    /// Internal lifecycle observation used by process-ownership tests. The
+    /// public progress contract deliberately does not expose process IDs.
+    private let processDidSpawn: (@Sendable (pid_t) -> Void)?
 
     init(
         timeout: TimeInterval = 30.0,
-        shellExecutableURL: URL = URL(fileURLWithPath: "/bin/sh")
+        shellExecutableURL: URL = URL(fileURLWithPath: "/bin/sh"),
+        ioExecutionPolicy: UserTaskIOExecutionPolicy? = nil,
+        processDidSpawn: (@Sendable (pid_t) -> Void)? = nil
     ) {
         self.timeout = timeout
         self.shellExecutableURL = shellExecutableURL
+        self.ioExecutionPolicy = ioExecutionPolicy ?? UserTaskIOExecutionPolicy(
+            workerScheduler: UserTaskDispatchIOWorkerScheduler(
+                queue: Self.processIOQueue
+            ),
+            startupDeadline: Self.ioStartupDeadline,
+            shutdownDeadline: Self.ioShutdownDeadline
+        )
+        self.processDidSpawn = processDidSpawn
     }
 
     /// Runs a task against the given file/project context.
@@ -275,7 +313,9 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                     stdin: stdinText,
                     timeout: timeout,
                     taskID: task.id,
-                    executionState: executionState
+                    executionState: executionState,
+                    ioExecutionPolicy: self.ioExecutionPolicy,
+                    processDidSpawn: self.processDidSpawn
                 ),
                 onStart: {
                     DispatchQueue.main.async { progress.onStart?() }
@@ -319,6 +359,8 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         let timeout: TimeInterval
         let taskID: String
         let executionState: UserTaskExecutionState
+        let ioExecutionPolicy: UserTaskIOExecutionPolicy
+        let processDidSpawn: (@Sendable (pid_t) -> Void)?
     }
 
     private struct ExecutionResult: Sendable {
@@ -383,7 +425,6 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 cancelled: config.executionState.closeWithoutProcess() == .cancelled
             )
         }
-
         let descendantTracker = UserTaskDescendantTracker(
             rootProcessID: subprocess.processGroup.identifier
         )
@@ -392,10 +433,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         // shell and ordinary descendants. A pre-spawn cancellation is applied
         // immediately; observed group escapees are cleaned up below.
         config.executionState.publishProcessGroup(subprocess.processGroup)
-
-        // Notify the caller that the process is now running so the UI can
-        // switch from the pending to the running state and start the timer.
-        onStart()
+        config.processDidSpawn?(subprocess.processGroup.identifier)
 
         // Each pipe has one owning worker. Polling readers/writer observe the
         // shared stop state, so cleanup never closes a FileHandle underneath
@@ -404,8 +442,13 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         let ioStopState = UserTaskIOStopState()
         let outputCapture = UserTaskOutputCapture()
         let inputCapture = UserTaskInputCapture()
+        let stdinData = config.stdin.data(using: .utf8) ?? Data()
+        let ioStartup = UserTaskIOStartupBarrier(
+            workerCount: stdinData.isEmpty ? 2 : 3
+        )
         ioGroup.enter()
-        processIOQueue.async {
+        config.ioExecutionPolicy.workerScheduler.schedule {
+            ioStartup.workerDidStart()
             defer { ioGroup.leave() }
             outputCapture.setStdout(
                 UserTaskPipeReader.read(
@@ -415,7 +458,8 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             )
         }
         ioGroup.enter()
-        processIOQueue.async {
+        config.ioExecutionPolicy.workerScheduler.schedule {
+            ioStartup.workerDidStart()
             defer { ioGroup.leave() }
             outputCapture.setStderr(
                 UserTaskPipeReader.read(
@@ -425,13 +469,13 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             )
         }
 
-        let stdinData = config.stdin.data(using: .utf8) ?? Data()
         if stdinData.isEmpty {
             subprocess.standardInput.closeFile()
             inputCapture.setResult(.complete)
         } else {
             ioGroup.enter()
-            processIOQueue.async {
+            config.ioExecutionPolicy.workerScheduler.schedule {
+                ioStartup.workerDidStart()
                 defer { ioGroup.leave() }
                 inputCapture.setResult(
                     UserTaskPipeWriter.write(
@@ -441,6 +485,20 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                     )
                 )
             }
+        }
+
+        // A task is not "running" until every worker owns its descriptor.
+        // This also keeps Pine's own executor delay outside the task timeout.
+        // If scheduling never begins, fail closed and start bounded process
+        // cleanup instead of waiting indefinitely.
+        let ioWorkersStarted = ioStartup.wait(
+            timeout: config.ioExecutionPolicy.startupDeadline
+        )
+        if ioWorkersStarted {
+            onStart()
+        } else {
+            ioStopState.stop()
+            subprocess.processGroup.requestTermination()
         }
 
         // One polling loop owns both waitpid and the timeout decision. It
@@ -478,13 +536,16 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         let terminatedTrackedDescendants =
             descendantTracker.terminateTrackedProcesses()
 
-        // Readers drain buffered bytes and then close their own descriptors.
-        // The timed wait is defensive; capture publication remains locked if
-        // a system call ever outlives the expected poll interval.
-        ioStopState.stop()
-        let ioFinished = ioGroup.wait(
-            timeout: .now() + ioShutdownDeadline
-        ) == .success
+        // Readers normally observe EOF and drain buffered bytes before their
+        // bounded stop fallback is requested. Under executor contention a
+        // worker may not start until after the shell exits; stopping first
+        // would incorrectly classify that clean run as incomplete.
+        let ioFinished = UserTaskIOShutdown.waitForCompletion(
+            ioGroup,
+            stopState: ioStopState,
+            naturalTimeout: config.ioExecutionPolicy.shutdownDeadline,
+            forcedTimeout: config.ioExecutionPolicy.shutdownDeadline
+        )
         let output = outputCapture.snapshot()
         let inputResult = inputCapture.snapshot()
         let streamsReachedEOF =
@@ -515,7 +576,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 Strings.userTaskDiagnosticSubprocessCleanup
             )
         }
-        if !ioFinished || !streamsReachedEOF {
+        if !ioWorkersStarted || !ioFinished || !streamsReachedEOF {
             diagnostics.append(
                 Strings.userTaskDiagnosticOutputDeadline
             )
@@ -545,6 +606,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             directChild.reaped
             && terminatedProcessGroup
             && terminatedTrackedDescendants
+            && ioWorkersStarted
             && ioFinished
             && streamsReachedEOF
         let resultIsValid =

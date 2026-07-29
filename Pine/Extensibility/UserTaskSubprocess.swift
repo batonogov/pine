@@ -384,6 +384,7 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
     private let leader: UserTaskProcessIdentity?
     private var knownMembers: [pid_t: UserTaskProcessIdentity] = [:]
     private var terminationRequested = false
+    private var terminationFinished = false
     private var terminationSucceeded = true
 
     init(identifier: pid_t) {
@@ -455,12 +456,12 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
         }
     }
 
-    func requestTermination() {
-        // Capture ordinary children before TERM can turn the direct shell into
-        // a zombie that another thread promptly reaps. This preserves an
-        // identity-qualified anchor for the later KILL fallback.
-        captureKnownMembers()
-
+    func requestTermination(
+        beforeMemberCapture: (@Sendable () -> Void)? = nil
+    ) {
+        // Publish the request and its pending completion atomically before
+        // process inspection. libproc can be slow under system load; a waiter
+        // must never mistake that inspection window for "not requested".
         let shouldStart = lock.withLock {
             guard !terminationRequested else { return false }
             terminationRequested = true
@@ -469,17 +470,22 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
         }
         guard shouldStart else { return }
 
+        // Capture ordinary children before TERM can turn the direct shell into
+        // a zombie that another thread promptly reaps. This preserves an
+        // identity-qualified anchor for the later KILL fallback.
+        beforeMemberCapture?()
+        captureKnownMembers()
+
         // Deliver the first TERM synchronously. App termination may only have
         // a short shared deadline, so merely enqueueing the first signal would
         // leave a queued task with no cleanup request at all.
-        let initialSignalSucceeded = signalIdentitySafeGroup(SIGTERM)
+        _ = signalIdentitySafeGroup(SIGTERM)
 
         Self.lifecycleQueue.async {
-            let succeeded = self.finishTermination(
-                initialSignalSucceeded: initialSignalSucceeded
-            )
+            let succeeded = self.finishTermination()
             self.lock.withLock {
                 self.terminationSucceeded = succeeded
+                self.terminationFinished = true
             }
             self.terminationCompletion.leave()
         }
@@ -488,19 +494,39 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
     /// Waits only when termination was requested, returning whether the whole
     /// process group disappeared within the bounded TERM-to-KILL sequence.
     func waitForRequestedTermination() -> Bool {
-        let requested = lock.withLock { terminationRequested }
-        guard requested else { return true }
+        waitForRequestedTermination(
+            completionTimeout: Self.completionWaitPeriod
+        )
+    }
+
+    func waitForRequestedTermination(
+        completionTimeout: TimeInterval
+    ) -> Bool {
+        let state = lock.withLock {
+            (
+                requested: terminationRequested,
+                finished: terminationFinished,
+                succeeded: terminationSucceeded
+            )
+        }
+        guard state.requested else { return true }
+        if state.finished {
+            return state.succeeded
+        }
+        // The direct shell may have exited and been reaped before the
+        // asynchronous lifecycle continuation gets scheduled. In that case
+        // there is no process group left to clean up, so queue contention
+        // must not turn successful termination into a false diagnostic.
+        guard Self.isProcessGroupAlive(identifier) else { return true }
         guard terminationCompletion.wait(
-            timeout: .now() + Self.completionWaitPeriod
+            timeout: .now() + max(completionTimeout, 0)
         ) == .success else {
-            return false
+            return !Self.isProcessGroupAlive(identifier)
         }
         return lock.withLock { terminationSucceeded }
     }
 
-    private func finishTermination(
-        initialSignalSucceeded: Bool
-    ) -> Bool {
+    private func finishTermination() -> Bool {
         if Self.isProcessGroupAlive(identifier) {
             Self.waitUntilGone(
                 identifier,
@@ -508,19 +534,19 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
             )
         }
 
-        var signallingSucceeded = initialSignalSucceeded
         if Self.isProcessGroupAlive(identifier) {
             captureKnownMembers()
-            signallingSucceeded =
-                signalIdentitySafeGroup(SIGKILL) && signallingSucceeded
+            _ = signalIdentitySafeGroup(SIGKILL)
             Self.waitUntilGone(
                 identifier,
                 timeout: Self.killWaitPeriod
             )
         }
 
-        let succeeded =
-            signallingSucceeded && !Self.isProcessGroupAlive(identifier)
+        // Disappearance is the cleanup contract. A signal syscall can race a
+        // natural exit and report a transient failure even though there is no
+        // process left to clean up.
+        let succeeded = !Self.isProcessGroupAlive(identifier)
         if !succeeded {
             Logger.task.error(
                 "Task process group \(self.identifier) survived SIGKILL"
@@ -905,6 +931,54 @@ nonisolated final class UserTaskIOStopState: @unchecked Sendable {
         lock.withLock {
             stopped = true
         }
+    }
+}
+
+/// Tracks entry into every descriptor-owning worker. Waiting happens only on
+/// the runner's background execution thread; worker entry itself is a single
+/// non-blocking `leave`.
+nonisolated final class UserTaskIOStartupBarrier: @unchecked Sendable {
+    private let group = DispatchGroup()
+
+    init(workerCount: Int) {
+        precondition(workerCount >= 0)
+        for _ in 0..<workerCount {
+            group.enter()
+        }
+    }
+
+    func workerDidStart() {
+        group.leave()
+    }
+
+    func wait(timeout: TimeInterval) -> Bool {
+        group.wait(
+            timeout: .now() + max(timeout, 0)
+        ) == .success
+    }
+}
+
+/// Gives pipe workers a chance to observe EOF before requesting their bounded
+/// fallback shutdown. Stopping first can make a worker that was merely waiting
+/// for an executor thread report an incomplete stream even though the child
+/// and every observed descendant have already exited.
+nonisolated enum UserTaskIOShutdown {
+    static func waitForCompletion(
+        _ group: DispatchGroup,
+        stopState: UserTaskIOStopState,
+        naturalTimeout: TimeInterval,
+        forcedTimeout: TimeInterval
+    ) -> Bool {
+        if group.wait(
+            timeout: .now() + max(naturalTimeout, 0)
+        ) == .success {
+            return true
+        }
+
+        stopState.stop()
+        return group.wait(
+            timeout: .now() + max(forcedTimeout, 0)
+        ) == .success
     }
 }
 

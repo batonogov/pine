@@ -54,7 +54,7 @@ nonisolated struct UserTaskRunnerTests {
     func subprocessGroupAndReaping() throws {
         let subprocess = try UserTaskSubprocess(
             executableURL: URL(fileURLWithPath: "/bin/sh"),
-            command: "while :; do :; done",
+            command: "while :; do /bin/sleep 1; done",
             workingDirectory: FileManager.default.temporaryDirectory
         )
         let processID = subprocess.processGroup.identifier
@@ -72,6 +72,62 @@ nonisolated struct UserTaskRunnerTests {
         #expect(errno == ECHILD)
     }
 
+    @Test("Termination wait observes the request before member capture")
+    func terminationRequestIsPublishedBeforeCapture() throws {
+        let subprocess = try UserTaskSubprocess(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            command: "while :; do /bin/sleep 1; done",
+            workingDirectory: FileManager.default.temporaryDirectory
+        )
+        let captureStarted = DispatchSemaphore(value: 0)
+        let releaseCapture = DispatchSemaphore(value: 0)
+        let requestFinished = DispatchSemaphore(value: 0)
+        var didReap = false
+        defer {
+            releaseCapture.signal()
+            subprocess.processGroup.requestTermination()
+            if !didReap {
+                _ = Darwin.kill(
+                    -subprocess.processGroup.identifier,
+                    SIGKILL
+                )
+                _ = subprocess.waitForExit()
+            }
+        }
+
+        let requestQueue = DispatchQueue(
+            label: "com.pine.tests.user-task-termination-request"
+        )
+        requestQueue.async {
+            subprocess.processGroup.requestTermination(
+                beforeMemberCapture: {
+                    captureStarted.signal()
+                    _ = releaseCapture.wait(timeout: .now() + 2)
+                }
+            )
+            requestFinished.signal()
+        }
+
+        #expect(captureStarted.wait(timeout: .now() + 2) == .success)
+        #expect(subprocess.processGroup.terminationWasRequested)
+        #expect(!subprocess.processGroup.waitForRequestedTermination(
+            completionTimeout: 0
+        ))
+
+        releaseCapture.signal()
+        let requestDidFinish =
+            requestFinished.wait(timeout: .now() + 2) == .success
+        #expect(requestDidFinish)
+        if !requestDidFinish {
+            _ = Darwin.kill(-subprocess.processGroup.identifier, SIGKILL)
+        }
+        let exitCode = subprocess.waitForExit()
+        didReap = true
+
+        #expect(exitCode == SIGTERM || exitCode == SIGKILL)
+        #expect(subprocess.processGroup.waitForRequestedTermination())
+    }
+
     @Test("Pipe reader stop is bounded while a writer remains open")
     func pipeReaderStopIsBounded() {
         let pipe = Pipe()
@@ -81,10 +137,15 @@ nonisolated struct UserTaskRunnerTests {
         let stopState = UserTaskIOStopState()
         let capture = UserTaskOutputCapture()
         let finished = DispatchGroup()
+        let started = DispatchSemaphore(value: 0)
+        let readerQueue = DispatchQueue(
+            label: "com.pine.tests.user-task-pipe-reader"
+        )
 
         finished.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
+        readerQueue.async {
             defer { finished.leave() }
+            started.signal()
             capture.setStdout(
                 UserTaskPipeReader.read(
                     from: readHandle,
@@ -92,10 +153,165 @@ nonisolated struct UserTaskRunnerTests {
                 )
             )
         }
+        #expect(started.wait(timeout: .now() + 1) == .success)
         stopState.stop()
 
-        #expect(finished.wait(timeout: .now() + 0.5) == .success)
+        #expect(finished.wait(timeout: .now() + 1) == .success)
         #expect(!capture.snapshot().stdout.reachedEndOfFile)
+    }
+
+    @Test("I/O shutdown allows delayed workers to finish before forcing stop")
+    func ioShutdownAllowsNaturalDrain() {
+        let group = DispatchGroup()
+        let stopState = UserTaskIOStopState()
+        let queue = DispatchQueue(
+            label: "com.pine.tests.user-task-delayed-io"
+        )
+
+        group.enter()
+        queue.asyncAfter(deadline: .now() + 0.05) {
+            group.leave()
+        }
+
+        #expect(UserTaskIOShutdown.waitForCompletion(
+            group,
+            stopState: stopState,
+            naturalTimeout: 0.5,
+            forcedTimeout: 0.5
+        ))
+        #expect(!stopState.shouldStop)
+    }
+
+    @Test("I/O shutdown forces a bounded stop after the drain deadline")
+    func ioShutdownForcesStop() {
+        let group = DispatchGroup()
+        let stopState = UserTaskIOStopState()
+        let started = DispatchSemaphore(value: 0)
+        let queue = DispatchQueue(
+            label: "com.pine.tests.user-task-forced-io"
+        )
+
+        group.enter()
+        queue.async {
+            started.signal()
+            while !stopState.shouldStop {
+                Darwin.usleep(1_000)
+            }
+            group.leave()
+        }
+        #expect(started.wait(timeout: .now() + 1) == .success)
+
+        #expect(UserTaskIOShutdown.waitForCompletion(
+            group,
+            stopState: stopState,
+            naturalTimeout: 0.01,
+            forcedTimeout: 0.5
+        ))
+        #expect(stopState.shouldStop)
+    }
+
+    @Test("I/O startup barrier opens only after every worker starts")
+    func ioStartupBarrierRequiresEveryWorker() {
+        let barrier = UserTaskIOStartupBarrier(workerCount: 3)
+
+        barrier.workerDidStart()
+        barrier.workerDidStart()
+        #expect(!barrier.wait(timeout: 0))
+
+        barrier.workerDidStart()
+        #expect(barrier.wait(timeout: 0))
+    }
+
+    @Test("Task start waits for stdout, stderr, and stdin workers")
+    func taskStartWaitsForEveryIOWorker() async {
+        let scheduler = HoldingUserTaskIOWorkerScheduler()
+        defer { scheduler.releaseAll() }
+        let runner = UserTaskRunner(
+            timeout: 2,
+            ioExecutionPolicy: UserTaskIOExecutionPolicy(
+                workerScheduler: scheduler,
+                startupDeadline: 5,
+                shutdownDeadline: 0.5
+            )
+        )
+        let task = UserTask(
+            id: "io-startup",
+            label: "I/O Startup",
+            command: "cat",
+            replacesFileContent: true
+        )
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("io-startup.txt")
+        let probe = start(
+            runner: runner,
+            task: task,
+            fileURL: fileURL,
+            fileContent: "source"
+        )
+
+        await scheduler.waitUntilScheduled(operationCount: 3)
+        #expect(!probe.didStart)
+        #expect(scheduler.release(operationCount: 2) == 2)
+        #expect(!probe.didStart)
+        #expect(scheduler.releaseAll() == 1)
+
+        await probe.waitForStart()
+        let completion = await probe.waitForCompletion()
+
+        #expect(completion.outcome.succeeded)
+        #expect(completion.outcome.stdout == "source")
+        #expect(probe.didStart)
+        #expect(
+            scheduler.waitForReleasedOperations(until: .now() + 1)
+        )
+    }
+
+    @Test("I/O startup failure reaps the child without publishing start")
+    func ioStartupFailureIsBoundedAndReapsChild() async {
+        let scheduler = HoldingUserTaskIOWorkerScheduler()
+        defer { scheduler.releaseAll() }
+        let processIDProbe = UserTaskProcessIDProbe()
+        let runner = UserTaskRunner(
+            timeout: 5,
+            ioExecutionPolicy: UserTaskIOExecutionPolicy(
+                workerScheduler: scheduler,
+                startupDeadline: 0,
+                shutdownDeadline: 0
+            ),
+            processDidSpawn: { processID in
+                processIDProbe.record(processID)
+            }
+        )
+        let probe = start(
+            runner: runner,
+            task: UserTask(
+                id: "io-startup-failure",
+                label: "I/O Startup Failure",
+                command: "while :; do /bin/sleep 1; done"
+            )
+        )
+        let processID = await processIDProbe.waitForProcessID()
+        let completion = await probe.waitForCompletion()
+
+        #expect(!probe.didStart)
+        #expect(!completion.cancelled)
+        #expect(!completion.outcome.timedOut)
+        #expect(!completion.outcome.cleanupSucceeded)
+        #expect(
+            completion.outcome.stderr.contains(
+                Strings.userTaskDiagnosticOutputDeadline
+            )
+        )
+
+        var status: Int32 = 0
+        errno = 0
+        #expect(Darwin.waitpid(processID, &status, WNOHANG) == -1)
+        #expect(errno == ECHILD)
+
+        #expect(scheduler.releaseAll() == 2)
+        #expect(
+            scheduler.waitForReleasedOperations(until: .now() + 1)
+        )
     }
 
     @Test("Successful replacement task receives stdin and captures stdout")
@@ -189,7 +405,7 @@ nonisolated struct UserTaskRunnerTests {
         let task = UserTask(
             id: "timeout",
             label: "Timeout",
-            command: "while :; do :; done"
+            command: "while :; do /bin/sleep 1; done"
         )
         let probe = start(runner: runner, task: task)
 
@@ -257,7 +473,7 @@ nonisolated struct UserTaskRunnerTests {
         let task = UserTask(
             id: "cancel",
             label: "Cancel",
-            command: "while :; do :; done"
+            command: "while :; do /bin/sleep 1; done"
         )
         let probe = start(runner: runner, task: task)
 
@@ -276,17 +492,32 @@ nonisolated struct UserTaskRunnerTests {
         #expect(probe.callbacksWereOnMainThread)
     }
 
-    @Test("Cancellation wins before timeout even when TERM is ignored")
+    @Test("Cancellation falls back to KILL when TERM is ignored")
     func cancellationWinsBeforeTimeout() async {
-        let runner = UserTaskRunner(timeout: 0.5)
+        let readyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "pine-task-term-ignored-\(UUID().uuidString)"
+            )
+        defer { try? FileManager.default.removeItem(at: readyURL) }
+        let runner = UserTaskRunner(timeout: 5)
         let task = UserTask(
             id: "cancel-before-timeout",
             label: "Cancel Before Timeout",
-            command: "trap '' TERM; while :; do :; done"
+            command: """
+            trap '' TERM
+            /usr/bin/printf ready > \(shellQuote(readyURL.path))
+            while :; do /bin/sleep 1; done
+            """
         )
         let probe = start(runner: runner, task: task)
         let cancellation = await probe.waitForCancellation()
         await probe.waitForStart()
+        guard await waitForFile(at: readyURL) else {
+            _ = cancellation.cancel()
+            _ = await probe.waitForCompletion()
+            Issue.record("TERM-ignoring shell did not publish readiness")
+            return
+        }
 
         #expect(cancellation.cancel())
         #expect(!cancellation.cancel())
@@ -294,6 +525,8 @@ nonisolated struct UserTaskRunnerTests {
 
         #expect(completion.cancelled)
         #expect(!completion.outcome.timedOut)
+        #expect(completion.outcome.exitCode == SIGKILL)
+        #expect(completion.outcome.cleanupSucceeded)
     }
 
     @Test("Timeout wins before a late cancellation")
@@ -302,7 +535,7 @@ nonisolated struct UserTaskRunnerTests {
         let task = UserTask(
             id: "timeout-before-cancel",
             label: "Timeout Before Cancel",
-            command: "trap '' TERM; while :; do :; done"
+            command: "trap '' TERM; while :; do /bin/sleep 1; done"
         )
         let probe = start(runner: runner, task: task)
         let cancellation = await probe.waitForCancellation()
@@ -318,20 +551,26 @@ nonisolated struct UserTaskRunnerTests {
 
     @Test("Natural, cancelled, and timed-out shells are reaped")
     func directShellsAreReaped() async {
-        let cases: [(id: String, timeout: TimeInterval, cancel: Bool)] = [
-            ("natural-reap", 2, false),
-            ("cancel-reap", 2, true),
-            ("timeout-reap", 0.05, false),
+        let cases: [
+            (
+                id: String,
+                timeout: TimeInterval,
+                cancel: Bool,
+                timedOut: Bool
+            )
+        ] = [
+            ("natural-reap", 2, false, false),
+            ("cancel-reap", 5, true, false),
+            ("timeout-reap", 0.2, false, true),
         ]
-
         for testCase in cases {
             let processIDURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(
                     "pine-task-\(testCase.id)-\(UUID().uuidString)"
                 )
             let body = testCase.id == "natural-reap"
-                ? "/bin/sleep 0.1"
-                : "trap '' TERM; while :; do :; done"
+                ? "/bin/sleep 0.25"
+                : "trap '' TERM; while :; do /bin/sleep 1; done"
             let command = """
             /usr/bin/printf '%s' "$$" > \(shellQuote(processIDURL.path))
             \(body)
@@ -346,25 +585,45 @@ nonisolated struct UserTaskRunnerTests {
             )
             let cancellation = await probe.waitForCancellation()
             await probe.waitForStart()
-            guard let processID = await waitForProcessID(
-                at: processIDURL
-            ), let identity = UserTaskProcessInspector.identity(
-                for: processID
-            ) else {
-                Issue.record("Task did not publish a live direct-shell pid")
-                try? FileManager.default.removeItem(at: processIDURL)
-                continue
-            }
             if testCase.cancel {
+                // Wait for the script itself, not merely posix_spawn, before
+                // cancelling so the PID probe is deterministic under load.
+                guard await waitForProcessID(at: processIDURL) != nil else {
+                    _ = cancellation.cancel()
+                    _ = await probe.waitForCompletion()
+                    Issue.record("Task did not publish its direct-shell pid")
+                    try? FileManager.default.removeItem(at: processIDURL)
+                    continue
+                }
                 #expect(cancellation.cancel())
             }
 
-            _ = await probe.waitForCompletion()
+            let completion = await probe.waitForCompletion()
+            guard let processID = await waitForProcessID(at: processIDURL) else {
+                Issue.record("Task did not publish its direct-shell pid")
+                try? FileManager.default.removeItem(at: processIDURL)
+                continue
+            }
 
-            #expect(
-                UserTaskProcessInspector.identity(for: processID) != identity
-            )
-            terminateIfStillCurrent(identity)
+            #expect(completion.outcome.cleanupSucceeded)
+            #expect(completion.cancelled == testCase.cancel)
+            #expect(completion.outcome.timedOut == testCase.timedOut)
+            if !testCase.cancel && !testCase.timedOut {
+                #expect(completion.outcome.succeeded)
+            } else {
+                #expect(!completion.outcome.succeeded)
+            }
+
+            // A PID cannot be reused while an unreaped direct child still owns
+            // it. Therefore ECHILD proves Pine collected its shell without a
+            // racy pre-completion identity lookup that can observe an already
+            // reaped process under test-runner contention.
+            if completion.outcome.cleanupSucceeded {
+                var status: Int32 = 0
+                errno = 0
+                #expect(Darwin.waitpid(processID, &status, WNOHANG) == -1)
+                #expect(errno == ECHILD)
+            }
             try? FileManager.default.removeItem(at: processIDURL)
         }
     }
@@ -403,32 +662,100 @@ nonisolated struct UserTaskRunnerTests {
         #expect(completion.outcome.succeeded)
     }
 
-    @Test("Concurrent task spawn does not delay another task's pipe EOF")
-    func concurrentRunsDoNotCrossInheritPipes() async {
-        let runner = UserTaskRunner(timeout: 3)
+    @Test("Concurrent task spawn does not cross-inherit another task's pipe")
+    func concurrentRunsDoNotCrossInheritPipes() async throws {
+        let handshakeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "pine-task-handshake-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: handshakeURL,
+            withIntermediateDirectories: false
+        )
+        let quickReadyURL = handshakeURL.appendingPathComponent("quick-ready")
+        let slowReadyURL = handshakeURL.appendingPathComponent("slow-ready")
+        let quickAcknowledgedURL = handshakeURL
+            .appendingPathComponent("quick-saw-slow")
+        let slowAcknowledgedURL = handshakeURL
+            .appendingPathComponent("slow-saw-quick")
+        let releaseSlowURL = handshakeURL
+            .appendingPathComponent("release-slow")
         let quick = UserTask(
             id: "quick",
             label: "Quick",
-            command: "printf quick; /bin/sleep 0.1"
+            command: """
+            /usr/bin/printf ready > \(shellQuote(quickReadyURL.path))
+            while [ ! -e \(shellQuote(slowReadyURL.path)) ]; do
+                /bin/sleep 0.01
+            done
+            /usr/bin/printf acknowledged > \(shellQuote(quickAcknowledgedURL.path))
+            /usr/bin/printf quick
+            """
         )
         let slow = UserTask(
             id: "slow",
             label: "Slow",
-            command: "/bin/sleep 1"
+            command: """
+            /usr/bin/printf ready > \(shellQuote(slowReadyURL.path))
+            while [ ! -e \(shellQuote(quickReadyURL.path)) ]; do
+                /bin/sleep 0.01
+            done
+            /usr/bin/printf acknowledged > \(shellQuote(slowAcknowledgedURL.path))
+            while [ ! -e \(shellQuote(releaseSlowURL.path)) ]; do
+                /bin/sleep 0.01
+            done
+            """
         )
-        let clock = ContinuousClock()
-        let startTime = clock.now
-        let quickProbe = start(runner: runner, task: quick)
-        let slowProbe = start(runner: runner, task: slow)
+        let quickProbe = start(
+            runner: UserTaskRunner(timeout: 2),
+            task: quick
+        )
+        let slowProbe = start(
+            runner: UserTaskRunner(timeout: 5),
+            task: slow
+        )
+        let quickCancellation = await quickProbe.waitForCancellation()
+        let slowCancellation = await slowProbe.waitForCancellation()
+        defer {
+            try? Data().write(to: releaseSlowURL, options: .atomic)
+            _ = quickCancellation.cancel()
+            _ = slowCancellation.cancel()
+            try? FileManager.default.removeItem(at: handshakeURL)
+        }
+
+        let quickObservedSlow = await waitForFile(
+            at: quickAcknowledgedURL
+        )
+        let slowObservedQuick = await waitForFile(
+            at: slowAcknowledgedURL
+        )
+        guard quickObservedSlow, slowObservedQuick else {
+            _ = quickCancellation.cancel()
+            _ = slowCancellation.cancel()
+            _ = await quickProbe.waitForCompletion()
+            _ = await slowProbe.waitForCompletion()
+            Issue.record("Concurrent shells did not complete their handshake")
+            return
+        }
 
         let quickCompletion = await quickProbe.waitForCompletion()
-        let quickElapsed = startTime.duration(to: clock.now)
+        guard (try? Data().write(
+            to: releaseSlowURL,
+            options: .atomic
+        )) != nil else {
+            _ = quickCancellation.cancel()
+            _ = slowCancellation.cancel()
+            _ = await slowProbe.waitForCompletion()
+            Issue.record("Could not release the slow handshake shell")
+            return
+        }
         let slowCompletion = await slowProbe.waitForCompletion()
 
         #expect(quickCompletion.outcome.succeeded)
         #expect(quickCompletion.outcome.stdout == "quick")
-        #expect(quickElapsed < .milliseconds(700))
         #expect(slowCompletion.outcome.succeeded)
+        #expect(!slowCompletion.outcome.timedOut)
     }
 
     @Test("Output capture accepts the exact limit and rejects one byte more")
@@ -760,14 +1087,26 @@ nonisolated struct UserTaskRunnerTests {
     private func waitForProcessID(at url: URL) async -> pid_t? {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(2))
-        while clock.now < deadline {
+        while true {
             if let text = try? String(contentsOf: url, encoding: .utf8),
                let processID = pid_t(text) {
                 return processID
             }
+            guard clock.now < deadline else { return nil }
             try? await Task.sleep(for: .milliseconds(10))
         }
-        return nil
+    }
+
+    private func waitForFile(at url: URL) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while true {
+            if FileManager.default.fileExists(atPath: url.path) {
+                return true
+            }
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     private func waitForProcessExit(_ processID: pid_t) async -> Bool {
@@ -845,6 +1184,115 @@ nonisolated private final class CancellationRaceResult: @unchecked Sendable {
     func recordFinish(_ cancelled: Bool) {
         lock.withLock {
             finishStorage = cancelled
+        }
+    }
+}
+
+nonisolated private final class HoldingUserTaskIOWorkerScheduler:
+    UserTaskIOWorkerScheduling,
+    @unchecked Sendable {
+    private struct ScheduleWaiter {
+        let operationCount: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private let lock = NSLock()
+    private let queue = DispatchQueue(
+        label: "com.pine.tests.user-task-held-io",
+        attributes: .concurrent
+    )
+    private let releasedOperations = DispatchGroup()
+    private var operations: [@Sendable () -> Void] = []
+    private var scheduleWaiters: [ScheduleWaiter] = []
+
+    func schedule(_ operation: @escaping @Sendable () -> Void) {
+        releasedOperations.enter()
+        let wrapped: @Sendable () -> Void = {
+            defer { self.releasedOperations.leave() }
+            operation()
+        }
+        let readyWaiters = lock.withLock {
+            operations.append(wrapped)
+            var ready: [ScheduleWaiter] = []
+            scheduleWaiters.removeAll { waiter in
+                guard operations.count >= waiter.operationCount else {
+                    return false
+                }
+                ready.append(waiter)
+                return true
+            }
+            return ready
+        }
+        readyWaiters.forEach { $0.continuation.resume() }
+    }
+
+    func waitUntilScheduled(operationCount: Int) async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = lock.withLock {
+                guard operations.count < operationCount else { return true }
+                scheduleWaiters.append(
+                    ScheduleWaiter(
+                        operationCount: operationCount,
+                        continuation: continuation
+                    )
+                )
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
+        }
+    }
+
+    @discardableResult
+    func release(operationCount: Int) -> Int {
+        let released = lock.withLock {
+            let count = min(max(operationCount, 0), operations.count)
+            let released = Array(operations.prefix(count))
+            operations.removeFirst(count)
+            return released
+        }
+        released.forEach { queue.async(execute: $0) }
+        return released.count
+    }
+
+    @discardableResult
+    func releaseAll() -> Int {
+        release(operationCount: .max)
+    }
+
+    func waitForReleasedOperations(until deadline: DispatchTime) -> Bool {
+        releasedOperations.wait(timeout: deadline) == .success
+    }
+}
+
+nonisolated private final class UserTaskProcessIDProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var processID: pid_t?
+    private var waiters: [CheckedContinuation<pid_t, Never>] = []
+
+    func record(_ processID: pid_t) {
+        let waiters = lock.withLock {
+            self.processID = processID
+            let waiters = self.waiters
+            self.waiters.removeAll()
+            return waiters
+        }
+        waiters.forEach { $0.resume(returning: processID) }
+    }
+
+    func waitForProcessID() async -> pid_t {
+        await withCheckedContinuation { continuation in
+            let processID: pid_t? = lock.withLock {
+                guard let processID else {
+                    waiters.append(continuation)
+                    return nil
+                }
+                return processID
+            }
+            if let processID {
+                continuation.resume(returning: processID)
+            }
         }
     }
 }
