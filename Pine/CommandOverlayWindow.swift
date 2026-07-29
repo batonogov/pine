@@ -96,6 +96,21 @@ enum CommandOverlayOwnerResolver {
     }
 }
 
+/// Invisible representable host that reports every AppKit window attachment.
+///
+/// SwiftUI may call `updateNSView` before the representable has entered a
+/// window. There is no guaranteed follow-up update after AppKit attaches the
+/// view, so presentation must also be driven by `viewDidMoveToWindow`.
+@MainActor
+final class CommandOverlayAttachmentView: NSView {
+    var onWindowChange: ((NSWindow?) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChange?(window)
+    }
+}
+
 /// Bridges a SwiftUI overlay view into a `CommandOverlayPanel` window.
 ///
 /// When `isPresented` flips to `true`, a panel is created and shown above the
@@ -112,31 +127,32 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+    func makeNSView(context: Context) -> CommandOverlayAttachmentView {
+        let view = CommandOverlayAttachmentView(frame: .zero)
         view.alphaValue = 0
+        let coordinator = context.coordinator
+        view.onWindowChange = { [weak coordinator] ownerWindow in
+            coordinator?.sync(ownerWindow: ownerWindow)
+        }
         context.coordinator.hostView = view
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(
+        _ nsView: CommandOverlayAttachmentView,
+        context: Context
+    ) {
         context.coordinator.parent = self
-        guard let window = nsView.window else { return }
-        context.coordinator.ownerWindow = window
-
-        if isPresented {
-            context.coordinator.presentIfNeeded(
-                ownerWindow: window,
-                content: content
-            )
-            // Keep the hosted content fresh across SwiftUI updates.
-            context.coordinator.updateContent(content)
-        } else {
-            context.coordinator.dismiss()
-        }
+        context.coordinator.sync(ownerWindow: nsView.window)
     }
 
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+    static func dismantleNSView(
+        _ nsView: CommandOverlayAttachmentView,
+        coordinator: Coordinator
+    ) {
+        nsView.onWindowChange = nil
+        coordinator.hostView = nil
+        coordinator.ownerWindow = nil
         coordinator.dismiss()
     }
 
@@ -151,6 +167,32 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
 
         init(parent: CommandOverlayWindow) {
             self.parent = parent
+        }
+
+        /// Reconciles the SwiftUI presentation state with the current AppKit
+        /// host. Called both from SwiftUI updates and the guaranteed AppKit
+        /// window-attachment lifecycle callback.
+        func sync(ownerWindow: NSWindow?) {
+            if self.ownerWindow !== ownerWindow {
+                dismiss()
+            }
+            self.ownerWindow = ownerWindow
+
+            guard let ownerWindow else {
+                dismiss()
+                return
+            }
+            guard parent.isPresented else {
+                dismiss()
+                return
+            }
+
+            presentIfNeeded(
+                ownerWindow: ownerWindow,
+                content: parent.content
+            )
+            // Keep the hosted content fresh across SwiftUI updates.
+            updateContent(parent.content)
         }
 
         func presentIfNeeded(
@@ -177,6 +219,9 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
             let panel = CommandOverlayPanel(
                 contentRect: controller.view.bounds,
                 documentOwner: ownerWindow
+            )
+            panel.identifier = NSUserInterfaceItemIdentifier(
+                parent.containerIdentifier
             )
             panel.level = ownerWindow.level
             panel.contentViewController = controller

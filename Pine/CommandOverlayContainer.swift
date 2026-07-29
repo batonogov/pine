@@ -278,18 +278,18 @@ enum CommandPaletteInvocationRouter {
     ) {
         switch item.id {
         case .builtIn(let command):
-            if let replacement = overlayPresentation(for: command) {
-                // Replace in-place. `CommandOverlayRouter.present` preserves
-                // the responder captured before Command Palette opened.
-                overlayRouter.present(replacement)
-            } else {
-                dismissThenDispatch(overlayRouter: overlayRouter) {
-                    UserCommandInvocationRouter.dispatch(
-                        command,
-                        projectManager: projectManager,
-                        notificationCenter: notificationCenter
-                    )
-                }
+            if replaceOverlayIfNeeded(
+                for: command,
+                overlayRouter: overlayRouter
+            ) {
+                return
+            }
+            dismissThenDispatch(overlayRouter: overlayRouter) {
+                UserCommandInvocationRouter.dispatch(
+                    command,
+                    projectManager: projectManager,
+                    notificationCenter: notificationCenter
+                )
             }
         case .task(let id):
             guard let task = ExtensibilityManager.shared.tasks.task(forID: id)
@@ -301,6 +301,23 @@ enum CommandPaletteInvocationRouter {
                 )
             }
         }
+    }
+
+    /// Replaces Command Palette with another overlay without touching project
+    /// state. Kept as a small seam so routing can be verified without creating
+    /// a heavyweight `ProjectManager` or starting unrelated app services.
+    @discardableResult
+    static func replaceOverlayIfNeeded(
+        for command: UserCommand,
+        overlayRouter: CommandOverlayRouter
+    ) -> Bool {
+        guard let replacement = overlayPresentation(for: command) else {
+            return false
+        }
+        // `present` preserves the responder captured before Command Palette
+        // opened, so the replacement remains in the same overlay session.
+        overlayRouter.present(replacement)
+        return true
     }
 
     private static func dismissThenDispatch(

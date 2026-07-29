@@ -95,13 +95,48 @@ struct CommandOverlayRouterTests {
         let router = CommandOverlayRouter()
         router.present(.commandPalette)
 
-        CommandPaletteInvocationRouter.invoke(
-            paletteItem(for: .quickOpen),
-            projectManager: ProjectManager(),
+        let didReplace = CommandPaletteInvocationRouter
+            .replaceOverlayIfNeeded(
+            for: .quickOpen,
             overlayRouter: router
         )
 
+        #expect(didReplace)
         #expect(router.activePresentation == .quickOpen)
+    }
+
+    @Test("Non-overlay palette commands leave replacement routing untouched")
+    func nonOverlayCommandDoesNotReplaceInPlace() {
+        let router = CommandOverlayRouter()
+        router.present(.commandPalette)
+
+        let didReplace = CommandPaletteInvocationRouter
+            .replaceOverlayIfNeeded(
+                for: .findInProject,
+                overlayRouter: router
+            )
+
+        #expect(!didReplace)
+        #expect(router.activePresentation == .commandPalette)
+    }
+
+    @Test("Attachment view reports window lifecycle changes")
+    func attachmentViewReportsLifecycleChanges() {
+        let view = CommandOverlayAttachmentView(frame: .zero)
+        var callbacks = 0
+        view.onWindowChange = { window in
+            #expect(window == nil)
+            callbacks += 1
+        }
+
+        view.viewDidMoveToWindow()
+        #expect(callbacks == 1)
+
+        // `dismantleNSView` clears this callback so a late AppKit detach
+        // cannot resurrect a stale coordinator or panel.
+        view.onWindowChange = nil
+        view.viewDidMoveToWindow()
+        #expect(callbacks == 1)
     }
 
     @Test("Palette document command is targeted after dismissal")
