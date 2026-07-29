@@ -387,6 +387,25 @@ struct CommandOverlayRouterTests {
         #expect(probe.values.count == 1)
     }
 
+    @Test("A replacement invalidates queued palette command delivery")
+    func replacementInvalidatesQueuedPaletteCommand() async {
+        let router = makeRouterWithoutResponderHost()
+        router.present(.commandPalette)
+        var deliveryCount = 0
+
+        router.dismiss(ifMatching: .commandPalette) {
+            deliveryCount += 1
+        }
+        router.present(.agentAttention)
+
+        for _ in 0..<8 {
+            await Task.yield()
+        }
+
+        #expect(deliveryCount == 0)
+        #expect(router.activePresentation == .agentAttention)
+    }
+
     @Test("Command panel is key-capable and document scoped")
     func panelConfiguration() {
         let configuration = CommandOverlayPanelConfiguration.overlay

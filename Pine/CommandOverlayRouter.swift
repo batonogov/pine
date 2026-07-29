@@ -239,11 +239,17 @@ final class CommandOverlayRouter {
     ) {
         guard activePresentation == presentation else { return }
         dismiss()
+        let dispatchGeneration = sessionGeneration
         // `dismiss()` first queues owner-window and responder restoration.
         // Use one additional turn before dispatching so SwiftUI can dismantle
         // the panel and AppKit can finish its key-window transition.
-        DispatchQueue.main.async {
-            DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      self.sessionGeneration == dispatchGeneration,
+                      self.activePresentation == nil else {
+                    return
+                }
                 action()
             }
         }

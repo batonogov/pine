@@ -107,6 +107,9 @@ struct CommandOverlayContainer: ViewModifier {
                         }
                     }
                 ),
+                onAccessibilityAnnouncement: { message in
+                    router.announce(message)
+                },
                 onGoTo: { line, column in
                     GoToLineLineCountProvider.navigate(
                         line: line,
