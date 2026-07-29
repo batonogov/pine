@@ -24,12 +24,15 @@ struct CommandPaletteView: View {
             QuickOpenSearchField(
                 text: $searchText,
                 placeholder: String(localized: "commandPalette.placeholder"),
+                accessibility: CommandOverlayTextFieldAccessibility(
+                    identifier: AccessibilityID.commandPaletteSearchField,
+                    label: String(localized: "commandPalette.placeholder")
+                ),
                 onArrowUp: { moveSelection(by: -1) },
                 onArrowDown: { moveSelection(by: 1) },
                 onReturn: { invokeSelected() },
                 onEscape: { isPresented = false }
             )
-            .accessibilityIdentifier(AccessibilityID.commandPaletteSearchField)
             .padding(10)
 
             Divider()

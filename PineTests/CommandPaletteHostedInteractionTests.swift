@@ -12,6 +12,28 @@ import Testing
 @Suite("Command palette hosted keyboard interaction")
 @MainActor
 struct CommandPaletteHostedInteractionTests {
+    @Test("Hosted palette exposes its identifier on the native text field")
+    func nativeAccessibilityIdentifier() throws {
+        let state = HostedState()
+        let hosted = hostPalette(state: state, items: makeItems())
+        let field = try #require(
+            findTextField(in: hosted) as? CommandOverlayTextField
+        )
+
+        #expect(
+            field.accessibilityIdentifier()
+                == AccessibilityID.commandPaletteSearchField
+        )
+        #expect(
+            field.identifier?.rawValue
+                == AccessibilityID.commandPaletteSearchField
+        )
+        #expect(
+            field.accessibilityLabel()
+                == String(localized: "commandPalette.placeholder")
+        )
+    }
+
     @Test("Arrow navigation and Return invoke the selected row")
     func arrowAndReturn() throws {
         let state = HostedState()

@@ -55,6 +55,7 @@ final class CommandOverlayPanel: NSPanel {
     /// clear the child-window relationship while the outgoing panel is still
     /// key and event routing still needs to resolve the originating document.
     private(set) weak var documentOwner: NSWindow?
+    var onCancel: (() -> Void)?
 
     init(contentRect: NSRect, documentOwner: NSWindow?) {
         let configuration = CommandOverlayPanelConfiguration.overlay
@@ -100,6 +101,14 @@ final class CommandOverlayPanel: NSPanel {
 
     override var canBecomeMain: Bool {
         CommandOverlayPanelConfiguration.overlay.canBecomeMain
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        guard let onCancel else {
+            super.cancelOperation(sender)
+            return
+        }
+        onCancel()
     }
 }
 
@@ -224,10 +233,11 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
                 return
             }
 
-            presentIfNeeded(
+            let didPresent = presentIfNeeded(
                 ownerWindow: ownerWindow,
                 content: parent.content
             )
+            guard !didPresent else { return }
             // Keep the hosted content fresh across SwiftUI updates.
             updateContent(parent.content)
         }
@@ -235,8 +245,8 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
         func presentIfNeeded(
             ownerWindow: NSWindow,
             content: () -> Content
-        ) {
-            guard panel == nil else { return }
+        ) -> Bool {
+            guard panel == nil else { return false }
 
             let wrapper = ContentWrapper(
                 content: content(),
@@ -260,14 +270,22 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
             panel.identifier = NSUserInterfaceItemIdentifier(
                 parent.containerIdentifier
             )
+            panel.setAccessibilityIdentifier(parent.containerIdentifier)
             panel.level = ownerWindow.level
             panel.contentViewController = controller
             panel.delegate = self
+            panel.onCancel = { [weak self, weak panel] in
+                guard let self, panel === self.panel else { return }
+                self.parent.isPresented = false
+            }
             self.panel = panel
 
             position(panel: panel, above: ownerWindow)
             ownerWindow.addChildWindow(panel, ordered: .above)
             panel.makeKeyAndOrderFront(nil)
+            controller.view.layoutSubtreeIfNeeded()
+            initialFocusField(in: controller.view)?.requestInitialFocus()
+            return true
         }
 
         func updateContent(_ content: () -> Content) {
@@ -294,12 +312,27 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
             // Clear the delegate before ordering out. A resign-key callback
             // from an obsolete panel must not dismiss a newer presentation.
             panel.delegate = nil
+            panel.onCancel = nil
             panel.parent?.removeChildWindow(panel)
             panel.orderOut(nil)
             panel.contentViewController = nil
             panel.close()
             self.panel = nil
             hostingController = nil
+        }
+
+        private func initialFocusField(
+            in view: NSView
+        ) -> CommandOverlayTextField? {
+            if let field = view as? CommandOverlayTextField {
+                return field
+            }
+            for subview in view.subviews {
+                if let field = initialFocusField(in: subview) {
+                    return field
+                }
+            }
+            return nil
         }
 
         private func targetSize(

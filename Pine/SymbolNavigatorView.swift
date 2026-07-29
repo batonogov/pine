@@ -118,13 +118,17 @@ struct SymbolNavigatorView: View {
                     localized: "symbolNavigator.placeholder",
                     locale: locale
                 ),
+                accessibility: CommandOverlayTextFieldAccessibility(
+                    identifier: AccessibilityID.symbolSearchField,
+                    label: String(
+                        localized: "symbolNavigator.placeholder",
+                        locale: locale
+                    )
+                ),
                 onArrowUp: { moveSelection(by: -1) },
                 onArrowDown: { moveSelection(by: 1) },
                 onReturn: { navigateToSelected() },
                 onEscape: { isPresented = false }
-            )
-            .accessibilityIdentifier(
-                AccessibilityID.symbolSearchField
             )
             .padding(10)
 

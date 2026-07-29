@@ -5,6 +5,7 @@
 //  Tests for CommandOverlayView dismissal logic and GoToLineView accessibility.
 //
 
+import AppKit
 import SwiftUI
 import Testing
 
@@ -36,6 +37,49 @@ struct CommandOverlayViewTests {
     @Test("GoToLineView has invalid message accessibility identifier")
     func goToLineInvalidMessageIdentifier() {
         #expect(AccessibilityID.goToLineInvalidMessage == "goToLineInvalidMessage")
+    }
+
+    @Test("GoToLineView exposes a native accessible field")
+    func goToLineNativeFieldAccessibility() throws {
+        var isPresented = true
+        let totalLines = 123
+        let hosted = NSHostingView(
+            rootView: GoToLineView(
+                totalLines: totalLines,
+                isPresented: Binding(
+                    get: { isPresented },
+                    set: { isPresented = $0 }
+                ),
+                onGoTo: { _, _ in }
+            )
+        )
+        hosted.frame = NSRect(x: 0, y: 0, width: 220, height: 100)
+        hosted.layoutSubtreeIfNeeded()
+        drainMainRunLoop()
+        hosted.layoutSubtreeIfNeeded()
+
+        let field = try #require(findCommandField(in: hosted))
+        #expect(
+            field.accessibilityIdentifier() == AccessibilityID.goToLineField
+        )
+        #expect(field.identifier?.rawValue == AccessibilityID.goToLineField)
+        #expect(field.accessibilityLabel() == String(localized: "Go to line"))
+        #expect(
+            field.accessibilityHelp()
+                == String(
+                    localized: "Enter a line number from 1 to \(totalLines)"
+                )
+        )
+
+        let coordinator = try #require(
+            field.delegate as? QuickOpenSearchField.Coordinator
+        )
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:))
+        ))
+        #expect(!isPresented)
     }
 
     @Test("GoToLineView is invalid when line exceeds total")
@@ -77,5 +121,23 @@ struct CommandOverlayViewTests {
             comment: ""
         )
         #expect(!outOfRange.isEmpty)
+    }
+
+    private func findCommandField(
+        in view: NSView
+    ) -> CommandOverlayTextField? {
+        if let field = view as? CommandOverlayTextField {
+            return field
+        }
+        for subview in view.subviews {
+            if let field = findCommandField(in: subview) {
+                return field
+            }
+        }
+        return nil
+    }
+
+    private func drainMainRunLoop() {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
     }
 }
