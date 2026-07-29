@@ -736,8 +736,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         ProjectManager,
         DialogPresentationContext
     ) async -> Bool
-    /// Sparkle updater controller — `startingUpdater: true` enables automatic
-    /// background checks respecting `SUScheduledCheckInterval`.
+
+    /// Pine's single app-scoped update runtime. The nil custom-user-driver
+    /// delegate is intentional: Sparkle's standard driver owns permission,
+    /// update, cancellation, and relaunch UI instead of silently accepting
+    /// first-run update-check consent.
+    ///
+    /// `startingUpdater: true` enables background checks only according to
+    /// the preference established through Sparkle's standard permission flow.
     lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil
     )

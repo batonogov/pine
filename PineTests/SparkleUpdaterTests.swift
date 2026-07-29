@@ -57,4 +57,91 @@ struct SparkleUpdaterTests {
         let feedURL = delegate.feedURLString(for: delegate.updaterController.updater)
         #expect(feedURL == SparkleConstants.appcastURLString)
     }
+
+    @MainActor
+    @Test func updaterRuntimeIsAppScoped() {
+        let delegate = AppDelegate()
+
+        #expect(delegate.updaterController === delegate.updaterController)
+        #expect(
+            delegate.checkForUpdatesViewModel
+                === delegate.checkForUpdatesViewModel
+        )
+    }
+
+    @MainActor
+    @Test func unavailableUpdaterRejectsCheckRequest() {
+        let probe = UpdateCheckProbe()
+        let viewModel = CheckForUpdatesViewModel(
+            canCheckForUpdates: false,
+            checkForUpdatesAction: probe.record
+        )
+
+        viewModel.checkForUpdates()
+
+        #expect(probe.requestCount == 0)
+        #expect(!viewModel.canCheckForUpdates)
+    }
+
+    @MainActor
+    @Test func acceptedCheckDisablesDuplicateRequest() {
+        let probe = UpdateCheckProbe()
+        let viewModel = CheckForUpdatesViewModel(
+            canCheckForUpdates: true,
+            checkForUpdatesAction: probe.record
+        )
+
+        viewModel.checkForUpdates()
+        viewModel.checkForUpdates()
+
+        #expect(probe.requestCount == 1)
+        #expect(!viewModel.canCheckForUpdates)
+    }
+
+    @Test func productionUsesOnlyStandardSparkleController() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceRoot = repositoryRoot.appendingPathComponent("Pine")
+        let appSource = try String(
+            contentsOf: sourceRoot.appendingPathComponent("PineApp.swift"),
+            encoding: .utf8
+        )
+        let menuSource = try String(
+            contentsOf: sourceRoot.appendingPathComponent(
+                "PineAppMenuCommands.swift"
+            ),
+            encoding: .utf8
+        )
+
+        #expect(
+            appSource.components(
+                separatedBy: "SPUStandardUpdaterController("
+            ).count - 1 == 1
+        )
+        #expect(appSource.contains("userDriverDelegate: nil"))
+        #expect(menuSource.contains(
+            "CheckForUpdatesView("
+                + "viewModel: appDelegate.checkForUpdatesViewModel"
+        ))
+        #expect(!FileManager.default.fileExists(
+            atPath: sourceRoot
+                .appendingPathComponent("UpdateCoordinator.swift")
+                .path
+        ))
+        #expect(!FileManager.default.fileExists(
+            atPath: sourceRoot
+                .appendingPathComponent("PineUserDriver.swift")
+                .path
+        ))
+    }
+}
+
+@MainActor
+private final class UpdateCheckProbe {
+    private(set) var requestCount = 0
+
+    func record() {
+        requestCount += 1
+    }
 }
