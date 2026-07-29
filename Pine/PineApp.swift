@@ -28,7 +28,13 @@ struct PineApp: App {
         .defaultSize(width: 1280, height: 800)
         .defaultLaunchBehavior(.suppressed)
         .commands {
-            PineAppMenuCommands(appDelegate: appDelegate)
+            PineAppMenuCommands(
+                checkForUpdatesViewModel:
+                    appDelegate.checkForUpdatesViewModel,
+                toggleQuickTerminal: { [weak appDelegate] in
+                    appDelegate?.quickTerminalCoordinator.toggle()
+                }
+            )
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {
@@ -736,8 +742,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         ProjectManager,
         DialogPresentationContext
     ) async -> Bool
-    /// Sparkle updater controller — `startingUpdater: true` enables automatic
-    /// background checks respecting `SUScheduledCheckInterval`.
+
+    /// Pure feed configuration shared by the Sparkle delegate callback and
+    /// tests. Keeping this seam independent from `updaterController` prevents
+    /// tests from starting a second Sparkle runtime inside the app host.
+    nonisolated static let configuredFeedURLString =
+        SparkleConstants.appcastURLString
+
+    /// Pine's single app-scoped update runtime. The nil custom-user-driver
+    /// delegate is intentional: Sparkle's standard driver owns permission,
+    /// update, cancellation, and relaunch UI instead of silently accepting
+    /// first-run update-check consent.
+    ///
+    /// `startingUpdater: true` enables background checks only according to
+    /// the preference established through Sparkle's standard permission flow.
     lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil
     )
@@ -777,7 +795,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     // MARK: - SPUUpdaterDelegate
 
     nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
-        SparkleConstants.appcastURLString
+        Self.configuredFeedURLString
     }
 
     /// Set to true once applicationShouldTerminate is called, so onDisappear

@@ -25,11 +25,11 @@ import SwiftUI
 /// file isolates the high-churn menu definitions from the small
 /// `@main` + Scene wiring in `PineApp.swift`.
 struct PineAppMenuCommands: Commands {
-    /// Needed for `CheckForUpdatesView(viewModel:)` which requires access to
-    /// the Sparkle updater view model owned by `AppDelegate`. Strong reference
-    /// is safe: `AppDelegate` does not retain this value-type `Commands` struct,
-    /// and the struct lives inside `Scene.body` for the app's lifetime.
-    let appDelegate: AppDelegate
+    /// Injecting the already-created app-scoped view model keeps menu
+    /// construction from reaching through an arbitrary `AppDelegate` and
+    /// accidentally starting another Sparkle runtime in hosted tests.
+    let checkForUpdatesViewModel: CheckForUpdatesViewModel
+    let toggleQuickTerminal: () -> Void
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
     var body: some Commands {
@@ -39,7 +39,7 @@ struct PineAppMenuCommands: Commands {
                 AboutInfo.showAboutPanel()
             }
 
-            CheckForUpdatesView(viewModel: appDelegate.checkForUpdatesViewModel)
+            CheckForUpdatesView(viewModel: checkForUpdatesViewModel)
 
             Divider()
 
@@ -570,7 +570,7 @@ struct PineAppMenuCommands: Commands {
             // the Carbon hotkey, not this menu item. Shows the current
             // shortcut as a trailing hint.
             Button {
-                appDelegate.quickTerminalCoordinator.toggle()
+                toggleQuickTerminal()
             } label: {
                 Label {
                     if QuickTerminalSettings.shared.enabled {
