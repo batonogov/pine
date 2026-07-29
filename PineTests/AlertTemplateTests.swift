@@ -129,16 +129,6 @@ struct AlertTemplateTests {
         #expect(buttons[1].title == Strings.dialogCancel)
     }
 
-    @Test("cliInstallerInfo has OK and informational style")
-    func cliInstallerInfoButtons() {
-        let template = AlertTemplate.cliInstallerInfo
-        let alert = template.makeAlert(messageText: "Title", informativeText: "Message")
-        let buttons = alert.buttons
-        #expect(buttons.count == 1)
-        #expect(buttons[0].title == Strings.dialogOK)
-        #expect(alert.alertStyle == .informational)
-    }
-
     // MARK: - Alert style defaults
 
     @Test("most templates default to warning style")
@@ -177,5 +167,158 @@ struct AlertTemplateTests {
         let alert = template.makeAlert(messageText: "Just title")
         #expect(alert.messageText == "Just title")
         #expect(alert.informativeText == "")
+    }
+
+    @Test("every template has exact native default, cancel, and destructive semantics")
+    func buttonRoles() {
+        struct Expected {
+            let template: AlertTemplate
+            let defaultIndex: Int
+            let cancelIndex: Int?
+            let destructiveIndices: Set<Int>
+        }
+        let expectations: [Expected] = [
+            .init(
+                template: .unsavedChangesSingle,
+                defaultIndex: 0,
+                cancelIndex: 2,
+                destructiveIndices: [1]
+            ),
+            .init(
+                template: .unsavedChangesBulk,
+                defaultIndex: 0,
+                cancelIndex: 2,
+                destructiveIndices: [1]
+            ),
+            .init(
+                template: .terminalTabCloseWarning,
+                defaultIndex: 1,
+                cancelIndex: 1,
+                destructiveIndices: [0]
+            ),
+            .init(
+                template: .terminalActiveProcessWarning,
+                defaultIndex: 1,
+                cancelIndex: 1,
+                destructiveIndices: [0]
+            ),
+            .init(
+                template: .externalModifyConflict,
+                defaultIndex: 1,
+                cancelIndex: 1,
+                destructiveIndices: [0]
+            ),
+            .init(
+                template: .fileDeletedSaveAs,
+                defaultIndex: 0,
+                cancelIndex: 2,
+                destructiveIndices: [1]
+            ),
+            .init(
+                template: .fileOperationErrorCritical,
+                defaultIndex: 0,
+                cancelIndex: nil,
+                destructiveIndices: []
+            ),
+            .init(
+                template: .fileOperationErrorWarning,
+                defaultIndex: 0,
+                cancelIndex: nil,
+                destructiveIndices: []
+            ),
+            .init(
+                template: .largeFileWarning,
+                defaultIndex: 0,
+                cancelIndex: 2,
+                destructiveIndices: []
+            ),
+            .init(
+                template: .branchUncommittedChanges,
+                defaultIndex: 1,
+                cancelIndex: 1,
+                destructiveIndices: [0]
+            ),
+            .init(
+                template: .revertAllConfirmation,
+                defaultIndex: 1,
+                cancelIndex: 1,
+                destructiveIndices: [0]
+            ),
+        ]
+
+        for expected in expectations {
+            let alert = expected.template.makeAlert(messageText: "Test")
+            let buttons = alert.buttons
+            var keyboardButtons = buttons
+            var seenButtons = Set(buttons.map(ObjectIdentifier.init))
+            func collectButtons(in view: NSView) {
+                if let button = view as? NSButton,
+                   seenButtons.insert(ObjectIdentifier(button)).inserted {
+                    keyboardButtons.append(button)
+                }
+                for subview in view.subviews {
+                    collectButtons(in: subview)
+                }
+            }
+            if let contentView = alert.window.contentView {
+                collectButtons(in: contentView)
+            }
+            let defaultIndices = buttons.indices.filter {
+                alert.window.defaultButtonCell ===
+                    (buttons[$0].cell as? NSButtonCell)
+            }
+            #expect(
+                defaultIndices == [expected.defaultIndex],
+                "Wrong Return default for \(expected.template)"
+            )
+            let escapeTargetTags = Set(keyboardButtons.compactMap { button in
+                button.keyEquivalent == "\u{1b}" ? button.tag : nil
+            })
+            let commandPeriodTargetTags = Set(keyboardButtons.compactMap { button in
+                button.keyEquivalent == "."
+                    && button.keyEquivalentModifierMask.contains(.command)
+                    ? button.tag
+                    : nil
+            })
+            let expectedCancelTags = expected.cancelIndex.map {
+                Set([buttons[$0].tag])
+            } ?? []
+            #expect(
+                escapeTargetTags == expectedCancelTags,
+                "Wrong Escape target for \(expected.template)"
+            )
+            #expect(
+                commandPeriodTargetTags == expectedCancelTags,
+                "Wrong Command-Period target for \(expected.template)"
+            )
+            let accessibilityShortcutProxies = keyboardButtons.filter { candidate in
+                !buttons.contains(where: { $0 === candidate })
+                    && (candidate.keyEquivalent == "\u{1b}"
+                        || candidate.keyEquivalent == ".")
+            }
+            #expect(
+                accessibilityShortcutProxies.allSatisfy {
+                    !$0.isAccessibilityElement()
+                },
+                "Keyboard proxies must stay out of VoiceOver for \(expected.template)"
+            )
+            let destructiveIndices = Set(buttons.indices.filter {
+                buttons[$0].hasDestructiveAction
+            })
+            #expect(
+                destructiveIndices == expected.destructiveIndices,
+                "Wrong destructive role for \(expected.template)"
+            )
+            #expect(
+                !destructiveIndices.contains(expected.defaultIndex),
+                "Destructive action must never be the Return default"
+            )
+            for index in expected.destructiveIndices {
+                #expect(
+                    buttons[index].keyEquivalent != "\r",
+                    "Destructive action must not retain implicit Return"
+                )
+            }
+        }
     }
 }

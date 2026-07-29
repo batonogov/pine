@@ -171,7 +171,7 @@ final class WorkspaceManager {
         }
     }
 
-    func openFolder() {
+    func openFolder(context: DialogPresentationContext) async {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -179,7 +179,8 @@ final class WorkspaceManager {
         panel.message = Strings.openPanelMessage
         panel.prompt = Strings.openPanelPrompt
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard await panel.runSheet(on: context) == .OK,
+              let url = panel.url else { return }
         loadDirectory(url: url)
     }
 

@@ -132,26 +132,35 @@ extension ContentView {
         // Recover into the focused editor pane (issue #971): the user is
         // looking at the active pane, so recovered tabs should appear there,
         // not in the possibly-orphaned primary TabManager.
-        let target = activeTabManager
-        for (_, entry) in recoveryEntries {
-            guard !entry.originalPath.isEmpty else { continue }
-
-            let url = URL(fileURLWithPath: entry.originalPath)
-            target.openTab(url: url)
-
-            if let index = target.tabs.firstIndex(where: { $0.url == url }) {
-                target.tabs[index].content = entry.content
-                target.tabs[index].encoding = entry.encoding
-                target.tabs[index].recomputeContentCaches()
-            }
+        guard let recoveryManager = projectManager.recoveryManager else {
+            return
         }
-        projectManager.recoveryManager?.deleteAllRecoveryFiles()
+        let target = activeTabManager
+        let entries = recoveryEntries
+        let context = DialogPresenter.forProject(projectManager)
+
+        // Dismiss the SwiftUI recovery sheet before presenting a native
+        // large-file sheet on the same window. The restorer keeps cancelled
+        // snapshots on disk, so closing this list cannot lose their content.
         showRecoveryDialog = false
         recoveryEntries = []
+
+        Task { @MainActor in
+            let retained = await recoveryManager.restorePendingEntries(
+                entries,
+                in: target,
+                context: context
+            )
+            guard !Task.isCancelled else { return }
+            recoveryEntries = retained
+            showRecoveryDialog = !retained.isEmpty
+        }
     }
 
     func discardRecovery() {
-        projectManager.recoveryManager?.deleteAllRecoveryFiles()
+        projectManager.recoveryManager?.deleteRecoveryFiles(
+            for: recoveryEntries.map(\.0)
+        )
         showRecoveryDialog = false
         recoveryEntries = []
     }
@@ -173,8 +182,11 @@ extension ContentView {
 extension ContentView {
 
     func openNewProject() {
-        guard let url = registry.openProjectViaPanel() else { return }
-        openWindow(value: url)
+        let context = DialogPresenter.forProject(projectManager)
+        Task { @MainActor in
+            guard let url = await registry.openProjectViaPanel(context: context) else { return }
+            openWindow(value: url)
+        }
     }
 
     func handleFileSelection(
@@ -313,12 +325,25 @@ extension ContentView {
                 await workspace.gitProvider.refreshAsync()
             }
         case .revertAll:
-            Self.confirmRevertAll(fileName: fileURL.lastPathComponent) { confirmed in
+            let confirmedTabID = tab.id
+            let confirmedContent = tab.content
+            confirmRevertAll(fileName: fileURL.lastPathComponent) { confirmed in
                 guard confirmed else { return }
+                guard let currentTab = activeTM.activeTab,
+                      currentTab.id == confirmedTabID,
+                      currentTab.content == confirmedContent else {
+                    return
+                }
+                let contentAtRevertStart = currentTab.content
                 Task {
                     if let newContent = await InlineDiffProvider.revertAllHunks(
                         fileURL: fileURL, repoURL: repoURL
                     ) {
+                        guard let latestTab = activeTM.activeTab,
+                              latestTab.id == confirmedTabID,
+                              latestTab.content == contentAtRevertStart else {
+                            return
+                        }
                         activeTM.updateContent(newContent)
                         activeTM.reloadTab(url: fileURL)
                         await workspace.gitProvider.refreshAsync()
@@ -329,9 +354,13 @@ extension ContentView {
     }
 
     /// Shows a confirmation dialog before reverting all changes in a file.
-    static func confirmRevertAll(fileName: String, completion: @escaping (Bool) -> Void) {
-        DispatchQueue.main.async {
-            let response = AlertTemplate.revertAllConfirmation.runModal(
+    /// Presented as a window-scoped sheet so it does not block other project
+    /// windows (issue #1241).
+    func confirmRevertAll(fileName: String, completion: @escaping (Bool) -> Void) {
+        let context = DialogPresenter.forProject(projectManager)
+        Task { @MainActor in
+            let response = await AlertTemplate.revertAllConfirmation.runSheet(
+                on: context,
                 messageText: Strings.revertAllTitle,
                 informativeText: Strings.revertAllMessage(fileName)
             )
@@ -345,7 +374,20 @@ extension ContentView {
 extension ContentView {
 
     func closeTabWithConfirmation(_ tab: EditorTab) {
-        TabCloseHelper.closeTab(tab, in: activeTabManager, gitProvider: workspace.gitProvider)
+        let context = DialogPresenter.forProject(projectManager)
+        let tabManager = activeTabManager
+        let paneID = paneManager.activePaneID
+        Task { @MainActor in
+            let didClose = await TabCloseHelper.closeTab(
+                tab,
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context
+            )
+            if didClose && tabManager.tabs.isEmpty {
+                paneManager.removePane(paneID)
+            }
+        }
     }
 
     func handleExternalChanges(_ result: TabManager.ExternalChangeResult) {
@@ -356,59 +398,154 @@ extension ContentView {
 
         let modified = result.conflicts.filter { $0.kind == .modified }
         let deleted = result.conflicts.filter { $0.kind == .deleted }
+        guard !modified.isEmpty || !deleted.isEmpty else { return }
 
-        if !modified.isEmpty {
-            let names = Array(Set(modified.map(\.url.lastPathComponent))).sorted().joined(separator: ", ")
-            let response = AlertTemplate.externalModifyConflict.runModal(
-                messageText: Strings.externalModifyTitle,
-                informativeText: Strings.externalModifyMessage(names)
-            )
-
-            if response == .alertFirstButtonReturn {
-                for conflict in modified {
-                    projectManager.reloadTabs(url: conflict.url)
+        let context = DialogPresenter.forProject(projectManager)
+        let projectManager = self.projectManager
+        projectManager.enqueueDialogOperation { @MainActor [weak projectManager] in
+            guard let projectManager else { return }
+            let currentModified = modified.filter { conflict in
+                projectManager.allTabs.contains {
+                    $0.url.standardizedFileURL ==
+                        conflict.url.standardizedFileURL
+                        && $0.isDirty
                 }
             }
-        }
+            if !currentModified.isEmpty {
+                let names = Array(
+                    Set(currentModified.map(\.url.lastPathComponent))
+                )
+                    .sorted()
+                    .joined(separator: ", ")
+                let modifiedURLs = Set(
+                    currentModified.map { $0.url.standardizedFileURL }
+                )
+                let displayedAffectedTabs = projectManager.allTabs.filter {
+                    modifiedURLs.contains($0.url.standardizedFileURL)
+                }
+                let displayedAuthorization = DirtyEditorContentAuthorization(
+                    tabs: displayedAffectedTabs
+                )
+                let response = await AlertTemplate.externalModifyConflict.runSheet(
+                    on: context,
+                    messageText: Strings.externalModifyTitle,
+                    informativeText: Strings.externalModifyMessage(names)
+                )
 
-        for conflict in deleted {
-            handleFileDeletion(conflict.url)
+                if response == .alertFirstButtonReturn {
+                    let currentDirtyTabs = projectManager.allTabs.filter {
+                        modifiedURLs.contains($0.url.standardizedFileURL)
+                            && $0.isDirty
+                    }
+                    if displayedAuthorization.covers(currentDirtyTabs) {
+                        for conflict in currentModified {
+                            projectManager.reloadTabs(url: conflict.url)
+                        }
+                    }
+                }
+            }
+
+            // Preserve the old synchronous ordering: each deletion decision
+            // completes before the next one computes its affected tabs.
+            for conflict in deleted {
+                await Self.resolveFileDeletion(
+                    conflict.url,
+                    projectManager: projectManager,
+                    context: context
+                )
+            }
         }
     }
 
     func handleFileDeletion(_ deletedURL: URL) {
+        let context = DialogPresenter.forProject(projectManager)
+        let projectManager = self.projectManager
+        projectManager.enqueueDialogOperation { @MainActor [weak projectManager] in
+            guard let projectManager else { return }
+            await Self.resolveFileDeletion(
+                deletedURL,
+                projectManager: projectManager,
+                context: context
+            )
+        }
+    }
+
+    private static func resolveFileDeletion(
+        _ deletedURL: URL,
+        projectManager: ProjectManager,
+        context: DialogPresentationContext
+    ) async {
         let affected = projectManager.tabsAffectedByDeletion(url: deletedURL)
         guard !affected.isEmpty else { return }
 
         let dirtyTabs = affected.filter { $0.isDirty }
-        if !dirtyTabs.isEmpty {
-            let response = AlertTemplate.fileDeletedSaveAs.runModal(
-                messageText: Strings.fileDeletedTitle,
-                informativeText: Strings.fileDeletedMessage
-            )
-            switch response {
-            case .alertFirstButtonReturn:
-                for tab in dirtyTabs {
-                    let panel = NSSavePanel()
-                    panel.nameFieldStringValue = tab.fileName
-                    guard panel.runModal() == .OK, let saveURL = panel.url else { return }
-                    do {
-                        try tab.content.write(to: saveURL, atomically: true, encoding: .utf8)
-                    } catch {
-                        AlertTemplate.fileOperationErrorWarning.runModal(
-                            messageText: Strings.fileOperationErrorTitle,
-                            informativeText: error.localizedDescription
-                        )
-                        return
-                    }
-                }
-            case .alertSecondButtonReturn:
-                break
-            default:
-                return
-            }
+        guard !dirtyTabs.isEmpty else {
+            projectManager.closeTabsForDeletedFile(url: deletedURL)
+            return
         }
+        let affectedTabIDs = Set(affected.map(\.id))
+        let displayedDirtyContent = Dictionary(
+            dirtyTabs.map { ($0.id, $0.content) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        var savedContent: [UUID: String] = [:]
 
+        let response = await AlertTemplate.fileDeletedSaveAs.runSheet(
+            on: context,
+            messageText: Strings.fileDeletedTitle,
+            informativeText: Strings.fileDeletedMessage
+        )
+        switch response {
+        case .alertFirstButtonReturn:
+            let dirtyTabIDs = projectManager.allTabs
+                .filter {
+                    affectedTabIDs.contains($0.id) && $0.isDirty
+                }
+                .map(\.id)
+            for tabID in dirtyTabIDs {
+                guard let tab = projectManager.allTabs.first(where: {
+                    $0.id == tabID
+                }) else {
+                    continue
+                }
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue = tab.fileName
+                guard await panel.runSheet(on: context) == .OK,
+                      let saveURL = panel.url else { return }
+                guard let currentTab = projectManager.allTabs.first(where: {
+                    $0.id == tabID
+                }) else {
+                    continue
+                }
+                do {
+                    try currentTab.content.write(
+                        to: saveURL,
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                    savedContent[tabID] = currentTab.content
+                } catch {
+                    _ = await AlertTemplate.fileOperationErrorWarning.runSheet(
+                        on: context,
+                        messageText: Strings.fileOperationErrorTitle,
+                        informativeText: error.localizedDescription
+                    )
+                    return
+                }
+            }
+        case .alertSecondButtonReturn:
+            savedContent = displayedDirtyContent
+        default:
+            return
+        }
+        let currentDirtyTabs = projectManager
+            .tabsAffectedByDeletion(url: deletedURL)
+            .filter(\.isDirty)
+        guard currentDirtyTabs.allSatisfy({
+            savedContent[$0.id] == $0.content
+        }) else {
+            return
+        }
         projectManager.closeTabsForDeletedFile(url: deletedURL)
     }
 }

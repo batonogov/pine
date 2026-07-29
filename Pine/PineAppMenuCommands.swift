@@ -45,9 +45,9 @@ struct PineAppMenuCommands: Commands {
 
             Button {
                 if CLIInstaller.isInstalled {
-                    CLIInstaller.uninstall()
+                    CLIInstaller.uninstall(projectManager: focusedProject)
                 } else {
-                    CLIInstaller.install()
+                    CLIInstaller.install(projectManager: focusedProject)
                 }
             } label: {
                 Text(CLIInstaller.isInstalled
@@ -137,7 +137,10 @@ struct PineAppMenuCommands: Commands {
 
             Button {
                 guard let pm = focusedProject else { return }
-                pm.activeTabManager.duplicateActiveTab(projectRoot: pm.workspace.rootURL)
+                pm.activeTabManager.duplicateActiveTab(
+                    projectRoot: pm.workspace.rootURL,
+                    context: DialogPresenter.forProject(pm)
+                )
             } label: {
                 Label(Strings.menuDuplicate, systemImage: MenuIcons.duplicate)
             }
@@ -663,22 +666,52 @@ struct PineAppMenuCommands: Commands {
             // and tasks.json) without restarting Pine. Starter files are
             // created on first open; reload surfaces validation errors.
             Button {
+                let context = if let focusedProject {
+                    DialogPresenter.forProject(focusedProject)
+                } else {
+                    DialogPresenter.forKeyWindow()
+                }
+                let presenter = AppKitUserConfigurationAlertPresenter(
+                    context: context
+                )
                 Task { @MainActor in
-                    await UserConfigurationEditor.openKeybindings()
+                    await UserConfigurationEditor.openKeybindings(
+                        alertPresenter: presenter
+                    )
                 }
             } label: {
                 Label(Strings.menuEditKeybindings, systemImage: MenuIcons.editKeybindings)
             }
             Button {
+                let context = if let focusedProject {
+                    DialogPresenter.forProject(focusedProject)
+                } else {
+                    DialogPresenter.forKeyWindow()
+                }
+                let presenter = AppKitUserConfigurationAlertPresenter(
+                    context: context
+                )
                 Task { @MainActor in
-                    await UserConfigurationEditor.openTasks()
+                    await UserConfigurationEditor.openTasks(
+                        alertPresenter: presenter
+                    )
                 }
             } label: {
                 Label(Strings.menuEditTasks, systemImage: MenuIcons.editTasks)
             }
             Button {
+                let context = if let focusedProject {
+                    DialogPresenter.forProject(focusedProject)
+                } else {
+                    DialogPresenter.forKeyWindow()
+                }
+                let presenter = AppKitUserConfigurationAlertPresenter(
+                    context: context
+                )
                 Task { @MainActor in
-                    await Self.reloadAndPresentConfigurationDiagnostics()
+                    await Self.reloadAndPresentConfigurationDiagnostics(
+                        alertPresenter: presenter
+                    )
                 }
             } label: {
                 Label(Strings.menuReloadUserConfiguration, systemImage: MenuIcons.reloadUserConfiguration)
@@ -704,7 +737,7 @@ struct PineAppMenuCommands: Commands {
     ) async {
         let report = await manager.reload()
         guard let report else { return }
-        alertPresenter.present(reloadAlert(for: report))
+        await alertPresenter.present(reloadAlert(for: report))
     }
 
     static func reloadAlert(

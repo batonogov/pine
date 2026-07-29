@@ -524,14 +524,41 @@ struct PaneLeafView: View {
                 workspaceURL: workspace.rootURL
             )
         }
-        LSPUIEndpoint.shared.openFileAtLineHandler = { [weak tabManager] url, line, _ in
-            tabManager?.openTab(url: url)
-            // Navigate to the position after a short delay so the tab content
-            // is loaded. Uses the pendingGoToLine mechanism (1-based line).
-            DispatchQueue.main.async {
-                tabManager?.pendingGoToLine = line + 1
-            }
+        LSPUIEndpoint.shared.openFileAtLineHandler = { [weak tabManager] url, line, character in
+            guard let tabManager else { return }
+            Self.openLSPFile(
+                url: url,
+                line: line,
+                character: character,
+                in: tabManager
+            )
         }
+    }
+
+    /// Routes a 0-based LSP destination through the location-aware open path.
+    /// `TabManager` installs the destination only after a pending large-file
+    /// decision succeeds, so the source tab cannot consume it prematurely.
+    @discardableResult
+    static func openLSPFile(
+        url: URL,
+        line: Int,
+        character: Int,
+        in tabManager: TabManager,
+        completion: TabManager.OpenCompletion? = nil
+    ) -> TabManager.OpenRequestResult {
+        tabManager.openTabAndGoToLocation(
+            url: url,
+            line: oneBasedLSPCoordinate(line),
+            column: oneBasedLSPCoordinate(character),
+            completion: completion
+        )
+    }
+
+    /// Converts an untrusted 0-based LSP coordinate to Pine's 1-based
+    /// coordinate without trapping on a negative or `Int.max` server value.
+    private static func oneBasedLSPCoordinate(_ value: Int) -> Int {
+        guard value > 0 else { return 1 }
+        return value == .max ? .max : value + 1
     }
 
     /// Clears the LSP UI endpoint handlers.
@@ -668,27 +695,55 @@ struct PaneLeafView: View {
     // MARK: - Tab close with dirty confirmation
 
     private func closeTabWithConfirmation(_ tab: EditorTab, tabManager: TabManager) {
-        TabCloseHelper.closeTab(tab, in: tabManager, gitProvider: workspace.gitProvider)
-        if tabManager.tabs.isEmpty {
-            paneManager.removePane(paneID)
+        let context = DialogPresenter.forProject(projectManager)
+        Task { @MainActor in
+            let didClose = await TabCloseHelper.closeTab(
+                tab,
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context
+            )
+            if didClose && tabManager.tabs.isEmpty {
+                paneManager.removePane(paneID)
+            }
         }
     }
 
     private func closeOtherTabsWithConfirmation(keeping tabID: UUID, tabManager: TabManager) {
-        TabCloseHelper.closeOtherTabs(keeping: tabID, in: tabManager, gitProvider: workspace.gitProvider)
+        let context = DialogPresenter.forProject(projectManager)
+        Task { @MainActor in
+            _ = await TabCloseHelper.closeOtherTabs(
+                keeping: tabID,
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context
+            )
+        }
     }
 
     private func closeTabsToTheRightWithConfirmation(of tabID: UUID, tabManager: TabManager) {
-        TabCloseHelper.closeTabsToTheRight(of: tabID, in: tabManager, gitProvider: workspace.gitProvider)
+        let context = DialogPresenter.forProject(projectManager)
+        Task { @MainActor in
+            _ = await TabCloseHelper.closeTabsToTheRight(
+                of: tabID,
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context
+            )
+        }
     }
 
     private func closeAllTabsWithConfirmation(tabManager: TabManager) {
-        let didClose = TabCloseHelper.closeAllTabs(
-            in: tabManager,
-            gitProvider: workspace.gitProvider
-        )
-        if didClose && tabManager.tabs.isEmpty {
-            paneManager.removePane(paneID)
+        let context = DialogPresenter.forProject(projectManager)
+        Task { @MainActor in
+            let didClose = await TabCloseHelper.closeAllTabs(
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context
+            )
+            if didClose && tabManager.tabs.isEmpty {
+                paneManager.removePane(paneID)
+            }
         }
     }
 }

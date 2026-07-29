@@ -221,41 +221,52 @@ struct WelcomeView: View {
     /// Handles file URLs dropped onto the Welcome window.
     /// Directories are opened as projects; files determine the project from their parent directory.
     private func handleDrop(providers: [NSItemProvider]) {
-        for provider in providers {
-            Task {
+        Task { @MainActor in
+            var urls: [URL] = []
+            for provider in providers {
                 guard let url = try? await provider.loadItem(
                     forTypeIdentifier: UTType.fileURL.identifier
-                ) as? URL else { return }
+                ) as? URL else { continue }
+                urls.append(url)
+            }
 
-                let classified = DropHandler.classifyURLs([url])
+            let classified = DropHandler.classifyURLs(urls)
+            for directory in classified.directories {
+                openProject(at: directory)
+            }
 
-                await MainActor.run {
-                    if let dir = classified.directories.first {
-                        // Open directory as project
-                        openProject(at: dir)
-                    } else if let file = classified.files.first {
-                        // Open file's parent directory as project, then open the file as a tab
-                        let projectDir = file.deletingLastPathComponent()
-                        openProject(at: projectDir)
-                        // Give the project window time to initialize, then open the file
-                        DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard) {
-                            let canonical = projectDir.resolvingSymlinksInPath()
-                            registry.openProjects[canonical]?.primaryTabManager.openTab(url: file)
-                        }
-                    }
-                }
+            guard let firstFile = classified.files.first else { return }
+            // Open one parent project for the complete file batch, then wait
+            // once for its real AppKit owner before any possible large-file
+            // sheet is requested.
+            let projectDir = firstFile.deletingLastPathComponent()
+                .resolvingSymlinksInPath()
+            guard let projectManager = openProject(at: projectDir),
+                  let owner = await projectManager.awaitDialogOwnerWindow(),
+                  projectManager.dialogOwnerWindow === owner,
+                  registry.openProjects[projectDir] === projectManager else {
+                return
+            }
+            for file in classified.files {
+                projectManager.paneManager.openFileInActiveEditor(url: file)
             }
         }
     }
 
     private func openFolder() {
-        if let url = registry.openProjectViaPanel() {
-            openProjectWindow(url)
-            closeWelcome()
+        let context = DialogPresenter.context(
+            for: appDelegate?.welcomeWindow ?? NSApp.keyWindow
+        )
+        Task { @MainActor in
+            if let url = await registry.openProjectViaPanel(context: context) {
+                openProjectWindow(url)
+                closeWelcome()
+            }
         }
     }
 
-    private func openProject(at url: URL) {
+    @discardableResult
+    private func openProject(at url: URL) -> ProjectManager? {
         let canonical = url.resolvingSymlinksInPath()
         // If the project is still in openProjects (window close didn't clean up),
         // save its session and remove it so projectManager(for:) creates a fresh PM.
@@ -263,9 +274,12 @@ struct WelcomeView: View {
             registry.openProjects[canonical]?.saveSession()
             registry.closeProject(canonical)
         }
-        guard registry.projectManager(for: canonical) != nil else { return }
+        guard let projectManager = registry.projectManager(for: canonical) else {
+            return nil
+        }
         openProjectWindow(canonical)
         closeWelcome()
+        return projectManager
     }
 
     /// Opens a project window using AppDelegate's captured closure (works from both
@@ -281,6 +295,10 @@ struct WelcomeView: View {
 
     /// Closes all Welcome windows — both SwiftUI-managed and AppKit-created fallback.
     private func closeWelcome() {
+        if let appDelegate {
+            appDelegate.hideWelcome()
+            return
+        }
         dismissWindow(id: "welcome")
         // Close any AppKit-created welcome windows that dismissWindow doesn't handle
         for window in NSApp.windows

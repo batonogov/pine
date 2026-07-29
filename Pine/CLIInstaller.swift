@@ -33,11 +33,18 @@ enum CLIInstaller {
 
     /// Installs the CLI tool by creating a symlink.
     /// Tries without elevated privileges first; falls back to AppleScript admin prompt if needed.
-    static func install() {
+    @MainActor
+    static func install(projectManager: ProjectManager? = nil) {
+        let context = if let projectManager {
+            DialogPresenter.forProject(projectManager)
+        } else {
+            DialogPresenter.forKeyWindow()
+        }
         guard let scriptPath = bundledScriptPath else {
-            showAlert(
+            showError(
                 title: "Installation Failed",
-                message: "Could not find the pine CLI script in the app bundle."
+                message: "Could not find the pine CLI script in the app bundle.",
+                context: context
             )
             return
         }
@@ -55,9 +62,11 @@ enum CLIInstaller {
                     atPath: defaultInstallPath,
                     withDestinationPath: scriptPath
                 )
-                showAlert(
+                presentSuccess(
                     title: "Command Line Tool Installed",
-                    message: "The 'pine' command is now available.\n\nUsage: pine . or pine file.swift"
+                    message: "The 'pine' command is now available.\n\nUsage: pine . or pine file.swift",
+                    projectManager: projectManager,
+                    context: context
                 )
                 return
             } catch {
@@ -78,15 +87,18 @@ enum CLIInstaller {
             if let error {
                 let message = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
                 if !message.contains("User canceled") {
-                    showAlert(
+                    showError(
                         title: "Installation Failed",
-                        message: message
+                        message: message,
+                        context: context
                     )
                 }
             } else {
-                showAlert(
+                presentSuccess(
                     title: "Command Line Tool Installed",
-                    message: "The 'pine' command is now available.\n\nUsage: pine . or pine file.swift"
+                    message: "The 'pine' command is now available.\n\nUsage: pine . or pine file.swift",
+                    projectManager: projectManager,
+                    context: context
                 )
             }
         }
@@ -94,14 +106,22 @@ enum CLIInstaller {
 
     /// Uninstalls the CLI tool by removing the symlink.
     /// Tries without elevated privileges first; falls back to AppleScript admin prompt if needed.
-    static func uninstall() {
+    @MainActor
+    static func uninstall(projectManager: ProjectManager? = nil) {
+        let context = if let projectManager {
+            DialogPresenter.forProject(projectManager)
+        } else {
+            DialogPresenter.forKeyWindow()
+        }
         // Try without sudo first
         if FileManager.default.isDeletableFile(atPath: defaultInstallPath) {
             do {
                 try FileManager.default.removeItem(atPath: defaultInstallPath)
-                showAlert(
+                presentSuccess(
                     title: "Command Line Tool Removed",
-                    message: "The 'pine' command has been removed from /usr/local/bin."
+                    message: "The 'pine' command has been removed from /usr/local/bin.",
+                    projectManager: projectManager,
+                    context: context
                 )
                 return
             } catch {
@@ -120,27 +140,62 @@ enum CLIInstaller {
             if let error {
                 let message = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
                 if !message.contains("User canceled") {
-                    showAlert(
+                    showError(
                         title: "Uninstall Failed",
-                        message: message
+                        message: message,
+                        context: context
                     )
                 }
             } else {
-                showAlert(
+                presentSuccess(
                     title: "Command Line Tool Removed",
-                    message: "The 'pine' command has been removed from /usr/local/bin."
+                    message: "The 'pine' command has been removed from /usr/local/bin.",
+                    projectManager: projectManager,
+                    context: context
                 )
             }
         }
     }
 
-    // MARK: - Private
+    // MARK: - Presentation
 
-    // TODO: Swift 6 — mark CLIInstaller or this method as @MainActor
-    private static func showAlert(title: String, message: String) {
-        AlertTemplate.cliInstallerInfo.runModal(
-            messageText: title,
-            informativeText: message
-        )
+    /// Reports success without taking focus or blocking any project window.
+    /// Internal visibility keeps the no-sheet contract directly testable.
+    @MainActor
+    static func presentSuccess(
+        title: String,
+        message: String,
+        projectManager: ProjectManager?,
+        context: DialogPresentationContext,
+        feedbackPresenter: any WindowNonmodalFeedbackPresenting =
+            WindowNonmodalFeedbackPresenter.shared
+    ) {
+        let announcement = "\(title). \(message)"
+        if let projectManager,
+           let owner = context.nsWindow,
+           owner.isVisible,
+           projectManager.dialogOwnerWindow === owner {
+            projectManager.toastManager.show(ToastItem(message: announcement))
+        } else {
+            feedbackPresenter.present(
+                message: announcement,
+                context: context
+            )
+        }
+    }
+
+    @MainActor
+    private static func showError(
+        title: String,
+        message: String,
+        context: DialogPresentationContext
+    ) {
+        Task { @MainActor in
+            _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                on: context,
+                messageText: title,
+                informativeText: message
+            )
+        }
     }
 }

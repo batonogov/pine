@@ -13,6 +13,7 @@ struct TerminalPaneTabBar: View {
     let paneID: PaneID
     let terminalState: TerminalPaneState
     var workingDirectory: URL?
+    var projectManager: ProjectManager? = nil
     @Environment(PaneManager.self) private var paneManager
     @State private var tabFrames: [UUID: CGRect] = [:]
     @State private var autoScrollSession = TabStripAutoScrollSession()
@@ -39,11 +40,26 @@ struct TerminalPaneTabBar: View {
     }
 
     private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
-        guard TabCloseHelper.confirmTerminalProcessStop(tabs: [tab]) else { return }
-        terminalState.removeTab(id: tab.id)
-        // Remove the pane if no tabs remain
-        if terminalState.terminalTabs.isEmpty {
-            paneManager.removePane(paneID)
+        let context = if let projectManager {
+            DialogPresenter.forProject(projectManager)
+        } else {
+            DialogPresentationContext.unscoped
+        }
+        Task { @MainActor in
+            guard await TabCloseHelper.confirmTerminalProcessStop(
+                tabs: [tab],
+                context: context
+            ) else { return }
+            guard let currentTab = terminalState.terminalTabs.first(where: {
+                $0.id == tab.id
+            }), currentTab === tab else {
+                return
+            }
+            terminalState.removeTab(id: tab.id)
+            // Remove the pane if no tabs remain
+            if terminalState.terminalTabs.isEmpty {
+                paneManager.removePane(paneID)
+            }
         }
     }
 
@@ -319,15 +335,42 @@ struct TerminalPaneTabBar: View {
 
             // Close terminal pane
             Button {
-                // Warn if any tab has a foreground process
-                guard TabCloseHelper.confirmTerminalProcessStop(
-                    tabs: terminalState.terminalTabs
-                ) else { return }
-                // Stop all tabs and remove pane
-                for tab in terminalState.terminalTabs {
-                    tab.stop()
+                // Warn if any tab has a foreground process (window-scoped sheet, #1241)
+                let context = if let projectManager {
+                    DialogPresenter.forProject(projectManager)
+                } else {
+                    DialogPresentationContext.unscoped
                 }
-                paneManager.removePane(paneID)
+                let targetTabs = terminalState.terminalTabs
+                let targetTabIDs = Set(targetTabs.map(\.id))
+                let authorizedForegroundProcesses =
+                    TabCloseHelper.foregroundProcessSnapshot(
+                        for: targetTabs
+                    )
+                Task { @MainActor in
+                    guard await TabCloseHelper.confirmTerminalProcessStop(
+                        tabs: targetTabs,
+                        context: context
+                    ) else { return }
+                    let currentTabs = terminalState.terminalTabs
+                    let currentTabIDs = Set(currentTabs.map(\.id))
+                    let currentForegroundProcesses =
+                        TabCloseHelper.foregroundProcessSnapshot(
+                            for: currentTabs
+                        )
+                    guard currentTabIDs.isSubset(of: targetTabIDs),
+                          TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+                              currentForegroundProcesses,
+                              by: authorizedForegroundProcesses
+                          ) else {
+                        return
+                    }
+                    // Stop all tabs and remove pane
+                    for tab in currentTabs {
+                        tab.stop()
+                    }
+                    paneManager.removePane(paneID)
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))

@@ -14,13 +14,15 @@ struct TerminalPaneContent: View {
     let terminalState: TerminalPaneState
     @Environment(PaneManager.self) private var paneManager
     @Environment(WorkspaceManager.self) private var workspace
+    @Environment(ProjectManager.self) private var projectManager
 
     var body: some View {
         VStack(spacing: 0) {
             TerminalPaneTabBar(
                 paneID: paneID,
                 terminalState: terminalState,
-                workingDirectory: workspace.rootURL
+                workingDirectory: workspace.rootURL,
+                projectManager: projectManager
             )
             TerminalSearchBarContainer(terminalState: terminalState)
             TerminalContentView(

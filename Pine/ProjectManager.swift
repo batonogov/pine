@@ -5,6 +5,7 @@
 //  Created by Федор Батоногов on 10.03.2026.
 //
 
+import AppKit
 import SwiftUI
 
 /// Thin coordinator that owns the workspace, terminal, and tab managers.
@@ -46,6 +47,17 @@ final class ProjectManager {
     /// Merges LSP diagnostics (read live) with config-validator diagnostics
     /// (revision-guarded). Owned here so every window observes the same truth.
     let problemsController: ProblemsPanelController
+    /// Weak anchor for every native dialog owned by this project.
+    ///
+    /// The window owns the visible project surface; keeping this reference
+    /// weak prevents the project model (which may remain alive in the
+    /// background) from extending the NSWindow lifetime.
+    @ObservationIgnored
+    private(set) weak var dialogOwnerWindow: NSWindow?
+    @ObservationIgnored
+    private var dialogOperationTail: Task<Void, Never>?
+    @ObservationIgnored
+    private var dialogOperationGeneration = 0
     @ObservationIgnored
     private(set) lazy var paneManager = PaneManager(existingTabManager: primaryTabManager)
 
@@ -70,11 +82,61 @@ final class ProjectManager {
         paneManager.tabManagers.values.flatMap(\.dirtyTabs)
     }
 
+    /// Validates an exact dirty-buffer authorization across every editor
+    /// pane. This is intentionally separate from commit so Quit can validate
+    /// every project before mutating any project.
+    func canCommitDiscard(
+        _ authorization: DirtyEditorContentAuthorization
+    ) -> Bool {
+        authorization.covers(allDirtyTabs)
+    }
+
+    /// Commits an already validated "Don't Save" decision across panes.
+    /// There is no suspension between the project-level validation and these
+    /// per-manager commits, so another MainActor mutation cannot interleave.
+    @discardableResult
+    func commitDiscard(
+        _ authorization: DirtyEditorContentAuthorization,
+        postReloadNotifications: Bool = true
+    ) -> Bool {
+        guard canCommitDiscard(authorization) else { return false }
+        let reloads = allDirtyTabs.map {
+            ReloadedTab(url: $0.url, text: $0.savedContent)
+        }
+        for tabManager in paneManager.allTabManagers {
+            guard tabManager.discardChanges(
+                authorizedBy: authorization,
+                postReloads: false
+            ) else {
+                return false
+            }
+        }
+        if postReloadNotifications {
+            for reload in reloads {
+                NotificationCenter.default.post(
+                    name: .tabReloadedFromDisk,
+                    object: nil,
+                    userInfo: ["url": reload.url, "text": reload.text]
+                )
+            }
+        }
+        return true
+    }
+
     /// Saves all tabs across all panes. Returns false if any save fails.
     @discardableResult
     func saveAllPaneTabs() -> Bool {
         for tabMgr in paneManager.tabManagers.values {
             guard tabMgr.saveAllTabs() else { return false }
+        }
+        return true
+    }
+
+    /// Window-scoped save-all used by close and termination decisions.
+    @discardableResult
+    func saveAllPaneTabs(context: DialogPresentationContext) async -> Bool {
+        for tabManager in paneManager.tabManagers.values {
+            guard await tabManager.saveAllTabs(context: context) else { return false }
         }
         return true
     }
@@ -89,32 +151,47 @@ final class ProjectManager {
     /// access and triggered `_swift_reportExclusivityConflict` → `abort()`
     /// on macOS 26.5.1 when format-on-save reformatted the buffer (#1058).
     ///
-    /// Autosave (`TabAutoSave`), close, and quit call
-    /// `activeTabManager.saveActiveTab()` directly — they are not invoked
-    /// from a `ButtonAction`, so there is no transactional exclusive access
-    /// to collide with and no deferral is needed.
+    /// Autosave uses the UI-free throwing primitive directly. Close and quit
+    /// use async, window-scoped save overloads after their sheet decisions;
+    /// neither runs inside a `ButtonAction`.
     ///
     /// The disk write is deferred by ~1 runloop (imperceptible at 60 Hz);
     /// the dirty indicator and git status settle one frame later.
     func saveActiveTabFromMenu() {
-        performMenuSave { [weak self] in self?.activeTabManager.saveActiveTab() ?? false }
+        let context = DialogPresenter.forProject(self)
+        let tabManager = activeTabManager
+        let activeID = tabManager.activeTabID
+        performMenuSave { [weak tabManager] in
+            guard let tabManager,
+                  let activeID,
+                  let index = tabManager.tabs.firstIndex(where: { $0.id == activeID }) else {
+                return false
+            }
+            return await tabManager.saveTab(at: index, context: context)
+        }
     }
 
     /// Cmd+Option+S (Save All) from the File menu. Same reentrancy rationale
     /// as ``saveActiveTabFromMenu`` — Save All can also mutate `@Observable`
     /// per-pane tab state synchronously when format-on-save changes content.
     func saveAllTabsFromMenu() {
-        performMenuSave { [weak self] in self?.saveAllPaneTabs() ?? false }
+        let context = DialogPresenter.forProject(self)
+        performMenuSave { [weak self] in
+            guard let self else { return false }
+            return await saveAllPaneTabs(context: context)
+        }
     }
 
     /// Shared deferral for menu-triggered saves. Runs the save `operation`
     /// on the next runloop (outside any `ButtonAction` callstack), then
     /// refreshes git status + line diffs when it succeeded.
-    private func performMenuSave(_ operation: @escaping () -> Bool) {
+    private func performMenuSave(
+        _ operation: @escaping @MainActor () async -> Bool
+    ) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            guard operation() else { return }
-            Task {
+            Task { @MainActor in
+                guard await operation() else { return }
                 await self.workspace.gitProvider.refreshAsync()
                 NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
             }
@@ -201,7 +278,75 @@ final class ProjectManager {
         terminal.paneManager = paneManager
     }
 
+    func bindDialogOwnerWindow(_ window: NSWindow) {
+        dialogOwnerWindow = window
+    }
+
+    func unbindDialogOwnerWindow(_ window: NSWindow) {
+        guard dialogOwnerWindow === window else { return }
+        dialogOwnerWindow = nil
+    }
+
+    /// Waits for the project window to become a valid native dialog owner.
+    /// Project scenes are created asynchronously, so launch/drop flows cannot
+    /// safely assume a fixed delay is enough before opening a large file.
+    ///
+    /// The retry loop is bounded and cancellation-aware. Tests can inject the
+    /// wait and eligibility predicate to exercise delayed binding without
+    /// depending on AppKit timing.
+    func awaitDialogOwnerWindow(
+        maximumAttempts: Int = 80,
+        waitForNextAttempt: (@MainActor () async -> Void)? = nil,
+        isEligible: (@MainActor (NSWindow) -> Bool)? = nil
+    ) async -> NSWindow? {
+        let wait = waitForNextAttempt ?? {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        let acceptsWindow = isEligible ?? {
+            DialogPresenter.isEligibleApplicationOwner($0)
+        }
+
+        for _ in 0..<max(0, maximumAttempts) {
+            guard !Task.isCancelled else { return nil }
+            if let window = dialogOwnerWindow, acceptsWindow(window) {
+                return window
+            }
+            await wait()
+        }
+
+        guard !Task.isCancelled,
+              let window = dialogOwnerWindow,
+              acceptsWindow(window) else {
+            return nil
+        }
+        return window
+    }
+
+    /// Serializes stateful dialog workflows whose model snapshot must be
+    /// recomputed only after an earlier decision finishes. The native sheet
+    /// coordinator serializes presentation, while this queue prevents two
+    /// filesystem events from taking stale tab snapshots before either sheet
+    /// resolves.
+    func enqueueDialogOperation(
+        _ operation: @escaping @MainActor () async -> Void
+    ) {
+        let previous = dialogOperationTail
+        dialogOperationGeneration &+= 1
+        let generation = dialogOperationGeneration
+        dialogOperationTail = Task { @MainActor [weak self] in
+            if let previous {
+                await previous.value
+            }
+            guard let self, !Task.isCancelled else { return }
+            await operation()
+            if dialogOperationGeneration == generation {
+                dialogOperationTail = nil
+            }
+        }
+    }
+
     isolated deinit {
+        dialogOperationTail?.cancel()
         recoveryManager?.stopPeriodicSnapshots()
     }
 
@@ -227,6 +372,10 @@ final class ProjectManager {
     /// created later by pane splits or session restoration.
     private func configureEditorTabManager(_ tabManager: TabManager) {
         tabManager.recoveryManager = recoveryManager
+        tabManager.dialogContextProvider = { [weak self] in
+            guard let self else { return .unscoped }
+            return DialogPresenter.forProject(self)
+        }
         tabManager.onEditorContextChanged = { [weak self] in
             guard let self else { return }
             self.updateEditorContext()
@@ -454,7 +603,12 @@ final class ProjectManager {
     var rootURL: URL? { workspace.rootURL }
     var gitProvider: GitStatusProvider { workspace.gitProvider }
 
-    func openFolder() { workspace.openFolder() }
+    func openFolder() {
+        let context = DialogPresenter.forProject(self)
+        Task { @MainActor in
+            await workspace.openFolder(context: context)
+        }
+    }
     func loadDirectory(url: URL) {
         workspace.loadDirectory(url: url)
         setupRecovery(projectURL: url)

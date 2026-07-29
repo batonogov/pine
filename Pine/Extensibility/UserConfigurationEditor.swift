@@ -206,7 +206,7 @@ enum UserConfigurationEditor {
             Logger.extensibility.error(
                 "Could not create starter \(file.rawValue) configuration: \(String(describing: error))"
             )
-            alertPresenter.present(creationFailureAlert(file, error: error))
+            await alertPresenter.present(creationFailureAlert(file, error: error))
             return .creationFailed
         }
 
@@ -214,20 +214,26 @@ enum UserConfigurationEditor {
             Logger.extensibility.error(
                 "Could not open \(file.rawValue) configuration at \(fileURL.path)"
             )
-            alertPresenter.present(openFailureAlert(file))
+            await alertPresenter.present(openFailureAlert(file))
             return .openFailed
         }
         return .opened(createdStarter: createdStarter)
     }
 
     /// Shortcut for the keybindings config file.
-    static func openKeybindings() async {
-        await open(.keybindings)
+    static func openKeybindings(
+        alertPresenter: any UserConfigurationAlertPresenting =
+            AppKitUserConfigurationAlertPresenter()
+    ) async {
+        await open(.keybindings, alertPresenter: alertPresenter)
     }
 
     /// Shortcut for the tasks config file.
-    static func openTasks() async {
-        await open(.tasks)
+    static func openTasks(
+        alertPresenter: any UserConfigurationAlertPresenting =
+            AppKitUserConfigurationAlertPresenter()
+    ) async {
+        await open(.tasks, alertPresenter: alertPresenter)
     }
 
     // MARK: - Paths & templates

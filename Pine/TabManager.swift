@@ -5,6 +5,7 @@
 //  Created by Pine Team on 12.03.2026.
 //
 
+import AppKit
 import os
 import SwiftUI
 
@@ -13,6 +14,33 @@ import SwiftUI
 nonisolated struct EditorNavigationLocation: Equatable, Sendable {
     let line: Int
     let column: Int?
+}
+
+/// Exact authorization captured by a dialog that displayed dirty editor
+/// buffers. It deliberately records only buffers that were dirty at capture
+/// time: a formerly clean tab that becomes dirty while a sheet is visible is
+/// therefore absent and fails validation.
+struct DirtyEditorContentAuthorization: Equatable {
+    private(set) var contentByTabID: [UUID: String]
+
+    init(tabs: [EditorTab]) {
+        contentByTabID = Dictionary(
+            tabs.lazy
+                .filter(\.isDirty)
+                .map { ($0.id, $0.content) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+    }
+
+    func covers(_ currentDirtyTabs: [EditorTab]) -> Bool {
+        currentDirtyTabs.allSatisfy {
+            contentByTabID[$0.id] == $0.content
+        }
+    }
+
+    var isEmpty: Bool {
+        contentByTabID.isEmpty
+    }
 }
 
 /// Manages the set of open editor tabs and the active selection.
@@ -28,6 +56,39 @@ nonisolated struct EditorNavigationLocation: Equatable, Sendable {
 @MainActor
 @Observable
 final class TabManager {
+    typealias LargeFileAlertPresenter = @MainActor (
+        _ context: DialogPresentationContext,
+        _ messageText: String,
+        _ informativeText: String
+    ) async -> NSApplication.ModalResponse
+    typealias OpenCompletion = @MainActor (OpenRequestResult) -> Void
+
+    /// Immediate state returned by an open request. Large-file decisions are
+    /// reported as ``pending`` and later deliver one terminal result through
+    /// `OpenCompletion`; ordinary opens deliver their terminal result both
+    /// synchronously and through the completion.
+    enum OpenRequestResult: Equatable {
+        case opened(tabID: UUID)
+        case pending
+        case cancelled
+
+        var wasAccepted: Bool {
+            self != .cancelled
+        }
+    }
+
+    /// Result of the deliberately narrow crash-recovery append path.
+    ///
+    /// Normal opens preserve the pane-local one-file/one-tab invariant.
+    /// Recovery is the sole exception: it must keep an already-open buffer
+    /// untouched while exposing a second, independently identified buffer
+    /// for the same URL.
+    enum RecoveryAppendResult: Equatable {
+        case appended(tabID: UUID)
+        case capacityReached
+        case sourceMissing
+    }
+
     private static let logger = Logger.editor
 
     nonisolated static let maxTabs = 1_000
@@ -72,6 +133,75 @@ final class TabManager {
     var onActiveTabChanged: ((UUID?) -> Void)?
     var editorSettings: EditorSettings = .shared
     var fileFormatters: FileFormatterRegistry = .default
+    /// Project wiring replaces this fallback for every pane-owned manager,
+    /// so model-triggered large-file and error flows do not depend on which
+    /// unrelated window happens to be key.
+    @ObservationIgnored
+    var dialogContextProvider: @MainActor () -> DialogPresentationContext = {
+        .unscoped
+    }
+    @ObservationIgnored
+    var largeFileAlertPresenter: LargeFileAlertPresenter = { context, messageText, informativeText in
+        await AlertTemplate.largeFileWarning.runSheet(
+            on: context,
+            messageText: messageText,
+            informativeText: informativeText
+        )
+    }
+    @ObservationIgnored
+    private var pendingLargeFileOpens: [URL: PendingLargeFileOpen] = [:]
+
+    private final class PendingLargeFileOpen {
+        var intent: LargeFileOpenIntent
+        var completions: [OpenCompletion]
+        private var didComplete = false
+
+        init(
+            intent: LargeFileOpenIntent,
+            completions: [OpenCompletion]
+        ) {
+            self.intent = intent
+            self.completions = completions
+        }
+
+        func merge(
+            intent newerIntent: LargeFileOpenIntent,
+            completion: OpenCompletion?
+        ) {
+            intent = intent.merging(newerIntent)
+            if let completion {
+                completions.append(completion)
+            }
+        }
+
+        func complete(with result: OpenRequestResult) {
+            guard !didComplete else { return }
+            didComplete = true
+            let completions = completions
+            self.completions.removeAll()
+            for completion in completions {
+                completion(result)
+            }
+        }
+    }
+
+    private enum LargeFileOpenIntent {
+        case regular(location: EditorNavigationLocation?)
+        case preview
+
+        func merging(_ newer: LargeFileOpenIntent) -> LargeFileOpenIntent {
+            switch (self, newer) {
+            case (.regular(let existingLocation), .regular(let newerLocation)):
+                return .regular(location: newerLocation ?? existingLocation)
+            case (.preview, .regular):
+                return newer
+            case (.regular, .preview):
+                return self
+            case (.preview, .preview):
+                return .preview
+            }
+        }
+    }
 
     // MARK: - Computed
 
@@ -130,23 +260,88 @@ final class TabManager {
 
     // MARK: - Open
 
-    func openTab(url: URL) {
-        applyOpenDecision(TabPersistence.resolveOpen(url: url, existingTabs: tabs, syntaxHighlightingDisabled: nil))
+    @discardableResult
+    func openTab(
+        url: URL,
+        context: DialogPresentationContext? = nil,
+        completion: OpenCompletion? = nil
+    ) -> OpenRequestResult {
+        return openTab(
+            url: url,
+            location: nil,
+            context: context ?? dialogContextProvider(),
+            completion: completion
+        )
     }
 
-    func openTabAndGoToLine(url: URL, line: Int) {
-        openTabAndGoToLocation(url: url, line: line, column: nil)
+    @discardableResult
+    func openTabAndGoToLine(
+        url: URL,
+        line: Int,
+        context: DialogPresentationContext? = nil,
+        completion: OpenCompletion? = nil
+    ) -> OpenRequestResult {
+        return openTabAndGoToLocation(
+            url: url,
+            line: line,
+            column: nil,
+            context: context,
+            completion: completion
+        )
     }
 
+    @discardableResult
     func openTabAndGoToLocation(
         url: URL,
         line: Int,
-        column: Int?
-    ) {
-        openTab(url: url)
-        pendingGoToLocation = EditorNavigationLocation(
-            line: line,
-            column: column
+        column: Int?,
+        context: DialogPresentationContext? = nil,
+        completion: OpenCompletion? = nil
+    ) -> OpenRequestResult {
+        // A new navigation request supersedes any not-yet-consumed route for
+        // the currently active tab. Install the destination only after the
+        // file actually opens, including after a large-file decision.
+        pendingGoToLocation = nil
+        return openTab(
+            url: url,
+            location: EditorNavigationLocation(
+                line: line,
+                column: column
+            ),
+            context: context ?? dialogContextProvider(),
+            completion: completion
+        )
+    }
+
+    @discardableResult
+    private func openTab(
+        url: URL,
+        location: EditorNavigationLocation?,
+        context: DialogPresentationContext,
+        completion: OpenCompletion?
+    ) -> OpenRequestResult {
+        guard TabPersistence.requiresLargeFileDecision(
+            url: url,
+            existingTabs: tabs,
+            syntaxHighlightingDisabled: nil
+        ) else {
+            let result = applyOpenDecision(TabPersistence.resolveOpen(
+                url: url,
+                existingTabs: tabs,
+                syntaxHighlightingDisabled: nil
+            ))
+            if case .opened = result, let location {
+                pendingGoToLocation = location
+            }
+            completion?(result)
+            return result
+        }
+
+        return requestLargeFileOpen(
+            url: url,
+            intent: .regular(location: location),
+            context: context,
+            completion: completion
         )
     }
 
@@ -154,16 +349,69 @@ final class TabManager {
         applyOpenDecision(TabPersistence.resolveOpen(url: url, existingTabs: tabs, syntaxHighlightingDisabled: syntaxHighlightingDisabled))
     }
 
-    private func applyOpenDecision(_ decision: TabPersistence.OpenDecision) {
+    @discardableResult
+    private func applyOpenDecision(
+        _ decision: TabPersistence.OpenDecision
+    ) -> OpenRequestResult {
         switch decision {
         case .activateExisting(let id):
             // A normal open is explicit. If the file was previously shown as
             // a transient preview, opening it normally promotes it in place.
             promoteTransientPreview(tabID: id)
             activeTabID = id
-        case .openNew(let tab): tabs.append(tab); activeTabID = tab.id
-        case .cancel: break
+            return .opened(tabID: id)
+        case .openNew(let tab):
+            tabs.append(tab)
+            activeTabID = tab.id
+            return .opened(tabID: tab.id)
+        case .cancel:
+            return .cancelled
         }
+    }
+
+    /// Whether recovery can keep the disk/current buffer and append a
+    /// separately identified recovered buffer without exceeding `maxTabs`.
+    ///
+    /// A URL that is not open yet needs two slots: the ordinary open supplies
+    /// the baseline buffer and ``appendRecoveredTab`` supplies the crash
+    /// buffer. An already-open URL needs only the latter.
+    func canRestoreRecoveryEntry(for url: URL) -> Bool {
+        let hasBaseline = tabs.contains(where: { $0.url == url })
+        let requiredSlots = hasBaseline ? 1 : 2
+        return tabs.count <= Self.maxTabs - requiredSlots
+    }
+
+    /// Appends recovered content as a new tab while preserving the source tab
+    /// exactly as it was. This is intentionally not part of the ordinary open
+    /// path: duplicate URLs inside one pane are allowed only when retaining
+    /// divergent crash-recovery buffers would otherwise lose user data.
+    ///
+    /// `savedContent` and file metadata come from the source tab, so dirty
+    /// state is computed against the same baseline that the user can inspect
+    /// in the separately retained source tab.
+    func appendRecoveredTab(
+        basedOn sourceTabID: UUID,
+        content: String,
+        encoding: String.Encoding
+    ) -> RecoveryAppendResult {
+        guard tabs.count < Self.maxTabs else {
+            return .capacityReached
+        }
+        guard let source = tabs.first(where: { $0.id == sourceTabID }) else {
+            return .sourceMissing
+        }
+
+        var recovered = EditorTab.reidentified(from: source)
+        recovered.kind = .text
+        recovered.content = content
+        recovered.encoding = encoding
+        recovered.cachedHighlightResult = nil
+        recovered.isPinned = false
+        recovered.isTransientPreview = false
+        recovered.recomputeContentCaches()
+        tabs.append(recovered)
+        activeTabID = recovered.id
+        return .appended(tabID: recovered.id)
     }
 
     // MARK: - Transient preview tabs
@@ -176,20 +424,113 @@ final class TabManager {
     ///
     /// Promotion triggers (defined in ``promoteTransientPreview``) upgrade a
     /// transient preview to a permanent tab.
-    func openTabAsPreview(url: URL) {
+    @discardableResult
+    func openTabAsPreview(
+        url: URL,
+        context: DialogPresentationContext? = nil,
+        completion: OpenCompletion? = nil
+    ) -> OpenRequestResult {
+        let context = context ?? dialogContextProvider()
         // If the file is already open as a permanent tab, just activate it.
         if let existing = tabs.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }),
            !existing.isTransientPreview {
             activeTabID = existing.id
-            return
+            let result = OpenRequestResult.opened(tabID: existing.id)
+            completion?(result)
+            return result
         }
 
-        let decision = TabPersistence.resolveOpen(url: url, existingTabs: tabs, syntaxHighlightingDisabled: nil)
+        guard TabPersistence.requiresLargeFileDecision(
+            url: url,
+            existingTabs: tabs,
+            syntaxHighlightingDisabled: nil
+        ) else {
+            let result = applyPreviewOpenDecision(TabPersistence.resolveOpen(
+                url: url,
+                existingTabs: tabs,
+                syntaxHighlightingDisabled: nil
+            ))
+            completion?(result)
+            return result
+        }
+
+        return requestLargeFileOpen(
+            url: url,
+            intent: .preview,
+            context: context,
+            completion: completion
+        )
+    }
+
+    @discardableResult
+    private func requestLargeFileOpen(
+        url: URL,
+        intent: LargeFileOpenIntent,
+        context: DialogPresentationContext,
+        completion: OpenCompletion?
+    ) -> OpenRequestResult {
+        let requestURL = url.standardizedFileURL
+        if let pendingOpen = pendingLargeFileOpens[requestURL] {
+            pendingOpen.merge(intent: intent, completion: completion)
+            return .pending
+        }
+        let pendingOpen = PendingLargeFileOpen(
+            intent: intent,
+            completions: completion.map { [$0] } ?? []
+        )
+        pendingLargeFileOpens[requestURL] = pendingOpen
+
+        let sizeMB = Double(TabPersistence.fileSize(url: url) ?? 0)
+            / Double(FileSizeConstants.oneMB)
+        let presentAlert = largeFileAlertPresenter
+        Task { @MainActor [weak self, pendingOpen] in
+            let response = await presentAlert(
+                context,
+                Strings.largeFileWarningTitle,
+                Strings.largeFileWarningMessage(
+                    url.lastPathComponent,
+                    sizeMB
+                )
+            )
+            guard let self else {
+                pendingOpen.complete(with: .cancelled)
+                return
+            }
+            guard pendingLargeFileOpens[requestURL] === pendingOpen else {
+                pendingOpen.complete(with: .cancelled)
+                return
+            }
+            pendingLargeFileOpens.removeValue(forKey: requestURL)
+            let decision = TabPersistence.resolveOpen(
+                url: url,
+                existingTabs: tabs,
+                syntaxHighlightingDisabled: nil,
+                largeFileDecision: TabPersistence.largeFileDecision(for: response)
+            )
+            let result: OpenRequestResult
+            switch pendingOpen.intent {
+            case .regular(let location):
+                result = applyOpenDecision(decision)
+                if case .opened = result, let location {
+                    pendingGoToLocation = location
+                }
+            case .preview:
+                result = applyPreviewOpenDecision(decision)
+            }
+            pendingOpen.complete(with: result)
+        }
+        return .pending
+    }
+
+    private func applyPreviewOpenDecision(
+        _ decision: TabPersistence.OpenDecision
+    ) -> OpenRequestResult {
         switch decision {
         case .activateExisting(let id):
             activeTabID = id
+            return .opened(tabID: id)
         case .cancel:
-            break
+            return .cancelled
         case .openNew(var tab):
             tab.isTransientPreview = true
             // Replacement is pane-scoped, not selection-scoped. A user may
@@ -201,6 +542,7 @@ final class TabManager {
                 tabs.append(tab)
             }
             activeTabID = tab.id
+            return .opened(tabID: tab.id)
         }
     }
 
@@ -264,6 +606,42 @@ final class TabManager {
 
     func closeAllTabs(force: Bool) {
         tabs.filter { force || !$0.isDirty }.map(\.id).forEach { closeTab(id: $0, force: true) }
+    }
+
+    /// Commits a previously authorized "Don't Save" decision without doing
+    /// file I/O. Validation happens before the first mutation so a new/edited
+    /// dirty buffer leaves the entire manager untouched.
+    @discardableResult
+    func discardChanges(
+        authorizedBy authorization: DirtyEditorContentAuthorization,
+        postReloads: Bool = true
+    ) -> Bool {
+        let currentDirtyTabs = tabs.filter(\.isDirty)
+        guard authorization.covers(currentDirtyTabs) else { return false }
+
+        var reloads: [ReloadedTab] = []
+        let authorizedExistingIDs = tabs.compactMap { tab in
+            authorization.contentByTabID[tab.id] == nil ? nil : tab.id
+        }
+        for index in tabs.indices where tabs[index].isDirty {
+            let tabID = tabs[index].id
+            cancelAutoSave(for: tabID)
+            tabs[index].content = tabs[index].savedContent
+            tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
+            reloads.append(.init(
+                url: tabs[index].url,
+                text: tabs[index].savedContent
+            ))
+        }
+        for tabID in authorizedExistingIDs {
+            cancelAutoSave(for: tabID)
+            recoveryManager?.deleteRecoveryFile(for: tabID)
+        }
+        if postReloads {
+            postReloadNotifications(reloads)
+        }
+        return true
     }
 
     // MARK: - Content updates
@@ -349,14 +727,35 @@ final class TabManager {
         return outcome.saved
     }
 
+    /// Synchronous, UI-free save primitive used by autosave and tests.
+    ///
+    /// Errors are reported by the async window-scoped overload at user
+    /// interaction boundaries. Keeping this primitive UI-free prevents a
+    /// background/autosave failure from creating detached modal UI.
     @discardableResult
     func saveTab(at index: Int) -> Bool {
         assert(tabs.indices.contains(index), "saveTab: index \(index) out of bounds, count \(tabs.count)")
         do {
             return try trySaveTab(at: index)
         } catch {
-            AlertTemplate.fileOperationErrorCritical.runModal(
-                messageText: Strings.fileOperationErrorTitle, informativeText: error.localizedDescription
+            return false
+        }
+    }
+
+    /// Saves and presents any failure on the captured project window.
+    @discardableResult
+    func saveTab(
+        at index: Int,
+        context: DialogPresentationContext
+    ) async -> Bool {
+        assert(tabs.indices.contains(index), "saveTab: index \(index) out of bounds, count \(tabs.count)")
+        do {
+            return try trySaveTab(at: index)
+        } catch {
+            _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                on: context,
+                messageText: Strings.fileOperationErrorTitle,
+                informativeText: error.localizedDescription
             )
             return false
         }
@@ -367,11 +766,24 @@ final class TabManager {
         for index in tabs.indices where tabs[index].isDirty { try trySaveTab(at: index) }
     }
 
+    /// Synchronous, UI-free save-all primitive.
     @discardableResult
     func saveAllTabs() -> Bool {
-        do { try trySaveAllTabs(); return true } catch {
-            AlertTemplate.fileOperationErrorCritical.runModal(
-                messageText: Strings.fileOperationErrorTitle, informativeText: error.localizedDescription
+        do { try trySaveAllTabs(); return true } catch { return false }
+    }
+
+    /// Save-all variant for close/termination flows. The first error is
+    /// presented as a sheet owned by the initiating project window.
+    @discardableResult
+    func saveAllTabs(context: DialogPresentationContext) async -> Bool {
+        do {
+            try trySaveAllTabs()
+            return true
+        } catch {
+            _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                on: context,
+                messageText: Strings.fileOperationErrorTitle,
+                informativeText: error.localizedDescription
             )
             return false
         }
@@ -606,11 +1018,19 @@ final class TabManager {
     }
 
     @discardableResult
-    func duplicateActiveTab(projectRoot: URL? = nil) -> Bool {
+    func duplicateActiveTab(
+        projectRoot: URL? = nil,
+        context: DialogPresentationContext? = nil
+    ) -> Bool {
+        let context = context ?? dialogContextProvider()
         do { return try tryDuplicateActiveTab(projectRoot: projectRoot) } catch {
-            AlertTemplate.fileOperationErrorCritical.runModal(
-                messageText: Strings.fileOperationErrorTitle, informativeText: error.localizedDescription
-            )
+            Task { @MainActor in
+                _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                    on: context,
+                    messageText: Strings.fileOperationErrorTitle,
+                    informativeText: error.localizedDescription
+                )
+            }
             return false
         }
     }

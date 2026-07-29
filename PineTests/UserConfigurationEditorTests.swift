@@ -395,7 +395,7 @@ private final class RecordingConfigurationAlertPresenter:
 
     func present(
         _ descriptor: UserConfigurationAlertDescriptor
-    ) -> NSApplication.ModalResponse {
+    ) async -> NSApplication.ModalResponse {
         isPresenting = true
         descriptors.append(descriptor)
         dismissalCount += 1

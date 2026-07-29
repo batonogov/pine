@@ -183,13 +183,17 @@ enum TabPersistence {
         case cancel
     }
 
-    /// Resolves what to do when opening a file: activate existing tab, create new, or cancel.
-    /// When `syntaxHighlightingDisabled` is nil, the large file alert is shown for large files.
-    /// When it's non-nil (session restore), the alert is skipped.
+    /// Resolves what to do when opening a file: activate existing tab, create
+    /// new, or cancel. For an interactive large-file open, the caller first
+    /// presents the window-owned warning and supplies `largeFileDecision`.
+    /// A missing decision fails closed. A non-nil
+    /// `syntaxHighlightingDisabled` is a restored-session decision and skips
+    /// the warning.
     static func resolveOpen(
         url: URL,
         existingTabs: [EditorTab],
-        syntaxHighlightingDisabled: Bool?
+        syntaxHighlightingDisabled: Bool?,
+        largeFileDecision: LargeFileAlertResult? = nil
     ) -> OpenDecision {
         if let existing = existingTabs.first(where: { $0.url == url }) {
             return .activateExisting(existing.id)
@@ -204,9 +208,11 @@ enum TabPersistence {
         }
 
         // Only show large file alert when not restoring a session
-        if syntaxHighlightingDisabled == nil, let size = fileSize(url: url), size >= largeFileThreshold {
-            let sizeMB = Double(size) / Double(FileSizeConstants.oneMB)
-            switch showLargeFileAlert(fileName: url.lastPathComponent, sizeMB: sizeMB) {
+        if syntaxHighlightingDisabled == nil,
+           let size = fileSize(url: url),
+           size >= largeFileThreshold {
+            guard let largeFileDecision else { return .cancel }
+            switch largeFileDecision {
             case .cancel:
                 return .cancel
             case .openWithoutHighlighting:
@@ -219,22 +225,30 @@ enum TabPersistence {
         return .openNew(createTextTab(url: url, syntaxHighlightingDisabled: syntaxHighlightingDisabled ?? false))
     }
 
-    // MARK: - Save
+    // MARK: - Large-file decision
 
     /// Result of the large file warning alert.
-    enum LargeFileAlertResult {
+    enum LargeFileAlertResult: Equatable {
         case openWithHighlighting
         case openWithoutHighlighting
         case cancel
     }
 
-    /// Shows a warning alert for large files. Returns the user's choice.
-    @discardableResult
-    static func showLargeFileAlert(fileName: String, sizeMB: Double) -> LargeFileAlertResult {
-        let response = AlertTemplate.largeFileWarning.runModal(
-            messageText: Strings.largeFileWarningTitle,
-            informativeText: Strings.largeFileWarningMessage(fileName, sizeMB)
-        )
+    static func requiresLargeFileDecision(
+        url: URL,
+        existingTabs: [EditorTab],
+        syntaxHighlightingDisabled: Bool?
+    ) -> Bool {
+        guard syntaxHighlightingDisabled == nil,
+              !existingTabs.contains(where: { $0.url == url }),
+              !isPreviewFile(url: url),
+              let size = fileSize(url: url) else { return false }
+        return size >= largeFileThreshold && size < hugeFileThreshold
+    }
+
+    static func largeFileDecision(
+        for response: NSApplication.ModalResponse
+    ) -> LargeFileAlertResult {
         switch response {
         case .alertFirstButtonReturn:
             return .openWithoutHighlighting
@@ -244,6 +258,8 @@ enum TabPersistence {
             return .cancel
         }
     }
+
+    // MARK: - Save
 
     /// Saves tab content to disk.
     ///

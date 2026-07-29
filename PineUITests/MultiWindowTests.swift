@@ -127,6 +127,35 @@ final class MultiWindowTests: PineUITestCase {
         XCTAssertTrue(sidebar.exists, "Window should remain open after closing tab")
     }
 
+    func testLargeFileWarningCancelsWithCommandPeriod() throws {
+        let largeFile = projectURL.appendingPathComponent("large.swift")
+        try String(repeating: "a", count: 1_048_577).write(
+            to: largeFile,
+            atomically: true,
+            encoding: .utf8
+        )
+        launchWithProject(projectURL)
+
+        let fileNode = app.sidebarNodes["fileNode_large.swift"]
+        XCTAssertTrue(waitForExistence(fileNode, timeout: 10))
+        fileNode.click()
+
+        let warningSheet = app.sheets.firstMatch
+        XCTAssertTrue(
+            warningSheet.waitForExistence(timeout: 5),
+            "Large-file warning should attach to the project window"
+        )
+
+        app.typeKey(".", modifierFlags: .command)
+
+        XCTAssertTrue(
+            warningSheet.waitForNonExistence(timeout: 5),
+            "Command-. should cancel the large-file warning"
+        )
+        XCTAssertFalse(editorTab("large.swift").exists)
+        XCTAssertTrue(app.scrollViews["sidebar"].exists)
+    }
+
     // Note: Cmd+W tab closing is handled by NSEvent.addLocalMonitorForEvents
     // in AppDelegate, but XCUITest's typeKey bypasses the app's event queue
     // (uses Accessibility APIs instead), so Cmd+W cannot be reliably UI-tested.

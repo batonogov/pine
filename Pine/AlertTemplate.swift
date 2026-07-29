@@ -2,23 +2,29 @@
 //  AlertTemplate.swift
 //  Pine
 //
-//  A single enum + factory that replaces all direct NSAlert() constructions
-//  across the codebase. Each case encodes button labels, alert style,
-//  and destructive-button position so every call site is one line.
+//  Shared templates for recurring Pine alerts. Each case encodes button
+//  labels, style, destructive-button position, and button roles so call
+//  sites stay consistent.
+//
+//  Alerts are presented only as queued, window-owned sheets. A missing or
+//  closed owner returns `.abort`; Pine never falls back to application-modal
+//  UI that can block unrelated project windows.
 //
 
 import AppKit
 
-/// Templates for all NSAlert dialogs used in Pine.
+/// Templates for recurring `NSAlert` dialogs used in Pine.
 ///
-/// Usage:
+/// Usage (window-scoped sheet, preferred):
 /// ```swift
-/// let response = AlertTemplate.unsavedChangesSingle.runModal(
+/// let response = await AlertTemplate.unsavedChangesSingle.runSheet(
+///     on: context,
 ///     messageText: Strings.unsavedChangesTitle,
 ///     informativeText: Strings.unsavedChangesMessage
 /// )
 /// ```
-enum AlertTemplate: Sendable {
+///
+enum AlertTemplate: Sendable, Equatable {
     // MARK: - Unsaved changes
 
     /// Save / Don't Save / Cancel  — single file close confirmation.
@@ -64,10 +70,6 @@ enum AlertTemplate: Sendable {
     /// Revert All / Cancel  — confirm reverting all changes in a file.
     case revertAllConfirmation
 
-    // MARK: - CLI Installer
-
-    /// OK only, `.informational` style  — CLI install/uninstall notification.
-    case cliInstallerInfo
 }
 
 // MARK: - Factory
@@ -75,10 +77,15 @@ enum AlertTemplate: Sendable {
 extension AlertTemplate {
     /// Creates a fully configured `NSAlert` for this template.
     ///
+    /// Each button is tagged with a role (`.default`, `.cancel`, or
+    /// `.destructive`) so VoiceOver announces intent and so Escape / ⌘-.
+    /// cancel to the button carrying `.cancel` (or the sole default when
+    /// no explicit cancel exists).
+    ///
     /// - Parameters:
     ///   - messageText: The primary message (bold title).
     ///   - informativeText: Optional secondary message. Pass `nil` to omit.
-    /// - Returns: A configured `NSAlert` ready for `runModal()`.
+    /// - Returns: A configured `NSAlert` ready for queued sheet presentation.
     @MainActor
     func makeAlert(messageText: String, informativeText: String? = nil) -> NSAlert {
         let alert = NSAlert()
@@ -88,23 +95,126 @@ extension AlertTemplate {
         }
         alert.alertStyle = style
 
-        for buttonTitle in buttonTitles {
-            alert.addButton(withTitle: buttonTitle)
+        let roles = buttonRoles
+        var buttons: [NSButton] = []
+        for (index, buttonTitle) in buttonTitles.enumerated() {
+            let role = roles[index]
+            let button = alert.addButton(withTitle: buttonTitle)
+            // `NSAlert` implicitly assigns Return to its first button. Clear
+            // every implicit equivalent first; the semantic roles below are
+            // the only keyboard authority.
+            button.keyEquivalent = ""
+            if role.contains(.destructive) {
+                button.hasDestructiveAction = true
+            }
+            buttons.append(button)
+        }
+
+        let defaultIndices = roles.indices.filter {
+            roles[$0].contains(.default)
+        }
+        assert(
+            defaultIndices.count == 1,
+            "Every alert template must declare exactly one default button"
+        )
+        let cancelIndices = roles.indices.filter {
+            roles[$0].contains(.cancel)
+        }
+        assert(
+            cancelIndices.count <= 1,
+            "Every alert template may declare at most one cancel button"
+        )
+
+        // A single NSButtonCell cannot own both Return and Escape: assigning
+        // either key equivalent makes AppKit remove the other. Keep the
+        // visible safe button as the native default (including its blue
+        // appearance), and install zero-sized semantic proxies for any
+        // additional cancellation shortcuts. The proxies forward the exact
+        // NSAlert response tag and are excluded from accessibility.
+        if let defaultIndex = defaultIndices.first,
+           buttons.indices.contains(defaultIndex),
+           let defaultCell = buttons[defaultIndex].cell as? NSButtonCell {
+            alert.window.defaultButtonCell = defaultCell
+        }
+        if let cancelIndex = cancelIndices.first,
+           buttons.indices.contains(cancelIndex) {
+            let cancelButton = buttons[cancelIndex]
+            if cancelIndex == defaultIndices.first {
+                installShortcutProxy(
+                    for: cancelButton,
+                    keyEquivalent: "\u{1b}",
+                    modifierMask: [],
+                    in: alert
+                )
+            } else {
+                cancelButton.keyEquivalent = "\u{1b}"
+            }
+            installShortcutProxy(
+                for: cancelButton,
+                keyEquivalent: ".",
+                modifierMask: [.command],
+                in: alert
+            )
         }
 
         return alert
     }
 
-    /// Creates and runs a modal alert for this template.
+    /// Adds an invisible keyboard-only button that forwards to an NSAlert
+    /// button. Keeping it outside `alert.buttons` preserves response indices,
+    /// layout, focus order, and VoiceOver output.
+    @MainActor
+    private func installShortcutProxy(
+        for button: NSButton,
+        keyEquivalent: String,
+        modifierMask: NSEvent.ModifierFlags,
+        in alert: NSAlert
+    ) {
+        let proxy = NSButton(frame: .zero)
+        proxy.target = button.target
+        proxy.action = button.action
+        proxy.tag = button.tag
+        proxy.keyEquivalent = keyEquivalent
+        proxy.keyEquivalentModifierMask = modifierMask
+        proxy.isBordered = false
+        proxy.isTransparent = true
+        proxy.focusRingType = .none
+        proxy.setAccessibilityElement(false)
+        alert.window.contentView?.addSubview(proxy)
+    }
+
+    /// Presents this alert as a sheet attached to the window resolved from
+    /// `context`. The sheet blocks only that window — other project windows
+    /// remain fully interactive (issue #1241).
+    ///
+    /// When `context` has no live owner, the request fails closed with
+    /// `.abort` and no detached dialog is shown.
+    ///
+    /// Escape and ⌘-. cancel the sheet, resolving to the cancel-button
+    /// response (`.alertThirdButtonReturn` for three-button templates,
+    /// `.alertSecondButtonReturn` for two-button templates, or
+    /// `.alertFirstButtonReturn` for single-button OK alerts).
     ///
     /// - Parameters:
+    ///   - context: The presentation context carrying the owning window.
     ///   - messageText: The primary message (bold title).
     ///   - informativeText: Optional secondary message.
-    /// - Returns: The modal response from the alert.
+    /// - Returns: The modal response from the sheet.
     @discardableResult
     @MainActor
-    func runModal(messageText: String, informativeText: String? = nil) -> NSApplication.ModalResponse {
-        makeAlert(messageText: messageText, informativeText: informativeText).runModal()
+    func runSheet(
+        on context: DialogPresentationContext,
+        deduplicationKey: DialogRequestKey? = nil,
+        messageText: String,
+        informativeText: String? = nil
+    ) async -> NSApplication.ModalResponse {
+        await makeAlert(
+            messageText: messageText,
+            informativeText: informativeText
+        ).runSheet(
+            on: context,
+            deduplicationKey: deduplicationKey
+        )
     }
 }
 
@@ -116,8 +226,6 @@ extension AlertTemplate {
         switch self {
         case .fileOperationErrorCritical:
             return .critical
-        case .cliInstallerInfo:
-            return .informational
         case .unsavedChangesSingle, .unsavedChangesBulk,
              .terminalTabCloseWarning, .terminalActiveProcessWarning,
              .externalModifyConflict, .fileDeletedSaveAs,
@@ -154,8 +262,48 @@ extension AlertTemplate {
             return [Strings.branchUncommittedChangesSwitch, Strings.dialogCancel]
         case .revertAllConfirmation:
             return [Strings.revertAllButton, Strings.dialogCancel]
-        case .cliInstallerInfo:
-            return [Strings.dialogOK]
         }
     }
+
+    /// Per-button roles, parallel to ``buttonTitles``.
+    ///
+    /// `.default`    — the Return/Enter action (Save, Keep, Cancel, …).
+    /// `.cancel`     — Escape / ⌘-. target (Cancel, Keep). A single-button
+    ///                 OK alert uses `.default` since there is nothing to cancel.
+    /// `.destructive`— Don't Save / Discard / Quit — confirmed data loss.
+    private var buttonRoles: [AlertButtonRole] {
+        switch self {
+        case .unsavedChangesSingle, .unsavedChangesBulk:
+            return [.default, .destructive, .cancel]
+        case .terminalTabCloseWarning:
+            return [.destructive, [.default, .cancel]]
+        case .terminalActiveProcessWarning:
+            return [.destructive, [.default, .cancel]]
+        case .externalModifyConflict:
+            // Reload discards local edits (destructive); Keep is the safe default.
+            return [.destructive, [.default, .cancel]]
+        case .fileDeletedSaveAs:
+            return [.default, .destructive, .cancel]
+        case .fileOperationErrorCritical, .fileOperationErrorWarning:
+            return [.default]
+        case .largeFileWarning:
+            return [.default, [], .cancel]
+        case .branchUncommittedChanges:
+            return [.destructive, [.default, .cancel]]
+        case .revertAllConfirmation:
+            return [.destructive, [.default, .cancel]]
+        }
+    }
+}
+
+// MARK: - Alert button role bridging
+
+/// Semantic roles for an alert button. A safe secondary action can be both
+/// the Return default and the Escape cancellation target.
+struct AlertButtonRole: OptionSet, Sendable, Equatable {
+    let rawValue: UInt8
+
+    static let `default` = AlertButtonRole(rawValue: 1 << 0)
+    static let cancel = AlertButtonRole(rawValue: 1 << 1)
+    static let destructive = AlertButtonRole(rawValue: 1 << 2)
 }

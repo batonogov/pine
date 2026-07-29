@@ -39,6 +39,12 @@ final class RecoveryManager {
     private let recoveryDirectory: URL
     private var periodicTimer: Timer?
     private var snapshotDebouncer: Debouncer?
+    /// Old crash IDs whose recovered buffers now live under a runtime tab ID.
+    ///
+    /// A failed write of the runtime snapshot leaves the old file in place
+    /// and records it here. A later successful periodic snapshot, save, or
+    /// close then removes the superseded file as well.
+    private var supersededRecoveryIDsByRuntimeID: [UUID: Set<UUID>] = [:]
 
     /// Tabs provider — set by ProjectManager so periodic snapshots can access current tabs.
     var tabsProvider: (() -> [EditorTab])?
@@ -58,29 +64,11 @@ final class RecoveryManager {
     func snapshotDirtyTabs(_ tabs: [EditorTab]) {
         let dirtyTabs = tabs.filter { $0.isDirty && $0.kind == .text }
         guard !dirtyTabs.isEmpty else { return }
-
-        ensureDirectoryExists()
-
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        guard ensureDirectoryExists() else { return }
+        let encoder = makeRecoveryEncoder()
 
         for tab in dirtyTabs {
-            let entry = RecoveryEntry(
-                originalPath: tab.url.path,
-                content: tab.content,
-                encoding: tab.encoding
-            )
-            do {
-                let data = try encoder.encode(entry)
-                let fileURL = recoveryFileURL(for: tab.id)
-                do {
-                    try data.write(to: fileURL, options: .atomic)
-                } catch {
-                    Self.logger.error("Failed to write recovery file for tab \(tab.url.lastPathComponent): \(error)")
-                }
-            } catch {
-                Self.logger.error("Failed to encode recovery entry for \(tab.url.lastPathComponent): \(error)")
-            }
+            _ = writeRecoverySnapshot(for: tab, encoder: encoder)
         }
     }
 
@@ -88,14 +76,17 @@ final class RecoveryManager {
 
     /// Removes the recovery file for a specific tab (e.g., after save or clean close).
     func deleteRecoveryFile(for tabID: UUID) {
-        let fileURL = recoveryFileURL(for: tabID)
-        do {
-            try FileManager.default.removeItem(at: fileURL)
-        } catch let error as NSError where error.domain == NSCocoaErrorDomain
-            && error.code == NSFileNoSuchFileError {
-            // File already deleted — not an error
-        } catch {
-            Self.logger.error("Failed to delete recovery file \(tabID.uuidString): \(error)")
+        _ = removeRecoveryFileOnly(for: tabID)
+        deleteSupersededRecoveryFiles(for: tabID)
+    }
+
+    /// Removes only the explicitly displayed recovery IDs.
+    ///
+    /// Used by the recovery sheet's Discard action so successfully migrated
+    /// runtime snapshots in the same project directory remain intact.
+    func deleteRecoveryFiles(for tabIDs: [UUID]) {
+        for tabID in Set(tabIDs) where removeRecoveryFileOnly(for: tabID) {
+            forgetSupersededReference(to: tabID)
         }
     }
 
@@ -153,6 +144,125 @@ final class RecoveryManager {
             }
         }
         return results
+    }
+
+    /// Restores crash snapshots into `tabManager`, waiting for any interactive
+    /// large-file decision before applying the recovered content.
+    ///
+    /// A snapshot is deleted only after its tab actually opens and the
+    /// recovered buffer has been installed. Cancelled or otherwise unresolved
+    /// entries stay on disk for a later recovery attempt.
+    ///
+    /// - Returns: Entries that could not be restored.
+    func restorePendingEntries(
+        _ entries: [(UUID, RecoveryEntry)],
+        in tabManager: TabManager,
+        context: DialogPresentationContext
+    ) async -> [(UUID, RecoveryEntry)] {
+        var retainedEntries: [(UUID, RecoveryEntry)] = []
+
+        for (recoveryID, entry) in entries {
+            guard !entry.originalPath.isEmpty else {
+                retainedEntries.append((recoveryID, entry))
+                continue
+            }
+
+            let url = URL(fileURLWithPath: entry.originalPath)
+            guard tabManager.canRestoreRecoveryEntry(for: url) else {
+                retainedEntries.append((recoveryID, entry))
+                continue
+            }
+
+            let result = await withCheckedContinuation { continuation in
+                tabManager.openTab(
+                    url: url,
+                    context: context,
+                    completion: { continuation.resume(returning: $0) }
+                )
+            }
+
+            guard case .opened(let tabID) = result,
+                  tabManager.tabs.contains(where: { $0.id == tabID }) else {
+                retainedEntries.append((recoveryID, entry))
+                continue
+            }
+
+            let recoveredTabID: UUID
+            switch tabManager.appendRecoveredTab(
+                basedOn: tabID,
+                content: entry.content,
+                encoding: entry.encoding
+            ) {
+            case .appended(let tabID):
+                recoveredTabID = tabID
+            case .capacityReached, .sourceMissing:
+                retainedEntries.append((recoveryID, entry))
+                continue
+            }
+
+            guard let recoveredTab = tabManager.tabs.first(where: {
+                $0.id == recoveredTabID
+            }) else {
+                retainedEntries.append((recoveryID, entry))
+                continue
+            }
+
+            // Persist the runtime-ID snapshot before removing the crash-ID
+            // snapshot. On failure the old file remains durable and is linked
+            // to the runtime tab for cleanup after a later snapshot/save.
+            _ = migrateRecoverySnapshot(
+                from: recoveryID,
+                to: recoveredTab
+            )
+        }
+
+        return retainedEntries
+    }
+
+    /// Replaces an old crash-ID snapshot with the restored runtime tab's
+    /// snapshot without creating a durability gap.
+    ///
+    /// - Returns: `true` when the restored state is durably represented under
+    ///   the runtime ID (or is clean and needs no snapshot). `false` means the
+    ///   destination write failed and the old snapshot was intentionally kept.
+    @discardableResult
+    func migrateRecoverySnapshot(
+        from recoveryID: UUID,
+        to restoredTab: EditorTab
+    ) -> Bool {
+        guard restoredTab.isDirty && restoredTab.kind == .text else {
+            if !removeRecoveryFileOnly(for: recoveryID),
+               recoveryID != restoredTab.id {
+                recordSupersededRecoveryID(
+                    recoveryID,
+                    for: restoredTab.id
+                )
+            }
+            return true
+        }
+
+        guard ensureDirectoryExists(),
+              writeRecoverySnapshot(for: restoredTab) else {
+            if recoveryID != restoredTab.id {
+                recordSupersededRecoveryID(
+                    recoveryID,
+                    for: restoredTab.id
+                )
+            }
+            return false
+        }
+
+        // When both identities are the same, the atomic write above replaced
+        // the old contents in place. Deleting here would remove the only new
+        // snapshot.
+        guard recoveryID != restoredTab.id else { return true }
+        if !removeRecoveryFileOnly(for: recoveryID) {
+            recordSupersededRecoveryID(
+                recoveryID,
+                for: restoredTab.id
+            )
+        }
+        return true
     }
 
     /// Whether there are any pending recovery files.
@@ -290,16 +400,115 @@ final class RecoveryManager {
         recoveryDirectory.appendingPathComponent("\(tabID.uuidString).json")
     }
 
-    private func ensureDirectoryExists() {
-        if !FileManager.default.fileExists(atPath: recoveryDirectory.path) {
-            do {
-                try FileManager.default.createDirectory(
-                    at: recoveryDirectory,
-                    withIntermediateDirectories: true
+    /// Atomically writes one runtime snapshot and returns whether it reached
+    /// its destination. Superseded crash IDs are removed only after success.
+    private func writeRecoverySnapshot(for tab: EditorTab) -> Bool {
+        writeRecoverySnapshot(for: tab, encoder: makeRecoveryEncoder())
+    }
+
+    private func writeRecoverySnapshot(
+        for tab: EditorTab,
+        encoder: JSONEncoder
+    ) -> Bool {
+        let entry = RecoveryEntry(
+            originalPath: tab.url.path,
+            content: tab.content,
+            encoding: tab.encoding
+        )
+
+        do {
+            let data = try encoder.encode(entry)
+            try data.write(
+                to: recoveryFileURL(for: tab.id),
+                options: .atomic
+            )
+        } catch {
+            Self.logger.error(
+                "Failed to write recovery file for tab \(tab.url.lastPathComponent): \(error)"
+            )
+            return false
+        }
+
+        deleteSupersededRecoveryFiles(for: tab.id)
+        return true
+    }
+
+    private func makeRecoveryEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+
+    @discardableResult
+    private func removeRecoveryFileOnly(for tabID: UUID) -> Bool {
+        let fileURL = recoveryFileURL(for: tabID)
+        do {
+            try FileManager.default.removeItem(at: fileURL)
+            return true
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && error.code == NSFileNoSuchFileError {
+            return true
+        } catch {
+            Self.logger.error(
+                "Failed to delete recovery file \(tabID.uuidString): \(error)"
+            )
+            return false
+        }
+    }
+
+    private func recordSupersededRecoveryID(
+        _ recoveryID: UUID,
+        for runtimeID: UUID
+    ) {
+        guard recoveryID != runtimeID else { return }
+        supersededRecoveryIDsByRuntimeID[runtimeID, default: []]
+            .insert(recoveryID)
+    }
+
+    private func deleteSupersededRecoveryFiles(for runtimeID: UUID) {
+        guard let recoveryIDs = supersededRecoveryIDsByRuntimeID[runtimeID] else {
+            return
+        }
+        let failed = Set(recoveryIDs.filter {
+            !removeRecoveryFileOnly(for: $0)
+        })
+        if failed.isEmpty {
+            supersededRecoveryIDsByRuntimeID.removeValue(forKey: runtimeID)
+        } else {
+            supersededRecoveryIDsByRuntimeID[runtimeID] = failed
+        }
+    }
+
+    private func forgetSupersededReference(to recoveryID: UUID) {
+        for runtimeID in Array(supersededRecoveryIDsByRuntimeID.keys) {
+            supersededRecoveryIDsByRuntimeID[runtimeID]?.remove(recoveryID)
+            if supersededRecoveryIDsByRuntimeID[runtimeID]?.isEmpty == true {
+                supersededRecoveryIDsByRuntimeID.removeValue(
+                    forKey: runtimeID
                 )
-            } catch {
-                Self.logger.error("Failed to create recovery directory: \(error)")
             }
+        }
+    }
+
+    @discardableResult
+    private func ensureDirectoryExists() -> Bool {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(
+            atPath: recoveryDirectory.path,
+            isDirectory: &isDirectory
+        ) {
+            return isDirectory.boolValue
+        }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: recoveryDirectory,
+                withIntermediateDirectories: true
+            )
+            return true
+        } catch {
+            Self.logger.error("Failed to create recovery directory: \(error)")
+            return false
         }
     }
 

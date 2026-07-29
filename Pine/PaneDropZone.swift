@@ -231,14 +231,17 @@ struct PaneSplitDropDelegate: DropDelegate {
     }
 
     private func handleFileDrop(providers: [NSItemProvider]) {
-        guard let tabManager = paneManager.tabManager(for: paneID) else { return }
+        guard paneManager.tabManager(for: paneID) != nil else { return }
         for provider in providers {
             Task {
                 guard let url = try? await provider.loadItem(
                     forTypeIdentifier: UTType.fileURL.identifier
                 ) as? URL else { return }
                 await MainActor.run {
-                    DropHandler.openFilesAsTabs([url], in: tabManager)
+                    _ = paneManager.openFileInPane(
+                        url: url,
+                        paneID: paneID
+                    )
                 }
             }
         }

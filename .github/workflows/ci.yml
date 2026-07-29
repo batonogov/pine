@@ -355,6 +355,7 @@ jobs:
             -skip-testing:PineTests/FuzzConfigValidatorTests \
             -skip-testing:PineTests/FuzzGoToLineParserTests \
             -retry-tests-on-failure \
+            -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
             -enableCodeCoverage YES \
             -resultBundlePath "$RESULT_BUNDLE" \

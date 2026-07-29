@@ -804,17 +804,41 @@ final class PaneManager {
     func openFileInActiveEditor(
         url: URL,
         asTransientPreview: Bool = false,
-        requestFocus: Bool = true
+        requestFocus: Bool = true,
+        completion: TabManager.OpenCompletion? = nil
     ) -> Bool {
+        let previousActivePaneID = activePaneID
+        let existingEditorPaneIDs = Set(tabManagers.keys)
         let tabManager = ensureEditorPane()
         let paneID = activePaneID
-        if asTransientPreview {
-            tabManager.openTabAsPreview(url: url)
-        } else {
-            tabManager.openTab(url: url)
+        let createdDestination = !existingEditorPaneIDs.contains(paneID)
+        let completion: TabManager.OpenCompletion = { [weak self, weak tabManager] result in
+            if let self, let tabManager {
+                self.finishFileOpen(
+                    result,
+                    in: tabManager,
+                    paneID: paneID,
+                    requestFocus: requestFocus,
+                    previousActivePaneID: previousActivePaneID,
+                    removeEmptyDestinationOnCancel: createdDestination
+                )
+            }
+            completion?(result)
         }
-        guard let tabID = tabManager.activeTabID else { return false }
-        return selectEditorTab(tabID, in: paneID, requestFocus: requestFocus)
+        let result = if asTransientPreview {
+            tabManager.openTabAsPreview(url: url, completion: completion)
+        } else {
+            tabManager.openTab(url: url, completion: completion)
+        }
+
+        // `ensureEditorPane()` must provision a destination before the
+        // large-file sheet can resolve, but a pending decision must not steal
+        // pane focus. The completion activates it only after acceptance.
+        if result == .pending,
+           root.content(for: previousActivePaneID) != nil {
+            activePaneID = previousActivePaneID
+        }
+        return result.wasAccepted
     }
 
     /// Removes a pane and promotes its sibling. When the very last leaf in
@@ -1480,19 +1504,35 @@ final class PaneManager {
     /// Opens a file as a new tab in the specified editor pane.
     /// Does nothing if the pane has no TabManager (e.g., terminal pane)
     /// or if the URL is a directory.
-    func openFileInPane(url: URL, paneID: PaneID) {
-        guard let tabManager = tabManagers[paneID] else { return }
+    @discardableResult
+    func openFileInPane(
+        url: URL,
+        paneID: PaneID,
+        completion: TabManager.OpenCompletion? = nil
+    ) -> Bool {
+        guard let tabManager = tabManagers[paneID] else {
+            completion?(.cancelled)
+            return false
+        }
         // Skip directories — they should not open as editor tabs
         var isDir: ObjCBool = false
         let filePath = url.path(percentEncoded: false)
         if FileManager.default.fileExists(atPath: filePath, isDirectory: &isDir), isDir.boolValue {
-            return
+            completion?(.cancelled)
+            return false
         }
-        tabManager.openTab(url: url)
-        activePaneID = paneID
-        if let activeID = tabManager.activeTabID {
-            recordTabActivation(paneID: paneID, tabID: activeID, contentType: .editor)
+        let result = tabManager.openTab(url: url) { [weak self, weak tabManager] result in
+            if let self, let tabManager {
+                self.finishFileOpen(
+                    result,
+                    in: tabManager,
+                    paneID: paneID,
+                    requestFocus: true
+                )
+            }
+            completion?(result)
         }
+        return result.wasAccepted
     }
 
     /// Splits a pane and opens a file in the new pane.
@@ -1502,12 +1542,43 @@ final class PaneManager {
         url: URL,
         relativeTo targetID: PaneID,
         axis: SplitAxis,
-        insertBefore: Bool = false
+        insertBefore: Bool = false,
+        completion: TabManager.OpenCompletion? = nil
     ) -> PaneID? {
-        guard let newPaneID = splitPane(targetID, axis: axis, insertBefore: insertBefore) else { return nil }
-        guard let newTabManager = tabManagers[newPaneID] else { return nil }
-        newTabManager.openTab(url: url)
-        return newPaneID
+        let previousActivePaneID = activePaneID
+        guard let newPaneID = splitPane(
+            targetID,
+            axis: axis,
+            insertBefore: insertBefore
+        ) else {
+            completion?(.cancelled)
+            return nil
+        }
+        guard let newTabManager = tabManagers[newPaneID] else {
+            completion?(.cancelled)
+            return nil
+        }
+        let result = newTabManager.openTab(url: url) { [weak self, weak newTabManager] result in
+            if let self, let newTabManager {
+                self.finishFileOpen(
+                    result,
+                    in: newTabManager,
+                    paneID: newPaneID,
+                    requestFocus: true,
+                    previousActivePaneID: previousActivePaneID,
+                    removeEmptyDestinationOnCancel: true
+                )
+            }
+            completion?(result)
+        }
+
+        // Creating the split is synchronous, while a large-file decision is
+        // not. Keep the source pane active until acceptance.
+        if result == .pending,
+           root.content(for: previousActivePaneID) != nil {
+            activePaneID = previousActivePaneID
+        }
+        return result.wasAccepted ? newPaneID : nil
     }
 
     // MARK: - Transactional tab drag
@@ -1831,6 +1902,39 @@ final class PaneManager {
     }
 
     // MARK: - Private helpers
+
+    /// Applies the terminal result of a file open to pane-level state. This is
+    /// the only place async large-file opens acquire pane focus and MRU
+    /// position, matching the synchronous open path.
+    private func finishFileOpen(
+        _ result: TabManager.OpenRequestResult,
+        in tabManager: TabManager,
+        paneID: PaneID,
+        requestFocus: Bool,
+        previousActivePaneID: PaneID? = nil,
+        removeEmptyDestinationOnCancel: Bool = false
+    ) {
+        switch result {
+        case .opened(let tabID):
+            guard tabManagers[paneID] === tabManager else { return }
+            selectEditorTab(tabID, in: paneID, requestFocus: requestFocus)
+        case .cancelled:
+            if removeEmptyDestinationOnCancel,
+               tabManagers[paneID] === tabManager,
+               tabManager.tabs.isEmpty,
+               root.leafCount > 1 {
+                removePane(paneID)
+            }
+            if let previousActivePaneID,
+               root.content(for: previousActivePaneID) != nil {
+                activePaneID = previousActivePaneID
+            }
+        case .pending:
+            // Completions are terminal; retaining this case makes the shared
+            // result type exhaustive if a future presenter changes behavior.
+            break
+        }
+    }
 
     private func makeEditorTabManager(for paneID: PaneID) -> TabManager {
         let tabManager = TabManager()

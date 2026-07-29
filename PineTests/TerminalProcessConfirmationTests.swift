@@ -19,9 +19,9 @@ struct TerminalProcessConfirmationTests {
 
     // MARK: - confirmTerminalStop (pure decision function)
 
-    @Test func noForegroundProcess_doesNotPresentAlert_proceedsImmediately() {
+    @Test func noForegroundProcess_doesNotPresentAlert_proceedsImmediately() async {
         var alertCalled = false
-        let result = TabCloseHelper.confirmTerminalStop(
+        let result = await TabCloseHelper.confirmTerminalStop(
             hasForegroundProcess: false,
             presentAlert: {
                 alertCalled = true
@@ -32,9 +32,9 @@ struct TerminalProcessConfirmationTests {
         #expect(alertCalled == false)
     }
 
-    @Test func foregroundProcess_userConfirms_proceeds() {
+    @Test func foregroundProcess_userConfirms_proceeds() async {
         var alertCalled = false
-        let result = TabCloseHelper.confirmTerminalStop(
+        let result = await TabCloseHelper.confirmTerminalStop(
             hasForegroundProcess: true,
             presentAlert: {
                 alertCalled = true
@@ -45,8 +45,8 @@ struct TerminalProcessConfirmationTests {
         #expect(alertCalled == true)
     }
 
-    @Test func foregroundProcess_userCancels_aborts() {
-        let result = TabCloseHelper.confirmTerminalStop(
+    @Test func foregroundProcess_userCancels_aborts() async {
+        let result = await TabCloseHelper.confirmTerminalStop(
             hasForegroundProcess: true,
             presentAlert: { .alertSecondButtonReturn } // "Cancel"
         )
@@ -55,9 +55,9 @@ struct TerminalProcessConfirmationTests {
 
     // MARK: - confirmTerminalProcessStop (tabs-based convenience)
 
-    @Test func emptyTabs_proceedsImmediately() {
+    @Test func emptyTabs_proceedsImmediately() async {
         var alertCalled = false
-        let result = TabCloseHelper.confirmTerminalProcessStop(
+        let result = await TabCloseHelper.confirmTerminalProcessStop(
             tabs: [],
             presentAlert: {
                 alertCalled = true
@@ -68,13 +68,13 @@ struct TerminalProcessConfirmationTests {
         #expect(alertCalled == false)
     }
 
-    @Test func tabsWithoutForegroundProcess_proceedsImmediately() {
+    @Test func tabsWithoutForegroundProcess_proceedsImmediately() async {
         // Newly created TerminalTabs have hasForegroundProcess == false
         // because no process has been started. We use this to verify the
         // no-warning fast path with real tab objects.
         let tab = TerminalTab(name: "Test Terminal")
         var alertCalled = false
-        let result = TabCloseHelper.confirmTerminalProcessStop(
+        let result = await TabCloseHelper.confirmTerminalProcessStop(
             tabs: [tab],
             presentAlert: {
                 alertCalled = true
@@ -87,27 +87,27 @@ struct TerminalProcessConfirmationTests {
 
     // MARK: - Default alert (production path)
 
-    @Test func defaultAlertIsUsedWhenNoInjectionProvided() {
+    @Test func defaultAlertIsUsedWhenNoInjectionProvided() async {
         // Verify the default parameter compiles and runs without crashing.
         // We can't meaningfully test the modal result in a headless test
         // (it would present a real NSAlert), so we only verify the no-process
         // fast path which never calls the alert.
-        let result = TabCloseHelper.confirmTerminalStop(hasForegroundProcess: false)
+        let result = await TabCloseHelper.confirmTerminalStop(hasForegroundProcess: false)
         #expect(result == true)
     }
 
-    @Test func defaultAlertIsUsedForTabsOverload_noProcess() {
+    @Test func defaultAlertIsUsedForTabsOverload_noProcess() async {
         let tab = TerminalTab(name: "Idle Terminal")
-        let result = TabCloseHelper.confirmTerminalProcessStop(tabs: [tab])
+        let result = await TabCloseHelper.confirmTerminalProcessStop(tabs: [tab])
         #expect(result == true)
     }
 
     // MARK: - Multiple tabs aggregation
 
-    @Test func multipleTabs_allIdle_proceedsImmediately() {
+    @Test func multipleTabs_allIdle_proceedsImmediately() async {
         let tabs = (0..<5).map { TerminalTab(name: "Terminal \($0)") }
         var alertCalled = false
-        let result = TabCloseHelper.confirmTerminalProcessStop(
+        let result = await TabCloseHelper.confirmTerminalProcessStop(
             tabs: tabs,
             presentAlert: {
                 alertCalled = true
@@ -116,5 +116,29 @@ struct TerminalProcessConfirmationTests {
         )
         #expect(result == true)
         #expect(alertCalled == false)
+    }
+
+    @Test func foregroundAuthorizationUsesProcessGroupGeneration() {
+        let tabID = UUID()
+        let authorized: Set<TerminalForegroundProcessIdentity> = [
+            .init(tabID: tabID, processGroupID: 101),
+        ]
+
+        #expect(TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+            [.init(tabID: tabID, processGroupID: 101)],
+            by: authorized
+        ))
+        #expect(!TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+            [.init(tabID: tabID, processGroupID: 202)],
+            by: authorized
+        ))
+        #expect(!TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+            [.init(tabID: UUID(), processGroupID: 101)],
+            by: authorized
+        ))
+        #expect(TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
+            [],
+            by: authorized
+        ))
     }
 }
