@@ -138,13 +138,22 @@ nonisolated protocol UserTaskIOWorkerScheduling: Sendable {
     func schedule(_ operation: @escaping @Sendable () -> Void)
 }
 
-nonisolated struct UserTaskDispatchIOWorkerScheduler:
-    UserTaskIOWorkerScheduling,
-    @unchecked Sendable {
-    let queue: DispatchQueue
-
+/// Starts each blocking descriptor owner on its own OS thread.
+///
+/// Pipe reads can remain blocked for the lifetime of a user task. Scheduling
+/// them on a shared concurrent dispatch queue lets libdispatch's worker limit
+/// delay every worker of a later task, so its startup barrier can expire before
+/// any descriptor is owned. Dedicated threads keep task startup independent
+/// while the injected scheduler preserves deterministic lifecycle tests.
+nonisolated struct UserTaskThreadIOWorkerScheduler:
+    UserTaskIOWorkerScheduling {
     func schedule(_ operation: @escaping @Sendable () -> Void) {
-        queue.async(execute: operation)
+        let thread = Thread {
+            operation()
+        }
+        thread.name = "com.pine.user-task-io"
+        thread.qualityOfService = .userInitiated
+        thread.start()
     }
 }
 
@@ -163,11 +172,6 @@ nonisolated struct UserTaskIOExecutionPolicy: Sendable {
 /// fully async — tasks are user-facing and may take longer than a formatter.
 nonisolated final class UserTaskRunner: @unchecked Sendable {
     static let shared = UserTaskRunner()
-    private static let processIOQueue = DispatchQueue(
-        label: "com.pine.user-task-io",
-        qos: .userInitiated,
-        attributes: .concurrent
-    )
     private static let deferredCleanupQueue = DispatchQueue(
         label: "com.pine.user-task-deferred-cleanup",
         qos: .userInitiated,
@@ -200,9 +204,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         self.timeout = timeout
         self.shellExecutableURL = shellExecutableURL
         self.ioExecutionPolicy = ioExecutionPolicy ?? UserTaskIOExecutionPolicy(
-            workerScheduler: UserTaskDispatchIOWorkerScheduler(
-                queue: Self.processIOQueue
-            ),
+            workerScheduler: UserTaskThreadIOWorkerScheduler(),
             startupDeadline: Self.ioStartupDeadline,
             shutdownDeadline: Self.ioShutdownDeadline
         )
