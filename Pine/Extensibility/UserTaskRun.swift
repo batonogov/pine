@@ -43,33 +43,50 @@ nonisolated struct UserTaskOutputPreview: Sendable, Equatable {
     ) -> UserTaskOutputPreview {
         let byteLimit = max(maximumUTF8Bytes, 0)
         let lineLimit = max(maximumLines, 1)
-        var data = Data()
-        data.reserveCapacity(byteLimit)
-        var lineCount = 1
         let newline: UInt8 = 0x0A
 
-        func append<Bytes: Sequence>(_ bytes: Bytes) -> Bool
-        where Bytes.Element == UInt8 {
-            for byte in bytes {
-                guard data.count < byteLimit else { return false }
-                if byte == newline, lineCount >= lineLimit {
-                    return false
+        func buildPreview(
+            first: String,
+            second: String
+        ) -> (data: Data, complete: Bool) {
+            var data = Data()
+            data.reserveCapacity(byteLimit)
+            var lineCount = 1
+
+            func append<Bytes: Sequence>(_ bytes: Bytes) -> Bool
+            where Bytes.Element == UInt8 {
+                for byte in bytes {
+                    guard data.count < byteLimit else { return false }
+                    if byte == newline, lineCount >= lineLimit {
+                        return false
+                    }
+                    data.append(byte)
+                    if byte == newline {
+                        lineCount += 1
+                    }
                 }
-                data.append(byte)
-                if byte == newline {
-                    lineCount += 1
-                }
+                return true
             }
-            return true
+
+            var complete = append(first.utf8)
+            if complete, !first.isEmpty, !second.isEmpty {
+                complete = append(CollectionOfOne(newline))
+            }
+            if complete {
+                complete = append(second.utf8)
+            }
+            return (data, complete)
         }
 
-        var complete = append(stdout.utf8)
-        if complete, !stdout.isEmpty, !stderr.isEmpty {
-            complete = append(CollectionOfOne(newline))
+        var preview = buildPreview(first: stdout, second: stderr)
+        if !preview.complete, !stderr.isEmpty {
+            // When the ordinary stdout-first projection exceeds either bound,
+            // rebuild stderr-first so diagnostics are never hidden behind a
+            // noisy command. Copy Output still preserves the full canonical
+            // stdout-then-stderr payload.
+            preview = buildPreview(first: stderr, second: stdout)
         }
-        if complete {
-            complete = append(stderr.utf8)
-        }
+        var data = preview.data
 
         // Both source strings are valid UTF-8. A byte-boundary cut can only
         // leave one incomplete scalar at the end, so remove at most its tail
@@ -84,7 +101,7 @@ nonisolated struct UserTaskOutputPreview: Sendable, Equatable {
 
         return UserTaskOutputPreview(
             text: text ?? "",
-            wasTruncated: !complete
+            wasTruncated: !preview.complete
         )
     }
 }

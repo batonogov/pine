@@ -456,7 +456,10 @@ struct UserTaskRunStoreTests {
             stdout: stdout,
             stderr: "z"
         )
-        #expect(splitStreams.text == stdout + "\n")
+        #expect(
+            splitStreams.text
+                == "z\n" + String(repeating: "x", count: byteLimit - 2)
+        )
         #expect(splitStreams.wasTruncated)
 
         let lineLimit = UserTaskOutputPreview.maximumLines
@@ -473,6 +476,22 @@ struct UserTaskRunStoreTests {
             omittingEmptySubsequences: false
         ).count == lineLimit)
         #expect(lineBounded.wasTruncated)
+    }
+
+    @Test("Bounded output preview prioritizes stderr diagnostics")
+    func outputPreviewPrioritizesStderr() {
+        let stdout = String(
+            repeating: "noisy output",
+            count: UserTaskOutputPreview.maximumUTF8Bytes
+        )
+        let stderr = "actionable failure"
+        let preview = UserTaskOutputPreview.make(
+            stdout: stdout,
+            stderr: stderr
+        )
+
+        #expect(preview.text.hasPrefix(stderr + "\n"))
+        #expect(preview.wasTruncated)
     }
 
     @Test("Output preview never publishes partial UTF-8 scalars")
