@@ -50,6 +50,146 @@ struct CommandOverlayRouterTests {
         #expect(second.activePresentation == .goToLine)
     }
 
+    @Test("Separate project windows restore only their own responder")
+    func projectWindowsKeepIndependentFocusState() async throws {
+        let firstOriginal = NSResponder()
+        let secondOriginal = NSResponder()
+        let firstHost = CommandOverlayResponderHostSpy(
+            firstResponder: firstOriginal
+        )
+        let secondHost = CommandOverlayResponderHostSpy(
+            firstResponder: secondOriginal
+        )
+        let first = CommandOverlayRouter()
+        let second = CommandOverlayRouter()
+
+        first.present(.quickOpen)
+        second.present(.commandPalette)
+        first.preparePresentation(in: firstHost)
+        second.preparePresentation(in: secondHost)
+
+        firstHost.firstResponder = NSResponder()
+        secondHost.firstResponder = NSResponder()
+        first.dismiss()
+
+        let firstDidRestore = await waitUntil {
+            firstHost.firstResponder === firstOriginal
+        }
+        try #require(firstDidRestore)
+        #expect(firstHost.restoreCallCount == 1)
+        #expect(secondHost.restoreCallCount == 0)
+
+        second.dismiss()
+        let secondDidRestore = await waitUntil {
+            secondHost.firstResponder === secondOriginal
+        }
+        try #require(secondDidRestore)
+        #expect(secondHost.restoreCallCount == 1)
+    }
+
+    @Test("Late document resolution never captures an unrelated key window")
+    func lateDocumentResolutionUsesExplicitOwner() async throws {
+        let unrelatedResponder = NSResponder()
+        let documentResponder = NSResponder()
+        let unrelatedHost = CommandOverlayResponderHostSpy(
+            firstResponder: unrelatedResponder
+        )
+        let documentHost = CommandOverlayResponderHostSpy(
+            firstResponder: documentResponder
+        )
+        let router = CommandOverlayRouter()
+
+        router.present(.symbolNavigator)
+        // The production router has no global key-window fallback. The owner
+        // is supplied by CommandOverlayWindow immediately before presentation.
+        #expect(router.capturedResponder == nil)
+        router.preparePresentation(in: documentHost)
+        documentHost.firstResponder = NSResponder()
+        router.dismiss()
+
+        let didRestore = await waitUntil {
+            documentHost.firstResponder === documentResponder
+        }
+        try #require(didRestore)
+        #expect(documentHost.restoreCallCount == 1)
+        #expect(unrelatedHost.restoreCallCount == 0)
+        #expect(unrelatedHost.firstResponder === unrelatedResponder)
+    }
+
+    @Test("Deferred restoration never steals another project window's focus")
+    func restorationRespectsActiveDocumentWindow() {
+        let owner = NSObject()
+        let otherProject = NSObject()
+
+        #expect(
+            CommandOverlayFocusRestorationPolicy.permitsRestore(
+                owner: owner,
+                activeDocument: nil
+            )
+        )
+        #expect(
+            CommandOverlayFocusRestorationPolicy.permitsRestore(
+                owner: owner,
+                activeDocument: owner
+            )
+        )
+        #expect(
+            !CommandOverlayFocusRestorationPolicy.permitsRestore(
+                owner: owner,
+                activeDocument: otherProject
+            )
+        )
+    }
+
+    @Test("A new overlay session invalidates queued responder restoration")
+    func newSessionInvalidatesQueuedRestoration() async throws {
+        let firstSessionResponder = NSResponder()
+        let secondSessionResponder = NSResponder()
+        let host = CommandOverlayResponderHostSpy(
+            firstResponder: firstSessionResponder
+        )
+        let router = CommandOverlayRouter(responderHostProvider: { host })
+
+        router.present(.quickOpen)
+        router.dismiss()
+
+        host.firstResponder = secondSessionResponder
+        router.present(.commandPalette)
+        try await Task.sleep(for: .milliseconds(20))
+
+        #expect(router.activePresentation == .commandPalette)
+        #expect(host.restoreCallCount == 0)
+        #expect(host.firstResponder === secondSessionResponder)
+        #expect(router.capturedResponder === secondSessionResponder)
+
+        router.dismiss()
+        let didRestoreSecondSession = await waitUntil {
+            host.restoreCallCount == 1
+        }
+        try #require(didRestoreSecondSession)
+        #expect(host.lastRestoredResponder === secondSessionResponder)
+    }
+
+    @Test("External focus changes preserve the user's new responder")
+    func externalFocusChangeDoesNotRestoreCapturedResponder() async throws {
+        let originalResponder = NSResponder()
+        let clickedResponder = NSResponder()
+        let host = CommandOverlayResponderHostSpy(
+            firstResponder: originalResponder
+        )
+        let router = CommandOverlayRouter(responderHostProvider: { host })
+
+        router.present(.quickOpen)
+        host.firstResponder = clickedResponder
+        router.dismissForExternalFocusChange(ifMatching: .quickOpen)
+        try await Task.sleep(for: .milliseconds(20))
+
+        #expect(router.activePresentation == nil)
+        #expect(host.firstResponder === clickedResponder)
+        #expect(host.restoreCallCount == 0)
+        #expect(router.capturedResponder == nil)
+    }
+
     @Test("Replacement restores an arbitrary original AppKit responder")
     func replacementPreservesOriginalResponder() async throws {
         let original = NSResponder()

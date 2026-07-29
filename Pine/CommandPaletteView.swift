@@ -47,14 +47,28 @@ struct CommandPaletteView: View {
             maxHeight: 400
         )
         .onChange(of: searchText) { _, _ in
-            selectedIndex = 0
+            selectedIndex = CommandPaletteNavigation.preferredIndex(
+                in: filteredItems
+            )
         }
         .onChange(of: filteredItems.map(\.id)) { _, newIDs in
             if newIDs.isEmpty {
                 selectedIndex = 0
             } else {
-                selectedIndex = min(selectedIndex, newIDs.count - 1)
+                let boundedIndex = min(selectedIndex, newIDs.count - 1)
+                if filteredItems[boundedIndex].isEnabled {
+                    selectedIndex = boundedIndex
+                } else {
+                    selectedIndex = CommandPaletteNavigation.preferredIndex(
+                        in: filteredItems
+                    )
+                }
             }
+        }
+        .onAppear {
+            selectedIndex = CommandPaletteNavigation.preferredIndex(
+                in: filteredItems
+            )
         }
         .accessibilityIdentifier(AccessibilityID.commandPaletteOverlay)
     }
@@ -82,7 +96,11 @@ struct CommandPaletteView: View {
                                         selectedIndex = index
                                         invoke(item)
                                     }
-                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityAddTraits(
+                                        CommandOverlayRowAccessibility.traits(
+                                            isSelected: index == selectedIndex
+                                        )
+                                    )
                                     .accessibilityAction {
                                         guard item.isEnabled else { return }
                                         selectedIndex = index
@@ -120,6 +138,13 @@ struct CommandPaletteView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
+
+                if let reason = item.unavailabilityReason {
+                    Text(reason)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
 
             Spacer(minLength: 8)
@@ -142,6 +167,9 @@ struct CommandPaletteView: View {
         .contentShape(Rectangle())
         .opacity(item.isEnabled ? 1 : 0.48)
         .accessibilityElement(children: .combine)
+        .accessibilityHint(
+            Text(verbatim: item.unavailabilityReason ?? "")
+        )
         .accessibilityIdentifier(AccessibilityID.commandPaletteItem(item.id.accessibilityToken))
     }
 
@@ -173,7 +201,7 @@ struct CommandPaletteView: View {
         selectedIndex = CommandPaletteNavigation.movedIndex(
             from: selectedIndex,
             by: delta,
-            itemCount: filteredItems.count
+            items: filteredItems
         )
     }
 

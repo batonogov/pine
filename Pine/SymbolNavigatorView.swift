@@ -204,7 +204,11 @@ struct SymbolNavigatorView: View {
                                     selectedIndex = index
                                     navigateToSymbol(entry)
                                 }
-                                .accessibilityAddTraits(.isButton)
+                                .accessibilityAddTraits(
+                                    CommandOverlayRowAccessibility.traits(
+                                        isSelected: index == selectedIndex
+                                    )
+                                )
                                 .accessibilityAction {
                                     selectedIndex = index
                                     navigateToSymbol(entry)

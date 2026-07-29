@@ -22035,6 +22035,81 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑" } }
       }
     },
+    "commandPalette.unavailable.project": {
+      "comment": "Command palette explanation for a disabled command that requires an open project.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Erfordert ein geöffnetes Projekt." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Requires an open project." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Requiere un proyecto abierto." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nécessite un projet ouvert." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "開いているプロジェクトが必要です。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "열려 있는 프로젝트가 필요합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Requer um projeto aberto." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Требуется открытый проект." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要打开的项目。" } }
+      }
+    },
+    "commandPalette.unavailable.activeFile": {
+      "comment": "Command palette explanation for a disabled command that requires an active file.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Erfordert eine aktive Datei." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Requires an active file." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Requiere un archivo activo." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nécessite un fichier actif." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アクティブなファイルが必要です。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "활성 파일이 필요합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Requer um arquivo ativo." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Требуется активный файл." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要活动文件。" } }
+      }
+    },
+    "commandPalette.unavailable.gitRepository": {
+      "comment": "Command palette explanation for a disabled command that requires a Git repository.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Erfordert ein Git-Repository." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Requires a Git repository." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Requiere un repositorio Git." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nécessite un dépôt Git." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Git リポジトリが必要です。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Git 저장소가 필요합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Requer um repositório Git." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Требуется репозиторий Git." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要 Git 仓库。" } }
+      }
+    },
+    "commandPalette.unavailable.terminal": {
+      "comment": "Command palette explanation for a disabled command that requires an open terminal.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Erfordert ein geöffnetes Terminal." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Requires an open terminal." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Requiere un terminal abierto." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nécessite un terminal ouvert." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "開いているターミナルが必要です。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "열려 있는 터미널이 필요합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Requer um terminal aberto." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Требуется открытый терминал." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要打开的终端。" } }
+      }
+    },
+    "commandPalette.unavailable.activeFileAndTerminal": {
+      "comment": "Command palette explanation for a disabled command that requires an active file and an open terminal.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Erfordert eine aktive Datei und ein geöffnetes Terminal." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Requires an active file and an open terminal." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Requiere un archivo activo y un terminal abierto." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nécessite un fichier actif et un terminal ouvert." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アクティブなファイルと開いているターミナルが必要です。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "활성 파일과 열려 있는 터미널이 필요합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Requer um arquivo ativo e um terminal aberto." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Требуются активный файл и открытый терминал." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要活动文件和打开的终端。" } }
+      }
+    },
     "menu.commandPalette": {
       "comment": "Menu command that opens the searchable command palette.",
       "extractionState": "manual",

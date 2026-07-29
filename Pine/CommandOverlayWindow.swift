@@ -167,6 +167,8 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
 
     @Binding var isPresented: Bool
     let containerIdentifier: String
+    let onDocumentOwnerResolved: @MainActor (NSWindow) -> Void
+    let onExternalFocusChange: @MainActor () -> Void
     @ViewBuilder var content: () -> Content
 
     func makeCoordinator() -> Coordinator {
@@ -247,6 +249,12 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
             content: () -> Content
         ) -> Bool {
             guard panel == nil else { return false }
+
+            // Capture focus from this representable's actual document window
+            // before the child panel becomes key. `NSApp.keyWindow` can belong
+            // to another project when a targeted command addresses a
+            // background window.
+            parent.onDocumentOwnerResolved(ownerWindow)
 
             let wrapper = ContentWrapper(
                 content: content(),
@@ -390,10 +398,11 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
         func windowDidResignKey(_ notification: Notification) {
             // The owner window regaining key (user clicked the document) closes
             // the non-modal overlay, matching `.sheet`'s click-outside-to-cancel
-            // behavior without a backdrop.
+            // behavior without a backdrop. Focus has already moved, so this
+            // path must not restore the responder captured before presentation.
             guard let panel = notification.object as? NSPanel,
                   panel === self.panel else { return }
-            parent.isPresented = false
+            parent.onExternalFocusChange()
         }
     }
 

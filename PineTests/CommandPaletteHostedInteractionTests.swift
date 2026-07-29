@@ -105,8 +105,8 @@ struct CommandPaletteHostedInteractionTests {
         #expect(state.invoked.isEmpty)
     }
 
-    @Test("Return does not invoke a disabled row")
-    func disabledRowDoesNotInvoke() throws {
+    @Test("Initial keyboard selection skips a disabled first row")
+    func initialSelectionSkipsDisabledRow() throws {
         let state = HostedState()
         var items = makeItems()
         items[0] = CommandPaletteItem(
@@ -116,7 +116,8 @@ struct CommandPaletteHostedInteractionTests {
             searchTerms: items[0].searchTerms,
             iconName: items[0].iconName,
             shortcut: items[0].shortcut,
-            isEnabled: false
+            isEnabled: false,
+            unavailabilityReason: Strings.commandPaletteRequiresProject
         )
         let hosted = hostPalette(state: state, items: items)
         let field = try #require(findTextField(in: hosted))
@@ -131,8 +132,95 @@ struct CommandPaletteHostedInteractionTests {
         ))
         drainMainRunLoop()
 
+        #expect(state.invoked == [.task("second")])
+        #expect(state.isPresented == false)
+    }
+
+    @Test("Arrow navigation skips disabled rows")
+    func arrowNavigationSkipsDisabledRows() throws {
+        let state = HostedState()
+        var items = makeItems()
+        items[1] = CommandPaletteItem(
+            id: items[1].id,
+            title: items[1].title,
+            subtitle: items[1].subtitle,
+            searchTerms: items[1].searchTerms,
+            iconName: items[1].iconName,
+            shortcut: items[1].shortcut,
+            isEnabled: false,
+            unavailabilityReason: Strings.commandPaletteRequiresProject
+        )
+        let hosted = hostPalette(state: state, items: items)
+        let field = try #require(findTextField(in: hosted))
+        let coordinator = try #require(
+            field.delegate as? QuickOpenSearchField.Coordinator
+        )
+
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        drainMainRunLoop()
+
+        #expect(state.invoked == [.builtIn(.findInFile)])
+        #expect(state.isPresented == false)
+    }
+
+    @Test("All-disabled results remain visible and Return is a no-op")
+    func allDisabledRowsDoNotInvoke() throws {
+        let state = HostedState()
+        let items = makeItems().map { item in
+            CommandPaletteItem(
+                id: item.id,
+                title: item.title,
+                subtitle: item.subtitle,
+                searchTerms: item.searchTerms,
+                iconName: item.iconName,
+                shortcut: item.shortcut,
+                isEnabled: false,
+                unavailabilityReason: Strings.commandPaletteRequiresProject
+            )
+        }
+        let hosted = hostPalette(state: state, items: items)
+        let field = try #require(findTextField(in: hosted))
+        let coordinator = try #require(
+            field.delegate as? QuickOpenSearchField.Coordinator
+        )
+
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        drainMainRunLoop()
+
         #expect(state.isPresented)
         #expect(state.invoked.isEmpty)
+        #expect(items.allSatisfy { $0.unavailabilityReason != nil })
+    }
+
+    @Test("Selected command rows expose the selected accessibility trait")
+    func selectedRowAccessibilityTrait() {
+        let selected = CommandOverlayRowAccessibility.traits(isSelected: true)
+        let unselected = CommandOverlayRowAccessibility.traits(
+            isSelected: false
+        )
+
+        #expect(selected.contains(.isButton))
+        #expect(selected.contains(.isSelected))
+        #expect(unselected.contains(.isButton))
+        #expect(!unselected.contains(.isSelected))
     }
 
     private func makeItems() -> [CommandPaletteItem] {

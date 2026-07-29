@@ -43,11 +43,20 @@ struct CommandOverlayContainer: ViewModifier {
                         }
                     }
                 ),
-                containerIdentifier: presentation.containerIdentifier
-            ) {
-                overlayContent(for: presentation)
-                    .environment(projectManager)
-            }
+                containerIdentifier: presentation.containerIdentifier,
+                onDocumentOwnerResolved: { ownerWindow in
+                    router.preparePresentation(in: ownerWindow)
+                },
+                onExternalFocusChange: {
+                    router.dismissForExternalFocusChange(
+                        ifMatching: presentation
+                    )
+                },
+                content: {
+                    overlayContent(for: presentation)
+                        .environment(projectManager)
+                }
+            )
             .id(presentation) // remount on flow switch → fresh @State
         } else {
             Color.clear

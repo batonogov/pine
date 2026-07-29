@@ -38,12 +38,47 @@ extension NSWindow: CommandOverlayResponderHost {
     }
 
     func restoreCommandOverlayResponder(_ responder: NSResponder?) {
+        guard CommandOverlayFocusRestorationPolicy.shouldRestore(
+            owner: self,
+            keyWindow: NSApp.keyWindow
+        ) else {
+            return
+        }
         if isVisible && !isKeyWindow {
             makeKey()
         }
         if let responder, firstResponder !== responder {
             makeFirstResponder(responder)
         }
+    }
+}
+
+/// Prevents a deferred overlay dismissal from stealing focus back from a
+/// different project window.
+///
+/// Clicking project B while project A's panel is key first resigns A's panel,
+/// then runs responder restoration on the next runloop turn. At that point B
+/// is already key and must remain so. A nil key document still permits the
+/// normal Escape/backdrop path to make the original owner key again.
+@MainActor
+enum CommandOverlayFocusRestorationPolicy {
+    static func shouldRestore(
+        owner: NSWindow,
+        keyWindow: NSWindow?
+    ) -> Bool {
+        permitsRestore(
+            owner: owner,
+            activeDocument: CommandOverlayOwnerResolver.documentWindow(
+                for: keyWindow
+            )
+        )
+    }
+
+    nonisolated static func permitsRestore<Window: AnyObject>(
+        owner: Window,
+        activeDocument: Window?
+    ) -> Bool {
+        activeDocument == nil || activeDocument === owner
     }
 }
 
@@ -58,11 +93,18 @@ final class CommandOverlayRouter {
 
     /// The AppKit first responder captured before the overlay took focus.
     /// Restored when the overlay is dismissed via cancel/backdrop.
+    @ObservationIgnored
     private(set) var capturedResponder: NSResponder?
 
     /// The host the captured responder belongs to. Held weakly so a closed
     /// document window does not keep the router alive longer than its project.
+    @ObservationIgnored
     private weak var capturedHost: (any CommandOverlayResponderHost)?
+
+    /// Identifies the active presentation session. A new session invalidates
+    /// any responder restoration queued by an earlier dismissal.
+    @ObservationIgnored
+    private var sessionGeneration = 0
 
     /// Resolves the active document host only when a new overlay session starts.
     @ObservationIgnored
@@ -72,7 +114,7 @@ final class CommandOverlayRouter {
     init(
         responderHostProvider:
             @escaping @MainActor () -> (any CommandOverlayResponderHost)? = {
-                NSApp.keyWindow
+                nil
             }
     ) {
         self.responderHostProvider = responderHostProvider
@@ -92,9 +134,26 @@ final class CommandOverlayRouter {
     /// begins; replacements keep the original responder.
     func present(_ presentation: CommandOverlayPresentation) {
         if activePresentation == nil {
+            sessionGeneration &+= 1
             captureResponder(in: responderHostProvider())
         }
         activePresentation = presentation
+    }
+
+    /// Captures the concrete document window immediately before its command
+    /// panel becomes key.
+    ///
+    /// Production presentation resolves this host from the attachment view's
+    /// `window`, never from `NSApp.keyWindow`. The latter may belong to a
+    /// different project when a targeted command is delivered to a background
+    /// window. Tests may still inject a responder host through the initializer;
+    /// an existing capture always wins so replacement flows preserve the
+    /// original session.
+    func preparePresentation(
+        in host: (any CommandOverlayResponderHost)?
+    ) {
+        guard activePresentation != nil, capturedHost == nil else { return }
+        captureResponder(in: host)
     }
 
     /// Dismisses the active presentation and restores the captured responder.
@@ -111,6 +170,23 @@ final class CommandOverlayRouter {
     func dismiss(ifMatching presentation: CommandOverlayPresentation) {
         guard activePresentation == presentation else { return }
         dismiss()
+    }
+
+    /// Dismisses after focus has already moved outside the command panel.
+    ///
+    /// `NSPanel.windowDidResignKey` represents a real external focus
+    /// transition: the user may have clicked another editor, sidebar, terminal,
+    /// or project window. Restoring the pre-overlay responder in this path
+    /// would overwrite that click target. Escape, backdrop, and explicit
+    /// cancellation continue to use ``dismiss()`` and restore normally.
+    func dismissForExternalFocusChange(
+        ifMatching presentation: CommandOverlayPresentation
+    ) {
+        guard activePresentation == presentation else { return }
+        activePresentation = nil
+        sessionGeneration &+= 1
+        capturedResponder = nil
+        capturedHost = nil
     }
 
     /// Dismisses the matching presentation, restores its document window, and
@@ -140,7 +216,7 @@ final class CommandOverlayRouter {
     private func captureResponder(
         in host: (any CommandOverlayResponderHost)?
     ) {
-        guard let host else { return }
+        guard capturedHost == nil, let host else { return }
         capturedHost = host
         // Preserve the actual responder, not only Cocoa text controls.
         // SwiftTerm's LocalProcessTerminalView and several Pine keyboard
@@ -152,6 +228,7 @@ final class CommandOverlayRouter {
     private func restoreResponderIfNeeded() {
         let responder = capturedResponder
         let host = capturedHost
+        let restoringGeneration = sessionGeneration
         defer {
             capturedResponder = nil
             capturedHost = nil
@@ -160,8 +237,13 @@ final class CommandOverlayRouter {
         // Defer to the next runloop: dismissal runs inside the SwiftUI update
         // pass, and AppKit rejects `makeFirstResponder` while a responder is
         // still resigning. One runloop tick is enough for AppKit to settle.
-        DispatchQueue.main.async { [weak host, weak responder] in
-            guard let host else { return }
+        DispatchQueue.main.async { [weak self, weak host, weak responder] in
+            guard let self,
+                  self.sessionGeneration == restoringGeneration,
+                  self.activePresentation == nil,
+                  let host else {
+                return
+            }
             host.restoreCommandOverlayResponder(responder)
         }
     }

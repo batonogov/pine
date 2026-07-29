@@ -960,6 +960,21 @@ enum Strings {
     static let menuTasks: LocalizedStringKey = "menu.tasks"
     static let menuTasksEmpty: LocalizedStringKey = "menu.tasksEmpty"
     static let menuCommandPalette: LocalizedStringKey = "menu.commandPalette"
+    static var commandPaletteRequiresProject: String {
+        String(localized: "commandPalette.unavailable.project")
+    }
+    static var commandPaletteRequiresActiveFile: String {
+        String(localized: "commandPalette.unavailable.activeFile")
+    }
+    static var commandPaletteRequiresGitRepository: String {
+        String(localized: "commandPalette.unavailable.gitRepository")
+    }
+    static var commandPaletteRequiresTerminal: String {
+        String(localized: "commandPalette.unavailable.terminal")
+    }
+    static var commandPaletteNeedsFileAndTerminal: String {
+        String(localized: "commandPalette.unavailable.activeFileAndTerminal")
+    }
     static let menuEditKeybindings: LocalizedStringKey = "menu.editKeybindings"
     static let menuEditTasks: LocalizedStringKey = "menu.editTasks"
     static let menuReloadUserConfiguration: LocalizedStringKey = "menu.reloadUserConfiguration"

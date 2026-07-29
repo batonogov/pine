@@ -17,7 +17,7 @@ final class QuickOpenUITests: PineUITestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
         projectURL = try createTempProject(files: [
-            "main.swift": "// Main file\n",
+            "main.swift": "func main() {}\n",
             "utils.swift": "// Utils\n",
             "readme.md": "# README\n"
         ])
@@ -123,6 +123,10 @@ final class QuickOpenUITests: PineUITestCase {
             result.waitForExistence(timeout: 3),
             "Quick Open result should expose a button accessibility action"
         )
+        XCTAssertTrue(
+            result.isSelected,
+            "Quick Open should expose its keyboard-selected result"
+        )
         result.click()
 
         // The command panel should dismiss after selection.
@@ -184,7 +188,15 @@ final class QuickOpenUITests: PineUITestCase {
         )
         searchField.click()
         searchField.typeText("main")
-        XCTAssertTrue(searchField.exists)
+        let symbol = overlay.buttons["symbolItem_main"].firstMatch
+        XCTAssertTrue(
+            symbol.waitForExistence(timeout: 5),
+            "Symbol Navigator row should expose a button accessibility action"
+        )
+        XCTAssertTrue(
+            symbol.isSelected,
+            "Symbol Navigator should expose its keyboard-selected result"
+        )
     }
 
     func testCommandPaletteFieldIsAccessibleInCommandPanel() throws {
@@ -205,6 +217,23 @@ final class QuickOpenUITests: PineUITestCase {
             "Command Palette search field should be accessible"
         )
         searchField.click()
+
+        let disabledSaveCommand = overlay
+            .buttons["commandPaletteItem_command_save"]
+            .firstMatch
+        XCTAssertTrue(
+            disabledSaveCommand.waitForExistence(timeout: 5),
+            "Disabled Command Palette rows should remain discoverable"
+        )
+        XCTAssertFalse(
+            disabledSaveCommand.isEnabled,
+            "Save should be disabled when no file is active"
+        )
+        XCTAssertTrue(
+            disabledSaveCommand.label.contains("Requires an active file."),
+            "Disabled Command Palette rows should explain their requirement"
+        )
+
         searchField.typeText("quick")
 
         let quickOpenCommand = overlay
@@ -213,6 +242,10 @@ final class QuickOpenUITests: PineUITestCase {
         XCTAssertTrue(
             quickOpenCommand.waitForExistence(timeout: 5),
             "Command Palette row should expose a button accessibility action"
+        )
+        XCTAssertTrue(
+            quickOpenCommand.isSelected,
+            "Command Palette should expose its keyboard-selected result"
         )
         quickOpenCommand.click()
 

@@ -74,7 +74,11 @@ struct QuickOpenView: View {
                                         selectedIndex = index
                                         openFile(result.url)
                                     }
-                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityAddTraits(
+                                        CommandOverlayRowAccessibility.traits(
+                                            isSelected: index == selectedIndex
+                                        )
+                                    )
                                     .accessibilityAction {
                                         selectedIndex = index
                                         openFile(result.url)
@@ -171,6 +175,12 @@ struct QuickOpenView: View {
         provider.recordOpened(url: url)
         projectManager.paneManager.openFileInActiveEditor(url: url)
         isPresented = false
+    }
+}
+
+nonisolated enum CommandOverlayRowAccessibility {
+    static func traits(isSelected: Bool) -> AccessibilityTraits {
+        isSelected ? [.isButton, .isSelected] : .isButton
     }
 }
 
