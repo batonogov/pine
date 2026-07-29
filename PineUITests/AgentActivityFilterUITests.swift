@@ -26,16 +26,14 @@ final class AgentActivityFilterUITests: PineUITestCase {
         app.launchArguments.append("--ui-test-agent-activity-heuristic")
         launchActivityPanel()
 
-        XCTAssertFalse(
-            sessionLinkedChip.exists,
-            "A session-linked chip must not appear without session-linked rows"
-        )
+        attributionMenu.click()
+        XCTAssertFalse(app.menuItems["Session-linked"].exists)
         XCTAssertTrue(
-            inferredChip.exists,
+            app.menuItems["Inferred"].exists,
             "The inferred category should be offered when inferred rows exist"
         )
         XCTAssertTrue(
-            ambiguousChip.exists,
+            app.menuItems["Ambiguous"].exists,
             "The ambiguous category should be offered when ambiguous rows exist"
         )
         XCTAssertFalse(app.buttons["Direct"].exists)
@@ -46,24 +44,21 @@ final class AgentActivityFilterUITests: PineUITestCase {
         app.launchArguments.append("--ui-test-agent-activity-all")
         launchActivityPanel()
 
-        XCTAssertTrue(sessionLinkedChip.exists)
-        XCTAssertEqual(sessionLinkedChip.label, "Session-linked")
-        XCTAssertFalse(app.buttons["Direct"].exists)
-        XCTAssertFalse(app.buttons["Verified"].exists)
-
-        sessionLinkedChip.click()
+        selectAttribution("Session-linked")
 
         XCTAssertTrue(
-            sessionLinkedChip.isSelected,
-            "The active evidence chip should expose the selected AX trait"
+            attributionMenu.isSelected,
+            "The active evidence menu should expose the selected AX trait"
         )
+        XCTAssertEqual(attributionMenu.value as? String, "Session-linked")
         XCTAssertTrue(sessionLinkedRow.exists)
         XCTAssertFalse(inferredRow.exists)
         XCTAssertFalse(ambiguousRow.exists)
 
-        sessionLinkedChip.click()
+        attributionMenu.click()
+        app.menuItems["All evidence"].click()
 
-        XCTAssertFalse(sessionLinkedChip.isSelected)
+        XCTAssertFalse(attributionMenu.isSelected)
         XCTAssertTrue(inferredRow.waitForExistence(timeout: 3))
         XCTAssertTrue(ambiguousRow.exists)
     }
@@ -72,16 +67,16 @@ final class AgentActivityFilterUITests: PineUITestCase {
         app.launchArguments.append("--ui-test-agent-activity-heuristic")
         launchActivityPanel()
 
-        inferredChip.click()
+        selectAttribution("Inferred")
         XCTAssertTrue(
-            inferredChip.isSelected,
-            "The active evidence chip should expose the selected AX trait"
+            attributionMenu.isSelected,
+            "The active evidence menu should expose the selected AX trait"
         )
-        XCTAssertTrue(commandsChip.waitForExistence(timeout: 3))
-        commandsChip.click()
+        XCTAssertEqual(attributionMenu.value as? String, "Inferred")
+        selectKind("Command")
         XCTAssertTrue(
-            commandsChip.isSelected,
-            "The active kind chip should expose the selected AX trait"
+            kindMenu.isSelected,
+            "The active kind menu should expose the selected AX trait"
         )
 
         XCTAssertTrue(
@@ -90,10 +85,32 @@ final class AgentActivityFilterUITests: PineUITestCase {
         )
         XCTAssertFalse(emptyFeedState.exists)
         XCTAssertTrue(
-            inferredChip.exists,
-            "A selected evidence chip must remain available so it can be cleared"
+            attributionMenu.exists,
+            "A selected evidence menu must remain available so it can be cleared"
         )
-        XCTAssertTrue(inferredChip.isSelected)
+        XCTAssertTrue(attributionMenu.isSelected)
+    }
+
+    func testCommandAndToolRowsWithoutFilesRemainInspectable() throws {
+        app.launchArguments += [
+            "--ui-test-agent-activity-all",
+            "--ui-test-agent-attention"
+        ]
+        launchActivityPanel()
+
+        commandRow.click()
+        XCTAssertTrue(activityDetail.waitForExistence(timeout: 3))
+        XCTAssertTrue(detailCopy.waitForExistence(timeout: 3))
+        XCTAssertTrue(detailGoToTerminal.waitForExistence(timeout: 3))
+        XCTAssertFalse(detailOpenFile.exists)
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertFalse(activityDetail.waitForExistence(timeout: 1))
+
+        toolRow.click()
+        XCTAssertTrue(activityDetail.waitForExistence(timeout: 3))
+        XCTAssertTrue(detailCopy.waitForExistence(timeout: 3))
+        XCTAssertTrue(detailGoToTerminal.waitForExistence(timeout: 3))
+        XCTAssertFalse(detailOpenFile.exists)
     }
 
     private func launchActivityPanel() {
@@ -112,20 +129,28 @@ final class AgentActivityFilterUITests: PineUITestCase {
         app.descendants(matching: .any)["agentActivityPanel"].firstMatch
     }
 
-    private var sessionLinkedChip: XCUIElement {
-        app.buttons["agentActivityFilterSessionLinked"].firstMatch
+    private func selectAttribution(_ label: String) {
+        attributionMenu.click()
+        let item = app.menuItems[label].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 3))
+        item.click()
     }
 
-    private var inferredChip: XCUIElement {
-        app.buttons["agentActivityFilterInferred"].firstMatch
+    private func selectKind(_ label: String) {
+        kindMenu.click()
+        let item = app.menuItems[label].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 3))
+        item.click()
     }
 
-    private var ambiguousChip: XCUIElement {
-        app.buttons["agentActivityFilterAmbiguous"].firstMatch
+    private var attributionMenu: XCUIElement {
+        app.descendants(matching: .any)[
+            "agentActivityAttributionMenu"
+        ].firstMatch
     }
 
-    private var commandsChip: XCUIElement {
-        app.buttons["agentActivityFilterCommands"].firstMatch
+    private var kindMenu: XCUIElement {
+        app.descendants(matching: .any)["agentActivityKindMenu"].firstMatch
     }
 
     private var sessionLinkedRow: XCUIElement {
@@ -143,6 +168,38 @@ final class AgentActivityFilterUITests: PineUITestCase {
     private var ambiguousRow: XCUIElement {
         app.buttons[
             "agentActivityRow_00000000-0000-0000-0000-000000000103"
+        ].firstMatch
+    }
+
+    private var commandRow: XCUIElement {
+        app.buttons[
+            "agentActivityRow_00000000-0000-0000-0000-000000000101"
+        ].firstMatch
+    }
+
+    private var toolRow: XCUIElement {
+        app.buttons[
+            "agentActivityRow_00000000-0000-0000-0000-000000000104"
+        ].firstMatch
+    }
+
+    private var activityDetail: XCUIElement {
+        app.descendants(matching: .any)["agentActivityDetail"].firstMatch
+    }
+
+    private var detailCopy: XCUIElement {
+        app.descendants(matching: .any)["agentActivityDetailCopy"].firstMatch
+    }
+
+    private var detailGoToTerminal: XCUIElement {
+        app.descendants(matching: .any)[
+            "agentActivityDetailGoToTerminal"
+        ].firstMatch
+    }
+
+    private var detailOpenFile: XCUIElement {
+        app.descendants(matching: .any)[
+            "agentActivityDetailOpenFile"
         ].firstMatch
     }
 

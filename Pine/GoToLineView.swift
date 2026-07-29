@@ -9,6 +9,7 @@ import SwiftUI
 struct GoToLineView: View {
     let totalLines: Int
     @Binding var isPresented: Bool
+    var onAccessibilityAnnouncement: (String) -> Void = { _ in }
     var onGoTo: (Int, Int?) -> Void
 
     @State private var inputText = ""
@@ -84,11 +85,7 @@ struct GoToLineView: View {
 
     /// Posts a VoiceOver announcement so the invalid-input state is audible.
     private func announceAccessibility(message: String) {
-        NSAccessibility.post(
-            element: NSApp.mainWindow ?? NSApplication.shared,
-            notification: .announcementRequested,
-            userInfo: [.announcement: message]
-        )
+        onAccessibilityAnnouncement(message)
     }
 
     private func submit() {

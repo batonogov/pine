@@ -698,8 +698,8 @@ extension ContentView {
 /// `showAgentActivity` notification. Encapsulating the `.sheet` + `.onReceive`
 /// wiring in a `ViewModifier` keeps `ContentView.body` within the Swift
 /// compiler's type-checking budget (an inline `.sheet`/`.onReceive` pair with
-/// a `map(AgentActivityRow.init)` argument pushed the surrounding view over
-/// the “unable to type-check in reasonable time” limit).
+/// inline row projection and terminal-target resolution push the surrounding
+/// view over the “unable to type-check in reasonable time” limit).
 ///
 /// The notification handler defers the state mutation to the next runloop to
 /// avoid the `.onReceive` reentrancy class from #1051.
@@ -707,6 +707,8 @@ struct AgentActivityPresenter: ViewModifier {
     @Binding var isPresented: Bool
     let projectManager: ProjectManager
     let store: AgentActivityStore
+    let paneManager: PaneManager
+    let terminalManager: TerminalManager
     let onSelect: (URL) -> Void
     @Environment(\.controlActiveState) private var controlActiveState
 
@@ -714,9 +716,29 @@ struct AgentActivityPresenter: ViewModifier {
         content
             .sheet(isPresented: $isPresented) {
                 AgentActivityView(
-                    rows: store.actions.map(AgentActivityRow.init),
+                    rows: store.actions.map { action in
+                        AgentActivityRow(
+                            action,
+                            terminalTarget:
+                                AgentActivityTerminalTargetResolver.resolve(
+                                    attribution: action.attribution,
+                                    in: paneManager
+                                )
+                        )
+                    },
                     onSelectFile: onSelect,
-                    onClose: { isPresented = false }
+                    onClose: { isPresented = false },
+                    onGoToTerminal: { target in
+                        let didRoute = AgentActivityTerminalRouter.route(
+                            to: target,
+                            paneManager: paneManager,
+                            terminalManager: terminalManager
+                        )
+                        if didRoute {
+                            isPresented = false
+                        }
+                        return didRoute
+                    }
                 )
             }
             .onReceive(NotificationCenter.default.publisher(for: .showAgentActivity)) { notification in

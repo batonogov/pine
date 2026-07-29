@@ -131,11 +131,11 @@ struct AgentModelsTests {
     // MARK: - AgentState
 
     @Test func agentState_displayNames() {
-        #expect(AgentState.idle.displayName == "Idle")
-        #expect(AgentState.thinking.displayName == "Thinking")
-        #expect(AgentState.executing.displayName == "Executing")
-        #expect(AgentState.waitingInput.displayName == "Waiting for input")
-        #expect(AgentState.done.displayName == "Done")
+        #expect(AgentState.idle.displayName == Strings.agentStateIdle)
+        #expect(AgentState.thinking.displayName == Strings.agentStateThinking)
+        #expect(AgentState.executing.displayName == Strings.agentStateExecuting)
+        #expect(AgentState.waitingInput.displayName == Strings.agentStateWaitingInput)
+        #expect(AgentState.done.displayName == Strings.agentStateDone)
     }
 
     // MARK: - AgentSession
@@ -243,5 +243,30 @@ struct AgentModelsTests {
         let a = AgentSession(agentType: .claudeCode)
         let b = AgentSession(agentType: .claudeCode)
         #expect(a != b)
+    }
+}
+
+@Suite("Agent badge motion")
+struct AgentBadgeMotionTests {
+    @Test("Reduce Motion disables indefinite active-state pulsing")
+    func reduceMotionDisablesPulse() {
+        #expect(
+            AgentTabBadge.shouldPulse(
+                isActive: true,
+                reduceMotion: false
+            )
+        )
+        #expect(
+            !AgentTabBadge.shouldPulse(
+                isActive: true,
+                reduceMotion: true
+            )
+        )
+        #expect(
+            !AgentTabBadge.shouldPulse(
+                isActive: false,
+                reduceMotion: false
+            )
+        )
     }
 }

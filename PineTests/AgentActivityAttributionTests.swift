@@ -96,9 +96,10 @@ struct AgentActivityAttributionTests {
         )
         #expect(presentation.detail == AgentType.claudeCode.displayName)
         #expect(
-            presentation.accessibilityHint
+            presentation.evidenceExplanation
                 == Strings.agentActivitySessionLinkedHint
         )
+        #expect(presentation.evidenceKind == .sessionLinked)
         #expect(presentation.markerAgentType == .claudeCode)
         #expect(!presentation.isAmbiguous)
         #expect(
@@ -106,6 +107,44 @@ struct AgentActivityAttributionTests {
                 Strings.agentActivityAttributionSessionLinked
             )
         )
+    }
+
+    @Test("Trusted structured attribution is presented as verified")
+    func verifiedPresentation() {
+        let presentation = AgentActionAttribution.verified(
+            AgentActionCandidate(sessionID: sessionA, agentType: .claudeCode)
+        ).activityPresentation(liveness: .live)
+
+        #expect(presentation.evidenceKind == .verified)
+        #expect(
+            presentation.badgeLabel
+                == Strings.agentActivityAttributionVerified
+        )
+        #expect(
+            presentation.evidenceExplanation
+                == Strings.agentActivityVerifiedHint
+        )
+    }
+
+    @Test("Liveness overrides provenance without erasing the agent identity")
+    func staleAndTerminatedPresentation() {
+        let attribution = AgentActionAttribution.verified(
+            AgentActionCandidate(sessionID: sessionA, agentType: .claudeCode)
+        )
+        let stale = attribution.activityPresentation(liveness: .stale)
+        let terminated = attribution.activityPresentation(
+            liveness: .terminated
+        )
+
+        #expect(stale.evidenceKind == .stale)
+        #expect(stale.badgeLabel == Strings.agentActivityAttributionStale)
+        #expect(stale.detail == AgentType.claudeCode.displayName)
+        #expect(terminated.evidenceKind == .terminated)
+        #expect(
+            terminated.badgeLabel
+                == Strings.agentActivityAttributionTerminated
+        )
+        #expect(terminated.detail == AgentType.claudeCode.displayName)
     }
 
     @Test("Inferred presentation identifies the heuristic without hiding the candidate")
@@ -116,7 +155,8 @@ struct AgentActivityAttributionTests {
 
         #expect(presentation.badgeLabel == Strings.agentActivityAttributionInferred)
         #expect(presentation.detail == AgentType.codex.displayName)
-        #expect(presentation.accessibilityHint == Strings.agentActivityInferredHint)
+        #expect(presentation.evidenceExplanation == Strings.agentActivityInferredHint)
+        #expect(presentation.evidenceKind == .inferred)
         #expect(presentation.markerAgentType == .codex)
         #expect(!presentation.isAmbiguous)
         #expect(
@@ -135,13 +175,120 @@ struct AgentActivityAttributionTests {
 
         #expect(presentation.badgeLabel == Strings.agentActivityAttributionAmbiguous)
         #expect(presentation.detail == Strings.agentActivityPossibleSessions(2))
-        #expect(presentation.accessibilityHint == Strings.agentActivityAmbiguousHint)
+        #expect(presentation.evidenceExplanation == Strings.agentActivityAmbiguousHint)
+        #expect(presentation.evidenceKind == .ambiguous)
         #expect(presentation.markerAgentType == nil)
         #expect(presentation.isAmbiguous)
         #expect(
             presentation.accessibilityValue.contains(
                 Strings.agentActivityAttributionAmbiguous
             )
+        )
+    }
+
+    @Test("Evidence kinds contain exactly the claims carried by AgentAction")
+    func evidenceKindsAreModelBacked() {
+        #expect(
+            AgentActivityEvidenceKind.allCases
+                == [
+                    .verified,
+                    .sessionLinked,
+                    .inferred,
+                    .ambiguous,
+                    .stale,
+                    .terminated
+                ]
+        )
+    }
+
+    @Test("Evidence and action-status accessibility matrix stays truthful")
+    func evidenceStatusAccessibilityMatrix() {
+        let claude = AgentActionCandidate(
+            sessionID: sessionA,
+            agentType: .claudeCode
+        )
+        let codex = AgentActionCandidate(
+            sessionID: sessionB,
+            agentType: .codex
+        )
+        let cases: [(
+            attribution: AgentActionAttribution,
+            kind: AgentActivityEvidenceKind,
+            label: String,
+            explanation: String
+        )] = [
+            (
+                .session(claude),
+                .sessionLinked,
+                Strings.agentActivityAttributionSessionLinked,
+                Strings.agentActivitySessionLinkedHint
+            ),
+            (
+                .inferred(claude),
+                .inferred,
+                Strings.agentActivityAttributionInferred,
+                Strings.agentActivityInferredHint
+            ),
+            (
+                .ambiguous(candidates: [claude, codex]),
+                .ambiguous,
+                Strings.agentActivityAttributionAmbiguous,
+                Strings.agentActivityAmbiguousHint
+            )
+        ]
+
+        for testCase in cases {
+            let presentation = testCase.attribution.activityPresentation
+            #expect(presentation.evidenceKind == testCase.kind)
+            #expect(presentation.badgeLabel == testCase.label)
+            #expect(presentation.evidenceExplanation == testCase.explanation)
+            #expect(
+                presentation.detailAccessibilityValue
+                    == "\(presentation.accessibilityValue). \(testCase.explanation)"
+            )
+            #expect(
+                presentation.rowAccessibilityHint
+                    == "\(testCase.explanation). \(Strings.agentActivityRowInspectHint)"
+            )
+
+            for status in AgentActionStatus.allCases {
+                let rowValue = presentation.rowAccessibilityValue(status: status)
+                #expect(
+                    rowValue.contains(
+                        "\(Strings.agentActionDetailStatusLabel): \(status.displayName)"
+                    )
+                )
+                #expect(
+                    rowValue.contains(
+                        "\(Strings.agentActionDetailEvidenceLabel): \(testCase.label)"
+                    )
+                )
+                #expect(presentation.evidenceKind == testCase.kind)
+            }
+        }
+    }
+
+    @Test("Inferred evidence never falls through to session-linked copy")
+    func inferredExplanationDoesNotUpgradeEvidence() {
+        let presentation = AgentActionAttribution.inferred(
+            AgentActionCandidate(
+                sessionID: sessionA,
+                agentType: .claudeCode
+            )
+        ).activityPresentation
+
+        #expect(presentation.evidenceKind == .inferred)
+        #expect(
+            presentation.evidenceExplanation
+                == Strings.agentActivityInferredHint
+        )
+        #expect(
+            presentation.evidenceExplanation
+                != Strings.agentActivitySessionLinkedHint
+        )
+        #expect(
+            presentation.badgeLabel
+                != Strings.agentActivityAttributionSessionLinked
         )
     }
 
@@ -152,5 +299,24 @@ struct AgentActivityAttributionTests {
 
         #expect(summary.contains(fileName))
         #expect(Strings.agentActivityPossibleSessions(37).contains("37"))
+    }
+
+    @Test("Detail selection disappears when the backing row is evicted")
+    func staleDetailSelectionDismisses() {
+        let action = AgentAction(
+            sessionID: sessionA,
+            agentType: .claudeCode,
+            kind: .command,
+            summary: "inspect"
+        )
+        let row = AgentActivityRow(action)
+
+        #expect(
+            AgentActivityView.detailSelection(id: row.id, rows: [row])?.id
+                == row.id
+        )
+        #expect(
+            AgentActivityView.detailSelection(id: row.id, rows: []) == nil
+        )
     }
 }

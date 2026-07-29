@@ -93,18 +93,25 @@ struct AgentActivityViewSnapshotTests {
                 timestamp: Self.stableTimestamp,
                 summary: "apply_patch failed"
             )
-        ].map(AgentActivityRow.init)
+        ].map { AgentActivityRow($0) }
     }
 
     @Test("AgentActivityView renders populated panel in light appearance")
     func populatedLight() throws {
-        let view = AgentActivityView(rows: populatedRows(), onSelectFile: { _ in }, onClose: {})
+        let view = AgentActivityView(
+            rows: populatedRows(),
+            onSelectFile: { _ in },
+            onClose: {},
+            onGoToTerminal: { _ in false }
+        )
         try assertSnapshot(
             of: view,
             size: Self.panelSize,
             appearance: .light,
             named: "AgentActivityView.populated.light",
-            tolerance: Self.tolerance
+            // Intentional Menu/ViewThatFits reflow exposes a slightly wider
+            // AppKit/SwiftUI rasterization delta between macOS 26 and 27.
+            tolerance: 0.04
         )
     }
 
@@ -112,7 +119,12 @@ struct AgentActivityViewSnapshotTests {
     func populatedDark() throws {
         let rows = populatedRows()
         verifyPopulatedSemantics(rows)
-        let view = AgentActivityView(rows: rows, onSelectFile: { _ in }, onClose: {})
+        let view = AgentActivityView(
+            rows: rows,
+            onSelectFile: { _ in },
+            onClose: {},
+            onGoToTerminal: { _ in false }
+        )
         if !SnapshotHarness.isHeadless {
             let bitmap = try SnapshotHarness.render(
                 view: view,
@@ -133,7 +145,12 @@ struct AgentActivityViewSnapshotTests {
 
     @Test("AgentActivityView renders empty state in light appearance")
     func emptyLight() throws {
-        let view = AgentActivityView(rows: [], onSelectFile: { _ in }, onClose: {})
+        let view = AgentActivityView(
+            rows: [],
+            onSelectFile: { _ in },
+            onClose: {},
+            onGoToTerminal: { _ in false }
+        )
         try assertSnapshot(
             of: view,
             size: Self.panelSize,
@@ -145,14 +162,113 @@ struct AgentActivityViewSnapshotTests {
 
     @Test("AgentActivityView renders empty state in dark appearance")
     func emptyDark() throws {
-        let view = AgentActivityView(rows: [], onSelectFile: { _ in }, onClose: {})
+        let view = AgentActivityView(
+            rows: [],
+            onSelectFile: { _ in },
+            onClose: {},
+            onGoToTerminal: { _ in false }
+        )
         try assertSnapshot(
             of: view,
             size: Self.panelSize,
             appearance: .dark,
             named: "AgentActivityView.empty.dark",
-            tolerance: Self.tolerance
+            // Keep the macOS 26/27 material rasterization allowance scoped to
+            // this empty dark reference.
+            tolerance: 0.035
         )
+    }
+
+    @Test("Narrow long-localization layout remains renderable")
+    func narrowLongLocalizationLayout() throws {
+        guard !SnapshotHarness.isHeadless else { return }
+        let size = NSSize(width: 300, height: 480)
+        let view = AgentActivityView(
+            rows: populatedRows(),
+            panelWidth: size.width,
+            onSelectFile: { _ in },
+            onClose: {},
+            onGoToTerminal: { _ in false }
+        )
+        .environment(\.locale, Locale(identifier: "de"))
+
+        let bitmap = try SnapshotHarness.render(
+            view: view,
+            size: size,
+            appearance: .light
+        )
+        #expect(bitmap.pixelsWide == 300)
+        #expect(bitmap.pixelsHigh == 480)
+        verifySnapshotIsNotBlank(bitmap)
+    }
+
+    @Test(
+        "Detail evidence snapshots render verified, stale, terminated, and ambiguous states",
+        arguments: [
+            AgentLiveness.live as AgentLiveness?,
+            AgentLiveness.stale as AgentLiveness?,
+            AgentLiveness.terminated as AgentLiveness?,
+            nil as AgentLiveness?
+        ]
+    )
+    func detailEvidenceStates(liveness: AgentLiveness?) throws {
+        guard !SnapshotHarness.isHeadless else { return }
+        let action: AgentAction
+        let target: AgentActivityTerminalTarget?
+        if let liveness {
+            let sessionID = UUID()
+            action = AgentAction(
+                attribution: .verified(
+                    AgentActionCandidate(
+                        sessionID: sessionID,
+                        agentType: .codex
+                    )
+                ),
+                kind: .command,
+                status: .completed,
+                timestamp: Self.stableTimestamp,
+                summary: "Run tests"
+            )
+            target = AgentActivityTerminalTarget(
+                paneID: PaneID(),
+                tabID: UUID(),
+                sessionID: sessionID,
+                agentType: .codex,
+                liveness: liveness,
+                label: "Codex tests",
+                workingDirectory: URL(fileURLWithPath: "/p")
+            )
+        } else {
+            action = AgentAction(
+                attribution: .ambiguous(candidates: [
+                    AgentActionCandidate(
+                        sessionID: Self.sessionA,
+                        agentType: .claudeCode
+                    ),
+                    AgentActionCandidate(
+                        sessionID: Self.sessionB,
+                        agentType: .codex
+                    )
+                ]),
+                kind: .toolCall,
+                status: .failed,
+                timestamp: Self.stableTimestamp,
+                summary: "Apply patch"
+            )
+            target = nil
+        }
+        let view = AgentActivityDetailView(
+            row: AgentActivityRow(action, terminalTarget: target),
+            onSelectFile: { _ in },
+            onGoToTerminal: { _ in false },
+            onClose: {}
+        )
+        let bitmap = try SnapshotHarness.render(
+            view: view,
+            size: NSSize(width: 420, height: 460),
+            appearance: .light
+        )
+        verifySnapshotIsNotBlank(bitmap)
     }
 
     private func verifyPopulatedSemantics(_ rows: [AgentActivityRow]) {

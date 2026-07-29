@@ -14,21 +14,77 @@ struct AgentActivityFilterLocalizationTests {
         "en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans"
     ]
     private static let activityKeys = [
+        "agentAction.detail.evidenceLabel",
+        "agentAction.detail.fileLabel",
+        "agentAction.detail.kindLabel",
+        "agentAction.detail.relatedTerminalLabel",
+        "agentAction.detail.summaryLabel",
+        "agentAction.detail.statusLabel",
+        "agentAction.detail.timestampLabel",
+        "agentAction.detail.workingDirectoryLabel",
+        "agentAction.kind.command",
+        "agentAction.kind.fileRead",
+        "agentAction.kind.fileWrite",
+        "agentAction.kind.toolCall",
+        "agentAction.status.completed",
+        "agentAction.status.failed",
+        "agentAction.status.inProgress",
+        "agentAction.status.pending",
         "agentActivity.noMatches",
         "agentActivity.attribution.filterLabel",
+        "agentActivity.attribution.verified",
+        "agentActivity.attribution.verifiedHint",
         "agentActivity.attribution.sessionLinked",
         "agentActivity.attribution.sessionLinkedHint",
         "agentActivity.attribution.inferred",
         "agentActivity.attribution.inferredHint",
         "agentActivity.attribution.ambiguous",
-        "agentActivity.attribution.ambiguousHint"
+        "agentActivity.attribution.ambiguousHint",
+        "agentActivity.attribution.stale",
+        "agentActivity.attribution.staleHint",
+        "agentActivity.attribution.terminated",
+        "agentActivity.attribution.terminatedHint",
+        "agentActivity.rowInspectHint",
+        "agentActivity.resetFilters",
+        "agentActivity.allAttributions",
+        "agentActivity.allKinds",
+        "agentActivity.allStatuses",
+        "agentActivity.detail.copied",
+        "agentActivity.detail.copy",
+        "agentActivity.detail.goToTerminal",
+        "agentActivity.detail.openFile",
+        "agentState.idle",
+        "agentState.thinking",
+        "agentState.executing",
+        "agentState.waitingInput",
+        "agentState.done"
     ]
     /// Unrelated manual entries that must survive an xcstrings `ours` merge
     /// when this feature branch is brought up to date with main.
     private static let mergePreservedKeys = [
+        "a11y.sidebar.collapse.action",
+        "a11y.sidebar.disclosure.collapsed",
+        "a11y.sidebar.disclosure.expanded",
+        "a11y.sidebar.expand.action",
+        "a11y.sidebar.folder.hint",
         "agent.liveness.live",
         "agent.liveness.stale",
         "agent.liveness.terminated",
+        "menu.nextDiagnostic",
+        "menu.previousDiagnostic",
+        "menu.problems",
+        "problems.close",
+        "problems.errorCount.one",
+        "problems.filter.allSeverities",
+        "problems.filter.allSources",
+        "problems.filter.severity",
+        "problems.filter.source",
+        "problems.panelTitle",
+        "problems.state.disabled",
+        "problems.state.loading",
+        "problems.state.unavailable",
+        "problems.state.unsupported",
+        "problems.warningCount.one",
         "statusbar.agentSession",
         "statusbar.agentSessions",
         "verifiedDiff.detail.applyTextHunks",
@@ -70,7 +126,7 @@ struct AgentActivityFilterLocalizationTests {
         return try #require(root["strings"] as? [String: Any])
     }
 
-    @Test("Every filter string is translated in all supported languages")
+    @Test("Every Activity evidence/status string is translated in all supported languages")
     func allLanguagesPresent() throws {
         let catalog = try stringsCatalog()
         try expectCompleteTranslations(
@@ -79,8 +135,8 @@ struct AgentActivityFilterLocalizationTests {
         )
     }
 
-    @Test("Merging Activity strings preserves existing agent and undo copy")
-    func unrelatedAgentAndUndoStringsRemainTranslated() throws {
+    @Test("Merging Activity strings preserves main and existing feature copy")
+    func unrelatedMainAndFeatureStringsRemainTranslated() throws {
         let catalog = try stringsCatalog()
         try expectCompleteTranslations(
             for: Self.mergePreservedKeys,
@@ -132,5 +188,8 @@ struct AgentActivityFilterLocalizationTests {
 
         #expect(unit["value"] as? String == "Session-linked")
         #expect(catalog["agentActivity.attribution.direct"] == nil)
+        #expect(catalog["agentActivity.attribution.verified"] != nil)
+        #expect(catalog["agentActivity.attribution.stale"] != nil)
+        #expect(catalog["agentActivity.attribution.terminated"] != nil)
     }
 }

@@ -43,10 +43,8 @@ struct ContentView: View {
     @State var isBranchSwitcherPresented = false
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
-    /// Agent attention-list overlay (#1112).
-    @State var showAgentAttention = false
     /// Shared command-overlay router (#975). Owns the single active navigation
-    /// overlay (Quick Open / Symbol Navigator / Go to Line / Command Palette)
+    /// overlay (including Agent Attention)
     /// and captures/restores the previous AppKit first responder.
     @State var commandOverlayRouter = CommandOverlayRouter()
     @AppStorage("minimapVisible") var isMinimapVisible = true
@@ -133,7 +131,6 @@ struct ContentView: View {
                 onDiscard: { discardRecovery() }
             )
         }
-        .overlay { agentAttentionOverlay }
         // MARK: - Command overlays (#975)
         // Quick Open, Symbol Navigator, Go to Line, and Command Palette route
         // through a single document-scoped router so at most one overlay is
@@ -172,6 +169,8 @@ struct ContentView: View {
             isPresented: $isAgentActivityPresented,
             projectManager: projectManager,
             store: projectManager.agentActivity,
+            paneManager: paneManager,
+            terminalManager: terminal,
             onSelect: { url in
                 isAgentActivityPresented = false
                 openFileFromActivity(url)
@@ -337,9 +336,7 @@ struct ContentView: View {
                     projectManager.problemsController.togglePanel()
                 },
                 onShowAttention: {
-                    withAnimation(PineAnimation.overlay) {
-                        showAgentAttention = true
-                    }
+                    commandOverlayRouter.present(.agentAttention)
                 }
             )
         }
@@ -380,30 +377,6 @@ struct ContentView: View {
                 }
             }
         }
-    }
-
-    /// Agent attention-list overlay (#1112). Broken out into its own
-    /// computed property so the SwiftUI type-checker can resolve `body` in
-    /// reasonable time — an inline `.overlay { CommandOverlayView { … } }`
-    /// pushes the already-large `body` past the type-checker's budget.
-    /// Returns `AnyView` to erase the `CommandOverlayView<…>` generic from the
-    /// call site (the body modifier chain is already near the inference
-    /// limit); the cost is negligible since the overlay is rarely shown.
-    private var agentAttentionOverlay: AnyView {
-        guard showAgentAttention else { return AnyView(EmptyView()) }
-        return AnyView(
-            CommandOverlayView(isPresented: $showAgentAttention) {
-                AgentAttentionOverlay(
-                    summaries: AgentStatusSummary.activeSummaries(in: paneManager)
-                ) { paneID, tabID in
-                    paneManager.activePaneID = paneID
-                    paneManager.terminalState(for: paneID)?.activeTerminalID = tabID
-                    withAnimation(PineAnimation.overlay) {
-                        showAgentAttention = false
-                    }
-                }
-            }
-        )
     }
 
     /// Branch subtitle as a plain String to avoid generating a localization key.

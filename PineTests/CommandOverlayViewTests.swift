@@ -32,6 +32,30 @@ struct CommandOverlayViewTests {
         #expect(isPresented == false)
     }
 
+    @Test("CommandOverlayView dismissal clears binding and runs cleanup once")
+    func dismissalIsUnifiedAndOneShot() {
+        var isPresented = true
+        var cleanupCount = 0
+        let binding = Binding<Bool>(
+            get: { isPresented },
+            set: { isPresented = $0 }
+        )
+        let overlay = CommandOverlayView(
+            isPresented: binding,
+            onDismiss: { cleanupCount += 1 },
+            content: { Text("test") }
+        )
+
+        overlay.dismiss()
+        #expect(!isPresented)
+        #expect(cleanupCount == 1)
+
+        // An Escape event that bubbles after the focused child already
+        // dismissed must not restore focus a second time.
+        overlay.dismiss()
+        #expect(cleanupCount == 1)
+    }
+
     // MARK: - GoToLineView accessibility
 
     @Test("GoToLineView has invalid message accessibility identifier")
@@ -82,6 +106,60 @@ struct CommandOverlayViewTests {
             doCommandBy: #selector(NSResponder.cancelOperation(_:))
         ))
         #expect(!isPresented)
+    }
+
+    @Test("GoToLineView routes invalid announcements through its owner")
+    func goToLineInvalidAnnouncementUsesInjectedOwner() throws {
+        var isPresented = true
+        var announcements: [String] = []
+        let hosted = NSHostingView(
+            rootView: GoToLineView(
+                totalLines: 100,
+                isPresented: Binding(
+                    get: { isPresented },
+                    set: { isPresented = $0 }
+                ),
+                onAccessibilityAnnouncement: {
+                    announcements.append($0)
+                },
+                onGoTo: { _, _ in }
+            )
+        )
+        hosted.frame = NSRect(x: 0, y: 0, width: 220, height: 100)
+        hosted.layoutSubtreeIfNeeded()
+        drainMainRunLoop()
+
+        let field = try #require(findCommandField(in: hosted))
+        let coordinator = try #require(
+            field.delegate as? QuickOpenSearchField.Coordinator
+        )
+        field.stringValue = "5000"
+        coordinator.controlTextDidChange(
+            Notification(
+                name: NSControl.textDidChangeNotification,
+                object: field
+            )
+        )
+        drainMainRunLoop()
+        hosted.layoutSubtreeIfNeeded()
+
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        drainMainRunLoop()
+
+        let expectedFormat = NSLocalizedString(
+            "Line %lld is out of range (1–%lld)",
+            comment: ""
+        )
+        #expect(
+            announcements == [
+                String.localizedStringWithFormat(expectedFormat, 5_000, 100)
+            ]
+        )
+        #expect(isPresented)
     }
 
     @Test("GoToLineView is invalid when line exceeds total")

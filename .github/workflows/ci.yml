@@ -508,7 +508,7 @@ jobs:
           fi
           echo "All $(echo "$ACTUAL" | wc -l | tr -d ' ') UI test classes are sharded."
 
-  # UI test shards — 7 parallel jobs, 27-28 tests each (delta ±1).
+  # UI test shards — 7 parallel jobs, 27-29 tests each (delta 2).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -554,7 +554,7 @@ jobs:
               -only-testing:PineUITests/DeleteTests
               -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests
-          # Shard 6 — Search & Panes (27 tests)
+          # Shard 6 — Search & Panes (28 tests)
           - shard-name: "Search & Panes"
             test-classes: >-
               -only-testing:PineUITests/SidebarSearchTests
@@ -562,7 +562,7 @@ jobs:
               -only-testing:PineUITests/SplitPaneLifecycleTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
-          # Shard 7 — Security & Layout (28 tests)
+          # Shard 7 — Security & Layout (29 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
               -only-testing:PineUITests/GitignoreFilterTests
@@ -574,6 +574,7 @@ jobs:
               -only-testing:PineUITests/BlameViewTests
               -only-testing:PineUITests/HCLFormatOnSaveTests
               -only-testing:PineUITests/ToggleCommentTests
+              -only-testing:PineUITests/AgentAttentionKeyboardUITests
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 

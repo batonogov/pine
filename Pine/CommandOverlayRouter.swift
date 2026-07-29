@@ -30,6 +30,7 @@ import SwiftUI
 protocol CommandOverlayResponderHost: AnyObject {
     var commandOverlayFirstResponder: NSResponder? { get }
     func restoreCommandOverlayResponder(_ responder: NSResponder?)
+    func postCommandOverlayAnnouncement(_ announcement: String)
 }
 
 extension NSWindow: CommandOverlayResponderHost {
@@ -50,6 +51,14 @@ extension NSWindow: CommandOverlayResponderHost {
         if let responder, firstResponder !== responder {
             makeFirstResponder(responder)
         }
+    }
+
+    func postCommandOverlayAnnouncement(_ announcement: String) {
+        NSAccessibility.post(
+            element: self,
+            notification: .announcementRequested,
+            userInfo: [.announcement: announcement]
+        )
     }
 }
 
@@ -189,6 +198,35 @@ final class CommandOverlayRouter {
         capturedHost = nil
     }
 
+    /// Completes a flow whose action deliberately moves focus to a new
+    /// destination.
+    ///
+    /// Agent Attention uses this after selecting a terminal. Restoring the
+    /// responder captured before presentation would race the explicit
+    /// terminal focus request and send keyboard input back to the old editor.
+    /// A stale flow cannot complete a newer replacement.
+    func complete(
+        ifMatching presentation: CommandOverlayPresentation
+    ) {
+        guard activePresentation == presentation else { return }
+        activePresentation = nil
+        sessionGeneration &+= 1
+        capturedResponder = nil
+        capturedHost = nil
+    }
+
+    /// Posts a VoiceOver announcement to the exact document owner captured
+    /// for this presentation. Fails closed until the attachment view resolves
+    /// an owner and never falls back to `NSApp.keyWindow`.
+    @discardableResult
+    func announce(_ announcement: String) -> Bool {
+        guard activePresentation != nil, let capturedHost else {
+            return false
+        }
+        capturedHost.postCommandOverlayAnnouncement(announcement)
+        return true
+    }
+
     /// Dismisses the matching presentation, restores its document window, and
     /// invokes `action` only after AppKit has had a runloop turn to retire the
     /// panel. Commands selected from Command Palette use this path so
@@ -201,11 +239,17 @@ final class CommandOverlayRouter {
     ) {
         guard activePresentation == presentation else { return }
         dismiss()
+        let dispatchGeneration = sessionGeneration
         // `dismiss()` first queues owner-window and responder restoration.
         // Use one additional turn before dispatching so SwiftUI can dismantle
         // the panel and AppKit can finish its key-window transition.
-        DispatchQueue.main.async {
-            DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      self.sessionGeneration == dispatchGeneration,
+                      self.activePresentation == nil else {
+                    return
+                }
                 action()
             }
         }

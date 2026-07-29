@@ -22,10 +22,12 @@ import Foundation
 
 /// Attribution-evidence filter for the Activity Panel.
 ///
-/// This deliberately does not model provenance trust. In particular,
-/// `.session` is the Activity model's legacy session link, not a verified
-/// `AgentEventEnvelope`, so its label must not imply proof or authority.
+/// `.verified` is reserved for trusted structured events. `.session` remains
+/// the Activity model's legacy session link and must never be upgraded into a
+/// verified claim merely because its terminal is currently live.
 nonisolated enum ActivityAttributionFilter: Sendable, Equatable, CaseIterable {
+    /// Actions backed by a trusted structured event.
+    case verified
     /// Actions carrying the legacy one-session association.
     case sessionLinked
     /// Actions inferred from file-system timing (single candidate).
@@ -36,6 +38,7 @@ nonisolated enum ActivityAttributionFilter: Sendable, Equatable, CaseIterable {
     /// Returns `true` when `attribution` belongs to this evidence category.
     func matches(_ attribution: AgentActionAttribution) -> Bool {
         switch (self, attribution) {
+        case (.verified, .verified): true
         case (.sessionLinked, .session): true
         case (.inferred, .inferred): true
         case (.ambiguous, .ambiguous): true
@@ -66,6 +69,7 @@ extension ActivityAttributionFilter {
     /// its matching semantics remain safe to use from pure model code.
     var filterLabel: String {
         switch self {
+        case .verified: Strings.agentActivityAttributionVerified
         case .sessionLinked: Strings.agentActivityAttributionSessionLinked
         case .inferred: Strings.agentActivityAttributionInferred
         case .ambiguous: Strings.agentActivityAttributionAmbiguous

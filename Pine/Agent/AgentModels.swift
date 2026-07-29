@@ -141,13 +141,17 @@ enum AgentState: Equatable, Sendable {
     case done
 
     /// Human-readable label for display (status bar, activity indicators).
+    ///
+    /// Resolved through ``Strings`` so the same label is used everywhere —
+    /// attention overlay, status bar, terminal badges, and accessibility —
+    /// and is localized across the 9 supported languages (#1245).
     var displayName: String {
         switch self {
-        case .idle: "Idle"
-        case .thinking: "Thinking"
-        case .executing: "Executing"
-        case .waitingInput: "Waiting for input"
-        case .done: "Done"
+        case .idle: Strings.agentStateIdle
+        case .thinking: Strings.agentStateThinking
+        case .executing: Strings.agentStateExecuting
+        case .waitingInput: Strings.agentStateWaitingInput
+        case .done: Strings.agentStateDone
         }
     }
 

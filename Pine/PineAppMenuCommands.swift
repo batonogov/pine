@@ -535,10 +535,13 @@ struct PineAppMenuCommands: Commands {
             Divider()
 
             Button {
-                NotificationCenter.default.post(name: .showAgentActivity, object: nil)
+                AgentActivityPresentationRouter.postRequest(
+                    for: focusedProject
+                )
             } label: {
                 Label(Strings.menuAgentActivity, systemImage: MenuIcons.agentActivity)
             }
+            .disabled(focusedProject == nil)
 
             Button {
                 NotificationCenter.default.post(name: .showAgentHistory, object: nil)

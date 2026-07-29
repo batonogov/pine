@@ -31,17 +31,18 @@ struct AgentActivityFilterTests {
 
     private var attributions: [AgentActionAttribution] {
         [
+            .verified(sessionCandidate),
             .session(sessionCandidate),
             .inferred(sessionCandidate),
             .ambiguous(candidates: [sessionCandidate, otherCandidate])
         ]
     }
 
-    @Test("Evidence categories have a stable, non-authoritative order")
+    @Test("Evidence categories have a stable trust-aware order")
     func categoryOrder() {
         #expect(
             ActivityAttributionFilter.allCases
-                == [.sessionLinked, .inferred, .ambiguous]
+                == [.verified, .sessionLinked, .inferred, .ambiguous]
         )
     }
 
@@ -55,12 +56,14 @@ struct AgentActivityFilterTests {
         }
 
         switch category {
-        case .sessionLinked:
+        case .verified:
             #expect(matchedIndices == [0])
-        case .inferred:
+        case .sessionLinked:
             #expect(matchedIndices == [1])
-        case .ambiguous:
+        case .inferred:
             #expect(matchedIndices == [2])
+        case .ambiguous:
+            #expect(matchedIndices == [3])
         }
     }
 
@@ -176,7 +179,7 @@ struct AgentActivityFilterTests {
         )
 
         let storedIDs = store.filtered(using: filter).map(\.id)
-        let rowIDs = actions.map(AgentActivityRow.init).filter { row in
+        let rowIDs = actions.map { AgentActivityRow($0) }.filter { row in
             filter.matches(
                 kind: row.kind,
                 status: row.status,
@@ -236,7 +239,7 @@ struct AgentActivityFilterTests {
                     }
                     .map(\.id)
                     let storeIDs = store.filtered(using: filter).map(\.id)
-                    let rowIDs = actions.map(AgentActivityRow.init).filter { row in
+                    let rowIDs = actions.map { AgentActivityRow($0) }.filter { row in
                         filter.matches(
                             kind: row.kind,
                             status: row.status,

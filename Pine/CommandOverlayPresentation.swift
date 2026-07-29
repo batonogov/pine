@@ -14,6 +14,7 @@ nonisolated enum CommandOverlayPresentation: String, Sendable, Equatable {
     case symbolNavigator
     case goToLine
     case commandPalette
+    case agentAttention
 
     /// The accessibility identifier applied to the overlay container element.
     var containerIdentifier: String {
@@ -26,6 +27,8 @@ nonisolated enum CommandOverlayPresentation: String, Sendable, Equatable {
             AccessibilityID.goToLineOverlay
         case .commandPalette:
             AccessibilityID.commandPaletteOverlay
+        case .agentAttention:
+            AccessibilityID.agentAttentionOverlay
         }
     }
 }

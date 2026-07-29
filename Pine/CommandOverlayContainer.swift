@@ -4,7 +4,7 @@
 //
 //  Single SwiftUI overlay modifier that renders whichever command overlay the
 //  router reports as active (#975). Installed once per project window — this
-//  is the shared container all four flows route through.
+//  is the shared container all command flows route through.
 //
 //  Only one overlay is ever mounted at a time because the router holds a single
 //  `activePresentation` value; switching to a different case replaces the
@@ -107,6 +107,9 @@ struct CommandOverlayContainer: ViewModifier {
                         }
                     }
                 ),
+                onAccessibilityAnnouncement: { message in
+                    router.announce(message)
+                },
                 onGoTo: { line, column in
                     GoToLineLineCountProvider.navigate(
                         line: line,
@@ -143,7 +146,45 @@ struct CommandOverlayContainer: ViewModifier {
                     )
                 }
             )
+        case .agentAttention:
+            AgentAttentionOverlay(
+                summaries: AgentStatusSummary.activeSummaries(
+                    in: projectManager.paneManager
+                ),
+                onAnnounce: { announcement in
+                    router.announce(announcement)
+                },
+                onNavigate: { paneID, tabID in
+                    navigateFromAgentAttention(
+                        paneID: paneID,
+                        tabID: tabID
+                    )
+                },
+                onDismiss: {
+                    router.dismiss(ifMatching: .agentAttention)
+                }
+            )
         }
+    }
+
+    /// A valid terminal selection becomes the new focus destination, so the
+    /// router consumes the old responder without restoring it. If the
+    /// destination vanished while the overlay was open, cancel normally and
+    /// restore the original responder.
+    private func navigateFromAgentAttention(
+        paneID: PaneID,
+        tabID: UUID
+    ) {
+        guard AgentTerminalNavigationRouter.route(
+            paneID: paneID,
+            tabID: tabID,
+            paneManager: projectManager.paneManager,
+            terminalManager: projectManager.terminal
+        ) else {
+            router.dismiss(ifMatching: .agentAttention)
+            return
+        }
+        router.complete(ifMatching: .agentAttention)
     }
 }
 

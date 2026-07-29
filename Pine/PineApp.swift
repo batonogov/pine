@@ -1155,6 +1155,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// AppKit state. Called only after user overrides decline the event.
     /// Returns `true` when the event was consumed.
     private static func handleBuiltInKeyDown(_ event: NSEvent) -> Bool {
+        let documentWindow = CommandOverlayOwnerResolver.documentWindow(
+            for: NSApp.keyWindow
+        )
+
         // Cmd+W closes the active editor tab (or the project window when no
         // editor tab remains). The physical key code is layout-independent.
         if KeyboardShortcutMatcher.matches(
@@ -1162,7 +1166,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             modifiers: .command,
             in: event
         ),
-           let window = NSApp.keyWindow,
+           let window = documentWindow,
            let closeDelegate = window.delegate as? CloseDelegate {
             if closeDelegate.projectManager.activeTabManager.activeTab != nil {
                 closeDelegate.closeActiveTab()
@@ -1190,7 +1194,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             modifiers: [.command, .shift],
             in: event
         ),
-           let window = NSApp.keyWindow,
+           let window = documentWindow,
            let closeDelegate = window.delegate as? CloseDelegate,
            closeDelegate.projectManager.workspace.gitProvider.isGitRepository {
             NotificationCenter.default.post(
@@ -1202,7 +1206,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Ctrl+Tab / Ctrl+Shift+Tab cycle editor tabs.
         if event.keyCode == 48,
-           let window = NSApp.keyWindow,
+           let window = documentWindow,
            let closeDelegate = window.delegate as? CloseDelegate {
             let modifiers = event.modifierFlags.intersection(
                 .deviceIndependentFlagsMask
@@ -1222,7 +1226,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             from: event,
             modifiers: .command
         ),
-           let window = NSApp.keyWindow,
+           let window = documentWindow,
            let closeDelegate = window.delegate as? CloseDelegate {
             let activeTabManager = closeDelegate.projectManager.activeTabManager
             guard !activeTabManager.tabs.isEmpty else { return false }
