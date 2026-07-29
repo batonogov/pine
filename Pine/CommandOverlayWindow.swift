@@ -125,7 +125,7 @@ enum CommandOverlayOwnerResolver {
     /// Pure owner-precedence seam. The generic form avoids constructing AppKit
     /// windows merely to verify that the explicit document owner wins over
     /// AppKit's transient child-window parent relationship.
-    static func preferredDocumentOwner<Window: AnyObject>(
+    static func preferredDocumentOwner<Window>(
         explicitOwner: Window?,
         parent: Window?
     ) -> Window? {

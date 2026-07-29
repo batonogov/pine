@@ -21,8 +21,35 @@
 import AppKit
 import SwiftUI
 
+/// Minimal first-responder surface used by the command-overlay router.
+///
+/// Keeping the session bookkeeping behind this protocol lets the router tests
+/// exercise deferred restoration without constructing and closing real AppKit
+/// windows inside the concurrently running Swift Testing host.
+@MainActor
+protocol CommandOverlayResponderHost: AnyObject {
+    var commandOverlayFirstResponder: NSResponder? { get }
+    func restoreCommandOverlayResponder(_ responder: NSResponder?)
+}
+
+extension NSWindow: CommandOverlayResponderHost {
+    var commandOverlayFirstResponder: NSResponder? {
+        firstResponder
+    }
+
+    func restoreCommandOverlayResponder(_ responder: NSResponder?) {
+        if isVisible && !isKeyWindow {
+            makeKey()
+        }
+        if let responder, firstResponder !== responder {
+            makeFirstResponder(responder)
+        }
+    }
+}
+
 /// Observable router that owns the active command overlay presentation for a
 /// single project window.
+@MainActor
 @Observable
 final class CommandOverlayRouter {
 
@@ -33,9 +60,23 @@ final class CommandOverlayRouter {
     /// Restored when the overlay is dismissed via cancel/backdrop.
     private(set) var capturedResponder: NSResponder?
 
-    /// The window the captured responder belongs to. Held weakly so a closed
-    /// window does not keep the router alive longer than the document.
-    private weak var capturedWindow: NSWindow?
+    /// The host the captured responder belongs to. Held weakly so a closed
+    /// document window does not keep the router alive longer than its project.
+    private weak var capturedHost: (any CommandOverlayResponderHost)?
+
+    /// Resolves the active document host only when a new overlay session starts.
+    @ObservationIgnored
+    private let responderHostProvider:
+        @MainActor () -> (any CommandOverlayResponderHost)?
+
+    init(
+        responderHostProvider:
+            @escaping @MainActor () -> (any CommandOverlayResponderHost)? = {
+                NSApp.keyWindow
+            }
+    ) {
+        self.responderHostProvider = responderHostProvider
+    }
 
     /// Indicates whether any overlay is currently presented.
     var isPresented: Bool { activePresentation != nil }
@@ -47,23 +88,11 @@ final class CommandOverlayRouter {
     /// capture (including the valid "no responder" result) so focus restoration
     /// never targets an intermediate overlay.
     ///
-    /// Production entry point. The current key window is captured only when a
-    /// new overlay session begins; replacements keep the original responder.
+    /// The current key window is captured only when a new overlay session
+    /// begins; replacements keep the original responder.
     func present(_ presentation: CommandOverlayPresentation) {
-        present(presentation, in: NSApp.keyWindow)
-    }
-
-    /// Presents from an explicitly supplied document window.
-    ///
-    /// Passing `nil` intentionally captures no AppKit state. Keeping this
-    /// distinct from the production entry point gives model-level tests a
-    /// deterministic seam and avoids consulting unrelated global key windows.
-    func present(
-        _ presentation: CommandOverlayPresentation,
-        in window: NSWindow?
-    ) {
         if activePresentation == nil {
-            captureResponder(in: window)
+            captureResponder(in: responderHostProvider())
         }
         activePresentation = presentation
     }
@@ -108,35 +137,32 @@ final class CommandOverlayRouter {
 
     // MARK: - First responder capture/restore
 
-    private func captureResponder(in window: NSWindow?) {
-        guard let window else { return }
-        capturedWindow = window
+    private func captureResponder(
+        in host: (any CommandOverlayResponderHost)?
+    ) {
+        guard let host else { return }
+        capturedHost = host
         // Preserve the actual responder, not only Cocoa text controls.
         // SwiftTerm's LocalProcessTerminalView and several Pine keyboard
         // responders are plain NSView subclasses; filtering them out loses
         // terminal/sidebar focus after Escape.
-        capturedResponder = window.firstResponder
+        capturedResponder = host.commandOverlayFirstResponder
     }
 
     private func restoreResponderIfNeeded() {
         let responder = capturedResponder
-        let window = capturedWindow ?? (responder as? NSView)?.window
+        let host = capturedHost
         defer {
             capturedResponder = nil
-            capturedWindow = nil
+            capturedHost = nil
         }
-        guard let window else { return }
+        guard host != nil else { return }
         // Defer to the next runloop: dismissal runs inside the SwiftUI update
         // pass, and AppKit rejects `makeFirstResponder` while a responder is
         // still resigning. One runloop tick is enough for AppKit to settle.
-        DispatchQueue.main.async { [weak window, weak responder] in
-            guard let window else { return }
-            if window.isVisible && !window.isKeyWindow {
-                window.makeKey()
-            }
-            if let responder, window.firstResponder !== responder {
-                _ = window.makeFirstResponder(responder)
-            }
+        DispatchQueue.main.async { [weak host, weak responder] in
+            guard let host else { return }
+            host.restoreCommandOverlayResponder(responder)
         }
     }
 }

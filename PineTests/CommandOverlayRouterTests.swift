@@ -15,9 +15,9 @@ struct CommandOverlayRouterTests {
 
     @Test("Presenting a new flow replaces the active flow")
     func replacementIsDeterministic() {
-        let router = CommandOverlayRouter()
+        let router = makeRouterWithoutResponderHost()
 
-        router.present(.quickOpen, in: nil)
+        router.present(.quickOpen)
         router.present(.commandPalette)
 
         #expect(router.activePresentation == .commandPalette)
@@ -26,8 +26,8 @@ struct CommandOverlayRouterTests {
 
     @Test("An obsolete flow cannot dismiss its replacement")
     func staleDismissIsIgnored() {
-        let router = CommandOverlayRouter()
-        router.present(.quickOpen, in: nil)
+        let router = makeRouterWithoutResponderHost()
+        router.present(.quickOpen)
         router.present(.symbolNavigator)
 
         router.dismiss(ifMatching: .quickOpen)
@@ -39,10 +39,10 @@ struct CommandOverlayRouterTests {
 
     @Test("Independent project routers do not dismiss each other")
     func routersAreIndependent() {
-        let first = CommandOverlayRouter()
-        let second = CommandOverlayRouter()
-        first.present(.quickOpen, in: nil)
-        second.present(.goToLine, in: nil)
+        let first = makeRouterWithoutResponderHost()
+        let second = makeRouterWithoutResponderHost()
+        first.present(.quickOpen)
+        second.present(.goToLine)
 
         first.dismiss()
 
@@ -52,35 +52,21 @@ struct CommandOverlayRouterTests {
 
     @Test("Replacement restores an arbitrary original AppKit responder")
     func replacementPreservesOriginalResponder() async throws {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        defer { window.close() }
-        let original = CommandOverlayResponderView(
-            frame: NSRect(x: 0, y: 0, width: 100, height: 40)
-        )
-        let intermediate = CommandOverlayResponderView(
-            frame: NSRect(x: 0, y: 50, width: 100, height: 40)
-        )
-        let contentView = try #require(window.contentView)
-        contentView.addSubview(original)
-        contentView.addSubview(intermediate)
-        #expect(window.makeFirstResponder(original))
+        let original = NSResponder()
+        let intermediate = NSResponder()
+        let host = CommandOverlayResponderHostSpy(firstResponder: original)
+        let router = CommandOverlayRouter(responderHostProvider: { host })
 
-        let router = CommandOverlayRouter()
-        router.present(.quickOpen, in: window)
+        router.present(.quickOpen)
         #expect(router.capturedResponder === original)
 
-        #expect(window.makeFirstResponder(intermediate))
-        router.present(.commandPalette, in: window)
+        host.firstResponder = intermediate
+        router.present(.commandPalette)
         #expect(router.capturedResponder === original)
 
         router.dismiss()
         let wasRestored = await waitUntil {
-            window.firstResponder === original
+            host.firstResponder === original
         }
         try #require(
             wasRestored,
@@ -88,12 +74,32 @@ struct CommandOverlayRouterTests {
         )
 
         #expect(router.capturedResponder == nil)
+        #expect(host.restoreCallCount == 1)
+        #expect(host.lastRestoredResponder === original)
+    }
+
+    @Test("Dismissal restores a valid session without a first responder")
+    func dismissalRestoresSessionWithoutResponder() async throws {
+        let host = CommandOverlayResponderHostSpy(firstResponder: nil)
+        let router = CommandOverlayRouter(responderHostProvider: { host })
+
+        router.present(.quickOpen)
+        router.dismiss()
+
+        let didRestore = await waitUntil {
+            host.restoreCallCount == 1
+        }
+        try #require(
+            didRestore,
+            "Timed out waiting for the responder host to be restored"
+        )
+        #expect(host.lastRestoredResponder == nil)
     }
 
     @Test("Palette overlay command replaces the panel in the same session")
     func paletteOverlayCommandReplacesInPlace() {
-        let router = CommandOverlayRouter()
-        router.present(.commandPalette, in: nil)
+        let router = makeRouterWithoutResponderHost()
+        router.present(.commandPalette)
 
         let didReplace = CommandPaletteInvocationRouter
             .replaceOverlayIfNeeded(
@@ -107,8 +113,8 @@ struct CommandOverlayRouterTests {
 
     @Test("Non-overlay palette commands leave replacement routing untouched")
     func nonOverlayCommandDoesNotReplaceInPlace() {
-        let router = CommandOverlayRouter()
-        router.present(.commandPalette, in: nil)
+        let router = makeRouterWithoutResponderHost()
+        router.present(.commandPalette)
 
         let didReplace = CommandPaletteInvocationRouter
             .replaceOverlayIfNeeded(
@@ -157,8 +163,8 @@ struct CommandOverlayRouterTests {
         // load would launch an unrelated detached file-tree/git task that can
         // outlive the test and race temporary-directory cleanup.
         projectManager.workspace.rootURL = directory
-        let router = CommandOverlayRouter()
-        router.present(.commandPalette, in: nil)
+        let router = makeRouterWithoutResponderHost()
+        router.present(.commandPalette)
 
         let center = NotificationCenter()
         let probe = CommandOverlayNotificationProbe()
@@ -211,26 +217,30 @@ struct CommandOverlayRouterTests {
 
     @Test("Explicit document owner wins over the transient parent")
     func panelResolvesDocumentOwner() {
-        let explicitOwner = NSObject()
-        let parent = NSObject()
+        let explicitOwner = 17
+        let parent = 29
 
         let resolved = CommandOverlayOwnerResolver.preferredDocumentOwner(
             explicitOwner: explicitOwner,
             parent: parent
         )
-        #expect(resolved === explicitOwner)
+        #expect(resolved == explicitOwner)
 
         let fallback = CommandOverlayOwnerResolver.preferredDocumentOwner(
-            explicitOwner: Optional<NSObject>.none,
+            explicitOwner: Optional<Int>.none,
             parent: parent
         )
-        #expect(fallback === parent)
+        #expect(fallback == parent)
 
         let missing = CommandOverlayOwnerResolver.preferredDocumentOwner(
-            explicitOwner: Optional<NSObject>.none,
+            explicitOwner: Optional<Int>.none,
             parent: nil
         )
         #expect(missing == nil)
+    }
+
+    private func makeRouterWithoutResponderHost() -> CommandOverlayRouter {
+        CommandOverlayRouter(responderHostProvider: { nil })
     }
 
     private func paletteItem(
@@ -267,8 +277,25 @@ struct CommandOverlayRouterTests {
 }
 
 @MainActor
-private final class CommandOverlayResponderView: NSView {
-    override var acceptsFirstResponder: Bool { true }
+private final class CommandOverlayResponderHostSpy:
+    CommandOverlayResponderHost {
+    var firstResponder: NSResponder?
+    private(set) var restoreCallCount = 0
+    private(set) weak var lastRestoredResponder: NSResponder?
+
+    var commandOverlayFirstResponder: NSResponder? {
+        firstResponder
+    }
+
+    init(firstResponder: NSResponder?) {
+        self.firstResponder = firstResponder
+    }
+
+    func restoreCommandOverlayResponder(_ responder: NSResponder?) {
+        firstResponder = responder
+        lastRestoredResponder = responder
+        restoreCallCount += 1
+    }
 }
 
 nonisolated private final class CommandOverlayNotificationProbe:
