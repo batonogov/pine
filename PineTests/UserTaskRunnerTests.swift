@@ -1283,15 +1283,15 @@ nonisolated private final class UserTaskProcessIDProbe: @unchecked Sendable {
 
     func waitForProcessID() async -> pid_t {
         await withCheckedContinuation { continuation in
-            let processID: pid_t? = lock.withLock {
-                guard let processID else {
+            let recordedProcessID: pid_t? = lock.withLock {
+                guard let processID = self.processID else {
                     waiters.append(continuation)
                     return nil
                 }
                 return processID
             }
-            if let processID {
-                continuation.resume(returning: processID)
+            if let recordedProcessID {
+                continuation.resume(returning: recordedProcessID)
             }
         }
     }
