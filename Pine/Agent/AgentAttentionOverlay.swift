@@ -26,6 +26,9 @@ import SwiftUI
 /// `AgentKeyboardSelection`.
 struct AgentAttentionOverlay: View {
     let summaries: [AgentStatusSummary]
+    /// Weak reference to the project window that owns this overlay. Selection
+    /// announcements must not follow `NSApp.keyWindow` to another project.
+    let windowContext: AgentAttentionWindowContext
     let onNavigate: (PaneID, UUID) -> Void
     /// Called when the user dismisses the overlay without choosing a row
     /// (Escape). The host restores the previous first responder (#1245).
@@ -247,14 +250,10 @@ struct AgentAttentionOverlay: View {
 
     private func announceRow(id: UUID) {
         guard let summary = ranked.first(where: { $0.id == id }) else { return }
-        NSAccessibility.post(
-            element: NSApp.keyWindow ?? NSApplication.shared,
-            notification: .announcementRequested,
-            userInfo: [
-                .announcement: Self.accessibilityAnnouncement(
-                    for: summary
-                ),
-            ]
+        windowContext.announce(
+            Self.accessibilityAnnouncement(
+                for: summary
+            )
         )
     }
 

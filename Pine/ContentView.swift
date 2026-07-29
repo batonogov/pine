@@ -49,6 +49,11 @@ struct ContentView: View {
     /// overlay (Quick Open / Symbol Navigator / Go to Line / Command Palette)
     /// and captures/restores the previous AppKit first responder.
     @State var commandOverlayRouter = CommandOverlayRouter()
+    /// Weak bridge to this exact project window. Agent Attention uses it for
+    /// VoiceOver announcements even if another project becomes key while the
+    /// overlay is open. Focus ownership remains in `commandOverlayRouter`.
+    @State var agentAttentionWindowContext =
+        AgentAttentionWindowContext()
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
     @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
@@ -108,6 +113,9 @@ struct ContentView: View {
             )
             DocumentEditedTracker(isEdited: projectManager.hasUnsavedChanges)
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
+            AgentAttentionWindowReader(
+                windowContext: agentAttentionWindowContext
+            )
         }
         .task {
             let disposition = restoreSessionIfNeeded()
@@ -339,8 +347,14 @@ struct ContentView: View {
                     projectManager.problemsController.togglePanel()
                 },
                 onShowAttention: {
-                    guard !showAgentAttention else { return }
-                    agentAttentionFocusCoordinator.capture(in: NSApp.keyWindow)
+                    guard !showAgentAttention,
+                          let ownerWindow = agentAttentionWindowContext.window
+                    else {
+                        return
+                    }
+                    agentAttentionFocusCoordinator.capture(
+                        in: ownerWindow
+                    )
                     withAnimation(PineAnimation.overlay) {
                         showAgentAttention = true
                     }
@@ -402,6 +416,7 @@ struct ContentView: View {
             ) {
                 AgentAttentionOverlay(
                     summaries: AgentStatusSummary.activeSummaries(in: paneManager),
+                    windowContext: agentAttentionWindowContext,
                     onNavigate: navigateFromAgentAttention,
                     onDismiss: dismissAgentAttention
                 )

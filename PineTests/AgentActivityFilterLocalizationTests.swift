@@ -62,9 +62,29 @@ struct AgentActivityFilterLocalizationTests {
     /// Unrelated manual entries that must survive an xcstrings `ours` merge
     /// when this feature branch is brought up to date with main.
     private static let mergePreservedKeys = [
+        "a11y.sidebar.collapse.action",
+        "a11y.sidebar.disclosure.collapsed",
+        "a11y.sidebar.disclosure.expanded",
+        "a11y.sidebar.expand.action",
+        "a11y.sidebar.folder.hint",
         "agent.liveness.live",
         "agent.liveness.stale",
         "agent.liveness.terminated",
+        "menu.nextDiagnostic",
+        "menu.previousDiagnostic",
+        "menu.problems",
+        "problems.close",
+        "problems.errorCount.one",
+        "problems.filter.allSeverities",
+        "problems.filter.allSources",
+        "problems.filter.severity",
+        "problems.filter.source",
+        "problems.panelTitle",
+        "problems.state.disabled",
+        "problems.state.loading",
+        "problems.state.unavailable",
+        "problems.state.unsupported",
+        "problems.warningCount.one",
         "statusbar.agentSession",
         "statusbar.agentSessions",
         "verifiedDiff.detail.applyTextHunks",
@@ -115,8 +135,8 @@ struct AgentActivityFilterLocalizationTests {
         )
     }
 
-    @Test("Merging Activity strings preserves existing agent and undo copy")
-    func unrelatedAgentAndUndoStringsRemainTranslated() throws {
+    @Test("Merging Activity strings preserves main and existing feature copy")
+    func unrelatedMainAndFeatureStringsRemainTranslated() throws {
         let catalog = try stringsCatalog()
         try expectCompleteTranslations(
             for: Self.mergePreservedKeys,
