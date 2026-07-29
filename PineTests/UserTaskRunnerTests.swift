@@ -256,6 +256,37 @@ nonisolated struct UserTaskRunnerTests {
         #expect(workers.wait(timeout: .now() + 1) == .success)
     }
 
+    @Test("Blocking task owner does not delay the next execution")
+    func blockingTaskOwnerDoesNotDelayNextExecution() {
+        let scheduler = UserTaskThreadExecutionScheduler()
+        let firstStarted = DispatchSemaphore(value: 0)
+        let releaseFirst = DispatchSemaphore(value: 0)
+        let secondStarted = DispatchSemaphore(value: 0)
+        let executions = DispatchGroup()
+        defer {
+            releaseFirst.signal()
+            _ = executions.wait(timeout: .now() + 1)
+        }
+
+        executions.enter()
+        scheduler.schedule {
+            defer { executions.leave() }
+            firstStarted.signal()
+            _ = releaseFirst.wait(timeout: .now() + 2)
+        }
+        #expect(firstStarted.wait(timeout: .now() + 1) == .success)
+
+        executions.enter()
+        scheduler.schedule {
+            defer { executions.leave() }
+            secondStarted.signal()
+        }
+        #expect(secondStarted.wait(timeout: .now() + 1) == .success)
+
+        releaseFirst.signal()
+        #expect(executions.wait(timeout: .now() + 1) == .success)
+    }
+
     @Test("Task start waits for stdout, stderr, and stdin workers")
     func taskStartWaitsForEveryIOWorker() async {
         let scheduler = HoldingUserTaskIOWorkerScheduler()

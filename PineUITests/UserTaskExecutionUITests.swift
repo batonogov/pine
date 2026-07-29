@@ -255,10 +255,19 @@ final class UserTaskExecutionUITests: PineUITestCase {
             predicate: NSPredicate(format: "label == %@", expected),
             object: element
         )
-        return XCTWaiter.wait(
+        let result = XCTWaiter.wait(
             for: [expectation],
             timeout: timeout
-        ) == .completed
+        )
+        if result != .completed {
+            print(
+                "Expected \(expected), actual label: "
+                    + "\(element.label.debugDescription), value: "
+                    + "\(String(describing: element.value)), exists: "
+                    + "\(element.exists); \(element.debugDescription)"
+            )
+        }
+        return result == .completed
     }
 
     private func waitForOneOfLabels(

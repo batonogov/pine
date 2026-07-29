@@ -131,6 +131,28 @@ nonisolated struct UserTaskProgress: Sendable {
     }
 }
 
+/// Schedules the blocking owner of a complete user-task execution.
+///
+/// A task owner waits for process exit and bounded descriptor cleanup, so it
+/// must not consume or depend on a shared libdispatch worker. The injectable
+/// scheduler keeps that ownership policy explicit and testable.
+nonisolated protocol UserTaskExecutionScheduling: Sendable {
+    func schedule(_ operation: @escaping @Sendable () -> Void)
+}
+
+/// Starts every complete task execution on its own OS thread.
+nonisolated struct UserTaskThreadExecutionScheduler:
+    UserTaskExecutionScheduling {
+    func schedule(_ operation: @escaping @Sendable () -> Void) {
+        let thread = Thread {
+            operation()
+        }
+        thread.name = "com.pine.user-task-execution"
+        thread.qualityOfService = .userInitiated
+        thread.start()
+    }
+}
+
 /// Schedules the blocking workers that own a task's stdin/stdout/stderr
 /// handles. The injectable implementation lets tests hold workers before
 /// their entry point without suspending a process-wide dispatch queue.
@@ -190,6 +212,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
     /// Injectable for deterministic spawn-failure coverage. Production always
     /// uses the system POSIX shell.
     private let shellExecutableURL: URL
+    private let executionScheduler: any UserTaskExecutionScheduling
     private let ioExecutionPolicy: UserTaskIOExecutionPolicy
     /// Internal lifecycle observation used by process-ownership tests. The
     /// public progress contract deliberately does not expose process IDs.
@@ -198,11 +221,14 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
     init(
         timeout: TimeInterval = 30.0,
         shellExecutableURL: URL = URL(fileURLWithPath: "/bin/sh"),
+        executionScheduler: (any UserTaskExecutionScheduling)? = nil,
         ioExecutionPolicy: UserTaskIOExecutionPolicy? = nil,
         processDidSpawn: (@Sendable (pid_t) -> Void)? = nil
     ) {
         self.timeout = timeout
         self.shellExecutableURL = shellExecutableURL
+        self.executionScheduler =
+            executionScheduler ?? UserTaskThreadExecutionScheduler()
         self.ioExecutionPolicy = ioExecutionPolicy ?? UserTaskIOExecutionPolicy(
             workerScheduler: UserTaskThreadIOWorkerScheduler(),
             startupDeadline: Self.ioStartupDeadline,
@@ -311,7 +337,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             progress.onCancellationReady?(cancellation)
         }
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        executionScheduler.schedule {
             let execution = Self.execute(
                 config: .init(
                     executableURL: self.shellExecutableURL,
