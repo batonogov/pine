@@ -214,15 +214,21 @@ struct EditorTabBar: View {
                                         onCloseTabsToTheRight?(tab.id)
                                     },
                                     onCloseAllTabs: { onCloseAllTabs?() },
-                                    onCopyPath: {
+                                    onCopyPath: tab.fileURL == nil ? nil : {
+                                        guard let fileURL = tab.fileURL else {
+                                            return
+                                        }
                                         NSPasteboard.general.clearContents()
                                         NSPasteboard.general.setString(
-                                            tab.url.path, forType: .string
+                                            fileURL.path, forType: .string
                                         )
                                     },
-                                    onCopyRelativePath: {
+                                    onCopyRelativePath: tab.fileURL == nil ? nil : {
+                                        guard let fileURL = tab.fileURL else {
+                                            return
+                                        }
                                         let relativePath = Self.computeRelativePath(
-                                            fileURL: tab.url,
+                                            fileURL: fileURL,
                                             projectRootURL: projectRootURL
                                         )
                                         NSPasteboard.general.clearContents()
@@ -230,16 +236,22 @@ struct EditorTabBar: View {
                                             relativePath, forType: .string
                                         )
                                     },
-                                    onRevealInSidebar: {
+                                    onRevealInSidebar: tab.fileURL == nil ? nil : {
+                                        guard let fileURL = tab.fileURL else {
+                                            return
+                                        }
                                         NotificationCenter.default.post(
                                             name: .revealInSidebar,
                                             object: nil,
-                                            userInfo: ["url": tab.url]
+                                            userInfo: ["url": fileURL]
                                         )
                                     },
-                                    onRevealInFinder: {
+                                    onRevealInFinder: tab.fileURL == nil ? nil : {
+                                        guard let fileURL = tab.fileURL else {
+                                            return
+                                        }
                                         NSWorkspace.shared.activateFileViewerSelecting(
-                                            [tab.url]
+                                            [fileURL]
                                         )
                                     },
                                     onMoveLeading: paneManager.canMoveTab(
@@ -310,7 +322,7 @@ struct EditorTabBar: View {
                                     let info = paneManager.beginTabDrag(
                                         paneID: paneID,
                                         tabID: tab.id,
-                                        fileURL: tab.url,
+                                        fileURL: tab.fileURL,
                                         contentType: .editor
                                     )
                                     return info.itemProvider()
@@ -591,6 +603,7 @@ struct EditorTabItem: View {
             } label: {
                 Label(Strings.tabCopyPath, systemImage: MenuIcons.copyPath)
             }
+            .disabled(onCopyPath == nil)
             .accessibilityIdentifier(AccessibilityID.editorTabCopyPath(tab.fileName))
 
             Button {
@@ -598,6 +611,7 @@ struct EditorTabItem: View {
             } label: {
                 Label(Strings.tabCopyRelativePath, systemImage: MenuIcons.copyRelativePath)
             }
+            .disabled(onCopyRelativePath == nil)
             .accessibilityIdentifier(AccessibilityID.editorTabCopyRelativePath(tab.fileName))
 
             Divider()
@@ -607,6 +621,7 @@ struct EditorTabItem: View {
             } label: {
                 Label(Strings.tabRevealInSidebar, systemImage: MenuIcons.revealInSidebar)
             }
+            .disabled(onRevealInSidebar == nil)
             .accessibilityIdentifier(AccessibilityID.editorTabRevealInSidebar(tab.fileName))
 
             Button {
@@ -614,6 +629,7 @@ struct EditorTabItem: View {
             } label: {
                 Label(Strings.tabRevealInFinder, systemImage: MenuIcons.revealInFinder)
             }
+            .disabled(onRevealInFinder == nil)
             .accessibilityIdentifier(AccessibilityID.editorTabRevealInFinder(tab.fileName))
         }
         .onPreferenceChange(TabCloseGlyphFramePreferenceKey.self) { frame in

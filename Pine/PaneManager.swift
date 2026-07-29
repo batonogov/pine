@@ -28,7 +28,7 @@ struct GlobalTabInventoryMetrics: Equatable {
 @Observable
 final class PaneManager {
     private enum GlobalTabInventoryItem {
-        case editor(fileName: String, url: URL)
+        case editor(fileName: String, url: URL?)
         case terminal(
             name: String,
             stableLabel: String,
@@ -162,7 +162,7 @@ final class PaneManager {
                         )
                         inventory.items[identity] = .editor(
                             fileName: tab.fileName,
-                            url: tab.url
+                            url: tab.fileURL
                         )
                         inventory.deterministicOrder.append(identity)
                     }
@@ -594,7 +594,8 @@ final class PaneManager {
 
     /// Secondary editor label: project-relative path when possible, otherwise
     /// the external parent directory so equal file names remain distinguishable.
-    private static func editorDetail(from url: URL, root: URL?) -> String? {
+    private static func editorDetail(from url: URL?, root: URL?) -> String? {
+        guard let url else { return nil }
         if let relativePath = relativePath(from: url, root: root),
            !relativePath.isEmpty {
             return relativePath
@@ -1368,7 +1369,7 @@ final class PaneManager {
                     : destination.tabs.count
                 return moveTabBetweenPanes(
                     tabID: tabID,
-                    tabURL: tab.url,
+                    tabURL: tab.fileURL,
                     from: paneID,
                     to: destinationPaneID,
                     at: insertionIndex
@@ -2106,7 +2107,7 @@ final class PaneManager {
                     destinationPaneID,
                     axis: axis,
                     tabID: key.tabID,
-                    tabURL: tab.url,
+                    tabURL: tab.fileURL,
                     sourcePane: key.sourcePaneID,
                     insertBefore: insertBefore
                 ) != nil
@@ -2292,8 +2293,11 @@ final class PaneManager {
             return source.tabs.contains(where: { $0.id == tabID }) ? tabID : nil
         }
         guard let url else { return nil }
-        return source.tabs.first(where: { $0.url == url })?.id
-            ?? source.tabs.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL })?.id
+        return source.tabs.first(where: { $0.fileURL == url })?.id
+            ?? source.tabs.first(where: {
+                $0.fileURL?.standardizedFileURL
+                    == url.standardizedFileURL
+            })?.id
     }
 
     private func transferEditorTab(

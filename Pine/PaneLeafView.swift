@@ -275,9 +275,11 @@ struct PaneLeafView: View {
                 overridePaneID: paneID
             )
 
-            if let tab = tabManager.activeTab, let rootURL = workspace.rootURL {
+            if let tab = tabManager.activeTab,
+               let fileURL = tab.fileURL,
+               let rootURL = workspace.rootURL {
                 BreadcrumbPathBar(
-                    fileURL: tab.url,
+                    fileURL: fileURL,
                     projectRoot: rootURL,
                     onOpenFile: { url in tabManager.openTab(url: url) }
                 )
@@ -370,7 +372,8 @@ struct PaneLeafView: View {
             contentVersion: tab.contentVersion,
             language: tab.language,
             fileName: tab.fileName,
-            fileURL: tab.url,
+            fileURL: tab.fileURL,
+            documentIdentityURL: tab.url,
             commandTarget: projectManager,
             canHandleCommands: {
                 paneManager.activePaneID == paneID
@@ -441,28 +444,35 @@ struct PaneLeafView: View {
         .onAppear {
             goToLineOffset = nil
             projectManager.problemsController.refreshDocumentOwnership()
-            configValidator.validate(
-                url: tab.url,
-                content: tab.content,
-                revision: tab.contentVersion
-            )
-            projectManager.lspManager.didOpen(
-                url: tab.url,
-                ownerID: tab.id,
-                contentRevision: tab.contentVersion,
-                text: tab.content
-            )
+            if let fileURL = tab.fileURL {
+                configValidator.validate(
+                    url: fileURL,
+                    content: tab.content,
+                    revision: tab.contentVersion
+                )
+                projectManager.lspManager.didOpen(
+                    url: fileURL,
+                    ownerID: tab.id,
+                    contentRevision: tab.contentVersion,
+                    text: tab.content
+                )
+            }
             installLSPUIEndpoint(tabManager: tabManager)
         }
         .onDisappear {
             configValidator.clear()
-            projectManager.lspManager.didClose(
-                url: tab.url,
-                ownerID: tab.id
-            )
-            projectManager.problemsController.removeConfigDiagnostics(
-                owner: problemsOwner(for: tab)
-            )
+            if let fileURL = tab.fileURL {
+                projectManager.lspManager.didClose(
+                    url: fileURL,
+                    ownerID: tab.id
+                )
+                projectManager.problemsController.removeConfigDiagnostics(
+                    owner: problemsOwner(
+                        for: tab,
+                        fileURL: fileURL
+                    )
+                )
+            }
             clearLSPUIEndpoint()
         }
         .onChange(of: tab.content) { _, newValue in
@@ -470,25 +480,50 @@ struct PaneLeafView: View {
             // Refreshing ownership makes it disappear before the debounced
             // validator commits the replacement.
             projectManager.problemsController.refreshDocumentOwnership()
+            guard let fileURL = tab.fileURL else { return }
             configValidator.validate(
-                url: tab.url,
+                url: fileURL,
                 content: newValue,
                 revision: tab.contentVersion
             )
             projectManager.lspManager.didChange(
-                url: tab.url,
+                url: fileURL,
                 ownerID: tab.id,
                 contentRevision: tab.contentVersion,
                 text: newValue
             )
         }
+        .onChange(of: tab.fileURL) { oldURL, newURL in
+            configValidator.clear()
+            if let oldURL {
+                projectManager.lspManager.didClose(
+                    url: oldURL,
+                    ownerID: tab.id
+                )
+            }
+            if let newURL {
+                configValidator.validate(
+                    url: newURL,
+                    content: tab.content,
+                    revision: tab.contentVersion
+                )
+                projectManager.lspManager.didOpen(
+                    url: newURL,
+                    ownerID: tab.id,
+                    contentRevision: tab.contentVersion,
+                    text: tab.content
+                )
+            }
+            projectManager.problemsController.refreshDocumentOwnership()
+        }
         .onChange(of: configValidator.diagnosticsResultGeneration) { _, _ in
-            guard let revision = configValidator.diagnosticsRevision else {
+            guard let fileURL = tab.fileURL,
+                  let revision = configValidator.diagnosticsRevision else {
                 return
             }
             projectManager.problemsController.setConfigDiagnostics(
                 configValidator.diagnostics,
-                owner: problemsOwner(for: tab),
+                owner: problemsOwner(for: tab, fileURL: fileURL),
                 contentRevision: revision
             )
         }
@@ -496,11 +531,14 @@ struct PaneLeafView: View {
 
     // MARK: - LSP UI endpoint installation
 
-    private func problemsOwner(for tab: EditorTab) -> ProblemsDocumentOwner {
+    private func problemsOwner(
+        for tab: EditorTab,
+        fileURL: URL
+    ) -> ProblemsDocumentOwner {
         projectManager.problemsController.documentOwner(
             paneID: paneID,
             tabID: tab.id,
-            uri: tab.url.absoluteString
+            uri: fileURL.absoluteString
         )
     }
 
@@ -582,8 +620,11 @@ struct PaneLeafView: View {
     /// LSP diagnostics for the given file. LSP diagnostics are keyed by
     /// document URI; config diagnostics are per-active-file in the validator.
     private func mergedDiagnostics(for tab: EditorTab) -> [ValidationDiagnostic] {
+        guard let fileURL = tab.fileURL else { return [] }
         var combined = configValidator.diagnostics
-        combined.append(contentsOf: projectManager.lspManager.diagnostics(for: tab.url))
+        combined.append(
+            contentsOf: projectManager.lspManager.diagnostics(for: fileURL)
+        )
         return combined
     }
 
@@ -604,12 +645,12 @@ struct PaneLeafView: View {
     /// `currentBranch` firing in the same runloop tick) run only once.
     private func refreshLineDiffs(tabManager: TabManager, debounce: Bool = false) {
         diffTask?.cancel()
-        guard let tab = tabManager.activeTab else {
+        guard let tab = tabManager.activeTab,
+              let fileURL = tab.fileURL else {
             lineDiffs = []
             diffHunks = []
             return
         }
-        let fileURL = tab.url
         let provider = workspace.gitProvider
         guard provider.isGitRepository, let repoURL = workspace.rootURL else {
             lineDiffs = []
@@ -625,7 +666,7 @@ struct PaneLeafView: View {
             async let hunks = InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
             let (resolvedDiffs, resolvedHunks) = await (diffs, hunks)
             if Task.isCancelled { return }
-            guard tabManager.activeTab?.url == fileURL else { return }
+            guard tabManager.activeTab?.fileURL == fileURL else { return }
             lineDiffs = resolvedDiffs
             diffHunks = resolvedHunks
             diffVersion &+= 1
@@ -639,11 +680,11 @@ struct PaneLeafView: View {
             blameLines = []
             return
         }
-        guard let tab = tabManager.activeTab else {
+        guard let tab = tabManager.activeTab,
+              let fileURL = tab.fileURL else {
             blameLines = []
             return
         }
-        let fileURL = tab.url
         let provider = workspace.gitProvider
         guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
             blameLines = []
@@ -663,7 +704,7 @@ struct PaneLeafView: View {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                if tabManager.activeTab?.url == fileURL {
+                if tabManager.activeTab?.fileURL == fileURL {
                     blameLines = lines
                 }
             }
@@ -674,9 +715,14 @@ struct PaneLeafView: View {
 
     private func handleGutterAccept(_ hunk: DiffHunk, tabManager: TabManager) {
         guard let tab = tabManager.activeTab,
+              let fileURL = tab.fileURL,
               let repoURL = workspace.rootURL else { return }
         Task {
-            await InlineDiffProvider.acceptHunk(hunk, fileURL: tab.url, repoURL: repoURL)
+            await InlineDiffProvider.acceptHunk(
+                hunk,
+                fileURL: fileURL,
+                repoURL: repoURL
+            )
             await workspace.gitProvider.refreshAsync()
             refreshLineDiffs(tabManager: tabManager)
         }
@@ -684,13 +730,16 @@ struct PaneLeafView: View {
 
     private func handleGutterRevert(_ hunk: DiffHunk, tabManager: TabManager) {
         guard let tab = tabManager.activeTab,
+              let fileURL = tab.fileURL,
               let repoURL = workspace.rootURL else { return }
         Task {
             if let newContent = await InlineDiffProvider.revertHunk(
-                hunk, fileURL: tab.url, repoURL: repoURL
+                hunk,
+                fileURL: fileURL,
+                repoURL: repoURL
             ) {
                 tabManager.updateContent(newContent)
-                tabManager.reloadTab(url: tab.url)
+                tabManager.reloadTab(url: fileURL)
                 await workspace.gitProvider.refreshAsync()
                 refreshLineDiffs(tabManager: tabManager)
             }
@@ -706,7 +755,18 @@ struct PaneLeafView: View {
                 tab,
                 in: tabManager,
                 gitProvider: workspace.gitProvider,
-                context: context
+                context: context,
+                saveTab: { index in
+                    guard tabManager.tabs.indices.contains(index) else {
+                        return false
+                    }
+                    return await projectManager.saveTab(
+                        tabID: tabManager.tabs[index].id,
+                        in: tabManager,
+                        forceSaveAs: false,
+                        context: context
+                    )
+                }
             )
             if didClose && tabManager.tabs.isEmpty {
                 paneManager.removePane(paneID)
@@ -721,7 +781,18 @@ struct PaneLeafView: View {
                 keeping: tabID,
                 in: tabManager,
                 gitProvider: workspace.gitProvider,
-                context: context
+                context: context,
+                saveTab: { index in
+                    guard tabManager.tabs.indices.contains(index) else {
+                        return false
+                    }
+                    return await projectManager.saveTab(
+                        tabID: tabManager.tabs[index].id,
+                        in: tabManager,
+                        forceSaveAs: false,
+                        context: context
+                    )
+                }
             )
         }
     }
@@ -733,7 +804,18 @@ struct PaneLeafView: View {
                 of: tabID,
                 in: tabManager,
                 gitProvider: workspace.gitProvider,
-                context: context
+                context: context,
+                saveTab: { index in
+                    guard tabManager.tabs.indices.contains(index) else {
+                        return false
+                    }
+                    return await projectManager.saveTab(
+                        tabID: tabManager.tabs[index].id,
+                        in: tabManager,
+                        forceSaveAs: false,
+                        context: context
+                    )
+                }
             )
         }
     }
@@ -744,7 +826,18 @@ struct PaneLeafView: View {
             let didClose = await TabCloseHelper.closeAllTabs(
                 in: tabManager,
                 gitProvider: workspace.gitProvider,
-                context: context
+                context: context,
+                saveTab: { index in
+                    guard tabManager.tabs.indices.contains(index) else {
+                        return false
+                    }
+                    return await projectManager.saveTab(
+                        tabID: tabManager.tabs[index].id,
+                        in: tabManager,
+                        forceSaveAs: false,
+                        context: context
+                    )
+                }
             )
             if didClose && tabManager.tabs.isEmpty {
                 paneManager.removePane(paneID)

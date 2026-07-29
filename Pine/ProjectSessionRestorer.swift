@@ -228,13 +228,17 @@ enum ProjectSessionRestorer {
         )
 
         if let previewPath = context.session.paneTransientPreviewPaths?[paneKey],
-           let index = tabManager.tabs.firstIndex(where: { $0.url.path == previewPath }),
+           let index = tabManager.tabs.firstIndex(where: {
+               $0.fileURL?.path == previewPath
+           }),
            !tabManager.tabs[index].isPinned {
             tabManager.tabs[index].isTransientPreview = true
         }
 
         if let activePath = context.session.paneActiveEditorPaths?[paneKey],
-           let tab = tabManager.tabs.first(where: { $0.url.path == activePath }) {
+           let tab = tabManager.tabs.first(where: {
+               $0.fileURL?.path == activePath
+           }) {
             tabManager.activeTabID = tab.id
         }
     }
@@ -245,7 +249,9 @@ enum ProjectSessionRestorer {
         pinnedPaths: Set<String>?
     ) {
         for index in tabManager.tabs.indices {
-            let path = tabManager.tabs[index].url.path
+            guard let path = tabManager.tabs[index].fileURL?.path else {
+                continue
+            }
             if let rawMode = context.previewModes?[path],
                let mode = MarkdownPreviewMode(rawValue: rawMode) {
                 tabManager.tabs[index].previewMode = mode
@@ -369,7 +375,9 @@ enum ProjectSessionRestorer {
                 guard let path = reference.editorFilePath,
                       path.hasPrefix(rootPrefix),
                       let tabID = paneManager.tabManager(for: paneID)?.tabs
-                        .first(where: { $0.url.path == path })?.id else {
+                        .first(where: {
+                            $0.fileURL?.path == path
+                        })?.id else {
                     return nil
                 }
                 return GlobalTabIdentity(

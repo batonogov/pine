@@ -22,7 +22,7 @@ enum TabDuplicator {
     ) throws -> UUID? {
         guard tabs.indices.contains(index) else { return nil }
         let tab = tabs[index]
-        let originalURL = tab.url
+        guard let originalURL = tab.fileURL else { return nil }
 
         if let root = projectRoot, !FileNode.isWithinProjectRoot(originalURL, projectRoot: root) {
             throw CocoaError(.fileWriteNoPermission, userInfo: [

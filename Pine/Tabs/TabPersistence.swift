@@ -195,7 +195,9 @@ enum TabPersistence {
         syntaxHighlightingDisabled: Bool?,
         largeFileDecision: LargeFileAlertResult? = nil
     ) -> OpenDecision {
-        if let existing = existingTabs.first(where: { $0.url == url }) {
+        if let existing = existingTabs.first(where: {
+            $0.fileURL == url
+        }) {
             return .activateExisting(existing.id)
         }
 
@@ -240,7 +242,7 @@ enum TabPersistence {
         syntaxHighlightingDisabled: Bool?
     ) -> Bool {
         guard syntaxHighlightingDisabled == nil,
-              !existingTabs.contains(where: { $0.url == url }),
+              !existingTabs.contains(where: { $0.fileURL == url }),
               !isPreviewFile(url: url),
               let size = fileSize(url: url) else { return false }
         return size >= largeFileThreshold && size < hugeFileThreshold
@@ -279,7 +281,10 @@ enum TabPersistence {
     ) throws -> SaveOutcome {
         assert(tabs.indices.contains(index), "saveTabContent called with out-of-bounds index \(index)")
         let tab = tabs[index]
-        guard tab.kind == .text else { return SaveOutcome(saved: false, reload: nil) }
+        guard tab.kind == .text,
+              let fileURL = tab.fileURL else {
+            return SaveOutcome(saved: false, reload: nil)
+        }
         if tab.isTruncated {
             throw CocoaError(.fileWriteUnknown, userInfo: [
                 NSLocalizedDescriptionKey: "Cannot save: file was partially loaded (truncated). Saving would corrupt the original file."
@@ -287,22 +292,22 @@ enum TabPersistence {
         }
         let trimmed = TabFormatter.contentPreparedForSave(
             tab.content,
-            url: tab.url,
+            url: fileURL,
             settings: config.editorSettings,
             formatters: config.formatters
         )
-        try trimmed.write(to: tab.url, atomically: true, encoding: tab.encoding)
+        try trimmed.write(to: fileURL, atomically: true, encoding: tab.encoding)
         let contentChanged = trimmed != tab.content
         tabs[index].content = trimmed
         tabs[index].savedContent = trimmed
-        tabs[index].lastModDate = providers.modDate(tab.url)
-        tabs[index].fileSizeBytes = providers.fileSize(tab.url)
+        tabs[index].lastModDate = providers.modDate(fileURL)
+        tabs[index].fileSizeBytes = providers.fileSize(fileURL)
 
         var reload: ReloadedTab?
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
             tabs[index].recomputeContentCaches()
-            reload = ReloadedTab(url: tab.url, text: trimmed)
+            reload = ReloadedTab(url: fileURL, text: trimmed)
         }
         return SaveOutcome(saved: true, reload: reload)
     }

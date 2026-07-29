@@ -647,7 +647,9 @@ final class LSPManager {
             guard !operated.edits.isEmpty else { continue }
 
             // Check if this file is open in a tab.
-            if let tabIndex = tabManager.tabs.firstIndex(where: { $0.url == fileURL }) {
+            if let tabIndex = tabManager.tabs.firstIndex(where: {
+                $0.fileURL == fileURL
+            }) {
                 let original = tabManager.tabs[tabIndex].content
                 let result = WorkspaceEditApplier.applyEdits(operated.edits, to: original)
                 guard result.success, let newText = result.newText else {

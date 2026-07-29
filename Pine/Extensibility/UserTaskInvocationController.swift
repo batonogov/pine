@@ -57,6 +57,15 @@ enum UserTaskInvocationController {
         }
     }
 
+    /// Active-file tasks require a real filesystem destination. An untitled
+    /// buffer's private identity URI is never a valid `${file}` value.
+    static func hasRequiredActiveFile(
+        for task: UserTask,
+        activeTab: EditorTab?
+    ) -> Bool {
+        task.scope != .activeFile || activeTab?.fileURL != nil
+    }
+
     /// Resolves and validates the active-file intent on the MainActor
     /// immediately before the runner starts. Kept internal so suspension
     /// races can be tested without spawning a real shell.
@@ -75,7 +84,10 @@ enum UserTaskInvocationController {
         }
 
         let activeTab = projectManager.activeTabManager.activeTab
-        if task.scope == .activeFile, activeTab == nil {
+        if !hasRequiredActiveFile(
+            for: task,
+            activeTab: activeTab
+        ) {
             await presentMissingActiveFile(context: context)
             return false
         }
@@ -189,7 +201,7 @@ enum UserTaskInvocationController {
     private static func capture(_ tab: EditorTab?) -> CapturedTab {
         CapturedTab(
             id: tab?.id,
-            url: tab?.url.standardizedFileURL,
+            url: tab?.fileURL?.standardizedFileURL,
             content: tab?.content,
             contentVersion: tab?.contentVersion,
             isEligibleForReplacement:

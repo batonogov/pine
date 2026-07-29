@@ -29,8 +29,41 @@ struct EditorTab: Identifiable, Hashable {
     /// Whether this tab shows an editable text file or a Quick Look preview.
     enum TabKind: Sendable { case text, preview }
 
+    /// A buffer may exist before it has a filesystem destination. Keeping that
+    /// state explicit prevents New File from fabricating a writable path and
+    /// lets Save route the first write through a native Save panel.
+    enum Backing: Hashable, Sendable {
+        case file(URL)
+        case untitled(displayName: String)
+    }
+
     let id: UUID
-    var url: URL
+    private(set) var backing: Backing
+    /// Compatibility URL for identity-only call sites. Untitled buffers use a
+    /// private non-file scheme; code that performs filesystem work must use
+    /// ``fileURL`` and handle `nil`.
+    var url: URL {
+        get {
+            switch backing {
+            case .file(let url):
+                return url
+            case .untitled:
+                return URL(string: "pine-untitled:///\(id.uuidString)")
+                    ?? URL(fileURLWithPath: "/.pine-untitled/\(id.uuidString)")
+            }
+        }
+        set {
+            backing = .file(newValue)
+        }
+    }
+    var fileURL: URL? {
+        guard case .file(let url) = backing else { return nil }
+        return url
+    }
+    var isUntitled: Bool {
+        if case .untitled = backing { return true }
+        return false
+    }
     var content: String {
         didSet { contentVersion &+= 1 }
     }
@@ -104,33 +137,68 @@ struct EditorTab: Identifiable, Hashable {
 
     /// Whether this tab's file is a Markdown file (.md or .markdown).
     var isMarkdownFile: Bool {
-        let ext = (url.lastPathComponent as NSString).pathExtension.lowercased()
+        guard let fileURL else { return false }
+        let ext = (fileURL.lastPathComponent as NSString)
+            .pathExtension
+            .lowercased()
         return ext == "md" || ext == "markdown"
     }
 
-    var fileName: String { url.lastPathComponent }
+    var fileName: String {
+        switch backing {
+        case .file(let url):
+            url.lastPathComponent
+        case .untitled(let displayName):
+            displayName
+        }
+    }
 
     var language: String {
-        (url.lastPathComponent as NSString).pathExtension.lowercased()
+        guard let fileURL else { return "" }
+        return (fileURL.lastPathComponent as NSString)
+            .pathExtension
+            .lowercased()
     }
 
     init(url: URL, content: String = "", savedContent: String = "", kind: TabKind = .text) {
         self.id = UUID()
-        self.url = url
+        self.backing = .file(url)
         self.content = content
         self.savedContent = savedContent
         self.kind = kind
     }
 
+    init(
+        untitledName: String,
+        content: String = "",
+        savedContent: String = ""
+    ) {
+        self.id = UUID()
+        self.backing = .untitled(displayName: untitledName)
+        self.content = content
+        self.savedContent = savedContent
+        self.kind = .text
+    }
+
     /// Creates a copy of a tab with a fresh UUID, preserving all content and editor state.
     /// Used when moving tabs between panes to avoid identity collisions.
     static func reidentified(from source: EditorTab) -> EditorTab {
-        var copy = EditorTab(
-            url: source.url,
-            content: source.content,
-            savedContent: source.savedContent,
-            kind: source.kind
-        )
+        var copy: EditorTab
+        switch source.backing {
+        case .file(let url):
+            copy = EditorTab(
+                url: url,
+                content: source.content,
+                savedContent: source.savedContent,
+                kind: source.kind
+            )
+        case .untitled(let displayName):
+            copy = EditorTab(
+                untitledName: displayName,
+                content: source.content,
+                savedContent: source.savedContent
+            )
+        }
         copy.cursorPosition = source.cursorPosition
         copy.scrollOffset = source.scrollOffset
         copy.cursorLine = source.cursorLine

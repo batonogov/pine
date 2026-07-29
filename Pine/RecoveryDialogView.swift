@@ -30,7 +30,7 @@ struct RecoveryDialogView: View {
                     HStack {
                         Image(systemName: "doc.text")
                         VStack(alignment: .leading) {
-                            Text(fileName(from: entry.originalPath))
+                            Text(fileName(from: entry))
                                 .font(.body)
                             Text(entry.timestamp, style: .relative)
                                 .font(.caption)
@@ -63,8 +63,10 @@ struct RecoveryDialogView: View {
         .frame(width: 400)
     }
 
-    private func fileName(from path: String) -> String {
-        if path.isEmpty { return Strings.recoveryUntitled }
-        return (path as NSString).lastPathComponent
+    private func fileName(from entry: RecoveryEntry) -> String {
+        if entry.originalPath.isEmpty {
+            return entry.untitledName ?? Strings.recoveryUntitled
+        }
+        return (entry.originalPath as NSString).lastPathComponent
     }
 }

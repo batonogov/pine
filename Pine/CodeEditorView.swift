@@ -28,9 +28,12 @@ struct CodeEditorView: NSViewRepresentable {
     var contentVersion: UInt64 = 0
     var language: String
     var fileName: String?
-    /// Full file URL — used by the coordinator to match notifications targeting
-    /// this specific tab (e.g., external file reloads).
+    /// Real filesystem URL. `nil` for an untitled buffer so filesystem and
+    /// LSP operations cannot accidentally consume its private identity URI.
     var fileURL: URL?
+    /// Stable identity used only to match editor reload notifications. This
+    /// may use a private non-file scheme for an untitled buffer.
+    var documentIdentityURL: URL? = nil
     /// Project that owns this editor. Palette-dispatched notifications carry
     /// this object so a delayed command cannot jump to another key window.
     var commandTarget: ProjectManager? = nil

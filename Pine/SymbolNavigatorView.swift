@@ -321,30 +321,33 @@ struct SymbolNavigatorView: View {
             return
         }
 
-        let url = tab.url
+        let identityURL = tab.url
+        let fileURL = tab.fileURL
         let text = tab.content
         let revision = symbolCoordinator.beginRevision()
         let snapshot = DocumentSnapshot(
-            uri: url.absoluteString,
+            uri: identityURL.absoluteString,
             text: text,
             revision: revision
         )
         let regexProvider = RegexSymbolProvider(
-            fileExtension: url.pathExtension
+            fileExtension: tab.language
         )
         let coordinator = symbolCoordinator
         let lspManager = projectManager.lspManager
-        let capabilities =
-            StructuralLanguageRegistry.capabilities(for: url)
-        let lspProvider: (any SymbolProviding)? =
-            capabilities.hasConfiguredLSPServer
-            ? LSPDocumentSymbolProvider { requestSnapshot in
+        let lspProvider: (any SymbolProviding)? = if let fileURL,
+            StructuralLanguageRegistry.capabilities(
+                for: fileURL
+            ).hasConfiguredLSPServer {
+            LSPDocumentSymbolProvider { requestSnapshot in
                 await lspManager.documentSymbols(
-                    url: url,
+                    url: fileURL,
                     text: requestSnapshot.text
                 )
             }
-            : nil
+        } else {
+            nil
+        }
 
         symbolTask = Task {
             let regexSymbols =
@@ -358,7 +361,7 @@ struct SymbolNavigatorView: View {
             guard !Task.isCancelled,
                   coordinator.isCurrent(revision),
                   isSnapshotCurrent(
-                    url: url,
+                    identityURL: identityURL,
                     text: text,
                     revision: revision
                   ) else {
@@ -382,7 +385,7 @@ struct SymbolNavigatorView: View {
                 }.value
                 guard !Task.isCancelled,
                       isSnapshotCurrent(
-                        url: url,
+                        identityURL: identityURL,
                         text: text,
                         revision: revision
                       ) else {
@@ -394,7 +397,7 @@ struct SymbolNavigatorView: View {
     }
 
     private func isSnapshotCurrent(
-        url: URL,
+        identityURL: URL,
         text: String,
         revision: DocumentRevision
     ) -> Bool {
@@ -403,7 +406,7 @@ struct SymbolNavigatorView: View {
                 projectManager.activeTabManager.activeTab else {
             return false
         }
-        return tab.url == url && tab.content == text
+        return tab.url == identityURL && tab.content == text
     }
 
     private func applyEntries(

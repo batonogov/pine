@@ -1441,7 +1441,12 @@ enum Strings {
     static let menuSaveAll: LocalizedStringKey = "menu.saveAll"
     static let menuSaveAs: LocalizedStringKey = "menu.saveAs"
     static let menuDuplicate: LocalizedStringKey = "menu.duplicate"
+    static let menuNewFile: LocalizedStringKey = "menu.newFile"
+    static let menuOpenFile: LocalizedStringKey = "menu.open"
+    static let menuOpenRecent: LocalizedStringKey = "menu.openRecent"
+    static let menuClearMenu: LocalizedStringKey = "menu.clearMenu"
     static let menuCloseTab: LocalizedStringKey = "menu.closeTab"
+    static let menuCloseWindow: LocalizedStringKey = "menu.closeWindow"
 
     // MARK: - Affordance / Accessibility Help
 
@@ -1555,6 +1560,14 @@ enum Strings {
 
     static var openPanelPrompt: String {
         String(localized: "openPanel.prompt")
+    }
+
+    static var openFilePanelMessage: String {
+        String(localized: "openFilePanel.message")
+    }
+
+    static var openFilePanelPrompt: String {
+        String(localized: "openFilePanel.prompt")
     }
 
     // MARK: - Large File Warning

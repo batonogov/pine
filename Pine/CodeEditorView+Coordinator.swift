@@ -258,7 +258,8 @@ extension CodeEditorView {
         @objc func handleTabReloadedFromDisk(_ note: Notification) {
             guard let url = note.userInfo?["url"] as? URL,
                   let newText = note.userInfo?["text"] as? String,
-                  let parentURL = parent.fileURL,
+                  let parentURL =
+                    parent.documentIdentityURL ?? parent.fileURL,
                   url == parentURL else { return }
             applyExternalReload(text: newText)
         }

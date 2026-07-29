@@ -12,6 +12,13 @@ import Testing
 @Suite("Dock Menu Tests")
 @MainActor
 struct DockMenuTests {
+    private func settleDeferredCommand() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+    }
 
     private func makeTempDirectory() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
@@ -140,7 +147,7 @@ struct DockMenuTests {
 
     // MARK: - Menu item action
 
-    @Test func dockMenuOpenProjectCallsOpenProjectWindow() throws {
+    @Test func dockMenuOpenProjectCallsOpenProjectWindow() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
@@ -153,6 +160,8 @@ struct DockMenuTests {
         item.representedObject = canonical
 
         delegate.dockMenuOpenProject(item)
+        #expect(openedURL == nil)
+        await settleDeferredCommand()
 
         #expect(openedURL == canonical)
         #expect(delegate.registry.isProjectOpen(canonical))
@@ -204,7 +213,7 @@ struct DockMenuTests {
         #expect(!openCalled)
     }
 
-    @Test func dockMenuOpenProjectReopensBackgroundProject() throws {
+    @Test func dockMenuOpenProjectReopensBackgroundProject() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
@@ -222,6 +231,8 @@ struct DockMenuTests {
         item.representedObject = canonical
 
         delegate.dockMenuOpenProject(item)
+        #expect(openedURL == nil)
+        await settleDeferredCommand()
 
         #expect(openedURL == canonical)
         #expect(!delegate.registry.backgroundProjects.contains(canonical))
