@@ -100,7 +100,7 @@ struct CommandPaletteView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
-                                .id(index)
+                                .id(item.id)
                                 .accessibilityIdentifier(
                                     AccessibilityID.commandPaletteItem(
                                         item.id.accessibilityToken
@@ -118,7 +118,18 @@ struct CommandPaletteView: View {
                         }
                     }
                     .onChange(of: selectedIndex) { _, newIndex in
-                        proxy.scrollTo(newIndex, anchor: .center)
+                        guard filteredItems.indices.contains(newIndex) else {
+                            return
+                        }
+                        proxy.scrollTo(
+                            filteredItems[newIndex].id,
+                            anchor: .center
+                        )
+                    }
+                    .onChange(of: filteredItems.map(\.id)) { _, newIDs in
+                        guard !newIDs.isEmpty else { return }
+                        let newIndex = min(selectedIndex, newIDs.count - 1)
+                        proxy.scrollTo(newIDs[newIndex], anchor: .center)
                     }
                 }
             }
