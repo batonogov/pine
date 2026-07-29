@@ -77,7 +77,7 @@ final class UserTaskExecutionUITests: PineUITestCase {
             )
         ).firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 3))
-        cancel.click()
+        clickCenter(of: cancel)
 
         XCTAssertTrue(
             waitForOneOfAccessibleTexts(
