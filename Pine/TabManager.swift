@@ -390,6 +390,7 @@ final class TabManager {
         tabs.append(tab)
         activeTabID = tab.id
         pendingFocusTabID = tab.id
+        onTabInventoryChanged?()
         return tab.id
     }
 
@@ -435,6 +436,7 @@ final class TabManager {
         recovered.recomputeContentCaches()
         tabs.append(recovered)
         activeTabID = recovered.id
+        onTabInventoryChanged?()
         return .appended(tabID: recovered.id)
     }
 
@@ -456,6 +458,7 @@ final class TabManager {
         recovered.recomputeContentCaches()
         tabs.append(recovered)
         activeTabID = recovered.id
+        onTabInventoryChanged?()
         return .appended(tabID: recovered.id)
     }
 
@@ -869,6 +872,7 @@ final class TabManager {
         )
         if outcome.saved {
             recoveryManager?.deleteRecoveryFile(for: tabID)
+            onTabInventoryChanged?()
         }
         // Same reentrancy rationale as trySaveTab (#1066): post after the
         // saveTabAs `inout tabs` scope ends, not inside it.
