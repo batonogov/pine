@@ -17,7 +17,7 @@ final class QuickOpenUITests: PineUITestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
         projectURL = try createTempProject(files: [
-            "main.swift": "// Main file\n",
+            "main.swift": "func main() {}\n",
             "utils.swift": "// Utils\n",
             "readme.md": "# README\n"
         ])
@@ -44,7 +44,7 @@ final class QuickOpenUITests: PineUITestCase {
         menuItem.click()
 
         // Verify Quick Open overlay appears
-        let overlay = app.sheets.firstMatch
+        let overlay = commandOverlay("quickOpenOverlay")
         XCTAssertTrue(overlay.waitForExistence(timeout: 5))
     }
 
@@ -57,13 +57,15 @@ final class QuickOpenUITests: PineUITestCase {
         clickMenuBarItem("File")
         app.menuItems["Quick Open…"].click()
 
-        let overlay = app.sheets.firstMatch
+        let overlay = commandOverlay("quickOpenOverlay")
         XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
-        // Press Escape to dismiss
+        // Move focus away from the search field before dismissing. Escape is
+        // handled by the panel's root wrapper, not only by its text field.
+        app.typeKey(.tab, modifierFlags: [])
         app.typeKey(.escape, modifierFlags: [])
 
-        // Sheet should dismiss
+        // The document-scoped panel should dismiss.
         XCTAssertTrue(overlay.waitForNonExistence(timeout: 5))
     }
 
@@ -82,14 +84,10 @@ final class QuickOpenUITests: PineUITestCase {
         clickMenuBarItem("File")
         app.menuItems["Quick Open…"].click()
 
-        let overlay = app.sheets.firstMatch
+        let overlay = commandOverlay("quickOpenOverlay")
         XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
-        // The search field is an NSTextField (NSViewRepresentable).
-        // XCUITest's typeText does not reliably input into NSTextField
-        // wrapped via NSViewRepresentable (same known issue as GutterTextView).
-        // Verify the search field exists and accepts focus.
-        let searchField = overlay.textFields.firstMatch
+        let searchField = overlay.textFields["quickOpenSearchField"].firstMatch
         XCTAssertTrue(searchField.waitForExistence(timeout: 3), "Search field should exist")
         searchField.click()
         XCTAssertTrue(searchField.exists, "Search field should remain after click")
@@ -108,29 +106,35 @@ final class QuickOpenUITests: PineUITestCase {
         clickMenuBarItem("File")
         app.menuItems["Quick Open…"].click()
 
-        let overlay = app.sheets.firstMatch
+        let overlay = commandOverlay("quickOpenOverlay")
         XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
         // Type to find a specific file
-        let searchField = overlay.textFields.firstMatch
+        let searchField = overlay.textFields["quickOpenSearchField"].firstMatch
         searchField.click()
         searchField.typeText("utils")
 
         sleep(1)
 
-        // Click on the result. The overlay may expose "utils.swift" in both
-        // the filename and path-hint labels; `firstMatch` picks the first.
-        let result = overlay.staticTexts["utils.swift"].firstMatch
-        if result.waitForExistence(timeout: 3) {
-            result.click()
+        // Result rows expose an explicit button role and default action for
+        // VoiceOver, rather than relying solely on a mouse-only tap gesture.
+        let result = overlay.buttons["quickOpenItem_utils.swift"].firstMatch
+        XCTAssertTrue(
+            result.waitForExistence(timeout: 3),
+            "Quick Open result should expose a button accessibility action"
+        )
+        XCTAssertTrue(
+            result.isSelected,
+            "Quick Open should expose its keyboard-selected result"
+        )
+        result.click()
 
-            // Sheet should dismiss after selection
-            XCTAssertTrue(overlay.waitForNonExistence(timeout: 5))
+        // The command panel should dismiss after selection.
+        XCTAssertTrue(overlay.waitForNonExistence(timeout: 5))
 
-            // Verify the file tab is opened
-            let tab = window.buttons["editorTab_utils.swift"]
-            XCTAssertTrue(tab.waitForExistence(timeout: 5))
-        }
+        // Verify the file tab is opened
+        let tab = window.buttons["editorTab_utils.swift"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 5))
     }
 
     // MARK: - Empty State
@@ -149,16 +153,125 @@ final class QuickOpenUITests: PineUITestCase {
         if menuItem.waitForExistence(timeout: 5) {
             menuItem.click()
 
-            let overlay = app.sheets.firstMatch
+            let overlay = commandOverlay("quickOpenOverlay")
             XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
             // Type a query — should show no results
-            let searchField = overlay.textFields.firstMatch
+            let searchField = overlay
+                .textFields["quickOpenSearchField"]
+                .firstMatch
             if searchField.waitForExistence(timeout: 3) {
                 searchField.click()
                 searchField.typeText("nonexistent")
                 sleep(1)
             }
         }
+    }
+
+    // MARK: - Shared command panel accessibility
+
+    func testSymbolNavigatorFieldIsAccessibleInCommandPanel() throws {
+        launchWithProject(projectURL)
+        openFile("main.swift")
+
+        clickMenuBarItem("File")
+        let menuItem = app.menuItems["Symbol Navigator"]
+        XCTAssertTrue(menuItem.waitForExistence(timeout: 5))
+        menuItem.click()
+
+        let overlay = commandOverlay("symbolNavigatorOverlay")
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5))
+        let searchField = overlay.textFields["symbolSearchField"].firstMatch
+        XCTAssertTrue(
+            searchField.waitForExistence(timeout: 5),
+            "Symbol Navigator search field should be accessible"
+        )
+        searchField.click()
+        searchField.typeText("main")
+        let symbol = overlay.buttons.matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@",
+                "symbolItem_"
+            )
+        ).firstMatch
+        XCTAssertTrue(
+            symbol.waitForExistence(timeout: 5),
+            "Symbol Navigator row should expose a button accessibility action"
+        )
+        XCTAssertTrue(
+            symbol.label.localizedCaseInsensitiveContains("main"),
+            "Symbol Navigator should expose the matching symbol label"
+        )
+        XCTAssertTrue(
+            symbol.isSelected,
+            "Symbol Navigator should expose its keyboard-selected result"
+        )
+    }
+
+    func testCommandPaletteFieldIsAccessibleInCommandPanel() throws {
+        launchWithProject(projectURL)
+
+        clickMenuBarItem("File")
+        let menuItem = app.menuItems["Command Palette…"]
+        XCTAssertTrue(menuItem.waitForExistence(timeout: 5))
+        menuItem.click()
+
+        let overlay = commandOverlay("commandPaletteOverlay")
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5))
+        let searchField = overlay
+            .textFields["commandPaletteSearchField"]
+            .firstMatch
+        XCTAssertTrue(
+            searchField.waitForExistence(timeout: 5),
+            "Command Palette search field should be accessible"
+        )
+        searchField.click()
+
+        let disabledSaveCommand = overlay
+            .buttons["commandPaletteItem_command_save"]
+            .firstMatch
+        XCTAssertTrue(
+            disabledSaveCommand.waitForExistence(timeout: 5),
+            "Disabled Command Palette rows should remain discoverable"
+        )
+        XCTAssertFalse(
+            disabledSaveCommand.isEnabled,
+            "Save should be disabled when no file is active"
+        )
+        XCTAssertTrue(
+            disabledSaveCommand.label.contains("Requires an active file."),
+            "Disabled Command Palette rows should explain their requirement"
+        )
+
+        searchField.click()
+        searchField.typeText("quick")
+        XCTAssertEqual(
+            searchField.value as? String,
+            "quick",
+            "Command Palette query should reach the native search field"
+        )
+
+        let quickOpenCommand = overlay
+            .buttons["commandPaletteItem_command_quickOpen"]
+            .firstMatch
+        XCTAssertTrue(
+            quickOpenCommand.waitForExistence(timeout: 5),
+            "Command Palette row should expose a button accessibility action"
+        )
+        XCTAssertTrue(
+            quickOpenCommand.isSelected,
+            "Command Palette should expose its keyboard-selected result"
+        )
+        quickOpenCommand.click()
+
+        XCTAssertTrue(
+            overlay.waitForNonExistence(timeout: 5),
+            "The replaced Command Palette panel should retire"
+        )
+        XCTAssertTrue(
+            commandOverlay("quickOpenOverlay")
+                .waitForExistence(timeout: 5),
+            "Quick Open should replace Command Palette without stale dismissal"
+        )
     }
 }

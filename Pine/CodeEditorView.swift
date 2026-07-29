@@ -31,6 +31,13 @@ struct CodeEditorView: NSViewRepresentable {
     /// Full file URL — used by the coordinator to match notifications targeting
     /// this specific tab (e.g., external file reloads).
     var fileURL: URL?
+    /// Project that owns this editor. Palette-dispatched notifications carry
+    /// this object so a delayed command cannot jump to another key window.
+    var commandTarget: ProjectManager? = nil
+    /// Revalidates pane/tab ownership when a broadcast command reaches this
+    /// AppKit bridge. Multiple editor panes share one key NSWindow, so window
+    /// focus alone cannot identify the intended coordinator.
+    var canHandleCommands: (() -> Bool)? = nil
     var lineDiffs: [GitLineDiff] = []
     /// Monotonic counter bumped after every `refreshLineDiffs` completion.
     /// Forces SwiftUI to call `updateNSView` even when the `[GitLineDiff]`
@@ -299,18 +306,18 @@ struct CodeEditorView: NSViewRepresentable {
         // Observe toggle comment notification (Cmd+/)
         NotificationCenter.default.addObserver(
             context.coordinator,
-            selector: #selector(Coordinator.handleToggleComment),
+            selector: #selector(Coordinator.handleToggleComment(_:)),
             name: .toggleComment,
             object: nil
         )
 
         // Observe Find & Replace notifications (Cmd+F, Cmd+Option+F, Cmd+G, Cmd+Shift+G, Cmd+E)
         for (selector, name) in [
-            (#selector(Coordinator.handleFindInFile), Notification.Name.findInFile),
-            (#selector(Coordinator.handleFindAndReplace), Notification.Name.findAndReplace),
-            (#selector(Coordinator.handleFindNext), Notification.Name.findNext),
-            (#selector(Coordinator.handleFindPrevious), Notification.Name.findPrevious),
-            (#selector(Coordinator.handleUseSelectionForFind), Notification.Name.useSelectionForFind),
+            (#selector(Coordinator.handleFindInFile(_:)), Notification.Name.findInFile),
+            (#selector(Coordinator.handleFindAndReplace(_:)), Notification.Name.findAndReplace),
+            (#selector(Coordinator.handleFindNext(_:)), Notification.Name.findNext),
+            (#selector(Coordinator.handleFindPrevious(_:)), Notification.Name.findPrevious),
+            (#selector(Coordinator.handleUseSelectionForFind(_:)), Notification.Name.useSelectionForFind),
         ] {
             NotificationCenter.default.addObserver(
                 context.coordinator, selector: selector, name: name, object: nil
@@ -328,7 +335,7 @@ struct CodeEditorView: NSViewRepresentable {
         // Observe send to terminal notification (Cmd+Shift+Enter)
         NotificationCenter.default.addObserver(
             context.coordinator,
-            selector: #selector(Coordinator.handleSendToTerminal),
+            selector: #selector(Coordinator.handleSendToTerminal(_:)),
             name: .sendToTerminal,
             object: nil
         )

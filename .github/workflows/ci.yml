@@ -525,7 +525,7 @@ jobs:
             test-classes: >-
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
-          # Shard 2 — Welcome & Session (27 tests)
+          # Shard 2 — Welcome & Session (28 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
@@ -533,13 +533,12 @@ jobs:
               -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/SessionRestoreTests
               -only-testing:PineUITests/SidebarFolderClickTests
-          # Shard 3 — Navigation (27 tests)
+          # Shard 3 — Navigation (28 tests)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
               -only-testing:PineUITests/QuickOpenUITests
               -only-testing:PineUITests/EditorTabNavigationTests
-              -only-testing:PineUITests/ToggleCommentTests
           # Shard 4 — Editor Chrome (28 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
@@ -563,7 +562,7 @@ jobs:
               -only-testing:PineUITests/SplitPaneLifecycleTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
-          # Shard 7 — Security & Layout (27 tests)
+          # Shard 7 — Security & Layout (28 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
               -only-testing:PineUITests/GitignoreFilterTests
@@ -574,6 +573,7 @@ jobs:
               -only-testing:PineUITests/SettingsUITests
               -only-testing:PineUITests/BlameViewTests
               -only-testing:PineUITests/HCLFormatOnSaveTests
+              -only-testing:PineUITests/ToggleCommentTests
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 

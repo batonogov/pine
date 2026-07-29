@@ -69,7 +69,10 @@ struct PineAppMenuCommands: Commands {
             .keyboardShortcut("o", modifiers: [.command, .shift])
 
             Button {
-                NotificationCenter.default.post(name: .showQuickOpen, object: nil)
+                NotificationCenter.default.post(
+                    name: .showQuickOpen,
+                    object: focusedProject
+                )
             } label: {
                 Label(Strings.menuQuickOpen, systemImage: MenuIcons.quickOpen)
             }
@@ -91,7 +94,10 @@ struct PineAppMenuCommands: Commands {
             .disabled(focusedProject?.workspace.rootURL == nil)
 
             Button {
-                NotificationCenter.default.post(name: .showSymbolNavigator, object: nil)
+                NotificationCenter.default.post(
+                    name: .showSymbolNavigator,
+                    object: focusedProject
+                )
             } label: {
                 Label(Strings.menuSymbolNavigator, systemImage: MenuIcons.symbolNavigator)
             }
@@ -230,7 +236,10 @@ struct PineAppMenuCommands: Commands {
             Divider()
 
             Button {
-                NotificationCenter.default.post(name: .goToLine, object: nil)
+                NotificationCenter.default.post(
+                    name: .goToLine,
+                    object: focusedProject
+                )
             } label: {
                 Label(Strings.menuGoToLine, systemImage: MenuIcons.goToLine)
             }

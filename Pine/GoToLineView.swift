@@ -14,21 +14,26 @@ struct GoToLineView: View {
     @State private var inputText = ""
     @State private var isInvalid = false
     @State private var invalidEnteredLine: Int?
-    @FocusState private var isFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 8) {
-            TextField("42 or 42:10", text: $inputText)
-                .textFieldStyle(.roundedBorder)
-                .focused($isFieldFocused)
-                .accessibilityIdentifier(AccessibilityID.goToLineField)
-                .accessibilityLabel(String(localized: "Go to line"))
-                .accessibilityHint(rangeHint)
+            QuickOpenSearchField(
+                text: $inputText,
+                placeholder: "42 or 42:10",
+                accessibility: CommandOverlayTextFieldAccessibility(
+                    identifier: AccessibilityID.goToLineField,
+                    label: String(localized: "Go to line"),
+                    help: rangeHint
+                ),
+                onArrowUp: {},
+                onArrowDown: {},
+                onReturn: { submit() },
+                onEscape: { isPresented = false }
+            )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(isInvalid ? Color.red : Color.clear, lineWidth: 1)
                 )
-                .onSubmit { submit() }
                 .animation(PineAnimation.quick, value: isInvalid)
                 .onChange(of: inputText) { _, _ in
                     isInvalid = false
@@ -40,7 +45,6 @@ struct GoToLineView: View {
         .padding()
         .frame(width: 220)
         .accessibilityIdentifier(AccessibilityID.goToLineSheet)
-        .onAppear { isFieldFocused = true }
         .onExitCommand { isPresented = false }
         .onChange(of: isInvalid) { _, newValue in
             guard newValue else { return }

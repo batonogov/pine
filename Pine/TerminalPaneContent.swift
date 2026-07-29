@@ -36,6 +36,9 @@ struct TerminalPaneContent: View {
         .onAppear {
             terminalState.startTabs(workingDirectory: workspace.rootURL)
         }
-        .modifier(TerminalSearchObserver(terminalState: terminalState))
+        .modifier(TerminalSearchObserver(
+            terminalState: terminalState,
+            paneID: paneID
+        ))
     }
 }

@@ -371,6 +371,11 @@ struct PaneLeafView: View {
             language: tab.language,
             fileName: tab.fileName,
             fileURL: tab.url,
+            commandTarget: projectManager,
+            canHandleCommands: {
+                paneManager.activePaneID == paneID
+                    && tabManager.activeTabID == tab.id
+            },
             lineDiffs: lineDiffs,
             diffVersion: diffVersion,
             diffHunks: diffHunks,

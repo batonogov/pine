@@ -123,12 +123,59 @@ struct CommandPaletteModelTests {
 
         #expect(try #require(item(for: .save, in: items)).isEnabled == false)
         #expect(try #require(item(for: .saveAs, in: items)).isEnabled == false)
+        #expect(
+            try #require(item(for: .save, in: items)).unavailabilityReason
+                == Strings.commandPaletteRequiresActiveFile
+        )
         #expect(try #require(item(for: .quickOpen, in: items)).isEnabled)
+        #expect(
+            try #require(item(for: .quickOpen, in: items))
+                .unavailabilityReason == nil
+        )
         #expect(
             try #require(item(forTask: "file-task", in: items)).isEnabled
                 == false
         )
+        #expect(
+            try #require(item(forTask: "file-task", in: items))
+                .unavailabilityReason
+                == Strings.commandPaletteRequiresActiveFile
+        )
         #expect(try #require(item(forTask: "project-task", in: items)).isEnabled)
+    }
+
+    @Test("Every unavailable context has a localized explanation")
+    func contextualAvailabilityReasons() throws {
+        let items = CommandPaletteCatalog.makeItems(
+            tasks: [],
+            keybindings: UserKeybindingRegistry(),
+            context: .unavailable
+        )
+
+        #expect(
+            try #require(item(for: .quickOpen, in: items))
+                .unavailabilityReason
+                == Strings.commandPaletteRequiresProject
+        )
+        #expect(
+            try #require(item(for: .save, in: items)).unavailabilityReason
+                == Strings.commandPaletteRequiresActiveFile
+        )
+        #expect(
+            try #require(item(for: .showBranchSwitcher, in: items))
+                .unavailabilityReason
+                == Strings.commandPaletteRequiresGitRepository
+        )
+        #expect(
+            try #require(item(for: .findInTerminal, in: items))
+                .unavailabilityReason
+                == Strings.commandPaletteRequiresTerminal
+        )
+        #expect(
+            try #require(item(for: .sendToTerminal, in: items))
+                .unavailabilityReason
+                == Strings.commandPaletteNeedsFileAndTerminal
+        )
     }
 
     @Test("Fuzzy search matches titles, command ids, and task ids")
@@ -196,6 +243,56 @@ struct CommandPaletteModelTests {
         )
     }
 
+    @Test("Keyboard navigation skips disabled results and wraps")
+    func keyboardNavigationSkipsDisabled() {
+        let items = [
+            navigationItem(id: "first", isEnabled: true),
+            navigationItem(id: "disabled", isEnabled: false),
+            navigationItem(id: "third", isEnabled: true),
+        ]
+
+        #expect(
+            CommandPaletteNavigation.movedIndex(
+                from: 0,
+                by: 1,
+                items: items
+            ) == 2
+        )
+        #expect(
+            CommandPaletteNavigation.movedIndex(
+                from: 2,
+                by: 1,
+                items: items
+            ) == 0
+        )
+        #expect(
+            CommandPaletteNavigation.movedIndex(
+                from: 0,
+                by: -1,
+                items: items
+            ) == 2
+        )
+        #expect(CommandPaletteNavigation.preferredIndex(in: items) == 0)
+    }
+
+    @Test("All-disabled results keep an explained row discoverable")
+    func allDisabledResultsRemainDiscoverable() {
+        let items = [
+            navigationItem(id: "first", isEnabled: false),
+            navigationItem(id: "second", isEnabled: false),
+        ]
+
+        #expect(CommandPaletteNavigation.preferredIndex(in: items) == 0)
+        #expect(
+            CommandPaletteNavigation.movedIndex(
+                from: 0,
+                by: 1,
+                items: items
+            ) == 0
+        )
+        #expect(items.allSatisfy { $0.unavailabilityReason != nil })
+    }
+
     @Test("Shortcut formatter covers named keys and modifiers")
     func shortcutFormatting() throws {
         #expect(
@@ -215,6 +312,24 @@ struct CommandPaletteModelTests {
         in items: [CommandPaletteItem]
     ) -> CommandPaletteItem? {
         items.first { $0.id == .builtIn(command) }
+    }
+
+    private func navigationItem(
+        id: String,
+        isEnabled: Bool
+    ) -> CommandPaletteItem {
+        CommandPaletteItem(
+            id: .task(id),
+            title: id,
+            subtitle: "Test",
+            searchTerms: [id],
+            iconName: "command",
+            shortcut: CommandShortcutPresentation(chord: nil, state: .none),
+            isEnabled: isEnabled,
+            unavailabilityReason: isEnabled
+                ? nil
+                : Strings.commandPaletteRequiresProject
+        )
     }
 
     private func item(

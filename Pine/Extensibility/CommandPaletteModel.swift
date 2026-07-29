@@ -110,6 +110,27 @@ nonisolated struct CommandPaletteItem: Identifiable, Sendable, Equatable {
     let iconName: String
     let shortcut: CommandShortcutPresentation
     let isEnabled: Bool
+    let unavailabilityReason: String?
+
+    init(
+        id: CommandPaletteItemID,
+        title: String,
+        subtitle: String,
+        searchTerms: [String],
+        iconName: String,
+        shortcut: CommandShortcutPresentation,
+        isEnabled: Bool,
+        unavailabilityReason: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.searchTerms = searchTerms
+        self.iconName = iconName
+        self.shortcut = shortcut
+        self.isEnabled = isEnabled
+        self.unavailabilityReason = isEnabled ? nil : unavailabilityReason
+    }
 
     var isTask: Bool {
         if case .task = id {
@@ -148,6 +169,8 @@ enum CommandPaletteCatalog {
                 entryByCommand: entryByCommand,
                 commandByClaimedChord: commandByClaimedChord
             )
+            let requirement = command.availabilityRequirement
+            let isEnabled = context.satisfies(requirement)
             return CommandPaletteItem(
                 id: .builtIn(command),
                 title: command.localizedTitle,
@@ -155,18 +178,22 @@ enum CommandPaletteCatalog {
                 searchTerms: [command.rawValue],
                 iconName: command.iconName,
                 shortcut: shortcut,
-                isEnabled: context.satisfies(command.availabilityRequirement)
+                isEnabled: isEnabled,
+                unavailabilityReason: isEnabled
+                    ? nil
+                    : unavailabilityReason(for: requirement)
             )
         }
 
         let taskItems = tasks.map { task in
-            let isEnabled: Bool
+            let requirement: CommandAvailabilityRequirement
             switch task.scope {
             case .activeFile:
-                isEnabled = context.hasActiveFile
+                requirement = .activeFile
             case .project:
-                isEnabled = context.hasProject
+                requirement = .project
             }
+            let isEnabled = context.satisfies(requirement)
             return CommandPaletteItem(
                 id: .task(task.id),
                 title: task.label,
@@ -174,11 +201,33 @@ enum CommandPaletteCatalog {
                 searchTerms: [task.id, task.command],
                 iconName: MenuIcons.tasks,
                 shortcut: CommandShortcutPresentation(chord: nil, state: .none),
-                isEnabled: isEnabled
+                isEnabled: isEnabled,
+                unavailabilityReason: isEnabled
+                    ? nil
+                    : unavailabilityReason(for: requirement)
             )
         }
 
         return builtIns + taskItems
+    }
+
+    private static func unavailabilityReason(
+        for requirement: CommandAvailabilityRequirement
+    ) -> String? {
+        switch requirement {
+        case .always:
+            nil
+        case .project:
+            Strings.commandPaletteRequiresProject
+        case .activeFile:
+            Strings.commandPaletteRequiresActiveFile
+        case .activeFileAndTerminal:
+            Strings.commandPaletteNeedsFileAndTerminal
+        case .gitRepository:
+            Strings.commandPaletteRequiresGitRepository
+        case .terminal:
+            Strings.commandPaletteRequiresTerminal
+        }
     }
 
     private static func shortcutPresentation(
@@ -294,6 +343,44 @@ nonisolated enum CommandPaletteNavigation {
         let normalized = min(max(currentIndex, 0), itemCount - 1)
         let remainder = (normalized + delta) % itemCount
         return remainder >= 0 ? remainder : remainder + itemCount
+    }
+
+    /// Moves among enabled results only. If every result is disabled, preserve
+    /// a visible row so its availability explanation remains discoverable.
+    static func movedIndex(
+        from currentIndex: Int,
+        by delta: Int,
+        items: [CommandPaletteItem]
+    ) -> Int {
+        guard !items.isEmpty else { return 0 }
+        let normalized = min(max(currentIndex, 0), items.count - 1)
+        let enabledIndices = items.indices.filter { items[$0].isEnabled }
+        guard !enabledIndices.isEmpty else { return normalized }
+
+        guard let enabledPosition = enabledIndices.firstIndex(of: normalized)
+        else {
+            if delta < 0 {
+                return enabledIndices.last(where: { $0 < normalized })
+                    ?? enabledIndices.last
+                    ?? normalized
+            }
+            return enabledIndices.first(where: { $0 > normalized })
+                ?? enabledIndices.first
+                ?? normalized
+        }
+
+        let nextPosition = movedIndex(
+            from: enabledPosition,
+            by: delta,
+            itemCount: enabledIndices.count
+        )
+        return enabledIndices[nextPosition]
+    }
+
+    /// Selects the first enabled result. An all-disabled result set deliberately
+    /// keeps its first row selected so VoiceOver can announce why it is disabled.
+    static func preferredIndex(in items: [CommandPaletteItem]) -> Int {
+        items.firstIndex(where: { $0.isEnabled }) ?? 0
     }
 }
 

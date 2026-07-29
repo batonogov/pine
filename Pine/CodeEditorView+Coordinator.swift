@@ -977,7 +977,12 @@ extension CodeEditorView {
             DispatchQueue.main.asyncAfter(deadline: .now() + scrollHighlightDelay, execute: workItem)
         }
 
-        @objc func handleToggleComment() {
+        @objc func handleToggleComment(_ notification: Notification) {
+            guard shouldHandleCommand(notification) else { return }
+            handleToggleComment()
+        }
+
+        func handleToggleComment() {
             guard let sv = scrollView,
                   let gutterView = sv.documentView as? GutterTextView,
                   gutterView.window?.isKeyWindow == true else { return }
@@ -997,17 +1002,47 @@ extension CodeEditorView {
             textView.performTextFinderAction(menuItem)
         }
 
-        @objc func handleFindInFile() { performFindAction(.showFindInterface) }
-        @objc func handleFindAndReplace() { performFindAction(.showReplaceInterface) }
-        @objc func handleFindNext() { performFindAction(.nextMatch) }
-        @objc func handleFindPrevious() { performFindAction(.previousMatch) }
-        @objc func handleUseSelectionForFind() { performFindAction(.setSearchString) }
+        @objc func handleFindInFile(_ notification: Notification) {
+            guard shouldHandleCommand(notification) else { return }
+            handleFindInFile()
+        }
+
+        @objc func handleFindAndReplace(_ notification: Notification) {
+            guard shouldHandleCommand(notification) else { return }
+            handleFindAndReplace()
+        }
+
+        @objc func handleFindNext(_ notification: Notification) {
+            guard shouldHandleCommand(notification) else { return }
+            handleFindNext()
+        }
+
+        @objc func handleFindPrevious(_ notification: Notification) {
+            guard shouldHandleCommand(notification) else { return }
+            handleFindPrevious()
+        }
+
+        @objc func handleUseSelectionForFind(_ notification: Notification) {
+            guard shouldHandleCommand(notification) else { return }
+            handleUseSelectionForFind()
+        }
+
+        func handleFindInFile() { performFindAction(.showFindInterface) }
+        func handleFindAndReplace() { performFindAction(.showReplaceInterface) }
+        func handleFindNext() { performFindAction(.nextMatch) }
+        func handleFindPrevious() { performFindAction(.previousMatch) }
+        func handleUseSelectionForFind() { performFindAction(.setSearchString) }
 
         // MARK: - Send to Terminal (issue #311)
 
         /// Extracts selected text (or current line if no selection) and posts
         /// `.sendTextToTerminal` notification with the text in userInfo.
-        @objc func handleSendToTerminal() {
+        @objc func handleSendToTerminal(_ notification: Notification) {
+            guard shouldHandleCommand(notification) else { return }
+            handleSendToTerminal()
+        }
+
+        func handleSendToTerminal() {
             guard let sv = scrollView,
                   let textView = sv.documentView as? GutterTextView,
                   textView.window?.isKeyWindow == true else { return }
@@ -1260,12 +1295,28 @@ extension CodeEditorView {
         /// test runner, so inlining would silently drop CI coverage of the
         /// deferral and let the crash regress unnoticed.
         @objc func handleFoldCode(_ notification: Notification) {
-            guard let sv = scrollView,
+            guard shouldHandleCommand(notification),
+                  let sv = scrollView,
                   let textView = sv.documentView as? GutterTextView,
                   textView.window?.isKeyWindow == true,
                   let action = notification.userInfo?["action"] as? String else { return }
 
             scheduleFoldAction(action)
+        }
+
+        /// Accepts unscoped menu notifications only in the key-window path,
+        /// while project-targeted palette notifications must match this
+        /// editor's owner even if another window becomes key before delivery.
+        /// The pane/tab predicate prevents every visible editor in one project
+        /// window from handling the same broadcast.
+        func shouldHandleCommand(_ notification: Notification) -> Bool {
+            guard parent.canHandleCommands?() != false else { return false }
+            guard let target = notification.object else { return true }
+            guard let targetProject = target as? ProjectManager,
+                  let commandTarget = parent.commandTarget else {
+                return false
+            }
+            return targetProject === commandTarget
         }
 
         /// Defers `performFoldAction` to the next runloop. Extracted and

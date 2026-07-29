@@ -1290,7 +1290,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     /// Returns the ProjectManager for the currently active project window, if any.
     private func activeProjectManager() -> ProjectManager? {
-        guard let window = NSApp.keyWindow,
+        guard let window = CommandOverlayOwnerResolver.documentWindow(
+            for: NSApp.keyWindow
+        ),
               let closeDelegate = window.delegate as? CloseDelegate else { return nil }
         let canonical = closeDelegate.projectURL.resolvingSymlinksInPath()
         return registry.openProjects[canonical]

@@ -112,6 +112,14 @@ class PineUITestCase: XCTestCase {
         }
     }
 
+    /// Finds one of Pine's document-scoped command panels by accessibility
+    /// identifier. Command overlays are NSPanel-backed windows, not sheets.
+    func commandOverlay(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: identifier)
+            .firstMatch
+    }
+
     // MARK: - Editor Tab Helpers
 
     /// Finds an editor tab button by file name.

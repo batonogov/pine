@@ -24,27 +24,51 @@ struct CommandPaletteView: View {
             QuickOpenSearchField(
                 text: $searchText,
                 placeholder: String(localized: "commandPalette.placeholder"),
+                accessibility: CommandOverlayTextFieldAccessibility(
+                    identifier: AccessibilityID.commandPaletteSearchField,
+                    label: String(localized: "commandPalette.placeholder")
+                ),
                 onArrowUp: { moveSelection(by: -1) },
                 onArrowDown: { moveSelection(by: 1) },
                 onReturn: { invokeSelected() },
                 onEscape: { isPresented = false }
             )
-            .accessibilityIdentifier(AccessibilityID.commandPaletteSearchField)
             .padding(10)
 
             Divider()
             resultsList
         }
-        .frame(width: 560, height: 400)
+        .frame(
+            minWidth: 320,
+            idealWidth: 560,
+            maxWidth: 560,
+            minHeight: 240,
+            idealHeight: 400,
+            maxHeight: 400
+        )
         .onChange(of: searchText) { _, _ in
-            selectedIndex = 0
+            selectedIndex = CommandPaletteNavigation.preferredIndex(
+                in: filteredItems
+            )
         }
         .onChange(of: filteredItems.map(\.id)) { _, newIDs in
             if newIDs.isEmpty {
                 selectedIndex = 0
             } else {
-                selectedIndex = min(selectedIndex, newIDs.count - 1)
+                let boundedIndex = min(selectedIndex, newIDs.count - 1)
+                if filteredItems[boundedIndex].isEnabled {
+                    selectedIndex = boundedIndex
+                } else {
+                    selectedIndex = CommandPaletteNavigation.preferredIndex(
+                        in: filteredItems
+                    )
+                }
             }
+        }
+        .onAppear {
+            selectedIndex = CommandPaletteNavigation.preferredIndex(
+                in: filteredItems
+            )
         }
         .accessibilityIdentifier(AccessibilityID.commandPaletteOverlay)
     }
@@ -65,18 +89,47 @@ struct CommandPaletteView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
-                                row(item, isSelected: index == selectedIndex)
-                                    .id(index)
-                                    .onTapGesture {
-                                        guard item.isEnabled else { return }
-                                        selectedIndex = index
-                                        invoke(item)
-                                    }
+                                Button {
+                                    guard item.isEnabled else { return }
+                                    selectedIndex = index
+                                    invoke(item)
+                                } label: {
+                                    row(
+                                        item,
+                                        isSelected: index == selectedIndex
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .id(item.id)
+                                .accessibilityIdentifier(
+                                    AccessibilityID.commandPaletteItem(
+                                        item.id.accessibilityToken
+                                    )
+                                )
+                                .accessibilityAddTraits(
+                                    CommandOverlayRowAccessibility
+                                        .selectionTraits(
+                                            isSelected:
+                                                index == selectedIndex
+                                        )
+                                )
+                                .disabled(!item.isEnabled)
                             }
                         }
                     }
                     .onChange(of: selectedIndex) { _, newIndex in
-                        proxy.scrollTo(newIndex, anchor: .center)
+                        guard filteredItems.indices.contains(newIndex) else {
+                            return
+                        }
+                        proxy.scrollTo(
+                            filteredItems[newIndex].id,
+                            anchor: .center
+                        )
+                    }
+                    .onChange(of: filteredItems.map(\.id)) { _, newIDs in
+                        guard !newIDs.isEmpty else { return }
+                        let newIndex = min(selectedIndex, newIDs.count - 1)
+                        proxy.scrollTo(newIDs[newIndex], anchor: .center)
                     }
                 }
             }
@@ -103,6 +156,13 @@ struct CommandPaletteView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
+
+                if let reason = item.unavailabilityReason {
+                    Text(reason)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
 
             Spacer(minLength: 8)
@@ -125,7 +185,9 @@ struct CommandPaletteView: View {
         .contentShape(Rectangle())
         .opacity(item.isEnabled ? 1 : 0.48)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(AccessibilityID.commandPaletteItem(item.id.accessibilityToken))
+        .accessibilityHint(
+            Text(verbatim: item.unavailabilityReason ?? "")
+        )
     }
 
     @ViewBuilder
@@ -156,7 +218,7 @@ struct CommandPaletteView: View {
         selectedIndex = CommandPaletteNavigation.movedIndex(
             from: selectedIndex,
             by: delta,
-            itemCount: filteredItems.count
+            items: filteredItems
         )
     }
 
@@ -168,8 +230,13 @@ struct CommandPaletteView: View {
     }
 
     private func invoke(_ item: CommandPaletteItem) {
-        isPresented = false
         onInvoke(item)
+        // `onInvoke` may synchronously replace Command Palette with another
+        // shared overlay. Re-read the binding before dismissing so this stale
+        // view cannot tear down its replacement.
+        if isPresented {
+            isPresented = false
+        }
     }
 }
 

@@ -274,19 +274,11 @@ final class SplitPaneRoutingUITests: PineUITestCase {
         )
         goToLineItem.click()
 
-        // The Go to Line overlay must appear — confirming the command is
-        // reachable from the non-primary pane. The overlay is a native
-        // SwiftUI `.sheet` (see ContentView), so `app.sheets.firstMatch` is
-        // the reliable presence indicator — the same detector used by the
-        // sibling `openGoToLine()` helper in
-        // `GoToLineTabOverflowExternalChangesUITests`. (A previous version
-        // queried `goToLineField` via `descendants(matching: .any)`, but that
-        // deep identifier query inside the sheet was flaky and failed
-        // deterministically on CI; the sheet container is the proven signal.)
-        // This is an availability check, not a routing proof (see file header).
-        let sheet = app.sheets.firstMatch
+        // The NSPanel-backed command overlay must appear. This is an
+        // availability check, not a routing proof (see file header).
+        let overlay = commandOverlay("goToLineOverlay")
         XCTAssertTrue(
-            waitForExistence(sheet, timeout: 5),
+            waitForExistence(overlay, timeout: 5),
             "Go to Line overlay should be reachable from the non-primary pane"
         )
 

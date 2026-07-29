@@ -118,20 +118,31 @@ struct SymbolNavigatorView: View {
                     localized: "symbolNavigator.placeholder",
                     locale: locale
                 ),
+                accessibility: CommandOverlayTextFieldAccessibility(
+                    identifier: AccessibilityID.symbolSearchField,
+                    label: String(
+                        localized: "symbolNavigator.placeholder",
+                        locale: locale
+                    )
+                ),
                 onArrowUp: { moveSelection(by: -1) },
                 onArrowDown: { moveSelection(by: 1) },
                 onReturn: { navigateToSelected() },
                 onEscape: { isPresented = false }
-            )
-            .accessibilityIdentifier(
-                AccessibilityID.symbolSearchField
             )
             .padding(10)
 
             Divider()
             resultsList
         }
-        .frame(width: 500, height: 360)
+        .frame(
+            minWidth: 300,
+            idealWidth: 500,
+            maxWidth: 500,
+            minHeight: 220,
+            idealHeight: 360,
+            maxHeight: 360
+        )
         .onAppear {
             loadSymbols()
         }
@@ -183,16 +194,30 @@ struct SymbolNavigatorView: View {
                                 Array(filteredSymbols.enumerated()),
                                 id: \.element.id
                             ) { index, entry in
-                                symbolRow(
-                                    entry,
-                                    isSelected:
-                                        index == selectedIndex
-                                )
-                                .id(index)
-                                .onTapGesture {
+                                Button {
                                     selectedIndex = index
                                     navigateToSymbol(entry)
+                                } label: {
+                                    symbolRow(
+                                        entry,
+                                        isSelected:
+                                            index == selectedIndex
+                                    )
                                 }
+                                .buttonStyle(.plain)
+                                .id(index)
+                                .accessibilityIdentifier(
+                                    AccessibilityID.symbolItem(
+                                        entry.symbol.name
+                                    )
+                                )
+                                .accessibilityAddTraits(
+                                    CommandOverlayRowAccessibility
+                                        .selectionTraits(
+                                            isSelected:
+                                                index == selectedIndex
+                                        )
+                                )
                             }
                         }
                     }
@@ -274,9 +299,6 @@ struct SymbolNavigatorView: View {
                 : Color.clear
         )
         .contentShape(Rectangle())
-        .accessibilityIdentifier(
-            AccessibilityID.symbolItem(entry.symbol.name)
-        )
     }
 
     private func symbolSecondaryLabel(
@@ -440,7 +462,7 @@ struct SymbolNavigatorView: View {
         )
         NotificationCenter.default.post(
             name: .symbolNavigate,
-            object: nil,
+            object: projectManager,
             userInfo: ["offset": offset]
         )
         isPresented = false

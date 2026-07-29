@@ -55,20 +55,25 @@ enum UserCommandInvocationRouter {
 
         case .toggleComment, .findInFile, .findAndReplace,
              .findNext, .findPrevious, .useSelectionForFind,
-             .findInProject, .goToLine,
-             .symbolNavigator, .quickOpen, .openFolder,
+             .findInProject,
              .toggleWordWrap, .showAgentActivity, .showAgentHistory,
              .findInTerminal, .sendToTerminal,
              .newFile, .openFile, .clearRecentProjects,
              .closeTab, .closeWindow:
             notificationCenter.post(
                 name: Notification.Name(command.notificationKey),
+                object: projectManager
+            )
+
+        case .openFolder:
+            notificationCenter.post(
+                name: .openFolder,
                 object: nil
             )
 
-        case .commandPalette:
+        case .goToLine, .symbolNavigator, .quickOpen, .commandPalette:
             notificationCenter.post(
-                name: .showCommandPalette,
+                name: Notification.Name(command.notificationKey),
                 object: projectManager
             )
 
@@ -76,7 +81,7 @@ enum UserCommandInvocationRouter {
             let direction = command == .nextChange ? "next" : "previous"
             notificationCenter.post(
                 name: .navigateChange,
-                object: nil,
+                object: projectManager,
                 userInfo: ["direction": direction]
             )
 
@@ -84,14 +89,14 @@ enum UserCommandInvocationRouter {
              .acceptAllChanges, .revertAllChanges:
             notificationCenter.post(
                 name: .inlineDiffAction,
-                object: nil,
+                object: projectManager,
                 userInfo: ["action": command.inlineDiffAction]
             )
 
         case .foldCode, .unfoldCode, .foldAll, .unfoldAll:
             notificationCenter.post(
                 name: .foldCode,
-                object: nil,
+                object: projectManager,
                 userInfo: ["action": command.foldAction]
             )
 

@@ -705,8 +705,10 @@ extension ContentView {
 /// avoid the `.onReceive` reentrancy class from #1051.
 struct AgentActivityPresenter: ViewModifier {
     @Binding var isPresented: Bool
+    let projectManager: ProjectManager
     let store: AgentActivityStore
     let onSelect: (URL) -> Void
+    @Environment(\.controlActiveState) private var controlActiveState
 
     func body(content: Content) -> some View {
         content
@@ -717,7 +719,12 @@ struct AgentActivityPresenter: ViewModifier {
                     onClose: { isPresented = false }
                 )
             }
-            .onReceive(NotificationCenter.default.publisher(for: .showAgentActivity)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .showAgentActivity)) { notification in
+                guard ContentView.shouldHandleTargetedCommand(
+                    notificationObject: notification.object,
+                    currentProject: projectManager,
+                    isKeyWindow: controlActiveState == .key
+                ) else { return }
                 // Defer to break reentrancy (#1051).
                 DispatchQueue.main.async {
                     isPresented = true
@@ -739,14 +746,21 @@ struct AgentActivityPresenter: ViewModifier {
 /// avoid the `.onReceive` reentrancy class from #1051.
 struct AgentHistoryPresenter: ViewModifier {
     @Binding var isPresented: Bool
+    let projectManager: ProjectManager
     let store: AgentHistoryStore
+    @Environment(\.controlActiveState) private var controlActiveState
 
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $isPresented) {
                 AgentHistoryView(store: store, isPresented: $isPresented)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .showAgentHistory)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .showAgentHistory)) { notification in
+                guard ContentView.shouldHandleTargetedCommand(
+                    notificationObject: notification.object,
+                    currentProject: projectManager,
+                    isKeyWindow: controlActiveState == .key
+                ) else { return }
                 // Defer to break reentrancy (#1051).
                 DispatchQueue.main.async {
                     isPresented = true

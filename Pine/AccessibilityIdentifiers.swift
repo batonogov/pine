@@ -98,7 +98,10 @@ nonisolated enum AccessibilityID {
     static let markdownPreviewView = "markdownPreviewView"
 
     // MARK: - Go to Line
+    /// Existing view-level identifier retained for compatibility. The
+    /// NSPanel container uses `goToLineOverlay`.
     static let goToLineSheet = "goToLineSheet"
+    static let goToLineOverlay = "goToLineOverlay"
     static let goToLineField = "goToLineField"
     static let goToLineInvalidMessage = "goToLineInvalidMessage"
 
