@@ -244,7 +244,7 @@ struct WelcomeView: View {
             guard let projectManager = openProject(at: projectDir),
                   let owner = await projectManager.awaitDialogOwnerWindow(),
                   projectManager.dialogOwnerWindow === owner,
-                  registry.openProjects[projectDir] === projectManager else {
+                  registry.openProjects[registry.canonicalProjectURL(projectDir)] === projectManager else {
                 return
             }
             for file in classified.files {

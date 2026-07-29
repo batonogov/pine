@@ -133,7 +133,13 @@ private struct ProjectWindowView: View {
             // Hidden windows from closed projects still get re-rendered by SwiftUI;
             // calling projectManager(for:) would silently re-add the closed project
             // to openProjects, breaking the "show Welcome when last project closes" logic.
-            if let pm = registry.openProjects[projectURL.resolvingSymlinksInPath()] {
+            // Must canonicalize with the same method used to store the key —
+            // canonicalProjectURL appends a trailing slash (isDirectory: true) and
+            // resolves prefix symlinks (/tmp → /private/tmp), which
+            // resolvingSymlinksInPath() alone does not, causing a key mismatch.
+            if let pm = registry.openProjects[
+                registry.canonicalProjectURL(projectURL)
+            ] {
                 ContentView()
                     .id(ObjectIdentifier(pm))
                     .environment(pm)
@@ -258,7 +264,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                 if closeDelegate.didCompleteWindowLifecycle,
                    registry.isWindowOpen(projectURL),
                    registry.openProjects[
-                       projectURL.resolvingSymlinksInPath()
+                       registry.canonicalProjectURL(projectURL)
                    ] === projectManager {
                     closeDelegate.beginNewWindowLifecycle(on: window)
                 }
@@ -286,7 +292,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                     if existing.didCompleteWindowLifecycle,
                        registry.isWindowOpen(projectURL),
                        registry.openProjects[
-                           projectURL.resolvingSymlinksInPath()
+                           registry.canonicalProjectURL(projectURL)
                        ] === projectManager {
                         existing.beginNewWindowLifecycle(on: window)
                     } else if !existing.didCompleteWindowLifecycle {
@@ -862,7 +868,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         guard !isTerminating else { return }
         // Save session before closing so it can be restored
         // when the user reopens this project from Welcome or Open Recent.
-        let canonical = projectURL.resolvingSymlinksInPath()
+        let canonical = registry.canonicalProjectURL(projectURL)
         registry.openProjects[canonical]?.saveSession()
         registry.openProjects[canonical]?.cleanupEditorContext()
         registry.closeProjectWindow(projectURL)
@@ -1360,7 +1366,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     guard let self, let projectManager else { return }
                     guard let owner = await projectManager.awaitDialogOwnerWindow(),
                           projectManager.dialogOwnerWindow === owner,
-                          self.registry.openProjects[projectDir] === projectManager else {
+                          self.registry.openProjects[
+                              self.registry.canonicalProjectURL(projectDir)
+                          ] === projectManager else {
                         return
                     }
                     for file in classified.files {
