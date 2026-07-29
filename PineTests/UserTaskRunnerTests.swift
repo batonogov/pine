@@ -287,6 +287,55 @@ nonisolated struct UserTaskRunnerTests {
         #expect(executions.wait(timeout: .now() + 1) == .success)
     }
 
+    @Test("Runner schedules execution through the injected owner")
+    func runnerUsesInjectedExecutionScheduler() async {
+        let scheduler = HoldingUserTaskExecutionScheduler()
+        defer { scheduler.releaseAll() }
+        let runner = UserTaskRunner(
+            timeout: 2,
+            executionScheduler: scheduler
+        )
+        let probe = UserTaskRunnerProbe()
+
+        let cancellation = runner.run(
+            task: UserTask(
+                id: "held-owner",
+                label: "Held Owner",
+                command: "printf 'must-not-run'"
+            ),
+            fileURL: nil,
+            projectRootURL: FileManager.default.temporaryDirectory,
+            fileContent: nil,
+            progress: UserTaskProgress(
+                onStart: {
+                    probe.recordStart(
+                        callbackWasOnMainThread: Thread.isMainThread
+                    )
+                },
+                onFinish: { outcome, cancelled in
+                    probe.recordFinish(
+                        outcome: outcome,
+                        cancelled: cancelled,
+                        callbackWasOnMainThread: Thread.isMainThread
+                    )
+                }
+            )
+        )
+
+        await scheduler.waitUntilScheduled()
+        #expect(scheduler.scheduledOperationCount == 1)
+        #expect(!probe.didStart)
+        #expect(cancellation.cancel())
+        #expect(scheduler.releaseAll() == 1)
+
+        let completion = await probe.waitForCompletion()
+        #expect(completion.cancelled)
+        #expect(completion.outcome.exitCode == -1)
+        #expect(completion.outcome.stdout.isEmpty)
+        #expect(!probe.didStart)
+        #expect(probe.callbacksWereOnMainThread)
+    }
+
     @Test("Task start waits for stdout, stderr, and stdin workers")
     func taskStartWaitsForEveryIOWorker() async {
         let scheduler = HoldingUserTaskIOWorkerScheduler()
@@ -1253,6 +1302,53 @@ nonisolated private final class CancellationRaceResult: @unchecked Sendable {
         lock.withLock {
             finishStorage = cancelled
         }
+    }
+}
+
+nonisolated private final class HoldingUserTaskExecutionScheduler:
+    UserTaskExecutionScheduling,
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private let workerScheduler = UserTaskThreadExecutionScheduler()
+    private var operations: [@Sendable () -> Void] = []
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    var scheduledOperationCount: Int {
+        lock.withLock { operations.count }
+    }
+
+    func schedule(_ operation: @escaping @Sendable () -> Void) {
+        let waiters = lock.withLock {
+            operations.append(operation)
+            let waiters = self.waiters
+            self.waiters.removeAll()
+            return waiters
+        }
+        waiters.forEach { $0.resume() }
+    }
+
+    func waitUntilScheduled() async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = lock.withLock {
+                guard operations.isEmpty else { return true }
+                waiters.append(continuation)
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
+        }
+    }
+
+    @discardableResult
+    func releaseAll() -> Int {
+        let released = lock.withLock {
+            let operations = self.operations
+            self.operations.removeAll()
+            return operations
+        }
+        released.forEach { workerScheduler.schedule($0) }
+        return released.count
     }
 }
 

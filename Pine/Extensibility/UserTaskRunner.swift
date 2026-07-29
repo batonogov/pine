@@ -185,13 +185,12 @@ nonisolated struct UserTaskIOExecutionPolicy: Sendable {
     let shutdownDeadline: TimeInterval
 }
 
-/// Runs `UserTask`s on a background queue.
+/// Runs `UserTask`s off the main thread.
 ///
-/// Threading: `run(...)` dispatches subprocess execution to
-/// `DispatchQueue.global` and invokes progress callbacks on the main thread.
-/// The caller (main actor) is never blocked. This mirrors
-/// `ExternalFileFormatter.format()`'s `DispatchGroup.wait()` pattern but is
-/// fully async — tasks are user-facing and may take longer than a formatter.
+/// Threading: `run(...)` schedules each complete subprocess execution on a
+/// dedicated owner thread and invokes progress callbacks on the main thread.
+/// The caller (main actor) is never blocked. Dedicated ownership prevents a
+/// task waiting for process exit from starving another task's startup.
 nonisolated final class UserTaskRunner: @unchecked Sendable {
     static let shared = UserTaskRunner()
     private static let deferredCleanupQueue = DispatchQueue(
