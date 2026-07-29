@@ -1377,9 +1377,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             }
             pm.recoveryManager?.stopPeriodicSnapshots()
         }
-        // `applicationShouldTerminate` already spent the one shared task
-        // shutdown budget. Do not multiply quit latency in this final hook.
-        _ = registry.destroyAllProjects(userTaskDeadline: .now())
+        // `applicationShouldTerminate` already completed task shutdown before
+        // replying to AppKit. Fail closed if lifecycle wiring ever regresses:
+        // project teardown must not discard live cancellation handles.
+        if !registry.destroyAllProjects() {
+            Logger.task.critical(
+                "Application termination reached teardown with live user tasks"
+            )
+        }
 
         // Stop the global quick-terminal session so its PTY does not outlive
         // Pine (#1113 review). The session is keep-alive across toggles but
@@ -1426,7 +1431,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     func confirmApplicationTermination(
         presentAlert: TerminationAlertPresenter? = nil,
         saveAll: TerminationSaveAll? = nil,
-        applicationContext: DialogPresentationContext? = nil
+        applicationContext: DialogPresentationContext? = nil,
+        userTaskShutdownDeadline: DispatchTime? = nil
     ) async -> Bool {
         let projects = registry.openProjects
             .sorted { $0.key.path.localizedStandardCompare($1.key.path) == .orderedAscending }
@@ -1539,10 +1545,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 activeTerminalProcesses
         }
 
-        // Other project windows stay interactive while each sheet is open.
-        // Revalidate every destructive authorization immediately before
-        // committing Quit so no new buffer edit or foreground process is
-        // silently covered by an earlier answer.
+        // Window closure keeps project tasks alive by policy; application
+        // termination does not. Use one shared deadline across every project
+        // so N concurrent tasks cannot multiply the quit delay. Process waits
+        // happen off-main while AppKit remains in its `.terminateLater`
+        // handshake. A timeout cancels Quit before any authorized editor
+        // discard is committed and retains every cleanup handle.
+        let taskShutdownDeadline =
+            userTaskShutdownDeadline ?? DispatchTime.now() + 3
+        guard await registry.shutdownUserTasks(
+            until: taskShutdownDeadline
+        ) else {
+            Logger.task.error(
+                "User-task cleanup exceeded Pine's quit deadline; cancelling Quit"
+            )
+            return false
+        }
+
+        // Other project windows remain interactive while sheets and off-main
+        // process waits are in flight. Revalidate every destructive
+        // authorization after the final suspension point, immediately before
+        // committing Quit, so later edits/processes are never covered by an
+        // earlier answer.
         for projectManager in registry.openProjects.values {
             let identifier = ObjectIdentifier(projectManager)
             let currentDirtyTabs = projectManager.allDirtyTabs
@@ -1569,7 +1593,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
 
         // Two-phase destructive commit: no project is mutated until every
-        // project and terminal authorization above has passed.
+        // project/terminal authorization and task cleanup above has passed.
         for projectManager in registry.openProjects.values {
             let identifier = ObjectIdentifier(projectManager)
             if let authorization = discardAuthorizations[identifier],
@@ -1579,27 +1603,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                ) {
                 return false
             }
-        }
-
-        // Window closure keeps project tasks alive by policy; application
-        // termination does not. Use one shared deadline across every project
-        // so N concurrent tasks cannot multiply the quit delay. This happens
-        // only after every user authorization and discard commit above.
-        let taskShutdownDeadline = DispatchTime.now() + 3
-        var userTasksStopped = true
-        for projectManager in registry.openProjects.values {
-            projectManager.requestUserTaskShutdown()
-        }
-        for projectManager in registry.openProjects.values
-        where !projectManager.shutdownUserTasks(
-            until: taskShutdownDeadline
-        ) {
-            userTasksStopped = false
-        }
-        if !userTasksStopped {
-            Logger.task.error(
-                "One or more user tasks exceeded Pine's quit cleanup deadline"
-            )
         }
 
         return true

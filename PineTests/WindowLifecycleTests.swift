@@ -306,6 +306,108 @@ struct WindowLifecycleTests {
         await secondProject.workspace.waitForLoadingComplete()
     }
 
+    @Test func quitTaskTimeoutRetainsProjectAndCleanupOwnership() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let run = project.taskRunStore.start(makeTaskRun(id: "timeout"))
+        let probe = TerminationTaskProbe(waitResult: false)
+        project.taskRunStore.registerCancellation(
+            probe.makeCancellation(),
+            forRunID: run.id
+        )
+        let delegate = AppDelegate()
+        delegate.registry = registry
+
+        let result = await delegate.confirmApplicationTermination(
+            userTaskShutdownDeadline: .now()
+        )
+
+        #expect(!result)
+        #expect(probe.cancellationCount == 1)
+        #expect(probe.waitCount == 1)
+        #expect(project.hasOutstandingUserTaskExecution)
+        #expect(registry.isProjectOpen(dir))
+        #expect(!registry.destroyAllProjects())
+        #expect(registry.isProjectOpen(dir))
+
+        project.taskRunStore.finishRun(
+            id: run.id,
+            outcome: makeTaskOutcome(id: "timeout"),
+            cancelled: true
+        )
+        #expect(registry.destroyAllProjects())
+    }
+
+    @Test func quitWaitsForTaskCleanupBeforeAllowingTeardown() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let run = project.taskRunStore.start(makeTaskRun(id: "success"))
+        let probe = TerminationTaskProbe(waitResult: true)
+        project.taskRunStore.registerCancellation(
+            probe.makeCancellation(),
+            forRunID: run.id
+        )
+        let delegate = AppDelegate()
+        delegate.registry = registry
+
+        let result = await delegate.confirmApplicationTermination(
+            userTaskShutdownDeadline: .now() + 1
+        )
+
+        #expect(result)
+        #expect(probe.cancellationCount == 1)
+        #expect(probe.waitCount == 1)
+        #expect(!project.hasOutstandingUserTaskExecution)
+        #expect(project.taskRunStore.runs.isEmpty)
+        #expect(registry.destroyAllProjects())
+    }
+
+    @Test func quitRevalidatesEditsMadeDuringTaskCleanup() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        let run = project.taskRunStore.start(makeTaskRun(id: "delayed"))
+        let gate = TerminationWaitGate()
+        project.taskRunStore.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    gate.waitForRelease(until: deadline)
+                }
+            ),
+            forRunID: run.id
+        )
+        let delegate = AppDelegate()
+        delegate.registry = registry
+
+        let decision = Task { @MainActor in
+            await delegate.confirmApplicationTermination(
+                userTaskShutdownDeadline: .now() + 2
+            )
+        }
+        defer { gate.release() }
+        for _ in 0..<200 where !gate.didStartWaiting {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(gate.didStartWaiting)
+        project.primaryTabManager.updateContent("// edited during cleanup")
+        gate.release()
+
+        let result = await decision.value
+        #expect(!result)
+        #expect(project.hasUnsavedChanges)
+        #expect(project.primaryTabManager.activeTab?.content ==
+                "// edited during cleanup")
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func terminationHandshakeDefersAndRepliesExactlyOnce() async {
         let delegate = AppDelegate()
         var replies: [Bool] = []
@@ -522,5 +624,81 @@ struct WindowLifecycleTests {
 
         #expect(!didOpen)
         #expect(welcome.isVisible)
+    }
+
+    private func makeTaskRun(id: String) -> UserTaskRun {
+        UserTaskRun(
+            taskID: id,
+            taskLabel: id,
+            command: "printf done",
+            replacesFileContent: false
+        )
+    }
+
+    private func makeTaskOutcome(id: String) -> UserTaskOutcome {
+        UserTaskOutcome(
+            taskID: id,
+            stdout: "",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false
+        )
+    }
+}
+
+nonisolated private final class TerminationTaskProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let waitResult: Bool
+    private var cancellations = 0
+    private var waits = 0
+
+    init(waitResult: Bool) {
+        self.waitResult = waitResult
+    }
+
+    var cancellationCount: Int {
+        lock.withLock { cancellations }
+    }
+
+    var waitCount: Int {
+        lock.withLock { waits }
+    }
+
+    func makeCancellation() -> UserTaskCancellation {
+        UserTaskCancellation(
+            terminate: { [self] in
+                lock.withLock {
+                    cancellations += 1
+                }
+                return true
+            },
+            waitForCompletion: { [self] _ in
+                lock.withLock {
+                    waits += 1
+                }
+                return waitResult
+            }
+        )
+    }
+}
+
+nonisolated private final class TerminationWaitGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+    private var startedWaiting = false
+
+    var didStartWaiting: Bool {
+        lock.withLock { startedWaiting }
+    }
+
+    func waitForRelease(until deadline: DispatchTime) -> Bool {
+        lock.withLock {
+            startedWaiting = true
+        }
+        return releaseSemaphore.wait(timeout: deadline) == .success
+    }
+
+    func release() {
+        releaseSemaphore.signal()
     }
 }

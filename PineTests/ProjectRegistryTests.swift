@@ -122,6 +122,116 @@ struct ProjectRegistryTests {
         #expect(pm1 === pm2)
     }
 
+    @Test func taskHistoryIsProjectIsolatedAcrossCloseAndReopen() throws {
+        let firstDirectory = try makeTempDirectory()
+        let secondDirectory = try makeTempDirectory()
+        defer {
+            cleanup(firstDirectory)
+            cleanup(secondDirectory)
+        }
+
+        let registry = ProjectRegistry()
+        let first = try #require(
+            registry.projectManager(for: firstDirectory)
+        )
+        let second = try #require(
+            registry.projectManager(for: secondDirectory)
+        )
+        let firstRun = first.taskRunStore.start(makeTaskRun(id: "first"))
+        let secondRun = second.taskRunStore.start(makeTaskRun(id: "second"))
+
+        first.taskRunStore.finishRun(
+            id: firstRun.id,
+            outcome: makeTaskOutcome(id: "first"),
+            cancelled: false
+        )
+        #expect(firstRun.state == .succeeded)
+        #expect(secondRun.state == .pending)
+        #expect(first.taskRunStore.runs.map(\.taskID) == ["first"])
+        #expect(second.taskRunStore.runs.map(\.taskID) == ["second"])
+
+        registry.closeProjectWindow(firstDirectory)
+        #expect(!registry.isWindowOpen(firstDirectory))
+        #expect(first.taskRunStore.run(forID: firstRun.id) === firstRun)
+
+        let reopened = try #require(
+            registry.projectManager(for: firstDirectory)
+        )
+        #expect(reopened === first)
+        #expect(reopened.taskRunStore.run(forID: firstRun.id) === firstRun)
+        #expect(second.taskRunStore.run(forID: secondRun.id) === secondRun)
+    }
+
+    @Test func deletedBackgroundProjectCompletesTaskCleanup() async throws {
+        let tempDir = try makeTempDirectory()
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: tempDir))
+        let run = project.taskRunStore.start(makeTaskRun(id: "deleted"))
+        let probe = ProjectTaskCancellationProbe()
+        project.taskRunStore.registerCancellation(
+            UserTaskCancellation(
+                terminate: {
+                    probe.recordCancellation()
+                    return true
+                },
+                waitForCompletion: { _ in
+                    probe.recordWait()
+                    return true
+                }
+            ),
+            forRunID: run.id
+        )
+
+        registry.closeProjectWindow(tempDir)
+        cleanup(tempDir)
+        #expect(registry.projectManager(for: tempDir) == nil)
+        #expect(registry.detachedUserTaskCleanupCount == 1)
+
+        for _ in 0..<200 where project.hasOutstandingUserTaskExecution {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(probe.cancellationCount == 1)
+        #expect(probe.waitCount == 1)
+        #expect(!project.hasOutstandingUserTaskExecution)
+        #expect(project.taskRunStore.runs.isEmpty)
+        #expect(!registry.isProjectOpen(tempDir))
+        #expect(registry.detachedUserTaskCleanupCount == 0)
+    }
+
+    @Test func deletedProjectTimeoutRetainsCleanupOwnerForQuit() async throws {
+        let tempDir = try makeTempDirectory()
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: tempDir))
+        let run = project.taskRunStore.start(makeTaskRun(id: "slow-delete"))
+        let probe = ProjectTaskCancellationProbe(waitResult: false)
+        project.taskRunStore.registerCancellation(
+            probe.makeCancellation(),
+            forRunID: run.id
+        )
+
+        registry.closeProjectWindow(tempDir)
+        cleanup(tempDir)
+        #expect(registry.projectManager(for: tempDir) == nil)
+        for _ in 0..<200 where probe.waitCount == 0 {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+
+        #expect(probe.cancellationCount == 1)
+        #expect(probe.waitCount == 1)
+        #expect(project.hasOutstandingUserTaskExecution)
+        #expect(registry.detachedUserTaskCleanupCount == 1)
+        let didShutdown = await registry.shutdownUserTasks(until: .now())
+        #expect(!didShutdown)
+        #expect(!registry.destroyAllProjects())
+
+        project.taskRunStore.finishRun(
+            id: run.id,
+            outcome: makeTaskOutcome(id: "slow-delete"),
+            cancelled: true
+        )
+        #expect(registry.destroyAllProjects())
+    }
+
     // MARK: - Recent projects
 
     @Test func recentProjectsAddedOnOpen() throws {
@@ -255,5 +365,69 @@ struct ProjectRegistryTests {
         registry.closeProject(tempDir)
         #expect(registry.isProjectOpen(tempDir))
         #expect(!registry.isWindowOpen(tempDir))
+    }
+
+    private func makeTaskRun(id: String) -> UserTaskRun {
+        UserTaskRun(
+            taskID: id,
+            taskLabel: id,
+            command: "printf done",
+            replacesFileContent: false
+        )
+    }
+
+    private func makeTaskOutcome(id: String) -> UserTaskOutcome {
+        UserTaskOutcome(
+            taskID: id,
+            stdout: "done",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false
+        )
+    }
+}
+
+nonisolated private final class ProjectTaskCancellationProbe:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private let waitResult: Bool
+    private var cancellations = 0
+    private var waits = 0
+
+    init(waitResult: Bool = true) {
+        self.waitResult = waitResult
+    }
+
+    var cancellationCount: Int {
+        lock.withLock { cancellations }
+    }
+
+    var waitCount: Int {
+        lock.withLock { waits }
+    }
+
+    func recordCancellation() {
+        lock.withLock {
+            cancellations += 1
+        }
+    }
+
+    func recordWait() {
+        lock.withLock {
+            waits += 1
+        }
+    }
+
+    func makeCancellation() -> UserTaskCancellation {
+        UserTaskCancellation(
+            terminate: { [self] in
+                recordCancellation()
+                return true
+            },
+            waitForCompletion: { [self] _ in
+                recordWait()
+                return waitResult
+            }
+        )
     }
 }

@@ -324,19 +324,40 @@ enum UserTaskInvocationController {
             alert.addButton(withTitle: Strings.userTaskOpenOutput)
             alert.addButton(withTitle: Strings.dialogOK)
             let response = await alert.runSheet(on: context)
-            guard let owner = context.nsWindow,
-                  owner.isVisible,
-                  !owner.isMiniaturized else {
-                return
-            }
-            switch response {
-            case .alertFirstButtonReturn:
-                UserTaskOutputClipboard.copy(run.stdout)
-            case .alertSecondButtonReturn:
-                projectManager.taskRunStore.isOutputVisible = true
-            default:
-                break
-            }
+            applyReplacementConflictResponse(
+                response,
+                run: run,
+                projectManager: projectManager,
+                context: context
+            )
+        }
+    }
+
+    /// Applies a recovery choice from the replacement-conflict sheet.
+    ///
+    /// Kept as an internal seam so the safe Copy/Open actions can be hosted
+    /// against a real owner window without automating an `NSAlert`.
+    static func applyReplacementConflictResponse(
+        _ response: NSApplication.ModalResponse,
+        run: UserTaskRun,
+        projectManager: ProjectManager,
+        context: DialogPresentationContext,
+        copyOutput: (String) -> Void = {
+            UserTaskOutputClipboard.copy($0)
+        }
+    ) {
+        guard let owner = context.nsWindow,
+              owner.isVisible,
+              !owner.isMiniaturized else {
+            return
+        }
+        switch response {
+        case .alertFirstButtonReturn:
+            copyOutput(run.stdout)
+        case .alertSecondButtonReturn:
+            projectManager.taskRunStore.isOutputVisible = true
+        default:
+            break
         }
     }
 

@@ -960,7 +960,12 @@ final class ProjectManager {
     /// Waits for project-owned user tasks only until the shared absolute
     /// deadline, requesting cancellation first when needed.
     @discardableResult
-    func shutdownUserTasks(until deadline: DispatchTime) -> Bool {
-        taskRunStore.shutdownAll(until: deadline)
+    func shutdownUserTasks(until deadline: DispatchTime) async -> Bool {
+        await taskRunStore.shutdownAll(until: deadline)
+    }
+
+    /// `true` while destroying this project would drop task cleanup ownership.
+    var hasOutstandingUserTaskExecution: Bool {
+        taskRunStore.hasOutstandingExecutionOwnership
     }
 }

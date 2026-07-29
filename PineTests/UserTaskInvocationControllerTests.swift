@@ -310,6 +310,60 @@ struct UserTaskInvocationControllerTests {
         }
     }
 
+    @Test("Replacement conflict Copy and Open preserve the edited buffer")
+    @MainActor
+    func replacementConflictRecoveryActionsPreserveEdits() {
+        let project = ProjectManager()
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/pine-conflict.swift"),
+            content: "human edits",
+            savedContent: "before"
+        )
+        project.primaryTabManager.tabs = [tab]
+        project.primaryTabManager.activeTabID = tab.id
+        let run = UserTaskRun(
+            taskID: "format",
+            taskLabel: "Format",
+            command: "formatter",
+            replacesFileContent: true
+        )
+        run.applyOutcome(
+            outcome(exitCode: 0, stdout: "formatted output"),
+            cancelled: false
+        )
+        let window = NSWindow()
+        window.orderFront(nil)
+        let context = DialogPresenter.register(
+            window: window,
+            projectManager: project
+        )
+        defer {
+            DialogPresenter.ownerDidClose(window)
+            window.orderOut(nil)
+        }
+        var copiedOutput: String?
+
+        UserTaskInvocationController.applyReplacementConflictResponse(
+            .alertFirstButtonReturn,
+            run: run,
+            projectManager: project,
+            context: context,
+            copyOutput: { copiedOutput = $0 }
+        )
+        #expect(copiedOutput == "formatted output")
+        #expect(project.primaryTabManager.activeTab?.content == "human edits")
+
+        project.taskRunStore.isOutputVisible = false
+        UserTaskInvocationController.applyReplacementConflictResponse(
+            .alertSecondButtonReturn,
+            run: run,
+            projectManager: project,
+            context: context
+        )
+        #expect(project.taskRunStore.isOutputVisible)
+        #expect(project.primaryTabManager.activeTab?.content == "human edits")
+    }
+
     private func capture(
         id: UUID,
         url: URL = URL(fileURLWithPath: "/tmp/source.swift"),

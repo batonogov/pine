@@ -17,6 +17,13 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// Projects whose window was closed but whose ProjectManager (and terminal processes)
     /// are kept alive. Reopening the same project returns the existing PM.
     private(set) var backgroundProjects: Set<URL> = []
+    /// Project managers detached after their directory disappeared. They stay
+    /// retained until user-task process cleanup completes, so a later Quit
+    /// can still wait for and reap those executions.
+    @ObservationIgnored
+    private var detachedTaskCleanupProjects: [
+        ObjectIdentifier: ProjectManager
+    ] = [:]
     /// Recently opened project paths (most recent first), persisted to UserDefaults.
     var recentProjects: [URL] = []
 
@@ -52,8 +59,21 @@ final class ProjectRegistry: LSPSettingsObserver {
                 guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDir),
                       isDir.boolValue else {
                     // Directory was deleted while in background — clean up
-                    _ = existing.shutdownUserTasks(until: .now() + 2)
+                    existing.requestUserTaskShutdown()
                     existing.terminal.terminateAll()
+                    existing.shutdownLanguageServers()
+                    let ownerID = ObjectIdentifier(existing)
+                    detachedTaskCleanupProjects[ownerID] = existing
+                    Task { @MainActor [weak self] in
+                        let didStop = await existing.shutdownUserTasks(
+                            until: .now() + 2
+                        )
+                        if didStop {
+                            self?.detachedTaskCleanupProjects.removeValue(
+                                forKey: ownerID
+                            )
+                        }
+                    }
                     openProjects.removeValue(forKey: canonical)
                     backgroundProjects.remove(canonical)
                     recentProjects.removeAll { $0 == canonical }
@@ -113,27 +133,65 @@ final class ProjectRegistry: LSPSettingsObserver {
         closeProjectWindow(url)
     }
 
-    /// Fully destroys all project managers. Called during app termination.
+    /// Cancels and waits for all project-owned user tasks against one shared
+    /// absolute deadline. Blocking process waits happen off the main actor.
     @discardableResult
-    func destroyAllProjects(
-        userTaskDeadline: DispatchTime = .now() + 3
-    ) -> Bool {
-        lspSettingsChangeTask?.cancel()
-        lspSettingsChangeTask = nil
-        var tasksStopped = true
-        for projectManager in openProjects.values {
+    func shutdownUserTasks(until deadline: DispatchTime) async -> Bool {
+        // Snapshot before the first suspension point. Main-actor reentrancy may
+        // otherwise mutate the registry while an iterator is held across an
+        // `await`.
+        let projectManagers = userTaskOwners
+        for projectManager in projectManagers {
             projectManager.requestUserTaskShutdown()
         }
-        for (_, pm) in openProjects {
-            if !pm.shutdownUserTasks(until: userTaskDeadline) {
-                tasksStopped = false
+        for projectManager in projectManagers {
+            _ = await projectManager.shutdownUserTasks(
+                until: deadline
+            )
+        }
+
+        detachedTaskCleanupProjects = detachedTaskCleanupProjects.filter {
+            $0.value.hasOutstandingUserTaskExecution
+        }
+
+        // A project or task may have appeared while process waits ran off the
+        // main actor. Treat that as an incomplete shutdown so Quit fails
+        // closed instead of dropping its execution ownership.
+        return !userTaskOwners.contains(where: {
+            $0.hasOutstandingUserTaskExecution
+        })
+    }
+
+    /// Fully destroys all project managers after task cleanup has completed.
+    ///
+    /// Fails closed instead of discarding cancellation handles if a caller
+    /// attempts teardown while any user-task execution is still owned.
+    @discardableResult
+    func destroyAllProjects() -> Bool {
+        guard !userTaskOwners.contains(where: {
+            $0.hasOutstandingUserTaskExecution
+        }) else {
+            for projectManager in userTaskOwners {
+                projectManager.requestUserTaskShutdown()
             }
+            return false
+        }
+
+        lspSettingsChangeTask?.cancel()
+        lspSettingsChangeTask = nil
+        for (_, pm) in openProjects {
             pm.terminal.terminateAll()
             pm.shutdownLanguageServers()
         }
         openProjects.removeAll()
         backgroundProjects.removeAll()
-        return tasksStopped
+        detachedTaskCleanupProjects.removeAll()
+        return true
+    }
+
+    /// Internal lifecycle observability used by unit tests.
+    var detachedUserTaskCleanupCount: Int {
+        detachedTaskCleanupProjects.count
     }
 
     /// Returns true if the project has an open (non-background) window.
@@ -201,5 +259,14 @@ final class ProjectRegistry: LSPSettingsObserver {
     private func saveRecentProjects() {
         let paths = recentProjects.map(\.path)
         UserDefaults.standard.set(paths, forKey: Self.recentProjectsKey)
+    }
+
+    private var userTaskOwners: [ProjectManager] {
+        var owners: [ObjectIdentifier: ProjectManager] =
+            detachedTaskCleanupProjects
+        for projectManager in openProjects.values {
+            owners[ObjectIdentifier(projectManager)] = projectManager
+        }
+        return Array(owners.values)
     }
 }

@@ -206,7 +206,8 @@ final class UserTaskRunStore {
     /// shutdown calls this across all stores before it waits on any one store,
     /// ensuring the first TERM reaches every project promptly.
     func requestShutdown() {
-        for run in runs where run.state.isActive {
+        for run in runs
+        where run.state.isActive && run.state != .cancelling {
             if let handle = cancellationHandles[run.id] {
                 if handle.cancel() {
                     run.markCancelling()
@@ -218,28 +219,52 @@ final class UserTaskRunStore {
     }
 
     /// Cancels and waits for every active run using one shared absolute
-    /// deadline. Runner completion is published before its main-thread finish
-    /// callback, so this bounded wait cannot deadlock the main actor.
+    /// deadline.
+    ///
+    /// Cancellation ownership is snapshotted on the main actor, but the
+    /// blocking process waits run on a background queue. This keeps project
+    /// reopening and AppKit's asynchronous termination handshake responsive
+    /// while the runner reaps direct children and finishes bounded cleanup.
     @discardableResult
-    func shutdownAll(until deadline: DispatchTime) -> Bool {
+    func shutdownAll(until deadline: DispatchTime) async -> Bool {
         requestShutdown()
-        let activeIDs = Array(runs.lazy
+        let activeIDs = Set(runs.lazy
             .filter { $0.state.isActive }
             .map { $0.id })
         var handles: [UserTaskCancellation] = []
-        var allCompleted = true
+        var ownsEveryActiveRun = true
 
         for id in activeIDs {
             if let handle = cancellationHandles[id] {
                 handles.append(handle)
             } else {
                 pendingCancellationRunIDs.insert(id)
-                allCompleted = false
+                ownsEveryActiveRun = false
             }
         }
-        for handle in handles where !handle.wait(until: deadline) {
-            allCompleted = false
+        let handlesCompleted = await Self.waitForCompletion(
+            of: handles,
+            until: deadline
+        )
+        let snapshotStillOwned = runs.contains {
+            activeIDs.contains($0.id) && $0.state.isActive
+        } || cancellationHandles.keys.contains {
+            activeIDs.contains($0)
+        } || pendingCancellationRunIDs.contains {
+            activeIDs.contains($0)
         }
+        let hasNewExecutionOwnership = runs.contains {
+            !activeIDs.contains($0.id) && $0.state.isActive
+        } || cancellationHandles.keys.contains {
+            !activeIDs.contains($0)
+        } || pendingCancellationRunIDs.contains {
+            !activeIDs.contains($0)
+        }
+        let capturedExecutionsCompleted =
+            (ownsEveryActiveRun && handlesCompleted)
+            || !snapshotStillOwned
+        let allCompleted =
+            capturedExecutionsCompleted && !hasNewExecutionOwnership
 
         if allCompleted {
             runs.removeAll()
@@ -249,7 +274,31 @@ final class UserTaskRunStore {
         return allCompleted
     }
 
+    /// Whether teardown can release this store without dropping ownership of
+    /// an active or not-yet-published task execution.
+    var hasOutstandingExecutionOwnership: Bool {
+        hasActiveRuns
+            || !cancellationHandles.isEmpty
+            || !pendingCancellationRunIDs.isEmpty
+    }
+
     // MARK: - Private
+
+    nonisolated private static func waitForCompletion(
+        of handles: [UserTaskCancellation],
+        until deadline: DispatchTime
+    ) async -> Bool {
+        guard !handles.isEmpty else { return true }
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var allCompleted = true
+                for handle in handles where !handle.wait(until: deadline) {
+                    allCompleted = false
+                }
+                continuation.resume(returning: allCompleted)
+            }
+        }
+    }
 
     private func trimToCapacity() {
         // Never trim active runs. Remove oldest terminal runs until both the

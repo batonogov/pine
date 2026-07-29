@@ -281,7 +281,7 @@ struct UserTaskRunStoreTests {
     }
 
     @Test("Shutdown cancels and waits on every registered active handle")
-    func shutdownCancelsAndWaits() {
+    func shutdownCancelsAndWaits() async {
         let store = UserTaskRunStore()
         let first = store.start(makeRun(taskID: "first"))
         let second = store.start(makeRun(taskID: "second"))
@@ -302,14 +302,15 @@ struct UserTaskRunStoreTests {
         store.registerCancellation(handle(), forRunID: first.id)
         store.registerCancellation(handle(), forRunID: second.id)
 
-        #expect(store.shutdownAll(until: .now() + 1))
+        let didShutdown = await store.shutdownAll(until: .now() + 1)
+        #expect(didShutdown)
         #expect(counter.value == 2)
         #expect(waits.value == 2)
         #expect(store.runs.isEmpty)
     }
 
     @Test("Shutdown timeout retains cancelling run and its handle")
-    func shutdownTimeoutRetainsOwnership() {
+    func shutdownTimeoutRetainsOwnership() async {
         let store = UserTaskRunStore()
         let run = store.start(makeRun())
         let counter = CancellationCounter()
@@ -324,11 +325,82 @@ struct UserTaskRunStoreTests {
             forRunID: run.id
         )
 
-        #expect(!store.shutdownAll(until: .now()))
+        let didShutdown = await store.shutdownAll(until: .now())
+        #expect(!didShutdown)
         #expect(run.state == .cancelling)
         #expect(store.run(forID: run.id)?.id == run.id)
         #expect(store.cancellationHandleCount == 1)
         #expect(counter.value == 1)
+    }
+
+    @Test("Shutdown process waits do not block the main actor")
+    func shutdownWaitDoesNotBlockMainActor() async {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let gate = ShutdownWaitGate()
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    gate.waitForRelease(until: deadline)
+                }
+            ),
+            forRunID: run.id
+        )
+
+        let shutdown = Task { @MainActor in
+            await store.shutdownAll(until: .now() + 2)
+        }
+        defer { gate.release() }
+
+        for _ in 0..<200 where !gate.didStartWaiting {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(gate.didStartWaiting)
+
+        // This task cannot run until `shutdownAll` suspends the main actor.
+        let heartbeat = Task { @MainActor in true }
+        let mainActorResponded = await heartbeat.value
+        #expect(mainActorResponded)
+
+        gate.release()
+        let didShutdown = await shutdown.value
+        #expect(didShutdown)
+        #expect(store.runs.isEmpty)
+    }
+
+    @Test("A run started during shutdown is retained and fails shutdown closed")
+    func runStartedDuringShutdownIsNotDiscarded() async {
+        let store = UserTaskRunStore()
+        let first = store.start(makeRun(taskID: "first"))
+        let gate = ShutdownWaitGate()
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    gate.waitForRelease(until: deadline)
+                }
+            ),
+            forRunID: first.id
+        )
+        let shutdown = Task { @MainActor in
+            await store.shutdownAll(until: .now() + 2)
+        }
+        defer { gate.release() }
+
+        for _ in 0..<200 where !gate.didStartWaiting {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let lateRun = store.start(makeRun(taskID: "late"))
+        store.registerCancellation(.noop, forRunID: lateRun.id)
+        gate.release()
+
+        let didShutdown = await shutdown.value
+        #expect(!didShutdown)
+        #expect(store.run(forID: first.id) != nil)
+        #expect(store.run(forID: lateRun.id) === lateRun)
+        #expect(lateRun.state == .pending)
+        #expect(store.hasOutstandingExecutionOwnership)
     }
 
     @Test("Elapsed time advances while active and freezes at completion")
@@ -558,5 +630,26 @@ nonisolated private final class CancellationCounter: @unchecked Sendable {
         lock.withLock {
             storage += 1
         }
+    }
+}
+
+nonisolated private final class ShutdownWaitGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+    private var startedWaiting = false
+
+    var didStartWaiting: Bool {
+        lock.withLock { startedWaiting }
+    }
+
+    func waitForRelease(until deadline: DispatchTime) -> Bool {
+        lock.withLock {
+            startedWaiting = true
+        }
+        return releaseSemaphore.wait(timeout: deadline) == .success
+    }
+
+    func release() {
+        releaseSemaphore.signal()
     }
 }
