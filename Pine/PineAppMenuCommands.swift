@@ -723,8 +723,12 @@ struct PineAppMenuCommands: Commands {
             .disabled(focusedProject?.workspace.rootURL == nil)
         }
 
-        // MARK: - Git menu
-        CommandMenu(Strings.menuGit) {
+        // Xcode 26's CommandsBuilder supports at most ten direct children.
+        // Keep the custom menus composed as one child so adding a menu does
+        // not make the whole app target fail to compile on macOS 26.
+        PineCommandCollection {
+            // MARK: - Git menu
+            CommandMenu(Strings.menuGit) {
             Button {
                 guard let focusedProject else { return }
                 NotificationCenter.default.post(name: .showBranchSwitcher, object: focusedProject)
@@ -902,8 +906,9 @@ struct PineAppMenuCommands: Commands {
             }
         }
 
-        // AppDelegate's single key-down router handles physical shortcuts
-        // after consulting user overrides.
+            // AppDelegate's single key-down router handles physical shortcuts
+            // after consulting user overrides.
+        }
     }
 
     // MARK: - Task outcome presentation
@@ -967,4 +972,17 @@ struct PineAppMenuCommands: Commands {
         )
     }
 
+}
+
+@MainActor
+private struct PineCommandCollection<Content: Commands>: Commands {
+    let content: Content
+
+    init(@CommandsBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some Commands {
+        content
+    }
 }
