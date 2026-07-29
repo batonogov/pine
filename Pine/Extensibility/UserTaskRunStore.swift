@@ -35,10 +35,15 @@ final class UserTaskRunStore {
     var isOutputVisible: Bool = false
 
     /// Cancellation handles keyed by run id, so the UI's Cancel button can
-    /// terminate the spawned process. Cleared when a run finishes.
+    /// terminate the spawned process. A failed bounded cleanup retains its
+    /// handle until the runner's deferred ownership cleanup resolves.
     private var cancellationHandles: [UUID: UserTaskCancellation] = [:]
     /// Cancel clicks received before the runner publishes its handle.
     private var pendingCancellationRunIDs: Set<UUID> = []
+    /// Terminal outcomes whose subprocess/descriptor ownership has not yet
+    /// been released. This also covers the short race before a late handle is
+    /// published on the main queue.
+    private var unresolvedCleanupRunIDs: Set<UUID> = []
     private let maximumRuns: Int
     private let maximumRetainedOutputBytes: Int
 
@@ -71,12 +76,19 @@ final class UserTaskRunStore {
         _ handle: UserTaskCancellation,
         forRunID id: UUID
     ) {
-        if pendingCancellationRunIDs.remove(id) != nil {
+        let cancellationWasPending =
+            pendingCancellationRunIDs.remove(id) != nil
+        if unresolvedCleanupRunIDs.contains(id) {
+            cancellationHandles[id] = handle
+            pruneResolvedCleanupOwnership()
+            return
+        }
+        if cancellationWasPending {
+            cancellationHandles[id] = handle
             guard let run = run(forID: id), run.state.isActive else {
                 _ = handle.cancel()
                 return
             }
-            cancellationHandles[id] = handle
             if handle.cancel() {
                 run.markCancelling()
             }
@@ -99,7 +111,7 @@ final class UserTaskRunStore {
         }
     }
 
-    /// Applies the terminal result and releases its cancellation handle.
+    /// Applies the terminal result and releases resolved execution ownership.
     ///
     /// A run cancelled before its handle arrived remains cancelled when the
     /// process later reports its concrete exit status and captured output.
@@ -109,9 +121,27 @@ final class UserTaskRunStore {
         outcome: UserTaskOutcome,
         cancelled: Bool
     ) -> Bool {
-        cancellationHandles.removeValue(forKey: id)
+        let run = run(forID: id)
+        let ownsExecution =
+            cancellationHandles[id] != nil
+            || pendingCancellationRunIDs.contains(id)
+            || unresolvedCleanupRunIDs.contains(id)
+        let tracksExecution =
+            run?.state.isActive == true || ownsExecution
+        guard tracksExecution else { return false }
+
         pendingCancellationRunIDs.remove(id)
-        guard let run = run(forID: id) else { return false }
+        if outcome.cleanupSucceeded {
+            cancellationHandles.removeValue(forKey: id)
+            unresolvedCleanupRunIDs.remove(id)
+        } else {
+            unresolvedCleanupRunIDs.insert(id)
+        }
+
+        guard let run else {
+            pruneResolvedCleanupOwnership()
+            return false
+        }
         let cancellationWon = cancelled || run.state == .cancelling
         guard run.state.isActive else { return false }
         run.applyOutcome(outcome, cancelled: cancellationWon)
@@ -119,6 +149,7 @@ final class UserTaskRunStore {
             isOutputVisible = true
         }
         trimToCapacity()
+        pruneResolvedCleanupOwnership()
         return true
     }
 
@@ -168,8 +199,10 @@ final class UserTaskRunStore {
     func removeRun(id: UUID) {
         guard let run = run(forID: id), !run.state.isActive else { return }
         runs.removeAll { $0.id == id }
-        cancellationHandles.removeValue(forKey: id)
-        pendingCancellationRunIDs.remove(id)
+        if !unresolvedCleanupRunIDs.contains(id) {
+            cancellationHandles.removeValue(forKey: id)
+            pendingCancellationRunIDs.remove(id)
+        }
     }
 
     /// Clears all finished runs.
@@ -180,12 +213,16 @@ final class UserTaskRunStore {
         runs.removeAll { finishedIDs.contains($0.id) }
         cancellationHandles = cancellationHandles.filter {
             !finishedIDs.contains($0.key)
+                || unresolvedCleanupRunIDs.contains($0.key)
         }
-        pendingCancellationRunIDs.subtract(finishedIDs)
+        pendingCancellationRunIDs.subtract(
+            finishedIDs.subtracting(unresolvedCleanupRunIDs)
+        )
     }
 
-    /// Immediately clears every run and requests active-process cancellation.
-    /// Project teardown should prefer ``shutdownAll(until:)`` so it can wait.
+    /// Immediately clears UI history and requests active-process cancellation.
+    /// Execution handles remain owned until their terminal callbacks resolve;
+    /// project teardown should prefer ``shutdownAll(until:)`` so it can wait.
     ///
     /// Runs whose handle has not arrived remain in the pending-cancellation
     /// set so a late handle is terminated instead of becoming unreachable.
@@ -199,7 +236,6 @@ final class UserTaskRunStore {
             }
         }
         runs.removeAll()
-        cancellationHandles.removeAll()
     }
 
     /// Requests cancellation for every active run without waiting. Project
@@ -228,41 +264,27 @@ final class UserTaskRunStore {
     @discardableResult
     func shutdownAll(until deadline: DispatchTime) async -> Bool {
         requestShutdown()
-        let activeIDs = Set(runs.lazy
-            .filter { $0.state.isActive }
-            .map { $0.id })
+        pruneResolvedCleanupOwnership()
+        let ownershipIDs = executionOwnershipRunIDs
         var handles: [UserTaskCancellation] = []
-        var ownsEveryActiveRun = true
+        var ownsEveryExecution = true
 
-        for id in activeIDs {
+        for id in ownershipIDs {
             if let handle = cancellationHandles[id] {
                 handles.append(handle)
             } else {
                 pendingCancellationRunIDs.insert(id)
-                ownsEveryActiveRun = false
+                ownsEveryExecution = false
             }
         }
         let handlesCompleted = await Self.waitForCompletion(
             of: handles,
             until: deadline
         )
-        let snapshotStillOwned = runs.contains {
-            activeIDs.contains($0.id) && $0.state.isActive
-        } || cancellationHandles.keys.contains {
-            activeIDs.contains($0)
-        } || pendingCancellationRunIDs.contains {
-            activeIDs.contains($0)
-        }
-        let hasNewExecutionOwnership = runs.contains {
-            !activeIDs.contains($0.id) && $0.state.isActive
-        } || cancellationHandles.keys.contains {
-            !activeIDs.contains($0)
-        } || pendingCancellationRunIDs.contains {
-            !activeIDs.contains($0)
-        }
+        let hasNewExecutionOwnership =
+            !executionOwnershipRunIDs.subtracting(ownershipIDs).isEmpty
         let capturedExecutionsCompleted =
-            (ownsEveryActiveRun && handlesCompleted)
-            || !snapshotStillOwned
+            ownsEveryExecution && handlesCompleted
         let allCompleted =
             capturedExecutionsCompleted && !hasNewExecutionOwnership
 
@@ -270,6 +292,7 @@ final class UserTaskRunStore {
             runs.removeAll()
             cancellationHandles.removeAll()
             pendingCancellationRunIDs.removeAll()
+            unresolvedCleanupRunIDs.removeAll()
         }
         return allCompleted
     }
@@ -277,9 +300,11 @@ final class UserTaskRunStore {
     /// Whether teardown can release this store without dropping ownership of
     /// an active or not-yet-published task execution.
     var hasOutstandingExecutionOwnership: Bool {
-        hasActiveRuns
+        pruneResolvedCleanupOwnership()
+        return hasActiveRuns
             || !cancellationHandles.isEmpty
             || !pendingCancellationRunIDs.isEmpty
+            || !unresolvedCleanupRunIDs.isEmpty
     }
 
     // MARK: - Private
@@ -297,6 +322,30 @@ final class UserTaskRunStore {
                 }
                 continuation.resume(returning: allCompleted)
             }
+        }
+    }
+
+    private var executionOwnershipRunIDs: Set<UUID> {
+        var ids = Set(runs.lazy
+            .filter { $0.state.isActive }
+            .map { $0.id })
+        ids.formUnion(cancellationHandles.keys)
+        ids.formUnion(pendingCancellationRunIDs)
+        ids.formUnion(unresolvedCleanupRunIDs)
+        return ids
+    }
+
+    /// Drops only cleanup handles whose runner-owned completion token is
+    /// already resolved. The zero-deadline wait never blocks the main actor.
+    private func pruneResolvedCleanupOwnership() {
+        let resolvedIDs = unresolvedCleanupRunIDs.filter { id in
+            guard let handle = cancellationHandles[id] else { return false }
+            return handle.wait(until: .now())
+        }
+        guard !resolvedIDs.isEmpty else { return }
+        unresolvedCleanupRunIDs.subtract(resolvedIDs)
+        for id in resolvedIDs {
+            cancellationHandles.removeValue(forKey: id)
         }
     }
 
@@ -320,7 +369,10 @@ final class UserTaskRunStore {
         runs.removeAll { toDrop.contains($0.id) }
         cancellationHandles = cancellationHandles.filter {
             !toDrop.contains($0.key)
+                || unresolvedCleanupRunIDs.contains($0.key)
         }
-        pendingCancellationRunIDs.subtract(toDrop)
+        pendingCancellationRunIDs.subtract(
+            toDrop.subtracting(unresolvedCleanupRunIDs)
+        )
     }
 }

@@ -25,7 +25,10 @@ nonisolated struct UserTaskRunnerTests {
         completed.complete(cleanupSucceeded: false)
         #expect(!completed.requestCancellation())
         #expect(completed.terminalCause == .naturalExit)
-        #expect(!completed.waitForCompletion(until: .now() + 1))
+        #expect(!completed.waitForCompletion(until: .now()))
+        completed.resolveDeferredCleanup()
+        completed.resolveDeferredCleanup()
+        #expect(completed.waitForCompletion(until: .now() + 1))
     }
 
     @Test("Concurrent cancel and natural exit select one lifecycle winner")
@@ -290,6 +293,7 @@ nonisolated struct UserTaskRunnerTests {
                 command: "while :; do /bin/sleep 1; done"
             )
         )
+        let cancellation = await probe.waitForCancellation()
         let processID = await processIDProbe.waitForProcessID()
         let completion = await probe.waitForCompletion()
 
@@ -308,10 +312,12 @@ nonisolated struct UserTaskRunnerTests {
         #expect(Darwin.waitpid(processID, &status, WNOHANG) == -1)
         #expect(errno == ECHILD)
 
+        #expect(!cancellation.wait(until: .now()))
         #expect(scheduler.releaseAll() == 2)
         #expect(
             scheduler.waitForReleasedOperations(until: .now() + 1)
         )
+        #expect(cancellation.wait(until: .now() + 1))
     }
 
     @Test("Successful replacement task receives stdin and captures stdout")

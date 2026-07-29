@@ -16,7 +16,7 @@ import os
 nonisolated final class UserTaskSubprocess: @unchecked Sendable {
     private static let reaperQueue = DispatchQueue(
         label: "com.pine.user-task-reaper",
-        qos: .utility,
+        qos: .userInitiated,
         attributes: .concurrent
     )
 
@@ -127,21 +127,33 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
     /// Transfers a still-running direct child to a dedicated blocking reaper
     /// after the runner's hard lifecycle deadline. No other waiter may touch
     /// this pid after handoff.
-    func reapInBackground() {
+    func reapInBackground() -> UserTaskBackgroundReaper {
         let processID = self.processID
+        let reaper = UserTaskBackgroundReaper()
         Self.reaperQueue.async {
             var status: Int32 = 0
-            var result: pid_t
-            repeat {
-                result = Darwin.waitpid(processID, &status, 0)
-            } while result == -1 && errno == EINTR
+            while true {
+                let result = Darwin.waitpid(processID, &status, 0)
+                if result == processID || (result == -1 && errno == ECHILD) {
+                    reaper.resolveOwnership()
+                    return
+                }
+                if result == -1, errno == EINTR {
+                    continue
+                }
 
-            if result == -1, errno != ECHILD {
+                let waitError = errno
                 Logger.task.error(
-                    "Background task reaper failed for pid \(processID): errno \(errno)"
+                    "Background task reaper retrying pid \(processID): errno \(waitError)"
                 )
+                if Darwin.kill(processID, 0) == -1, errno == ESRCH {
+                    reaper.resolveOwnership()
+                    return
+                }
+                Darwin.usleep(10_000)
             }
         }
+        return reaper
     }
 
     private static func spawn(
@@ -356,6 +368,36 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
     }
 }
 
+/// Completion token for a direct child transferred to the blocking reaper.
+///
+/// The token resolves only after `waitpid` collected the child or proved that
+/// no child remains. It lets project teardown keep execution ownership after
+/// the bounded task outcome has already been presented.
+nonisolated final class UserTaskBackgroundReaper: @unchecked Sendable {
+    private let completion = DispatchGroup()
+    private let lock = NSLock()
+    private var didResolve = false
+
+    init() {
+        completion.enter()
+    }
+
+    fileprivate func resolveOwnership() {
+        let shouldLeave = lock.withLock {
+            guard !didResolve else { return false }
+            didResolve = true
+            return true
+        }
+        if shouldLeave {
+            completion.leave()
+        }
+    }
+
+    func waitForOwnershipRelease() {
+        completion.wait()
+    }
+}
+
 nonisolated enum UserTaskProcessExitPoll: Sendable, Equatable {
     case running
     case exited(Int32)
@@ -526,6 +568,33 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
         return lock.withLock { terminationSucceeded }
     }
 
+    /// Finishes ownership cleanup after the bounded presentation deadline.
+    ///
+    /// The normal TERM-to-KILL sequence remains bounded so task output can be
+    /// shown promptly. If it reports failure, this background-only continuation
+    /// keeps signalling identity-qualified members until every process Pine
+    /// actually observed has exited. PID reuse cannot redirect these signals.
+    func finishDeferredCleanup() {
+        let shouldWaitForLifecycle = lock.withLock {
+            terminationRequested && !terminationFinished
+        }
+        if shouldWaitForLifecycle {
+            terminationCompletion.wait()
+        }
+
+        while true {
+            captureKnownMembers()
+            let liveMembers = lock.withLock {
+                knownMembers.values.filter {
+                    UserTaskProcessInspector.identity(for: $0.processID) == $0
+                }
+            }
+            guard !liveMembers.isEmpty else { return }
+            _ = signalKnownMembers(SIGKILL, identities: liveMembers)
+            Darwin.usleep(Self.pollIntervalMicroseconds)
+        }
+    }
+
     private func finishTermination() -> Bool {
         if Self.isProcessGroupAlive(identifier) {
             Self.waitUntilGone(
@@ -672,7 +741,7 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
 /// Start timestamps protect against signalling an unrelated process after PID
 /// reuse. A descendant that daemonizes between snapshots can still escape, so
 /// callers must also bound pipe draining and direct-child waiting.
-nonisolated final class UserTaskDescendantTracker {
+nonisolated final class UserTaskDescendantTracker: @unchecked Sendable {
     private static let maximumTrackedProcesses = 1_024
     private static let termGracePeriod: TimeInterval = 0.25
     private static let killWaitPeriod: TimeInterval = 1.0
@@ -746,6 +815,20 @@ nonisolated final class UserTaskDescendantTracker {
             )
         }
         return succeeded
+    }
+
+    /// Continues identity-safe cleanup off-main after the bounded task result
+    /// was published. This owns only descendants captured during execution;
+    /// an unobserved immediate double-fork remains the documented Darwin
+    /// best-effort limitation.
+    func finishDeferredCleanup() {
+        while true {
+            captureDescendants()
+            let live = liveDescendants()
+            guard !live.isEmpty else { return }
+            send(SIGKILL, to: live)
+            Darwin.usleep(Self.pollIntervalMicroseconds)
+        }
     }
 
     private func waitUntilGone(

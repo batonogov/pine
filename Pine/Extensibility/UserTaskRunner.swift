@@ -168,6 +168,11 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         qos: .userInitiated,
         attributes: .concurrent
     )
+    private static let deferredCleanupQueue = DispatchQueue(
+        label: "com.pine.user-task-deferred-cleanup",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
     private static let processPollIntervalMicroseconds: useconds_t = 10_000
     private static let descendantSnapshotInterval: TimeInterval = 0.025
     private static let terminationReapDeadline: TimeInterval = 2.0
@@ -374,10 +379,13 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
     ) -> ExecutionResult {
         precondition(!Thread.isMainThread, "UserTaskRunner must run off the main thread")
         var completedCleanup = false
+        var executionStateWasCompleted = false
         defer {
-            config.executionState.complete(
-                cleanupSucceeded: completedCleanup
-            )
+            if !executionStateWasCompleted {
+                config.executionState.complete(
+                    cleanupSucceeded: completedCleanup
+                )
+            }
         }
 
         // A cancellation accepted while this work item was still queued must
@@ -618,6 +626,21 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             ? directChild.exitCode
             : -1
         completedCleanup = cleanupSucceeded
+        if !cleanupSucceeded {
+            // Close the terminal-cause race before publishing the outcome, but
+            // keep the cancellation handle unresolved until every resource
+            // transferred to background cleanup has actually released.
+            config.executionState.complete(cleanupSucceeded: false)
+            executionStateWasCompleted = true
+            continueDeferredCleanup(.init(
+                subprocess: subprocess,
+                descendantTracker: descendantTracker,
+                backgroundReaper: directChild.backgroundReaper,
+                ioGroup: ioGroup,
+                ioStopState: ioStopState,
+                executionState: config.executionState
+            ))
+        }
 
         return ExecutionResult(
             outcome: UserTaskOutcome(
@@ -639,6 +662,29 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
     private struct DirectChildWaitResult {
         let exitCode: Int32
         let reaped: Bool
+        let backgroundReaper: UserTaskBackgroundReaper?
+    }
+
+    private struct DeferredCleanup: @unchecked Sendable {
+        let subprocess: UserTaskSubprocess
+        let descendantTracker: UserTaskDescendantTracker
+        let backgroundReaper: UserTaskBackgroundReaper?
+        let ioGroup: DispatchGroup
+        let ioStopState: UserTaskIOStopState
+        let executionState: UserTaskExecutionState
+    }
+
+    private static func continueDeferredCleanup(_ cleanup: DeferredCleanup) {
+        deferredCleanupQueue.async {
+            // Stop descriptor workers first so a delayed executor slot cannot
+            // extend ownership after process cleanup has already finished.
+            cleanup.ioStopState.stop()
+            cleanup.subprocess.processGroup.finishDeferredCleanup()
+            cleanup.descendantTracker.finishDeferredCleanup()
+            cleanup.backgroundReaper?.waitForOwnershipRelease()
+            cleanup.ioGroup.wait()
+            cleanup.executionState.resolveDeferredCleanup()
+        }
     }
 
     private static func waitForDirectChild(
@@ -673,14 +719,20 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 executionState.claimNaturalExit()
                 return DirectChildWaitResult(
                     exitCode: exitCode,
-                    reaped: true
+                    reaped: true,
+                    backgroundReaper: nil
                 )
             case .waitFailed(let error):
                 Logger.task.error(
                     "waitpid failed for task shell: errno \(error)"
                 )
+                let backgroundReaper = subprocess.reapInBackground()
                 executionState.closeWithoutProcess()
-                return DirectChildWaitResult(exitCode: -1, reaped: false)
+                return DirectChildWaitResult(
+                    exitCode: -1,
+                    reaped: false,
+                    backgroundReaper: backgroundReaper
+                )
             case .running:
                 break
             }
@@ -698,9 +750,13 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 subprocess.processGroup.requestTermination()
                 descendantTracker.captureDescendants()
                 subprocess.processGroup.captureKnownMembers()
-                subprocess.reapInBackground()
+                let backgroundReaper = subprocess.reapInBackground()
                 executionState.closeWithoutProcess()
-                return DirectChildWaitResult(exitCode: -1, reaped: false)
+                return DirectChildWaitResult(
+                    exitCode: -1,
+                    reaped: false,
+                    backgroundReaper: backgroundReaper
+                )
             }
 
             Darwin.usleep(processPollIntervalMicroseconds)
@@ -727,8 +783,8 @@ nonisolated final class UserTaskExecutionState: @unchecked Sendable {
     private let completion = DispatchGroup()
     private var cause: UserTaskTerminalCause = .active
     private var processGroup: UserTaskProcessGroup?
-    private var didComplete = false
-    private var completionSucceeded = false
+    private var didFinishExecution = false
+    private var didResolveOwnership = false
 
     init() {
         completion.enter()
@@ -781,10 +837,29 @@ nonisolated final class UserTaskExecutionState: @unchecked Sendable {
 
     func complete(cleanupSucceeded: Bool = true) {
         let shouldLeave = lock.withLock {
-            guard !didComplete else { return false }
-            didComplete = true
-            completionSucceeded = cleanupSucceeded
+            guard !didFinishExecution else { return false }
+            didFinishExecution = true
             processGroup = nil
+            guard cleanupSucceeded, !didResolveOwnership else { return false }
+            didResolveOwnership = true
+            return true
+        }
+        if shouldLeave {
+            completion.leave()
+        }
+    }
+
+    /// Resolves the cleanup ownership retained by `complete(false)`.
+    ///
+    /// This is called only by the off-main deferred cleanup continuation after
+    /// its direct-child reaper, process identities, and descriptor workers
+    /// have all completed.
+    func resolveDeferredCleanup() {
+        let shouldLeave = lock.withLock {
+            guard didFinishExecution, !didResolveOwnership else {
+                return false
+            }
+            didResolveOwnership = true
             return true
         }
         if shouldLeave {
@@ -793,15 +868,12 @@ nonisolated final class UserTaskExecutionState: @unchecked Sendable {
     }
 
     func waitForCompletion(until deadline: DispatchTime) -> Bool {
-        guard completion.wait(timeout: deadline) == .success else {
-            return false
-        }
-        return lock.withLock { completionSucceeded }
+        completion.wait(timeout: deadline) == .success
     }
 
     private func claim(_ requestedCause: UserTaskTerminalCause) -> Bool {
         let result: (accepted: Bool, group: UserTaskProcessGroup?) = lock.withLock {
-            guard cause == .active, !didComplete else {
+            guard cause == .active, !didFinishExecution else {
                 return (false, nil)
             }
             cause = requestedCause

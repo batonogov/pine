@@ -127,7 +127,7 @@ struct UserTaskRunStoreTests {
         #expect(store.cancellationHandleCount == 0)
     }
 
-    @Test("Clear all cancels every retained handle before dropping it")
+    @Test("Clear all cancels every retained handle without dropping ownership")
     func clearAllCancelsHandles() {
         let store = UserTaskRunStore()
         let first = store.start(makeRun(taskID: "first"))
@@ -146,9 +146,23 @@ struct UserTaskRunStoreTests {
         store.clearAll()
 
         #expect(store.runs.isEmpty)
-        #expect(store.cancellationHandleCount == 0)
+        #expect(store.cancellationHandleCount == 2)
         #expect(store.pendingCancellationCount == 0)
         #expect(counter.value == 2)
+        #expect(store.hasOutstandingExecutionOwnership)
+
+        #expect(!store.finishRun(
+            id: first.id,
+            outcome: outcome(exitCode: SIGTERM),
+            cancelled: true
+        ))
+        #expect(!store.finishRun(
+            id: second.id,
+            outcome: outcome(exitCode: SIGTERM),
+            cancelled: true
+        ))
+        #expect(store.cancellationHandleCount == 0)
+        #expect(!store.hasOutstandingExecutionOwnership)
     }
 
     @Test("Clear all forwards cancellation to a handle that arrives later")
@@ -167,11 +181,13 @@ struct UserTaskRunStoreTests {
         )
         #expect(counter.value == 1)
         #expect(store.pendingCancellationCount == 0)
+        #expect(store.cancellationHandleCount == 1)
         #expect(!store.finishRun(
             id: run.id,
             outcome: outcome(exitCode: SIGTERM),
             cancelled: true
         ))
+        #expect(store.cancellationHandleCount == 0)
     }
 
     @Test("Accepted cancellation remains active until cleanup outcome")
@@ -205,8 +221,17 @@ struct UserTaskRunStoreTests {
         let store = UserTaskRunStore()
         let run = store.start(makeRun())
         let counter = CancellationCounter()
+        let cleanupGate = ShutdownWaitGate()
         store.registerCancellation(
-            makeCancellation(counter: counter),
+            UserTaskCancellation(
+                terminate: {
+                    counter.increment()
+                    return true
+                },
+                waitForCompletion: { deadline in
+                    cleanupGate.waitForRelease(until: deadline)
+                }
+            ),
             forRunID: run.id
         )
         store.cancelRun(id: run.id)
@@ -227,6 +252,73 @@ struct UserTaskRunStoreTests {
 
         #expect(run.state == .failed)
         #expect(store.isOutputVisible)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(store.hasOutstandingExecutionOwnership)
+
+        cleanupGate.release()
+        #expect(!store.hasOutstandingExecutionOwnership)
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("Removing failed cleanup history preserves execution ownership")
+    func removeRunPreservesUnresolvedCleanup() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let cleanupGate = ShutdownWaitGate()
+        registerUnresolvedCleanup(
+            in: store,
+            run: run,
+            cleanupGate: cleanupGate
+        )
+
+        store.removeRun(id: run.id)
+
+        #expect(store.runs.isEmpty)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(store.hasOutstandingExecutionOwnership)
+        cleanupGate.release()
+        #expect(!store.hasOutstandingExecutionOwnership)
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("Clearing failed cleanup history preserves execution ownership")
+    func clearFinishedPreservesUnresolvedCleanup() {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let cleanupGate = ShutdownWaitGate()
+        registerUnresolvedCleanup(
+            in: store,
+            run: run,
+            cleanupGate: cleanupGate
+        )
+
+        store.clearFinished()
+
+        #expect(store.runs.isEmpty)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(store.hasOutstandingExecutionOwnership)
+        cleanupGate.release()
+        #expect(!store.hasOutstandingExecutionOwnership)
+        #expect(store.cancellationHandleCount == 0)
+    }
+
+    @Test("History trimming preserves unresolved cleanup ownership")
+    func trimmingPreservesUnresolvedCleanup() {
+        let store = UserTaskRunStore(maximumRuns: 0)
+        let run = store.start(makeRun())
+        let cleanupGate = ShutdownWaitGate()
+        registerUnresolvedCleanup(
+            in: store,
+            run: run,
+            cleanupGate: cleanupGate
+        )
+
+        #expect(store.runs.isEmpty)
+        #expect(store.cancellationHandleCount == 1)
+        #expect(store.hasOutstandingExecutionOwnership)
+        cleanupGate.release()
+        #expect(!store.hasOutstandingExecutionOwnership)
+        #expect(store.cancellationHandleCount == 0)
     }
 
     @Test("Terminal transitions trim count while preserving active runs")
@@ -331,6 +423,44 @@ struct UserTaskRunStoreTests {
         #expect(store.run(forID: run.id)?.id == run.id)
         #expect(store.cancellationHandleCount == 1)
         #expect(counter.value == 1)
+    }
+
+    @Test("Failed wait cannot become successful when finish removes the handle")
+    func shutdownWaitFailureStaysFailClosedAcrossFinishRace() async {
+        let store = UserTaskRunStore()
+        let run = store.start(makeRun())
+        let gate = ShutdownWaitGate()
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    _ = gate.waitForRelease(until: deadline)
+                    return false
+                }
+            ),
+            forRunID: run.id
+        )
+
+        let shutdown = Task { @MainActor in
+            await store.shutdownAll(until: .now() + 2)
+        }
+        defer { gate.release() }
+
+        for _ in 0..<200 where !gate.didStartWaiting {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(gate.didStartWaiting)
+
+        #expect(store.finishRun(
+            id: run.id,
+            outcome: outcome(exitCode: 0),
+            cancelled: false
+        ))
+        gate.release()
+
+        let didShutdown = await shutdown.value
+        #expect(!didShutdown)
+        #expect(!store.runs.isEmpty)
     }
 
     @Test("Shutdown process waits do not block the main actor")
@@ -602,6 +732,34 @@ struct UserTaskRunStoreTests {
             counter.increment()
             return accepted
         }
+    }
+
+    private func registerUnresolvedCleanup(
+        in store: UserTaskRunStore,
+        run: UserTaskRun,
+        cleanupGate: ShutdownWaitGate
+    ) {
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    cleanupGate.waitForRelease(until: deadline)
+                }
+            ),
+            forRunID: run.id
+        )
+        #expect(store.finishRun(
+            id: run.id,
+            outcome: UserTaskOutcome(
+                taskID: run.taskID,
+                stdout: "",
+                stderr: "cleanup failed",
+                exitCode: -1,
+                timedOut: false,
+                cleanupSucceeded: false
+            ),
+            cancelled: false
+        ))
     }
 
     private func outcome(
