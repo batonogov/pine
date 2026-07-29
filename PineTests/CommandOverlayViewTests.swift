@@ -59,6 +59,8 @@ struct CommandOverlayViewTests {
         hosted.layoutSubtreeIfNeeded()
 
         let field = try #require(findCommandField(in: hosted))
+        #expect(field.isAccessibilityElement())
+        #expect(field.accessibilityRole() == .textField)
         #expect(
             field.accessibilityIdentifier() == AccessibilityID.goToLineField
         )

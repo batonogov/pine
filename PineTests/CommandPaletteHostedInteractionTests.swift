@@ -20,6 +20,8 @@ struct CommandPaletteHostedInteractionTests {
             findTextField(in: hosted) as? CommandOverlayTextField
         )
 
+        #expect(field.isAccessibilityElement())
+        #expect(field.accessibilityRole() == .textField)
         #expect(
             field.accessibilityIdentifier()
                 == AccessibilityID.commandPaletteSearchField

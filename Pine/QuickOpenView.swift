@@ -224,6 +224,15 @@ final class CommandOverlayTextField: NSTextField {
     func applyAccessibility(
         _ accessibility: CommandOverlayTextFieldAccessibility
     ) {
+        // `NSTextField` normally derives its accessibility exposure from its
+        // cell. SwiftUI's `NSViewRepresentable` host can suppress that
+        // implicit element on macOS 26 when the view lives in an NSPanel:
+        // the panel/container remains visible to AX, but the represented
+        // field is omitted from its descendants. Declare the native contract
+        // explicitly so VoiceOver and role-scoped XCUITest queries see the
+        // field as an editable text field on both macOS 26 and 27.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.textField)
         identifier = NSUserInterfaceItemIdentifier(
             accessibility.identifier
         )
