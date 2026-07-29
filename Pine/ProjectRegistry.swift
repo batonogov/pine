@@ -51,7 +51,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// URLs are resolved to their canonical (real) path to prevent duplicates via symlinks.
     /// Returns nil if the directory no longer exists on disk.
     func projectManager(for projectURL: URL) -> ProjectManager? {
-        let canonical = projectURL.resolvingSymlinksInPath()
+        let canonical = Self.canonicalProjectURL(projectURL)
         if let existing = openProjects[canonical] {
             // Verify directory still exists when reopening from background
             if backgroundProjects.contains(canonical) {
@@ -113,7 +113,7 @@ final class ProjectRegistry: LSPSettingsObserver {
 
         guard await panel.runSheet(on: context) == .OK,
               let url = panel.url else { return nil }
-        let canonical = url.resolvingSymlinksInPath()
+        let canonical = Self.canonicalProjectURL(url)
         guard projectManager(for: canonical) != nil else { return nil }
         return canonical
     }
@@ -122,7 +122,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// sessions and user tasks continue in the background; reopening the
     /// project restores access to their current state and output history.
     func closeProjectWindow(_ url: URL) {
-        let canonical = url.resolvingSymlinksInPath()
+        let canonical = Self.canonicalProjectURL(url)
         guard openProjects[canonical] != nil else { return }
         backgroundProjects.insert(canonical)
     }
@@ -196,13 +196,13 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     /// Returns true if the project has an open (non-background) window.
     func isWindowOpen(_ url: URL) -> Bool {
-        let canonical = url.resolvingSymlinksInPath()
+        let canonical = Self.canonicalProjectURL(url)
         return openProjects[canonical] != nil && !backgroundProjects.contains(canonical)
     }
 
     /// Checks if a project is already open (including background).
     func isProjectOpen(_ url: URL) -> Bool {
-        openProjects[url.resolvingSymlinksInPath()] != nil
+        openProjects[Self.canonicalProjectURL(url)] != nil
     }
 
     // MARK: - Language Server Settings
@@ -259,6 +259,35 @@ final class ProjectRegistry: LSPSettingsObserver {
     private func saveRecentProjects() {
         let paths = recentProjects.map(\.path)
         UserDefaults.standard.set(paths, forKey: Self.recentProjectsKey)
+    }
+
+    /// Resolves a stable project identity even after the project directory is
+    /// deleted. `resolvingSymlinksInPath()` requires the path to exist before
+    /// it reliably resolves prefix symlinks such as `/var` → `/private/var`.
+    /// Resolve the nearest existing ancestor, then append every missing
+    /// component to preserve the key previously stored in `openProjects`.
+    nonisolated static func canonicalProjectURL(_ projectURL: URL) -> URL {
+        let standardized = projectURL.standardizedFileURL
+        var existingAncestor = standardized
+        var missingComponents: [String] = []
+
+        while !FileManager.default.fileExists(
+            atPath: existingAncestor.path
+        ) {
+            let parent = existingAncestor.deletingLastPathComponent()
+            guard parent.path != existingAncestor.path else { break }
+            missingComponents.append(existingAncestor.lastPathComponent)
+            existingAncestor = parent
+        }
+
+        var canonical = existingAncestor.resolvingSymlinksInPath()
+        for component in missingComponents.reversed() {
+            canonical.appendPathComponent(component)
+        }
+        return URL(
+            fileURLWithPath: canonical.path,
+            isDirectory: true
+        ).standardizedFileURL
     }
 
     private var userTaskOwners: [ProjectManager] {

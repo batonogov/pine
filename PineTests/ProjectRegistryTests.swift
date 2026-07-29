@@ -164,6 +164,8 @@ struct ProjectRegistryTests {
 
     @Test func deletedBackgroundProjectCompletesTaskCleanup() async throws {
         let tempDir = try makeTempDirectory()
+        let canonicalBeforeDeletion =
+            ProjectRegistry.canonicalProjectURL(tempDir)
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: tempDir))
         let run = project.taskRunStore.start(makeTaskRun(id: "deleted"))
@@ -184,6 +186,10 @@ struct ProjectRegistryTests {
 
         registry.closeProjectWindow(tempDir)
         cleanup(tempDir)
+        #expect(
+            ProjectRegistry.canonicalProjectURL(tempDir)
+                == canonicalBeforeDeletion
+        )
         #expect(registry.projectManager(for: tempDir) == nil)
         #expect(registry.detachedUserTaskCleanupCount == 1)
 
@@ -200,6 +206,8 @@ struct ProjectRegistryTests {
 
     @Test func deletedProjectTimeoutRetainsCleanupOwnerForQuit() async throws {
         let tempDir = try makeTempDirectory()
+        let canonicalBeforeDeletion =
+            ProjectRegistry.canonicalProjectURL(tempDir)
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: tempDir))
         let run = project.taskRunStore.start(makeTaskRun(id: "slow-delete"))
@@ -211,6 +219,10 @@ struct ProjectRegistryTests {
 
         registry.closeProjectWindow(tempDir)
         cleanup(tempDir)
+        #expect(
+            ProjectRegistry.canonicalProjectURL(tempDir)
+                == canonicalBeforeDeletion
+        )
         #expect(registry.projectManager(for: tempDir) == nil)
         for _ in 0..<200 where probe.waitCount == 0 {
             try? await Task.sleep(for: .milliseconds(5))
