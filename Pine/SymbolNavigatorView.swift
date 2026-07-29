@@ -194,25 +194,30 @@ struct SymbolNavigatorView: View {
                                 Array(filteredSymbols.enumerated()),
                                 id: \.element.id
                             ) { index, entry in
-                                symbolRow(
-                                    entry,
-                                    isSelected:
-                                        index == selectedIndex
-                                )
-                                .id(index)
-                                .onTapGesture {
+                                Button {
                                     selectedIndex = index
                                     navigateToSymbol(entry)
+                                } label: {
+                                    symbolRow(
+                                        entry,
+                                        isSelected:
+                                            index == selectedIndex
+                                    )
                                 }
-                                .accessibilityAddTraits(
-                                    CommandOverlayRowAccessibility.traits(
-                                        isSelected: index == selectedIndex
+                                .buttonStyle(.plain)
+                                .id(index)
+                                .accessibilityIdentifier(
+                                    AccessibilityID.symbolItem(
+                                        entry.symbol.name
                                     )
                                 )
-                                .accessibilityAction {
-                                    selectedIndex = index
-                                    navigateToSymbol(entry)
-                                }
+                                .accessibilityAddTraits(
+                                    CommandOverlayRowAccessibility
+                                        .selectionTraits(
+                                            isSelected:
+                                                index == selectedIndex
+                                        )
+                                )
                             }
                         }
                     }
@@ -294,9 +299,6 @@ struct SymbolNavigatorView: View {
                 : Color.clear
         )
         .contentShape(Rectangle())
-        .accessibilityIdentifier(
-            AccessibilityID.symbolItem(entry.symbol.name)
-        )
     }
 
     private func symbolSecondaryLabel(

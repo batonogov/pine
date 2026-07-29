@@ -68,21 +68,29 @@ struct QuickOpenView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
-                                resultRow(result, isSelected: index == selectedIndex)
-                                    .id(index)
-                                    .onTapGesture {
-                                        selectedIndex = index
-                                        openFile(result.url)
-                                    }
-                                    .accessibilityAddTraits(
-                                        CommandOverlayRowAccessibility.traits(
-                                            isSelected: index == selectedIndex
-                                        )
+                                Button {
+                                    selectedIndex = index
+                                    openFile(result.url)
+                                } label: {
+                                    resultRow(
+                                        result,
+                                        isSelected: index == selectedIndex
                                     )
-                                    .accessibilityAction {
-                                        selectedIndex = index
-                                        openFile(result.url)
-                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .id(index)
+                                .accessibilityIdentifier(
+                                    AccessibilityID.quickOpenItem(
+                                        result.fileName
+                                    )
+                                )
+                                .accessibilityAddTraits(
+                                    CommandOverlayRowAccessibility
+                                        .selectionTraits(
+                                            isSelected:
+                                                index == selectedIndex
+                                        )
+                                )
                             }
                         }
                     }
@@ -138,7 +146,6 @@ struct QuickOpenView: View {
         .padding(.vertical, 5)
         .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
         .contentShape(Rectangle())
-        .accessibilityIdentifier(AccessibilityID.quickOpenItem(result.fileName))
     }
 
     // MARK: - Actions
@@ -179,8 +186,8 @@ struct QuickOpenView: View {
 }
 
 nonisolated enum CommandOverlayRowAccessibility {
-    static func traits(isSelected: Bool) -> AccessibilityTraits {
-        isSelected ? [.isButton, .isSelected] : .isButton
+    static func selectionTraits(isSelected: Bool) -> AccessibilityTraits {
+        isSelected ? .isSelected : []
     }
 }
 

@@ -188,10 +188,19 @@ final class QuickOpenUITests: PineUITestCase {
         )
         searchField.click()
         searchField.typeText("main")
-        let symbol = overlay.buttons["symbolItem_main"].firstMatch
+        let symbol = overlay.buttons.matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@",
+                "symbolItem_"
+            )
+        ).firstMatch
         XCTAssertTrue(
             symbol.waitForExistence(timeout: 5),
             "Symbol Navigator row should expose a button accessibility action"
+        )
+        XCTAssertTrue(
+            symbol.label.localizedCaseInsensitiveContains("main"),
+            "Symbol Navigator should expose the matching symbol label"
         )
         XCTAssertTrue(
             symbol.isSelected,
@@ -234,7 +243,13 @@ final class QuickOpenUITests: PineUITestCase {
             "Disabled Command Palette rows should explain their requirement"
         )
 
+        searchField.click()
         searchField.typeText("quick")
+        XCTAssertEqual(
+            searchField.value as? String,
+            "quick",
+            "Command Palette query should reach the native search field"
+        )
 
         let quickOpenCommand = overlay
             .buttons["commandPaletteItem_command_quickOpen"]

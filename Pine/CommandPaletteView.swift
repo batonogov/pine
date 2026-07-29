@@ -89,24 +89,31 @@ struct CommandPaletteView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
-                                row(item, isSelected: index == selectedIndex)
-                                    .id(index)
-                                    .onTapGesture {
-                                        guard item.isEnabled else { return }
-                                        selectedIndex = index
-                                        invoke(item)
-                                    }
-                                    .accessibilityAddTraits(
-                                        CommandOverlayRowAccessibility.traits(
-                                            isSelected: index == selectedIndex
-                                        )
+                                Button {
+                                    guard item.isEnabled else { return }
+                                    selectedIndex = index
+                                    invoke(item)
+                                } label: {
+                                    row(
+                                        item,
+                                        isSelected: index == selectedIndex
                                     )
-                                    .accessibilityAction {
-                                        guard item.isEnabled else { return }
-                                        selectedIndex = index
-                                        invoke(item)
-                                    }
-                                    .disabled(!item.isEnabled)
+                                }
+                                .buttonStyle(.plain)
+                                .id(index)
+                                .accessibilityIdentifier(
+                                    AccessibilityID.commandPaletteItem(
+                                        item.id.accessibilityToken
+                                    )
+                                )
+                                .accessibilityAddTraits(
+                                    CommandOverlayRowAccessibility
+                                        .selectionTraits(
+                                            isSelected:
+                                                index == selectedIndex
+                                        )
+                                )
+                                .disabled(!item.isEnabled)
                             }
                         }
                     }
@@ -170,7 +177,6 @@ struct CommandPaletteView: View {
         .accessibilityHint(
             Text(verbatim: item.unavailabilityReason ?? "")
         )
-        .accessibilityIdentifier(AccessibilityID.commandPaletteItem(item.id.accessibilityToken))
     }
 
     @ViewBuilder

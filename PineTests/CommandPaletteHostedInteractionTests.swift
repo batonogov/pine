@@ -212,14 +212,14 @@ struct CommandPaletteHostedInteractionTests {
 
     @Test("Selected command rows expose the selected accessibility trait")
     func selectedRowAccessibilityTrait() {
-        let selected = CommandOverlayRowAccessibility.traits(isSelected: true)
-        let unselected = CommandOverlayRowAccessibility.traits(
+        let selected = CommandOverlayRowAccessibility.selectionTraits(
+            isSelected: true
+        )
+        let unselected = CommandOverlayRowAccessibility.selectionTraits(
             isSelected: false
         )
 
-        #expect(selected.contains(.isButton))
         #expect(selected.contains(.isSelected))
-        #expect(unselected.contains(.isButton))
         #expect(!unselected.contains(.isSelected))
     }
 
