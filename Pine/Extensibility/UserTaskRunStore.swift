@@ -13,6 +13,24 @@
 
 import Foundation
 
+nonisolated private enum UserTaskCompletionWaiter {
+    static func wait(
+        for handles: [UserTaskCancellation],
+        until deadline: DispatchTime
+    ) async -> Bool {
+        guard !handles.isEmpty else { return true }
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var allCompleted = true
+                for handle in handles where !handle.wait(until: deadline) {
+                    allCompleted = false
+                }
+                continuation.resume(returning: allCompleted)
+            }
+        }
+    }
+}
+
 /// Owns the active and recent task runs for one project window.
 ///
 /// Capped to `maxRuns` to bound memory; the most-recent run is always
@@ -277,8 +295,8 @@ final class UserTaskRunStore {
                 ownsEveryExecution = false
             }
         }
-        let handlesCompleted = await Self.waitForCompletion(
-            of: handles,
+        let handlesCompleted = await UserTaskCompletionWaiter.wait(
+            for: handles,
             until: deadline
         )
         let hasNewExecutionOwnership =
@@ -308,22 +326,6 @@ final class UserTaskRunStore {
     }
 
     // MARK: - Private
-
-    nonisolated private static func waitForCompletion(
-        of handles: [UserTaskCancellation],
-        until deadline: DispatchTime
-    ) async -> Bool {
-        guard !handles.isEmpty else { return true }
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                var allCompleted = true
-                for handle in handles where !handle.wait(until: deadline) {
-                    allCompleted = false
-                }
-                continuation.resume(returning: allCompleted)
-            }
-        }
-    }
 
     private var executionOwnershipRunIDs: Set<UUID> {
         var ids = Set(runs.lazy
