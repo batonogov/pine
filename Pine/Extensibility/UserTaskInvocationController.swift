@@ -35,8 +35,15 @@ enum UserTaskInvocationController {
         _ task: UserTask,
         projectManager: ProjectManager
     ) {
-        let context = DialogPresenter.forProject(projectManager)
         Task { @MainActor in
+            // The project window's NSWindow delegate may not have registered
+            // its dialog owner binding on the very first run-loop tick after
+            // scene creation. Wait for it so the confirmation and output
+            // surfaces always have a valid sheet parent.
+            guard let owner = await projectManager.awaitDialogOwnerWindow() else {
+                return
+            }
+            let context = DialogPresenter.context(for: owner)
             _ = await invokePrepared(
                 task,
                 projectManager: projectManager,
