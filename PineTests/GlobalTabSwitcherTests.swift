@@ -309,4 +309,563 @@ struct GlobalTabSwitcherTests {
         // After 3 forward switches (3 valid tabs), we return to start.
         #expect(visited.last == startID)
     }
+
+    // MARK: - Visual switcher session
+
+    @Test("Visual session advances without activating, then commits once")
+    func visualSessionCommit() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        for index in 0..<3 {
+            tabManager.tabs.append(EditorTab(
+                url: URL(fileURLWithPath: "/tmp/session-\(index).swift"),
+                content: "",
+                savedContent: ""
+            ))
+            pm.selectEditorTab(tabManager.tabs[index].id, in: paneID)
+        }
+        let originalID = try #require(tabManager.activeTabID)
+        let targetID = tabManager.tabs[1].id
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        #expect(pm.globalTabSwitcherSession?.selectedIdentity?.tabID == targetID)
+        #expect(tabManager.activeTabID == originalID)
+
+        pm.commitGlobalTabSwitcher()
+
+        #expect(pm.globalTabSwitcherSession == nil)
+        #expect(tabManager.activeTabID == targetID)
+        #expect(pm.globalTabSwitchOrder.first?.tabID == targetID)
+    }
+
+    @Test("Reverse visual session wraps to the oldest tab")
+    func visualSessionReverse() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        for index in 0..<3 {
+            tabManager.tabs.append(EditorTab(
+                url: URL(fileURLWithPath: "/tmp/reverse-\(index).swift"),
+                content: "",
+                savedContent: ""
+            ))
+            pm.selectEditorTab(tabManager.tabs[index].id, in: paneID)
+        }
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: -1))
+        #expect(
+            pm.globalTabSwitcherSession?.selectedIdentity?.tabID
+                == tabManager.tabs[0].id
+        )
+    }
+
+    @Test("Cancel ends the visual session without changing the active tab")
+    func visualSessionCancel() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        for index in 0..<2 {
+            tabManager.tabs.append(EditorTab(
+                url: URL(fileURLWithPath: "/tmp/cancel-\(index).swift"),
+                content: "",
+                savedContent: ""
+            ))
+            pm.selectEditorTab(tabManager.tabs[index].id, in: paneID)
+        }
+        let originalID = try #require(tabManager.activeTabID)
+        tabManager.pendingFocusTabID = originalID
+        let originalFocusRequest = try #require(
+            tabManager.pendingFocusRequestID
+        )
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        pm.cancelGlobalTabSwitcher()
+
+        #expect(pm.globalTabSwitcherSession == nil)
+        #expect(tabManager.activeTabID == originalID)
+        #expect(tabManager.pendingFocusTabID == originalID)
+        #expect(
+            tabManager.pendingFocusRequestID == originalFocusRequest
+        )
+    }
+
+    @Test("Cancel restores an original changed by an organic activation")
+    func visualSessionCancelRestoresOrganicChange() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        for index in 0..<2 {
+            tabManager.tabs.append(EditorTab(
+                url: URL(
+                    fileURLWithPath: "/tmp/cancel-restore-\(index).swift"
+                ),
+                content: "",
+                savedContent: ""
+            ))
+            pm.selectEditorTab(tabManager.tabs[index].id, in: paneID)
+        }
+        let originalID = try #require(tabManager.activeTabID)
+        let alternateID = tabManager.tabs[0].id
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        #expect(pm.selectEditorTab(alternateID, in: paneID))
+        let organicFocusRequest = try #require(
+            tabManager.pendingFocusRequestID
+        )
+
+        pm.cancelGlobalTabSwitcher()
+
+        #expect(tabManager.activeTabID == originalID)
+        #expect(tabManager.pendingFocusTabID == originalID)
+        #expect(tabManager.pendingFocusRequestID != organicFocusRequest)
+    }
+
+    @Test("Visual session requires two eligible tabs")
+    func visualSessionNeedsTwoTabs() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        tabManager.tabs.append(EditorTab(
+            url: URL(fileURLWithPath: "/tmp/only.swift"),
+            content: "",
+            savedContent: ""
+        ))
+        pm.selectEditorTab(tabManager.tabs[0].id, in: paneID)
+
+        #expect(!pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        #expect(pm.globalTabSwitcherSession == nil)
+    }
+
+    @Test("Visual session without a current tab starts at the MRU head")
+    func visualSessionWithoutCurrentStartsAtHead() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        let older = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/no-current-older.swift"),
+            content: "",
+            savedContent: ""
+        )
+        let head = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/no-current-head.swift"),
+            content: "",
+            savedContent: ""
+        )
+        tabManager.tabs = [older, head]
+        pm.recordTabActivation(
+            paneID: paneID,
+            tabID: older.id,
+            contentType: .editor
+        )
+        pm.recordTabActivation(
+            paneID: paneID,
+            tabID: head.id,
+            contentType: .editor
+        )
+        tabManager.activeTabID = nil
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        #expect(pm.globalTabSwitcherSession?.selectedIdentity?.tabID == head.id)
+    }
+
+    @Test("Reverse visual session without a current tab starts at the MRU tail")
+    func visualSessionWithoutCurrentReverseStartsAtTail() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        let tail = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/no-current-tail.swift"),
+            content: "",
+            savedContent: ""
+        )
+        let head = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/no-current-reverse-head.swift"),
+            content: "",
+            savedContent: ""
+        )
+        tabManager.tabs = [tail, head]
+        pm.recordTabActivation(
+            paneID: paneID,
+            tabID: tail.id,
+            contentType: .editor
+        )
+        pm.recordTabActivation(
+            paneID: paneID,
+            tabID: head.id,
+            contentType: .editor
+        )
+        tabManager.activeTabID = nil
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: -1))
+        #expect(pm.globalTabSwitcherSession?.selectedIdentity?.tabID == tail.id)
+    }
+
+    @Test("Closing the selected tab reconciles display and commit")
+    func visualSessionReconcilesClosedSelection() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        for index in 0..<3 {
+            tabManager.tabs.append(EditorTab(
+                url: URL(fileURLWithPath: "/tmp/stale-\(index).swift"),
+                content: "",
+                savedContent: ""
+            ))
+            pm.selectEditorTab(tabManager.tabs[index].id, in: paneID)
+        }
+        let expectedID = tabManager.tabs[0].id
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        let removedID = try #require(
+            pm.globalTabSwitcherSession?.selectedIdentity?.tabID
+        )
+        tabManager.closeTab(id: removedID)
+
+        // Inventory changes reconcile the stored session immediately; the
+        // overlay is a consumer, not the mechanism that repairs model state.
+        #expect(pm.globalTabSwitcherSession?.identities.count == 2)
+        #expect(
+            pm.globalTabSwitcherSession?.selectedIdentity?.tabID
+                == expectedID
+        )
+        let presentation = pm.globalTabSwitcherPresentation(projectRoot: nil)
+        #expect(presentation.entries.count == 2)
+        #expect(
+            presentation.entries[presentation.selectedIndex].id.tabID
+                == expectedID
+        )
+
+        pm.commitGlobalTabSwitcher()
+        #expect(tabManager.activeTabID == expectedID)
+    }
+
+    @Test("Removing the original pane preserves a valid selected identity")
+    func visualSessionReconcilesRemovedPane() throws {
+        let setup = makeTwoEditorPaneManager(leftCount: 2, rightCount: 1)
+        setup.manager.selectEditorTab(
+            setup.leftTM.tabs[0].id,
+            in: setup.leftPane
+        )
+        setup.manager.selectEditorTab(
+            setup.leftTM.tabs[1].id,
+            in: setup.leftPane
+        )
+        setup.manager.selectEditorTab(
+            setup.rightTM.tabs[0].id,
+            in: setup.rightPane
+        )
+        let expectedID = setup.leftTM.tabs[1].id
+
+        #expect(
+            setup.manager.beginGlobalTabSwitcherSession(initialOffset: 1)
+        )
+        #expect(
+            setup.manager.globalTabSwitcherSession?.selectedIdentity?.tabID
+                == expectedID
+        )
+        setup.manager.removePane(setup.rightPane)
+
+        #expect(
+            setup.manager.globalTabSwitcherSession?.identities
+                .allSatisfy { $0.paneID != setup.rightPane } == true
+        )
+        setup.manager.commitGlobalTabSwitcher()
+        #expect(setup.leftTM.activeTabID == expectedID)
+    }
+
+    @Test("Stale removal below two entries ends the visual session")
+    func visualSessionEndsWhenTooFewRemain() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        for index in 0..<2 {
+            tabManager.tabs.append(EditorTab(
+                url: URL(fileURLWithPath: "/tmp/end-\(index).swift"),
+                content: "",
+                savedContent: ""
+            ))
+            pm.selectEditorTab(tabManager.tabs[index].id, in: paneID)
+        }
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        tabManager.closeTab(id: tabManager.tabs[0].id)
+
+        #expect(pm.globalTabSwitcherSession == nil)
+        #expect(!pm.reconcileGlobalTabSwitcherSession())
+        #expect(pm.globalTabSwitcherSession == nil)
+    }
+
+    @Test("Reconciliation chooses the nearest surviving forward neighbour")
+    func reconciliationDoesNotSkipAfterEarlierRemoval() throws {
+        let paneID = PaneID()
+        let identities = (0..<5).map { _ in
+            GlobalTabIdentity(
+                paneID: paneID,
+                tabID: UUID(),
+                contentType: .editor
+            )
+        }
+        let session = GlobalTabSwitcherSession(
+            identities: identities,
+            originalIdentity: identities[0],
+            selectedIndex: 2
+        )
+        let valid = Set([
+            identities[1],
+            identities[3],
+            identities[4],
+        ])
+
+        let reconciled = try #require(session.reconciled(keeping: valid))
+
+        #expect(reconciled.identities == [
+            identities[1],
+            identities[3],
+            identities[4],
+        ])
+        #expect(reconciled.selectedIdentity == identities[3])
+    }
+
+    @Test("Replacing the pane layout discards a live visual session")
+    func layoutRestoreDiscardsVisualSession() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        for index in 0..<2 {
+            let tab = EditorTab(
+                url: URL(
+                    fileURLWithPath: "/tmp/layout-restore-\(index).swift"
+                ),
+                content: "",
+                savedContent: ""
+            )
+            tabManager.tabs.append(tab)
+            pm.selectEditorTab(tab.id, in: paneID)
+        }
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+
+        let restoredPaneID = PaneID()
+        #expect(pm.restoreLayout(
+            from: .leaf(restoredPaneID, .editor),
+            activePaneUUID: restoredPaneID.id
+        ))
+
+        #expect(pm.globalTabSwitcherSession == nil)
+        #expect(pm.activePaneID == restoredPaneID)
+    }
+
+    @Test("Switcher projection performs linear inventory work")
+    func switcherProjectionIsLinear() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        let tabCount = 1_000
+        tabManager.tabs = (0..<tabCount).map { index in
+            EditorTab(
+                url: URL(
+                    fileURLWithPath: "/tmp/linear/file-\(index).swift"
+                ),
+                content: "",
+                savedContent: ""
+            )
+        }
+        let identities = tabManager.tabs.map {
+            GlobalTabIdentity(
+                paneID: paneID,
+                tabID: $0.id,
+                contentType: .editor
+            )
+        }
+        tabManager.activeTabID = tabManager.tabs[0].id
+        pm.restoreGlobalTabSwitchOrder(identities)
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        let presentation = pm.globalTabSwitcherPresentation(
+            projectRoot: URL(fileURLWithPath: "/tmp/linear")
+        )
+        let metrics = pm.lastGlobalTabInventoryMetrics
+
+        #expect(presentation.entries.count == tabCount)
+        #expect(metrics.paneVisits == 1)
+        #expect(metrics.tabVisits == tabCount)
+        #expect(metrics.orderLookups == tabCount)
+        #expect(metrics.entryLookups == tabCount)
+        #expect(metrics.totalOperations == 3 * tabCount + 1)
+    }
+
+    @Test("Duplicate editor titles receive deterministic path details")
+    func duplicateEditorTitlesAreDisambiguated() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        let root = URL(fileURLWithPath: "/tmp/Pine Demo")
+        let urls = [
+            root.appendingPathComponent("Sources/A/main.swift"),
+            root.appendingPathComponent("Sources/B/main.swift"),
+            URL(fileURLWithPath: "/external/C/main.swift"),
+        ]
+        for url in urls {
+            let tab = EditorTab(
+                url: url,
+                content: "",
+                savedContent: ""
+            )
+            tabManager.tabs.append(tab)
+            pm.selectEditorTab(tab.id, in: paneID)
+        }
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        let entries = pm.globalTabSwitcherEntries(projectRoot: root)
+        let details = entries.compactMap(\.detail)
+
+        #expect(entries.allSatisfy { $0.title == "main.swift" })
+        #expect(Set(details).count == urls.count)
+        #expect(details.contains("Sources/A/main.swift"))
+        #expect(details.contains("Sources/B/main.swift"))
+        #expect(details.contains("/external/C"))
+    }
+
+    @Test("Terminal duplicate titles include stable labels and working directory")
+    func duplicateTerminalTitlesAreDisambiguated() throws {
+        let pm = PaneManager()
+        let editorPane = pm.activePaneID
+        let editorManager = try #require(pm.tabManager(for: editorPane))
+        let editor = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/project/main.swift"),
+            content: "",
+            savedContent: ""
+        )
+        editorManager.tabs.append(editor)
+        pm.selectEditorTab(editor.id, in: editorPane)
+
+        let projectRoot = URL(fileURLWithPath: "/tmp/project")
+        let terminalPane = pm.createTerminalPaneAtBottom(
+            workingDirectory: projectRoot
+        )
+        let state = try #require(pm.terminalState(for: terminalPane))
+        let first = try #require(state.terminalTabs.first)
+        let second = state.addTab(
+            workingDirectory: projectRoot.appendingPathComponent("Sources")
+        )
+        first.name = "shell"
+        second.name = "shell"
+        pm.selectTerminalTab(first.id, in: terminalPane)
+        pm.selectTerminalTab(second.id, in: terminalPane)
+
+        #expect(pm.beginGlobalTabSwitcherSession(initialOffset: 1))
+        let terminalEntries = pm.globalTabSwitcherEntries(
+            projectRoot: projectRoot
+        ).filter { $0.id.contentType == .terminal }
+        let details = terminalEntries.compactMap(\.detail)
+
+        #expect(terminalEntries.count == 2)
+        #expect(terminalEntries.allSatisfy { $0.title == "shell" })
+        #expect(Set(details).count == 2)
+        #expect(details.contains { $0.contains(first.stableLabel) })
+        #expect(details.contains { $0.contains(second.stableLabel) })
+        #expect(details.contains { $0.contains("Sources") })
+    }
+
+    @Test("Path normalization is lexical and respects component boundaries")
+    func lexicalRelativePathNormalization() {
+        let root = URL(fileURLWithPath: "/nonexistent/project")
+
+        #expect(PaneManager.relativePath(
+            from: URL(
+                fileURLWithPath:
+                    "/nonexistent/project/Sources/../main.swift"
+            ),
+            root: root
+        ) == "main.swift")
+        #expect(PaneManager.relativePath(
+            from: URL(
+                fileURLWithPath:
+                    "/nonexistent/project-sibling/main.swift"
+            ),
+            root: root
+        ) == nil)
+    }
+
+    @Test("Committing to a hidden pane swaps the maximized projection")
+    func switcherCommitSurfacesHiddenMaximizedPane() {
+        let setup = makeTwoEditorPaneManager(leftCount: 1, rightCount: 1)
+        setup.manager.selectEditorTab(
+            setup.rightTM.tabs[0].id,
+            in: setup.rightPane
+        )
+        setup.manager.selectEditorTab(
+            setup.leftTM.tabs[0].id,
+            in: setup.leftPane
+        )
+        setup.manager.maximize(paneID: setup.leftPane)
+
+        #expect(setup.manager.beginGlobalTabSwitcherSession(initialOffset: 1))
+        #expect(
+            setup.manager.globalTabSwitcherSession?.selectedIdentity?.paneID
+                == setup.rightPane
+        )
+        setup.manager.commitGlobalTabSwitcher()
+
+        #expect(setup.manager.isMaximized)
+        #expect(setup.manager.activePaneID == setup.rightPane)
+        #expect(setup.manager.root.content(for: setup.rightPane) == .editor)
+        #expect(
+            setup.rightTM.activeTabID == setup.rightTM.tabs[0].id
+        )
+    }
+
+    @Test("Maximizing an inactive pane makes it the switcher anchor")
+    func maximizedPaneBecomesCurrentSwitcherAnchor() throws {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        let editorManager = try #require(
+            manager.tabManager(for: editorPane)
+        )
+        let editorTab = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/max-anchor.swift"),
+            content: "",
+            savedContent: ""
+        )
+        editorManager.tabs = [editorTab]
+        manager.selectEditorTab(editorTab.id, in: editorPane)
+
+        let terminalPane = manager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let terminalState = try #require(
+            manager.terminalState(for: terminalPane)
+        )
+        let terminalTabID = try #require(terminalState.activeTerminalID)
+
+        // Deliberately leave the editor active, then invoke the same model
+        // operation as the terminal pane's maximize button.
+        manager.selectEditorTab(editorTab.id, in: editorPane)
+        #expect(manager.activePaneID == editorPane)
+        manager.maximize(paneID: terminalPane)
+
+        #expect(manager.activePaneID == terminalPane)
+        #expect(manager.beginGlobalTabSwitcherSession(initialOffset: 1))
+        #expect(
+            manager.globalTabSwitcherSession?.originalIdentity
+                == GlobalTabIdentity(
+                    paneID: terminalPane,
+                    tabID: terminalTabID,
+                    contentType: .terminal
+                )
+        )
+        #expect(
+            manager.globalTabSwitcherSession?.selectedIdentity?.paneID
+                == editorPane
+        )
+
+        manager.commitGlobalTabSwitcher()
+        #expect(manager.isMaximized)
+        #expect(manager.activePaneID == editorPane)
+        #expect(manager.root.content(for: editorPane) == .editor)
+        #expect(manager.persistableRoot.contains(terminalPane))
+
+        manager.restoreFromMaximize()
+        #expect(Set(manager.root.leafIDs) == Set([editorPane, terminalPane]))
+    }
 }

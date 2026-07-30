@@ -42,6 +42,9 @@ final class TerminalPaneState {
     /// completion from consuming a later request for the same terminal tab.
     private(set) var pendingFocusRequestID: UUID?
     var onActiveTabChanged: ((UUID?) -> Void)?
+    /// Called after terminal identities are inserted or removed so a live
+    /// global switcher can reconcile independently of SwiftUI rendering.
+    var onTabInventoryChanged: (() -> Void)?
 
     /// Monotonically increasing counter for unique terminal tab names.
     private var nextTabNumber = 1
@@ -93,6 +96,7 @@ final class TerminalPaneState {
         terminalTabs.append(tab)
         activeTerminalID = tab.id
         pendingFocusTabID = tab.id
+        onTabInventoryChanged?()
         return tab
     }
 
@@ -103,6 +107,7 @@ final class TerminalPaneState {
         if activeTerminalID == id {
             activeTerminalID = terminalTabs.last?.id
         }
+        onTabInventoryChanged?()
     }
 
     func reorderTab(draggedID: UUID, targetID: UUID) {

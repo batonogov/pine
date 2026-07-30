@@ -154,17 +154,30 @@ struct KeyboardShortcutMatcherTests {
 
     // MARK: - normalizedModifiers
 
-    @Test("normalizedModifiers strips device-specific flags")
-    func normalizedStripsDeviceFlags() {
-        // .capsLock is a device-independent flag that should be preserved
-        let withCaps = NSEvent.ModifierFlags([.command, .capsLock])
-        let normalized = KeyboardShortcutMatcher.normalizedModifiers(withCaps)
-        #expect(normalized == [.command, .capsLock])
+    @Test("normalizedModifiers strips incidental keyboard state")
+    func normalizedStripsIncidentalFlags() {
+        let incidental: NSEvent.ModifierFlags = [
+            .capsLock,
+            .numericPad,
+            .function,
+            .help,
+        ]
+        let normalized = KeyboardShortcutMatcher.normalizedModifiers(
+            .command.union(incidental)
+        )
+        #expect(normalized == .command)
     }
 
-    @Test("normalizedModifiers keeps pure command")
-    func normalizedPureCommand() {
-        let normalized = KeyboardShortcutMatcher.normalizedModifiers(.command)
-        #expect(normalized == .command)
+    @Test("normalizedModifiers keeps every logical shortcut modifier")
+    func normalizedKeepsLogicalModifiers() {
+        let logical: NSEvent.ModifierFlags = [
+            .command,
+            .option,
+            .control,
+            .shift,
+        ]
+        #expect(
+            KeyboardShortcutMatcher.normalizedModifiers(logical) == logical
+        )
     }
 }

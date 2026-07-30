@@ -29,6 +29,7 @@ struct ContentView: View {
     @Environment(\.openWindow) var openWindow
 
     @Environment(\.controlActiveState) var controlActiveState
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     // MARK: - State (internal for cross-file extension access in ContentView+Helpers)
 
@@ -130,6 +131,37 @@ struct ContentView: View {
                 entries: recoveryEntries,
                 onRecover: { recoverTabs() },
                 onDiscard: { discardRecovery() }
+            )
+        }
+        .overlay {
+            // The controller pins every gesture to the key project window and
+            // discards it when that window resigns. Mirror that ownership in
+            // the render gate so a shared/stale scene can never show another
+            // window's switcher session.
+            //
+            // The animation is scoped to this overlay's own subtree (via the
+            // ZStack wrapper) so it animates the switcher's appear/disappear
+            // transition without bleeding into sibling modifiers such as the
+            // task output panel's safeAreaInset. A top-level .animation here
+            // wraps the entire ContentView in an animation context, which
+            // delays conditional content — e.g. the copy button inside the
+            // task run LazyVStack — from becoming interactive when the panel
+            // is toggled closed and reopened.
+            ZStack {
+                if paneManager.isGlobalTabSwitcherActive,
+                   controlActiveState == .key {
+                    GlobalTabSwitcherOverlay()
+                        .transition(
+                            reduceMotion
+                                ? .identity
+                                : .opacity.combined(with: .scale(scale: 0.96))
+                        )
+                        .zIndex(100)
+                }
+            }
+            .animation(
+                reduceMotion ? nil : PineAnimation.overlay,
+                value: paneManager.isGlobalTabSwitcherActive
             )
         }
         // MARK: - Command overlays (#975)

@@ -12643,6 +12643,126 @@
         }
       }
     },
+    "tab.switchNext": {
+      "comment": "Window menu command that immediately activates the next tab in global MRU order.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nächster Tab"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next Tab"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pestaña siguiente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onglet suivant"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のタブ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 탭"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Próxima aba"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Следующая вкладка"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一个标签页"
+          }
+        }
+      }
+    },
+    "tab.switchPrevious": {
+      "comment": "Window menu command that immediately activates the previous tab in global MRU order.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorheriger Tab"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous Tab"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pestaña anterior"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onglet précédent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前のタブ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 탭"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aba anterior"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущая вкладка"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一个标签页"
+          }
+        }
+      }
+    },
     "tab.moveLeading": {
       "comment": "Move the active tab one position to the left without dragging.",
       "extractionState": "manual",
@@ -28683,6 +28803,81 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "1 aviso" } },
         "ru" : { "stringUnit" : { "state" : "translated", "value" : "1 предупреждение" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1个警告" } }
+      }
+    },
+    "globalTabSwitcher.announcement" : {
+      "comment" : "VoiceOver announcement for the selected global tab switcher row. Values are tab title, pane label, selected position, and total row count.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, %3$lld von %4$lld" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, %3$lld of %4$lld" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, %3$lld de %4$lld" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, %3$lld sur %4$lld" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "%1$@、%2$@、%4$lld件中%3$lld件目" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, %4$lld개 중 %3$lld" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, %3$lld de %4$lld" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, %3$lld из %4$lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%1$@，%2$@，第 %3$lld 项，共 %4$lld 项" } }
+      }
+    },
+    "globalTabSwitcher.hint" : {
+      "comment" : "Keyboard guidance shown beneath the global tab switcher.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Tab zum Wechseln · Control loslassen zum Auswählen · Esc zum Abbrechen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tab cycles · Release Control to switch · Esc cancels" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Tab para recorrer · Suelta Control para cambiar · Esc para cancelar" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Tab pour parcourir · Relâchez Contrôle pour basculer · Échap pour annuler" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "Tabで移動 · Controlを放して切り替え · Escでキャンセル" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Tab으로 순환 · Control을 놓아 전환 · Esc로 취소" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tab para percorrer · Solte Control para alternar · Esc para cancelar" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Tab — листать · отпустите Control — перейти · Esc — отменить" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按 Tab 循环 · 松开 Control 切换 · 按 Esc 取消" } }
+      }
+    },
+    "globalTabSwitcher.title" : {
+      "comment" : "Title shown at the top of the global tab switcher.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Tab wechseln" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Switch Tab" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cambiar pestaña" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Changer d’onglet" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タブを切り替え" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "탭 전환" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alternar aba" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Переключение вкладки" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "切换标签页" } }
+      }
+    },
+    "pane.genericLabel" : {
+      "comment" : "Fallback label for a pane whose position cannot be resolved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Bereich" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pane" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Panel" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Volet" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ペイン" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "패널" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Painel" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Область" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "窗格" } }
+      }
+    },
+    "pane.positionLabel" : {
+      "comment" : "One-based pane position in the global tab switcher.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Bereich %lld" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pane %lld" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Panel %lld" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Volet %lld" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "%lld番のペイン" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "패널 %lld" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Painel %lld" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Область %lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "窗格 %lld" } }
       }
     },
     "problems.noIssues": {

@@ -32,8 +32,9 @@ import SwiftUI
 /// session is active. The overlay view observes `PaneManager` and renders while
 /// this is non-`nil`.
 struct GlobalTabSwitcherSession: Equatable {
-    /// The MRU-ordered identities captured at session start. Immutable for the
-    /// life of the session so cycling is deterministic.
+    /// The MRU-ordered identities captured at session start. The order stays
+    /// frozen, but identities that disappear while the overlay is open are
+    /// removed by ``reconciled(keeping:)``.
     let identities: [GlobalTabIdentity]
 
     /// The tab that was active when the session began, used to restore on
@@ -50,11 +51,41 @@ struct GlobalTabSwitcherSession: Equatable {
         return identities[selectedIndex]
     }
 
-    /// `true` when the cursor points back at the tab the session started on.
-    /// Used to short-circuit a redundant restore on cancel.
-    var isSelectionAtOriginal: Bool {
-        guard let originalIdentity, let selectedIdentity else { return false }
-        return selectedIdentity == originalIdentity
+    /// Returns a session whose cursor and identity list agree with the tabs
+    /// that still exist. Keeping reconciliation here gives the overlay and
+    /// commit path one source of truth: a row can never be highlighted from a
+    /// compacted list while commit indexes the older, unfiltered snapshot.
+    ///
+    /// If the selected tab disappeared, the nearest surviving item after it
+    /// becomes selected, falling back to the nearest preceding item at the end
+    /// of the list. This is based on the original order rather than the stale
+    /// numeric index, so removing earlier rows cannot skip a valid neighbour.
+    /// Fewer than two remaining tabs ends the switching gesture.
+    func reconciled(keeping validIdentities: Set<GlobalTabIdentity>) -> Self? {
+        let previouslySelected = selectedIdentity
+        let remaining = identities.filter(validIdentities.contains)
+        guard remaining.count >= 2 else { return nil }
+
+        let replacement = previouslySelected.flatMap { selected in
+            if validIdentities.contains(selected) {
+                return selected
+            }
+            let nextIndex = identities.index(
+                after: identities.startIndex + selectedIndex
+            )
+            return identities[nextIndex...].first(where: validIdentities.contains)
+                ?? identities[..<(identities.startIndex + selectedIndex)]
+                    .last(where: validIdentities.contains)
+        }
+        let reconciledIndex = replacement
+            .flatMap { remaining.firstIndex(of: $0) }
+            ?? 0
+
+        return Self(
+            identities: remaining,
+            originalIdentity: originalIdentity,
+            selectedIndex: reconciledIndex
+        )
     }
 }
 
@@ -80,7 +111,17 @@ struct GlobalTabSwitcherEntry: Identifiable, Equatable {
     /// within the visible pane tree (left-to-right, top-to-bottom).
     let paneContext: String
 
-    /// Project-relative path for editor tabs when one can be derived; `nil`
-    /// for terminals or files outside the project root.
-    let relativePath: String?
+    /// Stable secondary context that disambiguates duplicate titles. Editor
+    /// rows use a project-relative path (or the external parent directory);
+    /// terminal rows use their creation label plus working directory.
+    let detail: String?
+}
+
+/// A self-consistent overlay projection. Both the rows and cursor come from
+/// the same reconciled session snapshot.
+struct GlobalTabSwitcherPresentation: Equatable {
+    let entries: [GlobalTabSwitcherEntry]
+    let selectedIndex: Int
+
+    static let empty = Self(entries: [], selectedIndex: 0)
 }

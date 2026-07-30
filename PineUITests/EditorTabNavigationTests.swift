@@ -102,6 +102,49 @@ final class EditorTabNavigationTests: PineUITestCase {
         XCTAssertTrue(editorTab("main.swift").exists, "main.swift tab should survive switching")
         XCTAssertTrue(editorTab("utils.swift").exists, "utils.swift tab should survive switching")
         XCTAssertTrue(editorTab("notes.txt").exists, "notes.txt tab should survive switching")
+
+        // XCUITest key events bypass Pine's local NSEvent monitor. The native
+        // Window-menu equivalents must preserve immediate Control-Tab
+        // switching for this Accessibility path.
+        app.typeKey(.tab, modifierFlags: .control)
+        let controlTabExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == true"),
+            object: editorTab("main.swift")
+        )
+        wait(for: [controlTabExpectation], timeout: 5)
+        XCTAssertTrue(editorTab("main.swift").isSelected)
+
+        // macOS 26 routes synthetic key events through the native menu while
+        // the current beta may deliver them to Pine's visual-session monitor.
+        // Those paths intentionally differ in whether a completed gesture
+        // promotes MRU state, so verify the menu commands as an inverse pair
+        // without coupling the assertion to that prior promotion.
+        app.menuBars.menuBarItems["Window"].click()
+        let previousTabMenuItem = app.menuItems["Previous Tab"]
+        XCTAssertTrue(waitForExistence(previousTabMenuItem, timeout: 5))
+        previousTabMenuItem.click()
+        let reverseControlTabExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == false"),
+            object: editorTab("main.swift")
+        )
+        wait(for: [reverseControlTabExpectation], timeout: 5)
+        XCTAssertFalse(editorTab("main.swift").isSelected)
+        XCTAssertNotEqual(
+            editorTab("notes.txt").isSelected,
+            editorTab("utils.swift").isSelected,
+            "Previous Tab should select exactly one neighbouring tab"
+        )
+
+        app.menuBars.menuBarItems["Window"].click()
+        let nextTabMenuItem = app.menuItems["Next Tab"]
+        XCTAssertTrue(waitForExistence(nextTabMenuItem, timeout: 5))
+        nextTabMenuItem.click()
+        let inverseControlTabExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == true"),
+            object: editorTab("main.swift")
+        )
+        wait(for: [inverseControlTabExpectation], timeout: 5)
+        XCTAssertTrue(editorTab("main.swift").isSelected)
     }
 
     // MARK: - Sidebar preview lifecycle

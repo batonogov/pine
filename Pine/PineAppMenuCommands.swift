@@ -171,6 +171,36 @@ struct PineAppMenuCommands: Commands {
             }
         }
 
+        // MARK: - Window menu
+        //
+        // The local event monitor presents the visual MRU switcher for
+        // physical Control-Tab gestures. Native menu equivalents preserve the
+        // immediate-switch fallback for Accessibility/XCUITest events, which
+        // bypass local NSEvent monitors on macOS 26.
+        CommandGroup(after: .windowArrangement) {
+            Button {
+                focusedProject?.paneManager.switchToNextTabGlobally()
+            } label: {
+                Text(Strings.tabSwitchNext)
+            }
+            .keyboardShortcut("\t", modifiers: .control)
+            .disabled(
+                (focusedProject?.paneManager
+                    .validGlobalTabSwitchOrder().count ?? 0) < 2
+            )
+
+            Button {
+                focusedProject?.paneManager.switchToPreviousTabGlobally()
+            } label: {
+                Text(Strings.tabSwitchPrevious)
+            }
+            .keyboardShortcut("\t", modifiers: [.control, .shift])
+            .disabled(
+                (focusedProject?.paneManager
+                    .validGlobalTabSwitchOrder().count ?? 0) < 2
+            )
+        }
+
         // MARK: - Edit menu
         // Toggle Comment, Find & Replace, Find in Project, Go to Line,
         // inline diff navigation/accept/revert, code folding
