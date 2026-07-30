@@ -269,7 +269,12 @@ struct WelcomeView: View {
     /// File > Open Recent and the Dock menu.
     private func openRecentProject(at url: URL) {
         if let appDelegate {
-            appDelegate.requestOpenRecentProject(url)
+            appDelegate.requestOpenRecentProject(
+                url,
+                fallbackOpenProjectWindow: { url in
+                    openProjectWindow(url)
+                }
+            )
             return
         }
         NativeCommandDelivery.deferToNextMainRunLoop {
@@ -281,7 +286,12 @@ struct WelcomeView: View {
     private func openProject(at url: URL) -> ProjectManager? {
         let canonical = registry.canonicalProjectURL(url)
         if let appDelegate {
-            guard appDelegate.openRecentProject(canonical) else {
+            guard appDelegate.openRecentProject(
+                canonical,
+                fallbackOpenProjectWindow: { url in
+                    openProjectWindow(url)
+                }
+            ) else {
                 return nil
             }
             return registry.openProjects[canonical]

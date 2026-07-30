@@ -668,6 +668,56 @@ struct NativeFileWindowMenuTests {
         )
     }
 
+    @Test("Open Recent uses the Welcome fallback without a SwiftUI bridge")
+    func openRecentUsesWelcomeFallback() throws {
+        let directory = try makeTemporaryDirectory(
+            prefix: "pine-recent-fallback"
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let delegate = AppDelegate()
+        delegate.registry = ProjectRegistry()
+        delegate.openProjectWindow = nil
+        var openedURL: URL?
+
+        let didOpen = delegate.openRecentProject(
+            directory,
+            fallbackOpenProjectWindow: { openedURL = $0 }
+        )
+
+        let canonical = delegate.registry.canonicalProjectURL(directory)
+        #expect(didOpen)
+        #expect(openedURL == canonical)
+        #expect(delegate.registry.openProjects[canonical] != nil)
+    }
+
+    @Test("Deferred Open Recent retains the Welcome fallback")
+    func deferredOpenRecentUsesWelcomeFallback() async throws {
+        let directory = try makeTemporaryDirectory(
+            prefix: "pine-recent-deferred-fallback"
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let delegate = AppDelegate()
+        delegate.registry = ProjectRegistry()
+        delegate.openProjectWindow = nil
+        var openedURL: URL?
+
+        delegate.requestOpenRecentProject(
+            directory,
+            fallbackOpenProjectWindow: { openedURL = $0 }
+        )
+        #expect(openedURL == nil)
+
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+
+        let canonical = delegate.registry.canonicalProjectURL(directory)
+        #expect(openedURL == canonical)
+        #expect(delegate.registry.openProjects[canonical] != nil)
+    }
+
     @Test("Recent project titles disambiguate equal names and history caps at ten")
     func recentProjectTitlesAndLimit() throws {
         let firstParent = try makeTemporaryDirectory(

@@ -1537,16 +1537,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     }
 
     /// Opens a recent project from File, Welcome, or Dock through one path.
-    func requestOpenRecentProject(_ url: URL) {
+    func requestOpenRecentProject(
+        _ url: URL,
+        fallbackOpenProjectWindow: ((URL) -> Void)? = nil
+    ) {
         NativeCommandDelivery.deferToNextMainRunLoop { [weak self] in
-            _ = self?.openRecentProject(url)
+            _ = self?.openRecentProject(
+                url,
+                fallbackOpenProjectWindow: fallbackOpenProjectWindow
+            )
         }
     }
 
     /// Executes the shared Open Recent transition after its initiating
     /// SwiftUI/AppKit action stack has unwound.
     @discardableResult
-    func openRecentProject(_ url: URL) -> Bool {
+    func openRecentProject(
+        _ url: URL,
+        fallbackOpenProjectWindow: ((URL) -> Void)? = nil
+    ) -> Bool {
         let canonical = registry.canonicalProjectURL(url)
         if registry.isWindowOpen(canonical),
            let project = registry.openProjects[canonical],
@@ -1570,7 +1579,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         guard registry.projectManager(for: canonical) != nil else {
             return false
         }
-        guard let openProjectWindow else {
+        guard let openProjectWindow =
+                self.openProjectWindow ?? fallbackOpenProjectWindow else {
             registry.closeProjectWindow(canonical)
             return false
         }
