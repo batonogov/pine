@@ -45,29 +45,28 @@ final class UserTaskExecutionUITests: PineUITestCase {
         let status = app.staticTexts.matching(
             identifierBeginningWith: "userTaskStatus_"
         ).firstMatch
-        XCTAssertTrue(waitForLabel("Running", on: status, timeout: 5))
+        XCTAssertTrue(
+            waitForAccessibleText("Running", on: status, timeout: 5)
+        )
 
         let elapsed = app.staticTexts.matching(
             identifierBeginningWith: "userTaskElapsed_"
         ).firstMatch
         XCTAssertTrue(elapsed.waitForExistence(timeout: 5))
-        let initialElapsed = elapsed.label
+        let initialElapsed = accessibleText(of: elapsed)
         XCTAssertTrue(
-            waitForDifferentLabel(
+            waitForDifferentAccessibleText(
                 from: initialElapsed,
                 on: elapsed,
                 timeout: 3
             ),
             "Elapsed time should update while the task is running"
         )
-        let progress = app.progressIndicators.matching(
-            NSPredicate(
-                format: "identifier BEGINSWITH %@",
-                "userTaskProgress_"
-            )
+        let progress = app.descendants(matching: .any).matching(
+            identifierBeginningWith: "userTaskProgress_"
         ).firstMatch
         XCTAssertTrue(
-            progress.exists,
+            progress.waitForExistence(timeout: 3),
             "An active task should expose a progress indicator"
         )
 
@@ -78,10 +77,10 @@ final class UserTaskExecutionUITests: PineUITestCase {
             )
         ).firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 3))
-        cancel.click()
+        clickCenter(of: cancel)
 
         XCTAssertTrue(
-            waitForOneOfLabels(
+            waitForOneOfAccessibleTexts(
                 ["Cancelling", "Cancelled"],
                 on: status,
                 timeout: 3
@@ -93,11 +92,11 @@ final class UserTaskExecutionUITests: PineUITestCase {
             "Cancel should disable during cleanup or disappear after completion"
         )
         XCTAssertTrue(
-            waitForLabel("Cancelled", on: status, timeout: 5),
+            waitForAccessibleText("Cancelled", on: status, timeout: 5),
             "The task should reach a terminal cancelled state"
         )
         XCTAssertFalse(cancel.exists)
-        XCTAssertFalse(progress.exists)
+        XCTAssertTrue(waitForNonExistence(progress, timeout: 3))
     }
 
     func testSuccessfulTaskCopiesExactCombinedOutputWithoutModal() throws {
@@ -115,22 +114,30 @@ final class UserTaskExecutionUITests: PineUITestCase {
         let status = app.staticTexts.matching(
             identifierBeginningWith: "userTaskStatus_"
         ).firstMatch
-        XCTAssertTrue(waitForLabel("Succeeded", on: status, timeout: 8))
+        XCTAssertTrue(
+            waitForAccessibleText("Succeeded", on: status, timeout: 8)
+        )
 
         let output = app.staticTexts.matching(
             identifierBeginningWith: "userTaskOutputText_"
         ).firstMatch
         XCTAssertTrue(output.waitForExistence(timeout: 3))
-        XCTAssertEqual(output.label.utf8.count, 16 * 1_024)
-        XCTAssertTrue(output.label.allSatisfy { $0 == "x" })
-        XCTAssertLessThan(output.label.utf8.count, expectedOutput.utf8.count)
+        let outputText = accessibleText(of: output)
+        let diagnosticPrefix = "success-err\n"
+        let expectedPreview = diagnosticPrefix + String(
+            repeating: "x",
+            count: 16 * 1_024 - diagnosticPrefix.utf8.count
+        )
+        XCTAssertEqual(outputText.utf8.count, 16 * 1_024)
+        XCTAssertEqual(outputText, expectedPreview)
+        XCTAssertLessThan(outputText.utf8.count, expectedOutput.utf8.count)
 
         let truncationNotice = app.staticTexts.matching(
             identifierBeginningWith: "userTaskOutputTruncation_"
         ).firstMatch
         XCTAssertTrue(truncationNotice.waitForExistence(timeout: 3))
         XCTAssertEqual(
-            truncationNotice.label,
+            accessibleText(of: truncationNotice),
             """
             Preview truncated. Copy Output includes the complete captured output.
             """
@@ -143,8 +150,7 @@ final class UserTaskExecutionUITests: PineUITestCase {
         let copy = app.buttons.matching(
             identifierBeginningWith: "userTaskCopyOutput_"
         ).firstMatch
-        XCTAssertTrue(copy.waitForExistence(timeout: 3))
-        copy.click()
+        clickCenter(of: copy)
         XCTAssertEqual(
             NSPasteboard.general.string(forType: .string),
             expectedOutput
@@ -165,13 +171,14 @@ final class UserTaskExecutionUITests: PineUITestCase {
         let status = app.staticTexts.matching(
             identifierBeginningWith: "userTaskStatus_"
         ).firstMatch
-        XCTAssertTrue(waitForLabel("Exit 7", on: status, timeout: 8))
+        XCTAssertTrue(
+            waitForAccessibleText("Exit 7", on: status, timeout: 8)
+        )
 
         let copy = app.buttons.matching(
             identifierBeginningWith: "userTaskCopyOutput_"
         ).firstMatch
-        XCTAssertTrue(copy.waitForExistence(timeout: 3))
-        copy.click()
+        clickCenter(of: copy)
         XCTAssertEqual(
             NSPasteboard.general.string(forType: .string),
             expectedOutput
@@ -195,11 +202,12 @@ final class UserTaskExecutionUITests: PineUITestCase {
             panel.waitForExistence(timeout: 3),
             "Open Output should restore the same task history"
         )
-        XCTAssertTrue(waitForLabel("Exit 7", on: status, timeout: 3))
+        XCTAssertTrue(
+            waitForAccessibleText("Exit 7", on: status, timeout: 3)
+        )
 
         NSPasteboard.general.clearContents()
-        XCTAssertTrue(copy.waitForExistence(timeout: 3))
-        copy.click()
+        clickCenter(of: copy)
         XCTAssertEqual(
             NSPasteboard.general.string(forType: .string),
             expectedOutput,
@@ -246,28 +254,45 @@ final class UserTaskExecutionUITests: PineUITestCase {
         taskItem.click()
     }
 
-    private func waitForLabel(
+    private func waitForAccessibleText(
         _ expected: String,
         on element: XCUIElement,
         timeout: TimeInterval
     ) -> Bool {
         let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label == %@", expected),
+            predicate: NSPredicate(
+                format: "label == %@ OR value == %@",
+                expected,
+                expected
+            ),
             object: element
         )
-        return XCTWaiter.wait(
+        let result = XCTWaiter.wait(
             for: [expectation],
             timeout: timeout
-        ) == .completed
+        )
+        if result != .completed {
+            print(
+                "Expected accessible text \(expected), actual label: "
+                    + "\(element.label.debugDescription), value: "
+                    + "\(String(describing: element.value)), exists: "
+                    + "\(element.exists); \(element.debugDescription)"
+            )
+        }
+        return result == .completed
     }
 
-    private func waitForOneOfLabels(
+    private func waitForOneOfAccessibleTexts(
         _ expected: [String],
         on element: XCUIElement,
         timeout: TimeInterval
     ) -> Bool {
         let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label IN %@", expected),
+            predicate: NSPredicate(
+                format: "label IN %@ OR value IN %@",
+                expected,
+                expected
+            ),
             object: element
         )
         return XCTWaiter.wait(
@@ -276,19 +301,44 @@ final class UserTaskExecutionUITests: PineUITestCase {
         ) == .completed
     }
 
-    private func waitForDifferentLabel(
+    private func waitForDifferentAccessibleText(
         from original: String,
         on element: XCUIElement,
         timeout: TimeInterval
     ) -> Bool {
         let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label != %@", original),
+            predicate: NSPredicate(
+                format: """
+                (label != %@ AND value != %@)
+                AND (label != '' OR value != nil)
+                """,
+                original,
+                original
+            ),
             object: element
         )
         return XCTWaiter.wait(
             for: [expectation],
             timeout: timeout
         ) == .completed
+    }
+
+    private func accessibleText(of element: XCUIElement) -> String {
+        if !element.label.isEmpty {
+            return element.label
+        }
+        return element.value as? String ?? ""
+    }
+
+    private func clickCenter(
+        of element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) {
+        XCTAssertTrue(element.waitForExistence(timeout: timeout))
+        XCTAssertFalse(element.frame.isEmpty)
+        element.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+        ).click()
     }
 
     private func waitForNonExistence(
