@@ -10,6 +10,14 @@ import XCTest
 final class NativeFileWindowMenuUITests: PineUITestCase {
     private var projectURL: URL!
 
+    private var canonicalProjectURL: URL {
+        projectURL.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    private var recentProjectMenuIdentifier: String {
+        "openRecentProjectMenuItem_\(canonicalProjectURL.path)"
+    }
+
     override func setUpWithError() throws {
         try super.setUpWithError()
         projectURL = try createTempProject(
@@ -77,7 +85,15 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
             openPanel.waitForExistence(timeout: 5),
             "File > Open… should present a project-window-owned sheet"
         )
-        let mainFile = openPanel.staticTexts["main.swift"].firstMatch
+        let mainFile = openPanel.descendants(matching: .any).matching(
+            NSPredicate(
+                format:
+                    "label == %@ OR identifier == %@ OR value == %@",
+                "main.swift",
+                "main.swift",
+                "main.swift"
+            )
+        ).firstMatch
         XCTAssertTrue(
             mainFile.waitForExistence(timeout: 5),
             "The project-root file should be selectable in Open…"
@@ -122,13 +138,8 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         XCTAssertTrue(openRecent.isEnabled)
         openRecent.click()
 
-        let recentPrefix = "\(projectURL.lastPathComponent) — "
-        let recentProject = app.menuItems.matching(
-            NSPredicate(
-                format: "label BEGINSWITH %@",
-                recentPrefix
-            )
-        ).firstMatch
+        let recentProject =
+            app.menuItems[recentProjectMenuIdentifier].firstMatch
         XCTAssertTrue(
             recentProject.waitForExistence(timeout: 5),
             "Open Recent should expose the retained project"
@@ -152,7 +163,8 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         XCTAssertTrue(openRecent.isEnabled)
         openRecent.click()
 
-        let clearMenu = app.menuItems["Clear Menu"].firstMatch
+        let clearMenu =
+            app.menuItems["clearRecentProjectsMenuItem"].firstMatch
         XCTAssertTrue(
             clearMenu.waitForExistence(timeout: 5),
             "Open Recent should expose Clear Menu"
