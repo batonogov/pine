@@ -245,9 +245,12 @@ final class SettingsUITests: PineUITestCase {
 
     func testEverySettingsPaneUsesLocalizedLabels() throws {
         launchClean()
-        openSettings()
+        openSettings(
+            menuTitle: "Settings…",
+            generalTabTitle: "General"
+        )
 
-        let panes = [
+        assertSettingsPanes([
             (
                 tab: "General",
                 contentIdentifier: "generalSettingsPane",
@@ -288,8 +291,69 @@ final class SettingsUITests: PineUITestCase {
                 ],
                 expectedIdentifiers: []
             ),
-        ]
+        ])
+    }
 
+    func testEverySettingsPaneUsesRussianLabelsWithoutRawKeys() throws {
+        useLaunchLocale(language: "ru", locale: "ru_RU")
+        launchClean()
+        openSettings(
+            menuTitle: "Настройки…",
+            generalTabTitle: "Основные"
+        )
+
+        assertSettingsPanes([
+            (
+                tab: "Основные",
+                contentIdentifier: "generalSettingsPane",
+                expectedLabels: [
+                    "Добавлять перевод строки в конце",
+                    "Удалять пробелы в конце строк",
+                    "Форматировать при сохранении",
+                    "Продолжать списки автоматически",
+                    "Переносить строки",
+                    "Мини-карта",
+                ],
+                expectedIdentifiers: ["generalFontSizeSlider"]
+            ),
+            (
+                tab: "Терминал",
+                contentIdentifier: "terminalAppearancePicker",
+                expectedLabels: [],
+                expectedIdentifiers: []
+            ),
+            (
+                tab: "Языковые серверы",
+                contentIdentifier: "lsp-settings-executable",
+                expectedLabels: [],
+                expectedIdentifiers: []
+            ),
+            (
+                tab: "Передача контекста",
+                contentIdentifier: "agentHandoffReadOnlyContextToggle",
+                expectedLabels: [],
+                expectedIdentifiers: []
+            ),
+            (
+                tab: "Сочетания клавиш и задачи",
+                contentIdentifier: "keyBindingsSettingsPane",
+                expectedLabels: [
+                    "Открыть файл",
+                    "Перезагрузить",
+                ],
+                expectedIdentifiers: []
+            ),
+        ])
+    }
+
+    private func assertSettingsPanes(
+        _ panes: [(
+            tab: String,
+            contentIdentifier: String,
+            expectedLabels: [String],
+            expectedIdentifiers: [String]
+        )]
+    ) {
         for pane in panes {
             let tab = app.buttons[pane.tab].firstMatch
             XCTAssertTrue(
@@ -339,14 +403,17 @@ final class SettingsUITests: PineUITestCase {
         }
     }
 
-    private func openSettings() {
+    private func openSettings(
+        menuTitle: String = "Settings…",
+        generalTabTitle: String = "General"
+    ) {
         let appMenu = app.menuBars.menuBarItems["Pine"]
         XCTAssertTrue(
             appMenu.waitForExistence(timeout: 10),
             "Pine application menu should be available"
         )
         appMenu.click()
-        let settingsItem = app.menuItems["Settings…"].firstMatch
+        let settingsItem = app.menuItems[menuTitle].firstMatch
         XCTAssertTrue(
             settingsItem.waitForExistence(timeout: 5),
             "Application menu should expose Settings"
@@ -354,7 +421,7 @@ final class SettingsUITests: PineUITestCase {
         settingsItem.click()
 
         XCTAssertTrue(
-            app.buttons["General"].firstMatch.waitForExistence(timeout: 10),
+            app.buttons[generalTabTitle].firstMatch.waitForExistence(timeout: 10),
             "The consolidated Settings scene should open"
         )
     }

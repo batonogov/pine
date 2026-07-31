@@ -9,6 +9,7 @@ import XCTest
 
 final class NativeFileWindowMenuUITests: PineUITestCase {
     private var projectURL: URL!
+    private var secondProjectURL: URL!
 
     private func visibleMenuItem(
         matching predicate: NSPredicate
@@ -57,11 +58,18 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
             files: ["main.swift": "let value = 1\n"],
             projectName: "Native Menu Project"
         )
+        secondProjectURL = try createTempProject(
+            files: ["second.swift": "let second = true\n"],
+            projectName: "Second Native Menu Project"
+        )
     }
 
     override func tearDownWithError() throws {
         if let projectURL {
             cleanupProject(projectURL)
+        }
+        if let secondProjectURL {
+            cleanupProject(secondProjectURL)
         }
         try super.tearDownWithError()
     }
@@ -235,6 +243,70 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
                 "Cancelling Open Folder must leave the current project open"
             )
         }
+    }
+
+    func testOpenFolderSelectsDirectoryAndRoutesCommandToNewWindow() throws {
+        launchWithProject(projectURL)
+        let firstWindow = app.windows[projectURL.lastPathComponent].firstMatch
+        XCTAssertTrue(
+            firstWindow.waitForExistence(timeout: 10),
+            "The original project window should be visible"
+        )
+
+        clickMenuBarItem("File")
+        let openFolder = app.menuItems["Open Folder…"].firstMatch
+        XCTAssertTrue(openFolder.waitForExistence(timeout: 5))
+        openFolder.click()
+
+        let openPanel = app.sheets.firstMatch
+        XCTAssertTrue(
+            openPanel.waitForExistence(timeout: 5),
+            "Open Folder should present a directory picker"
+        )
+
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let pathField = try XCTUnwrap(
+            app.textFields.allElementsBoundByIndex.first(where: {
+                $0.isHittable
+            }),
+            "Go to Folder should expose a hittable path field"
+        )
+        pathField.typeText(secondProjectURL.path)
+        pathField.typeKey(.return, modifierFlags: [])
+
+        let openButton = openPanel.buttons["Open"].firstMatch
+        XCTAssertTrue(
+            waitForEnabled(openButton, timeout: 5),
+            "Resolving the directory should enable Open"
+        )
+        openButton.click()
+
+        let secondWindow = app.windows[
+            secondProjectURL.lastPathComponent
+        ].firstMatch
+        XCTAssertTrue(
+            secondWindow.waitForExistence(timeout: 10),
+            "Selecting a directory should open its project window"
+        )
+        XCTAssertTrue(
+            secondWindow.descendants(matching: .any)[
+                "fileNode_second.swift"
+            ].firstMatch.waitForExistence(timeout: 10),
+            "The new window should display the selected project"
+        )
+
+        clickMenuBarItem("File")
+        app.menuItems["New File"].firstMatch.click()
+
+        XCTAssertTrue(
+            secondWindow.buttons["editorTab_Untitled"]
+                .firstMatch.waitForExistence(timeout: 5),
+            "File > New File should route to the newly focused project"
+        )
+        XCTAssertFalse(
+            firstWindow.buttons["editorTab_Untitled"].firstMatch.exists,
+            "The command must not mutate the background project"
+        )
     }
 
     func testOpenRecentClearMenuByMouse() throws {

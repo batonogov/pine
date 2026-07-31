@@ -89,6 +89,23 @@ class PineUITestCase: XCTestCase {
         app.activate()
     }
 
+    /// Overrides the deterministic locale configured by the base class.
+    ///
+    /// Keep locale changes explicit in the individual test so menu labels and
+    /// application strings are asserted under the same language.
+    func useLaunchLocale(language: String, locale: String) {
+        replaceLaunchArgument("-AppleLanguages", with: "(\(language))")
+        replaceLaunchArgument("-AppleLocale", with: locale)
+    }
+
+    /// Enables the production first-launch terminal path for tests that cover
+    /// startup behavior instead of the suite's legacy empty-editor fixture.
+    func enableInitialTerminalSeeding() {
+        app.launchArguments.removeAll {
+            $0 == "--disable-terminal-seeding"
+        }
+    }
+
     /// Waits for an element to exist with a timeout.
     @discardableResult
     func waitForExistence(_ element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
@@ -118,6 +135,18 @@ class PineUITestCase: XCTestCase {
         app.descendants(matching: .any)
             .matching(identifier: identifier)
             .firstMatch
+    }
+
+    private func replaceLaunchArgument(
+        _ key: String,
+        with value: String
+    ) {
+        guard let index = app.launchArguments.firstIndex(of: key),
+              app.launchArguments.indices.contains(index + 1) else {
+            XCTFail("Missing \(key) in PineUITestCase launch arguments")
+            return
+        }
+        app.launchArguments[index + 1] = value
     }
 
     // MARK: - Editor Tab Helpers
