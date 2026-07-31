@@ -42,13 +42,6 @@ nonisolated enum AccessibilityID {
     static let welcomeSearchToggle = "welcomeSearchToggle"
     static func welcomeRecentProject(_ name: String) -> String { "welcomeRecentProject_\(name)" }
 
-    // MARK: - Native File menu
-    static let clearRecentProjectsMenuItem =
-        "clearRecentProjectsMenuItem"
-    static func openRecentProjectMenuItem(_ url: URL) -> String {
-        "openRecentProjectMenuItem_\(url.path)"
-    }
-
     // MARK: - Main editor window
     static let sidebar = "sidebar"
     static func fileNode(_ name: String) -> String { "fileNode_\(name)" }

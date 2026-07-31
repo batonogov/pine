@@ -1399,6 +1399,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
     private func installNativeCommandObservers() {
         let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(handleNativeMenuDidBeginTracking(_:)),
+            name: NSMenu.didBeginTrackingNotification,
+            object: nil
+        )
         for name in [
             Notification.Name.newFile,
             .openFile,
@@ -1414,6 +1420,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 object: nil
             )
         }
+    }
+
+    @objc private func handleNativeMenuDidBeginTracking(
+        _ notification: Notification
+    ) {
+        guard let menu = notification.object as? NSMenu else { return }
+        NativeRecentProjectsMenu.synchronize(
+            mainMenu: menu,
+            projects: registry.recentProjects,
+            target: self,
+            openAction: #selector(openRecentProjectFromNativeMenu(_:)),
+            clearAction: #selector(clearRecentProjectsFromNativeMenu(_:))
+        )
     }
 
     @objc private func handleNativeCommand(_ notification: Notification) {
@@ -1482,6 +1501,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
         default:
             break
+        }
+    }
+
+    @objc private func openRecentProjectFromNativeMenu(
+        _ sender: NSMenuItem
+    ) {
+        guard let projectURL = sender.representedObject as? URL else {
+            return
+        }
+        requestOpenRecentProject(projectURL)
+    }
+
+    @objc private func clearRecentProjectsFromNativeMenu(
+        _: NSMenuItem
+    ) {
+        NativeCommandDelivery.deferToNextMainRunLoop { [weak self] in
+            self?.registry.clearRecentProjects()
         }
     }
 

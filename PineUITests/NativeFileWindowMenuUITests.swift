@@ -10,12 +10,45 @@ import XCTest
 final class NativeFileWindowMenuUITests: PineUITestCase {
     private var projectURL: URL!
 
-    private var canonicalProjectURL: URL {
-        projectURL.standardizedFileURL.resolvingSymlinksInPath()
+    private func visibleMenuItem(
+        matching predicate: NSPredicate
+    ) -> XCUIElement? {
+        app.menuItems
+            .matching(predicate)
+            .allElementsBoundByIndex
+            .first(
+                where: {
+                    $0.frame.width > 0 && $0.frame.height > 0
+                }
+            )
     }
 
-    private var recentProjectMenuIdentifier: String {
-        "openRecentProjectMenuItem_\(canonicalProjectURL.path)"
+    private func waitForEnabled(
+        _ element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"),
+            object: element
+        )
+        return XCTWaiter.wait(
+            for: [expectation],
+            timeout: timeout
+        ) == .completed
+    }
+
+    private func waitForDisabled(
+        _ element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == false"),
+            object: element
+        )
+        return XCTWaiter.wait(
+            for: [expectation],
+            timeout: timeout
+        ) == .completed
     }
 
     override func setUpWithError() throws {
@@ -85,23 +118,32 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
             openPanel.waitForExistence(timeout: 5),
             "File > Open… should present a project-window-owned sheet"
         )
-        let mainFile = openPanel.descendants(matching: .any).matching(
-            NSPredicate(
-                format:
-                    "label == %@ OR identifier == %@ OR value == %@",
-                "main.swift",
-                "main.swift",
-                "main.swift"
-            )
-        ).firstMatch
+        let viewOptions = openPanel.menuButtons["View Options"].firstMatch
+        XCTAssertTrue(viewOptions.exists)
+        viewOptions.click()
+        let listView = app.menuItems["List"].firstMatch
+        XCTAssertTrue(listView.exists)
+        listView.click()
+
+        let mainFilePredicate = NSPredicate(
+            format: "value == %@",
+            "main.swift"
+        )
+        let mainFile = openPanel.textFields
+            .matching(mainFilePredicate)
+            .firstMatch
         XCTAssertTrue(
             mainFile.waitForExistence(timeout: 5),
             "The project-root file should be selectable in Open…"
         )
-        mainFile.click()
+        mainFile.coordinate(
+            withNormalizedOffset: CGVector(dx: -0.2, dy: 0.5)
+        ).click()
         let openButton = openPanel.buttons["Open"].firstMatch
-        XCTAssertTrue(openButton.exists)
-        XCTAssertTrue(openButton.isEnabled)
+        XCTAssertTrue(
+            waitForEnabled(openButton, timeout: 5),
+            "Selecting the file should enable Open"
+        )
         openButton.click()
         XCTAssertTrue(
             waitForExistence(editorTab("main.swift"), timeout: 5),
@@ -138,10 +180,14 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         XCTAssertTrue(openRecent.isEnabled)
         openRecent.click()
 
-        let recentProject =
-            app.menuItems[recentProjectMenuIdentifier].firstMatch
-        XCTAssertTrue(
-            recentProject.waitForExistence(timeout: 5),
+        let recentPrefix = "\(projectURL.lastPathComponent) — "
+        let recentProject = try XCTUnwrap(
+            visibleMenuItem(
+                matching: NSPredicate(
+                    format: "title BEGINSWITH %@",
+                    recentPrefix
+                )
+            ),
             "Open Recent should expose the retained project"
         )
         recentProject.click()
@@ -163,21 +209,23 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         XCTAssertTrue(openRecent.isEnabled)
         openRecent.click()
 
-        let clearMenu =
-            app.menuItems["clearRecentProjectsMenuItem"].firstMatch
-        XCTAssertTrue(
-            clearMenu.waitForExistence(timeout: 5),
+        let clearMenu = try XCTUnwrap(
+            visibleMenuItem(
+                matching: NSPredicate(
+                    format: "title == %@",
+                    "Clear Menu"
+                )
+            ),
             "Open Recent should expose Clear Menu"
         )
         XCTAssertTrue(clearMenu.isEnabled)
         clearMenu.click()
-        XCTAssertTrue(clearMenu.waitForNonExistence(timeout: 5))
 
         clickMenuBarItem("File")
         let clearedOpenRecent = app.menuItems["Open Recent"].firstMatch
         XCTAssertTrue(clearedOpenRecent.exists)
-        XCTAssertFalse(
-            clearedOpenRecent.isEnabled,
+        XCTAssertTrue(
+            waitForDisabled(clearedOpenRecent, timeout: 5),
             "Clear Menu should disable an empty Open Recent submenu"
         )
     }

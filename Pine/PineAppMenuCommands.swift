@@ -109,11 +109,6 @@ struct PineAppMenuCommands: Commands {
                             userInfo: ["url": projectURL]
                         )
                     }
-                    .accessibilityIdentifier(
-                        AccessibilityID.openRecentProjectMenuItem(
-                            projectURL
-                        )
-                    )
                 }
 
                 Divider()
@@ -129,9 +124,6 @@ struct PineAppMenuCommands: Commands {
                         systemImage: MenuIcons.clearMenu
                     )
                 }
-                .accessibilityIdentifier(
-                    AccessibilityID.clearRecentProjectsMenuItem
-                )
             } label: {
                 Label(
                     Strings.menuOpenRecent,
