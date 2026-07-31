@@ -70,7 +70,7 @@ final class BlameViewTests: PineUITestCase {
             return
         }
 
-        // Toggle blame ON via View menu
+        // The native menu toggle changes the persisted preference.
         app.menuBars.menuBarItems["View"].click()
         let toggleItem = app.menuItems["Toggle Git Blame"]
         guard waitForExistence(toggleItem, timeout: 3) else {
@@ -79,7 +79,7 @@ final class BlameViewTests: PineUITestCase {
         }
         toggleItem.click()
 
-        // Toggle blame OFF via View menu
+        // Toggle it again to leave the persisted preference unchanged for later tests.
         app.menuBars.menuBarItems["View"].click()
         let toggleItemOff = app.menuItems["Toggle Git Blame"]
         guard waitForExistence(toggleItemOff, timeout: 3) else {
