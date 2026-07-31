@@ -197,6 +197,46 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         )
     }
 
+    func testOpenFolderFromProjectMenuPresentsReusableOwnedPanel() throws {
+        launchWithProject(projectURL)
+        let sidebar = app.scrollViews["sidebar"]
+        XCTAssertTrue(
+            waitForExistence(sidebar, timeout: 10),
+            "The project window should be ready before opening File"
+        )
+
+        for attempt in 1...2 {
+            clickMenuBarItem("File")
+            let openFolder = app.menuItems["Open Folder…"].firstMatch
+            XCTAssertTrue(
+                openFolder.waitForExistence(timeout: 5),
+                "File should expose Open Folder…"
+            )
+            XCTAssertTrue(openFolder.isEnabled)
+            openFolder.click()
+
+            let openPanel = app.sheets.firstMatch
+            XCTAssertTrue(
+                openPanel.waitForExistence(timeout: 5),
+                "File > Open Folder… should present a project-window-owned sheet on attempt \(attempt)"
+            )
+            XCTAssertTrue(
+                openPanel.buttons["Open"].firstMatch.exists,
+                "The owned folder picker should expose its Open action"
+            )
+
+            app.typeKey(".", modifierFlags: .command)
+            XCTAssertTrue(
+                openPanel.waitForNonExistence(timeout: 5),
+                "Cancelling the folder picker should dismiss the owned sheet"
+            )
+            XCTAssertTrue(
+                sidebar.exists,
+                "Cancelling Open Folder must leave the current project open"
+            )
+        }
+    }
+
     func testOpenRecentClearMenuByMouse() throws {
         launchWithProject(projectURL)
         XCTAssertTrue(

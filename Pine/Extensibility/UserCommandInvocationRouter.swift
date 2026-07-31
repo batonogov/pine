@@ -73,7 +73,7 @@ enum UserCommandInvocationRouter {
         case .openFolder:
             notificationCenter.post(
                 name: .openFolder,
-                object: nil
+                object: projectManager
             )
 
         case .newFile, .openFile, .closeTab, .closeWindow:
