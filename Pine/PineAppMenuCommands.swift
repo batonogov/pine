@@ -65,8 +65,8 @@ struct PineAppMenuCommands: Commands {
                 }
             } label: {
                 Text(CLIInstaller.isInstalled
-                     ? "Uninstall Command Line Tool..."
-                     : "Install Command Line Tool...")
+                     ? "Uninstall Command Line Tool…"
+                     : "Install Command Line Tool…")
             }
         }
 

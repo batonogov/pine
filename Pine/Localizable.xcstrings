@@ -6092,7 +6092,7 @@
         }
       }
     },
-    "Install Command Line Tool...": {
+    "Install Command Line Tool…": {
       "localizations": {
         "de": {
           "stringUnit": {
@@ -6103,7 +6103,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Install Command Line Tool..."
+            "value": "Install Command Line Tool…"
           }
         },
         "es": {
@@ -19097,7 +19097,7 @@
         }
       }
     },
-    "Uninstall Command Line Tool...": {
+    "Uninstall Command Line Tool…": {
       "localizations": {
         "de": {
           "stringUnit": {
@@ -19108,7 +19108,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uninstall Command Line Tool..."
+            "value": "Uninstall Command Line Tool…"
           }
         },
         "es": {
