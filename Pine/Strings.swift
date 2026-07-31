@@ -71,8 +71,57 @@ enum Strings {
     static let settingsKeyBindingsNoOverrides: LocalizedStringKey =
         "settings.keyBindings.noOverrides"
 
-    static func settingsKeyBindingsActiveCount(_ count: Int) -> String {
-        String(localized: "settings.keyBindings.activeCount \(count)")
+    static func settingsKeyBindingsActiveCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        localizedPluralString(
+            forKey: "settings.keyBindings.activeCount %lld",
+            fallback: "%lld active entries",
+            count: count,
+            locale: locale
+        )
+    }
+
+    static func settingsKeyBindingsReloadSummary(
+        tasks: Int,
+        keybindings: Int,
+        locale: Locale = .current
+    ) -> String {
+        let taskCount = localizedPluralString(
+            forKey: "settings.keyBindings.reload.taskCount %lld",
+            fallback: "%lld tasks",
+            count: tasks,
+            locale: locale
+        )
+        let keybindingCount = localizedPluralString(
+            forKey: "settings.keyBindings.reload.keybindingCount %lld",
+            fallback: "%lld key bindings",
+            count: keybindings,
+            locale: locale
+        )
+        let format = localizedString(
+            forKey: "settings.keyBindings.reload.success %@ %@",
+            fallback: "Reloaded: %1$@, %2$@.",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [taskCount, keybindingCount]
+        )
+    }
+
+    static func settingsKeyBindingsReloadProblems(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        localizedPluralString(
+            forKey: "settings.keyBindings.reload.problemCount %lld",
+            fallback: "Reloaded with %lld problems.",
+            count: count,
+            locale: locale
+        )
     }
 
     static let settingsLanguageServersTab: LocalizedStringKey =
@@ -118,6 +167,17 @@ enum Strings {
         "settings.lsp.directLaunch.help"
     static let lspChooseExecutable: LocalizedStringKey =
         "settings.lsp.executable.choose"
+    static var lspChooseExecutablePrompt: String {
+        lspChooseExecutablePrompt(locale: .current)
+    }
+
+    static func lspChooseExecutablePrompt(locale: Locale) -> String {
+        localizedString(
+            forKey: "settings.lsp.executable.prompt",
+            fallback: "Choose",
+            locale: locale
+        )
+    }
     static let lspReset: LocalizedStringKey =
         "settings.lsp.reset"
 
@@ -1511,7 +1571,7 @@ enum Strings {
 
     static func dialogClose(locale: Locale) -> String {
         localizedString(
-            forKey: "Close",
+            forKey: "dialog.close",
             fallback: "Close",
             locale: locale
         )

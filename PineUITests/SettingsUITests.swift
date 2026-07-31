@@ -24,19 +24,7 @@ final class SettingsUITests: PineUITestCase {
 
     func testTerminalPaneExposesThemeAndQuickTerminalControls() throws {
         launchClean()
-
-        let appMenu = app.menuBars.menuBarItems["Pine"]
-        XCTAssertTrue(
-            appMenu.waitForExistence(timeout: 10),
-            "Pine application menu should be available"
-        )
-        appMenu.click()
-        let settingsItem = app.menuItems["Settings…"].firstMatch
-        XCTAssertTrue(
-            settingsItem.waitForExistence(timeout: 5),
-            "Application menu should expose Settings"
-        )
-        settingsItem.click()
+        openSettings()
 
         let terminalTab = app.buttons["Terminal"].firstMatch
         XCTAssertTrue(
@@ -252,6 +240,122 @@ final class SettingsUITests: PineUITestCase {
         XCTAssertTrue(
             pineTheme.isSelected,
             "Clicking Pine should restore the selected accessibility trait"
+        )
+    }
+
+    func testEverySettingsPaneUsesLocalizedLabels() throws {
+        launchClean()
+        openSettings()
+
+        let panes = [
+            (
+                tab: "General",
+                contentIdentifier: "generalSettingsPane",
+                expectedLabels: [
+                    "Insert Final Newline",
+                    "Strip Trailing Whitespace",
+                    "Format on Save",
+                    "Smart List Continuation",
+                    "Word Wrap",
+                    "Minimap",
+                ],
+                expectedIdentifiers: ["generalFontSizeSlider"]
+            ),
+            (
+                tab: "Terminal",
+                contentIdentifier: "terminalAppearancePicker",
+                expectedLabels: [],
+                expectedIdentifiers: []
+            ),
+            (
+                tab: "Language Servers",
+                contentIdentifier: "lsp-settings-executable",
+                expectedLabels: [],
+                expectedIdentifiers: []
+            ),
+            (
+                tab: "Agent Handoff",
+                contentIdentifier: "agentHandoffReadOnlyContextToggle",
+                expectedLabels: [],
+                expectedIdentifiers: []
+            ),
+            (
+                tab: "Key Bindings & Tasks",
+                contentIdentifier: "keyBindingsSettingsPane",
+                expectedLabels: [
+                    "Open File",
+                    "Reload",
+                ],
+                expectedIdentifiers: []
+            ),
+        ]
+
+        for pane in panes {
+            let tab = app.buttons[pane.tab].firstMatch
+            XCTAssertTrue(
+                tab.waitForExistence(timeout: 5),
+                "Settings should expose the \(pane.tab) tab"
+            )
+            tab.click()
+
+            let content = app.descendants(matching: .any)[
+                pane.contentIdentifier
+            ].firstMatch
+            XCTAssertTrue(
+                content.waitForExistence(timeout: 5),
+                "\(pane.tab) should expose its localized content"
+            )
+
+            for label in pane.expectedLabels {
+                let element = app.descendants(matching: .any).matching(
+                    NSPredicate(format: "label == %@", label)
+                ).firstMatch
+                XCTAssertTrue(
+                    element.waitForExistence(timeout: 2),
+                    "\(pane.tab) should expose the localized \(label) control"
+                )
+            }
+
+            for identifier in pane.expectedIdentifiers {
+                let element = app.descendants(matching: .any)[
+                    identifier
+                ].firstMatch
+                XCTAssertTrue(
+                    element.waitForExistence(timeout: 2),
+                    "\(pane.tab) should expose the \(identifier) control"
+                )
+            }
+
+            let rawLabels = app.descendants(matching: .any).matching(
+                NSPredicate(
+                    format: "label BEGINSWITH %@",
+                    "settings."
+                )
+            ).allElementsBoundByIndex.map(\.label)
+            XCTAssertTrue(
+                rawLabels.isEmpty,
+                "\(pane.tab) exposes raw localization keys: \(rawLabels)"
+            )
+        }
+    }
+
+    private func openSettings() {
+        let appMenu = app.menuBars.menuBarItems["Pine"]
+        XCTAssertTrue(
+            appMenu.waitForExistence(timeout: 10),
+            "Pine application menu should be available"
+        )
+        appMenu.click()
+        let settingsItem = app.menuItems["Settings…"].firstMatch
+        XCTAssertTrue(
+            settingsItem.waitForExistence(timeout: 5),
+            "Application menu should expose Settings"
+        )
+        settingsItem.click()
+
+        XCTAssertTrue(
+            app.buttons["General"].firstMatch.waitForExistence(timeout: 10),
+            "The consolidated Settings scene should open"
         )
     }
 }
