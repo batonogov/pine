@@ -80,6 +80,9 @@ jobs:
       - name: Tests for xcodebuild CLI options
         run: bash scripts/tests/test-xcodebuild-cli-options.sh
 
+      - name: Tests for DMG packaging scripts
+        run: bash scripts/tests/test-dmg-packaging.sh
+
   build:
     name: Build for Testing
     runs-on: macos-26
