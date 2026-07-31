@@ -29157,6 +29157,21 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "关闭" } }
       }
     },
+    "settings.general.autoSave": {
+      "comment": "Toggle that automatically saves edited files after a delay.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Automatisch speichern" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Auto Save" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Guardar automáticamente" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Enregistrement automatique" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "自動保存" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "자동 저장" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Salvar automaticamente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Автосохранение" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自动保存" } }
+      }
+    },
     "settings.general.display": {
       "comment": "Heading for editor display preferences in General Settings.",
       "extractionState": "manual",

@@ -255,6 +255,7 @@ final class SettingsUITests: PineUITestCase {
                 tab: "General",
                 contentIdentifier: "generalSettingsPane",
                 expectedLabels: [
+                    "Auto Save",
                     "Insert Final Newline",
                     "Strip Trailing Whitespace",
                     "Format on Save",
@@ -307,6 +308,7 @@ final class SettingsUITests: PineUITestCase {
                 tab: "Основные",
                 contentIdentifier: "generalSettingsPane",
                 expectedLabels: [
+                    "Автосохранение",
                     "Добавлять перевод строки в конце",
                     "Удалять пробелы в конце строк",
                     "Форматировать при сохранении",

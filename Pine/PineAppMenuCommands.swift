@@ -39,7 +39,6 @@ struct PineAppMenuCommands: Commands {
     @AppStorage("minimapVisible") private var minimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var blameVisible = true
     @AppStorage("wordWrapEnabled") private var wordWrapEnabled = true
-    @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
     private var keybindings: UserKeybindingRegistry {
         ExtensibilityManager.shared.keybindings
     }
@@ -270,23 +269,6 @@ struct PineAppMenuCommands: Commands {
             )
             .disabled(!nativeState.canDuplicate)
 
-            Divider()
-
-            Toggle(isOn: $autoSaveEnabled) {
-                Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
-            }
-
-            Toggle(
-                isOn: Bindable(EditorSettings.shared).formatOnSave
-            ) {
-                Label(Strings.menuFormatOnSave, systemImage: MenuIcons.formatOnSave)
-            }
-
-            Toggle(
-                isOn: Bindable(EditorSettings.shared).smartListContinuation
-            ) {
-                Label(Strings.menuSmartListContinuation, systemImage: MenuIcons.smartListContinuation)
-            }
         }
 
         // MARK: - Window menu
