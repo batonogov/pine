@@ -89,6 +89,14 @@ final class TabManager {
         case sourceMissing
     }
 
+    /// Exact result of a close request. Callers must not report success when a
+    /// pinned tab rejected the operation.
+    enum CloseTabOutcome: Equatable {
+        case closed
+        case pinned
+        case missing
+    }
+
     private static let logger = Logger.editor
 
     nonisolated static let maxTabs = 1_000
@@ -374,6 +382,18 @@ final class TabManager {
         }
     }
 
+    /// Creates an editable buffer with no filesystem destination.
+    @discardableResult
+    func createUntitledTab(displayName: String) -> UUID? {
+        guard tabs.count < Self.maxTabs else { return nil }
+        let tab = EditorTab(untitledName: displayName)
+        tabs.append(tab)
+        activeTabID = tab.id
+        pendingFocusTabID = tab.id
+        onTabInventoryChanged?()
+        return tab.id
+    }
+
     /// Whether recovery can keep the disk/current buffer and append a
     /// separately identified recovered buffer without exceeding `maxTabs`.
     ///
@@ -381,7 +401,7 @@ final class TabManager {
     /// the baseline buffer and ``appendRecoveredTab`` supplies the crash
     /// buffer. An already-open URL needs only the latter.
     func canRestoreRecoveryEntry(for url: URL) -> Bool {
-        let hasBaseline = tabs.contains(where: { $0.url == url })
+        let hasBaseline = tabs.contains(where: { $0.fileURL == url })
         let requiredSlots = hasBaseline ? 1 : 2
         return tabs.count <= Self.maxTabs - requiredSlots
     }
@@ -416,6 +436,29 @@ final class TabManager {
         recovered.recomputeContentCaches()
         tabs.append(recovered)
         activeTabID = recovered.id
+        onTabInventoryChanged?()
+        return .appended(tabID: recovered.id)
+    }
+
+    /// Restores a crash snapshot that never had an on-disk destination.
+    func appendRecoveredUntitledTab(
+        displayName: String,
+        content: String,
+        encoding: String.Encoding
+    ) -> RecoveryAppendResult {
+        guard tabs.count < Self.maxTabs else {
+            return .capacityReached
+        }
+        var recovered = EditorTab(
+            untitledName: displayName,
+            content: content,
+            savedContent: ""
+        )
+        recovered.encoding = encoding
+        recovered.recomputeContentCaches()
+        tabs.append(recovered)
+        activeTabID = recovered.id
+        onTabInventoryChanged?()
         return .appended(tabID: recovered.id)
     }
 
@@ -437,7 +480,9 @@ final class TabManager {
     ) -> OpenRequestResult {
         let context = context ?? dialogContextProvider()
         // If the file is already open as a permanent tab, just activate it.
-        if let existing = tabs.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }),
+        if let existing = tabs.first(where: {
+            $0.fileURL?.standardizedFileURL == url.standardizedFileURL
+        }),
            !existing.isTransientPreview {
             activeTabID = existing.id
             let result = OpenRequestResult.opened(tabID: existing.id)
@@ -576,9 +621,14 @@ final class TabManager {
 
     // MARK: - Close
 
-    func closeTab(id: UUID, force: Bool = false) {
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        if tabs[index].isPinned && !force { return }
+    @discardableResult
+    func closeTab(id: UUID, force: Bool = false) -> CloseTabOutcome {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else {
+            return .missing
+        }
+        if tabs[index].isPinned && !force {
+            return .pinned
+        }
         cancelAutoSave(for: id)
         recoveryManager?.deleteRecoveryFile(for: id)
         let wasActive = activeTabID == id
@@ -587,6 +637,7 @@ final class TabManager {
             activeTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id
         }
         onTabInventoryChanged?()
+        return .closed
     }
 
     func dirtyTabsForCloseOthers(keeping tabID: UUID) -> [EditorTab] {
@@ -710,6 +761,7 @@ final class TabManager {
     @discardableResult
     func trySaveTab(at index: Int) throws -> Bool {
         assert(tabs.indices.contains(index), "trySaveTab: index \(index) out of bounds, count \(tabs.count)")
+        guard tabs[index].fileURL != nil else { return false }
         let tabID = tabs[index].id
         let outcome = try TabPersistence.saveTabContent(
             at: index, tabs: &tabs,
@@ -798,7 +850,18 @@ final class TabManager {
 
     @discardableResult
     func saveActiveTabAs(to newURL: URL) throws -> Bool {
-        guard let index = activeTabIndex else { return false }
+        guard let activeTabID else { return false }
+        return try saveTabAs(tabID: activeTabID, to: newURL)
+    }
+
+    /// Saves one exact tab to a new destination without depending on focus.
+    /// Close-window Save All uses this for untitled buffers while preserving
+    /// the tab identity captured before the native panel was shown.
+    @discardableResult
+    func saveTabAs(tabID: UUID, to newURL: URL) throws -> Bool {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else {
+            return false
+        }
         let outcome = try TabPersistence.saveTabAs(
             at: index, tabs: &tabs, newURL: newURL,
             config: .init(editorSettings: editorSettings, formatters: fileFormatters),
@@ -807,6 +870,10 @@ final class TabManager {
                 fileSize: { _ in nil }
             )
         )
+        if outcome.saved {
+            recoveryManager?.deleteRecoveryFile(for: tabID)
+            onTabInventoryChanged?()
+        }
         // Same reentrancy rationale as trySaveTab (#1066): post after the
         // saveTabAs `inout tabs` scope ends, not inside it.
         if let reload = outcome.reload {
@@ -870,8 +937,15 @@ final class TabManager {
             : insertionIndex >= pinnedTabCount
         guard respectsPinnedBoundary else { return false }
         return !tabs.contains { existing in
-            existing.id == tab.id
-                || existing.url.standardizedFileURL == tab.url.standardizedFileURL
+            if existing.id == tab.id {
+                return true
+            }
+            guard let existingURL = existing.fileURL,
+                  let incomingURL = tab.fileURL else {
+                return false
+            }
+            return existingURL.standardizedFileURL
+                == incomingURL.standardizedFileURL
         }
     }
 
@@ -1018,6 +1092,7 @@ final class TabManager {
     @discardableResult
     func tryDuplicateActiveTab(projectRoot: URL? = nil) throws -> Bool {
         guard let index = activeTabIndex else { return false }
+        guard tabs[index].fileURL != nil else { return false }
         let newID = try TabDuplicator.duplicateTab(
             atIndex: index, in: &tabs,
             editorSettings: editorSettings, fileFormatters: fileFormatters,
@@ -1061,7 +1136,11 @@ final class TabManager {
     }
 
     func closeTabsForDeletedFile(url: URL) {
-        tabs.filter { $0.url == url || $0.url.path.hasPrefix(url.path + "/") }
+        tabs.filter {
+            guard let fileURL = $0.fileURL else { return false }
+            return fileURL == url
+                || fileURL.path.hasPrefix(url.path + "/")
+        }
             .forEach { closeTab(id: $0.id) }
     }
 
@@ -1081,7 +1160,10 @@ final class TabManager {
 
     private func scheduleAutoSave(for tabID: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }),
-              FileManager.default.isWritableFile(atPath: tabs[index].url.path) else { return }
+              let fileURL = tabs[index].fileURL,
+              FileManager.default.isWritableFile(atPath: fileURL.path) else {
+            return
+        }
         autoSaveCoordinator.schedule(
             for: tabID,
             isStillDirty: { [weak self] in
@@ -1152,12 +1234,13 @@ final class TabManager {
     func reopenActiveTab(withEncoding encoding: String.Encoding) -> Bool {
         guard let index = activeTabIndex, !tabs[index].isDirty else { return false }
         let tab = tabs[index]
-        guard let data = try? Data(contentsOf: tab.url),
+        guard let fileURL = tab.fileURL,
+              let data = try? Data(contentsOf: fileURL),
               let content = String(data: data, encoding: encoding) else { return false }
         tabs[index].content = content
         tabs[index].savedContent = content
         tabs[index].encoding = encoding
-        tabs[index].lastModDate = modDate(for: tab.url)
+        tabs[index].lastModDate = modDate(for: fileURL)
         return true
     }
 

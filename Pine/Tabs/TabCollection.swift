@@ -14,7 +14,7 @@ enum TabCollection {
 
     /// Returns the tab matching the given URL, if any.
     static func tab(for url: URL, in tabs: [EditorTab]) -> EditorTab? {
-        tabs.first { $0.url == url }
+        tabs.first { $0.fileURL == url }
     }
 
     /// Returns the tab matching the given ID, if any.
@@ -79,7 +79,7 @@ enum TabCollection {
     /// Handles a file being renamed — updates URL in-place to preserve tab identity.
     static func handleFileRenamed(oldURL: URL, newURL: URL, in tabs: inout [EditorTab]) {
         for index in tabs.indices {
-            let tabURL = tabs[index].url
+            guard let tabURL = tabs[index].fileURL else { continue }
             if tabURL == oldURL {
                 tabs[index].url = newURL
             } else if tabURL.path.hasPrefix(oldURL.path + "/") {
@@ -92,7 +92,8 @@ enum TabCollection {
     /// Returns tabs affected by a file deletion.
     static func tabsAffectedByDeletion(url: URL, in tabs: [EditorTab]) -> [EditorTab] {
         tabs.filter { tab in
-            tab.url == url || tab.url.path.hasPrefix(url.path + "/")
+            guard let fileURL = tab.fileURL else { return false }
+            return fileURL == url || fileURL.path.hasPrefix(url.path + "/")
         }
     }
 

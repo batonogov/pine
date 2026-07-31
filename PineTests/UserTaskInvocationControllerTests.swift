@@ -11,6 +11,40 @@ import Testing
 
 @Suite("User task invocation safety")
 struct UserTaskInvocationControllerTests {
+    @Test("Untitled buffers are unavailable to active-file tasks")
+    func untitledBufferIsNotAnActiveFile() {
+        let activeFileTask = UserTask(
+            id: "lint-file",
+            label: "Lint File",
+            command: "swiftlint",
+            scope: .activeFile
+        )
+        let projectTask = UserTask(
+            id: "build-project",
+            label: "Build Project",
+            command: "swift build",
+            scope: .project
+        )
+        let untitled = EditorTab(
+            untitledName: "Untitled",
+            content: "draft",
+            savedContent: ""
+        )
+
+        #expect(
+            !UserTaskInvocationController.hasRequiredActiveFile(
+                for: activeFileTask,
+                activeTab: untitled
+            )
+        )
+        #expect(
+            UserTaskInvocationController.hasRequiredActiveFile(
+                for: projectTask,
+                activeTab: untitled
+            )
+        )
+    }
+
     @Test("Successful output replacement requires the same unchanged editor buffer")
     func replacementRequiresSameUnchangedBuffer() {
         let tabID = UUID()

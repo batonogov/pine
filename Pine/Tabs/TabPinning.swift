@@ -43,7 +43,10 @@ enum TabPinning {
     /// Called during session restoration. Re-sorts: pinned tabs first,
     /// preserving relative order within each group.
     static func restorePinnedState(pinnedPaths: Set<String>, in tabs: inout [EditorTab]) {
-        for index in tabs.indices where pinnedPaths.contains(tabs[index].url.path) {
+        for index in tabs.indices
+        where tabs[index].fileURL.map({
+            pinnedPaths.contains($0.path)
+        }) == true {
             tabs[index].isPinned = true
         }
         let pinned = tabs.filter(\.isPinned)

@@ -154,7 +154,7 @@ struct WelcomeView: View {
                                             .padding(.leading)
                                     }
                                     RecentProjectRow(url: url) {
-                                        openProject(at: url)
+                                        openRecentProject(at: url)
                                     }
                                     .contextMenu {
                                         Button {
@@ -244,7 +244,7 @@ struct WelcomeView: View {
             guard let projectManager = openProject(at: projectDir),
                   let owner = await projectManager.awaitDialogOwnerWindow(),
                   projectManager.dialogOwnerWindow === owner,
-                  registry.openProjects[projectDir] === projectManager else {
+                  registry.openProjects[registry.canonicalProjectURL(projectDir)] === projectManager else {
                 return
             }
             for file in classified.files {
@@ -265,15 +265,40 @@ struct WelcomeView: View {
         }
     }
 
+    /// Welcome recents use the same deferred AppDelegate transition as
+    /// File > Open Recent and the Dock menu.
+    private func openRecentProject(at url: URL) {
+        if let appDelegate {
+            appDelegate.requestOpenRecentProject(
+                url,
+                fallbackOpenProjectWindow: { url in
+                    openProjectWindow(url)
+                }
+            )
+            return
+        }
+        NativeCommandDelivery.deferToNextMainRunLoop {
+            _ = openProject(at: url)
+        }
+    }
+
     @discardableResult
     private func openProject(at url: URL) -> ProjectManager? {
-        let canonical = url.resolvingSymlinksInPath()
-        // If the project is still in openProjects (window close didn't clean up),
-        // save its session and remove it so projectManager(for:) creates a fresh PM.
-        if registry.isProjectOpen(canonical) {
-            registry.openProjects[canonical]?.saveSession()
-            registry.closeProject(canonical)
+        let canonical = registry.canonicalProjectURL(url)
+        if let appDelegate {
+            guard appDelegate.openRecentProject(
+                canonical,
+                fallbackOpenProjectWindow: { url in
+                    openProjectWindow(url)
+                }
+            ) else {
+                return nil
+            }
+            return registry.openProjects[canonical]
         }
+
+        // Preview/fallback hosts without AppDelegate still preserve the
+        // registry's retained ProjectManager instead of rebuilding it.
         guard let projectManager = registry.projectManager(for: canonical) else {
             return nil
         }

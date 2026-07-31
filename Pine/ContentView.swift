@@ -107,7 +107,9 @@ struct ContentView: View {
                 projectManager: projectManager
             )
             DocumentEditedTracker(isEdited: projectManager.hasUnsavedChanges)
-            RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
+            RepresentedFileTracker(
+                url: activeTab?.fileURL ?? workspace.rootURL
+            )
         }
         .task {
             let disposition = restoreSessionIfNeeded()
@@ -265,7 +267,6 @@ struct ContentView: View {
             },
             onRefreshLineDiffs: { refreshLineDiffs() },
             onRefreshBlame: { refreshBlame() },
-            onCloseTab: { closeTabWithConfirmation($0) },
             onOpenNewProject: { openNewProject() },
             onHandleFileDeletion: { handleFileDeletion($0) },
             onHandleExternalChanges: { handleExternalChanges($0) },

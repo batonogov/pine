@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import Observation
 
 /// A single user-defined keybinding entry.
 ///
@@ -193,6 +194,7 @@ nonisolated struct ResolvedUserKeybinding: Equatable, Sendable {
 
 /// Loads and parses user keybindings from `keybindings.json`.
 @MainActor
+@Observable
 final class UserKeybindingRegistry {
     /// Parsed entries in declaration order.
     private(set) var entries: [ResolvedUserKeybinding] = []
@@ -378,6 +380,21 @@ final class UserKeybindingRegistry {
     /// Whether a user entry replaces `command`'s built-in shortcut.
     func hasOverride(for command: UserCommand) -> Bool {
         entries.contains { $0.command == command }
+    }
+
+    /// Returns the one shortcut that is currently effective for `command`.
+    ///
+    /// A user entry replaces the built-in chord instead of supplementing it.
+    /// A built-in chord claimed by another user entry is suppressed so the
+    /// menu label, command palette, and event dispatcher all describe the
+    /// same routing decision.
+    func effectiveChord(for command: UserCommand) -> ParsedKeyChord? {
+        if let userEntry = entries.first(where: { $0.command == command }) {
+            return userEntry.chord
+        }
+        guard let builtIn = command.defaultChord else { return nil }
+        let claimant = entries.first(where: { $0.chord == builtIn })?.command
+        return claimant == nil || claimant == command ? builtIn : nil
     }
 
     /// Returns `true` when `event` is the old built-in shortcut of a command

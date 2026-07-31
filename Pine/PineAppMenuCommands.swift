@@ -24,14 +24,26 @@ import SwiftUI
 /// that PineApp attaches to its main `WindowGroup`. Keeping this in its own
 /// file isolates the high-churn menu definitions from the small
 /// `@main` + Scene wiring in `PineApp.swift`.
+@MainActor
 struct PineAppMenuCommands: Commands {
     /// Injecting the already-created app-scoped view model keeps menu
     /// construction from reaching through an arbitrary `AppDelegate` and
     /// accidentally starting another Sparkle runtime in hosted tests.
     let checkForUpdatesViewModel: CheckForUpdatesViewModel
     let toggleQuickTerminal: () -> Void
+    /// Reads the app-scoped registry without coupling Commands back to the
+    /// AppDelegate. The closure keeps hosted tests inert while preserving
+    /// observation of `ProjectRegistry.recentProjects` in the menu body.
+    let recentProjects: () -> [URL]
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
+    private var keybindings: UserKeybindingRegistry {
+        ExtensibilityManager.shared.keybindings
+    }
+    private var nativeState: NativeMenuCommandState {
+        NativeMenuCommandState(projectManager: focusedProject)
+    }
+
     var body: some Commands {
         // MARK: - App menu (About / CLI install)
         CommandGroup(replacing: .appInfo) {
@@ -57,16 +69,84 @@ struct PineAppMenuCommands: Commands {
         }
 
         // MARK: - File menu
-        // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
-        CommandGroup(replacing: .newItem) { }
-        // Cmd+Shift+O — Open Folder, Cmd+P — Quick Open, Cmd+R — Symbol Navigator
-        CommandGroup(after: .newItem) {
+        CommandGroup(replacing: .newItem) {
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .newFile,
+                    projectManager: focusedProject
+                )
+            } label: {
+                Label(Strings.menuNewFile, systemImage: MenuIcons.newFile)
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .newFile)
+            )
+            .disabled(focusedProject?.workspace.rootURL == nil)
+
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .openFile,
+                    projectManager: focusedProject
+                )
+            } label: {
+                Label(Strings.menuOpenFile, systemImage: MenuIcons.openFile)
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .openFile)
+            )
+            .disabled(focusedProject?.workspace.rootURL == nil)
+
+            Menu {
+                ForEach(recentProjects(), id: \.self) { projectURL in
+                    Button(
+                        ProjectRegistry.recentProjectDisplayTitle(
+                            for: projectURL
+                        )
+                    ) {
+                        NotificationCenter.default.post(
+                            name: .openRecentProject,
+                            object: nil,
+                            userInfo: ["url": projectURL]
+                        )
+                    }
+                }
+
+                Divider()
+
+                Button {
+                    UserCommandInvocationRouter.dispatch(
+                        .clearRecentProjects,
+                        projectManager: focusedProject
+                    )
+                } label: {
+                    Label(
+                        Strings.menuClearMenu,
+                        systemImage: MenuIcons.clearMenu
+                    )
+                }
+            } label: {
+                Label(
+                    Strings.menuOpenRecent,
+                    systemImage: MenuIcons.openFile
+                )
+            }
+            .disabled(recentProjects().isEmpty)
+
+            Divider()
+
             Button {
                 NotificationCenter.default.post(name: .openFolder, object: nil)
             } label: {
                 Label(Strings.menuOpenFolder, systemImage: MenuIcons.openFolder)
             }
-            .keyboardShortcut("o", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .openFolder)
+            )
+        }
+
+        // Quick Open and navigation remain project-specific additions after
+        // the conventional native open group.
+        CommandGroup(after: .newItem) {
 
             Button {
                 NotificationCenter.default.post(
@@ -76,7 +156,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuQuickOpen, systemImage: MenuIcons.quickOpen)
             }
-            .keyboardShortcut("p", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .quickOpen)
+            )
             .disabled(focusedProject?.workspace.rootURL == nil)
 
             Button {
@@ -90,7 +172,9 @@ struct PineAppMenuCommands: Commands {
                     systemImage: MenuIcons.commandPalette
                 )
             }
-            .keyboardShortcut("p", modifiers: [.command, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .commandPalette)
+            )
             .disabled(focusedProject?.workspace.rootURL == nil)
 
             Button {
@@ -101,8 +185,25 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuSymbolNavigator, systemImage: MenuIcons.symbolNavigator)
             }
-            .keyboardShortcut("r", modifiers: .command)
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .symbolNavigator)
+            )
+            .disabled(nativeState.activeEditorTabID == nil)
+
+            Divider()
+
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .closeTab,
+                    projectManager: focusedProject
+                )
+            } label: {
+                Label(Strings.menuCloseTab, systemImage: MenuIcons.closeTab)
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .closeTab)
+            )
+            .disabled(!nativeState.canCloseTab)
         }
         // Save, Save All, Save As, Duplicate, Auto-save toggle
         CommandGroup(replacing: .saveItem) {
@@ -117,7 +218,10 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuSave, systemImage: MenuIcons.save)
             }
-            .keyboardShortcut("s", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .save)
+            )
+            .disabled(!nativeState.canSave)
 
             Button {
                 guard let pm = focusedProject else { return }
@@ -126,7 +230,10 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuSaveAll, systemImage: MenuIcons.saveAll)
             }
-            .keyboardShortcut("s", modifiers: [.command, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .saveAll)
+            )
+            .disabled(!nativeState.canSaveAll)
 
             Divider()
 
@@ -139,18 +246,23 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuSaveAs, systemImage: MenuIcons.saveAs)
             }
-            .keyboardShortcut("s", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .saveAs)
+            )
+            .disabled(!nativeState.canSaveAs)
 
             Button {
-                guard let pm = focusedProject else { return }
-                pm.activeTabManager.duplicateActiveTab(
-                    projectRoot: pm.workspace.rootURL,
-                    context: DialogPresenter.forProject(pm)
+                UserCommandInvocationRouter.dispatch(
+                    .duplicate,
+                    projectManager: focusedProject
                 )
             } label: {
                 Label(Strings.menuDuplicate, systemImage: MenuIcons.duplicate)
             }
-            .keyboardShortcut("d", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .duplicate)
+            )
+            .disabled(!nativeState.canDuplicate)
 
             Divider()
 
@@ -172,7 +284,26 @@ struct PineAppMenuCommands: Commands {
         }
 
         // MARK: - Window menu
-        //
+        CommandGroup(before: .windowSize) {
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .closeWindow,
+                    projectManager: focusedProject
+                )
+            } label: {
+                Label(
+                    Strings.menuCloseWindow,
+                    systemImage: MenuIcons.closeWindow
+                )
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .closeWindow)
+            )
+            .disabled(!nativeState.canCloseWindow)
+
+            Divider()
+        }
+
         // The local event monitor presents the visual MRU switcher for
         // physical Control-Tab gestures. Native menu equivalents preserve the
         // immediate-switch fallback for Accessibility/XCUITest events, which
@@ -545,13 +676,24 @@ struct PineAppMenuCommands: Commands {
 
             Button {
                 guard let pm = focusedProject,
-                      let url = pm.activeTabManager.activeTab?.url else { return }
+                      pm.paneManager.root.content(
+                          for: pm.paneManager.activePaneID
+                      ) == .editor,
+                      let url = pm.paneManager.activeTabManager?
+                          .activeTab?
+                          .fileURL else {
+                    return
+                }
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             } label: {
                 Label(Strings.menuRevealFileInFinder, systemImage: MenuIcons.revealFileInFinder)
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
+            .disabled(
+                focusedProject?.paneManager.activeTabManager?
+                    .activeTab?
+                    .fileURL == nil
+            )
 
             Button {
                 guard let pm = focusedProject,
@@ -581,8 +723,12 @@ struct PineAppMenuCommands: Commands {
             .disabled(focusedProject?.workspace.rootURL == nil)
         }
 
-        // MARK: - Git menu
-        CommandMenu(Strings.menuGit) {
+        // Xcode 26's CommandsBuilder supports at most ten direct children.
+        // Keep the custom menus composed as one child so adding a menu does
+        // not make the whole app target fail to compile on macOS 26.
+        PineCommandCollection {
+            // MARK: - Git menu
+            CommandMenu(Strings.menuGit) {
             Button {
                 guard let focusedProject else { return }
                 NotificationCenter.default.post(name: .showBranchSwitcher, object: focusedProject)
@@ -760,8 +906,9 @@ struct PineAppMenuCommands: Commands {
             }
         }
 
-        // AppDelegate's single key-down router handles physical shortcuts
-        // after consulting user overrides.
+            // AppDelegate's single key-down router handles physical shortcuts
+            // after consulting user overrides.
+        }
     }
 
     // MARK: - Task outcome presentation
@@ -825,4 +972,17 @@ struct PineAppMenuCommands: Commands {
         )
     }
 
+}
+
+@MainActor
+private struct PineCommandCollection<Content: Commands>: Commands {
+    let content: Content
+
+    init(@CommandsBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some Commands {
+        content
+    }
 }

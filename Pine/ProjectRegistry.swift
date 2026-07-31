@@ -32,16 +32,27 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     private static let recentProjectsKey = "recentProjectPaths"
     private static let maxRecentProjects = 10
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let fileManager: FileManager
 
     /// Serializes settings lifecycle changes so rapid Apply/Reset operations
     /// cannot race each other across projects.
     @ObservationIgnored
     private var lspSettingsChangeTask: Task<Void, Never>?
 
-    init(lspSettings: LSPSettings = .shared) {
+    init(
+        lspSettings: LSPSettings = .shared,
+        defaults: UserDefaults = .standard,
+        fileManager: FileManager = .default,
+        clearRecentProjects: Bool = CommandLine.arguments.contains(
+            "--clear-recent-projects"
+        )
+    ) {
         self.lspSettings = lspSettings
-        if CommandLine.arguments.contains("--clear-recent-projects") {
-            UserDefaults.standard.removeObject(forKey: Self.recentProjectsKey)
+        self.defaults = defaults
+        self.fileManager = fileManager
+        if clearRecentProjects {
+            defaults.removeObject(forKey: Self.recentProjectsKey)
         }
         loadRecentProjects()
         lspSettings.addObserver(self)
@@ -51,12 +62,12 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// URLs are resolved to their canonical (real) path to prevent duplicates via symlinks.
     /// Returns nil if the directory no longer exists on disk.
     func projectManager(for projectURL: URL) -> ProjectManager? {
-        let canonical = Self.canonicalProjectURL(projectURL)
+        let canonical = canonicalProjectURL(projectURL)
         if let existing = openProjects[canonical] {
             // Verify directory still exists when reopening from background
             if backgroundProjects.contains(canonical) {
                 var isDir: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDir),
+                guard fileManager.fileExists(atPath: canonical.path, isDirectory: &isDir),
                       isDir.boolValue else {
                     // Directory was deleted while in background — clean up
                     existing.requestUserTaskShutdown()
@@ -82,11 +93,12 @@ final class ProjectRegistry: LSPSettingsObserver {
                 }
                 backgroundProjects.remove(canonical)
             }
+            addToRecent(canonical)
             return existing
         }
         // Validate that the directory still exists
         var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDir),
+        guard fileManager.fileExists(atPath: canonical.path, isDirectory: &isDir),
               isDir.boolValue else {
             recentProjects.removeAll { $0 == canonical }
             saveRecentProjects()
@@ -113,7 +125,7 @@ final class ProjectRegistry: LSPSettingsObserver {
 
         guard await panel.runSheet(on: context) == .OK,
               let url = panel.url else { return nil }
-        let canonical = Self.canonicalProjectURL(url)
+        let canonical = canonicalProjectURL(url)
         guard projectManager(for: canonical) != nil else { return nil }
         return canonical
     }
@@ -122,7 +134,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// sessions and user tasks continue in the background; reopening the
     /// project restores access to their current state and output history.
     func closeProjectWindow(_ url: URL) {
-        let canonical = Self.canonicalProjectURL(url)
+        let canonical = canonicalProjectURL(url)
         guard openProjects[canonical] != nil else { return }
         backgroundProjects.insert(canonical)
     }
@@ -196,13 +208,13 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     /// Returns true if the project has an open (non-background) window.
     func isWindowOpen(_ url: URL) -> Bool {
-        let canonical = Self.canonicalProjectURL(url)
+        let canonical = canonicalProjectURL(url)
         return openProjects[canonical] != nil && !backgroundProjects.contains(canonical)
     }
 
     /// Checks if a project is already open (including background).
     func isProjectOpen(_ url: URL) -> Bool {
-        openProjects[Self.canonicalProjectURL(url)] != nil
+        openProjects[canonicalProjectURL(url)] != nil
     }
 
     // MARK: - Language Server Settings
@@ -229,15 +241,30 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     // MARK: - Recent Projects
 
+    /// Shared title for File > Open Recent and the Dock menu. Including the
+    /// abbreviated full path keeps equal project basenames distinguishable.
+    static func recentProjectDisplayTitle(for url: URL) -> String {
+        "\(url.lastPathComponent) — \(url.abbreviatedPath)"
+    }
+
     /// Removes a single project from the recent projects list.
     func removeFromRecent(_ url: URL) {
-        recentProjects.removeAll { $0 == url }
+        let canonical = canonicalProjectURL(url)
+        recentProjects.removeAll { $0 == canonical }
+        saveRecentProjects()
+    }
+
+    /// Removes every recent project from all app surfaces (File menu,
+    /// Welcome, and Dock menu) through the registry's single shared source.
+    func clearRecentProjects() {
+        recentProjects.removeAll()
         saveRecentProjects()
     }
 
     private func addToRecent(_ url: URL) {
-        recentProjects.removeAll { $0 == url }
-        recentProjects.insert(url, at: 0)
+        let canonical = canonicalProjectURL(url)
+        recentProjects.removeAll { $0 == canonical }
+        recentProjects.insert(canonical, at: 0)
         if recentProjects.count > Self.maxRecentProjects {
             recentProjects = Array(recentProjects.prefix(Self.maxRecentProjects))
         }
@@ -245,20 +272,56 @@ final class ProjectRegistry: LSPSettingsObserver {
     }
 
     private func loadRecentProjects() {
-        guard let paths = UserDefaults.standard.stringArray(forKey: Self.recentProjectsKey) else {
+        guard let paths = defaults.stringArray(forKey: Self.recentProjectsKey) else {
             return
         }
+        var seen: Set<URL> = []
         recentProjects = paths.compactMap { path in
+            let canonical = canonicalProjectURL(
+                URL(fileURLWithPath: path)
+            )
             var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir),
-                  isDir.boolValue else { return nil }
-            return URL(fileURLWithPath: path)
+            guard fileManager.fileExists(
+                atPath: canonical.path,
+                isDirectory: &isDir
+            ),
+            isDir.boolValue,
+            seen.insert(canonical).inserted else {
+                return nil
+            }
+            return canonical
+        }
+        recentProjects = Array(recentProjects.prefix(Self.maxRecentProjects))
+        if paths != recentProjects.map(\.path) {
+            saveRecentProjects()
         }
     }
 
     private func saveRecentProjects() {
         let paths = recentProjects.map(\.path)
-        UserDefaults.standard.set(paths, forKey: Self.recentProjectsKey)
+        defaults.set(paths, forKey: Self.recentProjectsKey)
+    }
+
+    func canonicalProjectURL(_ projectURL: URL) -> URL {
+        let standardized = projectURL.standardizedFileURL
+        var existingAncestor = standardized
+        var missingComponents: [String] = []
+
+        while !fileManager.fileExists(atPath: existingAncestor.path) {
+            let parent = existingAncestor.deletingLastPathComponent()
+            guard parent.path != existingAncestor.path else { break }
+            missingComponents.append(existingAncestor.lastPathComponent)
+            existingAncestor = parent
+        }
+
+        var canonical = existingAncestor.resolvingSymlinksInPath()
+        for component in missingComponents.reversed() {
+            canonical.appendPathComponent(component)
+        }
+        return URL(
+            fileURLWithPath: canonical.path,
+            isDirectory: true
+        ).standardizedFileURL
     }
 
     /// Resolves a stable project identity even after the project directory is

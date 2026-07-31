@@ -13,6 +13,22 @@ import SwiftUI
 @MainActor
 @Observable
 final class ProjectManager {
+    typealias SaveDestinationChooser = @MainActor (
+        _ tab: EditorTab,
+        _ projectRoot: URL?,
+        _ context: DialogPresentationContext
+    ) async -> URL?
+    typealias OpenFileChooser = @MainActor (
+        _ projectRoot: URL?,
+        _ context: DialogPresentationContext
+    ) async -> URL?
+
+    private struct PlannedTabSave {
+        let tabManager: TabManager
+        let tab: EditorTab
+        var destination: URL?
+    }
+
     let workspace = WorkspaceManager()
     let terminal = TerminalManager()
     /// Structured agent-action feed for the Activity Panel (vision #933,
@@ -60,6 +76,34 @@ final class ProjectManager {
     private var dialogOperationGeneration = 0
     @ObservationIgnored
     private(set) lazy var paneManager = PaneManager(existingTabManager: primaryTabManager)
+    /// Test seam and single native Save-panel implementation for Save,
+    /// Save As, Save All, close-window, and Quit paths.
+    @ObservationIgnored
+    var saveDestinationChooser: SaveDestinationChooser = { tab, projectRoot, context in
+        let panel = NSSavePanel()
+        panel.title = Strings.saveAsPanelTitle
+        panel.nameFieldStringValue = tab.fileName
+        panel.directoryURL = tab.fileURL?.deletingLastPathComponent()
+            ?? projectRoot
+        guard await panel.runSheet(on: context) == .OK else {
+            return nil
+        }
+        return panel.url
+    }
+    @ObservationIgnored
+    var openFileChooser: OpenFileChooser = { projectRoot, context in
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = projectRoot
+        panel.message = Strings.openFilePanelMessage
+        panel.prompt = Strings.openFilePanelPrompt
+        guard await panel.runSheet(on: context) == .OK else {
+            return nil
+        }
+        return panel.url
+    }
 
     /// Returns the TabManager for the currently focused pane.
     /// Falls back to the primary ``primaryTabManager`` when no editor pane is active.
@@ -126,7 +170,16 @@ final class ProjectManager {
     /// Saves all tabs across all panes. Returns false if any save fails.
     @discardableResult
     func saveAllPaneTabs() -> Bool {
-        for tabMgr in paneManager.tabManagers.values {
+        let tabManagers = paneManager.allTabManagers
+        let dirtyTabs = tabManagers.flatMap(\.dirtyTabs)
+        guard dirtyTabs.allSatisfy({
+            $0.kind == .text
+                && !$0.isTruncated
+                && $0.fileURL != nil
+        }) else {
+            return false
+        }
+        for tabMgr in tabManagers {
             guard tabMgr.saveAllTabs() else { return false }
         }
         return true
@@ -135,10 +188,225 @@ final class ProjectManager {
     /// Window-scoped save-all used by close and termination decisions.
     @discardableResult
     func saveAllPaneTabs(context: DialogPresentationContext) async -> Bool {
-        for tabManager in paneManager.tabManagers.values {
-            guard await tabManager.saveAllTabs(context: context) else { return false }
+        var savePlan = paneManager.allTabManagers.flatMap { tabManager in
+            tabManager.tabs.compactMap { tab -> PlannedTabSave? in
+                guard tab.isDirty else { return nil }
+                return PlannedTabSave(
+                    tabManager: tabManager,
+                    tab: tab,
+                    destination: nil
+                )
+            }
+        }
+        // Preflight every known-unsavable tab before the first write. Without
+        // this guard, a valid pane could be written before a later truncated
+        // buffer rejects Save All, leaving the project partially saved.
+        guard savePlan.allSatisfy({
+            $0.tab.kind == .text && !$0.tab.isTruncated
+        }) else {
+            return false
+        }
+
+        // Collect every untitled destination before the first disk write.
+        // Cancelling any later Save panel must leave earlier buffers dirty
+        // instead of producing a partially saved project.
+        for index in savePlan.indices
+        where savePlan[index].tab.fileURL == nil {
+            guard let destination = await saveDestinationChooser(
+                savePlan[index].tab,
+                workspace.rootURL,
+                context
+            ) else {
+                return false
+            }
+            savePlan[index].destination = destination
+        }
+
+        // A panel may suspend long enough for a tab to close, become saved,
+        // change backing, or become truncated. Revalidate every captured
+        // identity before committing any member of the plan.
+        guard savePlan.allSatisfy({ planned in
+            guard let current = planned.tabManager.tabs.first(where: {
+                $0.id == planned.tab.id
+            }) else {
+                return false
+            }
+            return current.isDirty
+                && current.kind == .text
+                && !current.isTruncated
+                && current.fileURL == planned.tab.fileURL
+        }) else {
+            return false
+        }
+
+        let effectiveDestinations = savePlan.compactMap { planned in
+            (planned.destination ?? planned.tab.fileURL)?
+                .standardizedFileURL
+        }
+        guard effectiveDestinations.count == savePlan.count,
+              Set(effectiveDestinations).count
+                == effectiveDestinations.count else {
+            return false
+        }
+
+        // An untitled Save-As target must not alias a file already open in
+        // another tab, even when that other tab is clean and therefore absent
+        // from the plan. Otherwise Save All could create two clean buffers for
+        // one backing file, with only the last write matching disk.
+        let plannedTabIDs = Set(savePlan.map(\.tab.id))
+        let unplannedOpenDestinations = Set(
+            allTabs.compactMap { tab -> URL? in
+                guard !plannedTabIDs.contains(tab.id) else { return nil }
+                return tab.fileURL?.standardizedFileURL
+            }
+        )
+        let newDestinations = savePlan.compactMap(\.destination).map {
+            $0.standardizedFileURL
+        }
+        guard newDestinations.allSatisfy({
+            !unplannedOpenDestinations.contains($0)
+        }) else {
+            return false
+        }
+
+        for planned in savePlan {
+            if let destination = planned.destination {
+                do {
+                    guard try planned.tabManager.saveTabAs(
+                        tabID: planned.tab.id,
+                        to: destination
+                    ) else {
+                        return false
+                    }
+                } catch {
+                    _ = await AlertTemplate.fileOperationErrorCritical
+                        .runSheet(
+                            on: context,
+                            messageText: Strings.fileOperationErrorTitle,
+                            informativeText: error.localizedDescription
+                        )
+                    return false
+                }
+            } else {
+                guard await saveTab(
+                    tabID: planned.tab.id,
+                    in: planned.tabManager,
+                    forceSaveAs: false,
+                    context: context
+                ) else {
+                    return false
+                }
+            }
         }
         return true
+    }
+
+    /// Resolves the editor pane a native File command should keep targeting
+    /// if focus changes before its deferred delivery.
+    func nativeFileCommandPaneID() -> PaneID? {
+        if paneManager.root.content(for: paneManager.activePaneID) == .editor {
+            return paneManager.activePaneID
+        }
+        return paneManager.root.leafIDs.first(where: {
+            paneManager.root.content(for: $0) == .editor
+        })
+    }
+
+    /// Creates one project-window-scoped untitled buffer and focuses its
+    /// editor pane. Names stay unique across every split in the project.
+    @discardableResult
+    func createUntitledFile(in initiatingPaneID: PaneID? = nil) -> UUID? {
+        let baseName = Strings.recoveryUntitled
+        let existingNames = Set(
+            allTabs.lazy.filter(\.isUntitled).map(\.fileName)
+        )
+        var sequence = 1
+        var displayName = baseName
+        while existingNames.contains(displayName) {
+            sequence += 1
+            displayName = "\(baseName) \(sequence)"
+        }
+
+        let tabManager: TabManager
+        let destinationPaneID: PaneID
+        if let initiatingPaneID {
+            guard paneManager.root.content(for: initiatingPaneID) == .editor,
+                  let initiatingTabManager = paneManager.tabManager(
+                      for: initiatingPaneID
+                  ) else {
+                return nil
+            }
+            tabManager = initiatingTabManager
+            destinationPaneID = initiatingPaneID
+        } else {
+            tabManager = paneManager.ensureEditorPane()
+            destinationPaneID = paneManager.activePaneID
+        }
+        guard let tabID = tabManager.createUntitledTab(
+            displayName: displayName
+        ) else {
+            return nil
+        }
+        _ = paneManager.selectEditorTab(
+            tabID,
+            in: destinationPaneID
+        )
+        return tabID
+    }
+
+    /// Presents File > Open as a sheet owned by this project window and opens
+    /// the selected file in the editor pane captured before the panel appears.
+    /// A focus change while the sheet is suspended must not retarget the file.
+    func openFileFromMenu(
+        initiatingPaneID capturedPaneID: PaneID? = nil
+    ) {
+        let context = DialogPresenter.forProject(self)
+        let expectedRoot = workspace.rootURL
+        let initiatingPaneID: PaneID
+        if let capturedPaneID {
+            guard paneManager.root.content(for: capturedPaneID) == .editor,
+                  paneManager.tabManager(for: capturedPaneID) != nil else {
+                return
+            }
+            initiatingPaneID = capturedPaneID
+        } else if paneManager.root.content(for: paneManager.activePaneID)
+            == .editor {
+            initiatingPaneID = paneManager.activePaneID
+        } else if let existingEditorPaneID =
+            paneManager.root.leafIDs.first(where: {
+                paneManager.root.content(for: $0) == .editor
+            }) {
+            initiatingPaneID = existingEditorPaneID
+        } else {
+            _ = paneManager.ensureEditorPane()
+            initiatingPaneID = paneManager.activePaneID
+        }
+        guard let initiatingTabManager = paneManager.tabManager(
+            for: initiatingPaneID
+        ) else {
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let fileURL = await openFileChooser(
+                          expectedRoot,
+                          context
+                      ),
+                      workspace.rootURL == expectedRoot,
+                      paneManager.root.content(for: initiatingPaneID)
+                        == .editor,
+                      paneManager.tabManager(for: initiatingPaneID)
+                        === initiatingTabManager else {
+                    return
+                }
+                _ = paneManager.openFileInPane(
+                    url: fileURL,
+                    paneID: initiatingPaneID
+                )
+            }
+        }
     }
 
     // MARK: - Menu-triggered saves (reentrancy-safe)
@@ -159,15 +427,45 @@ final class ProjectManager {
     /// the dirty indicator and git status settle one frame later.
     func saveActiveTabFromMenu() {
         let context = DialogPresenter.forProject(self)
-        let tabManager = activeTabManager
+        guard paneManager.root.content(for: paneManager.activePaneID)
+                == .editor,
+              let tabManager = paneManager.activeTabManager else {
+            return
+        }
         let activeID = tabManager.activeTabID
-        performMenuSave { [weak tabManager] in
+        performMenuSave { [weak self, weak tabManager] in
+            guard let self else { return false }
             guard let tabManager,
-                  let activeID,
-                  let index = tabManager.tabs.firstIndex(where: { $0.id == activeID }) else {
+                  let activeID else {
                 return false
             }
-            return await tabManager.saveTab(at: index, context: context)
+            return await self.saveTab(
+                tabID: activeID,
+                in: tabManager,
+                forceSaveAs: false,
+                context: context
+            )
+        }
+    }
+
+    /// File > Save As. Captures the focused editor identity before deferring
+    /// beyond the SwiftUI ButtonAction call stack.
+    func saveActiveTabAsFromMenu() {
+        let context = DialogPresenter.forProject(self)
+        guard paneManager.root.content(for: paneManager.activePaneID)
+                == .editor,
+              let tabManager = paneManager.activeTabManager,
+              let activeID = tabManager.activeTabID else {
+            return
+        }
+        performMenuSave { [weak self, weak tabManager] in
+            guard let self, let tabManager else { return false }
+            return await self.saveTab(
+                tabID: activeID,
+                in: tabManager,
+                forceSaveAs: true,
+                context: context
+            )
         }
     }
 
@@ -195,6 +493,47 @@ final class ProjectManager {
                 await self.workspace.gitProvider.refreshAsync()
                 NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
             }
+        }
+    }
+
+    /// Saves an exact editor buffer. Untitled files and explicit Save As use
+    /// the project owner's sheet; ordinary file-backed buffers write directly.
+    func saveTab(
+        tabID: UUID,
+        in tabManager: TabManager,
+        forceSaveAs: Bool,
+        context: DialogPresentationContext
+    ) async -> Bool {
+        guard let tab = tabManager.tabs.first(where: { $0.id == tabID }),
+              tab.kind == .text,
+              !tab.isTruncated else {
+            return false
+        }
+        if !forceSaveAs, tab.fileURL != nil,
+           let index = tabManager.tabs.firstIndex(where: { $0.id == tabID }) {
+            return await tabManager.saveTab(at: index, context: context)
+        }
+
+        guard let destination = await saveDestinationChooser(
+            tab,
+            workspace.rootURL,
+            context
+        ),
+        tabManager.tabs.contains(where: { $0.id == tabID }) else {
+            return false
+        }
+        do {
+            return try tabManager.saveTabAs(
+                tabID: tabID,
+                to: destination
+            )
+        } catch {
+            _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                on: context,
+                messageText: Strings.fileOperationErrorTitle,
+                informativeText: error.localizedDescription
+            )
+            return false
         }
     }
 
@@ -396,12 +735,15 @@ final class ProjectManager {
                   let tabManager = paneManager.tabManager(for: paneID) else {
                 return nil
             }
-            guard let tab = tabManager.activeTab else { return nil }
+            guard let tab = tabManager.activeTab,
+                  let fileURL = tab.fileURL else {
+                return nil
+            }
             return ProblemsDocumentState(
                 owner: problemsController.documentOwner(
                     paneID: paneID,
                     tabID: tab.id,
-                    uri: tab.url.absoluteString
+                    uri: fileURL.absoluteString
                 ),
                 contentRevision: tab.contentVersion,
                 isFocusedPane: paneManager.activePaneID == paneID
@@ -421,8 +763,9 @@ final class ProjectManager {
         ),
         let tabManager = paneManager.tabManager(for: target.owner.paneID),
         let tab = tabManager.activeTab,
+        let fileURL = tab.fileURL,
         tab.id == target.owner.tabID,
-        tab.url.absoluteString == target.owner.uri else {
+        fileURL.absoluteString == target.owner.uri else {
             return false
         }
 
@@ -458,53 +801,60 @@ final class ProjectManager {
         let everyTab = allTabs
 
         let openFileURLs = everyTab
-            .map(\.url)
+            .compactMap(\.fileURL)
             .filter { $0.path.hasPrefix(rootPath) }
 
         // Only persist active file if it belongs to the project
-        let activeFileURL: URL? = if let url = activeTabManager.activeTab?.url,
+        let activeFileURL: URL? = if let url = activeTabManager.activeTab?.fileURL,
                                       url.path.hasPrefix(rootPath) { url } else { nil }
 
         // Collect preview modes for markdown tabs that aren't in default (.source) state
         // and belong to the project root
         var previewModes: [String: String]?
         let mdTabs = everyTab.filter {
-            $0.isMarkdownFile && $0.previewMode != .source && $0.url.path.hasPrefix(rootPath)
+            $0.isMarkdownFile
+                && $0.previewMode != .source
+                && ($0.fileURL?.path.hasPrefix(rootPath) ?? false)
         }
         if !mdTabs.isEmpty {
             previewModes = [:]
             for tab in mdTabs {
-                previewModes?[tab.url.path] = tab.previewMode.rawValue
+                guard let fileURL = tab.fileURL else { continue }
+                previewModes?[fileURL.path] = tab.previewMode.rawValue
             }
         }
 
         // Collect tabs with syntax highlighting disabled (large files), scoped to project root
         let disabledTabs = everyTab.filter {
-            $0.syntaxHighlightingDisabled && $0.url.path.hasPrefix(rootPath)
+            $0.syntaxHighlightingDisabled
+                && ($0.fileURL?.path.hasPrefix(rootPath) ?? false)
         }
         let highlightingDisabledPaths: [String]? = disabledTabs.isEmpty
             ? nil
-            : disabledTabs.map(\.url.path)
+            : disabledTabs.compactMap(\.fileURL?.path)
 
         // Per-tab editor state (cursor, scroll, folds)
         var editorStates: [String: PerTabEditorState]?
         let tabsWithState = everyTab.filter { tab in
-            tab.url.path.hasPrefix(rootPath) && tab.kind == .text
+            (tab.fileURL?.path.hasPrefix(rootPath) ?? false)
+                && tab.kind == .text
         }
         if !tabsWithState.isEmpty {
             editorStates = [:]
             for tab in tabsWithState {
-                editorStates?[tab.url.path] = PerTabEditorState.capture(from: tab)
+                guard let fileURL = tab.fileURL else { continue }
+                editorStates?[fileURL.path] =
+                    PerTabEditorState.capture(from: tab)
             }
         }
 
         // Pinned tabs, scoped to project root
         let pinnedTabs = everyTab.filter {
-            $0.isPinned && $0.url.path.hasPrefix(rootPath)
+            $0.isPinned && ($0.fileURL?.path.hasPrefix(rootPath) ?? false)
         }
         let pinnedPaths: [String]? = pinnedTabs.isEmpty
             ? nil
-            : pinnedTabs.map(\.url.path)
+            : pinnedTabs.compactMap(\.fileURL?.path)
 
         // Pane layout — always persist (terminal panes need it even with a single editor pane)
         var paneLayoutData: Data?
@@ -524,23 +874,29 @@ final class ProjectManager {
         var transientPreviewPaths: [String: String] = [:]
         for (paneID, tm) in paneManager.tabManagers {
             let paneKey = paneID.id.uuidString
-            let paths = tm.tabs.map(\.url.path).filter { $0.hasPrefix(rootPath) }
+            let paths = tm.tabs
+                .compactMap(\.fileURL?.path)
+                .filter { $0.hasPrefix(rootPath) }
             if !paths.isEmpty {
                 assignments[paneKey] = paths
             }
-            if let activePath = tm.activeTab?.url.path,
+            if let activePath = tm.activeTab?.fileURL?.path,
                activePath.hasPrefix(rootPath) {
                 activeEditorPaths[paneKey] = activePath
             }
             let panePins = tm.tabs
-                .filter { $0.isPinned && $0.url.path.hasPrefix(rootPath) }
-                .map(\.url.path)
+                .filter {
+                    $0.isPinned
+                        && ($0.fileURL?.path.hasPrefix(rootPath) ?? false)
+                }
+                .compactMap(\.fileURL?.path)
             if !panePins.isEmpty {
                 pinnedPathsByPane[paneKey] = panePins
             }
             if let previewPath = tm.tabs.first(where: {
-                $0.isTransientPreview && $0.url.path.hasPrefix(rootPath)
-            })?.url.path {
+                $0.isTransientPreview
+                    && ($0.fileURL?.path.hasPrefix(rootPath) ?? false)
+            })?.fileURL?.path {
                 transientPreviewPaths[paneKey] = previewPath
             }
         }
@@ -567,7 +923,7 @@ final class ProjectManager {
             switch identity.contentType {
             case .editor:
                 guard let path = paneManager.tabManager(for: identity.paneID)?.tabs
-                    .first(where: { $0.id == identity.tabID })?.url.path,
+                    .first(where: { $0.id == identity.tabID })?.fileURL?.path,
                       path.hasPrefix(rootPath) else { return nil }
                 return SessionTabReference.editor(paneID: identity.paneID, filePath: path)
             case .terminal:
@@ -904,11 +1260,14 @@ final class ProjectManager {
         guard let rootURL = workspace.rootURL else { return }
         let tab = activeTabManager.activeTab
         let relativePath = ContextFileWriter.relativePath(
-            fileURL: tab?.url,
+            fileURL: tab?.fileURL,
             rootURL: rootURL
         )
         let openFiles = allTabs.compactMap {
-            ContextFileWriter.relativePath(fileURL: $0.url, rootURL: rootURL)
+            ContextFileWriter.relativePath(
+                fileURL: $0.fileURL,
+                rootURL: rootURL
+            )
         }
         Task {
             await contextFileWriter.update(

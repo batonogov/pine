@@ -61,17 +61,18 @@ enum TabExternalChangeDetector {
 
         for index in tabs.indices {
             let tab = tabs[index]
+            guard let fileURL = tab.fileURL else { continue }
 
-            if !FileManager.default.fileExists(atPath: tab.url.path) {
+            if !FileManager.default.fileExists(atPath: fileURL.path) {
                 if tab.isDirty {
-                    conflicts.append(.init(tabID: tab.id, url: tab.url, kind: .deleted))
+                    conflicts.append(.init(tabID: tab.id, url: fileURL, kind: .deleted))
                 } else {
                     cleanDeletedIDs.append(tab.id)
                 }
                 continue
             }
 
-            guard let diskMod = providers.modDate(tab.url),
+            guard let diskMod = providers.modDate(fileURL),
                   let lastMod = tab.lastModDate,
                   diskMod > lastMod
             else { continue }
@@ -79,22 +80,27 @@ enum TabExternalChangeDetector {
             if tab.kind == .preview {
                 tabs[index].lastModDate = diskMod
             } else if tab.isDirty {
-                conflicts.append(.init(tabID: tab.id, url: tab.url, kind: .modified))
+                conflicts.append(.init(tabID: tab.id, url: fileURL, kind: .modified))
                 tabs[index].lastModDate = diskMod
             } else {
                 // Safe to reload silently
                 do {
-                    let content = try String(contentsOf: tab.url, encoding: tab.encoding)
+                    let content = try String(
+                        contentsOf: fileURL,
+                        encoding: tab.encoding
+                    )
                     tabs[index].content = content
                     tabs[index].savedContent = content
                     tabs[index].lastModDate = diskMod
-                    tabs[index].fileSizeBytes = providers.fileSize(tab.url)
+                    tabs[index].fileSizeBytes = providers.fileSize(fileURL)
                     tabs[index].cachedHighlightResult = nil
                     tabs[index].recomputeContentCaches()
-                    reloadedNames.append(tab.url.lastPathComponent)
-                    reloadedTabs.append(.init(url: tab.url, text: content))
+                    reloadedNames.append(fileURL.lastPathComponent)
+                    reloadedTabs.append(.init(url: fileURL, text: content))
                 } catch {
-                    logger.error("Failed to reload tab \(tab.url.lastPathComponent): \(error)")
+                    logger.error(
+                        "Failed to reload tab \(fileURL.lastPathComponent): \(error)"
+                    )
                 }
             }
         }
@@ -114,7 +120,11 @@ enum TabExternalChangeDetector {
         tabs: inout [EditorTab],
         providers: FileProviders
     ) -> ReloadedTab? {
-        guard let index = tabs.firstIndex(where: { $0.url == url }) else { return nil }
+        guard let index = tabs.firstIndex(where: {
+            $0.fileURL == url
+        }) else {
+            return nil
+        }
         do {
             let content = try String(contentsOf: url, encoding: tabs[index].encoding)
             tabs[index].content = content

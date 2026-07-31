@@ -280,12 +280,13 @@ nonisolated extension UserCommand {
 
     var availabilityRequirement: CommandAvailabilityRequirement {
         switch self {
-        case .newFile, .openFile, .openFolder, .clearRecentProjects,
+        case .openFolder, .clearRecentProjects,
              .increaseFontSize, .decreaseFontSize,
              .resetFontSize, .editKeybindings, .editTasks,
              .reloadUserConfiguration:
             .always
-        case .quickOpen, .commandPalette, .saveAll, .toggleAutoSave,
+        case .newFile, .openFile,
+             .quickOpen, .commandPalette, .saveAll, .toggleAutoSave,
              .toggleFormatOnSave, .toggleSmartListContinuation,
              .closeTab, .closeWindow,
              .findInProject, .toggleTerminal, .newTerminalTab,
@@ -402,9 +403,16 @@ nonisolated extension UserCommand {
             value = "cmd+option+return"
         case .editKeybindings, .editTasks, .reloadUserConfiguration:
             value = nil
-        case .newFile, .openFile, .clearRecentProjects,
-             .closeTab, .closeWindow:
+        case .newFile:
+            value = "cmd+n"
+        case .openFile:
+            value = "cmd+o"
+        case .clearRecentProjects:
             value = nil
+        case .closeTab:
+            value = "cmd+w"
+        case .closeWindow:
+            value = "cmd+shift+w"
         case .showProblems:
             value = "cmd+shift+x"
         case .nextDiagnostic:

@@ -31,11 +31,18 @@ enum UserCommandInvocationRouter {
 
         case .saveAs:
             guard let projectManager else { return }
-            saveAs(projectManager: projectManager)
+            projectManager.saveActiveTabAsFromMenu()
 
         case .duplicate:
-            guard let projectManager else { return }
-            projectManager.activeTabManager.duplicateActiveTab(
+            guard let projectManager,
+                  projectManager.paneManager.root.content(
+                      for: projectManager.paneManager.activePaneID
+                  ) == .editor,
+                  let tabManager = projectManager.paneManager.activeTabManager
+            else {
+                return
+            }
+            tabManager.duplicateActiveTab(
                 projectRoot: projectManager.workspace.rootURL,
                 context: DialogPresenter.forProject(projectManager)
             )
@@ -57,9 +64,7 @@ enum UserCommandInvocationRouter {
              .findNext, .findPrevious, .useSelectionForFind,
              .findInProject,
              .toggleWordWrap, .showAgentActivity, .showAgentHistory,
-             .findInTerminal, .sendToTerminal,
-             .newFile, .openFile, .clearRecentProjects,
-             .closeTab, .closeWindow:
+             .findInTerminal, .sendToTerminal:
             notificationCenter.post(
                 name: Notification.Name(command.notificationKey),
                 object: projectManager
@@ -68,6 +73,18 @@ enum UserCommandInvocationRouter {
         case .openFolder:
             notificationCenter.post(
                 name: .openFolder,
+                object: nil
+            )
+
+        case .newFile, .openFile, .closeTab, .closeWindow:
+            notificationCenter.post(
+                name: Notification.Name(command.notificationKey),
+                object: projectManager
+            )
+
+        case .clearRecentProjects:
+            notificationCenter.post(
+                name: .clearRecentProjects,
                 object: nil
             )
 
@@ -127,7 +144,13 @@ enum UserCommandInvocationRouter {
             projectManager?.activeTabManager.togglePreviewMode()
 
         case .revealFileInFinder:
-            guard let url = projectManager?.activeTabManager.activeTab?.url else {
+            guard let projectManager,
+                  projectManager.paneManager.root.content(
+                      for: projectManager.paneManager.activePaneID
+                  ) == .editor,
+                  let url = projectManager.paneManager.activeTabManager?
+                      .activeTab?
+                      .fileURL else {
                 return
             }
             NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -225,42 +248,17 @@ enum UserCommandInvocationRouter {
         guard let projectManager else {
             return .unavailable
         }
+        let nativeState = NativeMenuCommandState(
+            projectManager: projectManager
+        )
         return CommandPaletteContext(
             hasProject: projectManager.workspace.rootURL != nil,
-            hasActiveFile: projectManager.activeTabManager.activeTab != nil,
+            hasActiveFile: nativeState.activeEditorTabID != nil,
             isGitRepository: projectManager.workspace.gitProvider.isGitRepository,
             hasTerminal: projectManager.hasTerminalPanes
         )
     }
 
-    private static func saveAs(projectManager: ProjectManager) {
-        let tabManager = projectManager.activeTabManager
-        guard let activeTab = tabManager.activeTab else { return }
-        let context = DialogPresenter.forProject(projectManager)
-        Task { @MainActor in
-            let panel = NSSavePanel()
-            panel.title = Strings.saveAsPanelTitle
-            panel.nameFieldStringValue = activeTab.fileName
-            panel.directoryURL = activeTab.url.deletingLastPathComponent()
-            guard await panel.runSheet(on: context) == .OK,
-                  let url = panel.url else { return }
-            guard tabManager.activeTabID == activeTab.id else { return }
-            do {
-                try tabManager.saveActiveTabAs(to: url)
-                await projectManager.workspace.gitProvider.refreshAsync()
-                NotificationCenter.default.post(
-                    name: .refreshLineDiffs,
-                    object: nil
-                )
-            } catch {
-                _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
-                    on: context,
-                    messageText: Strings.fileOperationErrorTitle,
-                    informativeText: error.localizedDescription
-                )
-            }
-        }
-    }
 }
 
 nonisolated private extension UserCommand {

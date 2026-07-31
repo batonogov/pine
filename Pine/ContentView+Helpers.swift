@@ -207,7 +207,7 @@ extension ContentView {
 
     /// Syncs sidebar selection to match the active editor tab.
     func syncSidebarSelection() {
-        guard let url = activeTabManager.activeTab?.url else {
+        guard let url = activeTabManager.activeTab?.fileURL else {
             selectedNode = nil
             return
         }
@@ -256,8 +256,10 @@ extension ContentView {
     /// `activeTabManager.pendingGoToLine` so the focused `PaneLeafView`
     /// performs the actual scroll/cursor update.
     func navigateToChange(direction: ChangeDirection) {
-        guard let tab = activeTabManager.activeTab else { return }
-        let fileURL = tab.url
+        guard let tab = activeTabManager.activeTab,
+              let fileURL = tab.fileURL else {
+            return
+        }
         let provider = workspace.gitProvider
         guard provider.isGitRepository else { return }
         let activeTM = activeTabManager
@@ -289,10 +291,9 @@ extension ContentView {
     /// TabManager's tab.
     func handleInlineDiffAction(_ action: InlineDiffAction) {
         guard let tab = activeTabManager.activeTab,
+              let fileURL = tab.fileURL,
               let repoURL = workspace.rootURL,
               workspace.gitProvider.isGitRepository else { return }
-
-        let fileURL = tab.url
         let activeTM = activeTabManager
 
         switch action {
@@ -369,26 +370,9 @@ extension ContentView {
     }
 }
 
-// MARK: - Tab close & deletion handling
+// MARK: - Deletion handling
 
 extension ContentView {
-
-    func closeTabWithConfirmation(_ tab: EditorTab) {
-        let context = DialogPresenter.forProject(projectManager)
-        let tabManager = activeTabManager
-        let paneID = paneManager.activePaneID
-        Task { @MainActor in
-            let didClose = await TabCloseHelper.closeTab(
-                tab,
-                in: tabManager,
-                gitProvider: workspace.gitProvider,
-                context: context
-            )
-            if didClose && tabManager.tabs.isEmpty {
-                paneManager.removePane(paneID)
-            }
-        }
-    }
 
     func handleExternalChanges(_ result: TabManager.ExternalChangeResult) {
         // Show toast for silently reloaded files
@@ -406,7 +390,7 @@ extension ContentView {
             guard let projectManager else { return }
             let currentModified = modified.filter { conflict in
                 projectManager.allTabs.contains {
-                    $0.url.standardizedFileURL ==
+                    $0.fileURL?.standardizedFileURL ==
                         conflict.url.standardizedFileURL
                         && $0.isDirty
                 }

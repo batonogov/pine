@@ -9,6 +9,9 @@ import Foundation
 struct RecoveryEntry: Codable, Sendable {
     /// Path to the original file on disk (empty string for untitled tabs).
     let originalPath: String
+    /// Display name retained for an untitled buffer. Optional keeps snapshots
+    /// written by earlier Pine builds source-compatible.
+    let untitledName: String?
     /// The unsaved content at the time of the snapshot.
     let content: String
     /// When this snapshot was taken.
@@ -20,8 +23,15 @@ struct RecoveryEntry: Codable, Sendable {
         String.Encoding(rawValue: encodingRawValue)
     }
 
-    init(originalPath: String, content: String, timestamp: Date = Date(), encoding: String.Encoding = .utf8) {
+    init(
+        originalPath: String,
+        untitledName: String? = nil,
+        content: String,
+        timestamp: Date = Date(),
+        encoding: String.Encoding = .utf8
+    ) {
         self.originalPath = originalPath
+        self.untitledName = untitledName
         self.content = content
         self.timestamp = timestamp
         self.encodingRawValue = encoding.rawValue

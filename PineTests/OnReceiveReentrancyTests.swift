@@ -167,8 +167,8 @@ struct OnReceiveReentrancyTests {
     // so removing `DispatchQueue.main.async` from them turns the test red.
     // Both handlers are testable outside a view hierarchy because they touch
     // only @Binding/callback parameters (not @Environment). The other
-    // handlers (handleCloseTab, handleGoToLine, handleOpenFileAtLine,
-    // handleFileRenamed) read @Environment (controlActiveState,
+    // handlers (handleGoToLine, handleOpenFileAtLine, handleFileRenamed)
+    // read @Environment (controlActiveState,
     // projectManager) and are covered by the abstract contract tests above.
 
     /// Records writes to a value through a `Binding`, so the test can assert
@@ -201,7 +201,6 @@ struct OnReceiveReentrancyTests {
             onPresentGoToLine: {},
             onRefreshLineDiffs: { },
             onRefreshBlame: { },
-            onCloseTab: { _ in },
             onOpenNewProject: { },
             onHandleFileDeletion: { _ in },
             onHandleExternalChanges: { _ in },
@@ -238,7 +237,6 @@ struct OnReceiveReentrancyTests {
             onPresentGoToLine: {},
             onRefreshLineDiffs: { },
             onRefreshBlame: { },
-            onCloseTab: { _ in },
             onOpenNewProject: { },
             onHandleFileDeletion: { _ in callBox.value += 1 },
             onHandleExternalChanges: { _ in },

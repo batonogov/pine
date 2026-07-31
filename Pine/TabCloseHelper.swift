@@ -49,11 +49,11 @@ enum TabCloseHelper {
         }) else {
             return false
         }
+        guard !entryTab.isPinned else { return false }
         let tabID = entryTab.id
         let entryContent = entryTab.content
         guard entryTab.isDirty else {
-            tabManager.closeTab(id: tabID)
-            return true
+            return tabManager.closeTab(id: tabID) == .closed
         }
 
         let response: NSApplication.ModalResponse
@@ -92,8 +92,7 @@ enum TabCloseHelper {
                 return false
             }
             Task { await gitProvider.refreshAsync() }
-            tabManager.closeTab(id: tabID)
-            return true
+            return tabManager.closeTab(id: tabID) == .closed
         case .alertSecondButtonReturn:
             guard let currentTab = tabManager.tabs.first(where: { $0.id == tabID }) else {
                 return false
@@ -104,8 +103,7 @@ enum TabCloseHelper {
             guard !currentTab.isDirty || currentTab.content == entryContent else {
                 return false
             }
-            tabManager.closeTab(id: tabID)
-            return true
+            return tabManager.closeTab(id: tabID) == .closed
         default:
             return false
         }

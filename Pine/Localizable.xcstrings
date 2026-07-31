@@ -28880,6 +28880,111 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "窗格 %lld" } }
       }
     },
+    "menu.clearMenu" : {
+      "comment" : "Menu command: clear the recent projects menu.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Menü löschen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear Menu" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Borrar menú" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Effacer le menu" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "メニューを消去" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "메뉴 지우기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limpar Menu" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистить меню" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除菜单" } }
+      }
+    },
+    "menu.closeWindow" : {
+      "comment" : "Window menu command: close the current project window.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Fenster schließen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Close Window" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cerrar ventana" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Fermer la fenêtre" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ウインドウを閉じる" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "윈도우 닫기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar Janela" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Закрыть окно" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭窗口" } }
+      }
+    },
+    "menu.newFile" : {
+      "comment" : "File menu command: create an untitled editable buffer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Neue Datei" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New File" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Nuevo archivo" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Nouveau fichier" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "新規ファイル" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "새 파일" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Novo Arquivo" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Новый файл" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新建文件" } }
+      }
+    },
+    "menu.open" : {
+      "comment" : "File menu command: open a file in the current project window.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Öffnen…" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open…" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Abrir…" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Ouvrir…" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "開く…" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "열기…" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir…" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Открыть…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开…" } }
+      }
+    },
+    "menu.openRecent" : {
+      "comment" : "File menu submenu containing recent projects.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Zuletzt geöffnet" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Recent" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Abrir reciente" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Ouvrir récent" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "最近使った項目" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "최근 항목 열기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir Recentes" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Недавние проекты" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开最近项目" } }
+      }
+    },
+    "openFilePanel.message" : {
+      "comment" : "Message shown inside the project-window-scoped file picker.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Wähle eine zu öffnende Datei." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose a file to open." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Selecciona un archivo para abrir." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Choisissez un fichier à ouvrir." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "開くファイルを選択してください。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "열 파일을 선택하십시오." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha um arquivo para abrir." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выберите файл для открытия." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选择要打开的文件。" } }
+      }
+    },
+    "openFilePanel.prompt" : {
+      "comment" : "Confirm button label in the project-window-scoped file picker.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Öffnen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Abrir" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Ouvrir" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "開く" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "열기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Открыть" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开" } }
+      }
+    },
     "problems.noIssues": {
       "comment": "Label for the \"No problems detected\" message in the problems panel.",
       "extractionState": "extracted_with_value",

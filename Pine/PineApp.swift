@@ -34,6 +34,9 @@ struct PineApp: App {
                     appDelegate.checkForUpdatesViewModel,
                 toggleQuickTerminal: { [weak appDelegate] in
                     appDelegate?.quickTerminalCoordinator.toggle()
+                },
+                recentProjects: { [weak appDelegate] in
+                    appDelegate?.registry.recentProjects ?? []
                 }
             )
         }
@@ -130,7 +133,17 @@ private struct ProjectWindowView: View {
             // Hidden windows from closed projects still get re-rendered by SwiftUI;
             // calling projectManager(for:) would silently re-add the closed project
             // to openProjects, breaking the "show Welcome when last project closes" logic.
-            if let pm = registry.openProjects[projectURL.resolvingSymlinksInPath()] {
+            if let pm = registry.openProjects[
+                registry.canonicalProjectURL(projectURL)
+            ] ?? {
+                // Fallback: the project may have been opened through a path
+                // that canonicalizes differently (e.g. before the AppDelegate
+                // bridge wired openProjectWindow). Try a direct registry lookup
+                // as a last resort so the window always shows content.
+                registry.projectManager(
+                    for: registry.canonicalProjectURL(projectURL)
+                )
+            }() {
                 ContentView()
                     .id(ObjectIdentifier(pm))
                     .environment(pm)
@@ -255,7 +268,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                 if closeDelegate.didCompleteWindowLifecycle,
                    registry.isWindowOpen(projectURL),
                    registry.openProjects[
-                       projectURL.resolvingSymlinksInPath()
+                       registry.canonicalProjectURL(projectURL)
                    ] === projectManager {
                     closeDelegate.beginNewWindowLifecycle(on: window)
                 }
@@ -283,7 +296,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                     if existing.didCompleteWindowLifecycle,
                        registry.isWindowOpen(projectURL),
                        registry.openProjects[
-                           projectURL.resolvingSymlinksInPath()
+                           registry.canonicalProjectURL(projectURL)
                        ] === projectManager {
                         existing.beginNewWindowLifecycle(on: window)
                     } else if !existing.didCompleteWindowLifecycle {
@@ -487,46 +500,78 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Closes the active tab with unsaved-changes dialog. Called by the Cmd+W event monitor.
-    func closeActiveTab() {
+    /// Closes the exact focused tab with its native safeguards.
+    ///
+    /// - Returns: `true` when a close workflow was started. Pinned or missing
+    ///   tabs return `false` and remain untouched.
+    @discardableResult
+    func closeActiveTab(
+        expectedTarget: NativeTabCloseTarget? = nil
+    ) -> Bool {
         let pane = projectManager.paneManager
-        let activePaneID = pane.activePaneID
-        let content = pane.root.content(for: activePaneID)
+        let state = NativeMenuCommandState(projectManager: projectManager)
+        guard let target = state.closeTarget,
+              expectedTarget == nil || expectedTarget == target else {
+            return false
+        }
 
-        switch content {
-        case .terminal:
-            guard let state = pane.terminalState(for: activePaneID),
-                  let tab = state.activeTab else { return }
+        switch target {
+        case .terminal(let paneID, let tabID):
+            guard let terminalState = pane.terminalState(for: paneID),
+                  let tab = terminalState.terminalTabs.first(where: {
+                      $0.id == tabID
+                  }) else {
+                return false
+            }
             let context = dialogContext
             Task { @MainActor in
                 guard await TabCloseHelper.confirmTerminalProcessStop(
                     tabs: [tab],
                     context: context
                 ) else { return }
-                guard state.terminalTabs.contains(where: { $0 === tab }) else {
+                guard terminalState.terminalTabs.contains(where: {
+                    $0 === tab
+                }) else {
                     return
                 }
-                state.removeTab(id: tab.id)
-                if state.terminalTabs.isEmpty {
-                    pane.removePane(activePaneID)
+                terminalState.removeTab(id: tab.id)
+                if terminalState.terminalTabs.isEmpty {
+                    pane.removePane(paneID)
                 }
             }
+            return true
 
-        case .editor, nil:
-            let activeTM = projectManager.activeTabManager
-            guard let tab = activeTM.activeTab else { return }
+        case .editor(let paneID, let tabID):
+            guard let activeTM = pane.tabManager(for: paneID),
+                  let tab = activeTM.tabs.first(where: {
+                      $0.id == tabID && !$0.isPinned
+                  }) else {
+                return false
+            }
             let context = dialogContext
             Task { @MainActor in
                 let closed = await TabCloseHelper.closeTab(
                     tab,
                     in: activeTM,
                     gitProvider: projectManager.workspace.gitProvider,
-                    context: context
+                    context: context,
+                    saveTab: { index in
+                        guard activeTM.tabs.indices.contains(index) else {
+                            return false
+                        }
+                        return await self.projectManager.saveTab(
+                            tabID: activeTM.tabs[index].id,
+                            in: activeTM,
+                            forceSaveAs: false,
+                            context: context
+                        )
+                    }
                 )
                 if closed && activeTM.tabs.isEmpty {
-                    pane.removePane(activePaneID)
+                    pane.removePane(paneID)
                 }
             }
+            return true
         }
     }
 
@@ -827,7 +872,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         guard !isTerminating else { return }
         // Save session before closing so it can be restored
         // when the user reopens this project from Welcome or Open Recent.
-        let canonical = projectURL.resolvingSymlinksInPath()
+        let canonical = registry.canonicalProjectURL(projectURL)
         registry.openProjects[canonical]?.saveSession()
         registry.openProjects[canonical]?.cleanupEditorContext()
         registry.closeProjectWindow(projectURL)
@@ -1158,6 +1203,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 }
             }
         }
+
+        installNativeCommandObservers()
     }
 
     /// Handles Pine shortcuts that require physical key codes or focused
@@ -1171,8 +1218,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             for: NSApp.keyWindow
         )
 
-        // Cmd+W closes the active editor tab (or the project window when no
-        // editor tab remains). The physical key code is layout-independent.
+        // Cmd+W always means Close Tab. A pinned or absent tab consumes the
+        // chord without falling through to NSWindow's close responder.
         if KeyboardShortcutMatcher.matches(
             keyCode: KeyboardShortcutMatcher.PhysicalKey.w,
             modifiers: .command,
@@ -1180,11 +1227,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         ),
            let window = documentWindow,
            let closeDelegate = window.delegate as? CloseDelegate {
-            if closeDelegate.projectManager.activeTabManager.activeTab != nil {
-                closeDelegate.closeActiveTab()
-            } else {
-                window.performClose(nil)
-            }
+            _ = closeDelegate.closeActiveTab()
             return true
         }
 
@@ -1327,7 +1370,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     guard let self, let projectManager else { return }
                     guard let owner = await projectManager.awaitDialogOwnerWindow(),
                           projectManager.dialogOwnerWindow === owner,
-                          self.registry.openProjects[projectDir] === projectManager else {
+                          self.registry.openProjects[
+                              self.registry.canonicalProjectURL(projectDir)
+                          ] === projectManager else {
                         return
                     }
                     for file in classified.files {
@@ -1344,8 +1389,260 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             for: NSApp.keyWindow
         ),
               let closeDelegate = window.delegate as? CloseDelegate else { return nil }
-        let canonical = closeDelegate.projectURL.resolvingSymlinksInPath()
+        let canonical = registry.canonicalProjectURL(
+            closeDelegate.projectURL
+        )
         return registry.openProjects[canonical]
+    }
+
+    // MARK: - Native File / Window command routing
+
+    private func installNativeCommandObservers() {
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(handleNativeMenuDidBeginTracking(_:)),
+            name: NSMenu.didBeginTrackingNotification,
+            object: nil
+        )
+        for name in [
+            Notification.Name.newFile,
+            .openFile,
+            .closeTab,
+            .closeWindow,
+            .openRecentProject,
+            .clearRecentProjects,
+        ] {
+            center.addObserver(
+                self,
+                selector: #selector(handleNativeCommand(_:)),
+                name: name,
+                object: nil
+            )
+        }
+    }
+
+    @objc private func handleNativeMenuDidBeginTracking(
+        _ notification: Notification
+    ) {
+        guard let menu = notification.object as? NSMenu else { return }
+        NativeRecentProjectsMenu.synchronize(
+            mainMenu: menu,
+            projects: registry.recentProjects,
+            target: self,
+            openAction: #selector(openRecentProjectFromNativeMenu(_:)),
+            clearAction: #selector(clearRecentProjectsFromNativeMenu(_:))
+        )
+    }
+
+    @objc private func handleNativeCommand(_ notification: Notification) {
+        precondition(Thread.isMainThread)
+        switch notification.name {
+        case .openRecentProject:
+            guard let url = notification.userInfo?["url"] as? URL else {
+                return
+            }
+            requestOpenRecentProject(url)
+
+        case .clearRecentProjects:
+            NativeCommandDelivery.deferToNextMainRunLoop { [weak self] in
+                self?.registry.clearRecentProjects()
+            }
+
+        case .newFile, .openFile, .closeTab, .closeWindow:
+            guard let initialRoute = nativeCommandDestination(
+                requestedProject: notification.object as? ProjectManager
+            ) else {
+                return
+            }
+
+            let project = initialRoute.project
+            let initiatingPaneID = project.nativeFileCommandPaneID()
+            let expectedCloseTarget =
+                NativeMenuCommandState(projectManager: project).closeTarget
+            if notification.name == .closeTab,
+               expectedCloseTarget == nil {
+                return
+            }
+            let commandName = notification.name
+            let originatingWindow = initialRoute.window
+            NativeCommandDelivery.deferToNextMainRunLoop { [weak self, weak project, weak originatingWindow] in
+                guard let self,
+                      let project,
+                      let routed = self.nativeCommandDestination(
+                          requestedProject: project
+                      ),
+                      routed.project === project else {
+                    return
+                }
+
+                switch commandName {
+                case .newFile:
+                    _ = project.createUntitledFile(
+                        in: initiatingPaneID
+                    )
+                case .openFile:
+                    project.openFileFromMenu(
+                        initiatingPaneID: initiatingPaneID
+                    )
+                case .closeTab:
+                    _ = routed.delegate.closeActiveTab(
+                        expectedTarget: expectedCloseTarget
+                    )
+                case .closeWindow:
+                    guard routed.window === originatingWindow else {
+                        return
+                    }
+                    routed.window.performClose(nil)
+                default:
+                    break
+                }
+            }
+
+        default:
+            break
+        }
+    }
+
+    @objc private func openRecentProjectFromNativeMenu(
+        _ sender: NSMenuItem
+    ) {
+        guard let projectURL = sender.representedObject as? URL else {
+            return
+        }
+        requestOpenRecentProject(projectURL)
+    }
+
+    @objc private func clearRecentProjectsFromNativeMenu(
+        _: NSMenuItem
+    ) {
+        NativeCommandDelivery.deferToNextMainRunLoop { [weak self] in
+            self?.registry.clearRecentProjects()
+        }
+    }
+
+    private func nativeCommandDestination(
+        requestedProject: ProjectManager?
+    ) -> (
+        project: ProjectManager,
+        window: NSWindow,
+        delegate: CloseDelegate
+    )? {
+        let candidates: [(ProjectManager, NSWindow, CloseDelegate)] =
+            NSApp.windows.compactMap { window in
+            guard let delegate = window.delegate as? CloseDelegate else {
+                return nil
+            }
+            return (delegate.projectManager, window, delegate)
+        }
+        let routingCandidates = candidates.map { candidate in
+            let (project, window, delegate) = candidate
+            let isRegisteredProject =
+                registry.openProjects.values.contains(where: {
+                    $0 === project
+                })
+            return NativeCommandRoutingCandidate(
+                projectManager: project,
+                isKeyWindow: window === NSApp.keyWindow,
+                isEligibleWindow:
+                    !delegate.didCompleteWindowLifecycle
+                    && window.isVisible
+                    && registry.isWindowOpen(delegate.projectURL)
+                    && isRegisteredProject
+            )
+        }
+        guard let destinationIndex = NativeCommandRouting.destinationIndex(
+            requestedProject: requestedProject,
+            candidates: routingCandidates
+        ),
+        candidates.indices.contains(destinationIndex) else {
+            return nil
+        }
+        let match = candidates[destinationIndex]
+        guard
+              registry.openProjects.values.contains(where: {
+                  $0 === match.0
+              }) else {
+            return nil
+        }
+        return (
+            project: match.0,
+            window: match.1,
+            delegate: match.2
+        )
+    }
+
+    /// Opens a recent project from File, Welcome, or Dock through one path.
+    func requestOpenRecentProject(
+        _ url: URL,
+        fallbackOpenProjectWindow: ((URL) -> Void)? = nil
+    ) {
+        NativeCommandDelivery.deferToNextMainRunLoop { [weak self] in
+            _ = self?.openRecentProject(
+                url,
+                fallbackOpenProjectWindow: fallbackOpenProjectWindow
+            )
+        }
+    }
+
+    /// Executes the shared Open Recent transition after its initiating
+    /// SwiftUI/AppKit action stack has unwound.
+    @discardableResult
+    func openRecentProject(
+        _ url: URL,
+        fallbackOpenProjectWindow: ((URL) -> Void)? = nil
+    ) -> Bool {
+        let canonical = registry.canonicalProjectURL(url)
+        if registry.isWindowOpen(canonical),
+           let project = registry.openProjects[canonical],
+           let window = liveProjectWindow(
+               for: project,
+               canonicalURL: canonical
+           ) {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            registry.projectManager(for: canonical)
+            hideWelcome()
+            return true
+        }
+
+        // A registry entry can briefly claim an open window after AppKit has
+        // already hidden or retired its delegate. Move that model back to the
+        // retained-background state before asking SwiftUI for a replacement.
+        if registry.isWindowOpen(canonical) {
+            registry.closeProjectWindow(canonical)
+        }
+        guard registry.projectManager(for: canonical) != nil else {
+            return false
+        }
+        guard let openProjectWindow =
+                self.openProjectWindow ?? fallbackOpenProjectWindow else {
+            registry.closeProjectWindow(canonical)
+            return false
+        }
+        openProjectWindow(canonical)
+        hideWelcome()
+        return true
+    }
+
+    private func liveProjectWindow(
+        for project: ProjectManager,
+        canonicalURL: URL
+    ) -> NSWindow? {
+        guard registry.isWindowOpen(canonicalURL),
+              registry.openProjects[canonicalURL] === project else {
+            return nil
+        }
+        return NSApp.windows.first(where: { window in
+            guard window.isVisible,
+                  let delegate = window.delegate as? CloseDelegate,
+                  !delegate.didCompleteWindowLifecycle else {
+                return false
+            }
+            return delegate.projectManager === project
+                && registry.canonicalProjectURL(delegate.projectURL)
+                    == canonicalURL
+        })
     }
 
     // MARK: - Dock Menu
@@ -1355,7 +1652,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         let projects = Array(registry.recentProjects.prefix(10))
         guard !projects.isEmpty else { return nil }
         for url in projects {
-            let title = "\(url.lastPathComponent) — \(url.abbreviatedPath)"
+            let title = ProjectRegistry.recentProjectDisplayTitle(for: url)
             let item = NSMenuItem(title: title, action: #selector(dockMenuOpenProject(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = url
@@ -1366,24 +1663,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
     @objc func dockMenuOpenProject(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
-        let canonical = url.resolvingSymlinksInPath()
-        // If the project is already open with a visible window, just bring it front
-        if registry.isWindowOpen(canonical),
-           let window = NSApp.windows.first(where: {
-               $0.isVisible && (($0.delegate as? CloseDelegate)?.projectURL.resolvingSymlinksInPath() == canonical)
-           }) {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate()
-            return
-        }
-        // Close background project to recreate fresh
-        if registry.isProjectOpen(canonical) {
-            registry.openProjects[canonical]?.saveSession()
-            registry.closeProject(canonical)
-        }
-        guard registry.projectManager(for: canonical) != nil else { return }
-        openProjectWindow?(canonical)
-        hideWelcome()
+        requestOpenRecentProject(url)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

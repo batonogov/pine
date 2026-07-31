@@ -287,14 +287,17 @@ final class QuickTerminalController {
         // Pine's project windows carry their project URL on the delegate.
         let candidate: URL?
         if let closeDelegate = keyWindow.delegate as? CloseDelegate {
-            candidate = closeDelegate.projectURL.resolvingSymlinksInPath()
+            candidate = closeDelegate.projectURL
         } else {
             candidate = nil
         }
-        guard let url = candidate else { return nil }
+        guard let url = candidate,
+              let registry else { return nil }
         // Only return it if the project is actually open (not just a stale
-        // delegate reference on a closing window).
-        guard registry?.openProjects[url] != nil else { return nil }
+        // delegate reference on a closing window). Canonicalize so the key
+        // matches what was stored (trailing slash + symlink resolution).
+        let canonical = registry.canonicalProjectURL(url)
+        guard registry.openProjects[canonical] != nil else { return nil }
         return url
     }
 }

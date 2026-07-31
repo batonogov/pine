@@ -162,8 +162,24 @@ final class RecoveryManager {
         var retainedEntries: [(UUID, RecoveryEntry)] = []
 
         for (recoveryID, entry) in entries {
-            guard !entry.originalPath.isEmpty else {
-                retainedEntries.append((recoveryID, entry))
+            if entry.originalPath.isEmpty {
+                let result = tabManager.appendRecoveredUntitledTab(
+                    displayName: entry.untitledName
+                        ?? Strings.recoveryUntitled,
+                    content: entry.content,
+                    encoding: entry.encoding
+                )
+                guard case .appended(let recoveredTabID) = result,
+                      let recoveredTab = tabManager.tabs.first(where: {
+                          $0.id == recoveredTabID
+                      }) else {
+                    retainedEntries.append((recoveryID, entry))
+                    continue
+                }
+                _ = migrateRecoverySnapshot(
+                    from: recoveryID,
+                    to: recoveredTab
+                )
                 continue
             }
 
@@ -411,7 +427,8 @@ final class RecoveryManager {
         encoder: JSONEncoder
     ) -> Bool {
         let entry = RecoveryEntry(
-            originalPath: tab.url.path,
+            originalPath: tab.fileURL?.path ?? "",
+            untitledName: tab.isUntitled ? tab.fileName : nil,
             content: tab.content,
             encoding: tab.encoding
         )
@@ -424,7 +441,7 @@ final class RecoveryManager {
             )
         } catch {
             Self.logger.error(
-                "Failed to write recovery file for tab \(tab.url.lastPathComponent): \(error)"
+                "Failed to write recovery file for tab \(tab.fileName): \(error)"
             )
             return false
         }

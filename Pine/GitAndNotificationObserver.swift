@@ -41,7 +41,6 @@ struct GitAndNotificationObserver: ViewModifier {
     var onPresentGoToLine: () -> Void
     var onRefreshLineDiffs: () -> Void
     var onRefreshBlame: () -> Void
-    var onCloseTab: (EditorTab) -> Void
     var onOpenNewProject: () -> Void
     var onHandleFileDeletion: (URL) -> Void
     var onHandleExternalChanges: (TabManager.ExternalChangeResult) -> Void
@@ -74,14 +73,6 @@ struct GitAndNotificationObserver: ViewModifier {
                 guard controlActiveState == .key else { return }
                 onRefreshLineDiffs()
                 onRefreshBlame()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { notification in
-                guard ContentView.shouldHandleTargetedCommand(
-                    notificationObject: notification.object,
-                    currentProject: projectManager,
-                    isKeyWindow: controlActiveState == .key
-                ) else { return }
-                handleCloseTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
                 guard controlActiveState == .key else { return }
@@ -189,14 +180,6 @@ struct GitAndNotificationObserver: ViewModifier {
     // The handlers are extracted into named methods (rather than inline
     // closures) so the `body` type-checker stays fast and so the defer
     // contract is directly unit-testable without a live SwiftUI view.
-
-    func handleCloseTab() {
-        guard controlActiveState == .key,
-              let tab = activeTabManager.activeTab else { return }
-        DispatchQueue.main.async {
-            self.onCloseTab(tab)
-        }
-    }
 
     func handleFileRenamed(_ notification: Notification) {
         guard let oldURL = notification.userInfo?["oldURL"] as? URL,
