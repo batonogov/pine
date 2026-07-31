@@ -40,4 +40,22 @@ final class CheckForUpdatesTests: PineUITestCase {
         XCTAssertTrue(aboutItem.exists, "About Pine menu item should exist")
         XCTAssertTrue(updateItem.exists, "Check for Updates… menu item should exist")
     }
+
+    func testCommandLineToolMenuItemUsesNativeEllipsis() throws {
+        launchClean()
+
+        let welcomeWindow = app.windows["welcome"]
+        XCTAssertTrue(waitForExistence(welcomeWindow))
+
+        app.menuBars.menuBarItems["Pine"].click()
+
+        let install = app.menuItems["Install Command Line Tool…"]
+        let uninstall = app.menuItems["Uninstall Command Line Tool…"]
+        XCTAssertTrue(
+            install.exists || uninstall.exists,
+            "The CLI command should use the native ellipsis character"
+        )
+        XCTAssertFalse(app.menuItems["Install Command Line Tool..."].exists)
+        XCTAssertFalse(app.menuItems["Uninstall Command Line Tool..."].exists)
+    }
 }
