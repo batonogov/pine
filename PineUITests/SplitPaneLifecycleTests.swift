@@ -65,6 +65,30 @@ final class SplitPaneLifecycleTests: PineUITestCase {
 
     // MARK: - Terminal toggle creates and removes split
 
+    func testFreshProjectSeedsProductionTerminalAsOnlyPane() throws {
+        enableInitialTerminalSeeding()
+        launchWithProject(projectURL)
+
+        XCTAssertTrue(
+            waitForExistence(terminalTab("Terminal 1"), timeout: 10),
+            "A fresh project should seed its initial terminal"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["terminalSurface"]
+                .firstMatch.waitForExistence(timeout: 5),
+            "The seeded terminal should attach its terminal surface"
+        )
+        XCTAssertEqual(
+            paneDividers.count,
+            0,
+            "The seeded terminal should replace the untouched editor leaf"
+        )
+        XCTAssertFalse(
+            app.staticTexts["No File Selected"].firstMatch.exists,
+            "The legacy empty editor should not remain beside the terminal"
+        )
+    }
+
     func testTerminalToggleCreatesSplitWithDivider() throws {
         launchAndWaitForLoad()
         openFile("main.swift")

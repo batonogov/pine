@@ -476,8 +476,8 @@ jobs:
               });
             }
 
-  # Verify every UI test class is listed in the shard matrix below.
-  # Fails CI if someone adds a new test class and forgets to shard it.
+  # Verify every UI test class is assigned exactly once and the shard test
+  # counts stay within the release gate's maximum delta.
   verify-ui-shards:
     name: Verify UI Test Shards
     runs-on: ubuntu-latest
@@ -485,30 +485,18 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Check all UI test classes are sharded
+      - name: Test UI shard validator
+        working-directory: .github/scripts
+        run: python3 -m unittest test_check_ui_test_shards.py -v
+
+      - name: Check UI test shard membership and balance
         run: |
-          # Extract concrete test class names (exclude base class PineUITestCase and on-demand ScreenshotTests)
-          ACTUAL=$(grep -rh 'class.*:.*PineUITestCase' PineUITests/ \
-            | sed -E 's/.*class ([A-Za-z0-9_]+).*/\1/' \
-            | grep -v ScreenshotTests \
-            | sort)
+          python3 .github/scripts/check_ui_test_shards.py \
+            --tests-dir PineUITests \
+            --workflow .github/workflows/ci.yml \
+            --max-delta 3
 
-          # Extract class names from this workflow's shard matrix
-          SHARDED=$(grep -E '^\s+\-only-testing:PineUITests/' .github/workflows/ci.yml \
-            | sed -E 's/.*PineUITests\/([A-Za-z0-9_]+).*/\1/' \
-            | sort)
-
-          MISSING=$(comm -23 <(echo "$ACTUAL") <(echo "$SHARDED"))
-          if [ -n "$MISSING" ]; then
-            echo "::error::UI test classes not included in any shard:"
-            echo "$MISSING"
-            echo ""
-            echo "Add them to the ui-tests matrix in .github/workflows/ci.yml"
-            exit 1
-          fi
-          echo "All $(echo "$ACTUAL" | wc -l | tr -d ' ') UI test classes are sharded."
-
-  # UI test shards — 7 parallel jobs, 28-31 tests each (delta 3).
+  # UI test shards — 7 parallel jobs, 29-31 tests each (delta 2).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -526,22 +514,22 @@ jobs:
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
-          # Shard 2 — Welcome & Session (29 tests)
+          # Shard 2 — Welcome & Session (31 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/MinimapTests
-              -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/SessionRestoreTests
               -only-testing:PineUITests/SidebarFolderClickTests
+              -only-testing:PineUITests/NativeFileWindowMenuUITests
           # Shard 3 — Navigation (31 tests)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
               -only-testing:PineUITests/QuickOpenUITests
               -only-testing:PineUITests/EditorTabNavigationTests
-              -only-testing:PineUITests/NativeFileWindowMenuUITests
-          # Shard 4 — Editor Chrome (28 tests)
+              -only-testing:PineUITests/DiffNavigationUITests
+          # Shard 4 — Editor Chrome (31 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
@@ -549,6 +537,7 @@ jobs:
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/CheckForUpdatesTests
               -only-testing:PineUITests/SplitPaneRoutingUITests
+              -only-testing:PineUITests/UnsavedChangesUITests
           # Shard 5 — Files & Save (30 tests)
           - shard-name: "Files & Save"
             test-classes: >-
@@ -557,7 +546,7 @@ jobs:
               -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests
               -only-testing:PineUITests/UserTaskExecutionUITests
-          # Shard 6 — Search & Panes (28 tests)
+          # Shard 6 — Search & Panes (29 tests)
           - shard-name: "Search & Panes"
             test-classes: >-
               -only-testing:PineUITests/SidebarSearchTests
@@ -565,7 +554,7 @@ jobs:
               -only-testing:PineUITests/SplitPaneLifecycleTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
-          # Shard 7 — Security & Layout (29 tests)
+          # Shard 7 — Security & Layout (31 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
               -only-testing:PineUITests/GitignoreFilterTests
