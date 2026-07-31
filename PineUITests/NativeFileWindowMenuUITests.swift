@@ -52,6 +52,29 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         ) == .completed
     }
 
+    /// Polls for the first hittable text field within `timeout`.
+    ///
+    /// `NSOpenPanel`'s "Go to Folder" sheet animates its path field in
+    /// asynchronously, and `app.typeKey` can race the field's appearance on
+    /// CI runners. Polling avoids `XCTUnwrap` failing fast before the sheet is
+    /// fully interactive (stabilizes #1291, #1295).
+    private func firstHittableTextField(
+        timeout: TimeInterval
+    ) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let field = app.textFields.allElementsBoundByIndex.first(
+                where: { $0.isHittable }
+            ) {
+                return field
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return app.textFields.allElementsBoundByIndex.first {
+            $0.isHittable
+        }
+    }
+
     override func setUpWithError() throws {
         try super.setUpWithError()
         projectURL = try createTempProject(
@@ -264,11 +287,22 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
             "Open Folder should present a directory picker"
         )
 
-        app.typeKey("g", modifierFlags: [.command, .shift])
+        // Wait for the open panel to become interactive (it animates in),
+        // then route Cmd+Shift+G to the sheet itself so the "Go to Folder"
+        // path field reliably appears. Sending the shortcut to `app` can race
+        // the panel gaining first-responder on CI (#1291, #1295).
+        _ = XCTWaiter.wait(
+            for: [
+                XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "isHittable == true"),
+                    object: openPanel
+                )
+            ],
+            timeout: 5
+        )
+        openPanel.typeKey("g", modifierFlags: [.command, .shift])
         let pathField = try XCTUnwrap(
-            app.textFields.allElementsBoundByIndex.first(where: {
-                $0.isHittable
-            }),
+            firstHittableTextField(timeout: 5),
             "Go to Folder should expose a hittable path field"
         )
         pathField.typeText(secondProjectURL.path)
