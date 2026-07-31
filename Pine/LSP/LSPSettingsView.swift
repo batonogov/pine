@@ -576,7 +576,7 @@ private final class ExecutablePicker: NSObject, NSOpenSavePanelDelegate {
         // validate in `panel(_:validate:)` instead and reject non-executable
         // selections with a sheet-level error.
         panel.delegate = self
-        panel.prompt = "Choose"
+        panel.prompt = Strings.lspChooseExecutablePrompt
         Task { @MainActor [weak self] in
             let response = await panel.runSheet(on: context)
             guard response == .OK,

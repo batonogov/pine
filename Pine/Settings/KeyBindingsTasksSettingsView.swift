@@ -24,7 +24,21 @@ import SwiftUI
 /// they update immediately after a reload.
 @MainActor
 struct KeyBindingsTasksSettingsView: View {
+    struct Presentation {
+        let keybindingsFileURL: URL
+        let keybindingCount: Int
+        let tasksFileURL: URL
+        let taskCount: Int
+        let effectiveEntries: [ResolvedUserKeybinding]
+    }
+
+    @Environment(\.locale) private var locale
     @State private var reloadSummary: String?
+    private let presentation: Presentation?
+
+    init(presentation: Presentation? = nil) {
+        self.presentation = presentation
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -33,8 +47,12 @@ struct KeyBindingsTasksSettingsView: View {
 
             configSection(
                 title: Strings.settingsKeyBindingsKeybindings,
-                fileURL: UserConfigurationPaths.userKeybindingsFile,
-                count: ExtensibilityManager.shared.keybindings.count,
+                fileURL:
+                    presentation?.keybindingsFileURL
+                    ?? UserConfigurationPaths.userKeybindingsFile,
+                count:
+                    presentation?.keybindingCount
+                    ?? ExtensibilityManager.shared.keybindings.count,
                 openAction: {
                     let presenter = AppKitUserConfigurationAlertPresenter(
                         context: DialogPresenter.forKeyWindow()
@@ -49,8 +67,12 @@ struct KeyBindingsTasksSettingsView: View {
 
             configSection(
                 title: Strings.settingsKeyBindingsTasks,
-                fileURL: UserConfigurationPaths.userTasksFile,
-                count: ExtensibilityManager.shared.tasks.count,
+                fileURL:
+                    presentation?.tasksFileURL
+                    ?? UserConfigurationPaths.userTasksFile,
+                count:
+                    presentation?.taskCount
+                    ?? ExtensibilityManager.shared.tasks.count,
                 openAction: {
                     let presenter = AppKitUserConfigurationAlertPresenter(
                         context: DialogPresenter.forKeyWindow()
@@ -69,7 +91,7 @@ struct KeyBindingsTasksSettingsView: View {
                 Button(Strings.settingsKeyBindingsReload) {
                     Task {
                         await Self.reloadAndRefresh()
-                        reloadSummary = Self.reloadSummaryText()
+                        reloadSummary = Self.reloadSummaryText(locale: locale)
                     }
                 }
                 if let reloadSummary {
@@ -84,6 +106,9 @@ struct KeyBindingsTasksSettingsView: View {
         }
         .padding(20)
         .frame(width: 720, height: 500)
+        .accessibilityIdentifier(
+            AccessibilityID.keyBindingsSettingsPane
+        )
     }
 
     // MARK: - Sections
@@ -98,7 +123,10 @@ struct KeyBindingsTasksSettingsView: View {
         GroupBox(title) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(Strings.settingsKeyBindingsActiveCount(count))
+                    Text(Strings.settingsKeyBindingsActiveCount(
+                        count,
+                        locale: locale
+                    ))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -118,7 +146,9 @@ struct KeyBindingsTasksSettingsView: View {
 
     @ViewBuilder
     private var effectiveBindings: some View {
-        let entries = ExtensibilityManager.shared.keybindings.entries
+        let entries =
+            presentation?.effectiveEntries
+            ?? ExtensibilityManager.shared.keybindings.entries
         GroupBox(Strings.settingsKeyBindingsEffective) {
             if entries.isEmpty {
                 Text(Strings.settingsKeyBindingsNoOverrides)
@@ -156,13 +186,20 @@ struct KeyBindingsTasksSettingsView: View {
     }
 
     @MainActor
-    private static func reloadSummaryText() -> String {
+    private static func reloadSummaryText(locale: Locale) -> String {
         let report = ExtensibilityManager.shared.lastReloadReport
         if let report, report.diagnostics.isEmpty {
-            return "Reloaded: \(report.tasks.activeEntryCount) tasks, \(report.keybindings.activeEntryCount) keybindings."
+            return Strings.settingsKeyBindingsReloadSummary(
+                tasks: report.tasks.activeEntryCount,
+                keybindings: report.keybindings.activeEntryCount,
+                locale: locale
+            )
         }
         if let report, !report.diagnostics.isEmpty {
-            return "Reloaded with \(report.diagnostics.count) problem(s)."
+            return Strings.settingsKeyBindingsReloadProblems(
+                report.diagnostics.count,
+                locale: locale
+            )
         }
         return ""
     }

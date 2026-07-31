@@ -29142,6 +29142,500 @@
         }
       }
     },
+    "dialog.close": {
+      "comment": "Button that closes a dialog without performing another action.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Schließen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Close" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Cerrar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fermer" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "閉じる" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "닫기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Fechar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Закрыть" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关闭" } }
+      }
+    },
+    "settings.general.display": {
+      "comment": "Heading for editor display preferences in General Settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Darstellung" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Display" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Visualización" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Affichage" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "表示" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "표시" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Exibição" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Отображение" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示" } }
+      }
+    },
+    "settings.general.fontSize": {
+      "comment": "Label for the editor font-size slider in General Settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Schriftgröße" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Font Size" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Tamaño de fuente" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Taille de police" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フォントサイズ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "글꼴 크기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Tamanho da fonte" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Размер шрифта" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "字体大小" } }
+      }
+    },
+    "settings.general.formatOnSave": {
+      "comment": "Toggle that formats supported files when they are saved.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Beim Sichern formatieren" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Format on Save" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Formatear al guardar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Formater à l’enregistrement" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "保存時にフォーマット" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "저장 시 포맷" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Formatar ao salvar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Форматировать при сохранении" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "保存时格式化" } }
+      }
+    },
+    "settings.general.formatting": {
+      "comment": "Heading for editor formatting preferences in General Settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Formatierung" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Formatting" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Formato" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mise en forme" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "書式設定" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "서식" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Formatação" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Форматирование" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "格式化" } }
+      }
+    },
+    "settings.general.insertFinalNewline": {
+      "comment": "Toggle that ensures saved files end with a newline.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Abschließenden Zeilenumbruch einfügen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Insert Final Newline" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Insertar salto de línea final" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Insérer un saut de ligne final" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "末尾に改行を挿入" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "마지막 줄 바꿈 삽입" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Inserir quebra de linha final" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Добавлять перевод строки в конце" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在文件末尾插入换行符" } }
+      }
+    },
+    "settings.general.minimap": {
+      "comment": "Toggle that controls the default minimap visibility.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Minikarte" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Minimap" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Minimapa" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Minicarte" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ミニマップ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "미니맵" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Minimapa" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Мини-карта" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "小地图" } }
+      }
+    },
+    "settings.general.smartListContinuation": {
+      "comment": "Toggle that automatically continues Markdown lists.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Intelligente Listenfortsetzung" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Smart List Continuation" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Continuación inteligente de listas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Continuation intelligente des listes" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "リストを自動継続" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "스마트 목록 이어쓰기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Continuação inteligente de listas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Продолжать списки автоматически" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能延续列表" } }
+      }
+    },
+    "settings.general.stripTrailingWhitespace": {
+      "comment": "Toggle that removes trailing whitespace when files are saved.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Nachgestellte Leerzeichen entfernen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Strip Trailing Whitespace" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Eliminar espacios finales" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Supprimer les espaces de fin" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "行末の空白を削除" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "후행 공백 제거" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Remover espaços em branco à direita" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Удалять пробелы в конце строк" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除行尾空格" } }
+      }
+    },
+    "settings.general.title": {
+      "comment": "Title of the General Settings pane.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Allgemein" } },
+        "en": { "stringUnit": { "state": "translated", "value": "General" } },
+        "es": { "stringUnit": { "state": "translated", "value": "General" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Général" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "一般" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "일반" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Geral" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Основные" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "通用" } }
+      }
+    },
+    "settings.general.wordWrap": {
+      "comment": "Toggle that controls the default editor line wrapping.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Zeilenumbruch" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Word Wrap" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Ajuste de línea" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Retour à la ligne" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "行の折り返し" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "자동 줄 바꿈" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Quebra automática de linha" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Переносить строки" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自动换行" } }
+      }
+    },
+    "settings.keyBindings.activeCount %lld": {
+      "comment": "Number of active entries in a key-bindings or tasks configuration file.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld aktiver Eintrag" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld aktive Einträge" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld active entry" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld active entries" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld entrada activa" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld entradas activas" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld entrée active" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld entrées actives" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 件の有効なエントリ" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "활성 항목 %lld개" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld entrada ativa" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld entradas ativas" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "few": { "stringUnit": { "state": "translated", "value": "%lld активные записи" } },
+          "many": { "stringUnit": { "state": "translated", "value": "%lld активных записей" } },
+          "one": { "stringUnit": { "state": "translated", "value": "%lld активная запись" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld активной записи" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 个有效条目" } }
+        } } }
+      }
+    },
+    "settings.keyBindings.effective": {
+      "comment": "Heading for the effective key bindings list.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aktive Tastenkürzel" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Effective Key Bindings" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Atajos efectivos" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Raccourcis actifs" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "有効なキーバインド" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "적용된 키 바인딩" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Atalhos efetivos" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Действующие сочетания клавиш" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "生效的按键绑定" } }
+      }
+    },
+    "settings.keyBindings.keybindings": {
+      "comment": "Heading for the user key-bindings file in Settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Tastenkürzel" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Key Bindings" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Atajos de teclado" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Raccourcis clavier" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "キーバインド" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "키 바인딩" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Atalhos de teclado" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сочетания клавиш" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "按键绑定" } }
+      }
+    },
+    "settings.keyBindings.noOverrides": {
+      "comment": "Empty state when no custom key bindings are active.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Keine benutzerdefinierten Tastenkürzel." } },
+        "en": { "stringUnit": { "state": "translated", "value": "No custom key bindings." } },
+        "es": { "stringUnit": { "state": "translated", "value": "No hay atajos personalizados." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucun raccourci personnalisé." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "カスタムキーバインドはありません。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "사용자 지정 키 바인딩이 없습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhum atalho personalizado." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Пользовательские сочетания клавиш не заданы." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有自定义按键绑定。" } }
+      }
+    },
+    "settings.keyBindings.openFile": {
+      "comment": "Button that opens a key-bindings or tasks configuration file.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Datei öffnen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Open File" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Abrir archivo" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir le fichier" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ファイルを開く" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "파일 열기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir arquivo" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Открыть файл" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "打开文件" } }
+      }
+    },
+    "settings.keyBindings.reload": {
+      "comment": "Button that reloads key bindings and tasks from disk.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Neu laden" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Reload" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Recargar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Recharger" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "再読み込み" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "다시 불러오기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Recarregar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Перезагрузить" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "重新加载" } }
+      }
+    },
+    "settings.keyBindings.reload.keybindingCount %lld": {
+      "comment": "Localized key-binding count in the configuration reload summary.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld Tastenkürzel" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld Tastenkürzel" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld key binding" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld key bindings" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld atajo de teclado" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld atajos de teclado" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld raccourci clavier" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld raccourcis clavier" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 件のキーバインド" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "키 바인딩 %lld개" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld atalho de teclado" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld atalhos de teclado" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "few": { "stringUnit": { "state": "translated", "value": "%lld сочетания клавиш" } },
+          "many": { "stringUnit": { "state": "translated", "value": "%lld сочетаний клавиш" } },
+          "one": { "stringUnit": { "state": "translated", "value": "%lld сочетание клавиш" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld сочетания клавиш" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 个按键绑定" } }
+        } } }
+      }
+    },
+    "settings.keyBindings.reload.problemCount %lld": {
+      "comment": "Reload result when one or more key-binding or task diagnostics were found.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Mit %lld Problem neu geladen." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Mit %lld Problemen neu geladen." } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Reloaded with %lld problem." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Reloaded with %lld problems." } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Se recargó con %lld problema." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Se recargó con %lld problemas." } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Rechargé avec %lld problème." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Rechargé avec %lld problèmes." } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 件の問題がある状態で再読み込みしました。" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "문제 %lld개와 함께 다시 불러왔습니다." } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Recarregado com %lld problema." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Recarregado com %lld problemas." } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "few": { "stringUnit": { "state": "translated", "value": "Перезагружено с %lld проблемами." } },
+          "many": { "stringUnit": { "state": "translated", "value": "Перезагружено с %lld проблемами." } },
+          "one": { "stringUnit": { "state": "translated", "value": "Перезагружено с %lld проблемой." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Перезагружено с %lld проблемы." } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "重新加载时发现 %lld 个问题。" } }
+        } } }
+      }
+    },
+    "settings.keyBindings.reload.success %@ %@": {
+      "comment": "Successful configuration reload summary. The values are localized task and key-binding counts.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Neu geladen: %1$@, %2$@." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Reloaded: %1$@, %2$@." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Se recargaron: %1$@, %2$@." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rechargé : %1$@, %2$@." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "%1$@、%2$@を再読み込みしました。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%1$@와 %2$@을 다시 불러왔습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Recarregados: %1$@, %2$@." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Перезагружено: %1$@, %2$@." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已重新加载：%1$@，%2$@。" } }
+      }
+    },
+    "settings.keyBindings.reload.taskCount %lld": {
+      "comment": "Localized task count in the configuration reload summary.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld Aufgabe" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld Aufgaben" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld task" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld tasks" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld tarea" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld tareas" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld tâche" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld tâches" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 件のタスク" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "작업 %lld개" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld tarefa" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld tarefas" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "few": { "stringUnit": { "state": "translated", "value": "%lld задачи" } },
+          "many": { "stringUnit": { "state": "translated", "value": "%lld задач" } },
+          "one": { "stringUnit": { "state": "translated", "value": "%lld задача" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld задачи" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 个任务" } }
+        } } }
+      }
+    },
+    "settings.keyBindings.tasks": {
+      "comment": "Heading for the user tasks file in Settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgaben" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Tasks" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Tareas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tâches" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスク" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Tarefas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Задачи" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "任务" } }
+      }
+    },
+    "settings.keyBindings.title": {
+      "comment": "Title of the Key Bindings and Tasks Settings pane.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Tastenkürzel & Aufgaben" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Key Bindings & Tasks" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Atajos de teclado y tareas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Raccourcis clavier et tâches" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "キーバインドとタスク" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "키 바인딩 및 작업" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Atalhos de teclado e tarefas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сочетания клавиш и задачи" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "按键绑定与任务" } }
+      }
+    },
+    "settings.lsp.executable.prompt": {
+      "comment": "Confirmation button in the executable file picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Auswählen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Choose" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Seleccionar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisir" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "選択" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "선택" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escolher" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Выбрать" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择" } }
+      }
+    },
+    "settings.tab.general": {
+      "comment": "Title of the General pane in the consolidated Settings window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Allgemein" } },
+        "en": { "stringUnit": { "state": "translated", "value": "General" } },
+        "es": { "stringUnit": { "state": "translated", "value": "General" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Général" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "一般" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "일반" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Geral" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Основные" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "通用" } }
+      }
+    },
+    "settings.tab.keyBindings": {
+      "comment": "Title of the Key Bindings and Tasks pane in the consolidated Settings window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Tastenkürzel & Aufgaben" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Key Bindings & Tasks" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Atajos de teclado y tareas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Raccourcis clavier et tâches" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "キーバインドとタスク" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "키 바인딩 및 작업" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Atalhos de teclado e tarefas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сочетания клавиш и задачи" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "按键绑定与任务" } }
+      }
+    },
     "settings.quickTerminal.hotkey.modifierRequired": {
       "comment": "Validation shown when a shortcut lacks Command, Control, or Option; Shift alone is not sufficient.",
       "extractionState": "manual",

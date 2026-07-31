@@ -12,6 +12,9 @@ nonisolated enum AccessibilityID {
     static let agentHandoffReadOnlyContextToggle =
         "agentHandoffReadOnlyContextToggle"
     static let agentHandoffStatus = "agentHandoffStatus"
+    static let generalFontSizeSlider = "generalFontSizeSlider"
+    static let generalSettingsPane = "generalSettingsPane"
+    static let keyBindingsSettingsPane = "keyBindingsSettingsPane"
 
     // MARK: - Terminal theme settings
     static let terminalSettingsScrollView = "terminalSettingsScrollView"

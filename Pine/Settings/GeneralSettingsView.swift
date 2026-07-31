@@ -25,6 +25,25 @@ struct GeneralSettingsView: View {
     @AppStorage("minimapVisible") private var defaultMinimapVisible = true
     @AppStorage("wordWrapEnabled") private var defaultWordWrap = true
 
+    init(
+        editor: EditorSettings,
+        fontSizeSettings: FontSizeSettings,
+        defaults: UserDefaults = .standard
+    ) {
+        self.editor = editor
+        self.fontSizeSettings = fontSizeSettings
+        _defaultMinimapVisible = AppStorage(
+            wrappedValue: true,
+            "minimapVisible",
+            store: defaults
+        )
+        _defaultWordWrap = AppStorage(
+            wrappedValue: true,
+            "wordWrapEnabled",
+            store: defaults
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(Strings.settingsGeneralTitle)
@@ -67,7 +86,6 @@ struct GeneralSettingsView: View {
                     Divider()
 
                     HStack(alignment: .center, spacing: 12) {
-                        Text(Strings.settingsGeneralFontSize)
                         Slider(
                             value: $fontSizeSettings.fontSize,
                             in: FontSizeSettings.minSize ... FontSizeSettings.maxSize,
@@ -83,6 +101,9 @@ struct GeneralSettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityIdentifier(
+                            AccessibilityID.generalFontSizeSlider
+                        )
                         Text("\(Int(fontSizeSettings.fontSize)) pt")
                             .monospacedDigit()
                             .frame(minWidth: 48, alignment: .trailing)
@@ -96,5 +117,6 @@ struct GeneralSettingsView: View {
         }
         .padding(20)
         .frame(width: 720, height: 500)
+        .accessibilityIdentifier(AccessibilityID.generalSettingsPane)
     }
 }
