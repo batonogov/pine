@@ -341,4 +341,19 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
             "Clear Menu should disable an empty Open Recent submenu"
         )
     }
+
+    func testFileMenuContainsActionsNotEditorPreferences() throws {
+        launchWithProject(projectURL)
+        XCTAssertTrue(
+            waitForExistence(app.scrollViews["sidebar"], timeout: 10)
+        )
+
+        clickMenuBarItem("File")
+
+        XCTAssertFalse(app.menuItems["Auto Save"].exists)
+        XCTAssertFalse(app.menuItems["Format on Save"].exists)
+        XCTAssertFalse(app.menuItems["Smart List Continuation"].exists)
+        XCTAssertTrue(app.menuItems["Save"].exists)
+        XCTAssertTrue(app.menuItems["Save As…"].exists)
+    }
 }

@@ -6,8 +6,7 @@
 //  Surfaces the editor formatting defaults (EditorSettings), font size
 //  (FontSizeSettings), and the default visibility of the minimap and word
 //  wrap. Every control binds directly to the same source of truth used by
-//  the File / View menus, so changes apply immediately and the menu
-//  checkmarks stay in sync.
+//  the editor, so changes apply immediately.
 //
 
 import SwiftUI
@@ -22,6 +21,7 @@ import SwiftUI
 struct GeneralSettingsView: View {
     @Bindable var editor: EditorSettings
     @Bindable var fontSizeSettings: FontSizeSettings
+    @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
     @AppStorage("minimapVisible") private var defaultMinimapVisible = true
     @AppStorage("wordWrapEnabled") private var defaultWordWrap = true
 
@@ -32,6 +32,11 @@ struct GeneralSettingsView: View {
     ) {
         self.editor = editor
         self.fontSizeSettings = fontSizeSettings
+        _autoSaveEnabled = AppStorage(
+            wrappedValue: false,
+            TabManager.autoSaveKey,
+            store: defaults
+        )
         _defaultMinimapVisible = AppStorage(
             wrappedValue: true,
             "minimapVisible",
@@ -51,6 +56,10 @@ struct GeneralSettingsView: View {
 
             GroupBox(Strings.settingsGeneralFormatting) {
                 VStack(alignment: .leading, spacing: 12) {
+                    Toggle(
+                        Strings.settingsGeneralAutoSave,
+                        isOn: $autoSaveEnabled
+                    )
                     Toggle(
                         Strings.settingsGeneralInsertFinalNewline,
                         isOn: $editor.insertFinalNewline

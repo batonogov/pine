@@ -36,7 +36,6 @@ struct PineAppMenuCommands: Commands {
     /// observation of `ProjectRegistry.recentProjects` in the menu body.
     let recentProjects: () -> [URL]
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
-    @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
     private var keybindings: UserKeybindingRegistry {
         ExtensibilityManager.shared.keybindings
     }
@@ -267,23 +266,6 @@ struct PineAppMenuCommands: Commands {
             )
             .disabled(!nativeState.canDuplicate)
 
-            Divider()
-
-            Toggle(isOn: $autoSaveEnabled) {
-                Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
-            }
-
-            Toggle(
-                isOn: Bindable(EditorSettings.shared).formatOnSave
-            ) {
-                Label(Strings.menuFormatOnSave, systemImage: MenuIcons.formatOnSave)
-            }
-
-            Toggle(
-                isOn: Bindable(EditorSettings.shared).smartListContinuation
-            ) {
-                Label(Strings.menuSmartListContinuation, systemImage: MenuIcons.smartListContinuation)
-            }
         }
 
         // MARK: - Window menu

@@ -24,6 +24,8 @@ enum Strings {
         "settings.general.insertFinalNewline"
     static let settingsGeneralStripTrailingWhitespace: LocalizedStringKey =
         "settings.general.stripTrailingWhitespace"
+    static let settingsGeneralAutoSave: LocalizedStringKey =
+        "settings.general.autoSave"
     static let settingsGeneralFormatOnSave: LocalizedStringKey =
         "settings.general.formatOnSave"
     static let settingsGeneralSmartListContinuation: LocalizedStringKey =
@@ -1493,9 +1495,6 @@ enum Strings {
         String(localized: "branch.uncommittedChanges.switch")
     }
 
-    static let menuAutoSave: LocalizedStringKey = "menu.autoSave"
-    static let menuFormatOnSave: LocalizedStringKey = "menu.formatOnSave"
-    static let menuSmartListContinuation: LocalizedStringKey = "menu.smartListContinuation"
     static let autoSaving: LocalizedStringKey = "editor.autoSaving"
     static let menuSave: LocalizedStringKey = "menu.save"
     static let menuSaveAll: LocalizedStringKey = "menu.saveAll"
