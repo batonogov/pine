@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.38.0](https://github.com/batonogov/pine/compare/v1.37.1...v1.38.0) (2026-07-31)
+
+
+### Features
+
+* **agent:** complete keyboard, detail, and localization flows ([#1264](https://github.com/batonogov/pine/issues/1264)) ([4ca043c](https://github.com/batonogov/pine/commit/4ca043c840170910de09964a4ebac0f56487ca71))
+* **macos:** restore native File and Window menu semantics ([#1262](https://github.com/batonogov/pine/issues/1262)) ([f5bdf3f](https://github.com/batonogov/pine/commit/f5bdf3fd9d1fb632aea9e458dfca80d861d57f68))
+* **nav:** replace document-modal sheets with command overlays ([#1258](https://github.com/batonogov/pine/issues/1258)) ([764ba95](https://github.com/batonogov/pine/commit/764ba95a7ad9c8aaa5f07f81a30dd950bf3c1d18))
+* **settings:** adopt immediate-apply LSP configuration ([#1255](https://github.com/batonogov/pine/issues/1255)) ([c3b381c](https://github.com/batonogov/pine/commit/c3b381cc185c11ea3ffb40d0a5cb326007d6534a))
+* **settings:** consolidate existing global preferences ([#1267](https://github.com/batonogov/pine/issues/1267)) ([1ba3d80](https://github.com/batonogov/pine/commit/1ba3d8084f9fe58b31b34b525eb22255e79d687e))
+* **sidebar:** add Finder-style keyboard and VoiceOver navigation ([#1257](https://github.com/batonogov/pine/issues/1257)) ([9cc8106](https://github.com/batonogov/pine/commit/9cc8106dc3b1df4d7daa9ccd59b81180ec115763))
+* **tabs:** add visual global MRU switcher ([#1261](https://github.com/batonogov/pine/issues/1261)) ([cb6ec14](https://github.com/batonogov/pine/commit/cb6ec14efaa07591f398483a6bc007c1ee9c178d))
+* **tasks:** surface execution progress, output, and failures ([#1269](https://github.com/batonogov/pine/issues/1269)) ([9e5ef94](https://github.com/batonogov/pine/commit/9e5ef9498836022749861bfade6349d49258a42a))
+* **terminal:** add selectable terminal themes with light/dark pairs ([#1259](https://github.com/batonogov/pine/issues/1259)) ([3eb8623](https://github.com/batonogov/pine/commit/3eb8623a24bf20ef8013b5769c94c2bb7dc352b2))
+* **terminal:** complete Quick Terminal settings and project context ([#1265](https://github.com/batonogov/pine/issues/1265)) ([0a7c00c](https://github.com/batonogov/pine/commit/0a7c00ca9ebd3c1f71cc9e1725f531cba259291f))
+* **updates:** embed the Sparkle update flow in Pine ([#1268](https://github.com/batonogov/pine/issues/1268)) ([750c9ff](https://github.com/batonogov/pine/commit/750c9ffaceaa55c278a67c46b8e3b5c5e37d027c))
+* **workspace:** start new projects in a focused terminal ([#1256](https://github.com/batonogov/pine/issues/1256)) ([251c739](https://github.com/batonogov/pine/commit/251c739678e5f0346c7d1ec093060c8167d8ced5))
+
+
+### Bug Fixes
+
+* **agent-history:** make verified undo reachable and close preview TOCTOU ([#1279](https://github.com/batonogov/pine/issues/1279)) ([2710275](https://github.com/batonogov/pine/commit/271027524e8010d165998a942f4a85046569f600))
+* **agent:** integrate verified undo review into Agent History ([#1263](https://github.com/batonogov/pine/issues/1263)) ([329f412](https://github.com/batonogov/pine/commit/329f412acdfb26e07b299473109c5e2f4303c557))
+* **git:** harden command process lifecycle ([#1280](https://github.com/batonogov/pine/issues/1280)) ([19d891f](https://github.com/batonogov/pine/commit/19d891f6263929bae7ff04aad1c9e92545a7d036))
+* **i18n:** complete localization catalog coverage ([#1285](https://github.com/batonogov/pine/issues/1285)) ([f4f71d8](https://github.com/batonogov/pine/commit/f4f71d8c5fcaa7eba0cd27942b91a562d1e79fb8))
+* localize consolidated settings ([#1287](https://github.com/batonogov/pine/issues/1287)) ([37b481b](https://github.com/batonogov/pine/commit/37b481b9072cc5eb0056c9a8e06c5dfa6e445ce6))
+* **lsp:** wire Problems panel into editor chrome ([#1260](https://github.com/batonogov/pine/issues/1260)) ([f93dc3d](https://github.com/batonogov/pine/commit/f93dc3dabf80c45436dbf7d2c6a05626a097e990))
+* **macos:** finish native File and Window menu semantics ([#1283](https://github.com/batonogov/pine/issues/1283)) ([6ea758f](https://github.com/batonogov/pine/commit/6ea758f1ccddeef790bb08163bad8c31d112be18))
+* **macos:** restore Open Folder menu routing ([#1289](https://github.com/batonogov/pine/issues/1289)) ([827de7c](https://github.com/batonogov/pine/commit/827de7c17adbb378b97c4bfb8e04f002e1e7c5dd))
+* **settings:** restore terminal and Quick Terminal controls ([#1278](https://github.com/batonogov/pine/issues/1278)) ([0e077ae](https://github.com/batonogov/pine/commit/0e077ae4c04171dbca61e47b0e997b52ac349165))
+* **sidebar:** preserve position during keyboard navigation ([#1293](https://github.com/batonogov/pine/issues/1293)) ([866ccdf](https://github.com/batonogov/pine/commit/866ccdf12b0f8e2c7db1015f833f880485ba4fb6))
+* **tabs:** wire and harden the visual global MRU switcher ([#1282](https://github.com/batonogov/pine/issues/1282)) ([eb012ca](https://github.com/batonogov/pine/commit/eb012ca9b8e66c47365d4e33f16cdc7d670e75d1))
+* **updates:** keep a single standard Sparkle runtime ([#1281](https://github.com/batonogov/pine/issues/1281)) ([b9da0ac](https://github.com/batonogov/pine/commit/b9da0ace7295a829d6d593d8c6dc5688e5ff153a))
+* **ux:** make toast notifications nonblocking and accessible ([#1254](https://github.com/batonogov/pine/issues/1254)) ([211a5ae](https://github.com/batonogov/pine/commit/211a5aef2b3ea889aabe38f38c92ae5e40aa954c))
+
+
+### Code Refactoring
+
+* **macos:** scope document dialogs to their project window ([#1266](https://github.com/batonogov/pine/issues/1266)) ([4e6a45d](https://github.com/batonogov/pine/commit/4e6a45df59fab8c508ae81ffa1e52cce6d418d7d))
+
+
+### Documentation
+
+* **help:** expand Pine Help Book into task-based documentation ([#1253](https://github.com/batonogov/pine/issues/1253)) ([0bdfd40](https://github.com/batonogov/pine/commit/0bdfd4005121629206f4bc8930b79070d0ae0f0b))
+* **install:** use one-command Homebrew cask installation ([#1252](https://github.com/batonogov/pine/issues/1252)) ([42b5dcc](https://github.com/batonogov/pine/commit/42b5dcca778b7d1b8189cd4d0c45183ca73d0c42))
+* record native sidebar navigation flow ([#1294](https://github.com/batonogov/pine/issues/1294)) ([9c2c622](https://github.com/batonogov/pine/commit/9c2c6222c22ab975e14d1ca6396b37b5ba0242c8))
+
 ## [1.37.1](https://github.com/batonogov/pine/compare/v1.37.0...v1.37.1) (2026-07-27)
 
 
