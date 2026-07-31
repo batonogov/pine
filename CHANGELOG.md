@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.38.1](https://github.com/batonogov/pine/compare/v1.38.0...v1.38.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* consolidate editor preferences in settings ([#1295](https://github.com/batonogov/pine/issues/1295)) ([cd9aef0](https://github.com/batonogov/pine/commit/cd9aef04908fd5e7c804e4416382789846c960f4))
+* show native keybinding glyphs in settings ([#1297](https://github.com/batonogov/pine/issues/1297)) ([eec4391](https://github.com/batonogov/pine/commit/eec43916a2367281d988120be3551fcb82748208))
+* show state in view menu ([#1298](https://github.com/batonogov/pine/issues/1298)) ([1057386](https://github.com/batonogov/pine/commit/1057386c12dd67e8e2dd3e56ff8e0a682a4de64f))
+* use native ellipsis in app menu ([#1296](https://github.com/batonogov/pine/issues/1296)) ([0ec1145](https://github.com/batonogov/pine/commit/0ec1145f9a4750ba0f01799d7425d6fcbd17f1f2))
+
 ## [1.38.0](https://github.com/batonogov/pine/compare/v1.37.1...v1.38.0) (2026-07-31)
 
 
