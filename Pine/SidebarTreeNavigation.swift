@@ -292,12 +292,40 @@ enum SidebarTabTraversalDirection: Equatable, Sendable {
     }
 }
 
-enum SidebarKeyboardScrollMotion: Equatable, Sendable {
+enum SidebarScrollMotion: Equatable, Sendable {
     case animated
     case immediate
 
     static func resolve(reduceMotion: Bool) -> Self {
         reduceMotion ? .immediate : .animated
+    }
+}
+
+enum SidebarScrollAlignment: Equatable, Sendable {
+    /// Let SwiftUI move the smallest amount needed to reveal the row.
+    case nearestEdge
+    /// Deliberately place a newly-created item in the middle of the viewport.
+    case center
+}
+
+struct SidebarScrollRequest: Equatable, Sendable {
+    let id: URL
+    let alignment: SidebarScrollAlignment
+    let motion: SidebarScrollMotion
+
+    static func keyboardSelection(_ id: URL) -> Self {
+        Self(id: id, alignment: .nearestEdge, motion: .immediate)
+    }
+
+    static func intentionalReveal(
+        _ id: URL,
+        reduceMotion: Bool
+    ) -> Self {
+        Self(
+            id: id,
+            alignment: .center,
+            motion: .resolve(reduceMotion: reduceMotion)
+        )
     }
 }
 
@@ -446,10 +474,7 @@ final class SidebarTreeNavigation {
     /// Scroll callback invoked after selection changes to keep the
     /// selected row visible. Set by ``SidebarView`` via the
     /// ``ScrollViewProxy`` captured inside ``ScrollViewReader``.
-    var scrollToNode: ((URL, SidebarKeyboardScrollMotion) -> Void)?
-
-    /// Updated from SwiftUI's Reduce Motion environment.
-    var scrollMotion: SidebarKeyboardScrollMotion = .animated
+    var scrollToNode: ((SidebarScrollRequest) -> Void)?
 
     /// Viewport height of the sidebar scroll area, used to estimate page
     /// size for Page Up / Page Down.
@@ -656,7 +681,7 @@ final class SidebarTreeNavigation {
     // MARK: - Helpers
 
     func scroll(to node: FileNode) {
-        scrollToNode?(node.id, scrollMotion)
+        scrollToNode?(.keyboardSelection(node.id))
     }
 
     private func indexOf(_ node: FileNode?, in rows: [SidebarVisibleRow]) -> Int? {

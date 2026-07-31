@@ -615,32 +615,39 @@ struct SidebarTreeNavigationTests {
         defer { removeTree(fixture.root) }
         let node = try #require(fixture.rows.first?.node)
         let navigation = SidebarTreeNavigation()
-        var scrolledURL: URL?
-        var scrollMotion: SidebarKeyboardScrollMotion?
-        navigation.scrollToNode = {
-            scrolledURL = $0
-            scrollMotion = $1
-        }
+        var request: SidebarScrollRequest?
+        navigation.scrollToNode = { request = $0 }
 
         navigation.scroll(to: node)
 
-        #expect(scrolledURL == node.url)
-        #expect(scrollMotion == .animated)
-
-        navigation.scrollMotion = .immediate
-        navigation.scroll(to: node)
-        #expect(scrollMotion == .immediate)
+        #expect(request == SidebarScrollRequest(
+            id: node.url,
+            alignment: .nearestEdge,
+            motion: .immediate
+        ))
     }
 
-    @Test("Reduce Motion makes keyboard scrolling immediate")
-    func keyboardScrollMotionPolicy() {
+    @Test("Intentional centered reveal honors Reduce Motion")
+    func centeredRevealMotionPolicy() {
         #expect(
-            SidebarKeyboardScrollMotion.resolve(reduceMotion: false)
-                == .animated
+            SidebarScrollRequest.intentionalReveal(
+                URL(fileURLWithPath: "/tmp/new.swift"),
+                reduceMotion: false
+            ) == SidebarScrollRequest(
+                id: URL(fileURLWithPath: "/tmp/new.swift"),
+                alignment: .center,
+                motion: .animated
+            )
         )
         #expect(
-            SidebarKeyboardScrollMotion.resolve(reduceMotion: true)
-                == .immediate
+            SidebarScrollRequest.intentionalReveal(
+                URL(fileURLWithPath: "/tmp/new.swift"),
+                reduceMotion: true
+            ) == SidebarScrollRequest(
+                id: URL(fileURLWithPath: "/tmp/new.swift"),
+                alignment: .center,
+                motion: .immediate
+            )
         )
     }
 
