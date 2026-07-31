@@ -671,29 +671,18 @@ struct SidebarView: View {
                     }
                     .onAppear {
                         // Wire the ScrollViewReader proxy so selection
-                        // changes can keep the selected row visible.
-                        navigation.scrollMotion = .resolve(
-                            reduceMotion: reduceMotion
-                        )
-                        navigation.scrollToNode = { id, motion in
+                        // changes reveal a row only after it leaves the
+                        // viewport. Omitting an anchor asks SwiftUI for the
+                        // smallest scroll needed to make the row visible,
+                        // matching Finder instead of recentering every move.
+                        navigation.scrollToNode = { request in
                             DispatchQueue.main.async {
-                                if motion == .animated {
-                                    withAnimation {
-                                        scrollProxy.scrollTo(
-                                            id,
-                                            anchor: .center
-                                        )
-                                    }
-                                } else {
-                                    scrollProxy.scrollTo(id, anchor: .center)
-                                }
+                                performSidebarScroll(
+                                    request,
+                                    using: scrollProxy
+                                )
                             }
                         }
-                    }
-                    .onChange(of: reduceMotion) { _, newValue in
-                        navigation.scrollMotion = .resolve(
-                            reduceMotion: newValue
-                        )
                     }
                     .sidebarKeyboardNavigation(
                         SidebarKeyboardActions(
@@ -802,9 +791,13 @@ struct SidebarView: View {
                                 ) {
                                 selectedFile = node
                             }
-                            withAnimation {
-                                scrollProxy.scrollTo(targetID, anchor: .center)
-                            }
+                            performSidebarScroll(
+                                .intentionalReveal(
+                                    targetID,
+                                    reduceMotion: reduceMotion
+                                ),
+                                using: scrollProxy
+                            )
                             editState.scrollToNodeID = nil
                         }
                     }
@@ -813,6 +806,28 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200, idealWidth: 250)
+    }
+
+    private func performSidebarScroll(
+        _ request: SidebarScrollRequest,
+        using proxy: ScrollViewProxy
+    ) {
+        let scroll = {
+            switch request.alignment {
+            case .nearestEdge:
+                proxy.scrollTo(request.id)
+            case .center:
+                proxy.scrollTo(request.id, anchor: .center)
+            }
+        }
+
+        if request.motion == .animated {
+            withAnimation {
+                scroll()
+            }
+        } else {
+            scroll()
+        }
     }
 
     /// Opens a new project via folder picker in a new window.
