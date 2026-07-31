@@ -496,7 +496,7 @@ jobs:
             --workflow .github/workflows/ci.yml \
             --max-delta 3
 
-  # UI test shards — 7 parallel jobs, 29-31 tests each (delta 2).
+  # UI test shards — 7 parallel jobs, 29-32 tests each (delta 3).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -514,11 +514,10 @@ jobs:
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
-          # Shard 2 — Welcome & Session (31 tests)
+          # Shard 2 — Welcome & Session (30 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
-              -only-testing:PineUITests/MinimapTests
               -only-testing:PineUITests/SessionRestoreTests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
@@ -546,7 +545,7 @@ jobs:
               -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests
               -only-testing:PineUITests/UserTaskExecutionUITests
-          # Shard 6 — Search & Panes (29 tests)
+          # Shard 6 — Search & Panes (32 tests)
           - shard-name: "Search & Panes"
             test-classes: >-
               -only-testing:PineUITests/SidebarSearchTests
@@ -554,6 +553,7 @@ jobs:
               -only-testing:PineUITests/SplitPaneLifecycleTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
+              -only-testing:PineUITests/MinimapTests
           # Shard 7 — Security & Layout (31 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
