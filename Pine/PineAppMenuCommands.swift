@@ -36,6 +36,9 @@ struct PineAppMenuCommands: Commands {
     /// observation of `ProjectRegistry.recentProjects` in the menu body.
     let recentProjects: () -> [URL]
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
+    @AppStorage("minimapVisible") private var minimapVisible = true
+    @AppStorage(BlameConstants.storageKey) private var blameVisible = true
+    @AppStorage("wordWrapEnabled") private var wordWrapEnabled = true
     private var keybindings: UserKeybindingRegistry {
         ExtensibilityManager.shared.keybindings
     }
@@ -554,24 +557,17 @@ struct PineAppMenuCommands: Commands {
 
             Divider()
 
-            Button {
-                MinimapSettings.toggle()
-            } label: {
+            Toggle(isOn: $minimapVisible) {
                 Label(Strings.menuToggleMinimap, systemImage: MenuIcons.toggleMinimap)
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])
 
-            Button {
-                let key = BlameConstants.storageKey
-                UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
-            } label: {
+            Toggle(isOn: $blameVisible) {
                 Label(Strings.menuToggleBlame, systemImage: MenuIcons.toggleBlame)
             }
             .keyboardShortcut("b", modifiers: [.command, .control])
 
-            Button {
-                NotificationCenter.default.post(name: .toggleWordWrap, object: nil)
-            } label: {
+            Toggle(isOn: $wordWrapEnabled) {
                 Label(Strings.menuToggleWordWrap, systemImage: MenuIcons.toggleWordWrap)
             }
             .keyboardShortcut("z", modifiers: .option)

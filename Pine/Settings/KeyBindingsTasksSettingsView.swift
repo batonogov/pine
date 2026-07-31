@@ -204,16 +204,9 @@ struct KeyBindingsTasksSettingsView: View {
         return ""
     }
 
-    /// Renders a `ParsedKeyChord` as a human-readable shortcut string
-    /// (e.g. `cmd+shift+f`). Modifiers are listed in a stable order.
+    /// Renders a `ParsedKeyChord` using the same native macOS glyphs as the
+    /// command palette and menu key equivalents (for example, `⇧⌘F`).
     static func chordDescription(_ chord: ParsedKeyChord) -> String {
-        var parts: [String] = []
-        let modifiers = chord.modifiers
-        if modifiers.contains(.control) { parts.append("ctrl") }
-        if modifiers.contains(.option) { parts.append("option") }
-        if modifiers.contains(.shift) { parts.append("shift") }
-        if modifiers.contains(.command) { parts.append("cmd") }
-        parts.append(chord.key)
-        return parts.joined(separator: "+")
+        chord.displayText
     }
 }

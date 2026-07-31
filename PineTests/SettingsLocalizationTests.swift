@@ -10,6 +10,25 @@ import Testing
 
 @Suite("Settings localization")
 struct SettingsLocalizationTests {
+    @Test("Key bindings use native macOS shortcut glyphs")
+    func keyBindingGlyphs() throws {
+        let letterChord = try #require(
+            UserKeybindingRegistry.parse("ctrl+option+shift+cmd+f")
+        )
+        let namedKeyChord = try #require(
+            UserKeybindingRegistry.parse("cmd+return")
+        )
+
+        #expect(
+            KeyBindingsTasksSettingsView.chordDescription(letterChord)
+                == "⌃⌥⇧⌘F"
+        )
+        #expect(
+            KeyBindingsTasksSettingsView.chordDescription(namedKeyChord)
+                == "⌘↩"
+        )
+    }
+
     @Test("Active-entry counts follow English and Russian plural rules")
     func activeEntryCountPlurals() {
         let counts = [0, 1, 2, 5, 21, 22, 25]

@@ -90,4 +90,24 @@ final class MinimapTests: PineUITestCase {
             "Minimap should reappear after toggle on"
         )
     }
+
+    func testToggleMinimapViaViewMenu() throws {
+        launchWithProject(projectURL)
+
+        let fileRow = app.sidebarNodes["fileNode_main.swift"]
+        XCTAssertTrue(waitForExistence(fileRow, timeout: 10))
+        fileRow.click()
+        let minimapWasVisible = minimap.waitForExistence(timeout: 2)
+
+        app.menuBars.menuBarItems["View"].click()
+        let minimapItem = app.menuItems["Toggle Minimap"]
+        XCTAssertTrue(waitForExistence(minimapItem, timeout: 3))
+
+        minimapItem.click()
+        if minimapWasVisible {
+            XCTAssertTrue(minimap.waitForNonExistence(timeout: 3))
+        } else {
+            XCTAssertTrue(waitForExistence(minimap, timeout: 3))
+        }
+    }
 }
