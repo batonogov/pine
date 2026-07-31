@@ -115,26 +115,23 @@ jobs:
 
           xcrun stapler staple "$RUNNER_TEMP/export/Pine.app"
 
-      - name: Create DMG
-        run: |
-          DMG_TEMP=$RUNNER_TEMP/dmg-content
-          mkdir -p "$DMG_TEMP"
-          cp -R "$RUNNER_TEMP/export/Pine.app" "$DMG_TEMP/"
-          ln -s /Applications "$DMG_TEMP/Applications"
-
-          hdiutil create -volname "Pine" \
-            -srcfolder "$DMG_TEMP" \
-            -ov -format UDZO \
-            "$RUNNER_TEMP/Pine.dmg"
-
       - name: Get version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
-      - name: Rename DMG with version
+      - name: Create branded DMG
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          mv "$RUNNER_TEMP/Pine.dmg" "$RUNNER_TEMP/Pine-${VERSION}.dmg"
+          bash scripts/create-dmg.sh \
+            "$RUNNER_TEMP/export/Pine.app" \
+            "$RUNNER_TEMP/Pine-${VERSION}.dmg"
+
+      - name: Verify branded DMG
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          bash scripts/verify-dmg.sh \
+            "$RUNNER_TEMP/Pine-${VERSION}.dmg" \
+            "$VERSION"
 
       - name: Download Sparkle tools
         run: |

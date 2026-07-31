@@ -77,6 +77,8 @@ xcodebuild -project Pine.xcodeproj -scheme Pine build
 ```
 
 Dependencies resolve automatically via Swift Package Manager on first build.
+See [DMG packaging](docs/dmg-packaging.md) to build and visually preview the
+release disk image without publishing a release.
 
 ## Keyboard Shortcuts
 
