@@ -135,7 +135,10 @@ struct PineAppMenuCommands: Commands {
             Divider()
 
             Button {
-                NotificationCenter.default.post(name: .openFolder, object: nil)
+                UserCommandInvocationRouter.dispatch(
+                    .openFolder,
+                    projectManager: focusedProject
+                )
             } label: {
                 Label(Strings.menuOpenFolder, systemImage: MenuIcons.openFolder)
             }

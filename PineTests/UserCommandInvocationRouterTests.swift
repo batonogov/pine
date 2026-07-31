@@ -11,16 +11,43 @@ import Testing
 @Suite("Registered command invocation router")
 @MainActor
 struct UserCommandInvocationRouterTests {
-    @Test("Application command dispatches exactly one notification")
-    func openFolderDispatch() {
+    @Test("Open Folder dispatch targets its owning project")
+    func openFolderDispatchTargetsProject() {
+        let projectManager = ProjectManager()
+        let projectIdentifier = ObjectIdentifier(projectManager)
         let center = NotificationCenter()
         let probe = NotificationProbe()
         let token = center.addObserver(
             forName: .openFolder,
             object: nil,
             queue: nil
-        ) { _ in
-            probe.record("openFolder")
+        ) { notification in
+            let target = notification.object as AnyObject?
+            let isTargeted = target.map(ObjectIdentifier.init)
+                == projectIdentifier
+            probe.record("openFolder:\(isTargeted)")
+        }
+        defer { center.removeObserver(token) }
+
+        UserCommandInvocationRouter.dispatch(
+            .openFolder,
+            projectManager: projectManager,
+            notificationCenter: center
+        )
+
+        #expect(probe.values == ["openFolder:true"])
+    }
+
+    @Test("Open Folder remains global when no project owns the command")
+    func openFolderDispatchWithoutProject() {
+        let center = NotificationCenter()
+        let probe = NotificationProbe()
+        let token = center.addObserver(
+            forName: .openFolder,
+            object: nil,
+            queue: nil
+        ) { notification in
+            probe.record(notification.object == nil ? "global" : "targeted")
         }
         defer { center.removeObserver(token) }
 
@@ -30,7 +57,7 @@ struct UserCommandInvocationRouterTests {
             notificationCenter: center
         )
 
-        #expect(probe.values == ["openFolder"])
+        #expect(probe.values == ["global"])
     }
 
     @Test("Structured fold command preserves its action payload")

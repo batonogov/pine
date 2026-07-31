@@ -74,9 +74,20 @@ struct GitAndNotificationObserver: ViewModifier {
                 onRefreshLineDiffs()
                 onRefreshBlame()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
-                guard controlActiveState == .key else { return }
-                onOpenNewProject()
+            .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { notification in
+                guard ContentView.shouldHandleTargetedCommand(
+                    notificationObject: notification.object,
+                    currentProject: projectManager,
+                    isKeyWindow: controlActiveState == .key
+                ) else { return }
+                // A mouse click in the native File menu can temporarily make
+                // SwiftUI report the project window as non-key while AppKit is
+                // still tracking that menu. The targeted project identity
+                // above preserves ownership; deferring presentation lets menu
+                // tracking unwind before NSOpenPanel attaches its sheet.
+                NativeCommandDelivery.deferToNextMainRunLoop {
+                    onOpenNewProject()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
                 handleFileRenamed(notification)
