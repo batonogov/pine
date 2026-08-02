@@ -44,6 +44,7 @@ nonisolated enum AgentTaskStorePhase: Sendable {
     case beforeTemporaryCreate
     case temporaryWritten
     case beforePublish
+    case beforeAtomicRename
     case beforeCleanupRetire
     case beforeRetireMutation
 }
@@ -485,6 +486,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             guard verifyStorageChain(storage) else {
                 throw AgentTaskDirectoryError.unsafe
             }
+            try ensureLockEntryCapacity(
+                storage.leaf,
+                reservesWriterTemporary: true
+            )
             let lock = try acquireLock(storage.leaf)
             defer { releaseLock(lock) }
             reportPhase(.lockAcquired)
@@ -587,9 +592,15 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             guard verifyStorageChain(storage) else {
                 throw AgentTaskDirectoryError.unsafe
             }
+            try ensureLockEntryCapacity(
+                storage.leaf,
+                reservesWriterTemporary: false
+            )
             lock = try acquireLock(storage.leaf)
         } catch AgentTaskDirectoryError.unsafe {
             return rejectedLoad(.unsafeFilesystemObject)
+        } catch AgentTaskDirectoryError.storageLimit {
+            return rejectedLoad(.storageLimit)
         } catch AgentTaskDirectoryError.lockContention {
             return rejectedLoad(.lockContention)
         } catch {
@@ -863,22 +874,72 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         return true
     }
 
+    private func ensureLockEntryCapacity(
+        _ directoryDescriptor: Int32,
+        reservesWriterTemporary: Bool
+    ) throws {
+        func exists(_ name: String) throws -> Bool {
+            var info = stat()
+            if fstatat(
+                directoryDescriptor,
+                name,
+                &info,
+                AT_SYMLINK_NOFOLLOW
+            ) == 0 {
+                return true
+            }
+            guard errno == ENOENT else {
+                throw AgentTaskDirectoryError.transient
+            }
+            return false
+        }
+        var pending = reservesWriterTemporary ? 1 : 0
+        if try !exists(".agent-tasks.lock") { pending += 1 }
+        if try !exists(".agent-tasks.lock.guard") { pending += 1 }
+        let duplicate = Darwin.dup(directoryDescriptor)
+        guard duplicate >= 0, let directory = fdopendir(duplicate) else {
+            if duplicate >= 0 { Darwin.close(duplicate) }
+            throw AgentTaskDirectoryError.transient
+        }
+        defer { closedir(directory) }
+        var entries = 0
+        while let entry = readdir(directory) {
+            let name = withUnsafePointer(to: &entry.pointee.d_name) {
+                String(cString: UnsafeRawPointer($0)
+                    .assumingMemoryBound(to: CChar.self))
+            }
+            guard name != ".", name != ".." else { continue }
+            entries += 1
+            guard entries <= configuration.cleanup.directoryEntryLimit else {
+                throw AgentTaskDirectoryError.storageLimit
+            }
+        }
+        guard pending <= configuration.cleanup.directoryEntryLimit,
+              entries <= configuration.cleanup.directoryEntryLimit - pending else {
+            throw AgentTaskDirectoryError.storageLimit
+        }
+    }
+
     private func acquireLock(_ directoryDescriptor: Int32) throws -> Int32 {
-        try preflightPrivateFile(
-            ".agent-tasks.lock",
-            directoryDescriptor: directoryDescriptor,
-            allowsMissing: true
-        )
         let descriptor = openat(
             directoryDescriptor,
             ".agent-tasks.lock",
-            O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
+            O_RDWR | O_CREAT | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW,
             mode_t(0o600)
         )
         guard descriptor >= 0 else {
             throw unsafeOpenError(errno)
                 ? AgentTaskDirectoryError.unsafe
                 : AgentTaskDirectoryError.transient
+        }
+        do {
+            try establishLockGuard(
+                descriptor,
+                directoryDescriptor: directoryDescriptor
+            )
+        } catch {
+            Darwin.close(descriptor)
+            throw error
         }
         guard verifyLock(descriptor, directoryDescriptor: directoryDescriptor) else {
             Darwin.close(descriptor)
@@ -903,16 +964,89 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         return descriptor
     }
 
+    private func establishLockGuard(
+        _ descriptor: Int32,
+        directoryDescriptor: Int32
+    ) throws {
+        var opened = stat()
+        guard fstat(descriptor, &opened) == 0,
+              opened.st_uid == getuid(),
+              (opened.st_mode & S_IFMT) == S_IFREG,
+              (opened.st_mode & 0o777) == 0o600,
+              opened.st_nlink == 1 || opened.st_nlink == 2,
+              descriptorHasNoExtendedACL(descriptor) else {
+            throw AgentTaskDirectoryError.unsafe
+        }
+        var guardIdentity = stat()
+        if fstatat(
+            directoryDescriptor,
+            ".agent-tasks.lock.guard",
+            &guardIdentity,
+            AT_SYMLINK_NOFOLLOW
+        ) == 0 {
+            guard verifyLock(
+                descriptor,
+                directoryDescriptor: directoryDescriptor
+            ) else { throw AgentTaskDirectoryError.unsafe }
+            return
+        }
+        guard errno == ENOENT, opened.st_nlink == 1 else {
+            throw AgentTaskDirectoryError.unsafe
+        }
+        let linked = linkat(
+            directoryDescriptor,
+            ".agent-tasks.lock",
+            directoryDescriptor,
+            ".agent-tasks.lock.guard",
+            0
+        ) == 0
+        if !linked, errno != EEXIST {
+            throw unsafeOpenError(errno)
+                ? AgentTaskDirectoryError.unsafe
+                : AgentTaskDirectoryError.transient
+        }
+        guard verifyLock(
+            descriptor,
+            directoryDescriptor: directoryDescriptor
+        ) else { throw AgentTaskDirectoryError.unsafe }
+        if linked, !durableSync(
+            directoryDescriptor,
+            target: .storageDirectory
+        ) {
+            throw AgentTaskDirectoryError.durabilityUnknown
+        }
+    }
+
     private func verifyLock(
         _ descriptor: Int32,
         directoryDescriptor: Int32
     ) -> Bool {
         var opened = stat()
         var live = stat()
+        var guardIdentity = stat()
         return fstat(descriptor, &opened) == 0
             && fstatat(directoryDescriptor, ".agent-tasks.lock", &live,
                        AT_SYMLINK_NOFOLLOW) == 0
-            && samePrivateFile(opened, live)
+            && fstatat(
+                directoryDescriptor,
+                ".agent-tasks.lock.guard",
+                &guardIdentity,
+                AT_SYMLINK_NOFOLLOW
+            ) == 0
+            && sameObject(opened, live)
+            && sameObject(opened, guardIdentity)
+            && opened.st_uid == getuid()
+            && live.st_uid == getuid()
+            && guardIdentity.st_uid == getuid()
+            && opened.st_nlink == 2
+            && live.st_nlink == 2
+            && guardIdentity.st_nlink == 2
+            && (opened.st_mode & S_IFMT) == S_IFREG
+            && (live.st_mode & S_IFMT) == S_IFREG
+            && (guardIdentity.st_mode & S_IFMT) == S_IFREG
+            && (opened.st_mode & 0o777) == 0o600
+            && (live.st_mode & 0o777) == 0o600
+            && (guardIdentity.st_mode & 0o777) == 0o600
             && descriptorHasNoExtendedACL(descriptor)
     }
 
@@ -1123,31 +1257,34 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               ) else {
             throw AgentTaskDirectoryError.unsafe
         }
-        let publish = {
-            guard verifyContext(),
-                  fstat(descriptor, &opened) == 0,
-                  fstatat(
+        let canPublish = {
+            verifyContext()
+                && fstat(descriptor, &opened) == 0
+                && fstatat(
                     directoryDescriptor,
                     temporaryName,
                     &live,
                     AT_SYMLINK_NOFOLLOW
-                  ) == 0,
-                  samePrivateFile(opened, live),
-                  descriptorHasNoExtendedACL(descriptor),
-                  privateFileUnchanged(
+                ) == 0
+                && samePrivateFile(opened, live)
+                && descriptorHasNoExtendedACL(descriptor)
+                && privateFileUnchanged(
                     initialFinalIdentity,
                     name: fileName,
                     directoryDescriptor: directoryDescriptor
-                  ),
-                  authorization.map({
+                )
+                && (authorization.map({
                     self.diskRevisionMatches(
                         $0.ticket.expectedDiskRevision,
                         fileName: fileName,
                         directoryDescriptor: directoryDescriptor
                     )
-                  }) ?? true else {
-                return false
-            }
+                }) ?? true)
+        }
+        let publish = {
+            guard canPublish() else { return false }
+            reportPhase(.beforeAtomicRename)
+            guard canPublish() else { return false }
             return renameat(
                 directoryDescriptor,
                 temporaryName,

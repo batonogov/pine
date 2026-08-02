@@ -5,13 +5,48 @@
 //  Created by Федор Батоногов on 09.03.2026.
 //
 
+import Darwin
 import Dispatch
 import SwiftUI
 import SwiftTerm
 import os
 
-nonisolated private enum AcknowledgedPTYWriter {
-    static func write(_ bytes: [UInt8], to descriptor: Int32) async -> Bool {
+nonisolated enum AcknowledgedPTYWriter {
+    static func write(_ bytes: [UInt8], to borrowedDescriptor: Int32) async -> Bool {
+        await write(
+            bytes,
+            to: borrowedDescriptor,
+            didAcquireDescriptor: {}
+        )
+    }
+
+    #if DEBUG
+    static func writeForTesting(
+        _ bytes: [UInt8],
+        to borrowedDescriptor: Int32,
+        didAcquireDescriptor: @escaping @Sendable () -> Void
+    ) async -> Bool {
+        await write(
+            bytes,
+            to: borrowedDescriptor,
+            didAcquireDescriptor: didAcquireDescriptor
+        )
+    }
+    #endif
+
+    private static func write(
+        _ bytes: [UInt8],
+        to borrowedDescriptor: Int32,
+        didAcquireDescriptor: @escaping @Sendable () -> Void
+    ) async -> Bool {
+        let descriptor = Darwin.fcntl(
+            borrowedDescriptor,
+            F_DUPFD_CLOEXEC,
+            0
+        )
+        guard descriptor >= 0 else { return false }
+        defer { Darwin.close(descriptor) }
+        didAcquireDescriptor()
         let data = bytes.withUnsafeBytes { DispatchData(bytes: $0) }
         return await withCheckedContinuation { continuation in
             DispatchIO.write(
@@ -2114,10 +2149,10 @@ final class TerminalTab: Identifiable, Hashable {
         return true
     }
 
-    /// Writes launch input directly to SwiftTerm's public PTY descriptor and
-    /// resumes only after DispatchIO reports that every byte was accepted.
-    /// Durable launch authority must never rely on SwiftTerm's fire-and-forget
-    /// `send(data:)` API.
+    /// Duplicates SwiftTerm's public PTY descriptor before suspension, writes
+    /// launch input through that owned lease, and resumes only after DispatchIO
+    /// reports that every byte was accepted. SwiftTerm may close its descriptor
+    /// while the write is pending without redirecting bytes after descriptor reuse.
     func sendTextAcknowledged(_ text: String) async -> Bool {
         guard isProcessRunning else { return false }
         let descriptor = terminalView.process.childfd

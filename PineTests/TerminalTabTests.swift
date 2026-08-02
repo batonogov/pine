@@ -3,6 +3,7 @@
 //  PineTests
 //
 
+import Darwin
 import Testing
 import AppKit
 import SwiftTerm
@@ -32,6 +33,60 @@ struct TerminalTabTests {
         let tab2 = TerminalTab(name: "tab2")
         #expect(tab1.id != tab2.id)
         #expect(tab1 != tab2)
+    }
+
+    @Test("acknowledged PTY write retains its descriptor identity")
+    func acknowledgedWriteOwnsDescriptor() async throws {
+        var pipeDescriptors: [Int32] = [-1, -1]
+        try #require(Darwin.pipe(&pipeDescriptors) == 0)
+        let readDescriptor = pipeDescriptors[0]
+        let borrowedDescriptor = pipeDescriptors[1]
+        defer { Darwin.close(readDescriptor) }
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        let acquired = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let expected = Array("resume\n".utf8)
+        let writeTask = Task.detached {
+            await AcknowledgedPTYWriter.writeForTesting(
+                expected,
+                to: borrowedDescriptor
+            ) {
+                acquired.signal()
+                _ = release.wait(timeout: .now() + 2)
+            }
+        }
+        let didAcquire = await Task.detached {
+            acquired.wait(timeout: .now() + 1) == .success
+        }.value
+        try #require(didAcquire)
+        Darwin.close(borrowedDescriptor)
+        let replacement = Darwin.open(
+            temporaryURL.path,
+            O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC,
+            mode_t(0o600)
+        )
+        try #require(replacement >= 0)
+        let reusedDescriptor: Int32
+        if replacement == borrowedDescriptor {
+            reusedDescriptor = replacement
+        } else {
+            try #require(Darwin.dup2(replacement, borrowedDescriptor) >= 0)
+            Darwin.close(replacement)
+            reusedDescriptor = borrowedDescriptor
+        }
+        defer { Darwin.close(reusedDescriptor) }
+        release.signal()
+
+        #expect(await writeTask.value)
+        var received = [UInt8](repeating: 0, count: expected.count)
+        let readCount = received.withUnsafeMutableBytes { bytes in
+            Darwin.read(readDescriptor, bytes.baseAddress, bytes.count)
+        }
+        #expect(readCount == expected.count)
+        #expect(received == expected)
+        #expect((try? Data(contentsOf: temporaryURL)).map(\.isEmpty) == true)
     }
 
     @Test @MainActor func terminalTabHashable() {

@@ -221,6 +221,23 @@ struct AgentTaskStoreRaceTests {
         #expect(await store.save(tasks: [], project: fixture.identity)
             == .saved(taskCount: 0))
         let lockPath = fixture.storage.appendingPathComponent(".agent-tasks.lock").path
+        let guardPath = fixture.storage.appendingPathComponent(
+            ".agent-tasks.lock.guard"
+        ).path
+        let lockAttributes = try FileManager.default.attributesOfItem(
+            atPath: lockPath
+        )
+        let guardAttributes = try FileManager.default.attributesOfItem(
+            atPath: guardPath
+        )
+        let lockNode = try #require(
+            lockAttributes[.systemFileNumber] as? NSNumber
+        )
+        let guardNode = try #require(
+            guardAttributes[.systemFileNumber] as? NSNumber
+        )
+        #expect(lockNode == guardNode)
+        #expect((lockAttributes[.referenceCount] as? NSNumber)?.intValue == 2)
         let lock = StoreRacePOSIX.lock(lockPath)
         defer { StoreRacePOSIX.unlock(lock) }
         let contender = AgentTaskMetadataStore(storageRoot: fixture.storage)
@@ -250,6 +267,37 @@ struct AgentTaskStoreRaceTests {
 
         #expect(await hooked.save(tasks: [], project: fixture.identity)
             == .rejected(.unsafeFilesystemObject))
+    }
+
+    @Test("lock replacement at atomic rename cannot publish")
+    func lockReplacementAtAtomicRenameFailsClosed() async throws {
+        let fixture = try StoreRaceFixture()
+        defer { fixture.cleanup() }
+        let plain = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        #expect(await plain.save(tasks: [], project: fixture.identity)
+            == .saved(taskCount: 0))
+        let metadataURL = AgentTaskMetadataStore.metadataURL(
+            for: fixture.identity,
+            storageRoot: fixture.storage
+        )
+        let original = try Data(contentsOf: metadataURL)
+        let lockPath = fixture.storage.appendingPathComponent(
+            ".agent-tasks.lock"
+        ).path
+        let hooked = AgentTaskMetadataStore(
+            storageRoot: fixture.storage,
+            configuration: AgentTaskStoreConfiguration(
+                hooks: AgentTaskStoreHooks { phase in
+                    if case .beforeAtomicRename = phase {
+                        StoreRacePOSIX.replacePrivateFile(lockPath)
+                    }
+                }
+            )
+        )
+
+        #expect(await hooked.save(tasks: [], project: fixture.identity)
+            == .rejected(.transientIO))
+        #expect(try Data(contentsOf: metadataURL) == original)
     }
 
     @Test("metadata growth and shrink during read are rejected")
@@ -376,10 +424,14 @@ struct AgentTaskStoreRaceTests {
             expectedDiskRevision: nil
         )
         fence.authorize(ticket)
+        let authorization = AgentTaskPublicationAuthorization(
+            ticket: ticket,
+            fence: fence
+        )
         let entered = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
         let publication = Task.detached {
-            fence.publishForTesting {
+            authorization.publishForTesting {
                 entered.signal()
                 _ = release.wait(timeout: .now() + 2)
                 return true
@@ -694,6 +746,7 @@ struct AgentTaskStoreRaceTests {
         let entries = try FileManager.default.contentsOfDirectory(
             atPath: fixture.storage.path
         )
+        #expect(Set(entries) == ["unrelated-one", "unrelated-two"])
         #expect(entries.filter { $0.hasSuffix(".tmp") }.isEmpty)
     }
 
@@ -748,6 +801,7 @@ struct AgentTaskStoreRaceTests {
         #expect(counter.targets == [
             .parentDirectory,
             .createdDirectory,
+            .storageDirectory,
             .metadataFile,
             .storageDirectory,
         ])
