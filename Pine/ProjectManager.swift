@@ -30,7 +30,7 @@ final class ProjectManager {
     }
 
     let workspace = WorkspaceManager()
-    let terminal = TerminalManager()
+    let terminal: TerminalManager
     /// Structured agent-action feed for the Activity Panel (vision #933,
     /// Phase 2 — Visibility, issue #1072).
     let agentActivity = AgentActivityStore()
@@ -598,7 +598,13 @@ final class ProjectManager {
     /// Recovery snapshots and their lifecycle are owned by the main actor.
     private(set) var recoveryManager: RecoveryManager?
 
-    init(lspSettings: LSPSettings = .shared) {
+    init(
+        lspSettings: LSPSettings = .shared,
+        agentTaskRegistry: AgentTaskRegistry? = nil
+    ) {
+        self.terminal = TerminalManager(
+            agentTaskRegistry: agentTaskRegistry
+        )
         self.lspManager = LSPManager(settings: lspSettings)
         self.problemsController = ProblemsPanelController(lspManager: lspManager)
         workspace.setOnRootNodesChanged { [weak self] nodes in
@@ -613,6 +619,12 @@ final class ProjectManager {
         workspace.gitProvider.progressTracker = progress
         paneManager.configureEditorTabManager = { [weak self] tabManager in
             self?.configureEditorTabManager(tabManager)
+        }
+        paneManager.configureTerminalTab = { [weak self] tab in
+            self?.terminal.configureAgentLifecycle(for: tab)
+        }
+        paneManager.terminalTabDidMove = { [weak self] tab, paneID in
+            self?.terminal.agentTerminalDidMove(tab, to: paneID)
         }
         problemsController.configureDocumentStatesProvider { [weak self] in
             self?.problemsDocumentStates ?? []
@@ -971,6 +983,7 @@ final class ProjectManager {
     }
     func loadDirectory(url: URL) {
         workspace.loadDirectory(url: url)
+        terminal.configureAgentTaskProject(url)
         setupRecovery(projectURL: url)
         agentHistory.updateProjectRoot(url)
         synchronizeAgentHandoff(projectRoot: url)

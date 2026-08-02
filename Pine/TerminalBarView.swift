@@ -105,6 +105,12 @@ struct AgentTabBadge: View {
 
 // MARK: - Terminal tab item (capsule style)
 
+struct TerminalAgentResumeAction: Identifiable {
+    let id: UUID
+    let title: String
+    let action: () -> Void
+}
+
 struct TerminalNativeTabItem: View {
     let tab: TerminalTab
     let isActive: Bool
@@ -115,6 +121,7 @@ struct TerminalNativeTabItem: View {
     var onMoveTrailing: (() -> Void)?
     var onMoveToPreviousPane: (() -> Void)?
     var onMoveToNextPane: (() -> Void)?
+    var agentResumeActions: [TerminalAgentResumeAction] = []
 
     @State private var isHovering = false
     @State private var closeGlyphFrame = CGRect.null
@@ -198,6 +205,15 @@ struct TerminalNativeTabItem: View {
                 onMoveToNextPane?()
             }
             .disabled(onMoveToNextPane == nil)
+
+            if !agentResumeActions.isEmpty {
+                Divider()
+                Menu(Strings.agentResumeTask) {
+                    ForEach(agentResumeActions) { resume in
+                        Button(resume.title, action: resume.action)
+                    }
+                }
+            }
 
             Divider()
 

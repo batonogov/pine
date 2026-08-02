@@ -11,6 +11,11 @@ import Testing
 
 @MainActor
 struct AgentDetectorTests {
+    @Test("monotonic counters fail closed before wrap")
+    func monotonicCounterExhaustion() {
+        #expect(AgentMonotonicCounter.next(after: UInt64.max - 1) == UInt64.max)
+        #expect(AgentMonotonicCounter.next(after: UInt64.max) == nil)
+    }
 
     // MARK: - Detection of known agents
 
@@ -354,6 +359,8 @@ struct AgentDetectorTests {
             DetectedProcess(pid: 500, command: "claude"),
         ])
         let originalID = detector.detectedSessions[0].id
+        let originalGeneration = detector.detectedSessions[0]
+            .processEvidence?.processGeneration
 
         // Process exits.
         detector.processSnapshotDidUpdate([])
@@ -368,6 +375,10 @@ struct AgentDetectorTests {
         #expect(allClaude[1].id != originalID)
         #expect(allClaude[1].state == .idle)
         #expect(allClaude[0].state == .done)
+        #expect(
+            allClaude[1].processEvidence?.processGeneration
+                != originalGeneration
+        )
     }
 
     @Test func samePidCpuRegressionCreatesFreshSession() throws {
@@ -387,6 +398,10 @@ struct AgentDetectorTests {
         #expect(original.liveness == .terminated)
         #expect(replacement !== original)
         #expect(replacement.state == .idle)
+        #expect(
+            replacement.processEvidence?.processGeneration
+                != original.processEvidence?.processGeneration
+        )
     }
 
     @Test func changedProcessStartIdentifierCreatesFreshSession() throws {
@@ -413,6 +428,10 @@ struct AgentDetectorTests {
         let replacement = try #require(detector.session(forPID: 511))
         #expect(original.state == .done)
         #expect(replacement !== original)
+        #expect(
+            replacement.processEvidence?.processGeneration
+                != original.processEvidence?.processGeneration
+        )
     }
 
     @Test func stableProcessStartIdentifierKeepsSessionIdentity() throws {
@@ -439,6 +458,96 @@ struct AgentDetectorTests {
 
         #expect(detector.session(forPID: 512) === original)
         #expect(detector.detectedSessions == [original])
+        #expect(original.processEvidence?.startIdentifier == start)
+    }
+
+    @Test func preciseProcessStartIsRuntimeAuthorityEvidence() throws {
+        let detector = AgentDetector()
+        let preciseStart = Date(timeIntervalSince1970: 7_000.125)
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 515,
+                command: "codex",
+                startIdentifier: "Mon Jul 20 10:00:00 2026",
+                preciseStartedAt: preciseStart
+            ),
+        ])
+        let precise = try #require(detector.session(forPID: 515))
+        #expect(precise.processEvidence?.observedStartedAt == preciseStart)
+        #expect(precise.processEvidence?.startIsAuthoritative == true)
+
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 515,
+                command: "codex",
+                startIdentifier: "Mon Jul 20 10:00:00 2026",
+                preciseStartedAt: preciseStart.addingTimeInterval(0.25)
+            ),
+        ])
+        let replacement = try #require(detector.session(forPID: 515))
+        #expect(replacement.id != precise.id)
+        #expect(
+            replacement.processEvidence?.processGeneration
+                == (precise.processEvidence?.processGeneration ?? 0) + 1
+        )
+
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 516, command: "pi"),
+        ])
+        let fallback = try #require(detector.session(forPID: 516))
+        #expect(fallback.processEvidence?.startIsAuthoritative == false)
+    }
+
+    @Test func processSampleRequiresCoherentGeneration() {
+        let coarse = Date(timeIntervalSince1970: 1_722_000_000)
+        let precise = Date(timeIntervalSince1970: 1_722_000_000.125)
+        #expect(AgentDetectionCoordinator.processSampleIsCoherentForTesting(
+            coarseStart: coarse,
+            beforeStart: precise,
+            afterStart: precise,
+            observedExecutable: "codex",
+            currentExecutable: "codex"
+        ))
+        #expect(!AgentDetectionCoordinator.processSampleIsCoherentForTesting(
+            coarseStart: coarse,
+            beforeStart: precise,
+            afterStart: precise.addingTimeInterval(0.001),
+            observedExecutable: "codex",
+            currentExecutable: "codex"
+        ))
+        #expect(!AgentDetectionCoordinator.processSampleIsCoherentForTesting(
+            coarseStart: coarse,
+            beforeStart: precise,
+            afterStart: precise,
+            observedExecutable: "codex",
+            currentExecutable: "node"
+        ))
+        #expect(!AgentDetectionCoordinator.processSampleIsCoherentForTesting(
+            coarseStart: coarse.addingTimeInterval(-1),
+            beforeStart: precise,
+            afterStart: precise,
+            observedExecutable: "codex",
+            currentExecutable: "codex"
+        ))
+    }
+
+    @Test func detectorHistoryIsBoundedWithoutDroppingLiveSessions() {
+        let detector = AgentDetector(maxSessionHistory: 2)
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 801, command: "codex"),
+            DetectedProcess(pid: 802, command: "pi"),
+            DetectedProcess(pid: 803, command: "aider"),
+        ])
+        #expect(detector.detectedSessions.count == 2)
+        #expect(detector.activeCount == 2)
+
+        detector.processSnapshotDidUpdate([])
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 804, command: "codex"),
+            DetectedProcess(pid: 805, command: "pi"),
+        ])
+        #expect(detector.detectedSessions.count == 2)
+        #expect(detector.activeCount == 2)
     }
 
     @Test func olderSuccessfulSnapshotCannotTerminateNewerEvidence() throws {

@@ -1605,6 +1605,7 @@ final class TerminalTab: Identifiable, Hashable {
     let stableLabel: String
     let terminalView: LocalProcessTerminalView
     fileprivate(set) var isTerminated = false
+    private var didReportLifecycleEnd = false
     /// The AppKit container currently presenting `terminalView`.
     ///
     /// A pane maximize/restore can keep outgoing and incoming SwiftUI
@@ -1659,6 +1660,10 @@ final class TerminalTab: Identifiable, Hashable {
     /// Stored separately so the nonisolated `deinit` can remove the observer
     /// from the exact center that registered it.
     private let themeNotificationCenter: NotificationCenter
+    /// Value-only lifecycle callback installed by the terminal coordinator.
+    /// The tab never exposes its process or view to the durable task registry.
+    @ObservationIgnored
+    var onLifecycleEnded: ((UUID) -> Void)?
 
     init(
         name: String,
@@ -1875,9 +1880,21 @@ final class TerminalTab: Identifiable, Hashable {
     }
 
     func stop() {
+        if !didReportLifecycleEnd {
+            didReportLifecycleEnd = true
+            onLifecycleEnded?(id)
+        }
         guard !isTerminated else { return }
         isTerminated = true
         terminalView.terminate()
+    }
+
+    func processDidTerminate() {
+        if !didReportLifecycleEnd {
+            didReportLifecycleEnd = true
+            onLifecycleEnded?(id)
+        }
+        isTerminated = true
     }
 
     /// Forces SwiftTerm to mark the entire visible buffer as dirty and asks
@@ -2071,10 +2088,12 @@ final class TerminalTab: Identifiable, Hashable {
 
     /// Sends the given text to the terminal process as keyboard input.
     /// The text is written to the PTY as if the user typed it.
-    func sendText(_ text: String) {
-        guard isProcessRunning else { return }
+    @discardableResult
+    func sendText(_ text: String) -> Bool {
+        guard isProcessRunning else { return false }
         let data = Array(text.utf8)
         terminalView.process.send(data: data[...])
+        return true
     }
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }
@@ -2095,6 +2114,6 @@ class TerminalTabDelegate: NSObject, LocalProcessTerminalViewDelegate {
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
-        tab?.isTerminated = true
+        tab?.processDidTerminate()
     }
 }

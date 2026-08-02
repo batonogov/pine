@@ -1869,6 +1869,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
 
+        // Runtime pane/tab IDs cannot be trusted across relaunch. Freeze new
+        // mutations and publish the final task snapshot before any destructive
+        // editor discard. Every later failure rolls this state back.
+        registry.freezeAgentTasksForTermination()
+        registry.agentTasks.prepareForApplicationTermination()
+        var shouldRollbackAgentTasks = true
+        defer {
+            if shouldRollbackAgentTasks {
+                registry.cancelAgentTaskTermination()
+            }
+        }
+        guard await registry.agentTasks.flushPersistence() == .saved else {
+            Logger.app.error(
+                "Agent task metadata did not reach a clean persistence barrier"
+            )
+            return false
+        }
+
         // Other project windows remain interactive while sheets and off-main
         // process waits are in flight. Revalidate every destructive
         // authorization after the final suspension point, immediately before
@@ -1912,6 +1930,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             }
         }
 
+        shouldRollbackAgentTasks = false
         return true
     }
 }

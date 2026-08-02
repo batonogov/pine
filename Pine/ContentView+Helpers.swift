@@ -609,7 +609,19 @@ extension ContentView {
               let state = paneManager.terminalState(for: tpID),
               let activeTab = state.activeTab else { return }
 
-        // Send text followed by newline to execute
+        // A single known agent executable is an explicit Pine-owned launch.
+        // Shell expressions and argument-bearing commands remain ordinary,
+        // untrusted terminal input and are attributed only by observation.
+        if let descriptor = TerminalManager.exactAgentLaunchDescriptor(for: text) {
+            _ = terminal.launchAgentCommand(
+                text,
+                descriptor: descriptor,
+                in: activeTab
+            )
+            return
+        }
+
+        // Send ordinary text followed by newline to execute.
         activeTab.sendText(text + "\n")
     }
 

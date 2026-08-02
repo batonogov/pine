@@ -9,7 +9,15 @@
 //  `AgentSession` badge (#951).
 //
 
+import Darwin
 import Foundation
+
+nonisolated enum AgentMonotonicCounter {
+    static func next(after value: UInt64) -> UInt64? {
+        guard value < UInt64.max else { return nil }
+        return value + 1
+    }
+}
 
 /// Polls `ps` off the main thread and drives `AgentDetector` lifecycle,
 /// then maps detected agent pids to terminal tabs via `tcgetpgrp`.
@@ -74,8 +82,9 @@ nonisolated final class AgentDetectionCoordinator {
 
     @MainActor func start() {
         guard !isRunning else { return }
+        guard let generation = lifecycleGate.begin() else { return }
         isRunning = true
-        let run = AgentPollingRun(generation: lifecycleGate.begin())
+        let run = AgentPollingRun(generation: generation)
         let timer = DispatchSource.makeTimerSource(queue: pollQueue)
         timer.schedule(deadline: .now() + pollInterval, repeating: pollInterval)
         // Build the handler via the nonisolated makePollHandler(): a closure
@@ -108,6 +117,7 @@ nonisolated final class AgentDetectionCoordinator {
         lifecycleGate.end()
         timer?.cancel()
         timer = nil
+        terminalManager?.markAgentEvidenceUnavailable()
         clearAllTabSessions()
     }
 
@@ -132,7 +142,10 @@ nonisolated final class AgentDetectionCoordinator {
     /// `@MainActor` closure never captures `self`, avoiding the strict-
     /// concurrency "sending 'self' risks causing data races" error.
     nonisolated private func captureSnapshot(run: AgentPollingRun) {
-        let sequence = run.nextSequence()
+        guard let sequence = run.nextSequence() else {
+            lifecycleGate.end()
+            return
+        }
         let result = processRunner(
             "/bin/sh",
             ["-c", Self.psSnapshotCommand],
@@ -145,10 +158,10 @@ nonisolated final class AgentDetectionCoordinator {
             generation: run.generation,
             sequence: sequence
         )
-        let snapshot = Self.makeSnapshot(
+        let snapshot = Self.enrichProcessStarts(Self.makeSnapshot(
             from: result,
             observation: observation
-        )
+        ))
         // Extract references before the hop — the DispatchWorkItem closure
         // must not capture `self` (nonisolated, non-Sendable).
         let detector = self.detector
@@ -187,7 +200,7 @@ nonisolated final class AgentDetectionCoordinator {
             let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
             guard tokens.count >= 8,
                   let pid = Int32(tokens[0]),
-                  validLongStart(tokens[1...5]),
+                  parseLongStart(tokens[1...5]) != nil,
                   let cpuTime = parseCpuTime(String(tokens[6])) else {
                 continue
             }
@@ -204,6 +217,133 @@ nonisolated final class AgentDetectionCoordinator {
         }
         return processes
     }
+
+    nonisolated private static func enrichProcessStarts(
+        _ snapshot: AgentProcessSnapshot
+    ) -> AgentProcessSnapshot {
+        guard case .success(let processes, let observation) = snapshot else {
+            return snapshot
+        }
+        return .success(
+            processes: processes.map { process in
+                DetectedProcess(
+                    pid: process.pid,
+                    command: process.command,
+                    cwd: process.cwd,
+                    cpuTime: process.cpuTime,
+                    startIdentifier: process.startIdentifier,
+                    preciseStartedAt: coherentProcessStart(process)
+                )
+            },
+            observation: observation
+        )
+    }
+
+    nonisolated private static func coherentProcessStart(
+        _ process: DetectedProcess
+    ) -> Date? {
+        guard process.pid > 1,
+              let startIdentifier = process.startIdentifier,
+              let coarseStart = parseLongStart(
+                  startIdentifier.split(separator: " ")[...]
+              ),
+              let observedToken = process.command.split(
+                  separator: " ",
+                  maxSplits: 1,
+                  omittingEmptySubsequences: true
+              ).first else {
+            return nil
+        }
+        let observedExecutable = URL(fileURLWithPath: String(observedToken))
+            .lastPathComponent.lowercased()
+        guard !observedExecutable.isEmpty else { return nil }
+
+        var before = proc_bsdinfo()
+        var after = proc_bsdinfo()
+        let expectedSize = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(
+            process.pid,
+            PROC_PIDTBSDINFO,
+            0,
+            &before,
+            expectedSize
+        ) == expectedSize,
+        before.pbi_pid == UInt32(process.pid) else {
+            return nil
+        }
+
+        var pathBuffer = [CChar](
+            repeating: 0,
+            count: Int(PROC_PIDPATHINFO_MAXSIZE)
+        )
+        let pathLength = pathBuffer.withUnsafeMutableBytes { buffer in
+            proc_pidpath(
+                process.pid,
+                buffer.baseAddress,
+                UInt32(buffer.count)
+            )
+        }
+        guard pathLength > 0 else { return nil }
+        let currentExecutable = URL(fileURLWithPath: String(cString: pathBuffer))
+            .lastPathComponent.lowercased()
+
+        guard proc_pidinfo(
+            process.pid,
+            PROC_PIDTBSDINFO,
+            0,
+            &after,
+            expectedSize
+        ) == expectedSize,
+        after.pbi_pid == UInt32(process.pid) else {
+            return nil
+        }
+        let beforeStart = Date(
+            timeIntervalSince1970: TimeInterval(before.pbi_start_tvsec)
+                + TimeInterval(before.pbi_start_tvusec) / 1_000_000
+        )
+        let preciseStart = Date(
+            timeIntervalSince1970: TimeInterval(after.pbi_start_tvsec)
+                + TimeInterval(after.pbi_start_tvusec) / 1_000_000
+        )
+        return processSampleIsCoherent(
+            coarseStart: coarseStart,
+            beforeStart: beforeStart,
+            afterStart: preciseStart,
+            observedExecutable: observedExecutable,
+            currentExecutable: currentExecutable
+        ) ? preciseStart : nil
+    }
+
+    nonisolated private static func processSampleIsCoherent(
+        coarseStart: Date,
+        beforeStart: Date,
+        afterStart: Date,
+        observedExecutable: String,
+        currentExecutable: String
+    ) -> Bool {
+        observedExecutable == currentExecutable
+            && beforeStart == afterStart
+            && coarseStart.timeIntervalSince1970
+                == afterStart.timeIntervalSince1970.rounded(.down)
+    }
+
+    #if DEBUG
+    nonisolated static func processSampleIsCoherentForTesting(
+        coarseStart: Date,
+        beforeStart: Date,
+        afterStart: Date,
+        observedExecutable: String,
+        currentExecutable: String
+    ) -> Bool {
+        processSampleIsCoherent(
+            coarseStart: coarseStart,
+            beforeStart: beforeStart,
+            afterStart: afterStart,
+            observedExecutable: observedExecutable,
+            currentExecutable: currentExecutable
+        )
+    }
+    #endif
 
     #if DEBUG
     /// Parses the historical injected-test `pid command [cputime]` shape.
@@ -258,13 +398,13 @@ nonisolated final class AgentDetectionCoordinator {
         "exit \"$status\"",
     ].joined(separator: " ")
 
-    /// Validates the five fixed UTC `lstart` tokens, including the actual
+    /// Parses the five fixed UTC `lstart` tokens, including the actual
     /// Gregorian date and matching weekday. This rejects values such as
     /// `Wed Xxx 99 25:80:80 2026` that merely occupy the expected columns.
-    nonisolated private static func validLongStart(
+    nonisolated private static func parseLongStart(
         _ tokens: ArraySlice<Substring>
-    ) -> Bool {
-        guard tokens.count == 5 else { return false }
+    ) -> Date? {
+        guard tokens.count == 5 else { return nil }
         let values = Array(tokens)
         guard let expectedWeekday = psWeekdays[String(values[0])],
               let month = psMonths[String(values[1])],
@@ -272,11 +412,11 @@ nonisolated final class AgentDetectionCoordinator {
               let year = Int(values[4]),
               (1970...9999).contains(year),
               let clock = parseClock(String(values[3])) else {
-            return false
+            return nil
         }
 
         var calendar = Calendar(identifier: .gregorian)
-        guard let utc = TimeZone(secondsFromGMT: 0) else { return false }
+        guard let utc = TimeZone(secondsFromGMT: 0) else { return nil }
         calendar.timeZone = utc
         var components = DateComponents()
         components.calendar = calendar
@@ -287,18 +427,21 @@ nonisolated final class AgentDetectionCoordinator {
         components.hour = clock.hour
         components.minute = clock.minute
         components.second = clock.second
-        guard let date = calendar.date(from: components) else { return false }
+        guard let date = calendar.date(from: components) else { return nil }
         let resolved = calendar.dateComponents(
             [.year, .month, .day, .hour, .minute, .second, .weekday],
             from: date
         )
-        return resolved.year == year
-            && resolved.month == month
-            && resolved.day == day
-            && resolved.hour == clock.hour
-            && resolved.minute == clock.minute
-            && resolved.second == clock.second
-            && resolved.weekday == expectedWeekday
+        guard resolved.year == year,
+              resolved.month == month,
+              resolved.day == day,
+              resolved.hour == clock.hour,
+              resolved.minute == clock.minute,
+              resolved.second == clock.second,
+              resolved.weekday == expectedWeekday else {
+            return nil
+        }
+        return date
     }
 
     nonisolated private static func parseClock(
@@ -457,6 +600,7 @@ nonisolated final class AgentDetectionCoordinator {
             // snapshot, so its one-interval exit badge can expire even though
             // this poll failed. Live/stale associations remain untouched.
             guard let terminalManager else { return }
+            terminalManager.refreshAgentTasks()
             for tab in terminalManager.allTerminalTabs
             where shouldExpireAfterFailedSnapshot(tab.agentSession) {
                 tab.agentSession = nil
@@ -469,13 +613,23 @@ nonisolated final class AgentDetectionCoordinator {
             )
             guard let terminalManager else { return }
             for tab in terminalManager.allTerminalTabs {
-                tab.agentSession = reconciledSession(
-                    previous: tab.agentSession,
+                let previous = tab.agentSession
+                let current = reconciledSession(
+                    previous: previous,
                     foregroundPID: tab.foregroundProcessID,
                     detector: detector,
                     newlyTerminated: newlyTerminated
                 )
+                if let current {
+                    terminalManager.bridgeAgentSession(
+                        current,
+                        replacing: previous,
+                        in: tab
+                    )
+                }
+                tab.agentSession = current
             }
+            terminalManager.refreshAgentTasks()
         }
     }
 
@@ -531,7 +685,7 @@ nonisolated final class AgentDetectionCoordinator {
             wallTime: Date(),
             uptime: uptimeProvider(),
             generation: testingRun.generation,
-            sequence: testingRun.nextSequence()
+            sequence: testingRun.nextSequence() ?? UInt64.max
         )
         let snapshot = Self.makeSnapshot(
             from: result,
@@ -571,10 +725,13 @@ nonisolated private final class AgentPollingRun: @unchecked Sendable {
         self.generation = generation
     }
 
-    func nextSequence() -> UInt64 {
+    func nextSequence() -> UInt64? {
         lock.lock()
         defer { lock.unlock() }
-        sequence &+= 1
+        guard let next = AgentMonotonicCounter.next(after: sequence) else {
+            return nil
+        }
+        sequence = next
         return sequence
     }
 }
@@ -587,10 +744,16 @@ nonisolated private final class AgentPollingLifecycleGate: @unchecked Sendable {
     private var nextGeneration: UInt64 = 0
     private var activeGeneration: UInt64?
 
-    func begin() -> UInt64 {
+    func begin() -> UInt64? {
         lock.lock()
         defer { lock.unlock() }
-        nextGeneration &+= 1
+        guard let next = AgentMonotonicCounter.next(
+            after: nextGeneration
+        ) else {
+            activeGeneration = nil
+            return nil
+        }
+        nextGeneration = next
         activeGeneration = nextGeneration
         return nextGeneration
     }

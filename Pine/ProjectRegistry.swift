@@ -29,6 +29,8 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     /// Application-wide LSP preferences shared by every project manager.
     let lspSettings: LSPSettings
+    /// Application-lifetime durable agent identity across every project.
+    let agentTasks: AgentTaskRegistry
 
     private static let recentProjectsKey = "recentProjectPaths"
     private static let maxRecentProjects = 10
@@ -44,11 +46,13 @@ final class ProjectRegistry: LSPSettingsObserver {
         lspSettings: LSPSettings = .shared,
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,
+        agentTasks: AgentTaskRegistry = AgentTaskRegistry(),
         clearRecentProjects: Bool = CommandLine.arguments.contains(
             "--clear-recent-projects"
         )
     ) {
         self.lspSettings = lspSettings
+        self.agentTasks = agentTasks
         self.defaults = defaults
         self.fileManager = fileManager
         if clearRecentProjects {
@@ -87,11 +91,18 @@ final class ProjectRegistry: LSPSettingsObserver {
                     }
                     openProjects.removeValue(forKey: canonical)
                     backgroundProjects.remove(canonical)
+                    agentTasks.setWindowOpen(
+                        false,
+                        projectPath: canonical.path
+                    )
+                    existing.terminal.setAgentTaskWindowOpen(false)
                     recentProjects.removeAll { $0 == canonical }
                     saveRecentProjects()
                     return nil
                 }
                 backgroundProjects.remove(canonical)
+                agentTasks.setWindowOpen(true, projectPath: canonical.path)
+                existing.terminal.setAgentTaskWindowOpen(true)
             }
             addToRecent(canonical)
             return existing
@@ -104,7 +115,15 @@ final class ProjectRegistry: LSPSettingsObserver {
             saveRecentProjects()
             return nil
         }
-        let pm = ProjectManager(lspSettings: lspSettings)
+        let identity = AgentTaskProjectIdentity(
+            canonicalProjectPath: canonical.path,
+            canonicalWorktreePath: canonical.path
+        )
+        agentTasks.registerProject(identity)
+        let pm = ProjectManager(
+            lspSettings: lspSettings,
+            agentTaskRegistry: agentTasks
+        )
         pm.loadDirectory(url: canonical)
         openProjects[canonical] = pm
         addToRecent(canonical)
@@ -137,12 +156,167 @@ final class ProjectRegistry: LSPSettingsObserver {
         let canonical = canonicalProjectURL(url)
         guard openProjects[canonical] != nil else { return }
         backgroundProjects.insert(canonical)
+        agentTasks.setWindowOpen(false, projectPath: canonical.path)
+        openProjects[canonical]?.terminal.setAgentTaskWindowOpen(false)
     }
 
     /// Closes a project and removes it from open projects.
     /// For backwards compatibility, delegates to `closeProjectWindow`.
     func closeProject(_ url: URL) {
         closeProjectWindow(url)
+    }
+
+    /// Re-resolves a persisted route against current application ownership.
+    /// No UI object is retained by the durable registry; every activation must
+    /// cross this boundary immediately before use.
+    func resolveAgentTaskRoute(
+        _ taskID: UUID,
+        targetTerminalID: UUID? = nil
+    ) async -> AgentTaskRoute? {
+        guard let task = agentTasks.task(for: taskID) else { return nil }
+        if task.lifecycle == .paused, let targetTerminalID {
+            return await resolvePausedAgentTaskRoute(
+                task,
+                targetTerminalID: targetTerminalID
+            )
+        }
+        guard task.lifecycle == .active,
+              task.route.availability == .available,
+              let run = task.runs.last,
+              run.liveness == .live,
+              run.endedAt == nil,
+              agentTasks.isExactLiveOwner(
+                  taskID: taskID,
+                  terminalID: task.route.terminalID,
+                  runID: run.id
+              ) else { return nil }
+        let rawURL = URL(
+            fileURLWithPath: task.project.canonicalProjectPath,
+            isDirectory: true
+        )
+        let projectURL = await Task.detached {
+            Self.canonicalProjectURL(rawURL)
+        }.value
+        guard let currentTask = agentTasks.task(for: taskID),
+              currentTask == task,
+              currentTask.lifecycle == .active,
+              currentTask.route.availability == .available,
+              let currentRun = currentTask.runs.last,
+              currentRun == run,
+              currentRun.liveness == .live,
+              currentRun.endedAt == nil,
+              agentTasks.isExactLiveOwner(
+                  taskID: taskID,
+                  terminalID: currentTask.route.terminalID,
+                  runID: currentRun.id
+              ),
+              !backgroundProjects.contains(projectURL),
+              let manager = openProjects[projectURL],
+              manager.rootURL == projectURL,
+              projectURL.path == task.project.canonicalProjectPath,
+              projectURL.path == task.project.canonicalWorktreePath else {
+            return nil
+        }
+
+        var matches: [AgentTaskRoute] = []
+        for paneID in manager.paneManager.terminalPaneIDs {
+            guard let state = manager.paneManager.terminalState(for: paneID) else {
+                continue
+            }
+            for tab in state.terminalTabs {
+                guard tab.id == task.route.terminalID,
+                      let session = tab.agentSession,
+                      session.id == run.id,
+                      session.liveness == .live,
+                      AgentDescriptor(agentType: session.agentType)
+                        == task.descriptor,
+                      let observed = session.processEvidence,
+                      observed.identifiesSameProcess(as: run.process),
+                      run.terminalID == tab.id,
+                      agentTasks.isExactLiveOwner(
+                          taskID: taskID,
+                          terminalID: tab.id,
+                          runID: session.id
+                      ) else {
+                    continue
+                }
+                matches.append(AgentTaskRoute(
+                    paneID: paneID.id,
+                    tabID: tab.id,
+                    terminalID: tab.id
+                ))
+            }
+        }
+        guard matches.count == 1,
+              matches[0] == currentTask.route,
+              agentTasks.task(for: taskID) == currentTask,
+              agentTasks.isExactLiveOwner(
+                  taskID: taskID,
+                  terminalID: currentTask.route.terminalID,
+                  runID: currentRun.id
+              ),
+              !backgroundProjects.contains(projectURL) else { return nil }
+        return matches[0]
+    }
+
+    private func resolvePausedAgentTaskRoute(
+        _ task: AgentTask,
+        targetTerminalID: UUID
+    ) async -> AgentTaskRoute? {
+        let rawURL = URL(
+            fileURLWithPath: task.project.canonicalWorktreePath,
+            isDirectory: true
+        )
+        let projectURL = await Task.detached {
+            Self.canonicalProjectURL(rawURL)
+        }.value
+        guard let currentTask = agentTasks.task(for: task.id),
+              currentTask == task,
+              agentTasks.canResumeTask(task.id),
+              !backgroundProjects.contains(projectURL),
+              let manager = openProjects[projectURL],
+              manager.rootURL == projectURL,
+              projectURL.path == task.project.canonicalWorktreePath else {
+            return nil
+        }
+
+        var matches: [AgentTaskRoute] = []
+        for paneID in manager.paneManager.terminalPaneIDs {
+            guard let state = manager.paneManager.terminalState(for: paneID) else {
+                continue
+            }
+            for tab in state.terminalTabs where tab.id == targetTerminalID {
+                matches.append(AgentTaskRoute(
+                    paneID: paneID.id,
+                    tabID: tab.id,
+                    terminalID: tab.id
+                ))
+            }
+        }
+        guard matches.count == 1,
+              agentTasks.task(for: task.id) == currentTask else {
+            return nil
+        }
+        return matches[0]
+    }
+
+    func freezeAgentTasksForTermination() {
+        for manager in openProjects.values {
+            manager.terminal.freezeAgentTasksForTermination()
+        }
+        for manager in detachedTaskCleanupProjects.values {
+            manager.terminal.freezeAgentTasksForTermination()
+        }
+    }
+
+    func cancelAgentTaskTermination() {
+        agentTasks.cancelApplicationTermination()
+        for manager in openProjects.values {
+            manager.terminal.cancelAgentTaskTermination()
+        }
+        for manager in detachedTaskCleanupProjects.values {
+            manager.terminal.cancelAgentTaskTermination()
+        }
     }
 
     /// Cancels and waits for all project-owned user tasks against one shared
@@ -303,25 +477,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     }
 
     func canonicalProjectURL(_ projectURL: URL) -> URL {
-        let standardized = projectURL.standardizedFileURL
-        var existingAncestor = standardized
-        var missingComponents: [String] = []
-
-        while !fileManager.fileExists(atPath: existingAncestor.path) {
-            let parent = existingAncestor.deletingLastPathComponent()
-            guard parent.path != existingAncestor.path else { break }
-            missingComponents.append(existingAncestor.lastPathComponent)
-            existingAncestor = parent
-        }
-
-        var canonical = existingAncestor.resolvingSymlinksInPath()
-        for component in missingComponents.reversed() {
-            canonical.appendPathComponent(component)
-        }
-        return URL(
-            fileURLWithPath: canonical.path,
-            isDirectory: true
-        ).standardizedFileURL
+        Self.canonicalProjectURL(projectURL)
     }
 
     /// Resolves a stable project identity even after the project directory is

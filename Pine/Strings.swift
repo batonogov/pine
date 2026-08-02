@@ -1527,6 +1527,7 @@ enum Strings {
     static let tabRevealInSidebar: LocalizedStringKey = "tab.revealInSidebar"
     static let tabRevealInFinder: LocalizedStringKey = "tab.revealInFinder"
     static let tabCloseTabDisabledPinned: LocalizedStringKey = "tab.closeTabDisabledPinned"
+    static let agentResumeTask: LocalizedStringKey = "agent.resumeTask"
     static let tabMoveLeading: LocalizedStringKey = "tab.moveLeading"
     static let tabMoveTrailing: LocalizedStringKey = "tab.moveTrailing"
     static let tabMoveToPreviousPane: LocalizedStringKey = "tab.moveToPreviousPane"
