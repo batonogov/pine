@@ -228,8 +228,7 @@ final class ProjectRegistry: LSPSettingsObserver {
                       let session = tab.agentSession,
                       session.id == run.id,
                       session.liveness == .live,
-                      AgentDescriptor(agentType: session.agentType)
-                        == task.descriptor,
+                      session.agentType == task.descriptor.agentType,
                       let observed = session.processEvidence,
                       observed.identifiesSameProcess(as: run.process),
                       run.terminalID == tab.id,
@@ -309,14 +308,22 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
     }
 
-    func cancelAgentTaskTermination() {
-        agentTasks.cancelApplicationTermination()
+    @discardableResult
+    func cancelAgentTaskTermination(
+        maximumDuration: Duration? = nil
+    ) async -> Bool {
+        guard await agentTasks.cancelApplicationTerminationAndFlush(
+            maximumDuration: maximumDuration
+        ) else {
+            return false
+        }
         for manager in openProjects.values {
             manager.terminal.cancelAgentTaskTermination()
         }
         for manager in detachedTaskCleanupProjects.values {
             manager.terminal.cancelAgentTaskTermination()
         }
+        return true
     }
 
     /// Cancels and waits for all project-owned user tasks against one shared

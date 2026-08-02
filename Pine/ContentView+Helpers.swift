@@ -613,11 +613,13 @@ extension ContentView {
         // Shell expressions and argument-bearing commands remain ordinary,
         // untrusted terminal input and are attributed only by observation.
         if let descriptor = TerminalManager.exactAgentLaunchDescriptor(for: text) {
-            _ = terminal.launchAgentCommand(
-                text,
-                descriptor: descriptor,
-                in: activeTab
-            )
+            Task { @MainActor in
+                _ = await terminal.launchAgentCommand(
+                    text,
+                    descriptor: descriptor,
+                    in: activeTab
+                )
+            }
             return
         }
 

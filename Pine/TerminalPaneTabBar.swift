@@ -68,18 +68,21 @@ struct TerminalPaneTabBar: View {
         for tab: TerminalTab
     ) -> [TerminalAgentResumeAction] {
         guard let projectManager else { return [] }
-        let projectURL = projectRegistry.canonicalProjectURL(
-            projectManager.rootURL
-        )
+        let projectURL = projectManager.rootURL
         return projectRegistry.agentTasks.tasks.compactMap { task in
             guard projectRegistry.agentTasks.canResumeTask(task.id),
                   task.project.canonicalWorktreePath == projectURL.path,
-                  let command = task.descriptor.agentType.cliNames.sorted().first else {
+                  let command = task.descriptor.launchExecutable else {
                 return nil
             }
             let taskID = task.id
             let displayName = task.descriptor.agentType.displayName
-            let suffix = task.title ?? String(taskID.uuidString.prefix(8))
+            let created = task.createdAt.formatted(
+                date: .abbreviated,
+                time: .shortened
+            )
+            let context = task.title ?? task.objective ?? created
+            let suffix = "\(context) · \(taskID.uuidString.prefix(8))"
             return TerminalAgentResumeAction(
                 id: taskID,
                 title: "\(displayName) — \(suffix)"
@@ -92,7 +95,7 @@ struct TerminalPaneTabBar: View {
                     route.terminalID == tab.id else {
                         return
                     }
-                    _ = projectManager.terminal.resumeAgentTaskCommand(
+                    _ = await projectManager.terminal.resumeAgentTaskCommand(
                         taskID: taskID,
                         command: command,
                         in: tab

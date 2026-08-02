@@ -82,14 +82,17 @@ nonisolated enum AgentTaskOrigin: String, Codable, Sendable {
 /// Forward-compatible agent metadata. Unknown type identifiers remain opaque.
 nonisolated struct AgentDescriptor: Codable, Equatable, Sendable {
     let typeIdentifier: String
+    let launchExecutable: String?
 
     private enum CodingKeys: String, CodingKey {
         case typeIdentifier
+        case launchExecutable
     }
 
     @MainActor
-    init(agentType: AgentType) {
+    init(agentType: AgentType, launchExecutable: String? = nil) {
         typeIdentifier = agentType.stableIdentifier
+        self.launchExecutable = launchExecutable
     }
 
     @MainActor

@@ -271,6 +271,9 @@ nonisolated final class AgentDetectionCoordinator {
         before.pbi_pid == UInt32(process.pid) else {
             return nil
         }
+        guard let kernelArguments = kernelArguments(for: process.pid) else {
+            return nil
+        }
 
         var pathBuffer = [CChar](
             repeating: 0,
@@ -286,6 +289,11 @@ nonisolated final class AgentDetectionCoordinator {
         guard pathLength > 0 else { return nil }
         let currentExecutable = URL(fileURLWithPath: String(cString: pathBuffer))
             .lastPathComponent.lowercased()
+        guard processArgumentsAreCoherent(
+            observedCommand: process.command,
+            kernelArguments: kernelArguments,
+            currentExecutable: currentExecutable
+        ) else { return nil }
 
         guard proc_pidinfo(
             process.pid,
@@ -314,6 +322,82 @@ nonisolated final class AgentDetectionCoordinator {
         ) ? preciseStart : nil
     }
 
+    nonisolated private static func kernelArguments(
+        for pid: Int32
+    ) -> [String]? {
+        var mib = [Int32(CTL_KERN), Int32(KERN_PROCARGS2), pid]
+        var size = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0,
+              size >= MemoryLayout<Int32>.size,
+              size <= 16_384 else { return nil }
+        var bytes = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, u_int(mib.count), &bytes, &size, nil, 0) == 0,
+              size <= bytes.count else { return nil }
+        bytes.removeSubrange(size..<bytes.count)
+        let argumentCount = Int(bytes.withUnsafeBytes {
+            $0.loadUnaligned(as: Int32.self)
+        })
+        guard argumentCount > 0 else { return nil }
+        var cursor = MemoryLayout<Int32>.size
+        guard consumeCString(in: bytes, cursor: &cursor) != nil else {
+            return nil
+        }
+        while cursor < bytes.count, bytes[cursor] == 0 { cursor += 1 }
+        var arguments: [String] = []
+        while arguments.count < min(argumentCount, 2), cursor < bytes.count {
+            guard let argument = consumeCString(in: bytes, cursor: &cursor) else {
+                return nil
+            }
+            arguments.append(argument)
+        }
+        return arguments.count == min(argumentCount, 2) ? arguments : nil
+    }
+
+    nonisolated private static func consumeCString(
+        in bytes: [UInt8],
+        cursor: inout Int
+    ) -> String? {
+        guard cursor < bytes.count,
+              let terminator = bytes[cursor...].firstIndex(of: 0),
+              let value = String(
+                  bytes: bytes[cursor..<terminator],
+                  encoding: .utf8
+              ) else { return nil }
+        cursor = terminator + 1
+        return value
+    }
+
+    nonisolated private static func processArgumentsAreCoherent(
+        observedCommand: String,
+        kernelArguments: [String],
+        currentExecutable: String
+    ) -> Bool {
+        let observedArguments = observedCommand.split(
+            separator: " ",
+            omittingEmptySubsequences: true
+        ).map(String.init)
+        guard let observedFirst = observedArguments.first,
+              let kernelFirst = kernelArguments.first else { return false }
+        let observedBase = URL(fileURLWithPath: observedFirst)
+            .lastPathComponent.lowercased()
+        let kernelBase = URL(fileURLWithPath: kernelFirst)
+            .lastPathComponent.lowercased()
+        guard observedBase == kernelBase,
+              kernelBase == currentExecutable,
+              AgentDetector.extractExecutableName(arguments: observedArguments)
+                .lowercased()
+                == AgentDetector.extractExecutableName(arguments: kernelArguments)
+                    .lowercased() else { return false }
+        let isWrapped = AgentDetector.extractExecutableName(
+            arguments: observedArguments
+        ).lowercased() != observedBase
+        return !isWrapped || (
+            observedArguments.count >= 2
+                && kernelArguments.count >= 2
+                && observedArguments[1] == kernelArguments[1]
+        )
+    }
+
     nonisolated private static func processSampleIsCoherent(
         coarseStart: Date,
         beforeStart: Date,
@@ -328,6 +412,18 @@ nonisolated final class AgentDetectionCoordinator {
     }
 
     #if DEBUG
+    nonisolated static func processArgumentsAreCoherentForTesting(
+        observedCommand: String,
+        kernelArguments: [String],
+        currentExecutable: String
+    ) -> Bool {
+        processArgumentsAreCoherent(
+            observedCommand: observedCommand,
+            kernelArguments: kernelArguments,
+            currentExecutable: currentExecutable
+        )
+    }
+
     nonisolated static func processSampleIsCoherentForTesting(
         coarseStart: Date,
         beforeStart: Date,

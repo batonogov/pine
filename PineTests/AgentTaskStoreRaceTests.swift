@@ -109,6 +109,80 @@ struct AgentTaskStoreRaceTests {
         ))
     }
 
+    @Test("directory replacement immediately before temp creation has no side effect")
+    func directoryReplacementBeforeTempCreateFailsClosed() async throws {
+        let fixture = try StoreRaceFixture()
+        defer { fixture.cleanup() }
+        let plain = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        #expect(await plain.save(tasks: [], project: fixture.identity)
+            == .saved(taskCount: 0))
+        let storagePath = fixture.storage.path
+        let displaced = storagePath + ".before-temp-displaced"
+        let hooked = AgentTaskMetadataStore(
+            storageRoot: fixture.storage,
+            configuration: AgentTaskStoreConfiguration(
+                hooks: AgentTaskStoreHooks { phase in
+                    if case .beforeTemporaryCreate = phase {
+                        StoreRacePOSIX.replaceDirectory(
+                            storagePath,
+                            displaced: displaced
+                        )
+                    }
+                }
+            )
+        )
+
+        #expect(await hooked.save(tasks: [], project: fixture.identity)
+            == .rejected(.unsafeFilesystemObject))
+        let displacedEntries = try FileManager.default.contentsOfDirectory(
+            atPath: displaced
+        )
+        #expect(displacedEntries.allSatisfy { !$0.hasSuffix(".tmp") })
+    }
+
+    @Test("directory replacement before cleanup mutation preserves candidate")
+    func directoryReplacementBeforeRetirementFailsClosed() async throws {
+        let fixture = try StoreRaceFixture()
+        defer { fixture.cleanup() }
+        let plain = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        #expect(await plain.save(tasks: [], project: fixture.identity)
+            == .saved(taskCount: 0))
+        let now = Date(timeIntervalSince1970: 26_000)
+        let stale = try fixture.makeTemporary(age: 1_000, now: now)
+        let original = try Data(contentsOf: stale)
+        let storagePath = fixture.storage.path
+        let displaced = storagePath + ".retire-displaced"
+        let store = AgentTaskMetadataStore(
+            storageRoot: fixture.storage,
+            configuration: AgentTaskStoreConfiguration(
+                cleanup: AgentTaskCleanupConfiguration(
+                    staleAge: 100,
+                    scanLimit: 256,
+                    retireLimit: 1,
+                    now: { now }
+                ),
+                hooks: AgentTaskStoreHooks { phase in
+                    if case .beforeRetireMutation = phase {
+                        StoreRacePOSIX.replaceDirectory(
+                            storagePath,
+                            displaced: displaced
+                        )
+                    }
+                }
+            )
+        )
+
+        #expect(await store.load(project: fixture.identity).status
+            == .rejected(.unsafeFilesystemObject))
+        let displacedCandidate = URL(fileURLWithPath: displaced)
+            .appendingPathComponent(stale.lastPathComponent)
+        #expect(try Data(contentsOf: displacedCandidate) == original)
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: displacedCandidate.path
+        )
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+    }
+
     @Test("load revalidates storage before creating its lock")
     func loadDirectoryReplacementFailsClosed() async throws {
         let fixture = try StoreRaceFixture()
@@ -289,6 +363,48 @@ struct AgentTaskStoreRaceTests {
             authorization: stale
         ) == .rejected(.superseded))
         #expect(try Data(contentsOf: fileURL) == published)
+    }
+
+    @Test("publication generation advance never waits for in-flight rename")
+    func publicationAdvanceIsNonblocking() async {
+        let generation = UUID()
+        let fence = AgentTaskPublicationFence(generation: generation)
+        let ticket = AgentTaskPersistenceTicket(
+            generation: generation,
+            sequence: 1,
+            projectKey: "deadline-project",
+            expectedDiskRevision: nil
+        )
+        fence.authorize(ticket)
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let publication = Task.detached {
+            fence.publishForTesting {
+                entered.signal()
+                _ = release.wait(timeout: .now() + 2)
+                return true
+            }
+        }
+        let didEnter = await Task.detached {
+            entered.wait(timeout: .now() + 1) == .success
+        }.value
+        #expect(didEnter)
+        let clock = ContinuousClock()
+        let started = clock.now
+        _ = fence.advance(to: UUID())
+        #expect(started.duration(to: clock.now) < .milliseconds(250))
+        release.signal()
+        let decision = await publication.value
+        switch decision {
+        case .published:
+            break
+        case .failed, .superseded:
+            Issue.record("in-flight authorized publication was lost")
+        }
+        #expect(
+            fence.publishedRevision(for: ticket.projectKey)
+                == .versioned(ticket.nextDiskRevision)
+        )
     }
 
     @Test("temporary pathname replacement cannot publish")
@@ -546,6 +662,41 @@ struct AgentTaskStoreRaceTests {
         #expect(entries.filter { $0.hasSuffix(".tmp") }.count == 2)
     }
 
+    @Test("directory entry cap rejects at exact capacity before writer temp")
+    func directoryEntryCapFailsAtEquality() async throws {
+        let fixture = try StoreRaceFixture()
+        defer { fixture.cleanup() }
+        try FileManager.default.createDirectory(
+            at: fixture.storage,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        for name in ["unrelated-one", "unrelated-two"] {
+            let url = fixture.storage.appendingPathComponent(name)
+            try Data([1]).write(to: url)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: url.path
+            )
+        }
+        let store = AgentTaskMetadataStore(
+            storageRoot: fixture.storage,
+            configuration: AgentTaskStoreConfiguration(
+                cleanup: AgentTaskCleanupConfiguration(
+                    tombstoneLimit: 3,
+                    directoryEntryLimit: 3
+                )
+            )
+        )
+
+        #expect(await store.save(tasks: [], project: fixture.identity)
+            == .rejected(.storageLimit))
+        let entries = try FileManager.default.contentsOfDirectory(
+            atPath: fixture.storage.path
+        )
+        #expect(entries.filter { $0.hasSuffix(".tmp") }.isEmpty)
+    }
+
     @Test("bounded cleanup cursor cannot starve a stale orphan")
     func cleanupCursorReachesStaleOrphan() async throws {
         let fixture = try StoreRaceFixture()
@@ -732,6 +883,14 @@ private struct StoreRaceFixture {
         identity = AgentTaskProjectIdentity(
             canonicalProjectPath: project.path,
             canonicalWorktreePath: project.path
+        )
+    }
+
+    func prepareStorage() throws {
+        try FileManager.default.createDirectory(
+            at: storage,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
         )
     }
 

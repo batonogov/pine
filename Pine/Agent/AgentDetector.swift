@@ -227,12 +227,15 @@ final class AgentDetector {
                 } else {
                     false
                 }
+                let preciseAuthorityLost = preciseStartByPID[process.pid] != nil
+                    && process.preciseStartedAt == nil
 
                 // A pid may exec another agent or be recycled for the same
                 // command. A changed lstart value proves a new generation;
                 // cumulative CPU regression is the conservative fallback.
                 if existing.agentType != resolved || startChanged
-                    || preciseStartChanged || cpuRegressed {
+                    || preciseStartChanged || preciseAuthorityLost
+                    || cpuRegressed {
                     if let terminatedID = markDone(pid: process.pid) {
                         newlyTerminated.insert(terminatedID)
                     }
@@ -445,20 +448,26 @@ final class AgentDetector {
     /// the *second* token as the real CLI, resolving its basename and stripping
     /// a common script extension. A second token that is not a known agent
     /// (e.g. `server.js`) still resolves to `.generic` and is not tracked.
-    static func extractExecutableName(from command: String) -> String {
+    nonisolated static func extractExecutableName(from command: String) -> String {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
+        let arguments = trimmed.split(
+            separator: " ",
+            omittingEmptySubsequences: true
+        ).map(String.init)
+        return extractExecutableName(arguments: arguments)
+    }
 
-        let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
-        guard let firstToken = tokens.first else { return "" }
-        let firstBase = (String(firstToken) as NSString).lastPathComponent
+    nonisolated static func extractExecutableName(
+        arguments: [String]
+    ) -> String {
+        guard let firstToken = arguments.first else { return "" }
+        let firstBase = (firstToken as NSString).lastPathComponent
 
-        // Interpreter-wrapper form: `node /path/pi`, `python3 …/aider`, …
-        // The second token is the real CLI; resolve its basename and strip a
-        // common script extension so `claude.js` → `claude`.
-        if Self.interpreterWrappers.contains(firstBase.lowercased()), tokens.count >= 2 {
-            let scriptBase = (String(tokens[1]) as NSString).lastPathComponent
-            return Self.strippingScriptExtension(scriptBase)
+        if interpreterWrappers.contains(firstBase.lowercased()),
+           arguments.count >= 2 {
+            let scriptBase = (arguments[1] as NSString).lastPathComponent
+            return strippingScriptExtension(scriptBase)
         }
         return firstBase
     }
@@ -466,7 +475,7 @@ final class AgentDetector {
     /// Interpreter executable basenames that wrap a script CLI. When the first
     /// token of a command is one of these, the second token holds the real CLI.
     /// Lowercased; compared case-insensitively.
-    private static let interpreterWrappers: Set<String> = [
+    nonisolated private static let interpreterWrappers: Set<String> = [
         "node", "node.exe",
         "python", "python3", "python3.exe",
         "ruby", "ruby.exe",
@@ -478,13 +487,15 @@ final class AgentDetector {
 
     /// Script-file extensions stripped from a wrapped script's basename so
     /// `node …/claude.js` resolves to `claude`.
-    private static let scriptExtensions: Set<String> = [
+    nonisolated private static let scriptExtensions: Set<String> = [
         "js", "mjs", "cjs", "ts", "mts", "cts",
     ]
 
     /// Returns `name` with a single trailing script extension removed (if any),
     /// preserving the original casing of the stem.
-    private static func strippingScriptExtension(_ name: String) -> String {
+    nonisolated private static func strippingScriptExtension(
+        _ name: String
+    ) -> String {
         let lower = name.lowercased()
         for ext in scriptExtensions where lower.hasSuffix("." + ext) {
             return String(name.dropLast(ext.count + 1))

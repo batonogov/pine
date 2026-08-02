@@ -5,9 +5,27 @@
 //  Created by Федор Батоногов on 09.03.2026.
 //
 
+import Dispatch
 import SwiftUI
 import SwiftTerm
 import os
+
+nonisolated private enum AcknowledgedPTYWriter {
+    static func write(_ bytes: [UInt8], to descriptor: Int32) async -> Bool {
+        let data = bytes.withUnsafeBytes { DispatchData(bytes: $0) }
+        return await withCheckedContinuation { continuation in
+            DispatchIO.write(
+                toFileDescriptor: descriptor,
+                data: data,
+                runningHandlerOn: DispatchQueue.global(qos: .userInitiated)
+            ) { remaining, error in
+                continuation.resume(
+                    returning: error == 0 && (remaining?.isEmpty ?? true)
+                )
+            }
+        }
+    }
+}
 
 /// Pine-specific terminal view wrapper.
 ///
@@ -2094,6 +2112,18 @@ final class TerminalTab: Identifiable, Hashable {
         let data = Array(text.utf8)
         terminalView.process.send(data: data[...])
         return true
+    }
+
+    /// Writes launch input directly to SwiftTerm's public PTY descriptor and
+    /// resumes only after DispatchIO reports that every byte was accepted.
+    /// Durable launch authority must never rely on SwiftTerm's fire-and-forget
+    /// `send(data:)` API.
+    func sendTextAcknowledged(_ text: String) async -> Bool {
+        guard isProcessRunning else { return false }
+        let descriptor = terminalView.process.childfd
+        guard descriptor >= 0 else { return false }
+        let bytes = Array(text.utf8)
+        return await AcknowledgedPTYWriter.write(bytes, to: descriptor)
     }
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }

@@ -21,6 +21,7 @@ nonisolated struct AgentTaskLaunchReservation: Equatable, Sendable {
 
 nonisolated enum AgentTaskLaunchResult: Equatable, Sendable {
     case reserved(AgentTaskLaunchReservation)
+    case sentWithoutReservation
     case rejected
 }
 
@@ -91,6 +92,8 @@ final class AgentTaskRegistry {
     private var dirtyProjects = Set<AgentTaskProjectIdentity>()
     @ObservationIgnored
     private var persistenceRetryBlocked = Set<AgentTaskProjectIdentity>()
+    @ObservationIgnored
+    private var unpersistableDirtyProjects = Set<AgentTaskProjectIdentity>()
     @ObservationIgnored
     private var persistenceRevision: [AgentTaskProjectIdentity: UUID] = [:]
     @ObservationIgnored
@@ -355,6 +358,7 @@ final class AgentTaskRegistry {
         guard !isTerminating,
               context.origin == .pineLaunched,
               validLaunchRoute(context.route),
+              validLaunchExecutable(descriptor),
               validUserText(title, maximum: limits.maxTitleBytes),
               validUserText(objective, maximum: limits.maxObjectiveBytes) else {
             return .rejected
@@ -603,9 +607,25 @@ final class AgentTaskRegistry {
         changedProjects.forEach(markDirty)
     }
 
+    func cancelApplicationTerminationAndFlush(
+        maximumDuration: Duration? = nil
+    ) async -> Bool {
+        guard isTerminating else { return true }
+        restoreTerminationSnapshot()
+        guard await flushPersistence(maximumDuration: maximumDuration) == .saved else { return false }
+        finishTerminationCancellation()
+        return true
+    }
+
+    #if DEBUG
     func cancelApplicationTermination() {
         guard isTerminating else { return }
-        isTerminating = false
+        restoreTerminationSnapshot()
+        finishTerminationCancellation()
+    }
+    #endif
+
+    private func restoreTerminationSnapshot() {
         var restoredProjects = Set<AgentTaskProjectIdentity>()
         for index in tasks.indices {
             if let rollback = terminationRollback[tasks[index].id] {
@@ -620,6 +640,11 @@ final class AgentTaskRegistry {
                 restoredProjects.insert(tasks[index].project)
             }
         }
+        restoredProjects.forEach(markDirty)
+    }
+
+    private func finishTerminationCancellation() {
+        isTerminating = false
         terminationRollback.removeAll()
         let now = monotonicNow()
         for key in Array(pendingClaims.keys) {
@@ -631,21 +656,29 @@ final class AgentTaskRegistry {
             installClaim(claim, key: key)
         }
         terminationClaimRemaining.removeAll(keepingCapacity: true)
-        restoredProjects.forEach(markDirty)
     }
 
     /// Waits for loads and every queued save, with a five-second total and
     /// two-second per-tail monotonic deadline. A hung store fails closed.
-    func flushPersistence() async -> AgentTaskPersistenceFlushResult {
-        let deadline = monotonicNow().advanced(by: flushTotal)
+    func flushPersistence(
+        maximumDuration: Duration? = nil
+    ) async -> AgentTaskPersistenceFlushResult {
+        let requestedDuration = maximumDuration.map {
+            max(.zero, $0)
+        } ?? flushTotal
+        let deadline = monotonicNow().advanced(
+            by: min(flushTotal, requestedDuration)
+        )
         let loadingProjects = Array(loadTasks.keys)
         for project in loadingProjects {
             guard await waitForLoad(project, until: deadline) else {
                 return .failed
             }
         }
+        guard unpersistableDirtyProjects.isEmpty else { return .failed }
         var failedAttempts = 0
         while monotonicNow() < deadline {
+            guard unpersistableDirtyProjects.isEmpty else { return .failed }
             guard monotonicNow() < deadline else { return .failed }
             if persistenceTail == nil,
                !dirtyProjects.isEmpty,
@@ -684,17 +717,19 @@ final class AgentTaskRegistry {
         project: AgentTaskProjectIdentity
     ) {
         loadStatusByProject[project.persistenceKey] = result.status
-        if result.status == .rejected(.unknownSchema)
-            || result.status == .rejected(.storageLimit) {
-            quarantinedProjects.insert(project)
-            dirtyProjects.remove(project)
-            persistenceRetryBlocked.remove(project)
+        if case .rejected(let rejection) = result.status {
+            if rejection == .unknownSchema || rejection == .storageLimit {
+                quarantineLoadedProject(project, rejection: rejection)
+            }
             return
         }
-        var currentTaskIDs = Set(tasks.map(\.id))
-        var currentRunIDs = Set(tasks.flatMap(\.runs).map(\.id))
+        let currentTaskIDs = Set(tasks.map(\.id))
+        let currentRunIDs = Set(tasks.flatMap(\.runs).map(\.id))
+        var stagedTaskIDs = Set<UUID>()
+        var stagedRunIDs = Set<UUID>()
         var needsNormalizedSave = result.requiresMigration
         var stagedTasks: [AgentTask] = []
+        var stagedInterruptedTaskIDs = Set<UUID>()
         for loadedTask in result.tasks {
             if loadedTask.origin == .pineLaunched,
                loadedTask.runs.isEmpty {
@@ -702,28 +737,42 @@ final class AgentTaskRegistry {
                 continue
             }
             let loadedRunIDs = Set(loadedTask.runs.map(\.id))
-            guard loadedRunIDs.count == loadedTask.runs.count,
-                  currentTaskIDs.insert(loadedTask.id).inserted,
-                  currentRunIDs.isDisjoint(with: loadedRunIDs) else {
-                continue
+            guard loadedTask.project == project,
+                  loadedRunIDs.count == loadedTask.runs.count,
+                  !currentTaskIDs.contains(loadedTask.id),
+                  stagedTaskIDs.insert(loadedTask.id).inserted,
+                  currentRunIDs.isDisjoint(with: loadedRunIDs),
+                  stagedRunIDs.isDisjoint(with: loadedRunIDs) else {
+                quarantineLoadedProject(project, rejection: .invalidMetadata)
+                return
             }
-            currentRunIDs.formUnion(loadedRunIDs)
+            stagedRunIDs.formUnion(loadedRunIDs)
             var task = loadedTask
-            normalizeLoadedTask(&task)
-            if task != loadedTask { needsNormalizedSave = true }
+            if normalizeLoadedTask(&task) {
+                stagedInterruptedTaskIDs.insert(task.id)
+                needsNormalizedSave = true
+            }
             stagedTasks.append(task)
             if isTerminating { needsNormalizedSave = true }
+        }
+        let currentProjectTaskCount = tasks.lazy.filter {
+            $0.project == project
+        }.count
+        guard currentProjectTaskCount + stagedTasks.count
+                <= limits.maxTasksPerProject else {
+            quarantineLoadedProject(project, rejection: .storageLimit)
+            return
         }
         var stagedHistorical = historicalTaskIDByRunID
         for task in stagedTasks {
             for run in task.runs {
                 if let existing = stagedHistorical[run.id], existing != task.id {
-                    quarantineLoadedProject(project)
+                    quarantineLoadedProject(project, rejection: .invalidMetadata)
                     return
                 }
                 if stagedHistorical[run.id] == nil,
                    stagedHistorical.count >= limits.maxHistoricalRunIDs {
-                    quarantineLoadedProject(project)
+                    quarantineLoadedProject(project, rejection: .storageLimit)
                     return
                 }
                 stagedHistorical[run.id] = task.id
@@ -732,16 +781,23 @@ final class AgentTaskRegistry {
         loadedProjects.insert(project)
         diskRevisionByProject[project] = result.revision
         historicalTaskIDByRunID = stagedHistorical
+        loadedInterruptedTaskIDs.formUnion(stagedInterruptedTaskIDs)
         tasks.append(contentsOf: stagedTasks)
         if needsNormalizedSave { markDirty(project) }
         scheduleSaveIfReady(project)
     }
 
-    private func quarantineLoadedProject(_ project: AgentTaskProjectIdentity) {
-        loadStatusByProject[project.persistenceKey] = .rejected(.storageLimit)
+    private func quarantineLoadedProject(
+        _ project: AgentTaskProjectIdentity,
+        rejection: AgentTaskMetadataRejection
+    ) {
+        loadStatusByProject[project.persistenceKey] = .rejected(rejection)
         loadedProjects.remove(project)
         diskRevisionByProject[project] = nil
         quarantinedProjects.insert(project)
+        if dirtyProjects.contains(project) {
+            unpersistableDirtyProjects.insert(project)
+        }
         dirtyProjects.remove(project)
         persistenceRetryBlocked.remove(project)
     }
@@ -783,7 +839,7 @@ final class AgentTaskRegistry {
             && completedPersistenceSequence >= ticket.sequence
     }
 
-    private func normalizeLoadedTask(_ task: inout AgentTask) {
+    private func normalizeLoadedTask(_ task: inout AgentTask) -> Bool {
         task.route.availability = .missing
         var invalidatedLiveRun = false
         for index in task.runs.indices
@@ -793,12 +849,12 @@ final class AgentTaskRegistry {
             invalidatedLiveRun = true
         }
         if invalidatedLiveRun {
-            loadedInterruptedTaskIDs.insert(task.id)
             task.attention = .none
             if task.lifecycle == .active {
                 task.lifecycle = .paused
             }
         }
+        return invalidatedLiveRun
     }
 
     private func appendRun(
@@ -979,11 +1035,11 @@ final class AgentTaskRegistry {
               context.project == claim.project,
               context.route == claim.route,
               task.descriptor == claim.descriptor,
-              claim.descriptor == AgentDescriptor(agentType: session.agentType),
+              claim.descriptor.agentType == session.agentType,
               evidence.startIdentifier != nil,
               evidence.startIsAuthoritative,
               evidence.processGeneration > claim.generationFloor,
-              evidence.observedStartedAt >= claim.launchBoundary else {
+              evidence.observedStartedAt > claim.launchBoundary else {
             return false
         }
         switch claim.kind {
@@ -1131,7 +1187,10 @@ final class AgentTaskRegistry {
     }
 
     private func markDirty(_ project: AgentTaskProjectIdentity) {
-        guard !quarantinedProjects.contains(project) else { return }
+        if quarantinedProjects.contains(project) {
+            unpersistableDirtyProjects.insert(project)
+            return
+        }
         guard !isTerminating || registeredProjects.contains(project) else {
             return
         }
@@ -1180,8 +1239,13 @@ final class AgentTaskRegistry {
                 project: project,
                 authorization: authorization
             )
-            guard let self,
-                  persistenceGeneration == ticket.generation else { return }
+            guard let self else { return }
+            if let published = publicationFence.publishedRevision(
+                for: ticket.projectKey
+            ) {
+                diskRevisionByProject[project] = published
+            }
+            guard persistenceGeneration == ticket.generation else { return }
             completedPersistenceSequence = max(
                 completedPersistenceSequence,
                 ticket.sequence
@@ -1256,7 +1320,7 @@ final class AgentTaskRegistry {
         guard let task = task(for: taskID),
               task.project == context.project,
               task.route.terminalID == context.route.terminalID,
-              task.descriptor == AgentDescriptor(agentType: session.agentType),
+              task.descriptor.agentType == session.agentType,
               let run = task.runs.last,
               run.id == session.id,
               run.terminalID == context.route.terminalID,
@@ -1364,6 +1428,15 @@ final class AgentTaskRegistry {
         }
     }
 
+    private func validLaunchExecutable(_ descriptor: AgentDescriptor) -> Bool {
+        guard let executable = descriptor.launchExecutable else { return true }
+        return descriptor.agentType.cliNames.contains(executable)
+            && executable.utf8.count <= limits.maxAgentIdentifierBytes
+            && !executable.contains(where: { $0.isWhitespace })
+            && !executable.contains("/")
+            && !executable.contains("\0")
+    }
+
     private func validUserText(_ value: String?, maximum: Int) -> Bool {
         guard let value else { return true }
         return !value.isEmpty && value.utf8.count <= maximum
@@ -1381,6 +1454,9 @@ final class AgentTaskRegistry {
         guard task.origin == .pineLaunched,
               task.lifecycle == .paused,
               task.route.availability == .missing,
+              let executable = task.descriptor.launchExecutable,
+              task.descriptor.agentType.cliNames.contains(executable),
+              !executable.contains(where: { $0.isWhitespace }),
               let tail = task.runs.last,
               resumableTail(tail, taskID: task.id) else {
             return false

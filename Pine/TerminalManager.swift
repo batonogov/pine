@@ -214,14 +214,17 @@ final class TerminalManager {
               !token.contains(where: { $0.isWhitespace }),
               let agentType = AgentType.resolve(fromProcessName: token),
               agentType.cliNames.contains(token) else { return nil }
-        return AgentDescriptor(agentType: agentType)
+        return AgentDescriptor(
+            agentType: agentType,
+            launchExecutable: token
+        )
     }
 
     func launchAgentCommand(
         _ command: String,
         descriptor: AgentDescriptor,
         in tab: TerminalTab
-    ) -> AgentTaskLaunchResult {
+    ) async -> AgentTaskLaunchResult {
         guard Self.exactAgentLaunchDescriptor(for: command) == descriptor else {
             return .rejected
         }
@@ -231,8 +234,12 @@ final class TerminalManager {
             title: nil,
             objective: nil
         )
-        guard case .reserved(let reservation) = result else { return result }
-        guard tab.sendText(command + "\n") else {
+        guard case .reserved(let reservation) = result else {
+            return await tab.sendTextAcknowledged(command + "\n")
+                ? .sentWithoutReservation
+                : .rejected
+        }
+        guard await tab.sendTextAcknowledged(command + "\n") else {
             cancelAgentLaunch(in: tab)
             return .rejected
         }
@@ -250,15 +257,16 @@ final class TerminalManager {
         taskID: UUID,
         command: String,
         in tab: TerminalTab
-    ) -> AgentTaskLaunchResult {
+    ) async -> AgentTaskLaunchResult {
         guard let agentTaskRegistry,
               let task = agentTaskRegistry.task(for: taskID),
+              task.descriptor.launchExecutable == command,
               Self.exactAgentLaunchDescriptor(for: command) == task.descriptor else {
             return .rejected
         }
         let result = prepareAgentResume(taskID: taskID, in: tab)
         guard case .reserved(let reservation) = result else { return result }
-        guard tab.sendText(command + "\n") else {
+        guard await tab.sendTextAcknowledged(command + "\n") else {
             cancelAgentLaunch(in: tab)
             return .rejected
         }

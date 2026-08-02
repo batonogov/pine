@@ -498,6 +498,55 @@ struct AgentDetectorTests {
         #expect(fallback.processEvidence?.startIsAuthoritative == false)
     }
 
+    @Test func missingPreciseEvidenceCannotRefreshAuthoritativeGeneration() throws {
+        let detector = AgentDetector()
+        let coarse = "Mon Jul 20 10:00:00 2026"
+        let precise = Date(timeIntervalSince1970: 7_100.125)
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 517,
+                command: "codex",
+                cpuTime: 3,
+                startIdentifier: coarse,
+                preciseStartedAt: precise
+            ),
+        ])
+        let original = try #require(detector.session(forPID: 517))
+
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 517,
+                command: "codex",
+                cpuTime: 3,
+                startIdentifier: coarse,
+                preciseStartedAt: nil
+            ),
+        ])
+
+        let replacement = try #require(detector.session(forPID: 517))
+        #expect(replacement.id != original.id)
+        #expect(original.state == .done)
+        #expect(replacement.processEvidence?.startIsAuthoritative == false)
+    }
+
+    @Test func kernelArgumentsBindInterpreterScriptIdentity() {
+        #expect(AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+            observedCommand: "node /opt/agents/claude.js --verbose",
+            kernelArguments: ["/usr/local/bin/node", "/opt/agents/claude.js"],
+            currentExecutable: "node"
+        ))
+        #expect(!AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+            observedCommand: "node /opt/agents/claude.js --verbose",
+            kernelArguments: ["/usr/local/bin/node", "/tmp/benign.js"],
+            currentExecutable: "node"
+        ))
+        #expect(!AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+            observedCommand: "node /opt/agents/claude.js --verbose",
+            kernelArguments: ["/usr/local/bin/python3", "/opt/agents/claude.js"],
+            currentExecutable: "python3"
+        ))
+    }
+
     @Test func processSampleRequiresCoherentGeneration() {
         let coarse = Date(timeIntervalSince1970: 1_722_000_000)
         let precise = Date(timeIntervalSince1970: 1_722_000_000.125)

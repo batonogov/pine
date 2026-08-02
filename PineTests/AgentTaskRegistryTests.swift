@@ -179,7 +179,10 @@ struct AgentTaskRegistryTests {
         )
         let original = makeSession(pid: 601, generation: 1)
         guard case .reserved(let launch) = registry.preparePineLaunch(
-            descriptor: AgentDescriptor(agentType: original.agentType),
+            descriptor: AgentDescriptor(
+                agentType: original.agentType,
+                launchExecutable: "claude"
+            ),
             context: originalContext,
             title: nil,
             objective: nil
@@ -350,15 +353,29 @@ struct AgentTaskRegistryTests {
         )
         #expect(registry.task(for: reservation.taskID)?.runs.isEmpty == true)
 
-        let launched = makeSession(
+        let boundaryEqual = makeSession(
             pid: 703,
             generation: 7,
+            start: "Sun Aug 2 10:00:00 2026",
+            preciseStartedAt: capturedAt
+        )
+        registry.bridge(
+            boundaryEqual,
+            replacing: preexisting,
+            context: launchContext,
+            reservation: reservation
+        )
+        #expect(registry.task(for: reservation.taskID)?.runs.isEmpty == true)
+
+        let launched = makeSession(
+            pid: 704,
+            generation: 8,
             start: "Mon Aug 3 10:00:00 2026",
             preciseStartedAt: capturedAt.addingTimeInterval(86_400)
         )
         registry.bridge(
             launched,
-            replacing: preexisting,
+            replacing: boundaryEqual,
             context: launchContext,
             reservation: reservation
         )
@@ -745,7 +762,10 @@ struct AgentTaskRegistryTests {
     func exactAgentLaunchCommandClassification() {
         #expect(
             TerminalManager.exactAgentLaunchDescriptor(for: "codex")
-                == AgentDescriptor(agentType: .codex)
+                == AgentDescriptor(
+                    agentType: .codex,
+                    launchExecutable: "codex"
+                )
         )
         for untrusted in [
             " codex", "codex ", "codex\n", "CODEX", "codex --help",
@@ -775,7 +795,10 @@ struct AgentTaskRegistryTests {
         let tab = try #require(state.terminalTabs.first)
         guard case .reserved(let reservation) = manager.terminal.prepareAgentLaunch(
             in: tab,
-            descriptor: AgentDescriptor(agentType: .claudeCode),
+            descriptor: AgentDescriptor(
+                agentType: .claudeCode,
+                launchExecutable: "claude"
+            ),
             title: nil,
             objective: nil
         ) else {
@@ -1021,7 +1044,10 @@ struct AgentTaskRegistryTests {
         )
         var previous = makeSession(pid: 1_201, generation: 1)
         guard case .reserved(let initial) = registry.preparePineLaunch(
-            descriptor: AgentDescriptor(agentType: previous.agentType),
+            descriptor: AgentDescriptor(
+                agentType: previous.agentType,
+                launchExecutable: "claude"
+            ),
             context: sharedContext,
             title: nil,
             objective: nil
@@ -1328,7 +1354,7 @@ struct AgentTaskRegistryTests {
         )
         registry.prepareForApplicationTermination()
 
-        #expect(await registry.flushPersistence() == .saved)
+        #expect(await registry.flushPersistence() == .failed)
         #expect(try Data(contentsOf: fileURL) == original)
         #expect(
             registry.saveResultByProject[identity.persistenceKey] == nil
@@ -1375,7 +1401,7 @@ struct AgentTaskRegistryTests {
         )
         registry.prepareForApplicationTermination()
 
-        #expect(await registry.flushPersistence() == .saved)
+        #expect(await registry.flushPersistence() == .failed)
         #expect(try Data(contentsOf: fileURL) == original)
         #expect(registry.saveResultByProject[identity.persistenceKey] == nil)
     }
@@ -1406,7 +1432,7 @@ struct AgentTaskRegistryTests {
         #expect(snapshot.route.availability == .missing)
         #expect(snapshot.runs.last?.liveness == .stale)
 
-        registry.cancelApplicationTermination()
+        #expect(await registry.cancelApplicationTerminationAndFlush())
         let restored = try #require(registry.task(forSessionID: session.id))
         #expect(restored.lifecycle == .active)
         #expect(restored.route.availability == .available)
@@ -1502,7 +1528,10 @@ struct AgentTaskRegistryTests {
             origin: .pineLaunched
         )
         guard case .reserved(let reservation) = registry.preparePineLaunch(
-            descriptor: AgentDescriptor(agentType: session.agentType),
+            descriptor: AgentDescriptor(
+                agentType: session.agentType,
+                launchExecutable: "claude"
+            ),
             context: launchContext,
             title: "User title",
             objective: "User objective"
@@ -1565,7 +1594,8 @@ struct AgentTaskRegistryTests {
             "availability", "paneID", "tabID", "terminalID",
         ])
         let descriptor = try #require(task["descriptor"] as? [String: Any])
-        #expect(Set(descriptor.keys) == ["typeIdentifier"])
+        #expect(Set(descriptor.keys) == ["launchExecutable", "typeIdentifier"])
+        #expect(descriptor["launchExecutable"] as? String == "claude")
         let run = try #require((task["runs"] as? [[String: Any]])?.first)
         #expect(Set(run.keys) == [
             "id", "lastObservedAt", "liveness", "process", "startedAt",
@@ -1852,6 +1882,84 @@ struct AgentTaskRegistryTests {
         )
     }
 
+    @Test("load identity collision rejects whole persisted project")
+    func loadedIdentityCollisionIsAtomic() async throws {
+        let identity = project("/tmp/pine-agent-loaded-collision")
+        let store = LoadedAgentTaskStore(tasks: [])
+        let registry = AgentTaskRegistry(persistence: store)
+        let runtimeSession = makeSession(pid: 1_401, generation: 1)
+        let runtimeContext = context(project: identity, routeSeed: 151)
+        registry.bridge(runtimeSession, replacing: nil, context: runtimeContext)
+        let runtimeTask = try #require(registry.tasks.first)
+        let seed = AgentTaskRegistry()
+        let otherSession = makeSession(pid: 1_402, generation: 1)
+        let otherContext = context(project: identity, routeSeed: 152)
+        seed.bridge(otherSession, replacing: nil, context: otherContext)
+        let otherTask = try #require(seed.tasks.first)
+        await store.replaceTasks([runtimeTask, otherTask])
+
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .failed)
+
+        #expect(registry.tasks == [runtimeTask])
+        #expect(
+            registry.loadStatusByProject[identity.persistenceKey]
+                == .rejected(.invalidMetadata)
+        )
+    }
+
+    @Test("loaded tasks cannot exceed combined per-project runtime cap")
+    func loadedTasksRespectCombinedRuntimeCap() async throws {
+        let identity = project("/tmp/pine-agent-loaded-task-cap")
+        let seed = AgentTaskRegistry()
+        seed.bridge(
+            makeSession(pid: 1_404, generation: 1),
+            replacing: nil,
+            context: context(project: identity, routeSeed: 154)
+        )
+        let loadedTask = try #require(seed.tasks.first)
+        let registry = AgentTaskRegistry(
+            persistence: LoadedAgentTaskStore(tasks: [loadedTask]),
+            limits: AgentTaskPersistenceLimits(maxTasksPerProject: 1)
+        )
+        registry.bridge(
+            makeSession(pid: 1_405, generation: 1),
+            replacing: nil,
+            context: context(project: identity, routeSeed: 155)
+        )
+        let admittedRuntimeTask = try #require(registry.tasks.first)
+
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .failed)
+
+        #expect(registry.tasks == [admittedRuntimeTask])
+        #expect(
+            registry.loadStatusByProject[identity.persistenceKey]
+                == .rejected(.storageLimit)
+        )
+    }
+
+    @Test("quarantined project mutations fail persistence barrier")
+    func quarantinedMutationFailsFlush() async {
+        let identity = project("/tmp/pine-agent-quarantine-mutation")
+        let registry = AgentTaskRegistry(
+            persistence: LoadedAgentTaskStore(
+                status: .rejected(.unknownSchema),
+                tasks: []
+            )
+        )
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+
+        registry.bridge(
+            makeSession(pid: 1_406, generation: 1),
+            replacing: nil,
+            context: context(project: identity, routeSeed: 156)
+        )
+
+        #expect(await registry.flushPersistence() == .failed)
+    }
+
     @Test("failed resume admission preserves claim and run history")
     func failedResumeAdmissionIsNonDestructive() throws {
         let identity = project("/tmp/pine-agent-resume-admission")
@@ -1867,11 +1975,23 @@ struct AgentTaskRegistryTests {
             origin: .pineLaunched
         )
         let firstBoundary = launchBoundary(generation: 1, at: launchContext.observedAt)
-        let firstReservation = try #require(preparePineLaunch(
-            registry,
+        let firstReservation: AgentTaskLaunchReservation
+        switch registry.preparePineLaunch(
+            descriptor: AgentDescriptor(
+                agentType: .claudeCode,
+                launchExecutable: "claude"
+            ),
             context: launchContext,
+            title: nil,
+            objective: nil,
             boundary: firstBoundary
-        ))
+        ) {
+        case .reserved(let reservation):
+            firstReservation = reservation
+        case .sentWithoutReservation, .rejected:
+            Issue.record("initial reservation was rejected")
+            return
+        }
         let first = makeSession(
             pid: 1_397,
             generation: 1,
@@ -1898,7 +2018,8 @@ struct AgentTaskRegistryTests {
             boundary: resumeBoundary
         ) {
         case .reserved(let reservation): resume = reservation
-        case .rejected: Issue.record("Expected resume reservation")
+        case .sentWithoutReservation, .rejected:
+            Issue.record("Expected resume reservation")
             return
         }
         let second = makeSession(
@@ -2186,7 +2307,10 @@ struct AgentTaskRegistryTests {
             origin: .pineLaunched
         )
         guard case .reserved(let launch) = writer.preparePineLaunch(
-            descriptor: AgentDescriptor(agentType: .claudeCode),
+            descriptor: AgentDescriptor(
+                agentType: .claudeCode,
+                launchExecutable: "claude"
+            ),
             context: launchContext,
             title: nil,
             objective: nil
@@ -2209,6 +2333,10 @@ struct AgentTaskRegistryTests {
         let reader = AgentTaskRegistry(persistence: store)
         reader.registerProject(identity)
         #expect(await reader.flushPersistence() == .saved)
+        #expect(
+            reader.task(for: launch.taskID)?.descriptor.launchExecutable
+                == "claude"
+        )
         let resumeContext = context(
             project: identity,
             routeSeed: 152,
@@ -2577,7 +2705,7 @@ private actor PostPublicationBlockingStore: AgentTaskPersisting {
             retryMatchedRevision = authorization.ticket.expectedDiskRevision
                 == .versioned(firstRevision)
         }
-        guard authorization.publish(operation: { true }) == .published else {
+        guard authorization.publishForTesting(operation: { true }) == .published else {
             return .rejected(.superseded)
         }
         if call == 1 {
@@ -2630,16 +2758,25 @@ nonisolated private final class OneShotStorageSyncFault: @unchecked Sendable {
 }
 
 private actor LoadedAgentTaskStore: AgentTaskPersisting {
-    private let tasks: [AgentTask]
+    private let status: AgentTaskMetadataLoadStatus
+    private var tasks: [AgentTask]
 
-    init(tasks: [AgentTask]) {
+    init(
+        status: AgentTaskMetadataLoadStatus = .loaded,
+        tasks: [AgentTask]
+    ) {
+        self.status = status
         self.tasks = tasks
     }
 
     func load(
         project: AgentTaskProjectIdentity
     ) async -> AgentTaskMetadataLoadResult {
-        AgentTaskMetadataLoadResult(status: .loaded, tasks: tasks)
+        AgentTaskMetadataLoadResult(status: status, tasks: tasks)
+    }
+
+    func replaceTasks(_ tasks: [AgentTask]) {
+        self.tasks = tasks
     }
 
     func save(
@@ -2673,7 +2810,7 @@ private actor SelectiveAgentTaskStore: AgentTaskPersisting {
         guard project.persistenceKey != failingProjectKey else {
             return .rejected(.transientIO)
         }
-        let decision = authorization?.publish({ true }) ?? .published
+        let decision = authorization?.publishForTesting({ true }) ?? .published
         switch decision {
         case .published:
             savedTaskCounts[project.persistenceKey] = tasks.count
@@ -2748,7 +2885,7 @@ private actor ScriptedAgentTaskStore: AgentTaskPersisting {
         guard case .saved = saveResult else { return saveResult }
         let decision: AgentTaskPublicationDecision
         if let authorization {
-            decision = authorization.publish {
+            decision = authorization.publishForTesting {
                 publishedSnapshots.append(tasks)
                 return true
             }

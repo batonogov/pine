@@ -169,6 +169,33 @@ struct WindowLifecycleTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    @Test func terminationDeadlineBoundsHungAlertPresenter() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        project.primaryTabManager.updateContent("// dirty")
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let clock = ContinuousClock()
+        let started = clock.now
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { _, _, _, _ in
+                try? await Task.sleep(for: .seconds(10))
+                return .alertFirstButtonReturn
+            },
+            userTaskShutdownDeadline: .now() + .milliseconds(25)
+        )
+
+        #expect(!result)
+        #expect(started.duration(to: clock.now) < .seconds(1))
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func asyncTerminationCancelNeverAttemptsSave() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }

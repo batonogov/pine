@@ -41,6 +41,7 @@ nonisolated enum AgentTaskStorePhase: Sendable {
     case lockAcquired
     case beforeReadOpen
     case readOpened
+    case beforeTemporaryCreate
     case temporaryWritten
     case beforePublish
     case beforeCleanupRetire
@@ -210,11 +211,14 @@ nonisolated enum AgentTaskPublicationDecision: Sendable {
     case superseded
 }
 
-/// Synchronous because the authorization lock must cover the final check and
-/// `renameat` as one publication transaction. The unchecked conformance wraps
-/// only NSLock-protected value state; it carries no UI or process references.
+/// The short state lock protects authorization and receipts. A separate
+/// publication lock serializes final renames, but generation advancement never
+/// waits for filesystem I/O: an operation that already passed its final check
+/// may finish and publish a receipt, while every later generation waits behind
+/// it and revalidates CAS before rename.
 nonisolated final class AgentTaskPublicationFence: @unchecked Sendable {
-    private let lock = NSLock()
+    private let stateLock = NSLock()
+    private let publicationLock = NSLock()
     private var generation: UUID
     private var latestTicketByProject: [String: AgentTaskPersistenceTicket] = [:]
     private var publishedRevisionByProject: [String: AgentTaskDiskRevision] = [:]
@@ -224,8 +228,8 @@ nonisolated final class AgentTaskPublicationFence: @unchecked Sendable {
     }
 
     func authorize(_ ticket: AgentTaskPersistenceTicket) {
-        lock.lock()
-        defer { lock.unlock() }
+        stateLock.lock()
+        defer { stateLock.unlock() }
         guard ticket.generation == generation else { return }
         if let latest = latestTicketByProject[ticket.projectKey],
            latest.sequence >= ticket.sequence {
@@ -236,29 +240,41 @@ nonisolated final class AgentTaskPublicationFence: @unchecked Sendable {
 
     @discardableResult
     func advance(to generation: UUID) -> [String: AgentTaskDiskRevision] {
-        lock.lock()
-        defer { lock.unlock() }
+        stateLock.lock()
+        defer { stateLock.unlock() }
         let published = publishedRevisionByProject
         self.generation = generation
         latestTicketByProject.removeAll(keepingCapacity: true)
-        publishedRevisionByProject.removeAll(keepingCapacity: true)
         return published
+    }
+
+    func publishedRevision(
+        for projectKey: String
+    ) -> AgentTaskDiskRevision? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return publishedRevisionByProject[projectKey]
     }
 
     fileprivate func publish(
         _ ticket: AgentTaskPersistenceTicket,
         operation: () -> Bool
     ) -> AgentTaskPublicationDecision {
-        lock.lock()
-        defer { lock.unlock() }
-        guard generation == ticket.generation,
-              latestTicketByProject[ticket.projectKey] == ticket else {
-            return .superseded
-        }
+        publicationLock.lock()
+        defer { publicationLock.unlock() }
+
+        stateLock.lock()
+        let isAuthorized = generation == ticket.generation
+            && latestTicketByProject[ticket.projectKey] == ticket
+        stateLock.unlock()
+        guard isAuthorized else { return .superseded }
         guard operation() else { return .failed }
+
+        stateLock.lock()
         publishedRevisionByProject[ticket.projectKey] = .versioned(
             ticket.nextDiskRevision
         )
+        stateLock.unlock()
         return .published
     }
 }
@@ -272,9 +288,17 @@ nonisolated struct AgentTaskPublicationAuthorization: Sendable {
         self.fence = fence
     }
 
-    func publish(operation: () -> Bool) -> AgentTaskPublicationDecision {
+    fileprivate func publish(operation: () -> Bool) -> AgentTaskPublicationDecision {
         fence.publish(ticket, operation: operation)
     }
+
+    #if DEBUG
+    func publishForTesting(
+        operation: () -> Bool
+    ) -> AgentTaskPublicationDecision {
+        publish(operation: operation)
+    }
+    #endif
 }
 
 nonisolated protocol AgentTaskPersisting: Sendable {
@@ -484,7 +508,16 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             guard !Task.isCancelled else {
                 throw AgentTaskDirectoryError.superseded
             }
-            cleanupStaleTemporaryFiles(directoryDescriptor: storage.leaf)
+            cleanupStaleTemporaryFiles(
+                directoryDescriptor: storage.leaf,
+                verifyContext: {
+                    self.verifyStorageChain(storage)
+                        && self.verifyLock(
+                            lock,
+                            directoryDescriptor: storage.leaf
+                        )
+                }
+            )
             try secureAtomicWrite(
                 data,
                 fileName: fileURL.lastPathComponent,
@@ -500,7 +533,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             )
             guard verifyStorageChain(storage),
                   verifyLock(lock, directoryDescriptor: storage.leaf) else {
-                throw AgentTaskDirectoryError.unsafe
+                throw AgentTaskDirectoryError.durabilityUnknownAfterPublication
             }
             return .saved(taskCount: bounded.count)
         } catch AgentTaskDirectoryError.unsafe {
@@ -583,7 +616,16 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               verifyLock(lock, directoryDescriptor: storage.leaf) else {
             return rejectedLoad(.unsafeFilesystemObject)
         }
-        cleanupStaleTemporaryFiles(directoryDescriptor: storage.leaf)
+        cleanupStaleTemporaryFiles(
+            directoryDescriptor: storage.leaf,
+            verifyContext: {
+                self.verifyStorageChain(storage)
+                    && self.verifyLock(
+                        lock,
+                        directoryDescriptor: storage.leaf
+                    )
+            }
+        )
         let read = secureBoundedRead(
             fileName: fileURL.lastPathComponent,
             directoryDescriptor: storage.leaf
@@ -688,7 +730,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     ) throws -> AgentTaskStorageHandle {
         let components = url.standardizedFileURL.pathComponents.dropFirst()
         let names = Array(components)
-        let privateCount = configuration.privateComponentCount ?? 1
+        let privateCount = configuration.privateComponentCount
+            ?? (storageRoot == nil ? 2 : 1)
         guard !names.isEmpty, (1...names.count).contains(privateCount) else {
             throw AgentTaskDirectoryError.unsafe
         }
@@ -986,6 +1029,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         }
         try enforceTombstoneCapacity(directoryDescriptor)
         let temporaryName = ".agent-tasks-\(UUID().uuidString).tmp"
+        reportPhase(.beforeTemporaryCreate)
+        guard verifyContext() else { throw AgentTaskDirectoryError.unsafe }
         let descriptor = openat(
             directoryDescriptor,
             temporaryName,
@@ -1005,7 +1050,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                     temporaryName,
                     expectedDevice: UInt64(writerIdentity.st_dev),
                     expectedInode: UInt64(writerIdentity.st_ino),
-                    directoryDescriptor: directoryDescriptor
+                    directoryDescriptor: directoryDescriptor,
+                    verifyContext: verifyContext
                 )
             }
         }
@@ -1059,9 +1105,26 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               ) else {
             throw AgentTaskDirectoryError.unsafe
         }
+        guard !Task.isCancelled,
+              verifyContext(),
+              fstat(descriptor, &opened) == 0,
+              fstatat(
+                directoryDescriptor,
+                temporaryName,
+                &live,
+                AT_SYMLINK_NOFOLLOW
+              ) == 0,
+              samePrivateFile(opened, live),
+              descriptorHasNoExtendedACL(descriptor),
+              privateFileUnchanged(
+                initialFinalIdentity,
+                name: fileName,
+                directoryDescriptor: directoryDescriptor
+              ) else {
+            throw AgentTaskDirectoryError.unsafe
+        }
         let publish = {
-            guard !Task.isCancelled,
-                  verifyContext(),
+            guard verifyContext(),
                   fstat(descriptor, &opened) == 0,
                   fstatat(
                     directoryDescriptor,
@@ -1075,7 +1138,14 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                     initialFinalIdentity,
                     name: fileName,
                     directoryDescriptor: directoryDescriptor
-                  ) else {
+                  ),
+                  authorization.map({
+                    self.diskRevisionMatches(
+                        $0.ticket.expectedDiskRevision,
+                        fileName: fileName,
+                        directoryDescriptor: directoryDescriptor
+                    )
+                  }) ?? true else {
                 return false
             }
             return renameat(
@@ -1105,7 +1175,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               ) == 0,
               samePrivateFile(opened, live),
               descriptorHasNoExtendedACL(descriptor) else {
-            throw AgentTaskDirectoryError.unsafe
+            throw AgentTaskDirectoryError.durabilityUnknownAfterPublication
         }
         guard durableSync(
             directoryDescriptor,
@@ -1113,7 +1183,9 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         ) else {
             throw AgentTaskDirectoryError.durabilityUnknownAfterPublication
         }
-        guard verifyContext() else { throw AgentTaskDirectoryError.unsafe }
+        guard verifyContext() else {
+            throw AgentTaskDirectoryError.durabilityUnknownAfterPublication
+        }
     }
 
     private func diskRevisionMatches(
@@ -1192,13 +1264,14 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         var scanned = 0
         var tombstones = 0
         while let entry = readdir(directory) {
-            scanned += 1
-            guard scanned <= configuration.cleanup.directoryEntryLimit else {
-                throw AgentTaskDirectoryError.storageLimit
-            }
             let name = withUnsafePointer(to: &entry.pointee.d_name) {
                 String(cString: UnsafeRawPointer($0)
                     .assumingMemoryBound(to: CChar.self))
+            }
+            guard name != ".", name != ".." else { continue }
+            scanned += 1
+            guard scanned < configuration.cleanup.directoryEntryLimit else {
+                throw AgentTaskDirectoryError.storageLimit
             }
             guard isCanonicalTemporaryName(name) else { continue }
             var info = stat()
@@ -1234,7 +1307,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         return parsed.uuidString == identifier.uppercased()
     }
 
-    private func cleanupStaleTemporaryFiles(directoryDescriptor: Int32) {
+    private func cleanupStaleTemporaryFiles(
+        directoryDescriptor: Int32,
+        verifyContext: () -> Bool
+    ) {
         var directoryInfo = stat()
         guard fstat(directoryDescriptor, &directoryInfo) == 0 else { return }
         let identity = AgentTaskCleanupDirectory(
@@ -1301,21 +1377,24 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         for candidate in ordered.prefix(configuration.cleanup.retireLimit) {
             retireCleanupCandidateIfUnchanged(
                 candidate,
-                directoryDescriptor: directoryDescriptor
+                directoryDescriptor: directoryDescriptor,
+                verifyContext: verifyContext
             )
         }
     }
 
     private func retireCleanupCandidateIfUnchanged(
         _ candidate: AgentTaskCleanupCandidate,
-        directoryDescriptor: Int32
+        directoryDescriptor: Int32,
+        verifyContext: () -> Bool
     ) {
         reportPhase(.beforeCleanupRetire)
         retirePrivateFileIfUnchanged(
             candidate.name,
             expectedDevice: candidate.device,
             expectedInode: candidate.inode,
-            directoryDescriptor: directoryDescriptor
+            directoryDescriptor: directoryDescriptor,
+            verifyContext: verifyContext
         )
     }
 
@@ -1323,7 +1402,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         _ fileName: String,
         expectedDevice: UInt64,
         expectedInode: UInt64,
-        directoryDescriptor: Int32
+        directoryDescriptor: Int32,
+        verifyContext: () -> Bool
     ) {
         let descriptor = openat(
             directoryDescriptor,
@@ -1348,7 +1428,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         reportPhase(.beforeRetireMutation)
         var finalOpened = stat()
         var finalLive = stat()
-        guard fstat(descriptor, &finalOpened) == 0,
+        guard verifyContext(),
+              fstat(descriptor, &finalOpened) == 0,
               fstatat(
                   directoryDescriptor,
                   fileName,
@@ -1359,17 +1440,29 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               UInt64(finalOpened.st_ino) == expectedInode,
               exactPrivateIdentity(finalOpened, finalLive),
               descriptorHasNoExtendedACL(descriptor) else { return }
-        guard ftruncate(descriptor, 0) == 0 else { return }
+        guard ftruncate(descriptor, 0) == 0,
+              verifyContext(),
+              fstat(descriptor, &finalOpened) == 0,
+              fstatat(
+                directoryDescriptor,
+                fileName,
+                &finalLive,
+                AT_SYMLINK_NOFOLLOW
+              ) == 0,
+              UInt64(finalOpened.st_dev) == expectedDevice,
+              UInt64(finalOpened.st_ino) == expectedInode,
+              exactPrivateIdentity(finalOpened, finalLive),
+              descriptorHasNoExtendedACL(descriptor) else { return }
         _ = fchmod(descriptor, mode_t(0o000))
     }
 
     private func descriptorHasNoExtendedACL(_ descriptor: Int32) -> Bool {
+        errno = 0
         guard let acl = acl_get_fd_np(descriptor, ACL_TYPE_EXTENDED) else {
-            return false
+            return errno == 0 || errno == ENOENT
         }
-        defer { acl_free(acl) }
-        var entry: acl_entry_t?
-        return acl_get_entry(acl, ACL_FIRST_ENTRY, &entry) == 0
+        _ = acl_free(UnsafeMutableRawPointer(acl))
+        return false
     }
 
     private func sameObject(_ lhs: stat, _ rhs: stat) -> Bool {
@@ -1545,6 +1638,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                   maximum: limits.maxAgentIdentifierBytes,
                   allowsEmpty: false
               ),
+              validOptionalExecutable(
+                  task.descriptor.launchExecutable,
+                  maximum: limits.maxAgentIdentifierBytes
+              ),
               validOptionalText(task.title, maximum: limits.maxTitleBytes),
               validOptionalText(
                   task.objective,
@@ -1651,6 +1748,22 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             guard task.route.availability == .missing else { return false }
         }
         return true
+    }
+
+    private func validOptionalExecutable(
+        _ value: String?,
+        maximum: Int
+    ) -> Bool {
+        guard let value,
+              validText(value, maximum: maximum, allowsEmpty: false) else {
+            return value == nil
+        }
+        return value.utf8.allSatisfy { byte in
+            (byte >= 0x61 && byte <= 0x7A)
+                || (byte >= 0x30 && byte <= 0x39)
+                || byte == 0x2D
+                || byte == 0x5F
+        }
     }
 
     private func validOptionalText(

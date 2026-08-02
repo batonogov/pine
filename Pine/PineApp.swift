@@ -777,6 +777,23 @@ class CloseDelegate: NSObject, NSWindowDelegate {
 
 // MARK: - AppDelegate
 
+@MainActor
+private final class TerminationDeadlineResolver<Value: Sendable> {
+    private var continuation: CheckedContinuation<Value?, Never>?
+
+    init(_ continuation: CheckedContinuation<Value?, Never>) {
+        self.continuation = continuation
+    }
+
+    @discardableResult
+    func resolve(_ value: Value?) -> Bool {
+        guard let continuation else { return false }
+        self.continuation = nil
+        continuation.resume(returning: value)
+        return true
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                    GlobalTabSwitcherKeyControllerDelegate {
     typealias TerminationAlertPresenter = @MainActor (
@@ -1730,6 +1747,50 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         return .terminateLater
     }
 
+    private func remainingTerminationDuration(
+        until deadline: DispatchTime
+    ) -> Duration? {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now < deadline.uptimeNanoseconds else { return nil }
+        return .nanoseconds(
+            Int64(clamping: deadline.uptimeNanoseconds - now)
+        )
+    }
+
+    private func valueBeforeTerminationDeadline<Value: Sendable>(
+        _ deadline: DispatchTime,
+        onTimeout: @escaping @MainActor () -> Void,
+        operation: @escaping @MainActor () async -> Value
+    ) async -> Value? {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now < deadline.uptimeNanoseconds else {
+            onTimeout()
+            return nil
+        }
+        let delay = deadline.uptimeNanoseconds - now
+        return await withCheckedContinuation { continuation in
+            let resolver = TerminationDeadlineResolver<Value>(continuation)
+            var timeoutTask: Task<Void, Never>?
+            let operationTask = Task { @MainActor in
+                let value = await operation()
+                if resolver.resolve(value) {
+                    timeoutTask?.cancel()
+                }
+            }
+            timeoutTask = Task { @MainActor in
+                do {
+                    try await Task.sleep(nanoseconds: delay)
+                } catch {
+                    return
+                }
+                if resolver.resolve(nil) {
+                    operationTask.cancel()
+                    onTimeout()
+                }
+            }
+        }
+    }
+
     /// Runs all quit decisions asynchronously on their owning project
     /// windows. Background projects fall back to one captured visible
     /// application window (normally Welcome); with no live owner, native
@@ -1741,6 +1802,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         applicationContext: DialogPresentationContext? = nil,
         userTaskShutdownDeadline: DispatchTime? = nil
     ) async -> Bool {
+        let terminationDeadline = userTaskShutdownDeadline
+            ?? DispatchTime.now() + .seconds(30)
         let projects = registry.openProjects
             .sorted { $0.key.path.localizedStandardCompare($1.key.path) == .orderedAscending }
             .map(\.value)
@@ -1781,28 +1844,49 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
             let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
             let message = Strings.unsavedChangesListMessage(fileList)
-            let response = if let presentAlert {
-                await presentAlert(
-                    .unsavedChangesBulk,
-                    context,
-                    Strings.unsavedChangesTitle,
-                    message
-                )
-            } else {
-                await AlertTemplate.unsavedChangesBulk.runSheet(
-                    on: context,
-                    messageText: Strings.unsavedChangesTitle,
-                    informativeText: message
-                )
-            }
+            let response = await valueBeforeTerminationDeadline(
+                terminationDeadline,
+                onTimeout: {
+                    guard let window = context.nsWindow,
+                          let sheet = window.attachedSheet else { return }
+                    window.endSheet(sheet, returnCode: .abort)
+                },
+                operation: {
+                    if let presentAlert {
+                        return await presentAlert(
+                            .unsavedChangesBulk,
+                            context,
+                            Strings.unsavedChangesTitle,
+                            message
+                        )
+                    }
+                    return await AlertTemplate.unsavedChangesBulk.runSheet(
+                        on: context,
+                        messageText: Strings.unsavedChangesTitle,
+                        informativeText: message
+                    )
+                }
+            )
+            guard let response else { return false }
             switch response {
             case .alertFirstButtonReturn:
-                let didSave = if let saveAll {
-                    await saveAll(projectManager, context)
-                } else {
-                    await projectManager.saveAllPaneTabs(context: context)
-                }
-                guard didSave else {
+                let didSave = await valueBeforeTerminationDeadline(
+                    terminationDeadline,
+                    onTimeout: {
+                        guard let window = context.nsWindow,
+                              let sheet = window.attachedSheet else { return }
+                        window.endSheet(sheet, returnCode: .abort)
+                    },
+                    operation: {
+                        if let saveAll {
+                            return await saveAll(projectManager, context)
+                        }
+                        return await projectManager.saveAllPaneTabs(
+                            context: context
+                        )
+                    }
+                )
+                guard didSave == true else {
                     return false
                 }
             case .alertSecondButtonReturn:
@@ -1831,20 +1915,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             let context = hasEligibleProjectOwner
                 ? projectContext
                 : fallbackContext
-            let response = if let presentAlert {
-                await presentAlert(
-                    .terminalActiveProcessWarning,
-                    context,
-                    Strings.terminalActiveProcessWarningTitle,
-                    Strings.terminalActiveProcessWarningMessage
-                )
-            } else {
-                await AlertTemplate.terminalActiveProcessWarning.runSheet(
-                    on: context,
-                    messageText: Strings.terminalActiveProcessWarningTitle,
-                    informativeText: Strings.terminalActiveProcessWarningMessage
-                )
-            }
+            let response = await valueBeforeTerminationDeadline(
+                terminationDeadline,
+                onTimeout: {
+                    guard let window = context.nsWindow,
+                          let sheet = window.attachedSheet else { return }
+                    window.endSheet(sheet, returnCode: .abort)
+                },
+                operation: {
+                    if let presentAlert {
+                        return await presentAlert(
+                            .terminalActiveProcessWarning,
+                            context,
+                            Strings.terminalActiveProcessWarningTitle,
+                            Strings.terminalActiveProcessWarningMessage
+                        )
+                    }
+                    return await AlertTemplate.terminalActiveProcessWarning.runSheet(
+                        on: context,
+                        messageText: Strings.terminalActiveProcessWarningTitle,
+                        informativeText: Strings.terminalActiveProcessWarningMessage
+                    )
+                }
+            )
+            guard let response else { return false }
             guard response == .alertFirstButtonReturn else {
                 return false
             }
@@ -1858,8 +1952,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // happen off-main while AppKit remains in its `.terminateLater`
         // handshake. A timeout cancels Quit before any authorized editor
         // discard is committed and retains every cleanup handle.
-        let taskShutdownDeadline =
-            userTaskShutdownDeadline ?? DispatchTime.now() + 3
+        let taskStageDeadline = DispatchTime.now() + .seconds(3)
+        let taskShutdownDeadline = min(
+            terminationDeadline,
+            taskStageDeadline
+        )
         guard await registry.shutdownUserTasks(
             until: taskShutdownDeadline
         ) else {
@@ -1869,21 +1966,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
 
-        // Runtime pane/tab IDs cannot be trusted across relaunch. Freeze new
-        // mutations and publish the final task snapshot before any destructive
-        // editor discard. Every later failure rolls this state back.
+        // Runtime pane/tab IDs cannot be trusted across relaunch. Reserve a
+        // rollback slice before freezing so every failed Quit can durably
+        // restore the pre-handshake snapshot within the same absolute budget.
+        let rollbackReserve: Duration = .seconds(2)
+        guard let availablePersistenceTime = remainingTerminationDuration(
+            until: terminationDeadline
+        ), availablePersistenceTime > rollbackReserve else {
+            return false
+        }
         registry.freezeAgentTasksForTermination()
         registry.agentTasks.prepareForApplicationTermination()
-        var shouldRollbackAgentTasks = true
-        defer {
-            if shouldRollbackAgentTasks {
-                registry.cancelAgentTaskTermination()
+        func rollbackAgentTasks() async {
+            let remaining = remainingTerminationDuration(
+                until: terminationDeadline
+            ) ?? .zero
+            guard await registry.cancelAgentTaskTermination(
+                maximumDuration: remaining
+            ) else {
+                Logger.app.error(
+                    "Agent task rollback did not reach a clean persistence barrier"
+                )
+                return
             }
         }
-        guard await registry.agentTasks.flushPersistence() == .saved else {
+        let persistenceBudget = availablePersistenceTime - rollbackReserve
+        guard await registry.agentTasks.flushPersistence(
+            maximumDuration: persistenceBudget
+        ) == .saved else {
             Logger.app.error(
                 "Agent task metadata did not reach a clean persistence barrier"
             )
+            await rollbackAgentTasks()
             return false
         }
 
@@ -1897,9 +2011,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             let currentDirtyTabs = projectManager.allDirtyTabs
             if let authorization = discardAuthorizations[identifier] {
                 guard authorization.covers(currentDirtyTabs) else {
+                    await rollbackAgentTasks()
                     return false
                 }
             } else if !currentDirtyTabs.isEmpty {
+                await rollbackAgentTasks()
                 return false
             }
 
@@ -1913,6 +2029,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 currentTerminalProcesses,
                 by: allowedTerminalProcesses
             ) else {
+                await rollbackAgentTasks()
                 return false
             }
         }
@@ -1926,11 +2043,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                    authorization,
                    postReloadNotifications: false
                ) {
+                await rollbackAgentTasks()
                 return false
             }
         }
 
-        shouldRollbackAgentTasks = false
         return true
     }
 }
