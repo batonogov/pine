@@ -1266,9 +1266,9 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                     &live,
                     AT_SYMLINK_NOFOLLOW
                 ) == 0
-                && samePrivateFile(opened, live)
-                && descriptorHasNoExtendedACL(descriptor)
-                && privateFileUnchanged(
+                && self.samePrivateFile(opened, live)
+                && self.descriptorHasNoExtendedACL(descriptor)
+                && self.privateFileUnchanged(
                     initialFinalIdentity,
                     name: fileName,
                     directoryDescriptor: directoryDescriptor
@@ -1283,7 +1283,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         }
         let publish = {
             guard canPublish() else { return false }
-            reportPhase(.beforeAtomicRename)
+            self.reportPhase(.beforeAtomicRename)
             guard canPublish() else { return false }
             return renameat(
                 directoryDescriptor,

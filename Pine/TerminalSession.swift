@@ -34,6 +34,13 @@ nonisolated enum AcknowledgedPTYWriter {
     }
     #endif
 
+    static func acknowledgesCompletion(
+        error: Int32,
+        remainingByteCount: Int
+    ) -> Bool {
+        error == 0 && remainingByteCount == 0
+    }
+
     private static func write(
         _ bytes: [UInt8],
         to borrowedDescriptor: Int32,
@@ -54,8 +61,11 @@ nonisolated enum AcknowledgedPTYWriter {
                 data: data,
                 runningHandlerOn: DispatchQueue.global(qos: .userInitiated)
             ) { remaining, error in
-                continuation.resume(
-                    returning: error == 0 && (remaining?.isEmpty ?? true)
+                continuation.resume(returning:
+                    AcknowledgedPTYWriter.acknowledgesCompletion(
+                        error: error,
+                        remainingByteCount: remaining?.count ?? 0
+                    )
                 )
             }
         }

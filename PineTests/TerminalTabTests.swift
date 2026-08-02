@@ -89,6 +89,28 @@ struct TerminalTabTests {
         #expect((try? Data(contentsOf: temporaryURL)).map(\.isEmpty) == true)
     }
 
+    @Test("partial and failed PTY completions are never acknowledged")
+    func incompletePTYWriteIsRejected() {
+        #expect(
+            AcknowledgedPTYWriter.acknowledgesCompletion(
+                error: 0,
+                remainingByteCount: 0
+            )
+        )
+        #expect(
+            !AcknowledgedPTYWriter.acknowledgesCompletion(
+                error: 0,
+                remainingByteCount: 1
+            )
+        )
+        #expect(
+            !AcknowledgedPTYWriter.acknowledgesCompletion(
+                error: EIO,
+                remainingByteCount: 0
+            )
+        )
+    }
+
     @Test @MainActor func terminalTabHashable() {
         let tab = TerminalTab(name: "test")
         var set: Set<TerminalTab> = [tab, tab]

@@ -30,6 +30,11 @@ nonisolated private enum AgentTaskClaimKind: Sendable {
     case resume(previousRunID: UUID)
 }
 
+nonisolated private enum AgentTaskClaimState: Equatable, Sendable {
+    case dormant
+    case armed
+}
+
 nonisolated private struct AgentTaskPendingClaim: Sendable {
     let token: UUID
     let taskID: UUID
@@ -41,6 +46,7 @@ nonisolated private struct AgentTaskPendingClaim: Sendable {
     let generationFloor: UInt64
     let launchBoundary: Date
     var deadline: ContinuousClock.Instant
+    var state: AgentTaskClaimState
 }
 
 nonisolated private struct AgentTaskTerminationRollback: Sendable {
@@ -390,9 +396,9 @@ final class AgentTaskRegistry {
             expectedRunCount: 0,
             generationFloor: boundary.generationFloor,
             launchBoundary: normalizedLaunchBoundary(boundary.capturedAt),
-            deadline: monotonicNow().advanced(by: claimTTL)
+            deadline: monotonicNow().advanced(by: claimTTL),
+            state: .dormant
         ), key: key)
-        markDirty(task.project)
         return .reserved(reservation)
     }
 
@@ -429,7 +435,8 @@ final class AgentTaskRegistry {
             expectedRunCount: tasks[index].runs.count,
             generationFloor: boundary.generationFloor,
             launchBoundary: normalizedLaunchBoundary(boundary.capturedAt),
-            deadline: monotonicNow().advanced(by: claimTTL)
+            deadline: monotonicNow().advanced(by: claimTTL),
+            state: .dormant
         ), key: terminalKey(context))
         return .reserved(reservation)
     }
@@ -439,6 +446,24 @@ final class AgentTaskRegistry {
         guard !isTerminating,
               let index = taskIndex(for: taskID) else { return false }
         return isResumableTask(at: index)
+    }
+
+    /// Makes a reserved claim consumable only after Pine's exact PTY write was
+    /// acknowledged in full. Dormant claims still occupy their route and TTL,
+    /// but detector evidence cannot consume them.
+    @discardableResult
+    func armLaunch(_ reservation: AgentTaskLaunchReservation) -> Bool {
+        expireClaims()
+        guard !isTerminating,
+              let key = pendingClaimKeyByToken[reservation.token],
+              var claim = pendingClaims[key],
+              claim.taskID == reservation.taskID,
+              claim.state == .dormant,
+              monotonicNow() < claim.deadline else { return false }
+        claim.state = .armed
+        pendingClaims[key] = claim
+        markDirty(claim.project)
+        return true
     }
 
     func cancelLaunch(_ reservation: AgentTaskLaunchReservation) {
@@ -998,6 +1023,7 @@ final class AgentTaskRegistry {
     ) -> Bool {
         guard let key = pendingClaimKeyByToken[reservation.token],
               let claim = pendingClaims[key],
+              claim.state == .armed,
               claim.token == reservation.token,
               claim.taskID == reservation.taskID,
               monotonicNow() < claim.deadline,
@@ -1215,7 +1241,17 @@ final class AgentTaskRegistry {
             return
         }
         persistenceSequence += 1
-        let snapshot = tasks.filter { $0.project == project }
+        let unacknowledgedInitialTaskIDs = Set<UUID>(
+            pendingClaims.values.compactMap { claim in
+                guard claim.state == .dormant,
+                      case .initialLaunch = claim.kind else { return nil }
+                return claim.taskID
+            }
+        )
+        let snapshot = tasks.filter {
+            $0.project == project
+                && !unacknowledgedInitialTaskIDs.contains($0.id)
+        }
         let store = persistence
         let revision = persistenceRevision[project]
         let ticket = AgentTaskPersistenceTicket(

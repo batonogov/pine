@@ -42,6 +42,8 @@ final class TerminalManager {
     private var agentTaskWindowOpen = true
     @ObservationIgnored
     private var launchReservations: [UUID: AgentTaskLaunchReservation] = [:]
+    @ObservationIgnored
+    private var launchWritesInFlight: Set<UUID> = []
 
     /// `true` once agent-detection polling has started. Read-only diagnostic /
     /// test hook. Delegates to the coordinator's `isRunning` so it correctly
@@ -225,7 +227,51 @@ final class TerminalManager {
         descriptor: AgentDescriptor,
         in tab: TerminalTab
     ) async -> AgentTaskLaunchResult {
+        await performAgentLaunch(
+            command,
+            descriptor: descriptor,
+            in: tab
+        ) {
+            await tab.sendTextAcknowledged(command + "\n")
+        }
+    }
+
+#if DEBUG
+    func launchAgentCommandForTesting(
+        _ command: String,
+        descriptor: AgentDescriptor,
+        in tab: TerminalTab,
+        acknowledgedWrite: () async -> Bool
+    ) async -> AgentTaskLaunchResult {
+        await performAgentLaunch(
+            command,
+            descriptor: descriptor,
+            in: tab,
+            acknowledgedWrite: acknowledgedWrite
+        )
+    }
+#endif
+
+    private func performAgentLaunch(
+        _ command: String,
+        descriptor: AgentDescriptor,
+        in tab: TerminalTab,
+        acknowledgedWrite: () async -> Bool
+    ) async -> AgentTaskLaunchResult {
         guard Self.exactAgentLaunchDescriptor(for: command) == descriptor else {
+            return .rejected
+        }
+        guard agentTaskRegistry != nil,
+              agentTaskContext(for: tab) != nil else {
+            return await acknowledgedWrite()
+                ? .sentWithoutReservation
+                : .rejected
+        }
+        guard !launchWritesInFlight.contains(tab.id) else {
+            return .rejected
+        }
+        if let existing = launchReservations[tab.id],
+           agentTaskRegistry?.isLaunchPending(existing) == true {
             return .rejected
         }
         let result = prepareAgentLaunch(
@@ -235,21 +281,35 @@ final class TerminalManager {
             objective: nil
         )
         guard case .reserved(let reservation) = result else {
-            return await tab.sendTextAcknowledged(command + "\n")
-                ? .sentWithoutReservation
-                : .rejected
-        }
-        guard await tab.sendTextAcknowledged(command + "\n") else {
-            cancelAgentLaunch(in: tab)
             return .rejected
+        }
+        launchWritesInFlight.insert(tab.id)
+        let acknowledged = await acknowledgedWrite()
+        launchWritesInFlight.remove(tab.id)
+        guard acknowledged else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .rejected
+        }
+        guard launchReservations[tab.id] == reservation,
+              agentTaskRegistry?.armLaunch(reservation) == true else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .sentWithoutReservation
         }
         return .reserved(reservation)
     }
 
     func cancelAgentLaunch(in tab: TerminalTab) {
-        guard let reservation = launchReservations.removeValue(
-            forKey: tab.id
-        ) else { return }
+        guard let reservation = launchReservations[tab.id] else { return }
+        cancelAgentLaunch(reservation, in: tab)
+    }
+
+    private func cancelAgentLaunch(
+        _ reservation: AgentTaskLaunchReservation,
+        in tab: TerminalTab
+    ) {
+        if launchReservations[tab.id] == reservation {
+            launchReservations[tab.id] = nil
+        }
         agentTaskRegistry?.cancelLaunch(reservation)
     }
 
@@ -261,14 +321,23 @@ final class TerminalManager {
         guard let agentTaskRegistry,
               let task = agentTaskRegistry.task(for: taskID),
               task.descriptor.launchExecutable == command,
-              Self.exactAgentLaunchDescriptor(for: command) == task.descriptor else {
+              Self.exactAgentLaunchDescriptor(for: command) == task.descriptor,
+              !launchWritesInFlight.contains(tab.id) else {
             return .rejected
         }
         let result = prepareAgentResume(taskID: taskID, in: tab)
         guard case .reserved(let reservation) = result else { return result }
-        guard await tab.sendTextAcknowledged(command + "\n") else {
-            cancelAgentLaunch(in: tab)
+        launchWritesInFlight.insert(tab.id)
+        let acknowledged = await tab.sendTextAcknowledged(command + "\n")
+        launchWritesInFlight.remove(tab.id)
+        guard acknowledged else {
+            cancelAgentLaunch(reservation, in: tab)
             return .rejected
+        }
+        guard launchReservations[tab.id] == reservation,
+              agentTaskRegistry.armLaunch(reservation) else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .sentWithoutReservation
         }
         return .reserved(reservation)
     }

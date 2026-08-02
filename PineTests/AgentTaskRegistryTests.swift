@@ -190,6 +190,7 @@ struct AgentTaskRegistryTests {
             Issue.record("initial reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(launch))
         registry.bridge(
             original,
             replacing: nil,
@@ -217,6 +218,7 @@ struct AgentTaskRegistryTests {
             Issue.record("resume reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(reservation))
         registry.bridge(
             resumed,
             replacing: original,
@@ -265,6 +267,15 @@ struct AgentTaskRegistryTests {
             context: launchContext,
             reservation: reservation
         )
+        #expect(registry.task(for: reservation.taskID)?.runs.isEmpty == true)
+        #expect(registry.isLaunchPending(reservation))
+        #expect(registry.armLaunch(reservation))
+        registry.bridge(
+            detected,
+            replacing: nil,
+            context: launchContext,
+            reservation: reservation
+        )
 
         let taskID = reservation.taskID
         let task = try #require(registry.task(for: taskID))
@@ -293,6 +304,7 @@ struct AgentTaskRegistryTests {
             Issue.record("launch reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(reservation))
         #expect(
             registry.task(for: reservation.taskID)?.route.availability
                 == .missing
@@ -339,6 +351,7 @@ struct AgentTaskRegistryTests {
             Issue.record("launch reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(reservation))
         let preexisting = makeSession(
             pid: 702,
             generation: 6,
@@ -404,6 +417,7 @@ struct AgentTaskRegistryTests {
             Issue.record("reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(reservation))
         let session = makeSession(
             pid: 705,
             generation: 2,
@@ -463,6 +477,8 @@ struct AgentTaskRegistryTests {
             Issue.record("launch reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(reservation))
+        #expect(!registry.armLaunch(reservation))
         let first = makeSession(pid: 703, generation: 1, agentType: .codex)
         registry.bridge(
             first,
@@ -502,6 +518,8 @@ struct AgentTaskRegistryTests {
             Issue.record("reservations were rejected")
             return
         }
+        #expect(registry.armLaunch(firstClaim))
+        #expect(registry.armLaunch(secondClaim))
         registry.bridge(
             makeSession(pid: 705, generation: 1, agentType: .codex),
             replacing: nil,
@@ -526,6 +544,7 @@ struct AgentTaskRegistryTests {
             Issue.record("reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(claim))
         let session = makeSession(pid: 706, generation: 1)
         registry.bridge(
             session, replacing: nil, context: launchContext,
@@ -560,6 +579,7 @@ struct AgentTaskRegistryTests {
             Issue.record("reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(claim))
         let before = try #require(registry.task(for: claim.taskID))
         registry.prepareForApplicationTermination(
             at: before.updatedAt.addingTimeInterval(10)
@@ -602,6 +622,7 @@ struct AgentTaskRegistryTests {
             Issue.record("reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(reservation))
         let movedRoute = AgentTaskRoute(
             paneID: uuid(668),
             tabID: initial.route.tabID,
@@ -805,6 +826,7 @@ struct AgentTaskRegistryTests {
             Issue.record("terminal launch reservation was rejected")
             return
         }
+        #expect(taskRegistry.armLaunch(reservation))
         let now = Date()
         let preexisting = makeSession(
             pid: 1_109,
@@ -852,13 +874,14 @@ struct AgentTaskRegistryTests {
                 targetTerminalID: tab.id
             )?.terminalID == tab.id
         )
-        guard case .reserved = manager.terminal.prepareAgentResume(
+        guard case .reserved(let resumeReservation) = manager.terminal.prepareAgentResume(
             taskID: reservation.taskID,
             in: tab
         ) else {
             Issue.record("production resume reservation was rejected")
             return
         }
+        #expect(taskRegistry.armLaunch(resumeReservation))
         let resumed = makeSession(
             pid: 1_111,
             generation: 3,
@@ -872,6 +895,170 @@ struct AgentTaskRegistryTests {
         )
         #expect(taskRegistry.taskID(forSessionID: resumed.id) == reservation.taskID)
         #expect(taskRegistry.task(for: reservation.taskID)?.runs.count == 2)
+    }
+
+    @Test("PTY acknowledgement arms launch authority exactly once")
+    func acknowledgedWriteArmsLaunchAuthority() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let taskRegistry = AgentTaskRegistry(claimTTL: .milliseconds(50))
+        let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let state = try #require(
+            manager.paneManager.terminalState(for: pane)
+        )
+        let tab = try #require(state.terminalTabs.first)
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        let gate = AgentLaunchWriteGate()
+        let launch = Task { @MainActor in
+            await manager.terminal.launchAgentCommandForTesting(
+                "codex",
+                descriptor: descriptor,
+                in: tab
+            ) {
+                await gate.waitForCompletion()
+            }
+        }
+        await gate.waitUntilStarted()
+        let dormantTaskID = try #require(taskRegistry.tasks.first?.id)
+        let observed = makeSession(
+            pid: 1_109,
+            generation: 1,
+            agentType: .codex,
+            preciseStartedAt: Date().addingTimeInterval(60)
+        )
+        manager.terminal.bridgeAgentSession(
+            observed,
+            replacing: nil,
+            in: tab
+        )
+        #expect(taskRegistry.task(for: dormantTaskID)?.runs.isEmpty == true)
+        try await ContinuousClock().sleep(for: .milliseconds(100))
+        #expect(taskRegistry.task(for: dormantTaskID) == nil)
+
+        var duplicateWriteCalled = false
+        let duplicate = await manager.terminal.launchAgentCommandForTesting(
+            "codex",
+            descriptor: descriptor,
+            in: tab
+        ) {
+            duplicateWriteCalled = true
+            return true
+        }
+        #expect(duplicate == .rejected)
+        #expect(!duplicateWriteCalled)
+
+        gate.finish(false)
+        #expect(await launch.value == .rejected)
+        #expect(taskRegistry.task(for: dormantTaskID) == nil)
+
+        let armed = await manager.terminal.launchAgentCommandForTesting(
+            "codex",
+            descriptor: descriptor,
+            in: tab
+        ) {
+            true
+        }
+        guard case .reserved(let reservation) = armed else {
+            Issue.record("acknowledged launch was not armed")
+            return
+        }
+        let launched = makeSession(
+            pid: 1_110,
+            generation: 2,
+            agentType: .codex,
+            preciseStartedAt: Date().addingTimeInterval(120)
+        )
+        manager.terminal.bridgeAgentSession(
+            launched,
+            replacing: observed,
+            in: tab
+        )
+        #expect(
+            taskRegistry.taskID(forSessionID: launched.id)
+                == reservation.taskID
+        )
+        #expect(!taskRegistry.armLaunch(reservation))
+    }
+
+    @Test("closing a dormant launch cancels its authority")
+    func closingDormantLaunchCancelsClaim() throws {
+        let registry = AgentTaskRegistry()
+        let identity = project("/tmp/pine-agent-dormant-close")
+        let launchContext = context(
+            project: identity,
+            routeSeed: 669,
+            origin: .pineLaunched
+        )
+        guard case .reserved(let reservation) = registry.preparePineLaunch(
+            descriptor: AgentDescriptor(
+                agentType: .claudeCode,
+                launchExecutable: "claude"
+            ),
+            context: launchContext,
+            title: nil,
+            objective: nil
+        ) else {
+            Issue.record("reservation was rejected")
+            return
+        }
+
+        registry.markTerminalClosed(
+            terminalID: launchContext.route.terminalID,
+            project: identity
+        )
+
+        #expect(!registry.isLaunchPending(reservation))
+        #expect(!registry.armLaunch(reservation))
+        #expect(registry.task(for: reservation.taskID) == nil)
+    }
+
+    @Test("unacknowledged launch is never published")
+    func unacknowledgedLaunchIsNotPersisted() async throws {
+        let identity = project("/tmp/pine-agent-dormant-persistence")
+        let store = ScriptedAgentTaskStore()
+        let registry = AgentTaskRegistry(persistence: store)
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+        let callsBeforeReservation = await store.saveCallCount()
+        let launchContext = context(
+            project: identity,
+            routeSeed: 670,
+            origin: .pineLaunched
+        )
+        guard case .reserved(let reservation) = registry.preparePineLaunch(
+            descriptor: AgentDescriptor(
+                agentType: .claudeCode,
+                launchExecutable: "claude"
+            ),
+            context: launchContext,
+            title: nil,
+            objective: nil
+        ) else {
+            Issue.record("reservation was rejected")
+            return
+        }
+
+        #expect(await registry.flushPersistence() == .saved)
+        #expect(await store.saveCallCount() == callsBeforeReservation)
+
+        registry.prepareForApplicationTermination()
+        #expect(await registry.flushPersistence() == .saved)
+        #expect(await store.savedTaskCounts().last == 0)
+        #expect(await registry.cancelApplicationTerminationAndFlush())
+        #expect(await store.savedTaskCounts().last == 0)
+
+        registry.cancelLaunch(reservation)
+        #expect(await registry.flushPersistence() == .saved)
+        #expect(await store.savedTaskCounts().last == 0)
     }
 
     @Test("expired local reservation permits a new terminal launch")
@@ -1055,6 +1242,7 @@ struct AgentTaskRegistryTests {
             Issue.record("initial reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(initial))
         registry.bridge(
             previous,
             replacing: nil,
@@ -1085,6 +1273,7 @@ struct AgentTaskRegistryTests {
                 Issue.record("resume reservation was rejected")
                 return
             }
+            #expect(registry.armLaunch(reservation))
             registry.bridge(
                 next,
                 replacing: previous,
@@ -1539,6 +1728,7 @@ struct AgentTaskRegistryTests {
             Issue.record("launch reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(reservation))
         registry.bridge(
             session,
             replacing: nil,
@@ -1992,6 +2182,7 @@ struct AgentTaskRegistryTests {
             Issue.record("initial reservation was rejected")
             return
         }
+        #expect(registry.armLaunch(firstReservation))
         let first = makeSession(
             pid: 1_397,
             generation: 1,
@@ -2022,6 +2213,7 @@ struct AgentTaskRegistryTests {
             Issue.record("Expected resume reservation")
             return
         }
+        #expect(registry.armLaunch(resume))
         let second = makeSession(
             pid: 1_398,
             generation: 2,
@@ -2318,6 +2510,7 @@ struct AgentTaskRegistryTests {
             Issue.record("launch reservation was rejected")
             return
         }
+        #expect(writer.armLaunch(launch))
         let original = makeSession(pid: 1_651, generation: 1)
         writer.bridge(
             original,
@@ -2349,6 +2542,7 @@ struct AgentTaskRegistryTests {
             Issue.record("loaded interruption was not resumable")
             return
         }
+        #expect(reader.armLaunch(resume))
         let resumed = makeSession(pid: 1_652, generation: 2)
         reader.bridge(
             resumed,
@@ -2785,6 +2979,34 @@ private actor LoadedAgentTaskStore: AgentTaskPersisting {
         authorization: AgentTaskPublicationAuthorization?
     ) async -> AgentTaskMetadataSaveResult {
         .saved(taskCount: tasks.count)
+    }
+}
+
+@MainActor
+private final class AgentLaunchWriteGate {
+    private var started = false
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var completionContinuation: CheckedContinuation<Bool, Never>?
+
+    func waitForCompletion() async -> Bool {
+        started = true
+        startedContinuation?.resume()
+        startedContinuation = nil
+        return await withCheckedContinuation { continuation in
+            completionContinuation = continuation
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard !started else { return }
+        await withCheckedContinuation { continuation in
+            startedContinuation = continuation
+        }
+    }
+
+    func finish(_ result: Bool) {
+        completionContinuation?.resume(returning: result)
+        completionContinuation = nil
     }
 }
 
