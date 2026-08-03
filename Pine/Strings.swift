@@ -632,6 +632,38 @@ enum Strings {
     static let agentInboxRouteUnavailable: LocalizedStringKey =
         "agentInbox.routeUnavailable"
 
+    // MARK: - Agent notifications (#1306)
+    static let agentNotificationsSettingsTitle: LocalizedStringKey =
+        "agentNotifications.settings.title"
+    static let agentNotificationsPermissionExplanation: LocalizedStringKey =
+        "agentNotifications.permission.explanation"
+    static let agentNotificationsEnable: LocalizedStringKey =
+        "agentNotifications.permission.enable"
+    static let agentNotificationsDenied: LocalizedStringKey =
+        "agentNotifications.permission.denied"
+    static let agentNotificationsOpenSystemSettings: LocalizedStringKey =
+        "agentNotifications.permission.openSettings"
+    static let agentNotificationsMainToggle: LocalizedStringKey =
+        "agentNotifications.master"
+    static let agentNotificationsEvents: LocalizedStringKey =
+        "agentNotifications.events"
+    static let agentNotificationsWaiting: LocalizedStringKey =
+        "agentNotifications.event.waiting"
+    static let agentNotificationsFailed: LocalizedStringKey =
+        "agentNotifications.event.failed"
+    static let agentNotificationsCompleted: LocalizedStringKey =
+        "agentNotifications.event.completed"
+    static let agentNotificationsProcessEnded: LocalizedStringKey =
+        "agentNotifications.event.processEnded"
+    static let agentNotificationsAgents: LocalizedStringKey =
+        "agentNotifications.agents"
+    static let agentNotificationsProjects: LocalizedStringKey =
+        "agentNotifications.projects"
+    static let agentNotificationsTasks: LocalizedStringKey =
+        "agentNotifications.tasks"
+    static let agentNotificationsFocusHelp: LocalizedStringKey =
+        "agentNotifications.focusHelp"
+
     // MARK: - Agent History & Undo (#1073)
     static let menuAgentHistory: LocalizedStringKey = "menu.agentHistory"
     static let agentHistoryTitle: LocalizedStringKey = "agentHistory.title"

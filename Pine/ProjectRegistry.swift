@@ -173,6 +173,39 @@ final class ProjectRegistry: LSPSettingsObserver {
         closeProjectWindow(url)
     }
 
+    /// True only when the exact live terminal route is already visible in the
+    /// key project window. Merely having Pine active or the project open is not
+    /// enough to suppress a notification for another pane or terminal tab.
+    func isAgentTaskPresented(_ taskID: UUID) -> Bool {
+        guard let task = agentTasks.task(for: taskID),
+              task.lifecycle == .active,
+              task.route.availability == .available,
+              let run = task.runs.last,
+              run.liveness == .live,
+              run.endedAt == nil,
+              agentTasks.isExactLiveOwner(
+                  taskID: taskID,
+                  terminalID: task.route.terminalID,
+                  runID: run.id
+              ) else { return false }
+        let projectURL = URL(
+            fileURLWithPath: task.project.canonicalProjectPath,
+            isDirectory: true
+        ).standardizedFileURL
+        guard !backgroundProjects.contains(projectURL),
+              let manager = openProjects[projectURL],
+              manager.rootURL == projectURL,
+              manager.paneManager.activePaneID.id == task.route.paneID,
+              manager.paneManager.terminalState(
+                  for: PaneID(id: task.route.paneID)
+              )?.activeTerminalID == task.route.tabID,
+              let window = manager.dialogOwnerWindow,
+              window.isVisible,
+              window.isKeyWindow,
+              window.occlusionState.contains(.visible) else { return false }
+        return true
+    }
+
     /// Re-resolves a persisted route against current application ownership.
     /// No UI object is retained by the durable registry; every activation must
     /// cross this boundary immediately before use.
@@ -273,13 +306,15 @@ final class ProjectRegistry: LSPSettingsObserver {
         _ taskID: UUID,
         openProjectWindow: @escaping @MainActor (URL) -> Void,
         waitUntilPresented: (@MainActor (ProjectManager) async -> Bool)? = nil,
-        activateApplication: (@MainActor (ProjectManager) -> Void)? = nil
+        activateApplication: (@MainActor (ProjectManager) -> Void)? = nil,
+        expectedNotificationRoute: AgentNotificationRouteIdentity? = nil
     ) async -> AgentInboxNavigationResult {
         guard let initialTask = agentTasks.task(for: taskID) else {
             return .taskMissing
         }
         guard initialTask.lifecycle == .active,
-              initialTask.route.availability != .missing else {
+              initialTask.route.availability != .missing,
+              matches(initialTask, expectedNotificationRoute) else {
             return .routeStale
         }
 
@@ -315,6 +350,7 @@ final class ProjectRegistry: LSPSettingsObserver {
               let run = currentTask.runs.last,
               run.liveness == .live,
               run.endedAt == nil,
+              matches(currentTask, expectedNotificationRoute),
               agentTasks.isExactLiveOwner(
                   taskID: taskID,
                   terminalID: route.terminalID,
@@ -345,6 +381,17 @@ final class ProjectRegistry: LSPSettingsObserver {
         _ = agentTasks.setReviewed(true, taskID: taskID)
         activate()
         return .focused(route)
+    }
+
+    private func matches(
+        _ task: AgentTask,
+        _ expected: AgentNotificationRouteIdentity?
+    ) -> Bool {
+        guard let expected else { return true }
+        guard task.id == expected.taskID,
+              let run = task.runs.last else { return false }
+        return run.id == expected.runID
+            && run.process.processGeneration == expected.processGeneration
     }
 
     private func resolvePausedAgentTaskRoute(
