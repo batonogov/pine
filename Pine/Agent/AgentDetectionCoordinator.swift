@@ -277,7 +277,9 @@ nonisolated final class AgentDetectionCoordinator {
 
         var pathBuffer = [CChar](
             repeating: 0,
-            count: Int(PROC_PIDPATHINFO_MAXSIZE)
+            // libproc defines PROC_PIDPATHINFO_MAXSIZE as 4 * MAXPATHLEN,
+            // but Swift's Clang importer does not expose that compound macro.
+            count: 4 * Int(MAXPATHLEN)
         )
         let pathLength = pathBuffer.withUnsafeMutableBytes { buffer in
             proc_pidpath(
