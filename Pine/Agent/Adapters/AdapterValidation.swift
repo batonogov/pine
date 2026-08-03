@@ -3,11 +3,42 @@ import Foundation
 
 nonisolated struct NegotiatedAdapterContract: Equatable, Sendable {
     fileprivate let registryID: UUID
+    fileprivate let probeGeneration: UUID
+    fileprivate let freshSessionGate: OneShotAuthorityGate
     let agentID: AgentID
     let adapterID: AdapterID
     let factoryID: AdapterFactoryID
     let version: PineAdapterContractVersion
     let profile: AdapterCapabilityProfile
+
+    fileprivate init(
+        registryID: UUID,
+        probeGeneration: UUID,
+        agentID: AgentID,
+        adapterID: AdapterID,
+        factoryID: AdapterFactoryID,
+        version: PineAdapterContractVersion,
+        profile: AdapterCapabilityProfile
+    ) {
+        self.registryID = registryID
+        self.probeGeneration = probeGeneration
+        freshSessionGate = OneShotAuthorityGate()
+        self.agentID = agentID
+        self.adapterID = adapterID
+        self.factoryID = factoryID
+        self.version = version
+        self.profile = profile
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.registryID == rhs.registryID
+            && lhs.probeGeneration == rhs.probeGeneration
+            && lhs.agentID == rhs.agentID
+            && lhs.adapterID == rhs.adapterID
+            && lhs.factoryID == rhs.factoryID
+            && lhs.version == rhs.version
+            && lhs.profile == rhs.profile
+    }
 }
 
 /// Discovery metadata and authority minted only after a registry-owned factory probe succeeds.
@@ -18,6 +49,8 @@ nonisolated struct AgentAdapterOffer: Sendable, CustomStringConvertible,
     fileprivate let adapterID: AdapterID
     fileprivate let factoryID: AdapterFactoryID
     fileprivate let probeResult: AdapterProbeResult
+    fileprivate let probeGeneration: UUID
+    fileprivate let gate: OneShotAuthorityGate
 
     var detectedVendorVersion: DetectedVendorVersion { probeResult.detectedVendorVersion }
     var detectedSchema: DetectedVendorVersion? { probeResult.detectedSchema }
@@ -34,6 +67,8 @@ nonisolated struct AgentAdapterOffer: Sendable, CustomStringConvertible,
         self.adapterID = adapterID
         self.factoryID = factoryID
         self.probeResult = probeResult
+        probeGeneration = UUID()
+        gate = OneShotAuthorityGate()
     }
 
     var description: String { "<redacted:agent-adapter-offer>" }
@@ -107,7 +142,7 @@ nonisolated struct AdapterResumeCheckpoint: Sendable, CustomStringConvertible,
     fileprivate let registryID: UUID
     fileprivate let namespace: SourceNamespace
     fileprivate let sourceContract: NegotiatedAdapterContract
-    fileprivate let gate: CheckpointConsumptionGate
+    fileprivate let gate: OneShotAuthorityGate
     let resumePosition: AdapterResumePosition
     let lastSourceEvent: VendorReference
     let lastSourceSequence: UInt64
@@ -123,7 +158,7 @@ nonisolated struct AdapterResumeCheckpoint: Sendable, CustomStringConvertible,
         self.registryID = registryID
         self.namespace = namespace
         self.sourceContract = sourceContract
-        gate = CheckpointConsumptionGate()
+        gate = OneShotAuthorityGate()
         self.resumePosition = resumePosition
         self.lastSourceEvent = lastSourceEvent
         self.lastSourceSequence = lastSourceSequence
@@ -135,12 +170,56 @@ nonisolated struct AdapterResumeCheckpoint: Sendable, CustomStringConvertible,
 }
 
 // swiftlint:disable:next private_over_fileprivate
-fileprivate actor CheckpointConsumptionGate {
-    private var consumed = false
+fileprivate actor OneShotAuthorityGate {
+    private enum State: Equatable { case available, reserved(UUID), consumed }
+    private var state = State.available
+
     func consume() -> Bool {
-        guard !consumed else { return false }
-        consumed = true
+        guard state == .available else { return false }
+        state = .consumed
         return true
+    }
+
+    func reserve(_ reservationID: UUID) -> Bool {
+        guard state == .available else { return false }
+        state = .reserved(reservationID)
+        return true
+    }
+
+    func commit(_ reservationID: UUID) {
+        guard state == .reserved(reservationID) else { return }
+        state = .consumed
+    }
+
+    func rollback(_ reservationID: UUID) {
+        guard state == .reserved(reservationID) else { return }
+        state = .available
+    }
+}
+
+nonisolated private final class OneShotAuthorityReservation: Sendable {
+    private let gate: OneShotAuthorityGate
+    private let reservationID: UUID
+
+    init(gate: OneShotAuthorityGate, reservationID: UUID) {
+        self.gate = gate
+        self.reservationID = reservationID
+    }
+
+    func commit() async {
+        await gate.commit(reservationID)
+    }
+
+    func rollback() async {
+        await gate.rollback(reservationID)
+    }
+
+    deinit {
+        let gate = gate
+        let reservationID = reservationID
+        Task.detached {
+            await gate.rollback(reservationID)
+        }
     }
 }
 
@@ -155,7 +234,7 @@ nonisolated private enum SourceActivationResult: Equatable, Sendable {
 }
 
 private actor SourceSessionState {
-    private enum Lifecycle { case ready, starting, flushing, active, retired }
+    private enum Lifecycle { case ready, starting, flushing, active, closing, retired }
     private var lifecycle = Lifecycle.ready
     private var highestAdmittedSequence: UInt64
     private var latestAcceptedPosition: AdapterSourcePosition?
@@ -163,6 +242,7 @@ private actor SourceSessionState {
     private var pendingCandidates: [AdapterCandidate] = []
     private var activationRemaining = 0
     private var inFlightCount = 0
+    private let drainCompletion = BoundedAdapterStop()
     private let pendingLimit = AgentAdapterRegistry.startBufferLimit
 
     init(baseline: UInt64) {
@@ -181,13 +261,13 @@ private actor SourceSessionState {
 
     func admit(_ candidate: AdapterCandidate) -> SourceAdmission {
         switch lifecycle {
-        case .ready, .retired:
+        case .ready, .closing, .retired:
             return .rejected(.revoked)
         case .flushing:
-            return .rejected(.droppedInvalid)
+            return .rejected(.retryAfterActivation)
         case .starting:
             guard pendingCandidates.count < pendingLimit else {
-                return .rejected(.droppedInvalid)
+                return .rejected(.retryAfterActivation)
             }
         case .active:
             break
@@ -238,10 +318,10 @@ private actor SourceSessionState {
     func complete(
         _ candidate: AdapterCandidate,
         outcome: AdapterIngestOutcome
-    ) -> AdapterIngestOutcome {
+    ) async -> AdapterIngestOutcome {
         guard inFlightCount > 0 else { return .revoked }
         inFlightCount -= 1
-        guard lifecycle == .active || lifecycle == .flushing else { return .revoked }
+        if inFlightCount == 0 { await drainCompletion.complete() }
         if outcome == .revoked {
             lifecycle = .retired
             pendingCandidates.removeAll(keepingCapacity: false)
@@ -250,6 +330,7 @@ private actor SourceSessionState {
         }
         if outcome == .accepted, let position = candidate.sourcePosition,
            let sequence = position.sourceSequence,
+           lifecycle == .active || lifecycle == .flushing || lifecycle == .closing,
            sequence > (latestAcceptedPosition?.sourceSequence ?? 0) {
             latestAcceptedPosition = position
         }
@@ -267,10 +348,26 @@ private actor SourceSessionState {
         return position
     }
 
-    func revoke() {
+    func beginStop() async {
+        guard lifecycle != .retired else {
+            await drainCompletion.complete()
+            return
+        }
+        lifecycle = .closing
+        pendingCandidates.removeAll(keepingCapacity: false)
+        activationRemaining = 0
+        if inFlightCount == 0 { await drainCompletion.complete() }
+    }
+
+    func waitUntilDrained() async {
+        await drainCompletion.wait()
+    }
+
+    func revoke() async {
         lifecycle = .retired
         pendingCandidates.removeAll(keepingCapacity: false)
         activationRemaining = 0
+        await drainCompletion.complete()
     }
 }
 
@@ -339,6 +436,30 @@ private actor ValidatingAgentEventSink: AgentEventSink {
     }
 }
 
+private actor BoundedAdapterStop {
+    private var completed = false
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        guard !completed else { return }
+        await withCheckedContinuation { continuation in
+            if completed {
+                continuation.resume()
+            } else {
+                waiter = continuation
+            }
+        }
+    }
+
+    func complete() {
+        guard !completed else { return }
+        completed = true
+        let retained = waiter
+        waiter = nil
+        retained?.resume()
+    }
+}
+
 nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
     let contract: NegotiatedAdapterContract
     let registryID: UUID
@@ -347,6 +468,7 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
     let state: SourceSessionState
     let sink: ValidatingAgentEventSink
     let underlying: any AgentAdapterSession
+    let authority: OneShotAuthorityReservation
 
     func start() async throws {
         guard await state.beginStart() else {
@@ -354,21 +476,43 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
         }
         do { try await underlying.start() } catch {
             await state.revoke()
+            await authority.rollback()
             throw error
         }
         switch await sink.activate() {
         case .committed:
-            break
+            await authority.commit()
         case .cancelled:
+            await authority.rollback()
             throw CancellationError()
         case .rejected:
+            await authority.rollback()
             throw AdapterSessionError.invalidLifecycle
         }
     }
 
     func stop(deadline: ContinuousClock.Instant) async {
+        await state.beginStop()
+        await authority.rollback()
+        let completion = BoundedAdapterStop()
+        let cleanup = Task.detached {
+            async let adapterStop: Void = underlying.stop(deadline: deadline)
+            async let admittedDeliveries: Void = state.waitUntilDrained()
+            _ = await (adapterStop, admittedDeliveries)
+            await completion.complete()
+        }
+        let timeout = Task.detached {
+            do {
+                try await ContinuousClock().sleep(until: deadline)
+            } catch {
+                // Cancellation means the cleanup completed before the deadline.
+            }
+            await completion.complete()
+        }
+        await completion.wait()
+        cleanup.cancel()
+        timeout.cancel()
         await state.revoke()
-        await underlying.stop(deadline: deadline)
     }
 }
 
@@ -463,10 +607,17 @@ nonisolated struct AgentAdapterRegistry: Sendable {
                   checkpoint.sourceContract == contract else {
                 throw AdapterSessionError.checkpointMismatch
             }
-            guard await checkpoint.gate.consume() else {
-                throw AdapterSessionError.checkpointAlreadyConsumed
-            }
         }
+        let authorityGate = checkpoint?.gate ?? contract.freshSessionGate
+        let reservationID = UUID()
+        guard await authorityGate.reserve(reservationID) else {
+            if checkpoint != nil { throw AdapterSessionError.checkpointAlreadyConsumed }
+            throw AdapterSessionError.contractAlreadyConsumed
+        }
+        let authority = OneShotAuthorityReservation(
+            gate: authorityGate,
+            reservationID: reservationID
+        )
         let namespace = checkpoint?.namespace ?? SourceNamespace()
         let attempt = SourceAttempt()
         let state = SourceSessionState(baseline: checkpoint?.lastSourceSequence ?? 0)
@@ -491,9 +642,11 @@ nonisolated struct AgentAdapterRegistry: Sendable {
                 attempt: attempt,
                 state: state,
                 sink: sink,
-                underlying: session
+                underlying: session,
+                authority: authority
             )
         } catch {
+            await authority.rollback()
             await state.revoke()
             throw error
         }
@@ -536,12 +689,15 @@ nonisolated struct AgentAdapterRegistry: Sendable {
     func negotiate(
         offer: AgentAdapterOffer,
         policy: AdapterNegotiationPolicy
-    ) throws -> NegotiatedAdapterContract {
+    ) async throws -> NegotiatedAdapterContract {
         guard offer.registryID == registryID,
               let pair = adapters[offer.adapterID],
               pair.0.agentID == offer.agentID,
               pair.0.adapterID == offer.adapterID,
               pair.0.factoryID == offer.factoryID else {
+            throw AdapterNegotiationError.offerMismatch
+        }
+        guard await offer.gate.consume() else {
             throw AdapterNegotiationError.offerMismatch
         }
         guard policy.allowedVersions.isValid else { throw AdapterNegotiationError.invalidPolicyRange }
@@ -564,7 +720,8 @@ nonisolated struct AgentAdapterRegistry: Sendable {
         }.first
         guard let selected else { throw AdapterNegotiationError.noCommonProfile }
         return NegotiatedAdapterContract(
-            registryID: registryID, agentID: pair.0.agentID, adapterID: offer.adapterID, factoryID: pair.0.factoryID,
+            registryID: registryID, probeGeneration: offer.probeGeneration,
+            agentID: pair.0.agentID, adapterID: offer.adapterID, factoryID: pair.0.factoryID,
             version: upper, profile: selected
         )
     }

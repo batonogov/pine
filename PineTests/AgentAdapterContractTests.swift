@@ -479,7 +479,7 @@ struct AgentAdapterContractTests {
             ), ContractTestFactory(id: factoryID, probeResult: probeResult))]
         )
         let offer = try await registry.probe(adapterID: adapterID)
-        return try registry.negotiate(
+        return try await registry.negotiate(
             offer: offer,
             policy: AdapterNegotiationPolicy(
                 allowedVersions: versions,

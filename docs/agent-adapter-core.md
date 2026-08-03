@@ -28,8 +28,11 @@ requirement. V1 exposes no control operations. Raw factories and their maximum
 capabilities stay private to the registry. The unskippable authority flow is:
 registered factory probe → registry-minted opaque offer → policy negotiation →
 registry-bound contract → exact registered factory session. A raw probe result
-cannot authorize negotiation, and an offer from another registry is rejected
-before any factory invocation. Negotiation derives offered profiles and Pine
+cannot authorize negotiation, copied offers share one registry-owned one-shot
+gate, and an offer from another registry is rejected before any factory
+invocation. The resulting contract is bound to that probe generation and carries
+one fresh-session authority; resume instead requires a one-shot checkpoint.
+Negotiation derives offered profiles and Pine
 contract versions only from the exact stored factory's probe result, then
 selects the highest policy-allowed version and one whole offered profile within
 the compiled maximum. Only the minting registry constructs and wraps sessions:
@@ -57,7 +60,10 @@ core-wrapped source session; callers cannot supply a position to checkpoint.
 The adapter-facing payload contains the opaque vendor
 cursor plus the last accepted source event identity and sequence; the private
 binding contains no credential, task, project, terminal, process, or routing
-authority. Resume uses the checkpoint itself as one-shot authority and requires
+authority. Resume reserves the checkpoint exclusively before factory invocation,
+commits its one-shot consumption only after a contract-matching session activates,
+and rolls the reservation back on construction failure, failed start,
+cancellation, stop-before-start, or abandoned construction. It requires
 the same registry and exact negotiated contract before the payload reaches a
 factory. Session sinks reject input before `start()`, after `stop()`, and after
 a failed start. During `start()` they hold only a core-bounded number of
@@ -66,8 +72,9 @@ and return the distinct `bufferedUntilActivation` outcome. After underlying
 startup succeeds, core checks cancellation and commits activation in one
 synchronous actor transition, freezing exactly that finite batch before
 draining it. Ingress during the drain is rejected without advancing source
-ordering, so it cannot extend startup and the same sequence can retry after the
-session becomes active. Failure or
+ordering, so it cannot extend startup and receives the explicit
+`retryAfterActivation` outcome rather than a permanent-invalid result. The same
+sequence can retry after the session becomes active. Failure or
 cancellation before the commit discards
 it without publication; downstream revocation or cancellation after the commit
 may retire the live session, but cannot retroactively turn `start()` into a
@@ -117,5 +124,8 @@ security boundary. Strict duplicate-key, integer-token, nesting, source-envelope
 and schema parsing belong to the future authenticated framed-ingress slice.
 
 Every async throwing factory/session seam propagates `CancellationError`
-unchanged. `stop(deadline:)` attempts bounded cleanup independently of caller
-cancellation and does not claim forced termination.
+unchanged. `stop(deadline:)` first closes admission, then supervises already
+admitted deliveries and adapter cleanup outside caller cancellation. It returns
+when both finish or the shared deadline expires, preserves the actual downstream
+outcome for work admitted before closing, and then cancels unfinished cleanup.
+It does not claim forced termination when an implementation ignores cancellation.

@@ -189,7 +189,7 @@ struct AgentAdapterRegistryTests {
         )
 
         let offer = try await registry.probe(adapterID: firstDescriptor.adapterID)
-        let contract = try registry.negotiate(offer: offer, policy: policy())
+        let contract = try await registry.negotiate(offer: offer, policy: policy())
         _ = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .accepted }
 
         #expect(contract.adapterID == firstDescriptor.adapterID)
@@ -229,13 +229,68 @@ struct AgentAdapterRegistryTests {
         )
 
         let foreignOffer = try await firstRegistry.probe(adapterID: descriptor.adapterID)
-        #expect(throws: AdapterNegotiationError.offerMismatch) {
-            _ = try secondRegistry.negotiate(offer: foreignOffer, policy: policy())
+        await #expect(throws: AdapterNegotiationError.offerMismatch) {
+            _ = try await secondRegistry.negotiate(offer: foreignOffer, policy: policy())
         }
         #expect(await firstRecorder.probeCalls == 1)
         #expect(await firstRecorder.sessionCalls == 0)
         #expect(await secondRecorder.probeCalls == 0)
         #expect(await secondRecorder.sessionCalls == 0)
+    }
+
+    @Test func registryOfferCanBeNegotiatedOnlyOnce() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: FactoryRecorder(),
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                )
+            ))]
+        )
+        let offer = try await registry.probe(adapterID: descriptor.adapterID)
+
+        _ = try await registry.negotiate(offer: offer, policy: policy())
+        await #expect(throws: AdapterNegotiationError.offerMismatch) {
+            _ = try await registry.negotiate(offer: offer, policy: policy())
+        }
+    }
+
+    @Test func negotiatedContractAuthorizesOnlyOneFreshSession() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: FactoryRecorder(),
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                )
+            ))]
+        )
+        let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let first = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+
+        await #expect(throws: AdapterSessionError.contractAlreadyConsumed) {
+            _ = try await registry.makeSession(
+                contract: contract,
+                resumeFrom: nil
+            ) { _ in .accepted }
+        }
+        _ = first
     }
 
     @Test func strictSubsetProbeOfferNegotiatesAndActivates() async throws {
@@ -269,7 +324,7 @@ struct AgentAdapterRegistryTests {
         )
 
         let offer = try await registry.probe(adapterID: descriptor.adapterID)
-        let contract = try registry.negotiate(
+        let contract = try await registry.negotiate(
             offer: offer,
             policy: AdapterNegotiationPolicy(
                 allowedVersions: range(1, 1, 1, 8),
@@ -300,8 +355,8 @@ struct AgentAdapterRegistryTests {
             ))]
         )
         let versionOffer = try await versionRegistry.probe(adapterID: descriptor.adapterID)
-        #expect(throws: AdapterNegotiationError.noCommonVersion) {
-            _ = try versionRegistry.negotiate(offer: versionOffer, policy: policy())
+        await #expect(throws: AdapterNegotiationError.noCommonVersion) {
+            _ = try await versionRegistry.negotiate(offer: versionOffer, policy: policy())
         }
         #expect(await versionRecorder.probeCalls == 1)
         #expect(await versionRecorder.sessionCalls == 0)
@@ -323,8 +378,8 @@ struct AgentAdapterRegistryTests {
             ))]
         )
         let profileOffer = try await profileRegistry.probe(adapterID: descriptor.adapterID)
-        #expect(throws: AdapterNegotiationError.offeredProfileExceedsMaximum) {
-            _ = try profileRegistry.negotiate(offer: profileOffer, policy: policy())
+        await #expect(throws: AdapterNegotiationError.offeredProfileExceedsMaximum) {
+            _ = try await profileRegistry.negotiate(offer: profileOffer, policy: policy())
         }
         #expect(await profileRecorder.probeCalls == 1)
         #expect(await profileRecorder.sessionCalls == 0)
@@ -463,8 +518,8 @@ struct AgentAdapterRegistryTests {
             acceptedAuthentication: [.authenticatedPeer]
         )
         let offer = try await registry.probe(adapterID: setup.adapters[0].0.adapterID)
-        #expect(throws: AdapterNegotiationError.noCommonProfile) {
-            _ = try registry.negotiate(offer: offer, policy: forbiddenPolicy)
+        await #expect(throws: AdapterNegotiationError.noCommonProfile) {
+            _ = try await registry.negotiate(offer: offer, policy: forbiddenPolicy)
         }
     }
 
@@ -490,16 +545,16 @@ struct AgentAdapterRegistryTests {
             ))]
         )
         let versionOffer = try await registry.probe(adapterID: descriptor.adapterID)
-        #expect(throws: AdapterNegotiationError.noCommonVersion) {
-            _ = try registry.negotiate(offer: versionOffer, policy: policy())
+        await #expect(throws: AdapterNegotiationError.noCommonVersion) {
+            _ = try await registry.negotiate(offer: versionOffer, policy: policy())
         }
         let emptyOffer = try await registry.probe(adapterID: descriptor.adapterID)
-        #expect(throws: AdapterNegotiationError.noCommonProfile) {
-            _ = try registry.negotiate(offer: emptyOffer, policy: policy())
+        await #expect(throws: AdapterNegotiationError.noCommonProfile) {
+            _ = try await registry.negotiate(offer: emptyOffer, policy: policy())
         }
         let validOffer = try await registry.probe(adapterID: descriptor.adapterID)
-        #expect(throws: AdapterNegotiationError.invalidPolicyRange) {
-            _ = try registry.negotiate(
+        await #expect(throws: AdapterNegotiationError.invalidPolicyRange) {
+            _ = try await registry.negotiate(
                 offer: validOffer,
                 policy: AdapterNegotiationPolicy(
                     allowedVersions: range(2, 0, 1, 0),
@@ -522,11 +577,12 @@ struct AgentAdapterRegistryTests {
                 probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
             ))]
         )
-        let contract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
-        let first = try await registry.makeSession(contract: contract, resumeFrom: nil) { event in
+        let firstContract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let secondContract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let first = try await registry.makeSession(contract: firstContract, resumeFrom: nil) { event in
             await recorder.capture(event); return .accepted
         }
-        let second = try await registry.makeSession(contract: contract, resumeFrom: nil) { event in
+        let second = try await registry.makeSession(contract: secondContract, resumeFrom: nil) { event in
             await recorder.capture(event); return .accepted
         }
         try await first.start()
@@ -543,7 +599,7 @@ struct AgentAdapterRegistryTests {
             #expect(!output.contains("event-1"))
         }
         #expect(Array(Mirror(reflecting: checkpoint).children).count == 1)
-        let resumed = try await registry.makeSession(contract: contract, resumeFrom: checkpoint) { event in
+        let resumed = try await registry.makeSession(contract: firstContract, resumeFrom: checkpoint) { event in
             await recorder.capture(event)
             return .accepted
         }
@@ -624,7 +680,7 @@ struct AgentAdapterRegistryTests {
         let outcomes = await recorder.startOutcomes
         #expect(outcomes.count == limit + 1)
         #expect(outcomes.prefix(limit).allSatisfy { $0 == .bufferedUntilActivation })
-        #expect(outcomes.last == .droppedInvalid)
+        #expect(outcomes.last == .retryAfterActivation)
         #expect(await recorder.capturedCount == limit)
         let retry = AdapterCandidate(
             event: .processExited(status: nil),
@@ -672,7 +728,7 @@ struct AgentAdapterRegistryTests {
         let startTask = Task { try await session.start() }
         await completions.waitUntilArrived(1)
         let postCommit = try candidate(sequence: 2)
-        #expect(await recorder.ingest(postCommit) == .droppedInvalid)
+        #expect(await recorder.ingest(postCommit) == .retryAfterActivation)
 
         await completions.release(1)
         try await startTask.value
@@ -952,8 +1008,11 @@ struct AgentAdapterRegistryTests {
                 probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
             ))]
         )
-        let contract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
-        let dropped = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .droppedInvalid }
+        let droppedContract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let dropped = try await registry.makeSession(
+            contract: droppedContract,
+            resumeFrom: nil
+        ) { _ in .droppedInvalid }
         try await dropped.start()
         await #expect(throws: AdapterSessionError.checkpointUnavailable) {
             _ = try await registry.makeCheckpoint(for: dropped)
@@ -963,14 +1022,22 @@ struct AgentAdapterRegistryTests {
             _ = try await registry.makeCheckpoint(for: dropped)
         }
 
-        let revoked = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .revoked }
+        let revokedContract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let revoked = try await registry.makeSession(
+            contract: revokedContract,
+            resumeFrom: nil
+        ) { _ in .revoked }
         try await revoked.start()
         #expect(await recorder.ingest(try candidate(sequence: 2), sinkIndex: 1) == .revoked)
         await #expect(throws: AdapterSessionError.checkpointUnavailable) {
             _ = try await registry.makeCheckpoint(for: revoked)
         }
 
-        let accepted = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .accepted }
+        let acceptedContract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let accepted = try await registry.makeSession(
+            contract: acceptedContract,
+            resumeFrom: nil
+        ) { _ in .accepted }
         try await accepted.start()
         #expect(await recorder.ingest(try candidate(sequence: 7), sinkIndex: 2) == .accepted)
         _ = try await registry.makeCheckpoint(for: accepted)
@@ -1062,6 +1129,191 @@ struct AgentAdapterRegistryTests {
         #expect(await recorder.calls == 2)
     }
 
+    @Test func failedResumeConstructionRollsBackCheckpointReservation() async throws {
+        let setup = try fixtures(replay: .sourceCursor)
+        let descriptor = setup.adapters[0].0
+        let recorder = FactoryRecorder()
+        let resumeFailure = ResumeFailureController()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, RetryableResumeFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                ),
+                recorder: recorder,
+                resumeFailure: resumeFailure
+            ))]
+        )
+        let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let source = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+        try await source.start()
+        #expect(await recorder.ingest(try candidate(sequence: 1)) == .accepted)
+        let checkpoint = try await registry.makeCheckpoint(for: source)
+
+        await #expect(throws: AdapterSessionError.launchFailed(.transient)) {
+            _ = try await registry.makeSession(
+                contract: contract,
+                resumeFrom: checkpoint
+            ) { _ in .accepted }
+        }
+        let failedStart = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: checkpoint
+        ) { _ in .accepted }
+        await #expect(throws: AdapterSessionError.launchFailed(.transient)) {
+            try await failedStart.start()
+        }
+        let resumed = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: checkpoint
+        ) { _ in .accepted }
+        try await resumed.start()
+        await #expect(throws: AdapterSessionError.checkpointAlreadyConsumed) {
+            _ = try await registry.makeSession(
+                contract: contract,
+                resumeFrom: checkpoint
+            ) { _ in .accepted }
+        }
+        #expect(await recorder.calls == 4)
+    }
+
+    @Test func stopRunsOutsideCallerCancellation() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let stopHold = StopHold()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, StopTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                ),
+                stopHold: stopHold
+            ))]
+        )
+        let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let session = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+
+        let stopTask = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await session.stop(
+                deadline: ContinuousClock.now.advanced(by: .seconds(5))
+            )
+        }
+        await stopHold.waitUntilArrived()
+        await stopHold.release()
+        await stopTask.value
+        #expect(await stopHold.observedCallerCancellation == false)
+    }
+
+    @Test func stopReturnsByDeadlineWhenAdapterDoesNotCooperate() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let stopHold = StopHold()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, StopTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                ),
+                stopHold: stopHold
+            ))]
+        )
+        let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let session = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+        let completion = TestSignal()
+        let deadline = ContinuousClock.now.advanced(by: .milliseconds(200))
+        let stopTask = Task {
+            await session.stop(deadline: deadline)
+            await completion.signal()
+        }
+
+        await stopHold.waitUntilArrived()
+        try await ContinuousClock().sleep(
+            until: deadline.advanced(by: .seconds(1))
+        )
+        let returnedByDeadline = await completion.signalled
+        await stopHold.release()
+        await stopTask.value
+        #expect(returnedByDeadline)
+    }
+
+    @Test func stopPreservesAcceptedOutcomeForAlreadyAdmittedDelivery() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let recorder = FactoryRecorder()
+        let completions = CompletionController()
+        let stopHold = StopHold()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, StopTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                ),
+                stopHold: stopHold,
+                recorder: recorder
+            ))]
+        )
+        let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let session = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: nil
+        ) { event in
+            await completions.wait(
+                sequence: event.candidate.sourcePosition?.sourceSequence
+            )
+            return .accepted
+        }
+        try await session.start()
+
+        let admitted = Task { await recorder.ingest(try candidate(sequence: 1)) }
+        await completions.waitUntilArrived(1)
+        let stopTask = Task {
+            await session.stop(
+                deadline: ContinuousClock.now.advanced(by: .seconds(5))
+            )
+        }
+        await stopHold.waitUntilArrived()
+        await stopHold.release()
+        #expect(await recorder.ingest(try candidate(sequence: 2)) == .revoked)
+        await completions.release(1)
+
+        #expect(try await admitted.value == .accepted)
+        await stopTask.value
+    }
+
     @Test func checkpointBindingsAndResumeBaselineFailClosed() async throws {
         let setup = try fixtures(twoAdapters: true, replay: .sourceCursor)
         let recorder = FactoryRecorder()
@@ -1145,12 +1397,12 @@ struct AgentAdapterRegistryTests {
         let checkpoint = try await registry.makeCheckpoint(for: source)
 
         let olderOffer = try await registry.probe(adapterID: descriptor.adapterID)
-        let olderVersion = try registry.negotiate(offer: olderOffer, policy: policy())
+        let olderVersion = try await registry.negotiate(offer: olderOffer, policy: policy())
         await #expect(throws: AdapterSessionError.checkpointMismatch) {
             _ = try await registry.makeSession(contract: olderVersion, resumeFrom: checkpoint) { _ in .accepted }
         }
         let alternateOffer = try await registry.probe(adapterID: descriptor.adapterID)
-        let alternateProfile = try registry.negotiate(
+        let alternateProfile = try await registry.negotiate(
             offer: alternateOffer,
             policy: AdapterNegotiationPolicy(
                 allowedVersions: range(1, 0, 1, 4),
@@ -1204,7 +1456,7 @@ struct AgentAdapterRegistryTests {
         var selections: [NegotiatedAdapterContract] = []
         for _ in permutations {
             let offer = try await completeRegistry.probe(adapterID: descriptor.adapterID)
-            selections.append(try completeRegistry.negotiate(
+            selections.append(try await completeRegistry.negotiate(
                 offer: offer,
                 policy: AdapterNegotiationPolicy(
                     allowedVersions: range(1, 0, 1, 4),
@@ -1237,8 +1489,8 @@ struct AgentAdapterRegistryTests {
             ))]
         )
         let offer = try await registry.probe(adapterID: descriptor.adapterID)
-        #expect(throws: AdapterNegotiationError.offeredProfileExceedsMaximum) {
-            _ = try registry.negotiate(offer: offer, policy: policy())
+        await #expect(throws: AdapterNegotiationError.offeredProfileExceedsMaximum) {
+            _ = try await registry.negotiate(offer: offer, policy: policy())
         }
     }
 
@@ -1291,7 +1543,7 @@ struct AgentAdapterRegistryTests {
         _ registry: AgentAdapterRegistry, adapterID: AdapterID, profile: AdapterCapabilityProfile
     ) async throws -> NegotiatedAdapterContract {
         let offer = try await registry.probe(adapterID: adapterID)
-        return try registry.negotiate(
+        return try await registry.negotiate(
             offer: offer,
             policy: AdapterNegotiationPolicy(
                 allowedVersions: range(1, 0, 1, 8), transportPreference: [profile.transport],
@@ -1462,12 +1714,109 @@ nonisolated private struct ProbeCancellingFactory: AgentAdapterFactory {
     }
 }
 
+private actor ResumeFailureController {
+    enum Behavior: Sendable { case failConstruction, failStart, succeed }
+    private var attempt = 0
+
+    func nextBehavior() -> Behavior {
+        attempt += 1
+        switch attempt {
+        case 1: return .failConstruction
+        case 2: return .failStart
+        default: return .succeed
+        }
+    }
+}
+
+nonisolated private struct RetryableResumeFactory: AgentAdapterFactory {
+    let id: AdapterFactoryID
+    let probeResult: AdapterProbeResult
+    let recorder: FactoryRecorder
+    let resumeFailure: ResumeFailureController
+
+    func probe() async throws -> AdapterProbeResult { probeResult }
+
+    func makeSession(
+        _ request: AgentAdapterSessionRequest
+    ) async throws -> any AgentAdapterSession {
+        await recorder.record(request: request)
+        if request.resumeFrom != nil {
+            switch await resumeFailure.nextBehavior() {
+            case .failConstruction:
+                throw AdapterSessionError.launchFailed(.transient)
+            case .failStart:
+                return RegistryTestSession(
+                    contract: request.contract,
+                    startFailure: .launchFailed(.transient)
+                )
+            case .succeed:
+                break
+            }
+        }
+        return RegistryTestSession(contract: request.contract)
+    }
+}
+
+nonisolated private struct StopTestFactory: AgentAdapterFactory {
+    let id: AdapterFactoryID
+    let probeResult: AdapterProbeResult
+    let stopHold: StopHold
+    var recorder: FactoryRecorder? = nil
+
+    func probe() async throws -> AdapterProbeResult { probeResult }
+
+    func makeSession(
+        _ request: AgentAdapterSessionRequest
+    ) async throws -> any AgentAdapterSession {
+        if let recorder { await recorder.record(request: request) }
+        return StopTestSession(contract: request.contract, stopHold: stopHold)
+    }
+}
+
+nonisolated private struct StopTestSession: AgentAdapterSession {
+    let contract: NegotiatedAdapterContract
+    let stopHold: StopHold
+
+    func start() async throws {}
+    func stop(deadline: ContinuousClock.Instant) async {
+        await stopHold.wait()
+    }
+}
+
+private actor StopHold {
+    private let arrival = TestSignal()
+    private var released = false
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var observedCallerCancellation: Bool?
+
+    func wait() async {
+        observedCallerCancellation = Task.isCancelled
+        await arrival.signal()
+        guard !released else { return }
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func waitUntilArrived() async {
+        await arrival.wait()
+    }
+
+    func release() {
+        guard !released else { return }
+        released = true
+        let retained = releaseWaiters
+        releaseWaiters.removeAll(keepingCapacity: false)
+        retained.forEach { $0.resume() }
+    }
+}
+
 private actor TestSignal {
     private var isSignalled = false
     private var nextWaiterID: UInt64 = 0
     private var waiters: [UInt64: CheckedContinuation<Void, Never>] = [:]
     private var cancelledBeforeRegistration = Set<UInt64>()
     private var resolvedBeforeCancellation = Set<UInt64>()
+
+    var signalled: Bool { isSignalled }
 
     func wait() async {
         guard !isSignalled, !Task.isCancelled else { return }
