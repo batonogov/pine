@@ -51,7 +51,18 @@ struct AgentHistoryRow: Identifiable, Equatable {
 /// no side effects — so it can be snapshotted with stub rows.
 struct AgentHistoryList: View {
     let rows: [AgentHistoryRow]
+    let onOpenBrief: ((AgentHistoryRow) -> Void)?
     let onRevert: (AgentHistoryRow) -> Void
+
+    init(
+        rows: [AgentHistoryRow],
+        onOpenBrief: ((AgentHistoryRow) -> Void)? = nil,
+        onRevert: @escaping (AgentHistoryRow) -> Void
+    ) {
+        self.rows = rows
+        self.onOpenBrief = onOpenBrief
+        self.onRevert = onRevert
+    }
 
     var body: some View {
         if rows.isEmpty {
@@ -64,7 +75,11 @@ struct AgentHistoryList: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(rows) { row in
-                        AgentHistoryRowView(row: row, onRevert: onRevert)
+                        AgentHistoryRowView(
+                            row: row,
+                            onOpenBrief: onOpenBrief,
+                            onRevert: onRevert
+                        )
                         if row.id != rows.last?.id {
                             Divider()
                         }
@@ -80,6 +95,7 @@ struct AgentHistoryList: View {
 /// revert status/action.
 struct AgentHistoryRowView: View {
     let row: AgentHistoryRow
+    let onOpenBrief: ((AgentHistoryRow) -> Void)?
     let onRevert: (AgentHistoryRow) -> Void
 
     var body: some View {
@@ -102,6 +118,21 @@ struct AgentHistoryRowView: View {
             }
 
             Spacer()
+
+            if let onOpenBrief {
+                Button {
+                    onOpenBrief(row)
+                } label: {
+                    Label(
+                        Strings.agentCompletionShowButton,
+                        systemImage: "doc.text.magnifyingglass"
+                    )
+                }
+                .controlSize(.small)
+                .accessibilityIdentifier(
+                    AccessibilityID.agentCompletionShowButton
+                )
+            }
 
             if row.reverted {
                 Text(Strings.agentHistoryRevertedBadge)
@@ -143,7 +174,7 @@ struct AgentHistoryRowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     /// "HH:mm – HH:mm" range, or a single time when no end is recorded.
@@ -165,8 +196,20 @@ struct AgentHistoryView: View {
     @Environment(\.locale) private var locale
     @Bindable var store: AgentHistoryStore
     @Binding var isPresented: Bool
+    let activities: [AgentAction]?
     @State private var reviewTarget: AgentHistoryEntry?
+    @State private var completionBrief: AgentCompletionBrief?
     @State private var revertResult: AgentHistoryRevertResult?
+
+    init(
+        store: AgentHistoryStore,
+        isPresented: Binding<Bool>,
+        activities: [AgentAction]? = nil
+    ) {
+        self.store = store
+        _isPresented = isPresented
+        self.activities = activities
+    }
 
     private var rows: [AgentHistoryRow] {
         store.entries.reversed().map { entry in
@@ -186,9 +229,15 @@ struct AgentHistoryView: View {
                 )
                 Divider()
             }
-            AgentHistoryList(rows: rows) { row in
-                openReview(for: row)
-            }
+            AgentHistoryList(
+                rows: rows,
+                onOpenBrief: activities == nil ? nil : { row in
+                    openCompletionBrief(for: row)
+                },
+                onRevert: { row in
+                    openReview(for: row)
+                }
+            )
             if let revertResult {
                 Divider()
                 resultBanner(revertResult)
@@ -211,6 +260,15 @@ struct AgentHistoryView: View {
                 revertResult = result
             }
         }
+        .sheet(item: $completionBrief) { brief in
+            AgentCompletionBriefView(
+                brief: brief,
+                onReviewChanges: brief.links.diffPaths.isEmpty ? nil : {
+                    openReviewFromCompletionBrief(brief)
+                },
+                onDismiss: { completionBrief = nil }
+            )
+        }
     }
 
     /// Opens the verified undo review sheet for the entry behind a row.
@@ -224,6 +282,42 @@ struct AgentHistoryView: View {
             return
         }
         reviewTarget = entry
+    }
+
+    private func openCompletionBrief(for row: AgentHistoryRow) {
+        guard let entry = store.entries.first(where: { $0.id == row.id }) else {
+            return
+        }
+        let activities = activities ?? []
+        Task { @MainActor in
+            let preview = await store.prepareVerifiedUndoPreview(for: entry)
+            let previewModel: AgentHistoryUndoPreviewModel? = switch preview {
+            case .available(let model): model
+            case .unavailable: nil
+            }
+            guard store.entries.contains(where: { $0.id == entry.id }) else {
+                return
+            }
+            completionBrief = AgentCompletionBriefBuilder.build(
+                entry: entry,
+                evidence: AgentCompletionBriefEvidence(
+                    activities: activities,
+                    verifiedUndoPreview: previewModel
+                )
+            )
+        }
+    }
+
+    private func openReviewFromCompletionBrief(
+        _ brief: AgentCompletionBrief
+    ) {
+        completionBrief = nil
+        guard let entry = store.entries.first(where: { $0.id == brief.id }) else {
+            return
+        }
+        DispatchQueue.main.async {
+            reviewTarget = entry
+        }
     }
 
     private var sheetHeader: some View {

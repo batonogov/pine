@@ -588,6 +588,51 @@ nonisolated enum VerifiedCheckedInverseResult: Sendable, Equatable {
     case conflicted([VerifiedPatchConflict])
 }
 
+/// User-selected part of a prepared review.
+///
+/// Exact-state operations are selectable only as a whole. Checked-text
+/// modifications may instead select individual verified hunks. Acceptance is
+/// represented by omission: Pine mutates only explicit `.revert` selections.
+nonisolated enum VerifiedPatchReviewSelection: Sendable, Equatable {
+    case operation(VerifiedPatchOperationID)
+    case hunks(
+        operationID: VerifiedPatchOperationID,
+        indices: Set<Int>
+    )
+}
+
+nonisolated struct VerifiedPreparedSelection: Sendable, Equatable {
+    let prepared: PreparedInverse
+    let selections: [VerifiedPatchReviewSelection]
+    let operations: [VerifiedPreparedInverseOperation]
+}
+
+nonisolated enum VerifiedPatchSelectionFailure:
+    Error,
+    Sendable,
+    Equatable {
+    case invalidPreparedInverse
+    case emptySelection
+    case duplicateOperation(VerifiedPatchOperationID)
+    case unknownOperation(VerifiedPatchOperationID)
+    case hunkSelectionRequiresCheckedText(VerifiedPatchOperationID)
+    case emptyHunkSelection(VerifiedPatchOperationID)
+    case invalidHunkIndex(
+        operationID: VerifiedPatchOperationID,
+        index: Int
+    )
+    case resourceLimitExceeded
+}
+
+nonisolated enum VerifiedCheckedSelectionResult: Sendable, Equatable {
+    case applied(
+        snapshot: VerifiedPatchWorkspaceSnapshot,
+        previews: [VerifiedInverseOperationPreview]
+    )
+    case conflicted([VerifiedPatchConflict])
+    case invalid(VerifiedPatchSelectionFailure)
+}
+
 nonisolated enum VerifiedPatchValidationError: Error, Sendable, Equatable {
     case invalidWorkspaceIdentity
     case invalidReceipt

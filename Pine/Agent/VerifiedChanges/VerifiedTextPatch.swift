@@ -298,6 +298,48 @@ nonisolated enum VerifiedTextPatch {
         return result
     }
 
+    /// Applies already-resolved, non-overlapping hunks to the exact current
+    /// bytes they were prepared against. This does no fuzzy matching: callers
+    /// must compare the current content identity immediately before use.
+    static func applyingPreparedHunks(
+        _ hunks: [VerifiedPreparedTextHunk],
+        to current: Data
+    ) -> Data? {
+        guard !hunks.isEmpty,
+              hunks.count <= VerifiedPatchLimits.maximumHunkCount,
+              isText(current) else {
+            return nil
+        }
+        var lines = lines(in: current)
+        let ordered = hunks.sorted {
+            $0.resolvedCurrentRange.lowerBound
+                < $1.resolvedCurrentRange.lowerBound
+        }
+        var previousUpperBound = 0
+        for hunk in ordered {
+            guard hunk.resolvedCurrentRange.lowerBound >= previousUpperBound,
+                  hunk.resolvedCurrentRange.lowerBound >= 0,
+                  hunk.resolvedCurrentRange.upperBound <= lines.count else {
+                return nil
+            }
+            previousUpperBound = hunk.resolvedCurrentRange.upperBound
+        }
+        for hunk in ordered.reversed() {
+            lines.replaceSubrange(
+                hunk.resolvedCurrentRange,
+                with: hunk.replacementLines
+            )
+        }
+        let byteCount = lines.reduce(0) { partial, line in
+            let sum = partial.addingReportingOverflow(line.count)
+            return sum.overflow ? Int.max : sum.partialValue
+        }
+        guard byteCount <= VerifiedPatchLimits.maximumFileByteCount else {
+            return nil
+        }
+        return lines.reduce(into: Data()) { $0.append($1) }
+    }
+
     private static func lcsCellCount(
         lhsCount: Int,
         rhsCount: Int
