@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>Pine lower blue plate</title>
+  <path fill="#2F79E8" transform="translate(512 512) scale(1 1.16) translate(-512 -512)" d="M512 442c28 0 54 6 78 18l225 110c39 19 39 63 0 83L590 763c-49 24-107 24-156 0L209 653c-39-20-39-64 0-83l225-110c24-12 50-18 78-18Z"/>
+</svg>
