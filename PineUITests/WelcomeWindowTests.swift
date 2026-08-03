@@ -47,9 +47,12 @@ final class WelcomeWindowTests: PineUITestCase {
 
         let inboxWindow = app.windows["Agent Inbox"]
         XCTAssertTrue(waitForExistence(inboxWindow), "Agent Inbox should open")
+        // ContentUnavailableView doesn't reliably expose a modifier-applied
+        // accessibilityIdentifier on macOS. The test locale is forced to English,
+        // so assert the rendered empty-state text within the Inbox window instead.
         XCTAssertTrue(
             waitForExistence(
-                inboxWindow.descendants(matching: .any)["agentInboxEmpty"].firstMatch
+                inboxWindow.staticTexts["No agent tasks"].firstMatch
             ),
             "A fresh Inbox should show its empty state"
         )
