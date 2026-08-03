@@ -99,7 +99,7 @@ nonisolated struct AdapterResumeCheckpoint: Sendable, CustomStringConvertible,
 }
 
 // swiftlint:disable:next private_over_fileprivate
-nonisolated fileprivate actor CheckpointConsumptionGate {
+fileprivate actor CheckpointConsumptionGate {
     private var consumed = false
     func consume() -> Bool {
         guard !consumed else { return false }
@@ -118,7 +118,7 @@ nonisolated private enum SourceActivationResult: Equatable, Sendable {
     case committed, cancelled, rejected
 }
 
-nonisolated private actor SourceSessionState {
+private actor SourceSessionState {
     private enum Lifecycle { case ready, starting, flushing, active, retired }
     private var lifecycle = Lifecycle.ready
     private var highestAdmittedSequence: UInt64
@@ -220,7 +220,7 @@ nonisolated private actor SourceSessionState {
     }
 }
 
-nonisolated private actor ValidatingAgentEventSink: AgentEventSink {
+private actor ValidatingAgentEventSink: AgentEventSink {
     typealias Downstream = @Sendable (ValidatedAgentEvent) async -> AdapterIngestOutcome
     private let contract: NegotiatedAdapterContract
     private let namespace: SourceNamespace
