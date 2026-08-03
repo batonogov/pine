@@ -770,7 +770,7 @@ struct AgentAdapterRegistryTests {
         #expect(await recorder.capturedCount == 2)
     }
 
-    @Test func postCommitRevocationDoesNotFailStart() async throws {
+    @Test func postCommitCancellationFailsStartWithoutReopeningAuthority() async throws {
         let setup = try fixtures()
         let descriptor = setup.adapters[0].0
         let recorder = FactoryRecorder()
@@ -804,13 +804,21 @@ struct AgentAdapterRegistryTests {
         await completions.waitUntilArrived(2)
         startTask.cancel()
         await completions.release(2)
-        try await startTask.value
+        await #expect(throws: CancellationError.self) {
+            try await startTask.value
+        }
         #expect(await recorder.capturedCount == 2)
         let afterRevocation = AdapterCandidate(
             event: .processExited(status: nil),
             sourcePosition: try AdapterSourcePosition(sourceSequence: 3)
         )
         #expect(await recorder.ingest(afterRevocation) == .revoked)
+        await #expect(throws: AdapterSessionError.contractAlreadyConsumed) {
+            _ = try await registry.makeSession(
+                contract: contract,
+                resumeFrom: nil
+            ) { _ in .accepted }
+        }
     }
 
     @Test func preCommitTaskCancellationDiscardsStartBuffer() async throws {
@@ -1029,6 +1037,34 @@ struct AgentAdapterRegistryTests {
         }
     }
 
+    @Test func registryRejectsProbeResultAfterCallerCancellation() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let cancellation = IgnoredFactoryCancellation()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, CancellationIgnoringProbeFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                ),
+                cancellation: cancellation
+            ))]
+        )
+        let cancelledProbe = Task {
+            try await registry.probe(adapterID: descriptor.adapterID)
+        }
+        await cancellation.waitUntilEntered()
+        cancelledProbe.cancel()
+        await #expect(throws: CancellationError.self) {
+            _ = try await cancelledProbe.value
+        }
+
+        let offer = try await registry.probe(adapterID: descriptor.adapterID)
+        _ = try await registry.negotiate(offer: offer, policy: policy())
+    }
+
     @Test func checkpointRequiresNewAcceptedReplayPosition() async throws {
         let setup = try fixtures(replay: .sourceCursor)
         let recorder = FactoryRecorder()
@@ -1223,7 +1259,7 @@ struct AgentAdapterRegistryTests {
         let setup = try fixtures(replay: .sourceCursor)
         let descriptor = setup.adapters[0].0
         let recorder = FactoryRecorder()
-        let cancellation = IgnoredResumeCancellation()
+        let cancellation = IgnoredFactoryCancellation()
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
             compiledAdapters: [(descriptor, CancellationIgnoringResumeFactory(
@@ -1921,6 +1957,21 @@ nonisolated private struct ProbeCancellingFactory: AgentAdapterFactory {
     }
 }
 
+nonisolated private struct CancellationIgnoringProbeFactory: AgentAdapterFactory {
+    let id: AdapterFactoryID
+    let probeResult: AdapterProbeResult
+    let cancellation: IgnoredFactoryCancellation
+
+    func probe() async throws -> AdapterProbeResult {
+        await cancellation.ignoreOnce()
+        return probeResult
+    }
+
+    func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
+        RegistryTestSession(contract: request.contract)
+    }
+}
+
 private actor ResumeFailureController {
     enum Behavior: Sendable { case failConstruction, failStart, succeed }
     private var attempt = 0
@@ -1964,7 +2015,7 @@ nonisolated private struct RetryableResumeFactory: AgentAdapterFactory {
     }
 }
 
-private actor IgnoredResumeCancellation {
+private actor IgnoredFactoryCancellation {
     private let entered = TestSignal()
     private var attempts = 0
 
@@ -1986,7 +2037,7 @@ nonisolated private struct CancellationIgnoringResumeFactory: AgentAdapterFactor
     let id: AdapterFactoryID
     let recorder: FactoryRecorder
     let probeResult: AdapterProbeResult
-    let cancellation: IgnoredResumeCancellation
+    let cancellation: IgnoredFactoryCancellation
 
     func probe() async throws -> AdapterProbeResult { probeResult }
 

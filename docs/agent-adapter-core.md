@@ -125,10 +125,13 @@ security boundary. Strict duplicate-key, integer-token, nesting, source-envelope
 and schema parsing belong to the future authenticated framed-ingress slice.
 
 Every async throwing factory/session seam propagates `CancellationError`
-unchanged, and core checks cancellation again after an untrusted factory returns.
-`stop(deadline:)` first closes admission, then starts at most one shared adapter
-cleanup per session and supervises the current set of already admitted deliveries
-outside caller cancellation. Concurrent callers share that cleanup while retaining
-their own return deadlines. Stop preserves the actual downstream outcome for work
-admitted before closing and cancels unfinished cleanup at the initiating deadline.
-It does not claim forced termination when an implementation ignores cancellation.
+unchanged, and core checks cancellation again after an untrusted probe or session
+factory returns. `stop(deadline:)` first closes admission, then starts at most one
+shared adapter cleanup per session and supervises the current set of already
+admitted deliveries outside caller cancellation. Concurrent callers share that
+cleanup while retaining their own return deadlines. Stop preserves the actual
+downstream outcome for work admitted before closing and cancels unfinished cleanup
+at the initiating deadline.
+An adapter cleanup that ignores cancellation remains explicitly tracked in a
+fixed-capacity process-wide quarantine; saturation does not launch additional
+unbounded cleanup tasks. This slice does not claim forced in-process termination.
