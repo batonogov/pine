@@ -106,7 +106,12 @@ registry advances to the published revision while still reporting failure and
 retrying; a pre-publication sync failure never advances that revision.
 Quit freezes mutations and persists live tasks as a valid paused/stale/missing
 snapshot; rollback restores and re-persists the exact runtime lifecycle,
-availability, liveness, attention, and chronology. Files and directories are
+availability, liveness, attention, and chronology. If any user task still owns
+an executing process, Quit is refused before Pine sends TERM/KILL and an alert
+requires explicit task cancellation first. Ownership is checked again after the
+last persistence suspension and before editor discard, so a task started while
+a Quit sheet is visible also cancels Quit without being killed.
+Files and directories are
 owner-only, reject any extended ACL entry, and publication uses a same-directory
 atomic replacement with durable file and directory sync.
 Private components remain bound through a descriptor chain checked before and

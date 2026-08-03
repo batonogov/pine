@@ -1768,6 +1768,14 @@ enum Strings {
         String(localized: "terminal.activeProcessWarning.quit")
     }
 
+    static var activeUserTasksPreventQuitTitle: String {
+        String(localized: "task.activePreventQuit.title")
+    }
+
+    static var activeUserTasksPreventQuitMessage: String {
+        String(localized: "task.activePreventQuit.message")
+    }
+
     static var terminalTabCloseWarningTitle: String {
         String(localized: "terminal.tabCloseWarning.title")
     }

@@ -1800,17 +1800,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         presentAlert: TerminationAlertPresenter? = nil,
         saveAll: TerminationSaveAll? = nil,
         applicationContext: DialogPresentationContext? = nil,
-        userTaskShutdownDeadline: DispatchTime? = nil
+        terminationDeadlineOverride: DispatchTime? = nil
     ) async -> Bool {
-        let terminationDeadline = userTaskShutdownDeadline
+        let terminationDeadline = terminationDeadlineOverride
             ?? DispatchTime.now() + .seconds(30)
         let projects = registry.openProjects
             .sorted { $0.key.path.localizedStandardCompare($1.key.path) == .orderedAscending }
             .map(\.value)
         let needsNativeDecision = presentAlert == nil
-            && projects.contains {
-                !$0.allDirtyTabs.isEmpty || $0.terminal.hasActiveProcesses
-            }
+            && (registry.hasOutstandingUserTaskExecution
+                || projects.contains {
+                    !$0.allDirtyTabs.isEmpty || $0.terminal.hasActiveProcesses
+                })
         if applicationContext == nil, needsNativeDecision {
             // Quit can arrive from the Dock while Pine is hidden or every
             // project is miniaturized. Restore/create a discoverable owner
@@ -1819,6 +1820,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
         let fallbackContext = applicationContext
             ?? DialogPresenter.forApplicationWindow()
+
+        // A cancellable Quit cannot safely start TERM/KILL: a later save,
+        // metadata barrier, or authorization check may still fail, but a
+        // destroyed process cannot be rolled back. Keep execution ownership
+        // intact and require the user to cancel the task explicitly first.
+        if registry.hasOutstandingUserTaskExecution {
+            _ = await valueBeforeTerminationDeadline(
+                terminationDeadline,
+                onTimeout: {
+                    guard let window = fallbackContext.nsWindow,
+                          let sheet = window.attachedSheet else { return }
+                    window.endSheet(sheet, returnCode: .abort)
+                },
+                operation: {
+                    if let presentAlert {
+                        return await presentAlert(
+                            .activeUserTasksPreventQuit,
+                            fallbackContext,
+                            Strings.activeUserTasksPreventQuitTitle,
+                            Strings.activeUserTasksPreventQuitMessage
+                        )
+                    }
+                    return await AlertTemplate.activeUserTasksPreventQuit.runSheet(
+                        on: fallbackContext,
+                        messageText: Strings.activeUserTasksPreventQuitTitle,
+                        informativeText: Strings.activeUserTasksPreventQuitMessage
+                    )
+                }
+            )
+            return false
+        }
+
         var discardAuthorizations: [
             ObjectIdentifier: DirtyEditorContentAuthorization
         ] = [:]
@@ -1946,26 +1979,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 activeTerminalProcesses
         }
 
-        // Window closure keeps project tasks alive by policy; application
-        // termination does not. Use one shared deadline across every project
-        // so N concurrent tasks cannot multiply the quit delay. Process waits
-        // happen off-main while AppKit remains in its `.terminateLater`
-        // handshake. A timeout cancels Quit before any authorized editor
-        // discard is committed and retains every cleanup handle.
-        let taskStageDeadline = DispatchTime.now() + .seconds(3)
-        let taskShutdownDeadline = min(
-            terminationDeadline,
-            taskStageDeadline
-        )
-        guard await registry.shutdownUserTasks(
-            until: taskShutdownDeadline
-        ) else {
-            Logger.task.error(
-                "User-task cleanup exceeded Pine's quit deadline; cancelling Quit"
-            )
-            return false
-        }
-
         // Runtime pane/tab IDs cannot be trusted across relaunch. Reserve a
         // rollback slice before freezing so every failed Quit can durably
         // restore the pre-handshake snapshot within the same absolute budget.
@@ -2001,11 +2014,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
 
-        // Other project windows remain interactive while sheets and off-main
-        // process waits are in flight. Revalidate every destructive
-        // authorization after the final suspension point, immediately before
-        // committing Quit, so later edits/processes are never covered by an
-        // earlier answer.
+        // Other project windows remain interactive while sheets and metadata
+        // waits are in flight. A task can therefore start after the initial
+        // refusal check; revalidate execution ownership after the final
+        // suspension point, before any editor discard is committed.
+        guard !registry.hasOutstandingUserTaskExecution else {
+            await rollbackAgentTasks()
+            return false
+        }
+
+        // Revalidate every destructive authorization after the final
+        // suspension point, immediately before committing Quit, so later
+        // edits/processes are never covered by an earlier answer.
         for projectManager in registry.openProjects.values {
             let identifier = ObjectIdentifier(projectManager)
             let currentDirtyTabs = projectManager.allDirtyTabs
@@ -2035,7 +2055,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
 
         // Two-phase destructive commit: no project is mutated until every
-        // project/terminal authorization and task cleanup above has passed.
+        // project/terminal authorization and task-ownership checks above pass.
         for projectManager in registry.openProjects.values {
             let identifier = ObjectIdentifier(projectManager)
             if let authorization = discardAuthorizations[identifier],

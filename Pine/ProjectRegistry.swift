@@ -324,6 +324,13 @@ final class ProjectRegistry: LSPSettingsObserver {
         return rollbackWasSaved
     }
 
+    /// Whether any open or detached project still owns a user-task execution.
+    /// Application termination uses this as a fail-closed preflight and final
+    /// revalidation; it never sends TERM/KILL as part of a cancellable Quit.
+    var hasOutstandingUserTaskExecution: Bool {
+        userTaskOwners.contains { $0.hasOutstandingUserTaskExecution }
+    }
+
     /// Cancels and waits for all project-owned user tasks against one shared
     /// absolute deadline. Blocking process waits happen off the main actor.
     @discardableResult

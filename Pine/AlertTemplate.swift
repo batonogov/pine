@@ -41,6 +41,9 @@ enum AlertTemplate: Sendable, Equatable {
     /// Quit / Cancel  — quitting the app with active terminal processes.
     case terminalActiveProcessWarning
 
+    /// OK — Quit is refused while a user task still owns an execution.
+    case activeUserTasksPreventQuit
+
     // MARK: - External changes
 
     /// Reload / Keep  — file was modified externally.
@@ -228,6 +231,7 @@ extension AlertTemplate {
             return .critical
         case .unsavedChangesSingle, .unsavedChangesBulk,
              .terminalTabCloseWarning, .terminalActiveProcessWarning,
+             .activeUserTasksPreventQuit,
              .externalModifyConflict, .fileDeletedSaveAs,
              .fileOperationErrorWarning, .largeFileWarning,
              .branchUncommittedChanges, .revertAllConfirmation:
@@ -246,6 +250,8 @@ extension AlertTemplate {
             return [Strings.terminalTabCloseWarningClose, Strings.dialogCancel]
         case .terminalActiveProcessWarning:
             return [Strings.terminalActiveProcessWarningQuit, Strings.dialogCancel]
+        case .activeUserTasksPreventQuit:
+            return [Strings.dialogOK]
         case .externalModifyConflict:
             return [Strings.externalModifyReload, Strings.externalModifyKeep]
         case .fileDeletedSaveAs:
@@ -279,6 +285,8 @@ extension AlertTemplate {
             return [.destructive, [.default, .cancel]]
         case .terminalActiveProcessWarning:
             return [.destructive, [.default, .cancel]]
+        case .activeUserTasksPreventQuit:
+            return [.default]
         case .externalModifyConflict:
             // Reload discards local edits (destructive); Keep is the safe default.
             return [.destructive, [.default, .cancel]]

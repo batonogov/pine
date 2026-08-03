@@ -187,7 +187,7 @@ struct WindowLifecycleTests {
                 try? await Task.sleep(for: .seconds(10))
                 return .alertFirstButtonReturn
             },
-            userTaskShutdownDeadline: .now() + .milliseconds(25)
+            terminationDeadlineOverride: .now() + .milliseconds(25)
         )
 
         #expect(!result)
@@ -333,12 +333,12 @@ struct WindowLifecycleTests {
         await secondProject.workspace.waitForLoadingComplete()
     }
 
-    @Test func quitTaskTimeoutRetainsProjectAndCleanupOwnership() async throws {
+    @Test func quitRefusesWhileUserTaskOwnsExecution() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
-        let run = project.taskRunStore.start(makeTaskRun(id: "timeout"))
+        let run = project.taskRunStore.start(makeTaskRun(id: "active"))
         let probe = TerminationTaskProbe(waitResult: false)
         project.taskRunStore.registerCancellation(
             probe.makeCancellation(),
@@ -346,14 +346,20 @@ struct WindowLifecycleTests {
         )
         let delegate = AppDelegate()
         delegate.registry = registry
+        var presentedTemplates: [AlertTemplate] = []
 
         let result = await delegate.confirmApplicationTermination(
-            userTaskShutdownDeadline: .now()
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 1
         )
 
         #expect(!result)
-        #expect(probe.cancellationCount == 1)
-        #expect(probe.waitCount == 1)
+        #expect(presentedTemplates == [.activeUserTasksPreventQuit])
+        #expect(probe.cancellationCount == 0)
+        #expect(probe.waitCount == 0)
         #expect(project.hasOutstandingUserTaskExecution)
         #expect(registry.isProjectOpen(dir))
         #expect(!registry.destroyAllProjects())
@@ -361,18 +367,18 @@ struct WindowLifecycleTests {
 
         project.taskRunStore.finishRun(
             id: run.id,
-            outcome: makeTaskOutcome(id: "timeout"),
-            cancelled: true
+            outcome: makeTaskOutcome(id: "active"),
+            cancelled: false
         )
         #expect(registry.destroyAllProjects())
     }
 
-    @Test func quitWaitsForTaskCleanupBeforeAllowingTeardown() async throws {
+    @Test func quitNeverKillsTaskWhoseCleanupWouldFitDeadline() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
-        let run = project.taskRunStore.start(makeTaskRun(id: "success"))
+        let run = project.taskRunStore.start(makeTaskRun(id: "active"))
         let probe = TerminationTaskProbe(waitResult: true)
         project.taskRunStore.registerCancellation(
             probe.makeCancellation(),
@@ -382,56 +388,69 @@ struct WindowLifecycleTests {
         delegate.registry = registry
 
         let result = await delegate.confirmApplicationTermination(
-            userTaskShutdownDeadline: .now() + 1
+            presentAlert: { template, _, _, _ in
+                #expect(template == .activeUserTasksPreventQuit)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 1
         )
 
-        #expect(result)
-        #expect(probe.cancellationCount == 1)
-        #expect(probe.waitCount == 1)
-        #expect(!project.hasOutstandingUserTaskExecution)
-        #expect(project.taskRunStore.runs.isEmpty)
+        #expect(!result)
+        #expect(probe.cancellationCount == 0)
+        #expect(probe.waitCount == 0)
+        #expect(project.hasOutstandingUserTaskExecution)
+        #expect(project.taskRunStore.runs.count == 1)
+        #expect(!registry.destroyAllProjects())
+
+        project.taskRunStore.finishRun(
+            id: run.id,
+            outcome: makeTaskOutcome(id: "active"),
+            cancelled: false
+        )
         #expect(registry.destroyAllProjects())
     }
 
-    @Test func quitRevalidatesEditsMadeDuringTaskCleanup() async throws {
+    @Test func taskStartedDuringQuitDoesNotCommitDiscard() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        let run = project.taskRunStore.start(makeTaskRun(id: "delayed"))
-        let gate = TerminationWaitGate()
-        project.taskRunStore.registerCancellation(
-            UserTaskCancellation(
-                terminate: { true },
-                waitForCompletion: { deadline in
-                    gate.waitForRelease(until: deadline)
-                }
-            ),
-            forRunID: run.id
-        )
+        project.primaryTabManager.updateContent("// keep after refused quit")
+        let probe = TerminationTaskProbe(waitResult: true)
+        var run: UserTaskRun?
         let delegate = AppDelegate()
         delegate.registry = registry
 
-        let decision = Task { @MainActor in
-            await delegate.confirmApplicationTermination(
-                userTaskShutdownDeadline: .now() + 2
-            )
-        }
-        defer { gate.release() }
-        for _ in 0..<200 where !gate.didStartWaiting {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        #expect(gate.didStartWaiting)
-        project.primaryTabManager.updateContent("// edited during cleanup")
-        gate.release()
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .unsavedChangesBulk)
+                let started = project.taskRunStore.start(
+                    makeTaskRun(id: "late-active")
+                )
+                project.taskRunStore.registerCancellation(
+                    probe.makeCancellation(),
+                    forRunID: started.id
+                )
+                run = started
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 2
+        )
 
-        let result = await decision.value
         #expect(!result)
+        #expect(probe.cancellationCount == 0)
+        #expect(probe.waitCount == 0)
         #expect(project.hasUnsavedChanges)
         #expect(project.primaryTabManager.activeTab?.content ==
-                "// edited during cleanup")
+                "// keep after refused quit")
+        let activeRun = try #require(run)
+        project.taskRunStore.finishRun(
+            id: activeRun.id,
+            outcome: makeTaskOutcome(id: "late-active"),
+            cancelled: false
+        )
         await project.workspace.waitForLoadingComplete()
     }
 
@@ -706,26 +725,5 @@ nonisolated private final class TerminationTaskProbe: @unchecked Sendable {
                 return waitResult
             }
         )
-    }
-}
-
-nonisolated private final class TerminationWaitGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private let releaseSemaphore = DispatchSemaphore(value: 0)
-    private var startedWaiting = false
-
-    var didStartWaiting: Bool {
-        lock.withLock { startedWaiting }
-    }
-
-    func waitForRelease(until deadline: DispatchTime) -> Bool {
-        lock.withLock {
-            startedWaiting = true
-        }
-        return releaseSemaphore.wait(timeout: deadline) == .success
-    }
-
-    func release() {
-        releaseSemaphore.signal()
     }
 }
