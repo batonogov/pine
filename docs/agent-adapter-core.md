@@ -128,10 +128,11 @@ Every async throwing factory/session seam propagates `CancellationError`
 unchanged, and core checks cancellation again after an untrusted probe or session
 factory returns. `stop(deadline:)` first closes admission, then starts at most one
 shared adapter cleanup per session and supervises the current set of already
-admitted deliveries outside caller cancellation. Concurrent callers share that
-cleanup while retaining their own return deadlines. Stop preserves the actual
-downstream outcome for work admitted before closing and cancels the supervised
-adapter task at the initiating deadline. Cleanup capacity is reserved before a
+admitted deliveries outside caller cancellation. Concurrent callers and
+last-copy abandonment share that same single-flight cleanup; abandonment uses a
+bounded core-owned deadline. Stop preserves the actual downstream outcome for
+work admitted before closing and cancels the supervised adapter task at the
+initiating deadline. Cleanup capacity is reserved before a
 core-bound session is exposed; construction fails with
 `cleanupCapacityUnavailable` when no permit remains. A cleanup that ignores
 cancellation keeps its pre-reserved process-wide quarantine slot until it exits,

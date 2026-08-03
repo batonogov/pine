@@ -326,56 +326,73 @@ struct AgentAdapterRegistryTests {
         _ = replacement
     }
 
-    @Test func cleanupCapacityIsReservedBeforeExposureAndReleasedOnAbandonment() async throws {
-        let setup = try fixtures()
-        let descriptor = setup.adapters[0].0
-        let recorder = FactoryRecorder()
-        let capacity = AdapterCleanupCapacity(limit: 1)
-        let registry = try AgentAdapterRegistry(
-            compiledPresentations: [setup.presentation],
-            compiledAdapters: [(descriptor, RecordingFactory(
-                id: descriptor.factoryID,
-                recorder: recorder,
-                probeResult: try probeResult(
-                    profile: setup.profile,
-                    versions: descriptor.contractVersions
-                )
-            ))],
-            cleanupCapacity: capacity
-        )
-        let firstContract = try await negotiate(
-            registry,
-            adapterID: descriptor.adapterID,
-            profile: setup.profile
-        )
-        let secondContract = try await negotiate(
-            registry,
-            adapterID: descriptor.adapterID,
-            profile: setup.profile
-        )
-        var first: (any AgentAdapterSession)? = try await registry.makeSession(
-            contract: firstContract,
-            resumeFrom: nil
-        ) { _ in .accepted }
-        #expect(first != nil)
-        #expect(capacity.reservedCount == 1)
-        await #expect(throws: AdapterSessionError.cleanupCapacityUnavailable) {
-            _ = try await registry.makeSession(
-                contract: secondContract,
+    @Test func abandonmentBeforeOrAfterStartRunsExactlyOneCleanup() async throws {
+        for startsBeforeAbandonment in [false, true] {
+            let setup = try fixtures()
+            let descriptor = setup.adapters[0].0
+            let recorder = FactoryRecorder()
+            let stopHold = StopHold()
+            let capacity = AdapterCleanupCapacity(limit: 1)
+            let registry = try AgentAdapterRegistry(
+                compiledPresentations: [setup.presentation],
+                compiledAdapters: [(descriptor, StopTestFactory(
+                    id: descriptor.factoryID,
+                    probeResult: try probeResult(
+                        profile: setup.profile,
+                        versions: descriptor.contractVersions
+                    ),
+                    stopHold: stopHold,
+                    recorder: recorder
+                ))],
+                cleanupCapacity: capacity
+            )
+            let abandonedContract = try await negotiate(
+                registry,
+                adapterID: descriptor.adapterID,
+                profile: setup.profile
+            )
+            let replacementContract = try await negotiate(
+                registry,
+                adapterID: descriptor.adapterID,
+                profile: setup.profile
+            )
+            var abandoned: (any AgentAdapterSession)? = try await registry.makeSession(
+                contract: abandonedContract,
                 resumeFrom: nil
             ) { _ in .accepted }
-        }
+            if startsBeforeAbandonment, let session = abandoned {
+                try await session.start()
+            }
+            #expect(capacity.reservedCount == 1)
+            abandoned = nil
 
-        first = nil
-        #expect(capacity.reservedCount == 0)
-        var replacement: (any AgentAdapterSession)? = try await registry.makeSession(
-            contract: secondContract,
-            resumeFrom: nil
-        ) { _ in .accepted }
-        #expect(replacement != nil)
-        #expect(capacity.reservedCount == 1)
-        replacement = nil
-        #expect(capacity.reservedCount == 0)
+            await stopHold.waitUntilArrived()
+            #expect(await stopHold.callCount == 1)
+            #expect(capacity.reservedCount == 1)
+            await #expect(throws: AdapterSessionError.cleanupCapacityUnavailable) {
+                _ = try await registry.makeSession(
+                    contract: replacementContract,
+                    resumeFrom: nil
+                ) { _ in .accepted }
+            }
+
+            await stopHold.release()
+            await stopHold.waitUntilFinished()
+            for _ in 0..<10_000 where capacity.reservedCount != 0 {
+                await Task.yield()
+            }
+            #expect(capacity.reservedCount == 0)
+
+            let replacement = try await registry.makeSession(
+                contract: replacementContract,
+                resumeFrom: nil
+            ) { _ in .accepted }
+            await replacement.stop(
+                deadline: ContinuousClock.now.advanced(by: .seconds(1))
+            )
+            #expect(await stopHold.callCount == 2)
+            #expect(capacity.reservedCount == 0)
+        }
     }
 
     @Test func continuationGateResolvesEveryRegistrationCancellationOrdering() async {
@@ -403,6 +420,18 @@ struct AgentAdapterRegistryTests {
         registeredBeforeResolution.resolve()
         await registeredTask.value
         #expect(registeredBeforeResolution.isResolved)
+
+        let cancelledAfterRegistration = AsyncContinuationGate()
+        let cancellationTask = Task { await cancelledAfterRegistration.wait() }
+        for _ in 0..<1_000 where !cancelledAfterRegistration.hasRegisteredWaiter {
+            await Task.yield()
+        }
+        #expect(cancelledAfterRegistration.hasRegisteredWaiter)
+        cancellationTask.cancel()
+        await cancellationTask.value
+        cancelledAfterRegistration.resolve()
+        cancelledAfterRegistration.resolve()
+        #expect(cancelledAfterRegistration.isResolved)
 
         for _ in 0..<128 {
             let raced = AsyncContinuationGate()
@@ -1540,14 +1569,189 @@ struct AgentAdapterRegistryTests {
         #expect(await stopHold.observedCancellationAtExit == true)
         #expect(capacity.reservedCount == 0)
 
-        var replacement: (any AgentAdapterSession)? = try await registry.makeSession(
+        let replacement = try await registry.makeSession(
             contract: replacementContract,
             resumeFrom: nil
         ) { _ in .accepted }
-        #expect(replacement != nil)
         #expect(capacity.reservedCount == 1)
-        replacement = nil
+        await replacement.stop(
+            deadline: ContinuousClock.now.advanced(by: .seconds(1))
+        )
         #expect(capacity.reservedCount == 0)
+    }
+
+    @Test func cancellationIgnoringCleanupRetainsCapacityUntilActualExit() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let hold = IgnoringStopHold()
+        let capacity = AdapterCleanupCapacity(limit: 1)
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, IgnoringStopTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                ),
+                hold: hold
+            ))],
+            cleanupCapacity: capacity
+        )
+        let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let replacementContract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let session = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .milliseconds(200))
+        let stopTask = Task {
+            await session.stop(deadline: deadline)
+            return clock.now
+        }
+        let watchdog = Task {
+            try? await clock.sleep(until: deadline.advanced(by: .seconds(2)))
+            await hold.release()
+        }
+
+        await hold.waitUntilArrived()
+        let returnedAt = await stopTask.value
+        #expect(returnedAt <= deadline.advanced(by: .seconds(1)))
+        #expect(capacity.reservedCount == 1)
+        await #expect(throws: AdapterSessionError.cleanupCapacityUnavailable) {
+            _ = try await registry.makeSession(
+                contract: replacementContract,
+                resumeFrom: nil
+            ) { _ in .accepted }
+        }
+
+        await hold.release()
+        await hold.waitUntilFinished()
+        watchdog.cancel()
+        #expect(await hold.observedCancellationAtExit == true)
+        for _ in 0..<10_000 where capacity.reservedCount != 0 {
+            await Task.yield()
+        }
+        #expect(capacity.reservedCount == 0)
+
+        let replacement = try await registry.makeSession(
+            contract: replacementContract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+        await replacement.stop(
+            deadline: ContinuousClock.now.advanced(by: .seconds(1))
+        )
+        #expect(await hold.callCount == 2)
+        #expect(capacity.reservedCount == 0)
+    }
+
+    @Test func laterShortStopKeepsInitiatingLongCleanupAlive() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let hold = StopHold()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, StopTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                ),
+                stopHold: hold
+            ))]
+        )
+        let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let session = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+        let clock = ContinuousClock()
+        let longDeadline = clock.now.advanced(by: .seconds(2))
+        let longStop = Task {
+            await session.stop(deadline: longDeadline)
+            return clock.now
+        }
+        await hold.waitUntilArrived()
+
+        let shortDeadline = clock.now.advanced(by: .milliseconds(200))
+        let shortStop = Task {
+            await session.stop(deadline: shortDeadline)
+            return clock.now
+        }
+        let shortReturnedAt = await shortStop.value
+        #expect(shortReturnedAt <= shortDeadline.advanced(by: .seconds(1)))
+        #expect(await hold.callCount == 1)
+        #expect(await hold.observedCancellationAtExit == nil)
+
+        await hold.release()
+        let longReturnedAt = await longStop.value
+        await hold.waitUntilFinished()
+        #expect(longReturnedAt <= longDeadline.advanced(by: .seconds(1)))
+        #expect(await hold.observedCancellationAtExit == false)
+    }
+
+    @Test func initiatingShortStopCancelsSharedCleanupForLongFollower() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let hold = StopHold()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, StopTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                ),
+                stopHold: hold
+            ))]
+        )
+        let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let session = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+        let clock = ContinuousClock()
+        let shortDeadline = clock.now.advanced(by: .milliseconds(200))
+        let shortStop = Task {
+            await session.stop(deadline: shortDeadline)
+            return clock.now
+        }
+        await hold.waitUntilArrived()
+        let longDeadline = clock.now.advanced(by: .seconds(2))
+        let longStop = Task {
+            await session.stop(deadline: longDeadline)
+            return clock.now
+        }
+        let watchdog = Task {
+            try? await clock.sleep(until: shortDeadline.advanced(by: .seconds(2)))
+            await hold.release()
+        }
+
+        let shortReturnedAt = await shortStop.value
+        let longReturnedAt = await longStop.value
+        await hold.waitUntilFinished()
+        watchdog.cancel()
+        await hold.release()
+        #expect(shortReturnedAt <= shortDeadline.advanced(by: .seconds(1)))
+        #expect(longReturnedAt <= shortDeadline.advanced(by: .seconds(1)))
+        #expect(await hold.callCount == 1)
+        #expect(await hold.observedCancellationAtExit == true)
     }
 
     @Test func stopPreservesAcceptedOutcomeForAlreadyAdmittedDelivery() async throws {
@@ -2160,6 +2364,30 @@ nonisolated private struct CancellationIgnoringResumeFactory: AgentAdapterFactor
     }
 }
 
+nonisolated private struct IgnoringStopTestFactory: AgentAdapterFactory {
+    let id: AdapterFactoryID
+    let probeResult: AdapterProbeResult
+    let hold: IgnoringStopHold
+
+    func probe() async throws -> AdapterProbeResult { probeResult }
+
+    func makeSession(
+        _ request: AgentAdapterSessionRequest
+    ) async throws -> any AgentAdapterSession {
+        IgnoringStopTestSession(contract: request.contract, hold: hold)
+    }
+}
+
+nonisolated private struct IgnoringStopTestSession: AgentAdapterSession {
+    let contract: NegotiatedAdapterContract
+    let hold: IgnoringStopHold
+
+    func start() async throws {}
+    func stop(deadline: ContinuousClock.Instant) async {
+        await hold.wait()
+    }
+}
+
 nonisolated private struct StopTestFactory: AgentAdapterFactory {
     let id: AdapterFactoryID
     let probeResult: AdapterProbeResult
@@ -2215,6 +2443,41 @@ private actor StopHold {
 
     func release() async {
         await releaseSignal.signal()
+    }
+}
+
+private actor IgnoringStopHold {
+    private let arrival = TestSignal()
+    private let finished = TestSignal()
+    private var released = false
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var observedCancellationAtExit: Bool?
+    private(set) var callCount = 0
+
+    func wait() async {
+        callCount += 1
+        await arrival.signal()
+        if !released {
+            await withCheckedContinuation { releaseWaiters.append($0) }
+        }
+        observedCancellationAtExit = Task.isCancelled
+        await finished.signal()
+    }
+
+    func waitUntilArrived() async {
+        await arrival.wait()
+    }
+
+    func waitUntilFinished() async {
+        await finished.wait()
+    }
+
+    func release() {
+        guard !released else { return }
+        released = true
+        let retained = releaseWaiters
+        releaseWaiters.removeAll(keepingCapacity: false)
+        retained.forEach { $0.resume() }
     }
 }
 

@@ -598,7 +598,7 @@ nonisolated private struct AdapterCleanupTicket: Sendable {
 }
 
 nonisolated final class AdapterCleanupCapacity: Sendable {
-    nonisolated static let shared = AdapterCleanupCapacity(limit: 64)
+    nonisolated static let shared = AdapterCleanupCapacity(limit: 1_024)
     private let limit: Int
     private let reservations = Mutex(Set<UUID>())
 
@@ -731,54 +731,77 @@ private actor AdapterCleanupSupervisor {
     }
 }
 
-nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
-    let contract: NegotiatedAdapterContract
-    let registryID: UUID
-    let namespace: SourceNamespace
-    let attempt: SourceAttempt
+nonisolated private final class CoreBoundSessionLifetime: Sendable {
+    nonisolated private static let abandonmentGrace = Duration.seconds(5)
     let state: SourceSessionState
-    let sink: ValidatingAgentEventSink
     let underlying: any AgentAdapterSession
-    let authorityLease: OneShotAuthorityLease
     let cleanupPermit: AdapterCleanupPermit
 
-    func start() async throws {
-        guard await state.beginStart() else {
-            throw AdapterSessionError.invalidLifecycle
-        }
-        do { try await underlying.start() } catch {
-            await state.failStart()
-            throw error
-        }
-        switch await sink.activate() {
-        case .committed:
-            return
-        case .cancelled:
-            throw CancellationError()
-        case .rejected:
-            throw AdapterSessionError.invalidLifecycle
-        }
+    init(
+        state: SourceSessionState,
+        underlying: any AgentAdapterSession,
+        cleanupPermit: AdapterCleanupPermit
+    ) {
+        self.state = state
+        self.underlying = underlying
+        self.cleanupPermit = cleanupPermit
     }
 
     func stop(deadline: ContinuousClock.Instant) async {
+        await Self.performStop(
+            state: state,
+            underlying: underlying,
+            cleanupPermit: cleanupPermit,
+            deadline: deadline
+        )
+    }
+
+    deinit {
+        let state = state
+        let underlying = underlying
+        let cleanupPermit = cleanupPermit
+        let deadline = ContinuousClock.now.advanced(by: Self.abandonmentGrace)
+        Task.detached {
+            await CoreBoundSessionLifetime.performStop(
+                state: state,
+                underlying: underlying,
+                cleanupPermit: cleanupPermit,
+                deadline: deadline
+            )
+        }
+    }
+
+    nonisolated private static func performStop(
+        state: SourceSessionState,
+        underlying: any AgentAdapterSession,
+        cleanupPermit: AdapterCleanupPermit,
+        deadline: ContinuousClock.Instant
+    ) async {
         let directive = await state.beginStop()
         let sharedCompletion: BoundedAdapterStop
         switch directive {
         case .start(let completion):
             sharedCompletion = completion
-            startSharedCleanup(completion: completion, deadline: deadline)
+            startSharedCleanup(
+                state: state,
+                underlying: underlying,
+                cleanupPermit: cleanupPermit,
+                completion: completion,
+                deadline: deadline
+            )
         case .wait(let completion):
             sharedCompletion = completion
         }
         await waitForSharedCleanup(sharedCompletion, deadline: deadline)
     }
 
-    private func startSharedCleanup(
+    nonisolated private static func startSharedCleanup(
+        state: SourceSessionState,
+        underlying: any AgentAdapterSession,
+        cleanupPermit: AdapterCleanupPermit,
         completion: BoundedAdapterStop,
         deadline: ContinuousClock.Instant
     ) {
-        let state = state
-        let underlying = underlying
         Task.detached {
             let boundedWork = BoundedAdapterStop()
             let countdown = AdapterStopCountdown(
@@ -816,7 +839,7 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
         }
     }
 
-    private func waitForSharedCleanup(
+    nonisolated private static func waitForSharedCleanup(
         _ sharedCompletion: BoundedAdapterStop,
         deadline: ContinuousClock.Instant
     ) async {
@@ -836,6 +859,40 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
         await localCompletion.wait()
         sharedWait.cancel()
         timeout.cancel()
+    }
+}
+
+nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
+    let contract: NegotiatedAdapterContract
+    let registryID: UUID
+    let namespace: SourceNamespace
+    let attempt: SourceAttempt
+    let sink: ValidatingAgentEventSink
+    let authorityLease: OneShotAuthorityLease
+    let lifetime: CoreBoundSessionLifetime
+
+    var state: SourceSessionState { lifetime.state }
+
+    func start() async throws {
+        guard await lifetime.state.beginStart() else {
+            throw AdapterSessionError.invalidLifecycle
+        }
+        do { try await lifetime.underlying.start() } catch {
+            await lifetime.state.failStart()
+            throw error
+        }
+        switch await sink.activate() {
+        case .committed:
+            return
+        case .cancelled:
+            throw CancellationError()
+        case .rejected:
+            throw AdapterSessionError.invalidLifecycle
+        }
+    }
+
+    func stop(deadline: ContinuousClock.Instant) async {
+        await lifetime.stop(deadline: deadline)
     }
 }
 
@@ -969,16 +1026,19 @@ nonisolated struct AgentAdapterRegistry: Sendable {
             guard session.contract == contract else {
                 throw AdapterSessionError.contractMismatch
             }
+            let lifetime = CoreBoundSessionLifetime(
+                state: state,
+                underlying: session,
+                cleanupPermit: cleanupPermit
+            )
             return CoreBoundAdapterSession(
                 contract: contract,
                 registryID: registryID,
                 namespace: namespace,
                 attempt: attempt,
-                state: state,
                 sink: sink,
-                underlying: session,
                 authorityLease: authorityLease,
-                cleanupPermit: cleanupPermit
+                lifetime: lifetime
             )
         } catch {
             await state.failStart()
