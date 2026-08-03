@@ -82,6 +82,55 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(app.scrollViews["sidebar"].exists)
     }
 
+    func testRecoveredTaskRequiresExplicitChoiceAndRoutesNewSession() throws {
+        let url = try createTempProject(
+            files: ["release.md": "# Pine 2.0\n"]
+        )
+        projectURLs.append(url)
+        app.launchArguments.append("--ui-test-agent-recovery")
+        launchWithProject(url)
+
+        openAgentInbox()
+        let firstLaunchRow = recoveryRow
+        XCTAssertTrue(
+            firstLaunchRow.waitForExistence(timeout: 8),
+            "The first launch should create the durable recovery fixture"
+        )
+        firstLaunchRow.rightClick()
+        XCTAssertTrue(app.menuItems["Resume Session"].exists)
+        XCTAssertTrue(app.menuItems["New Session"].exists)
+        XCTAssertTrue(app.menuItems["Copy Objective"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+
+        app.terminate()
+        app.launch()
+        app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+
+        openAgentInbox()
+        let restoredRow = recoveryRow
+        XCTAssertTrue(
+            restoredRow.waitForExistence(timeout: 8),
+            "The second launch should load the persisted recovery card"
+        )
+        restoredRow.rightClick()
+        let newSession = app.menuItems["New Session"]
+        XCTAssertTrue(newSession.waitForExistence(timeout: 3))
+        let terminal = app.buttons["terminalTab_Terminal 1"].firstMatch
+        XCTAssertFalse(
+            terminal.exists,
+            "Restoring task metadata must not launch a terminal automatically"
+        )
+        newSession.click()
+
+        XCTAssertTrue(terminal.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            app.buttons.matching(identifier: "terminalTab_Terminal 1").count,
+            1,
+            "One explicit recovery action must create one exact terminal"
+        )
+    }
+
     func testWelcomeWindowShowsPineTitle() throws {
         launchClean()
 
@@ -92,6 +141,24 @@ final class WelcomeWindowTests: PineUITestCase {
             NSPredicate(format: "value == 'Pine'")
         ).firstMatch
         XCTAssertTrue(pineTitle.exists, "Pine title should be visible in Welcome window")
+    }
+
+    private func openAgentInbox() {
+        clickMenuBarItem("View")
+        let inboxItem = app.menuBars.menuBarItems["View"]
+            .menus.menuItems["Agent Inbox"].firstMatch
+        XCTAssertTrue(inboxItem.waitForExistence(timeout: 3))
+        inboxItem.click()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["agentInbox"]
+                .firstMatch.waitForExistence(timeout: 5)
+        )
+    }
+
+    private var recoveryRow: XCUIElement {
+        app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Recovery fixture'")
+        ).firstMatch
     }
 
     // MARK: - P0: Open Folder → NSOpenPanel appears

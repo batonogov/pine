@@ -147,8 +147,95 @@ final class ProjectRegistry: LSPSettingsObserver {
         pm.loadDirectory(url: canonical)
         openProjects[canonical] = pm
         addToRecent(canonical)
+        #if DEBUG
+        seedAgentRecoveryUITestFixture(
+            manager: pm,
+            project: identity
+        )
+        #endif
         return pm
     }
+
+    #if DEBUG
+    /// Creates a durable, terminated Pine-owned task only for the explicit
+    /// recovery XCUITest. A second launch loads the persisted card instead of
+    /// seeding another one, exercising the real restore boundary.
+    private func seedAgentRecoveryUITestFixture(
+        manager: ProjectManager,
+        project: AgentTaskProjectIdentity
+    ) {
+        guard ProcessInfo.processInfo.arguments.contains(
+            "--ui-test-agent-recovery"
+        ) else { return }
+        Task { @MainActor [weak self, weak manager] in
+            guard let self, let manager else { return }
+            _ = await agentTasks.flushPersistence(
+                maximumDuration: .seconds(2)
+            )
+            guard !agentTasks.tasks.contains(where: { $0.project == project }) else {
+                return
+            }
+            let paneID = manager.paneManager.createTerminalPaneAtBottom(
+                workingDirectory: manager.rootURL
+            )
+            manager.terminal.lastActiveTerminalPaneID = paneID
+            guard let tab = manager.paneManager.terminalState(for: paneID)?
+                .activeTab else { return }
+            let startedAt = Date()
+            let context = AgentTaskBridgeContext(
+                project: project,
+                route: AgentTaskRoute(
+                    paneID: paneID.id,
+                    tabID: tab.id,
+                    terminalID: tab.id
+                ),
+                origin: .pineLaunched,
+                observedAt: startedAt
+            )
+            let launch = agentTasks.preparePineLaunch(
+                descriptor: AgentDescriptor(
+                    agentType: .codex,
+                    launchExecutable: "codex"
+                ),
+                context: context,
+                title: "Recovery fixture",
+                objective: "Finish the Pine 2.0 release",
+                boundary: AgentTaskLaunchBoundary(
+                    generationFloor: 0,
+                    capturedAt: startedAt
+                )
+            )
+            guard case .reserved(let reservation) = launch,
+                  agentTasks.armLaunch(reservation) else { return }
+            let session = AgentSession(
+                id: UUID(
+                    uuidString: "00000000-0000-0000-0000-000000001307"
+                ) ?? UUID(),
+                agentType: .codex,
+                state: .executing,
+                startedAt: startedAt
+            )
+            _ = session.bindProcessEvidence(AgentProcessEvidence(
+                processIdentifier: 13_007,
+                processGeneration: 1,
+                startIdentifier: "ui-recovery-fixture",
+                observedStartedAt: startedAt,
+                startIsAuthoritative: true
+            ))
+            agentTasks.bridge(
+                session,
+                replacing: nil,
+                context: context,
+                reservation: reservation
+            )
+            session.applyLiveness(.terminated)
+            agentTasks.bridge(session, replacing: session, context: context)
+            _ = await agentTasks.flushPersistence(
+                maximumDuration: .seconds(2)
+            )
+        }
+    }
+    #endif
 
     /// Opens a project via folder picker. Returns the project URL if opened.
     @discardableResult
