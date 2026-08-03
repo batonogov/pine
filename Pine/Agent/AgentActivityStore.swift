@@ -322,6 +322,10 @@ final class AgentActivityStore {
             "copilot"
         case .pi:
             "pi"
+        case .openCode:
+            "opencode"
+        case .gemini:
+            "gemini"
         case .generic(let name):
             "generic:\(name)"
         }

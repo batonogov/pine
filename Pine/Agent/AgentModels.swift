@@ -26,6 +26,10 @@ enum AgentType: Equatable, Sendable {
     case copilot
     /// pi coding agent (`pi`).
     case pi
+    /// OpenCode (`opencode`).
+    case openCode
+    /// Google Gemini CLI (`gemini`).
+    case gemini
     /// Any other/unrecognised agent, identified by a free-form name.
     case generic(name: String)
 
@@ -37,21 +41,22 @@ enum AgentType: Equatable, Sendable {
         case .aider: "Aider"
         case .copilot: "Copilot"
         case .pi: "Pi"
+        case .openCode: "OpenCode"
+        case .gemini: "Gemini CLI"
         case .generic(let name): name
         }
     }
 
     /// Process/command names an `AgentDetector` matches against for this agent.
-    /// Lowercased to allow case-insensitive matching.
+    /// Sourced from the compatibility catalog so legacy callers and process
+    /// resolution cannot drift onto different alias lists.
     var cliNames: Set<String> {
-        switch self {
-        case .claudeCode: ["claude"]
-        case .codex: ["codex"]
-        case .aider: ["aider"]
-        case .copilot: ["github-copilot-cli", "copilot"]
-        case .pi: ["pi"]
-        case .generic: []
+        guard case .generic = self else {
+            return FirstPartyAgentCompatibilityCatalog.record(
+                stableIdentifier: stableIdentifier
+            )?.executableAliases ?? []
         }
+        return []
     }
 
     /// Semantic system color used for UI color-coding of this agent.
@@ -62,6 +67,8 @@ enum AgentType: Equatable, Sendable {
         case .aider: .systemPurple
         case .copilot: .systemBlue
         case .pi: .systemTeal
+        case .openCode: .systemPink
+        case .gemini: .systemIndigo
         case .generic: .systemGray
         }
     }
@@ -75,12 +82,12 @@ enum AgentType: Equatable, Sendable {
         guard !trimmed.isEmpty else { return nil }
         let lowered = trimmed.lowercased()
 
-        let known: [AgentType] = [.claudeCode, .codex, .aider, .copilot, .pi]
-        for agent in known where agent.cliNames.contains(lowered) {
-            return agent
-        }
-        return .generic(name: trimmed)
+        guard let stableIdentifier = AgentPresentationCatalog.stableIdentifier(
+            forExecutableAlias: lowered
+        ) else { return .generic(name: trimmed) }
+        return Self(stableIdentifier: stableIdentifier) ?? .generic(name: trimmed)
     }
+
 }
 
 /// Liveness of an agent session — whether the backing terminal process

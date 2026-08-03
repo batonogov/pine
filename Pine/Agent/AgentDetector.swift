@@ -6,8 +6,8 @@
 //  them as `AgentSession`s (vision #933, Phase 1 — Awareness).
 //
 //  This implementation covers ONLY process-name matching: the executable name
-//  extracted from a process command line is resolved against
-//  `AgentType.cliNames`. Output-pattern matching, file-system event
+//  extracted from a process command line is resolved against the versioned
+//  first-party compatibility catalog. Output-pattern matching, file-system event
 //  correlation, and terminal-tab wiring are intentionally out of scope and
 //  tracked as separate issues (see #950 Out of scope, #951, #952).
 //

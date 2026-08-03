@@ -71,6 +71,16 @@ struct AgentDetectorTests {
         #expect(detector2.detectedSessions[0].agentType == .copilot)
     }
 
+    @Test func detectsOpenCodeAndGemini() {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 112, command: "opencode"),
+            DetectedProcess(pid: 113, command: "gemini"),
+        ])
+        #expect(detector.detectedSessions.map(\.agentType).contains(.openCode))
+        #expect(detector.detectedSessions.map(\.agentType).contains(.gemini))
+    }
+
     // MARK: - Full-path resolution
 
     @Test func detectsAgentFromFullPath() {

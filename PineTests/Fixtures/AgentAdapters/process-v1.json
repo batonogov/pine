@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "agents": [
+    {
+      "stableIdentifier": "pi",
+      "testedVersion": "0.83.0",
+      "commands": ["pi", "node /opt/homebrew/bin/pi --print task"]
+    },
+    {
+      "stableIdentifier": "codex",
+      "testedVersion": "0.146.0",
+      "commands": ["codex", "/opt/homebrew/bin/codex"]
+    },
+    {
+      "stableIdentifier": "claudeCode",
+      "testedVersion": "2.1.220",
+      "commands": ["claude", "node /usr/local/bin/claude.js"]
+    },
+    {
+      "stableIdentifier": "openCode",
+      "testedVersion": "1.18.10",
+      "commands": ["opencode", "/opt/homebrew/bin/opencode"]
+    },
+    {
+      "stableIdentifier": "copilot",
+      "testedVersion": "1.0.77",
+      "commands": ["copilot", "github-copilot-cli"]
+    },
+    {
+      "stableIdentifier": "aider",
+      "testedVersion": "0.86.0",
+      "commands": ["aider", "/opt/homebrew/bin/aider"]
+    },
+    {
+      "stableIdentifier": "gemini",
+      "testedVersion": "0.53.1",
+      "commands": ["gemini", "node /opt/homebrew/bin/gemini.js"]
+    }
+  ]
+}
