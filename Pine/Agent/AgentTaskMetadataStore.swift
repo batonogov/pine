@@ -1145,7 +1145,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         fileName: String,
         directoryDescriptor: Int32,
         authorization: AgentTaskPublicationAuthorization?,
-        verifyContext: () -> Bool
+        verifyContext: @escaping () -> Bool
     ) throws {
         guard verifyContext() else { throw AgentTaskDirectoryError.unsafe }
         let initialFinalIdentity = try existingPrivateFileIdentity(
@@ -1258,15 +1258,17 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             throw AgentTaskDirectoryError.unsafe
         }
         let canPublish = {
-            verifyContext()
-                && fstat(descriptor, &opened) == 0
+            var openedAtPublish = stat()
+            var liveAtPublish = stat()
+            return verifyContext()
+                && fstat(descriptor, &openedAtPublish) == 0
                 && fstatat(
                     directoryDescriptor,
                     temporaryName,
-                    &live,
+                    &liveAtPublish,
                     AT_SYMLINK_NOFOLLOW
                 ) == 0
-                && self.samePrivateFile(opened, live)
+                && self.samePrivateFile(openedAtPublish, liveAtPublish)
                 && self.descriptorHasNoExtendedACL(descriptor)
                 && self.privateFileUnchanged(
                     initialFinalIdentity,
