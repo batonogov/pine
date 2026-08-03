@@ -145,13 +145,21 @@ enum AgentState: Equatable, Sendable {
     /// Resolved through ``Strings`` so the same label is used everywhere —
     /// attention overlay, status bar, terminal badges, and accessibility —
     /// and is localized across the 9 supported languages (#1245).
+    @MainActor
     var displayName: String {
+        displayName(locale: .current)
+    }
+
+    /// Localized state label in an explicitly selected language. Status-bar
+    /// snapshots and previews must not mix this with the host's locale.
+    @MainActor
+    func displayName(locale: Locale) -> String {
         switch self {
-        case .idle: Strings.agentStateIdle
-        case .thinking: Strings.agentStateThinking
-        case .executing: Strings.agentStateExecuting
-        case .waitingInput: Strings.agentStateWaitingInput
-        case .done: Strings.agentStateDone
+        case .idle: Strings.agentStateIdle(locale: locale)
+        case .thinking: Strings.agentStateThinking(locale: locale)
+        case .executing: Strings.agentStateExecuting(locale: locale)
+        case .waitingInput: Strings.agentStateWaitingInput(locale: locale)
+        case .done: Strings.agentStateDone(locale: locale)
         }
     }
 

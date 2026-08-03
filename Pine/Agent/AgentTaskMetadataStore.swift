@@ -760,10 +760,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         }
         for (componentIndex, component) in names.enumerated() {
             var created = false
-            var next = openat(
-                descriptor,
+            var next = openDirectoryComponent(
                 component,
-                O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+                relativeTo: descriptor,
+                allowsSystemRedirect: componentIndex < privateComponentStart
             )
             if next < 0, errno == ENOENT, create {
                 guard componentIndex >= privateComponentStart,
@@ -785,10 +785,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 ) else {
                     throw AgentTaskDirectoryError.durabilityUnknown
                 }
-                next = openat(
-                    descriptor,
+                next = openDirectoryComponent(
                     component,
-                    O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+                    relativeTo: descriptor,
+                    allowsSystemRedirect: false
                 )
             }
             guard next >= 0 else {
@@ -804,7 +804,13 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             guard fstat(next, &opened) == 0,
                   fstatat(descriptors[descriptors.count - 2], component, &live,
                           AT_SYMLINK_NOFOLLOW) == 0,
-                  sameObject(opened, live) else {
+                  sameDirectoryComponent(
+                      opened,
+                      live,
+                      name: component,
+                      parentDescriptor: descriptors[descriptors.count - 2],
+                      allowsSystemRedirect: componentIndex < privateComponentStart
+                  ) else {
                 throw AgentTaskDirectoryError.unsafe
             }
             if componentIndex >= privateComponentStart {
@@ -838,6 +844,92 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         )
     }
 
+    /// Inside the Xcode 27 test-host sandbox, `O_NOFOLLOW` sees the
+    /// system-protected `/private/var` redirect and rejects it as `ENOTDIR`.
+    /// Every user-controlled and private component stays no-follow.
+    private func openDirectoryComponent(
+        _ name: String,
+        relativeTo parentDescriptor: Int32,
+        allowsSystemRedirect: Bool
+    ) -> Int32 {
+        let flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC
+        let descriptor = openat(
+            parentDescriptor,
+            name,
+            flags | O_NOFOLLOW
+        )
+        guard descriptor < 0,
+              errno == ENOTDIR,
+              allowsSystemRedirect else {
+            return descriptor
+        }
+
+        var info = stat()
+        guard fstatat(
+            parentDescriptor,
+            name,
+            &info,
+            AT_SYMLINK_NOFOLLOW
+        ) == 0,
+        isSystemProtectedDirectoryRedirect(
+            info,
+            name: name,
+            parentDescriptor: parentDescriptor
+        ) else {
+            errno = ENOTDIR
+            return -1
+        }
+        return openat(parentDescriptor, name, flags)
+    }
+
+    private func sameDirectoryComponent(
+        _ opened: stat,
+        _ live: stat,
+        name: String,
+        parentDescriptor: Int32,
+        allowsSystemRedirect: Bool
+    ) -> Bool {
+        if sameObject(opened, live) { return true }
+        return allowsSystemRedirect
+            && opened.st_uid == 0
+            && (opened.st_mode & S_IFMT) == S_IFDIR
+            && (opened.st_flags & UInt32(SF_NOUNLINK)) != 0
+            && isSystemProtectedDirectoryRedirect(
+                live,
+                name: name,
+                parentDescriptor: parentDescriptor
+            )
+    }
+
+    private func isSystemProtectedDirectoryRedirect(
+        _ info: stat,
+        name: String,
+        parentDescriptor: Int32
+    ) -> Bool {
+        guard name == "var",
+              info.st_uid == 0,
+              (info.st_mode & S_IFMT) == S_IFLNK,
+              (info.st_flags & UInt32(SF_RESTRICTED)) != 0 else {
+            return false
+        }
+        var parent = stat()
+        guard fstat(parentDescriptor, &parent) == 0,
+              parent.st_uid == 0,
+              (parent.st_mode & S_IFMT) == S_IFDIR,
+              (parent.st_flags & UInt32(SF_NOUNLINK)) != 0 else {
+            return false
+        }
+        var target = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let count = readlinkat(
+            parentDescriptor,
+            name,
+            &target,
+            target.count - 1
+        )
+        guard count >= 0 else { return false }
+        return String(cString: target) == "private/var"
+    }
+
     private func verifyStorageChain(_ storage: AgentTaskStorageHandle) -> Bool {
         verifyDescriptorLinks(
             descriptors: storage.descriptors,
@@ -860,7 +952,14 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 guard fstatat(
                     descriptors[index - 1], names[index - 1], &live,
                     AT_SYMLINK_NOFOLLOW
-                ) == 0, sameObject(opened, live) else { return false }
+                ) == 0,
+                sameDirectoryComponent(
+                    opened,
+                    live,
+                    name: names[index - 1],
+                    parentDescriptor: descriptors[index - 1],
+                    allowsSystemRedirect: index < privateDescriptorStart
+                ) else { return false }
             }
             if index >= privateDescriptorStart {
                 guard opened.st_uid == getuid(),
@@ -896,9 +995,15 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         var pending = reservesWriterTemporary ? 1 : 0
         if try !exists(".agent-tasks.lock") { pending += 1 }
         if try !exists(".agent-tasks.lock.guard") { pending += 1 }
-        let duplicate = Darwin.dup(directoryDescriptor)
-        guard duplicate >= 0, let directory = fdopendir(duplicate) else {
-            if duplicate >= 0 { Darwin.close(duplicate) }
+        // `dup` would share the directory offset and leave later scans at EOF.
+        let streamDescriptor = openat(
+            directoryDescriptor,
+            ".",
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+        guard streamDescriptor >= 0,
+              let directory = fdopendir(streamDescriptor) else {
+            if streamDescriptor >= 0 { Darwin.close(streamDescriptor) }
             throw AgentTaskDirectoryError.transient
         }
         defer { closedir(directory) }
@@ -1394,9 +1499,15 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     private func enforceTombstoneCapacity(
         _ directoryDescriptor: Int32
     ) throws {
-        let duplicate = Darwin.dup(directoryDescriptor)
-        guard duplicate >= 0, let directory = fdopendir(duplicate) else {
-            if duplicate >= 0 { Darwin.close(duplicate) }
+        // Use an independent open file description for every directory scan.
+        let streamDescriptor = openat(
+            directoryDescriptor,
+            ".",
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+        guard streamDescriptor >= 0,
+              let directory = fdopendir(streamDescriptor) else {
+            if streamDescriptor >= 0 { Darwin.close(streamDescriptor) }
             throw AgentTaskDirectoryError.transient
         }
         defer { closedir(directory) }
@@ -1456,13 +1567,35 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             device: UInt64(directoryInfo.st_dev),
             inode: UInt64(directoryInfo.st_ino)
         )
-        guard let directory = fdopendir(dup(directoryDescriptor)) else { return }
+        // Xcode 27 test hosts can report a zero `telldir` cookie for every
+        // entry, so retain a portable ordinal within the already capped dir.
+        let streamDescriptor = openat(
+            directoryDescriptor,
+            ".",
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+        guard streamDescriptor >= 0,
+              let directory = fdopendir(streamDescriptor) else {
+            if streamDescriptor >= 0 { Darwin.close(streamDescriptor) }
+            return
+        }
         defer { closedir(directory) }
-        if let cursor = cleanupCursorByDirectory[identity], cursor > 0 {
-            seekdir(directory, cursor)
+        let cursor = max(0, cleanupCursorByDirectory[identity] ?? 0)
+        var skipped = 0
+        var reachedEnd = false
+        while skipped < cursor {
+            guard let entry = readdir(directory) else {
+                reachedEnd = true
+                break
+            }
+            let name = withUnsafePointer(to: &entry.pointee.d_name) {
+                String(cString: UnsafeRawPointer($0)
+                    .assumingMemoryBound(to: CChar.self))
+            }
+            guard name != ".", name != ".." else { continue }
+            skipped += 1
         }
         var scanned = 0
-        var reachedEnd = false
         var candidates: [AgentTaskCleanupCandidate] = []
         let staleBefore = configuration.cleanup.now().timeIntervalSince1970
             - configuration.cleanup.staleAge
@@ -1471,11 +1604,12 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 reachedEnd = true
                 break
             }
-            scanned += 1
             let name = withUnsafePointer(to: &entry.pointee.d_name) {
                 String(cString: UnsafeRawPointer($0)
                     .assumingMemoryBound(to: CChar.self))
             }
+            guard name != ".", name != ".." else { continue }
+            scanned += 1
             guard isCanonicalTemporaryName(name) else { continue }
             var info = stat()
             guard fstatat(
@@ -1502,7 +1636,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         if reachedEnd {
             cleanupCursorByDirectory[identity] = 0
         } else {
-            cleanupCursorByDirectory[identity] = max(0, telldir(directory))
+            cleanupCursorByDirectory[identity] = cursor + scanned
         }
         let ordered = candidates.sorted { lhs, rhs in
             if lhs.modifiedSeconds != rhs.modifiedSeconds {

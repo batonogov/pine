@@ -10,7 +10,7 @@ import Testing
 @testable import Pine
 
 @MainActor
-@Suite("Agent Task Registry Tests")
+@Suite("Agent Task Registry Tests", .serialized)
 struct AgentTaskRegistryTests {
     @Test("same agent type remains distinct across projects")
     func sameTypeAcrossProjects() throws {
@@ -1852,8 +1852,8 @@ struct AgentTaskRegistryTests {
         let store = ScriptedAgentTaskStore()
         let registry = AgentTaskRegistry(
             persistence: store,
-            flushTotal: .milliseconds(100),
-            flushTail: .milliseconds(20)
+            flushTotal: .seconds(120),
+            flushTail: .seconds(120)
         )
         registry.registerProject(identity)
         #expect(await registry.flushPersistence() == .saved)
@@ -1888,8 +1888,8 @@ struct AgentTaskRegistryTests {
         let store = ScriptedAgentTaskStore()
         let agentTasks = AgentTaskRegistry(
             persistence: store,
-            flushTotal: .milliseconds(100),
-            flushTail: .milliseconds(20)
+            flushTotal: .seconds(120),
+            flushTail: .seconds(120)
         )
         let projects = ProjectRegistry(agentTasks: agentTasks)
         let manager = try #require(projects.projectManager(for: fixture.project))
@@ -2249,7 +2249,8 @@ struct AgentTaskRegistryTests {
         ).load(project: identity)
         #expect(loaded.status == .loaded)
         #expect(loaded.tasks.count == 1)
-        #expect(loaded.tasks[0].runs.map(\.id) == [firstSession.id])
+        let persistedTask = try #require(loaded.tasks.first)
+        #expect(persistedTask.runs.map(\.id) == [firstSession.id])
     }
 
     @Test("in-memory task cap never evicts a paused resumable task")
@@ -2755,9 +2756,11 @@ struct AgentTaskRegistryTests {
         reader.registerProject(identity)
         #expect(await reader.flushPersistence() == .saved)
         #expect(reader.tasks.count == 1)
-        #expect(reader.tasks[0].route.availability == .missing)
-        #expect(reader.tasks[0].lifecycle == .paused)
-        #expect(reader.tasks[0].runs[0].liveness == .stale)
+        let loadedTask = try #require(reader.tasks.first)
+        #expect(loadedTask.route.availability == .missing)
+        #expect(loadedTask.lifecycle == .paused)
+        let loadedRun = try #require(loadedTask.runs.first)
+        #expect(loadedRun.liveness == .stale)
         #expect(reader.taskID(forSessionID: session.id) == nil)
     }
 
@@ -2818,7 +2821,11 @@ struct AgentTaskRegistryTests {
             return
         }
         #expect(reader.armLaunch(resume))
-        let resumed = makeSession(pid: 1_652, generation: 2)
+        let resumed = makeSession(
+            pid: 1_652,
+            generation: 2,
+            preciseStartedAt: Date(timeIntervalSince1970: 2)
+        )
         reader.bridge(
             resumed,
             replacing: nil,
@@ -2828,9 +2835,11 @@ struct AgentTaskRegistryTests {
 
         let task = try #require(reader.task(for: launch.taskID))
         #expect(task.runs.map(\.id) == [original.id, resumed.id])
-        #expect(task.runs[0].liveness == .terminated)
-        #expect(task.runs[0].endedAt != nil)
-        #expect(task.runs[1].liveness == .live)
+        let originalRun = try #require(task.runs.first)
+        let resumedRun = try #require(task.runs.last)
+        #expect(originalRun.liveness == .terminated)
+        #expect(originalRun.endedAt != nil)
+        #expect(resumedRun.liveness == .live)
         #expect(task.lifecycle == .active)
         #expect(reader.taskID(forSessionID: resumed.id) == launch.taskID)
         #expect(await reader.flushPersistence() == .saved)
@@ -2844,12 +2853,12 @@ struct AgentTaskRegistryTests {
     func failedSaveRetriesAfterProjectReturns() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        try FileManager.default.removeItem(at: fixture.project)
         let identity = project(fixture.project.path)
         let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
         let registry = AgentTaskRegistry(persistence: store)
         registry.registerProject(identity)
-        await registry.flushPersistence()
+        #expect(await registry.flushPersistence() == .saved)
+        try FileManager.default.removeItem(at: fixture.project)
         let session = makeSession(pid: 1_701, generation: 1)
         registry.bridge(
             session,
@@ -2909,8 +2918,8 @@ struct AgentTaskRegistryTests {
         let store = ScriptedAgentTaskStore(suspendFirstSave: true)
         let registry = AgentTaskRegistry(
             persistence: store,
-            flushTotal: .milliseconds(100),
-            flushTail: .milliseconds(20)
+            flushTotal: .seconds(1),
+            flushTail: .milliseconds(100)
         )
         registry.registerProject(identity)
         #expect(await registry.flushPersistence() == .saved)

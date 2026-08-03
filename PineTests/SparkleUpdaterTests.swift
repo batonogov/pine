@@ -153,7 +153,7 @@ struct SparkleUpdaterTests {
         guard let enumerator = FileManager.default.enumerator(
             at: sourceRoot,
             includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
+            options: []
         ) else {
             throw CocoaError(.fileReadUnknown)
         }

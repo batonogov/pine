@@ -1095,7 +1095,7 @@ final class AgentTaskRegistry {
             let interruptedTail = loadedInterruptedTaskIDs.contains(task.id)
                 && previous.liveness == .stale
                 && previous.endedAt == nil
-                && session.startedAt >= previous.lastObservedAt
+                && evidence.observedStartedAt >= previous.lastObservedAt
             let terminatedTail = previous.liveness == .terminated
                 && previous.endedAt != nil
             return previous.id == previousRunID

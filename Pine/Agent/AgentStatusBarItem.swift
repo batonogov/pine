@@ -227,7 +227,7 @@ extension AgentStatusSummary {
 
     @MainActor
     func detailText(locale: Locale) -> String {
-        let stateText = "\(agentType.displayName): \(state.displayName)"
+        let stateText = "\(agentType.displayName): \(state.displayName(locale: locale))"
         guard liveness != .live else { return stateText }
         return "\(stateText) — \(liveness.displayName(locale: locale))"
     }

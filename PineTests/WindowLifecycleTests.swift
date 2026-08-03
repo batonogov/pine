@@ -35,6 +35,14 @@ struct WindowLifecycleTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    private func updateContent(
+        _ content: String,
+        in project: ProjectManager
+    ) {
+        project.primaryTabManager.autoSavePreferenceProvider = { false }
+        project.primaryTabManager.updateContent(content)
+    }
+
     // MARK: - onDisappear logic (handleProjectWindowDisappear)
 
     @Test func closingLastProjectTriggersShowWelcome() throws {
@@ -144,7 +152,7 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// dirty")
+        updateContent("// dirty", in: project)
 
         let delegate = AppDelegate()
         delegate.registry = registry
@@ -159,7 +167,8 @@ struct WindowLifecycleTests {
             saveAll: { _, _ in
                 saveAttempts += 1
                 return false
-            }
+            },
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
@@ -176,22 +185,24 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// dirty")
+        updateContent("// dirty", in: project)
         let delegate = AppDelegate()
         delegate.registry = registry
-        let clock = ContinuousClock()
-        let started = clock.now
+        let deadlineProbe = TerminationDeadlineProbe()
 
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { _, _, _, _ in
                 try? await Task.sleep(for: .seconds(10))
                 return .alertFirstButtonReturn
             },
-            terminationDeadlineOverride: .now() + .milliseconds(25)
+            terminationDeadlineOverride: .now() + .milliseconds(25),
+            terminationDeadlineObserver: deadlineProbe.record
         )
 
         #expect(!result)
-        #expect(started.duration(to: clock.now) < .seconds(1))
+        #expect(
+            deadlineProbe.elapsedNanoseconds.map { $0 < 1_000_000_000 } == true
+        )
         #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
     }
@@ -204,7 +215,7 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// dirty")
+        updateContent("// dirty", in: project)
 
         let delegate = AppDelegate()
         delegate.registry = registry
@@ -223,7 +234,8 @@ struct WindowLifecycleTests {
                 saveAttempts += 1
                 return true
             },
-            applicationContext: fallbackContext
+            applicationContext: fallbackContext,
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
@@ -241,18 +253,20 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// first dirty state")
+        updateContent("// first dirty state", in: project)
 
         let delegate = AppDelegate()
         delegate.registry = registry
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
                 #expect(template == .unsavedChangesBulk)
-                project.primaryTabManager.updateContent(
-                    "// changed while quit sheet was visible"
+                updateContent(
+                    "// changed while quit sheet was visible",
+                    in: project
                 )
                 return .alertSecondButtonReturn
-            }
+            },
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
@@ -269,7 +283,7 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// discarded")
+        updateContent("// discarded", in: project)
         project.recoveryManager?.snapshotDirtyTabs(project.allTabs)
         #expect(project.recoveryManager?.pendingRecoveryEntries().isEmpty == false)
         let delegate = AppDelegate()
@@ -279,7 +293,8 @@ struct WindowLifecycleTests {
             presentAlert: { template, _, _, _ in
                 #expect(template == .unsavedChangesBulk)
                 return .alertSecondButtonReturn
-            }
+            },
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(result)
@@ -307,8 +322,8 @@ struct WindowLifecycleTests {
         )
         firstProject.primaryTabManager.openTab(url: firstFile)
         secondProject.primaryTabManager.openTab(url: secondFile)
-        firstProject.primaryTabManager.updateContent("// first dirty")
-        secondProject.primaryTabManager.updateContent("// second dirty")
+        updateContent("// first dirty", in: firstProject)
+        updateContent("// second dirty", in: secondProject)
         let delegate = AppDelegate()
         delegate.registry = registry
         var promptCount = 0
@@ -320,7 +335,8 @@ struct WindowLifecycleTests {
                 return promptCount == 1
                     ? .alertSecondButtonReturn
                     : .alertThirdButtonReturn
-            }
+            },
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
@@ -417,7 +433,7 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// keep after refused quit")
+        updateContent("// keep after refused quit", in: project)
         let probe = TerminationTaskProbe(waitResult: true)
         var run: UserTaskRun?
         let delegate = AppDelegate()
@@ -689,6 +705,24 @@ struct WindowLifecycleTests {
             exitCode: 0,
             timedOut: false
         )
+    }
+}
+
+nonisolated private final class TerminationDeadlineProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let started = DispatchTime.now().uptimeNanoseconds
+    private var recordedElapsedNanoseconds: UInt64?
+
+    var elapsedNanoseconds: UInt64? {
+        lock.withLock { recordedElapsedNanoseconds }
+    }
+
+    func record() {
+        lock.withLock {
+            guard recordedElapsedNanoseconds == nil else { return }
+            recordedElapsedNanoseconds =
+                DispatchTime.now().uptimeNanoseconds - started
+        }
     }
 }
 

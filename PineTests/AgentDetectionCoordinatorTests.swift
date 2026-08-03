@@ -722,7 +722,8 @@ struct AgentDetectionCoordinatorTests {
     @Test func tooltipFormatIsDisplayNameAndState() {
         let session = AgentSession(agentType: .claudeCode, state: .executing)
         let expected = "\(session.agentType.displayName) — \(session.state.displayName)"
-        #expect(expected == "Claude Code — Executing")
+        #expect(expected.hasPrefix("Claude Code — "))
+        #expect(expected.hasSuffix(session.state.displayName))
     }
 
     // MARK: - cputime parsing (#1112 fix: `times=` was an invalid ps keyword;

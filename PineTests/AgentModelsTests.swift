@@ -131,11 +131,11 @@ struct AgentModelsTests {
     // MARK: - AgentState
 
     @Test func agentState_displayNames() {
-        #expect(AgentState.idle.displayName == Strings.agentStateIdle)
-        #expect(AgentState.thinking.displayName == Strings.agentStateThinking)
-        #expect(AgentState.executing.displayName == Strings.agentStateExecuting)
-        #expect(AgentState.waitingInput.displayName == Strings.agentStateWaitingInput)
-        #expect(AgentState.done.displayName == Strings.agentStateDone)
+        #expect(AgentState.idle.displayName == Strings.agentStateIdle())
+        #expect(AgentState.thinking.displayName == Strings.agentStateThinking())
+        #expect(AgentState.executing.displayName == Strings.agentStateExecuting())
+        #expect(AgentState.waitingInput.displayName == Strings.agentStateWaitingInput())
+        #expect(AgentState.done.displayName == Strings.agentStateDone())
     }
 
     // MARK: - AgentSession

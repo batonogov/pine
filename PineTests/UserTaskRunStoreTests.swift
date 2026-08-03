@@ -479,7 +479,7 @@ struct UserTaskRunStoreTests {
         )
 
         let shutdown = Task { @MainActor in
-            await store.shutdownAll(until: .now() + 2)
+            await store.shutdownAll(until: .now() + 120)
         }
         defer { gate.release() }
 

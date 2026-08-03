@@ -145,6 +145,12 @@ final class TabManager {
     var onTabInventoryChanged: (() -> Void)?
     var editorSettings: EditorSettings = .shared
     var fileFormatters: FileFormatterRegistry = .default
+    /// Injectable preference lookup keeps independent project/test contexts
+    /// from inheriting a concurrently mutated process-wide UserDefaults key.
+    @ObservationIgnored
+    var autoSavePreferenceProvider: @MainActor () -> Bool = {
+        UserDefaults.standard.bool(forKey: TabAutoSave.autoSaveKey)
+    }
     /// Project wiring replaces this fallback for every pane-owned manager,
     /// so model-triggered large-file and error flows do not depend on which
     /// unrelated window happens to be key.
@@ -235,7 +241,7 @@ final class TabManager {
 
     var hasUnsavedChanges: Bool { TabCollection.hasUnsavedChanges(in: tabs) }
     var dirtyTabs: [EditorTab] { TabCollection.dirtyTabs(in: tabs) }
-    var isAutoSaveEnabled: Bool { UserDefaults.standard.bool(forKey: Self.autoSaveKey) }
+    var isAutoSaveEnabled: Bool { autoSavePreferenceProvider() }
     var pinnedTabCount: Int { TabPinning.pinnedTabCount(in: tabs) }
 
     /// Consumes the terminal result of a bounded AppKit focus request.

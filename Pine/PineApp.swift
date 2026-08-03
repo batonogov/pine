@@ -777,8 +777,9 @@ class CloseDelegate: NSObject, NSWindowDelegate {
 
 // MARK: - AppDelegate
 
-@MainActor
-private final class TerminationDeadlineResolver<Value: Sendable> {
+nonisolated private final class TerminationDeadlineResolver<Value: Sendable>:
+    @unchecked Sendable {
+    private let lock = NSLock()
     private var continuation: CheckedContinuation<Value?, Never>?
 
     init(_ continuation: CheckedContinuation<Value?, Never>) {
@@ -787,11 +788,24 @@ private final class TerminationDeadlineResolver<Value: Sendable> {
 
     @discardableResult
     func resolve(_ value: Value?) -> Bool {
+        let continuation = lock.withLock {
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
         guard let continuation else { return false }
-        self.continuation = nil
         continuation.resume(returning: value)
         return true
     }
+}
+
+nonisolated private enum TerminationDeadlineTimer {
+    /// A Swift-executor sleep can be delayed badly when the app or test host
+    /// is saturated. Quit's hard deadline is a wall-clock contract.
+    static let queue = DispatchQueue(
+        label: "com.pine.termination-deadline",
+        qos: .userInteractive
+    )
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
@@ -1759,33 +1773,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
     private func valueBeforeTerminationDeadline<Value: Sendable>(
         _ deadline: DispatchTime,
+        deadlineObserver: @escaping @Sendable () -> Void,
         onTimeout: @escaping @MainActor () -> Void,
         operation: @escaping @MainActor () async -> Value
     ) async -> Value? {
         let now = DispatchTime.now().uptimeNanoseconds
         guard now < deadline.uptimeNanoseconds else {
+            deadlineObserver()
             onTimeout()
             return nil
         }
-        let delay = deadline.uptimeNanoseconds - now
         return await withCheckedContinuation { continuation in
             let resolver = TerminationDeadlineResolver<Value>(continuation)
-            var timeoutTask: Task<Void, Never>?
             let operationTask = Task { @MainActor in
                 let value = await operation()
-                if resolver.resolve(value) {
-                    timeoutTask?.cancel()
-                }
+                resolver.resolve(value)
             }
-            timeoutTask = Task { @MainActor in
-                do {
-                    try await Task.sleep(nanoseconds: delay)
-                } catch {
-                    return
-                }
+            TerminationDeadlineTimer.queue.asyncAfter(
+                deadline: deadline
+            ) {
                 if resolver.resolve(nil) {
+                    deadlineObserver()
                     operationTask.cancel()
-                    onTimeout()
+                    Task { @MainActor in
+                        onTimeout()
+                    }
                 }
             }
         }
@@ -1800,7 +1812,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         presentAlert: TerminationAlertPresenter? = nil,
         saveAll: TerminationSaveAll? = nil,
         applicationContext: DialogPresentationContext? = nil,
-        terminationDeadlineOverride: DispatchTime? = nil
+        terminationDeadlineOverride: DispatchTime? = nil,
+        terminationDeadlineObserver: @escaping @Sendable () -> Void = {}
     ) async -> Bool {
         let terminationDeadline = terminationDeadlineOverride
             ?? DispatchTime.now() + .seconds(30)
@@ -1828,6 +1841,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         if registry.hasOutstandingUserTaskExecution {
             _ = await valueBeforeTerminationDeadline(
                 terminationDeadline,
+                deadlineObserver: terminationDeadlineObserver,
                 onTimeout: {
                     guard let window = fallbackContext.nsWindow,
                           let sheet = window.attachedSheet else { return }
@@ -1879,6 +1893,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             let message = Strings.unsavedChangesListMessage(fileList)
             let response = await valueBeforeTerminationDeadline(
                 terminationDeadline,
+                deadlineObserver: terminationDeadlineObserver,
                 onTimeout: {
                     guard let window = context.nsWindow,
                           let sheet = window.attachedSheet else { return }
@@ -1905,6 +1920,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             case .alertFirstButtonReturn:
                 let didSave = await valueBeforeTerminationDeadline(
                     terminationDeadline,
+                    deadlineObserver: terminationDeadlineObserver,
                     onTimeout: {
                         guard let window = context.nsWindow,
                               let sheet = window.attachedSheet else { return }
@@ -1950,6 +1966,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 : fallbackContext
             let response = await valueBeforeTerminationDeadline(
                 terminationDeadline,
+                deadlineObserver: terminationDeadlineObserver,
                 onTimeout: {
                     guard let window = context.nsWindow,
                           let sheet = window.attachedSheet else { return }
