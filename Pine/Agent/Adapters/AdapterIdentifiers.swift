@@ -50,7 +50,10 @@ nonisolated struct AgentID: CanonicalAdapterIdentifier {
     }
 
     init(migratingLegacyStableIdentifier value: String) throws {
-        guard ["claudeCode", "codex", "aider", "copilot", "pi", "openCode", "gemini"].contains(value) else {
+        guard [
+            "claudeCode", "codex", "aider", "copilot", "pi", "openCode", "gemini",
+            "amp", "cursorAgent", "goose", "qwenCode", "crush",
+        ].contains(value) else {
             throw AdapterValueError.invalidCharacters("legacyAgentID")
         }
         self.value = value

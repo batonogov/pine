@@ -11,7 +11,7 @@ credentials, prompts, terminal output, or network services.
 | Gate | Coverage | Release command or evidence |
 | --- | --- | --- |
 | First-party adapter conformance | Every catalog entry runs the same identity, exact-alias, detected-tier, observed-generation, and generic-fallback assertions | `PineTests/AgentReleaseGateTests` and `PineTests/FirstPartyAgentCompatibilityTests` |
-| Protocol and process fixtures | Versioned synthetic working, waiting, completion, failure, malformed, delayed, PID-reuse, and process-replacement streams | `PineTests/Fixtures/AgentAdapters/process-v1.json` and `fake-agent.sh` |
+| Protocol and process fixtures | Versioned synthetic working, waiting, completion, failure, malformed, delayed, PID-reuse, process-replacement, structured-interface, replay, oversized, and future-schema streams | `PineTests/Fixtures/AgentAdapters/process-v1.json`, `protocol-review-v1.json`, and `fake-agent.sh` |
 | Multi-project routing and Inbox | Two projects, multiple panes and agents, background project reopen, exact task/run/generation routing, stale routes, relaunch, and project close | `PineTests/AgentInboxTests`, `PineTests/AgentTaskRegistryTests`, and `PineTests/ProjectRegistryTests` |
 | Notification correctness | Exact transitions, process-only downgrade, stale/reordered/replacement rejection, cross-project suppression, de-duplication, and persisted settings | `PineTests/AgentNotificationTests` |
 | Security and privacy | Spoofs, lookalikes, cross-project identity, replay, path traversal, opaque-value redaction, untrusted registration, and malformed persistence | `PineTests/AgentAdapterContractTests`, `PineTests/AgentAdapterRegistryTests`, `PineTests/AgentReleaseGateTests`, and `PineTests/AgentTaskRegistryTests` |
@@ -81,6 +81,11 @@ text is never parsed as trusted lifecycle evidence.
 | GitHub Copilot CLI | 1.0.77 | Detected | Exact executable alias + process generation | Generic terminal command | Process termination only |
 | Aider | 0.86.0 | Detected | Exact executable alias + process generation | Generic terminal command | Process termination only |
 | Gemini CLI | 0.53.1 | Detected | Exact executable alias + process generation | Generic terminal command | Process termination only |
+| Amp | 0.0.1785747753-g51f676 | Detected | Exact executable alias + process generation | Generic terminal command | Structured stream disabled; process termination only |
+| Cursor Agent | 2026.07.23-e383d2b | Detected | Exact executable alias + process generation | Generic terminal command | Structured print/resume disabled; process termination only |
+| Goose | 1.45.0 | Detected | Exact executable alias + process generation | Generic terminal command | ACP disabled; process termination only |
+| Qwen Code | 0.21.4 | Detected | Exact executable alias + process generation | Generic terminal command | Structured stream disabled; process termination only |
+| Crush | 0.88.0 | Detected | Exact executable alias + process generation | Generic terminal command | Experimental SSE disabled; process termination only |
 
 If the installed version differs, record it and rerun the shared adapter
 conformance suite. Do not raise the tier based on terminal presentation,

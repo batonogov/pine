@@ -326,6 +326,16 @@ final class AgentActivityStore {
             "opencode"
         case .gemini:
             "gemini"
+        case .amp:
+            "amp"
+        case .cursorAgent:
+            "cursor-agent"
+        case .goose:
+            "goose"
+        case .qwenCode:
+            "qwen"
+        case .crush:
+            "crush"
         case .generic(let name):
             "generic:\(name)"
         }

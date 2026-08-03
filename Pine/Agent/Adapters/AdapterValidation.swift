@@ -1288,7 +1288,12 @@ nonisolated enum AgentPresentationCatalog {
         "copilot": ("Copilot", .copilot, ["github-copilot-cli", "copilot"]),
         "pi": ("Pi", .pi, ["pi"]),
         "openCode": ("OpenCode", .generic, ["opencode"]),
-        "gemini": ("Gemini CLI", .generic, ["gemini"])
+        "gemini": ("Gemini CLI", .generic, ["gemini"]),
+        "amp": ("Amp", .generic, ["amp"]),
+        "cursorAgent": ("Cursor Agent", .generic, ["cursor-agent"]),
+        "goose": ("Goose", .generic, ["goose"]),
+        "qwenCode": ("Qwen Code", .generic, ["qwen"]),
+        "crush": ("Crush", .generic, ["crush"])
     ]
 
     static var builtInStableIdentifiers: Set<String> { Set(builtIns.keys) }

@@ -15,9 +15,29 @@ struct FirstPartyAgentCompatibilityTests {
         let commands: [String]
     }
 
+    private struct ProtocolReviewFixture: Decodable {
+        struct Agent: Decodable {
+            struct Case: Decodable {
+                let name: String
+                let inputBytes: Int
+                let wire: String
+            }
+
+            let stableIdentifier: String
+            let authority: String
+            let interface: String
+            let cases: [Case]
+        }
+
+        let schemaVersion: UInt16
+        let maximumEventBytes: Int
+        let sanitization: String
+        let agents: [Agent]
+    }
+
     @Test func catalogIsCompleteUniqueAndFailClosed() throws {
         let records = FirstPartyAgentCompatibilityCatalog.records
-        #expect(records.count == 7)
+        #expect(records.count == 12)
         #expect(Set(records.map(\.stableIdentifier)).count == records.count)
         #expect(records.allSatisfy { $0.schemaVersion == FirstPartyAgentCompatibilityCatalog.schemaVersion })
         #expect(records.allSatisfy { $0.supportTier == .detected })
@@ -38,6 +58,41 @@ struct FirstPartyAgentCompatibilityTests {
             for alias in record.executableAliases {
                 #expect(AgentPresentationCatalog.stableIdentifier(forExecutableAlias: alias) == record.stableIdentifier)
             }
+        }
+    }
+
+    @Test func reviewedStructuredInterfacesRemainFailClosed() throws {
+        let fixture = try loadProtocolReviewFixture()
+        #expect(fixture.schemaVersion == FirstPartyAgentCompatibilityCatalog.schemaVersion)
+        #expect(fixture.maximumEventBytes == 65_536)
+        #expect(fixture.sanitization.contains("credentials"))
+        #expect(Set(fixture.agents.map(\.stableIdentifier)) == [
+            "amp", "cursorAgent", "goose", "qwenCode", "crush",
+        ])
+
+        let requiredCases: [String: Set<String>] = [
+            "amp": ["documented-init", "documented-completion", "malformed", "reordered", "oversized", "future-schema"],
+            "cursorAgent": ["version", "json", "stream-json", "resume-explicit", "malformed", "oversized", "future-schema"],
+            "goose": ["negotiation", "ordering", "replay", "malformed", "oversized", "future-schema"],
+            "qwenCode": ["version", "process", "documented-stream", "malformed", "reordered", "oversized", "future-schema"],
+            "crush": ["session", "reconnect", "duplicate", "reordered", "malformed", "oversized", "future-schema"],
+        ]
+
+        for agent in fixture.agents {
+            let record = try #require(
+                FirstPartyAgentCompatibilityCatalog.record(stableIdentifier: agent.stableIdentifier)
+            )
+            #expect(record.supportTier == .detected)
+            #expect(record.eventSource == .processSnapshot)
+            #expect(record.trustLevel == .observedProcessGeneration)
+            #expect(record.launchCapability == .manualTerminal)
+            #expect(record.resumeCapability == .newSessionOnly)
+            #expect(agent.authority == "pine-launched-authenticated-transport-only")
+            #expect(!agent.interface.isEmpty)
+            #expect(Set(agent.cases.map(\.name)) == requiredCases[agent.stableIdentifier])
+            #expect(agent.cases.first { $0.name == "oversized" }?.inputBytes == fixture.maximumEventBytes + 1)
+            #expect(agent.cases.allSatisfy { !$0.wire.localizedCaseInsensitiveContains("token") })
+            #expect(agent.cases.allSatisfy { !$0.wire.localizedCaseInsensitiveContains("prompt") })
         }
     }
 
@@ -118,5 +173,13 @@ struct FirstPartyAgentCompatibilityTests {
             .appending(path: "Fixtures/AgentAdapters/process-v1.json")
         let data = try Data(contentsOf: fixtureURL)
         return try JSONDecoder().decode(Fixture.self, from: data)
+    }
+
+    private func loadProtocolReviewFixture() throws -> ProtocolReviewFixture {
+        let source = URL(fileURLWithPath: #filePath)
+        let fixtureURL = source.deletingLastPathComponent()
+            .appending(path: "Fixtures/AgentAdapters/protocol-review-v1.json")
+        let data = try Data(contentsOf: fixtureURL)
+        return try JSONDecoder().decode(ProtocolReviewFixture.self, from: data)
     }
 }
