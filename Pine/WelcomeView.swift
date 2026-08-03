@@ -98,11 +98,8 @@ struct WelcomeView: View {
                 .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
 
                 Button {
-                    if let appDelegate {
-                        appDelegate.showAgentInbox()
-                    } else {
-                        openWindow(id: "agent-inbox")
-                    }
+                    openWindow(id: "agent-inbox")
+                    NSApp.activate()
                 } label: {
                     Label(Strings.menuAgentInbox, systemImage: MenuIcons.agentInbox)
                 }

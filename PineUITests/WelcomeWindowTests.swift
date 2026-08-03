@@ -45,11 +45,11 @@ final class WelcomeWindowTests: PineUITestCase {
 
         inboxButton.click()
 
-        let inbox = app.descendants(matching: .any)["agentInbox"].firstMatch
-        XCTAssertTrue(waitForExistence(inbox), "Agent Inbox should open")
+        let inboxWindow = app.windows["Agent Inbox"]
+        XCTAssertTrue(waitForExistence(inboxWindow), "Agent Inbox should open")
         XCTAssertTrue(
             waitForExistence(
-                app.descendants(matching: .any)["agentInboxEmpty"].firstMatch
+                inboxWindow.descendants(matching: .any)["agentInboxEmpty"].firstMatch
             ),
             "A fresh Inbox should show its empty state"
         )
@@ -64,12 +64,14 @@ final class WelcomeWindowTests: PineUITestCase {
         projectURLs.append(url)
         launchWithProject(url)
 
-        clickMenuBarItem("View")
-        let inboxItem = app.menuItems["Agent Inbox"]
+        let viewMenu = app.menuBars.menuBarItems["View"]
+        XCTAssertTrue(waitForExistence(viewMenu))
+        viewMenu.click()
+        let inboxItem = viewMenu.menus.menuItems["Agent Inbox"].firstMatch
         XCTAssertTrue(waitForExistence(inboxItem))
         inboxItem.click()
 
-        let inbox = app.descendants(matching: .any)["agentInbox"].firstMatch
+        let inbox = app.windows["Agent Inbox"]
         XCTAssertTrue(
             waitForExistence(inbox),
             "Agent Inbox should be available from every project window"
