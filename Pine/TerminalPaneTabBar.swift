@@ -67,8 +67,8 @@ struct TerminalPaneTabBar: View {
     private func agentResumeActions(
         for tab: TerminalTab
     ) -> [TerminalAgentResumeAction] {
-        guard let projectManager else { return [] }
-        let projectURL = projectManager.rootURL
+        guard let projectManager,
+              let projectURL = projectManager.rootURL else { return [] }
         return projectRegistry.agentTasks.tasks.compactMap { task in
             guard projectRegistry.agentTasks.canResumeTask(task.id),
                   task.project.canonicalWorktreePath == projectURL.path,

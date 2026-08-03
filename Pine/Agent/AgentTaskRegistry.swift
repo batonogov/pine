@@ -178,6 +178,14 @@ final class AgentTaskRegistry {
         tasks.first { task in task.runs.contains { $0.id == sessionID } }
     }
 
+    #if DEBUG
+    func persistenceIsQuarantinedForTesting(
+        _ project: AgentTaskProjectIdentity
+    ) -> Bool {
+        quarantinedProjects.contains(project)
+    }
+    #endif
+
     func isExactLiveOwner(
         taskID: UUID,
         terminalID: UUID,
@@ -453,22 +461,26 @@ final class AgentTaskRegistry {
     /// but detector evidence cannot consume them.
     @discardableResult
     func armLaunch(_ reservation: AgentTaskLaunchReservation) -> Bool {
-        expireClaims()
-        guard !isTerminating,
-              let key = pendingClaimKeyByToken[reservation.token],
+        if !isTerminating { expireClaims() }
+        guard let key = pendingClaimKeyByToken[reservation.token],
               var claim = pendingClaims[key],
               claim.taskID == reservation.taskID,
-              claim.state == .dormant,
-              monotonicNow() < claim.deadline else { return false }
+              claim.state == .dormant else { return false }
+        let deadlineIsValid: Bool
+        if isTerminating {
+            deadlineIsValid = terminationClaimRemaining[reservation.token]
+                .map { $0 > .zero } ?? false
+        } else {
+            deadlineIsValid = monotonicNow() < claim.deadline
+        }
+        guard deadlineIsValid else { return false }
         claim.state = .armed
         pendingClaims[key] = claim
-        markDirty(claim.project)
         return true
     }
 
     func cancelLaunch(_ reservation: AgentTaskLaunchReservation) {
-        guard !isTerminating else { return }
-        expireClaims()
+        if !isTerminating { expireClaims() }
         cancelClaim(reservation)
     }
 
@@ -637,9 +649,14 @@ final class AgentTaskRegistry {
     ) async -> Bool {
         guard isTerminating else { return true }
         restoreTerminationSnapshot()
-        guard await flushPersistence(maximumDuration: maximumDuration) == .saved else { return false }
+        let rollbackWasSaved = await flushPersistence(
+            maximumDuration: maximumDuration
+        ) == .saved
+        // A failed durability barrier is surfaced to the caller, but it must
+        // never leave the still-running application in termination mode.
+        // Runtime admission and bounded claim expiry are restored regardless.
         finishTerminationCancellation()
-        return true
+        return rollbackWasSaved
     }
 
     #if DEBUG
@@ -743,9 +760,7 @@ final class AgentTaskRegistry {
     ) {
         loadStatusByProject[project.persistenceKey] = result.status
         if case .rejected(let rejection) = result.status {
-            if rejection == .unknownSchema || rejection == .storageLimit {
-                quarantineLoadedProject(project, rejection: rejection)
-            }
+            quarantineLoadedProject(project, rejection: rejection)
             return
         }
         let currentTaskIDs = Set(tasks.map(\.id))
@@ -1157,6 +1172,7 @@ final class AgentTaskRegistry {
     private func removeClaim(for key: AgentTaskTerminalKey) {
         guard let claim = pendingClaims.removeValue(forKey: key) else { return }
         pendingClaimKeyByToken[claim.token] = nil
+        terminationClaimRemaining[claim.token] = nil
         claimExpiryTasks.removeValue(forKey: claim.token)?.cancel()
     }
 
@@ -1241,16 +1257,18 @@ final class AgentTaskRegistry {
             return
         }
         persistenceSequence += 1
-        let unacknowledgedInitialTaskIDs = Set<UUID>(
+        let pendingInitialTaskIDs = Set<UUID>(
             pendingClaims.values.compactMap { claim in
-                guard claim.state == .dormant,
-                      case .initialLaunch = claim.kind else { return nil }
+                guard case .initialLaunch = claim.kind else { return nil }
                 return claim.taskID
             }
         )
+        // A Pine-owned task is not durable until authoritative process
+        // evidence appends its first run. This covers both pre-ACK dormant and
+        // post-ACK armed claims, including snapshots taken during Quit.
         let snapshot = tasks.filter {
             $0.project == project
-                && !unacknowledgedInitialTaskIDs.contains($0.id)
+                && !pendingInitialTaskIDs.contains($0.id)
         }
         let store = persistence
         let revision = persistenceRevision[project]

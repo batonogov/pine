@@ -312,18 +312,16 @@ final class ProjectRegistry: LSPSettingsObserver {
     func cancelAgentTaskTermination(
         maximumDuration: Duration? = nil
     ) async -> Bool {
-        guard await agentTasks.cancelApplicationTerminationAndFlush(
+        let rollbackWasSaved = await agentTasks.cancelApplicationTerminationAndFlush(
             maximumDuration: maximumDuration
-        ) else {
-            return false
-        }
+        )
         for manager in openProjects.values {
             manager.terminal.cancelAgentTaskTermination()
         }
         for manager in detachedTaskCleanupProjects.values {
             manager.terminal.cancelAgentTaskTermination()
         }
-        return true
+        return rollbackWasSaved
     }
 
     /// Cancels and waits for all project-owned user tasks against one shared

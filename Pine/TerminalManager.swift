@@ -237,6 +237,10 @@ final class TerminalManager {
     }
 
 #if DEBUG
+    var agentCallbacksFrozenForTesting: Bool {
+        agentTaskCallbacksFrozen
+    }
+
     func launchAgentCommandForTesting(
         _ command: String,
         descriptor: AgentDescriptor,

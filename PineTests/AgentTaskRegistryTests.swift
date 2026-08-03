@@ -897,8 +897,56 @@ struct AgentTaskRegistryTests {
         #expect(taskRegistry.task(for: reservation.taskID)?.runs.count == 2)
     }
 
-    @Test("PTY acknowledgement arms launch authority exactly once")
-    func acknowledgedWriteArmsLaunchAuthority() async throws {
+    @Test("failed PTY write cancels live launch reservation before expiry")
+    func failedWriteCancelsLaunchReservation() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let taskRegistry = AgentTaskRegistry(claimTTL: .seconds(1))
+        let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let state = try #require(
+            manager.paneManager.terminalState(for: pane)
+        )
+        let tab = try #require(state.terminalTabs.first)
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+
+        let failed = await manager.terminal.launchAgentCommandForTesting(
+            "codex",
+            descriptor: descriptor,
+            in: tab
+        ) {
+            false
+        }
+        #expect(failed == .rejected)
+        #expect(taskRegistry.tasks.isEmpty)
+
+        var retryWriteCalled = false
+        let retry = await manager.terminal.launchAgentCommandForTesting(
+            "codex",
+            descriptor: descriptor,
+            in: tab
+        ) {
+            retryWriteCalled = true
+            return true
+        }
+        #expect(retryWriteCalled)
+        guard case .reserved = retry else {
+            Issue.record("failed write left the terminal reservation occupied")
+            return
+        }
+        manager.terminal.cancelAgentLaunch(in: tab)
+    }
+
+    @Test("stale successful PTY acknowledgement cannot arm launch authority")
+    func staleAcknowledgementCannotArmLaunchAuthority() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
         let taskRegistry = AgentTaskRegistry(claimTTL: .milliseconds(50))
@@ -927,7 +975,7 @@ struct AgentTaskRegistryTests {
                 await gate.waitForCompletion()
             }
         }
-        await gate.waitUntilStarted()
+        #expect(await gate.waitUntilStarted())
         let dormantTaskID = try #require(taskRegistry.tasks.first?.id)
         let observed = makeSession(
             pid: 1_109,
@@ -956,8 +1004,8 @@ struct AgentTaskRegistryTests {
         #expect(duplicate == .rejected)
         #expect(!duplicateWriteCalled)
 
-        gate.finish(false)
-        #expect(await launch.value == .rejected)
+        gate.finish(true)
+        #expect(await launch.value == .sentWithoutReservation)
         #expect(taskRegistry.task(for: dormantTaskID) == nil)
 
         let armed = await manager.terminal.launchAgentCommandForTesting(
@@ -1059,6 +1107,104 @@ struct AgentTaskRegistryTests {
         registry.cancelLaunch(reservation)
         #expect(await registry.flushPersistence() == .saved)
         #expect(await store.savedTaskCounts().last == 0)
+    }
+
+    @Test("acknowledged initial launch is not published before observation")
+    func armedInitialLaunchIsNotPersisted() async throws {
+        let identity = project("/tmp/pine-agent-armed-persistence")
+        let store = ScriptedAgentTaskStore()
+        let registry = AgentTaskRegistry(persistence: store)
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+        let launchContext = context(
+            project: identity,
+            routeSeed: 671,
+            origin: .pineLaunched
+        )
+        guard case .reserved(let reservation) = registry.preparePineLaunch(
+            descriptor: AgentDescriptor(
+                agentType: .claudeCode,
+                launchExecutable: "claude"
+            ),
+            context: launchContext,
+            title: nil,
+            objective: nil
+        ) else {
+            Issue.record("reservation was rejected")
+            return
+        }
+        let callsBeforeArm = await store.saveCallCount()
+
+        #expect(registry.armLaunch(reservation))
+        #expect(await registry.flushPersistence() == .saved)
+        #expect(await store.saveCallCount() == callsBeforeArm)
+
+        registry.prepareForApplicationTermination()
+        #expect(await registry.flushPersistence() == .saved)
+        #expect(await store.savedTaskCounts().last == 0)
+        #expect(await registry.cancelApplicationTerminationAndFlush())
+        #expect(await store.savedTaskCounts().last == 0)
+
+        registry.cancelLaunch(reservation)
+        #expect(await registry.flushPersistence() == .saved)
+        #expect(await store.savedTaskCounts().last == 0)
+    }
+
+    @Test("successful launch acknowledgement survives Quit rollback")
+    func acknowledgedLaunchSurvivesTerminationRollback() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let taskRegistry = AgentTaskRegistry(claimTTL: .seconds(1))
+        let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        #expect(await taskRegistry.flushPersistence() == .saved)
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let state = try #require(
+            manager.paneManager.terminalState(for: pane)
+        )
+        let tab = try #require(state.terminalTabs.first)
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        let gate = AgentLaunchWriteGate()
+        let launch = Task { @MainActor in
+            await manager.terminal.launchAgentCommandForTesting(
+                "codex",
+                descriptor: descriptor,
+                in: tab
+            ) {
+                await gate.waitForCompletion()
+            }
+        }
+        #expect(await gate.waitUntilStarted())
+
+        projectRegistry.freezeAgentTasksForTermination()
+        taskRegistry.prepareForApplicationTermination()
+        gate.finish(true)
+        guard case .reserved(let reservation) = await launch.value else {
+            Issue.record("successful write lost its reservation during Quit")
+            return
+        }
+        #expect(await projectRegistry.cancelAgentTaskTermination())
+        #expect(taskRegistry.isLaunchPending(reservation))
+
+        let launched = makeSession(
+            pid: 1_495,
+            generation: 2,
+            agentType: .codex,
+            preciseStartedAt: Date().addingTimeInterval(60)
+        )
+        manager.terminal.bridgeAgentSession(
+            launched,
+            replacing: nil,
+            in: tab
+        )
+        #expect(taskRegistry.taskID(forSessionID: launched.id) == reservation.taskID)
     }
 
     @Test("expired local reservation permits a new terminal launch")
@@ -1550,6 +1696,52 @@ struct AgentTaskRegistryTests {
         )
     }
 
+    @Test("every rejected load quarantines later registry mutations")
+    func rejectedLoadQuarantinesRegistryWrites() async throws {
+        let rejections: [AgentTaskMetadataRejection] = [
+            .corrupt,
+            .unknownSchema,
+            .missingProject,
+            .invalidMetadata,
+            .storageLimit,
+            .ioFailure,
+            .unsafeFilesystemObject,
+            .lockContention,
+            .transientIO,
+            .durabilityUnknown,
+            .concurrentMutation,
+            .superseded
+        ]
+        for (offset, rejection) in rejections.enumerated() {
+            let identity = project(
+                "/tmp/pine-agent-rejected-load-\(offset)"
+            )
+            let store = LoadedAgentTaskStore(
+                status: .rejected(rejection),
+                tasks: []
+            )
+            let registry = AgentTaskRegistry(persistence: store)
+            registry.registerProject(identity)
+            #expect(await registry.flushPersistence() == .saved)
+            #expect(registry.persistenceIsQuarantinedForTesting(identity))
+
+            registry.bridge(
+                makeSession(
+                    pid: 1_492 + Int32(offset),
+                    generation: UInt64(offset + 1)
+                ),
+                replacing: nil,
+                context: context(
+                    project: identity,
+                    routeSeed: UInt8(152 + offset)
+                )
+            )
+
+            #expect(await registry.flushPersistence() == .failed)
+            #expect(registry.saveResultByProject[identity.persistenceKey] == nil)
+        }
+    }
+
     @Test("oversized metadata quarantines registry writes byte-for-byte")
     func oversizedMetadataQuarantinesWrites() async throws {
         let fixture = try PersistenceFixture()
@@ -1638,6 +1830,74 @@ struct AgentTaskRegistryTests {
         #expect(
             abs(rolledBack.updatedAt.timeIntervalSince(originalUpdatedAt)) < 0.001
         )
+    }
+
+    @Test("failed durable rollback still releases termination admission")
+    func failedRollbackReleasesTerminationAdmission() async throws {
+        let identity = project("/tmp/pine-agent-failed-rollback")
+        let store = ScriptedAgentTaskStore()
+        let registry = AgentTaskRegistry(
+            persistence: store,
+            flushTotal: .milliseconds(100),
+            flushTail: .milliseconds(20)
+        )
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+        registry.bridge(
+            makeSession(pid: 1_493, generation: 1),
+            replacing: nil,
+            context: context(project: identity, routeSeed: 153)
+        )
+        #expect(await registry.flushPersistence() == .saved)
+        registry.prepareForApplicationTermination()
+        #expect(await registry.flushPersistence() == .saved)
+        await store.setSaveResult(.rejected(.ioFailure))
+
+        let didPersistRollback = await registry.cancelApplicationTerminationAndFlush(
+            maximumDuration: .milliseconds(100)
+        )
+        #expect(!didPersistRollback)
+        let replacement = makeSession(pid: 1_494, generation: 2)
+        registry.bridge(
+            replacement,
+            replacing: nil,
+            context: context(project: identity, routeSeed: 154)
+        )
+        #expect(registry.task(forSessionID: replacement.id) != nil)
+    }
+
+    @Test("failed durable rollback still thaws project terminal callbacks")
+    func failedRollbackThawsProjectTerminalCallbacks() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = ScriptedAgentTaskStore()
+        let agentTasks = AgentTaskRegistry(
+            persistence: store,
+            flushTotal: .milliseconds(100),
+            flushTail: .milliseconds(20)
+        )
+        let projects = ProjectRegistry(agentTasks: agentTasks)
+        let manager = try #require(projects.projectManager(for: fixture.project))
+        #expect(await agentTasks.flushPersistence() == .saved)
+        agentTasks.bridge(
+            makeSession(pid: 1_496, generation: 1),
+            replacing: nil,
+            context: context(project: identity, routeSeed: 155)
+        )
+        #expect(await agentTasks.flushPersistence() == .saved)
+        projects.freezeAgentTasksForTermination()
+        #expect(manager.terminal.agentCallbacksFrozenForTesting)
+        agentTasks.prepareForApplicationTermination()
+        #expect(await agentTasks.flushPersistence() == .saved)
+        await store.setSaveResult(.rejected(.ioFailure))
+
+        let didPersistRollback = await projects.cancelAgentTaskTermination(
+            maximumDuration: .milliseconds(100)
+        )
+
+        #expect(!didPersistRollback)
+        #expect(!manager.terminal.agentCallbacksFrozenForTesting)
     }
 
     @Test("one rejected project cannot starve another project save")
@@ -2985,28 +3245,41 @@ private actor LoadedAgentTaskStore: AgentTaskPersisting {
 @MainActor
 private final class AgentLaunchWriteGate {
     private var started = false
-    private var startedContinuation: CheckedContinuation<Void, Never>?
-    private var completionContinuation: CheckedContinuation<Bool, Never>?
+    private var completion: Bool?
 
-    func waitForCompletion() async -> Bool {
+    func waitForCompletion(
+        maximumDuration: Duration = .seconds(2)
+    ) async -> Bool {
         started = true
-        startedContinuation?.resume()
-        startedContinuation = nil
-        return await withCheckedContinuation { continuation in
-            completionContinuation = continuation
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: maximumDuration)
+        while completion == nil, clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
         }
+        return completion ?? false
     }
 
-    func waitUntilStarted() async {
-        guard !started else { return }
-        await withCheckedContinuation { continuation in
-            startedContinuation = continuation
+    func waitUntilStarted(
+        maximumDuration: Duration = .seconds(1)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: maximumDuration)
+        while !started, clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
         }
+        return started
     }
 
     func finish(_ result: Bool) {
-        completionContinuation?.resume(returning: result)
-        completionContinuation = nil
+        completion = result
     }
 }
 
@@ -3063,7 +3336,7 @@ private actor SelectiveAgentTaskStore: AgentTaskPersisting {
 }
 
 private actor ScriptedAgentTaskStore: AgentTaskPersisting {
-    private let saveResult: AgentTaskMetadataSaveResult
+    private var saveResult: AgentTaskMetadataSaveResult
     private let suspendFirstSave: Bool
     private let suspendEverySave: Bool
     private var saveSnapshots: [[AgentTask]] = []
@@ -3123,6 +3396,10 @@ private actor ScriptedAgentTaskStore: AgentTaskPersisting {
         case .superseded:
             return .rejected(.superseded)
         }
+    }
+
+    func setSaveResult(_ result: AgentTaskMetadataSaveResult) {
+        saveResult = result
     }
 
     func waitForFirstSave() async -> Bool {
