@@ -1286,8 +1286,18 @@ nonisolated enum AgentPresentationCatalog {
         "codex": ("Codex", .codex, ["codex"]),
         "aider": ("Aider", .aider, ["aider"]),
         "copilot": ("Copilot", .copilot, ["github-copilot-cli", "copilot"]),
-        "pi": ("Pi", .pi, ["pi"])
+        "pi": ("Pi", .pi, ["pi"]),
+        "openCode": ("OpenCode", .generic, ["opencode"]),
+        "gemini": ("Gemini CLI", .generic, ["gemini"])
     ]
+
+    static var builtInStableIdentifiers: Set<String> { Set(builtIns.keys) }
+
+    static func stableIdentifier(forExecutableAlias alias: String) -> String? {
+        FirstPartyAgentCompatibilityCatalog.record(
+            executableAlias: alias
+        )?.stableIdentifier
+    }
 
     static func validateBuiltIn(_ descriptor: AgentPresentationDescriptor) throws {
         guard let expected = builtIns[descriptor.agentID.value] else { return }

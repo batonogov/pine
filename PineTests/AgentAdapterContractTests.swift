@@ -43,7 +43,9 @@ struct AgentAdapterContractTests {
     }
 
     @Test func legacyCatalogRoundTripsAndCollisions() throws {
-        let values = ["claudeCode", "codex", "aider", "copilot", "pi", "generic:Local Tool"]
+        let values = [
+            "claudeCode", "codex", "aider", "copilot", "pi", "openCode", "gemini", "generic:Local Tool",
+        ]
         let catalog = try LegacyAgentMigrationCatalog(stableIdentifiers: values)
         for value in values {
             let migration = try #require(catalog.lookup(stableIdentifier: value))

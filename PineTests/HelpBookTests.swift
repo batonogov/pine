@@ -52,6 +52,7 @@ struct HelpBookTests {
             #expect(html.contains("id=\"troubleshooting\""))
             #expect(html.contains("id=\"support\""))
             #expect(html.contains("href=\"../style.css\""))
+            #expect(html.contains("docs/agent-compatibility.md"))
             #expect(!html.contains("<script"))
 
             let stringsData = try Data(contentsOf: stringsURL)
