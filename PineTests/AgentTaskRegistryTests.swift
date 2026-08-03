@@ -91,7 +91,7 @@ struct AgentTaskRegistryTests {
         )
 
         #expect(
-            registry.task(forSessionID: first.id)?.route.availability
+            registry.historicalTask(forSessionID: first.id)?.route.availability
                 == .missing
         )
         #expect(
@@ -852,6 +852,7 @@ struct AgentTaskRegistryTests {
             replacing: preexisting,
             in: tab
         )
+        tab.agentSession = launched
         #expect(
             taskRegistry.taskID(forSessionID: launched.id)
                 == reservation.taskID
@@ -1154,7 +1155,11 @@ struct AgentTaskRegistryTests {
     func acknowledgedLaunchSurvivesTerminationRollback() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        let taskRegistry = AgentTaskRegistry(claimTTL: .seconds(1))
+        let store = ScriptedAgentTaskStore()
+        let taskRegistry = AgentTaskRegistry(
+            persistence: store,
+            claimTTL: .seconds(1)
+        )
         let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
         let manager = try #require(
             projectRegistry.projectManager(for: fixture.project)
@@ -1375,7 +1380,12 @@ struct AgentTaskRegistryTests {
             routeSeed: 110,
             origin: .pineLaunched
         )
-        var previous = makeSession(pid: 1_201, generation: 1)
+        let initialStartedAt = Date(timeIntervalSince1970: 1)
+        var previous = makeSession(
+            pid: 1_201,
+            generation: 1,
+            preciseStartedAt: initialStartedAt
+        )
         guard case .reserved(let initial) = registry.preparePineLaunch(
             descriptor: AgentDescriptor(
                 agentType: previous.agentType,
@@ -1402,15 +1412,19 @@ struct AgentTaskRegistryTests {
             previous.applyLiveness(.terminated)
             previous.state = .done
             registry.refresh(sessions: [previous])
+            let nextStartedAt = Date(
+                timeIntervalSince1970: TimeInterval(sequence)
+            )
             let next = makeSession(
                 pid: 1_200 + Int32(sequence),
-                generation: UInt64(sequence)
+                generation: UInt64(sequence),
+                preciseStartedAt: nextStartedAt
             )
             let resumeContext = AgentTaskBridgeContext(
                 project: identity,
                 route: sharedContext.route,
                 origin: .pineLaunched,
-                observedAt: Date(timeIntervalSince1970: 0)
+                observedAt: nextStartedAt
             )
             guard case .reserved(let reservation) = registry.prepareResume(
                 taskID: retainedTaskID,
@@ -3116,15 +3130,37 @@ private final class PersistenceFixture {
         worktree = makeWorktree
             ? root.appendingPathComponent("worktree", isDirectory: true)
             : nil
-        try FileManager.default.createDirectory(
-            at: project,
-            withIntermediateDirectories: true
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(
+            at: root,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
         )
-        if let worktree {
-            try FileManager.default.createDirectory(
-                at: worktree,
-                withIntermediateDirectories: true
+        do {
+            // GitHub-hosted macOS temp directories carry an inherited ACL.
+            // The production store correctly rejects such a private root, so
+            // make the test fixture match a clean user-owned storage root.
+            let chmod = Process()
+            chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+            chmod.arguments = ["-N", root.path]
+            try chmod.run()
+            chmod.waitUntilExit()
+            guard chmod.terminationStatus == 0 else {
+                throw CocoaError(.fileWriteNoPermission)
+            }
+            try fileManager.createDirectory(
+                at: project,
+                withIntermediateDirectories: false
             )
+            if let worktree {
+                try fileManager.createDirectory(
+                    at: worktree,
+                    withIntermediateDirectories: false
+                )
+            }
+        } catch {
+            try? fileManager.removeItem(at: root)
+            throw error
         }
     }
 
