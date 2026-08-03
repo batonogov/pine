@@ -15,7 +15,7 @@ nonisolated protocol AgentAdapterSession: Sendable {
 
 nonisolated protocol AgentAdapterFactory: Sendable {
     var id: AdapterFactoryID { get }
-    /// Probes a factory instance already bound by a future supervised loader.
+    /// Probes the exact factory instance stored by the registry.
     /// This method neither searches PATH nor proves executable identity.
     /// Cancellation is reported by propagating `CancellationError`.
     func probe() async throws -> AdapterProbeResult
@@ -25,7 +25,9 @@ nonisolated protocol AgentAdapterFactory: Sendable {
 
 nonisolated enum AdapterFailureDisposition: Equatable, Sendable { case transient, permanent }
 nonisolated enum AdapterProbeError: Error, Equatable, Sendable {
-    case unavailable(AdapterFailureDisposition), malformedResponse
+    case unknownAdapter
+    case unavailable(AdapterFailureDisposition)
+    case malformedResponse
 }
 nonisolated enum AdapterSessionError: Error, Equatable, Sendable {
     case launchFailed(AdapterFailureDisposition)

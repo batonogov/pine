@@ -25,14 +25,19 @@ versions, and bounded capability profiles. Each profile describes exactly one
 transport, explicit lifecycle scope/phase pairs, coherent tool/file-change
 evidence, replay, ordering, and a minimum core-derived authentication
 requirement. V1 exposes no control operations. Raw factories and their maximum
-capabilities stay private to the registry. Negotiation selects the highest
-policy-allowed version and one whole offered profile within the compiled
-maximum. Only the minting registry constructs and wraps sessions: it rejects
-foreign contracts, checkpoints for no-replay profiles, and checkpoints not
-bound to the exact minting registry, negotiated contract, and source-session
-namespace. It passes its exact contract and core-owned validating sink to the
-exact factory, and rejects a returned session whose contract differs before it
-can escape.
+capabilities stay private to the registry. The unskippable authority flow is:
+registered factory probe → registry-minted opaque offer → policy negotiation →
+registry-bound contract → exact registered factory session. A raw probe result
+cannot authorize negotiation, and an offer from another registry is rejected
+before any factory invocation. Negotiation derives offered profiles and Pine
+contract versions only from the exact stored factory's probe result, then
+selects the highest policy-allowed version and one whole offered profile within
+the compiled maximum. Only the minting registry constructs and wraps sessions:
+it rejects foreign contracts, checkpoints for no-replay profiles, and
+checkpoints not bound to the exact minting registry, negotiated contract, and
+source-session namespace. It passes its exact contract and core-owned validating
+sink to the exact factory, and rejects a returned session whose contract differs
+before it can escape.
 
 The **candidate plane** contains discriminated, non-authoritative lifecycle,
 question, approval, tool, file-change, process-exit, timestamp, and vendor
@@ -59,7 +64,10 @@ a failed start. During `start()` they hold only a core-bounded number of
 already-validated candidates
 and return the distinct `bufferedUntilActivation` outcome. After underlying
 startup succeeds, core checks cancellation and commits activation in one
-synchronous actor transition before draining that buffer. Failure or
+synchronous actor transition, freezing exactly that finite batch before
+draining it. Ingress during the drain is rejected without advancing source
+ordering, so it cannot extend startup and the same sequence can retry after the
+session becomes active. Failure or
 cancellation before the commit discards
 it without publication; downstream revocation or cancellation after the commit
 may retire the live session, but cannot retroactively turn `start()` into a

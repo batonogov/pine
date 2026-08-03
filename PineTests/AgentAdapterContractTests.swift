@@ -4,7 +4,8 @@ import Testing
 
 nonisolated private struct ContractTestFactory: AgentAdapterFactory {
     let id: AdapterFactoryID
-    func probe() async throws -> AdapterProbeResult { throw AdapterProbeError.unavailable(.permanent) }
+    let probeResult: AdapterProbeResult
+    func probe() async throws -> AdapterProbeResult { probeResult }
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
         throw AdapterSessionError.launchFailed(.permanent)
     }
@@ -95,11 +96,11 @@ struct AgentAdapterContractTests {
         }
     }
 
-    @Test func piAndCodexLifecyclePairsDoNotCross() throws {
-        let pi = try fixtureContract(profile: fixtureProfile(signals: [
+    @Test func piAndCodexLifecyclePairsDoNotCross() async throws {
+        let pi = try await fixtureContract(profile: fixtureProfile(signals: [
             .init(scope: .run, phase: .succeeded), .init(scope: .session, phase: .settled)
         ]))
-        let codex = try fixtureContract(profile: fixtureProfile(signals: [
+        let codex = try await fixtureContract(profile: fixtureProfile(signals: [
             .init(scope: .session, phase: .started), .init(scope: .turn, phase: .succeeded),
             .init(scope: .item, phase: .started)
         ]))
@@ -119,8 +120,8 @@ struct AgentAdapterContractTests {
         }
     }
 
-    @Test func candidatesAreCapabilityBound() throws {
-        let contract = try fixtureContract(profile: fixtureProfile(signals: [
+    @Test func candidatesAreCapabilityBound() async throws {
+        let contract = try await fixtureContract(profile: fixtureProfile(signals: [
             .init(scope: .session, phase: .started),
             .init(scope: .turn, phase: .waitingForQuestion)
         ]))
@@ -151,8 +152,8 @@ struct AgentAdapterContractTests {
         }
     }
 
-    @Test func attentionRequiresExactScopePhaseAndRoles() throws {
-        let contract = try fixtureContract(profile: fixtureProfile(signals: [
+    @Test func attentionRequiresExactScopePhaseAndRoles() async throws {
+        let contract = try await fixtureContract(profile: fixtureProfile(signals: [
             .init(scope: .session, phase: .waitingForQuestion),
             .init(scope: .turn, phase: .waitingForQuestion),
             .init(scope: .turn, phase: .waitingForApproval)
@@ -232,7 +233,7 @@ struct AgentAdapterContractTests {
         #expect(try DetectedVendorVersion("e\u{301}").value == "é")
     }
 
-    @Test func fileChangeBatchesAreCoherent() throws {
+    @Test func fileChangeBatchesAreCoherent() async throws {
         let call = try VendorReference(role: .toolCall, value: "call")
         let change = try CandidateFileChange(operation: .modify, relativePath: "Sources/File.swift")
         #expect(throws: AdapterCandidateError.contradictoryEvent) {
@@ -278,7 +279,7 @@ struct AgentAdapterContractTests {
         let tool = try CandidateToolEvent(
             phase: .succeeded, category: .read, toolCall: call, fileChanges: [change]
         )
-        let toolOnly = try fixtureContract(profile: fixtureProfile(evidence: [.tool]))
+        let toolOnly = try await fixtureContract(profile: fixtureProfile(evidence: [.tool]))
         #expect(throws: AdapterCandidateError.capabilityOverreach) {
             try AdapterCandidateEvent.tool(tool).validate(against: toolOnly)
         }
@@ -288,18 +289,18 @@ struct AgentAdapterContractTests {
         #expect(throws: AdapterCandidateError.capabilityOverreach) {
             try AdapterCandidateEvent.tool(categoryEvent).validate(against: toolOnly)
         }
-        let both = try fixtureContract(profile: fixtureProfile(evidence: [.tool, .fileChange]))
+        let both = try await fixtureContract(profile: fixtureProfile(evidence: [.tool, .fileChange]))
         try AdapterCandidateEvent.tool(tool).validate(against: both)
     }
 
-    @Test func sourcePositionFollowsProfile() throws {
-        let ordered = try fixtureContract(profile: fixtureProfile())
+    @Test func sourcePositionFollowsProfile() async throws {
+        let ordered = try await fixtureContract(profile: fixtureProfile())
         let sequence = try AdapterSourcePosition(sourceSequence: 1)
         try AdapterCandidate(event: .processExited(status: nil), sourcePosition: sequence).validate(against: ordered)
         #expect(throws: AdapterCandidateError.missingSourceSequence) {
             try AdapterCandidate(event: .processExited(status: nil)).validate(against: ordered)
         }
-        let replay = try fixtureContract(profile: fixtureProfile(replay: .sourceCursor))
+        let replay = try await fixtureContract(profile: fixtureProfile(replay: .sourceCursor))
         #expect(throws: AdapterCandidateError.incompleteReplayPosition) {
             try AdapterCandidate(event: .processExited(status: nil), sourcePosition: sequence).validate(against: replay)
         }
@@ -332,7 +333,7 @@ struct AgentAdapterContractTests {
         #expect(throws: AdapterCandidateError.invalidSourcePosition) {
             _ = try AdapterSourcePosition(sourceSequence: 0)
         }
-        let unordered = try fixtureContract(profile: fixtureProfile(ordering: .unordered))
+        let unordered = try await fixtureContract(profile: fixtureProfile(ordering: .unordered))
         #expect(throws: AdapterCandidateError.forbiddenSourceSequence) {
             try AdapterCandidate(event: .processExited(status: nil), sourcePosition: sequence)
                 .validate(against: unordered)
@@ -358,17 +359,44 @@ struct AgentAdapterContractTests {
         let version = try DetectedVendorVersion("1.0")
         let profile = try fixtureProfile()
         _ = try AdapterProbeResult(
-            detectedVendorVersion: version, detectedSchema: nil, offeredProfiles: [profile]
+            detectedVendorVersion: version,
+            detectedSchema: nil,
+            offeredProfiles: [profile],
+            offeredContractVersions: PineAdapterContractVersionRange(
+                minimum: PineAdapterContractVersion(major: 1, minor: 0),
+                maximum: PineAdapterContractVersion(major: 1, minor: 1)
+            )
         )
         #expect(throws: AdapterProbeError.malformedResponse) {
             _ = try AdapterProbeResult(
-                detectedVendorVersion: version, detectedSchema: nil, offeredProfiles: [profile, profile]
+                detectedVendorVersion: version,
+                detectedSchema: nil,
+                offeredProfiles: [profile, profile],
+                offeredContractVersions: PineAdapterContractVersionRange(
+                    minimum: PineAdapterContractVersion(major: 1, minor: 0),
+                    maximum: PineAdapterContractVersion(major: 1, minor: 1)
+                )
             )
         }
         #expect(throws: AdapterProbeError.malformedResponse) {
             _ = try AdapterProbeResult(
                 detectedVendorVersion: version, detectedSchema: nil,
-                offeredProfiles: Array(repeating: profile, count: 17)
+                offeredProfiles: Array(repeating: profile, count: 17),
+                offeredContractVersions: PineAdapterContractVersionRange(
+                    minimum: PineAdapterContractVersion(major: 1, minor: 0),
+                    maximum: PineAdapterContractVersion(major: 1, minor: 1)
+                )
+            )
+        }
+        #expect(throws: AdapterProbeError.malformedResponse) {
+            _ = try AdapterProbeResult(
+                detectedVendorVersion: version,
+                detectedSchema: nil,
+                offeredProfiles: [profile],
+                offeredContractVersions: PineAdapterContractVersionRange(
+                    minimum: PineAdapterContractVersion(major: 2, minor: 0),
+                    maximum: PineAdapterContractVersion(major: 1, minor: 0)
+                )
             )
         }
     }
@@ -426,7 +454,7 @@ struct AgentAdapterContractTests {
         )
     }
 
-    private func fixtureContract(profile: AdapterCapabilityProfile) throws -> NegotiatedAdapterContract {
+    private func fixtureContract(profile: AdapterCapabilityProfile) async throws -> NegotiatedAdapterContract {
         let agentID = try AgentID(validating: "codex")
         let adapterID = try AdapterID(validating: "pine:codex")
         let factoryID = try AdapterFactoryID(validating: "pine.codex.factory")
@@ -435,19 +463,26 @@ struct AgentAdapterContractTests {
             executableAliases: [ExecutableAlias(validating: "codex")], style: .codex
         )
         let version = PineAdapterContractVersion(major: 1, minor: 0)
+        let versions = PineAdapterContractVersionRange(minimum: version, maximum: version)
+        let probeResult = try AdapterProbeResult(
+            detectedVendorVersion: DetectedVendorVersion("test-vendor-1.0"),
+            detectedSchema: nil,
+            offeredProfiles: [profile],
+            offeredContractVersions: versions
+        )
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [presentation],
             compiledAdapters: [(AdapterDescriptor(
                 adapterID: adapterID, agentID: agentID, factoryID: factoryID,
-                contractVersions: PineAdapterContractVersionRange(minimum: version, maximum: version),
+                contractVersions: versions,
                 maximumProfiles: [profile]
-            ), ContractTestFactory(id: factoryID))]
+            ), ContractTestFactory(id: factoryID, probeResult: probeResult))]
         )
+        let offer = try await registry.probe(adapterID: adapterID)
         return try registry.negotiate(
-            adapterID: adapterID, offeredProfiles: [profile],
-            offeredVersions: PineAdapterContractVersionRange(minimum: version, maximum: version),
+            offer: offer,
             policy: AdapterNegotiationPolicy(
-                allowedVersions: PineAdapterContractVersionRange(minimum: version, maximum: version),
+                allowedVersions: versions,
                 transportPreference: [profile.transport], acceptedAuthentication: [profile.minimumAuthentication]
             )
         )

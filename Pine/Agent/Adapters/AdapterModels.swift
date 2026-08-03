@@ -68,16 +68,20 @@ nonisolated struct AdapterProbeResult: Sendable {
     let detectedVendorVersion: DetectedVendorVersion
     let detectedSchema: DetectedVendorVersion?
     let offeredProfiles: [AdapterCapabilityProfile]
+    let offeredContractVersions: PineAdapterContractVersionRange
     init(
         detectedVendorVersion: DetectedVendorVersion,
         detectedSchema: DetectedVendorVersion?,
-        offeredProfiles: [AdapterCapabilityProfile]
+        offeredProfiles: [AdapterCapabilityProfile],
+        offeredContractVersions: PineAdapterContractVersionRange
     ) throws {
         guard offeredProfiles.count <= 16 else { throw AdapterProbeError.malformedResponse }
         guard Set(offeredProfiles).count == offeredProfiles.count else { throw AdapterProbeError.malformedResponse }
+        guard offeredContractVersions.isValid else { throw AdapterProbeError.malformedResponse }
         self.detectedVendorVersion = detectedVendorVersion
         self.detectedSchema = detectedSchema
         self.offeredProfiles = offeredProfiles
+        self.offeredContractVersions = offeredContractVersions
     }
 }
 

@@ -4,13 +4,79 @@ import Testing
 nonisolated private struct RegistryTestFactory: AgentAdapterFactory {
     let id: AdapterFactoryID
     let failure: AdapterFailureDisposition
-    init(id: AdapterFactoryID, failure: AdapterFailureDisposition = .permanent) {
+    let probeResult: AdapterProbeResult?
+    init(
+        id: AdapterFactoryID,
+        failure: AdapterFailureDisposition = .permanent,
+        probeResult: AdapterProbeResult? = nil
+    ) {
         self.id = id
         self.failure = failure
+        self.probeResult = probeResult
     }
-    func probe() async throws -> AdapterProbeResult { throw AdapterProbeError.unavailable(.permanent) }
+    func probe() async throws -> AdapterProbeResult {
+        guard let probeResult else { throw AdapterProbeError.unavailable(.permanent) }
+        return probeResult
+    }
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
         throw AdapterSessionError.launchFailed(failure)
+    }
+}
+
+nonisolated private struct AuthorityTestFactory: AgentAdapterFactory {
+    let id: AdapterFactoryID
+    let probeResult: AdapterProbeResult?
+    let probeFailure: AdapterProbeError?
+    let sessionFailure: AdapterSessionError?
+    let recorder: AuthorityFactoryRecorder
+
+    func probe() async throws -> AdapterProbeResult {
+        await recorder.recordProbe()
+        if let probeFailure { throw probeFailure }
+        return try #require(probeResult)
+    }
+
+    func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
+        await recorder.recordSession(contract: request.contract)
+        if let sessionFailure { throw sessionFailure }
+        return RegistryTestSession(contract: request.contract)
+    }
+}
+
+private actor AuthorityFactoryRecorder {
+    private(set) var probeCalls = 0
+    private(set) var sessionCalls = 0
+    private(set) var sessionContract: NegotiatedAdapterContract?
+
+    func recordProbe() { probeCalls += 1 }
+    func recordSession(contract: NegotiatedAdapterContract) {
+        sessionCalls += 1
+        sessionContract = contract
+    }
+}
+
+private actor ProbeResultSequence {
+    private var results: [AdapterProbeResult]
+    private var index = 0
+
+    init(_ results: [AdapterProbeResult]) { self.results = results }
+
+    func next() throws -> AdapterProbeResult {
+        guard results.indices.contains(index) else { throw AdapterProbeError.malformedResponse }
+        defer { index += 1 }
+        return results[index]
+    }
+}
+
+nonisolated private struct SequencedRecordingFactory: AgentAdapterFactory {
+    let id: AdapterFactoryID
+    let probes: ProbeResultSequence
+    let sessionRecorder: FactoryRecorder?
+
+    func probe() async throws -> AdapterProbeResult { try await probes.next() }
+    func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
+        await sessionRecorder?.record(request: request)
+        return RegistryTestSession(contract: request.contract)
     }
 }
 
@@ -67,15 +133,221 @@ nonisolated private struct RegistryTestSession: AgentAdapterSession {
     func stop(deadline: ContinuousClock.Instant) async {}
 }
 
-@Suite("Agent adapter compiled registry")
+@Suite("Agent adapter compiled registry", .timeLimit(.minutes(1)))
 struct AgentAdapterRegistryTests {
+    @Test func unavailableProbeCannotBeBypassedByEquivalentCallerResult() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let equivalentRawResult = try probeResult(
+            profile: setup.profile,
+            versions: descriptor.contractVersions
+        )
+        let recorder = AuthorityFactoryRecorder()
+        let factory = AuthorityTestFactory(
+            id: descriptor.factoryID,
+            probeResult: nil,
+            probeFailure: .unavailable(.permanent),
+            sessionFailure: nil,
+            recorder: recorder
+        )
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, factory)]
+        )
+
+        await #expect(throws: AdapterProbeError.unavailable(.permanent)) {
+            _ = try await registry.probe(adapterID: descriptor.adapterID)
+        }
+        #expect(equivalentRawResult.offeredProfiles == [setup.profile])
+        #expect(await recorder.probeCalls == 1)
+        #expect(await recorder.sessionCalls == 0)
+    }
+
+    @Test func offerBindsExactRegisteredFactoryThroughSessionCreation() async throws {
+        let setup = try fixtures(twoAdapters: true)
+        let firstDescriptor = setup.adapters[0].0
+        let secondDescriptor = setup.adapters[1].0
+        let firstRecorder = AuthorityFactoryRecorder()
+        let secondRecorder = AuthorityFactoryRecorder()
+        let firstFactory = AuthorityTestFactory(
+            id: firstDescriptor.factoryID,
+            probeResult: try probeResult(profile: setup.profile, versions: range(1, 1, 1, 3)),
+            probeFailure: nil,
+            sessionFailure: nil,
+            recorder: firstRecorder
+        )
+        let secondFactory = AuthorityTestFactory(
+            id: secondDescriptor.factoryID,
+            probeResult: try probeResult(profile: setup.profile, versions: range(1, 0, 1, 4)),
+            probeFailure: nil,
+            sessionFailure: .launchFailed(.permanent),
+            recorder: secondRecorder
+        )
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(firstDescriptor, firstFactory), (secondDescriptor, secondFactory)]
+        )
+
+        let offer = try await registry.probe(adapterID: firstDescriptor.adapterID)
+        let contract = try registry.negotiate(offer: offer, policy: policy())
+        _ = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .accepted }
+
+        #expect(contract.adapterID == firstDescriptor.adapterID)
+        #expect(contract.factoryID == firstDescriptor.factoryID)
+        #expect(await firstRecorder.probeCalls == 1)
+        #expect(await firstRecorder.sessionCalls == 1)
+        #expect(await firstRecorder.sessionContract == contract)
+        #expect(await secondRecorder.probeCalls == 0)
+        #expect(await secondRecorder.sessionCalls == 0)
+    }
+
+    @Test func foreignRegistryOfferIsRejectedBeforeFactoryInvocation() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let firstRecorder = AuthorityFactoryRecorder()
+        let secondRecorder = AuthorityFactoryRecorder()
+        let result = try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
+        let firstRegistry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, AuthorityTestFactory(
+                id: descriptor.factoryID,
+                probeResult: result,
+                probeFailure: nil,
+                sessionFailure: nil,
+                recorder: firstRecorder
+            ))]
+        )
+        let secondRegistry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, AuthorityTestFactory(
+                id: descriptor.factoryID,
+                probeResult: result,
+                probeFailure: nil,
+                sessionFailure: nil,
+                recorder: secondRecorder
+            ))]
+        )
+
+        let foreignOffer = try await firstRegistry.probe(adapterID: descriptor.adapterID)
+        #expect(throws: AdapterNegotiationError.offerMismatch) {
+            _ = try secondRegistry.negotiate(offer: foreignOffer, policy: policy())
+        }
+        #expect(await firstRecorder.probeCalls == 1)
+        #expect(await firstRecorder.sessionCalls == 0)
+        #expect(await secondRecorder.probeCalls == 0)
+        #expect(await secondRecorder.sessionCalls == 0)
+    }
+
+    @Test func strictSubsetProbeOfferNegotiatesAndActivates() async throws {
+        let setup = try fixtures()
+        let base = setup.adapters[0].0
+        let maximum = try AdapterCapabilityProfile(
+            transport: .ownedStandardIO,
+            lifecycle: AdapterLifecycleCapabilities(
+                signals: lifecycleSignals().union([.init(scope: .turn, phase: .working)]),
+                evidence: [.tool]
+            ),
+            delivery: AdapterDeliverySemantics(ordering: .ordered, minimumAuthentication: .ownedChildPipe)
+        )
+        let descriptor = AdapterDescriptor(
+            adapterID: base.adapterID,
+            agentID: base.agentID,
+            factoryID: base.factoryID,
+            contractVersions: range(1, 0, 1, 9),
+            maximumProfiles: [maximum]
+        )
+        let recorder = AuthorityFactoryRecorder()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, AuthorityTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(profile: setup.profile, versions: range(1, 2, 1, 4)),
+                probeFailure: nil,
+                sessionFailure: nil,
+                recorder: recorder
+            ))]
+        )
+
+        let offer = try await registry.probe(adapterID: descriptor.adapterID)
+        let contract = try registry.negotiate(
+            offer: offer,
+            policy: AdapterNegotiationPolicy(
+                allowedVersions: range(1, 1, 1, 8),
+                transportPreference: [.ownedStandardIO],
+                acceptedAuthentication: [.ownedChildPipe]
+            )
+        )
+        _ = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .accepted }
+
+        #expect(contract.version == PineAdapterContractVersion(major: 1, minor: 4))
+        #expect(contract.profile == setup.profile)
+        #expect(await recorder.probeCalls == 1)
+        #expect(await recorder.sessionCalls == 1)
+    }
+
+    @Test func unsupportedProbeVersionAndProfileOverreachFailBeforeFactoryInvocation() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let versionRecorder = AuthorityFactoryRecorder()
+        let versionRegistry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, AuthorityTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(profile: setup.profile, versions: range(2, 0, 2, 1)),
+                probeFailure: nil,
+                sessionFailure: nil,
+                recorder: versionRecorder
+            ))]
+        )
+        let versionOffer = try await versionRegistry.probe(adapterID: descriptor.adapterID)
+        #expect(throws: AdapterNegotiationError.noCommonVersion) {
+            _ = try versionRegistry.negotiate(offer: versionOffer, policy: policy())
+        }
+        #expect(await versionRecorder.probeCalls == 1)
+        #expect(await versionRecorder.sessionCalls == 0)
+
+        let excessive = try AdapterCapabilityProfile(
+            transport: .ownedStandardIO,
+            lifecycle: AdapterLifecycleCapabilities(signals: lifecycleSignals(), evidence: [.tool]),
+            delivery: AdapterDeliverySemantics(ordering: .ordered, minimumAuthentication: .ownedChildPipe)
+        )
+        let profileRecorder = AuthorityFactoryRecorder()
+        let profileRegistry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, AuthorityTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(profile: excessive, versions: descriptor.contractVersions),
+                probeFailure: nil,
+                sessionFailure: nil,
+                recorder: profileRecorder
+            ))]
+        )
+        let profileOffer = try await profileRegistry.probe(adapterID: descriptor.adapterID)
+        #expect(throws: AdapterNegotiationError.offeredProfileExceedsMaximum) {
+            _ = try profileRegistry.negotiate(offer: profileOffer, policy: policy())
+        }
+        #expect(await profileRecorder.probeCalls == 1)
+        #expect(await profileRecorder.sessionCalls == 0)
+    }
+
+    @Test func unknownAdapterProbeFailsWithoutFactoryInvocation() async throws {
+        let setup = try fixtures()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation], compiledAdapters: setup.adapters
+        )
+
+        await #expect(throws: AdapterProbeError.unknownAdapter) {
+            _ = try await registry.probe(adapterID: AdapterID(validating: "pine:unknown"))
+        }
+    }
+
     @Test func exactFactoryMembership() async throws {
         let setup = try fixtures(twoAdapters: true)
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation], compiledAdapters: setup.adapters
         )
-        let first = try negotiate(registry, adapterID: setup.adapters[0].0.adapterID, profile: setup.profile)
-        let second = try negotiate(registry, adapterID: setup.adapters[1].0.adapterID, profile: setup.profile)
+        let first = try await negotiate(registry, adapterID: setup.adapters[0].0.adapterID, profile: setup.profile)
+        let second = try await negotiate(registry, adapterID: setup.adapters[1].0.adapterID, profile: setup.profile)
         #expect(first.agentID == second.agentID)
         await #expect(throws: AdapterSessionError.launchFailed(.permanent)) {
             _ = try await registry.makeSession(contract: first, resumeFrom: nil) { _ in .accepted }
@@ -181,56 +453,59 @@ struct AgentAdapterRegistryTests {
         }
     }
 
-    @Test func negotiationEnforcesSecurity() throws {
+    @Test func negotiationEnforcesSecurity() async throws {
         let setup = try fixtures()
         let registry = try AgentAdapterRegistry(compiledPresentations: [setup.presentation], compiledAdapters: setup.adapters)
-        let contract = try negotiate(registry, adapterID: setup.adapters[0].0.adapterID, profile: setup.profile)
+        let contract = try await negotiate(registry, adapterID: setup.adapters[0].0.adapterID, profile: setup.profile)
         #expect(contract.version == PineAdapterContractVersion(major: 1, minor: 4))
         let forbiddenPolicy = AdapterNegotiationPolicy(
             allowedVersions: range(1, 0, 1, 4), transportPreference: [.ownedStandardIO],
             acceptedAuthentication: [.authenticatedPeer]
         )
+        let offer = try await registry.probe(adapterID: setup.adapters[0].0.adapterID)
         #expect(throws: AdapterNegotiationError.noCommonProfile) {
-            _ = try registry.negotiate(
-                adapterID: setup.adapters[0].0.adapterID, offeredProfiles: [setup.profile],
-                offeredVersions: range(1, 1, 1, 9), policy: forbiddenPolicy
-            )
+            _ = try registry.negotiate(offer: offer, policy: forbiddenPolicy)
         }
     }
 
-    @Test func negotiationRejectsInvalidAndEmptyOffers() throws {
+    @Test func negotiationRejectsInvalidPolicyAndEmptyOffers() async throws {
         let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let probes = ProbeResultSequence([
+            try probeResult(profile: setup.profile, versions: range(2, 0, 2, 1)),
+            try AdapterProbeResult(
+                detectedVendorVersion: DetectedVendorVersion("test-vendor-1.0"),
+                detectedSchema: nil,
+                offeredProfiles: [],
+                offeredContractVersions: descriptor.contractVersions
+            ),
+            try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
+        ])
         let registry = try AgentAdapterRegistry(
-            compiledPresentations: [setup.presentation], compiledAdapters: setup.adapters
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, SequencedRecordingFactory(
+                id: descriptor.factoryID,
+                probes: probes,
+                sessionRecorder: nil
+            ))]
         )
-        let adapterID = setup.adapters[0].0.adapterID
+        let versionOffer = try await registry.probe(adapterID: descriptor.adapterID)
         #expect(throws: AdapterNegotiationError.noCommonVersion) {
-            _ = try registry.negotiate(
-                adapterID: adapterID, offeredProfiles: [setup.profile],
-                offeredVersions: range(2, 0, 2, 1), policy: policy()
-            )
+            _ = try registry.negotiate(offer: versionOffer, policy: policy())
         }
+        let emptyOffer = try await registry.probe(adapterID: descriptor.adapterID)
         #expect(throws: AdapterNegotiationError.noCommonProfile) {
-            _ = try registry.negotiate(
-                adapterID: adapterID, offeredProfiles: [],
-                offeredVersions: range(1, 0, 1, 4), policy: policy()
-            )
+            _ = try registry.negotiate(offer: emptyOffer, policy: policy())
         }
+        let validOffer = try await registry.probe(adapterID: descriptor.adapterID)
         #expect(throws: AdapterNegotiationError.invalidPolicyRange) {
             _ = try registry.negotiate(
-                adapterID: adapterID, offeredProfiles: [setup.profile],
-                offeredVersions: range(1, 0, 1, 4),
+                offer: validOffer,
                 policy: AdapterNegotiationPolicy(
                     allowedVersions: range(2, 0, 1, 0),
                     transportPreference: [.ownedStandardIO],
                     acceptedAuthentication: [.ownedChildPipe]
                 )
-            )
-        }
-        #expect(throws: AdapterNegotiationError.invalidPolicyRange) {
-            _ = try registry.negotiate(
-                adapterID: adapterID, offeredProfiles: [setup.profile, setup.profile],
-                offeredVersions: range(1, 0, 1, 4), policy: policy()
             )
         }
     }
@@ -241,9 +516,13 @@ struct AgentAdapterRegistryTests {
         let descriptor = setup.adapters[0].0
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
-            compiledAdapters: [(descriptor, RecordingFactory(id: descriptor.factoryID, recorder: recorder))]
+            compiledAdapters: [(descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
+            ))]
         )
-        let contract = try negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let contract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
         let first = try await registry.makeSession(contract: contract, resumeFrom: nil) { event in
             await recorder.capture(event); return .accepted
         }
@@ -283,13 +562,14 @@ struct AgentAdapterRegistryTests {
         let factory = RecordingFactory(
             id: descriptor.factoryID,
             recorder: recorder,
+            probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions),
             emitDuringMake: true,
             emitDuringStart: true
         )
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation], compiledAdapters: [(descriptor, factory)]
         )
-        let contract = try negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let contract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
         let session = try await registry.makeSession(contract: contract, resumeFrom: nil) { event in
             await recorder.capture(event)
             return .accepted
@@ -322,11 +602,12 @@ struct AgentAdapterRegistryTests {
             compiledAdapters: [(descriptor, RecordingFactory(
                 id: descriptor.factoryID,
                 recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions),
                 emitDuringStart: true,
                 startEmissionCount: limit + 1
             ))]
         )
-        let contract = try negotiate(
+        let contract = try await negotiate(
             registry,
             adapterID: descriptor.adapterID,
             profile: setup.profile
@@ -355,6 +636,51 @@ struct AgentAdapterRegistryTests {
         #expect(await recorder.capturedCount == limit + 1)
     }
 
+    @Test func postCommitIngressCannotExtendActivationWatermark() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let recorder = FactoryRecorder()
+        let completions = CompletionController()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: recorder,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                ),
+                emitDuringStart: true
+            ))]
+        )
+        let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let session = try await registry.makeSession(
+            contract: contract,
+            resumeFrom: nil
+        ) { event in
+            await completions.wait(
+                sequence: event.candidate.sourcePosition?.sourceSequence
+            )
+            await recorder.capture(event)
+            return .accepted
+        }
+
+        let startTask = Task { try await session.start() }
+        await completions.waitUntilArrived(1)
+        let postCommit = try candidate(sequence: 2)
+        #expect(await recorder.ingest(postCommit) == .droppedInvalid)
+
+        await completions.release(1)
+        try await startTask.value
+        #expect(await recorder.capturedCount == 1)
+        #expect(await recorder.ingest(postCommit) == .accepted)
+        #expect(await recorder.capturedCount == 2)
+    }
+
     @Test func postCommitRevocationDoesNotFailStart() async throws {
         let setup = try fixtures()
         let descriptor = setup.adapters[0].0
@@ -365,11 +691,12 @@ struct AgentAdapterRegistryTests {
             compiledAdapters: [(descriptor, RecordingFactory(
                 id: descriptor.factoryID,
                 recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions),
                 emitDuringStart: true,
                 startEmissionCount: 2
             ))]
         )
-        let contract = try negotiate(
+        let contract = try await negotiate(
             registry,
             adapterID: descriptor.adapterID,
             profile: setup.profile
@@ -407,11 +734,12 @@ struct AgentAdapterRegistryTests {
             compiledAdapters: [(descriptor, RecordingFactory(
                 id: descriptor.factoryID,
                 recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions),
                 emitDuringStart: true,
                 startHold: hold
             ))]
         )
-        let contract = try negotiate(
+        let contract = try await negotiate(
             registry,
             adapterID: descriptor.adapterID,
             profile: setup.profile
@@ -448,11 +776,12 @@ struct AgentAdapterRegistryTests {
             compiledAdapters: [(descriptor, RecordingFactory(
                 id: descriptor.factoryID,
                 recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions),
                 emitDuringStart: true,
                 cancelBeforeReturning: true
             ))]
         )
-        let contract = try negotiate(
+        let contract = try await negotiate(
             registry,
             adapterID: descriptor.adapterID,
             profile: setup.profile
@@ -486,11 +815,12 @@ struct AgentAdapterRegistryTests {
             compiledAdapters: [(descriptor, RecordingFactory(
                 id: descriptor.factoryID,
                 recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions),
                 startFailure: AdapterSessionError.launchFailed(.transient),
                 emitDuringStart: true
             ))]
         )
-        let contract = try negotiate(
+        let contract = try await negotiate(
             registry,
             adapterID: descriptor.adapterID,
             profile: setup.profile
@@ -516,11 +846,12 @@ struct AgentAdapterRegistryTests {
             compiledAdapters: [(descriptor, RecordingFactory(
                 id: descriptor.factoryID,
                 recorder: cancellationRecorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions),
                 emitDuringStart: true,
                 cancelDuringStart: true
             ))]
         )
-        let cancellationContract = try negotiate(
+        let cancellationContract = try await negotiate(
             cancellationRegistry,
             adapterID: descriptor.adapterID,
             profile: setup.profile
@@ -550,24 +881,30 @@ struct AgentAdapterRegistryTests {
         let failedRegistry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
             compiledAdapters: [(descriptor, RecordingFactory(
-                id: descriptor.factoryID, recorder: failedRecorder, failure: AdapterSessionError.launchFailed(.permanent)
+                id: descriptor.factoryID,
+                recorder: failedRecorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions),
+                failure: AdapterSessionError.launchFailed(.permanent)
             ))]
         )
-        let failedContract = try negotiate(failedRegistry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let failedContract = try await negotiate(failedRegistry, adapterID: descriptor.adapterID, profile: setup.profile)
         await #expect(throws: AdapterSessionError.launchFailed(.permanent)) {
             _ = try await failedRegistry.makeSession(contract: failedContract, resumeFrom: nil) { _ in .accepted }
         }
         #expect(await failedRecorder.ingest(try candidate(sequence: 1)) == .revoked)
 
         let mismatchRecorder = FactoryRecorder()
-        let mismatch = try mismatchContract(from: setup)
+        let mismatch = try await mismatchContract(from: setup)
         let mismatchRegistry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
             compiledAdapters: [(descriptor, RecordingFactory(
-                id: descriptor.factoryID, recorder: mismatchRecorder, returnedContract: mismatch
+                id: descriptor.factoryID,
+                recorder: mismatchRecorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions),
+                returnedContract: mismatch
             ))]
         )
-        let mismatchContract = try negotiate(mismatchRegistry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let mismatchContract = try await negotiate(mismatchRegistry, adapterID: descriptor.adapterID, profile: setup.profile)
         await #expect(throws: AdapterSessionError.contractMismatch) {
             _ = try await mismatchRegistry.makeSession(contract: mismatchContract, resumeFrom: nil) { _ in .accepted }
         }
@@ -579,11 +916,27 @@ struct AgentAdapterRegistryTests {
         let descriptor = setup.adapters[0].0
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
-            compiledAdapters: [(descriptor, CancellingFactory(id: descriptor.factoryID))]
+            compiledAdapters: [(descriptor, CancellingFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
+            ))]
         )
-        let contract = try negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let contract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
         await #expect(throws: CancellationError.self) {
             _ = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .accepted }
+        }
+    }
+
+    @Test func probeCancellationPropagatesUnchanged() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, ProbeCancellingFactory(id: descriptor.factoryID))]
+        )
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await registry.probe(adapterID: descriptor.adapterID)
         }
     }
 
@@ -593,9 +946,13 @@ struct AgentAdapterRegistryTests {
         let descriptor = setup.adapters[0].0
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
-            compiledAdapters: [(descriptor, RecordingFactory(id: descriptor.factoryID, recorder: recorder))]
+            compiledAdapters: [(descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
+            ))]
         )
-        let contract = try negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let contract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
         let dropped = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .droppedInvalid }
         try await dropped.start()
         await #expect(throws: AdapterSessionError.checkpointUnavailable) {
@@ -628,9 +985,13 @@ struct AgentAdapterRegistryTests {
         let descriptor = setup.adapters[0].0
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
-            compiledAdapters: [(descriptor, RecordingFactory(id: descriptor.factoryID, recorder: recorder))]
+            compiledAdapters: [(descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
+            ))]
         )
-        let contract = try negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let contract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
         let session = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .accepted }
         try await session.start()
         await #expect(throws: AdapterSessionError.checkpointNotSupported) {
@@ -645,9 +1006,13 @@ struct AgentAdapterRegistryTests {
         let completions = CompletionController()
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
-            compiledAdapters: [(descriptor, RecordingFactory(id: descriptor.factoryID, recorder: recorder))]
+            compiledAdapters: [(descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
+            ))]
         )
-        let contract = try negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let contract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
         let session = try await registry.makeSession(contract: contract, resumeFrom: nil) { event in
             await completions.wait(sequence: event.candidate.sourcePosition?.sourceSequence)
             return .accepted
@@ -678,9 +1043,13 @@ struct AgentAdapterRegistryTests {
         let descriptor = setup.adapters[0].0
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
-            compiledAdapters: [(descriptor, RecordingFactory(id: descriptor.factoryID, recorder: recorder))]
+            compiledAdapters: [(descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
+            ))]
         )
-        let contract = try negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let contract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
         let source = try await registry.makeSession(contract: contract, resumeFrom: nil) { _ in .accepted }
         try await source.start()
         #expect(await recorder.ingest(try candidate(sequence: 4)) == .accepted)
@@ -696,10 +1065,16 @@ struct AgentAdapterRegistryTests {
     @Test func checkpointBindingsAndResumeBaselineFailClosed() async throws {
         let setup = try fixtures(twoAdapters: true, replay: .sourceCursor)
         let recorder = FactoryRecorder()
-        let compiled = setup.adapters.map { ($0.0, RecordingFactory(id: $0.0.factoryID, recorder: recorder) as any AgentAdapterFactory) }
+        let compiled = try setup.adapters.map { descriptor, _ in
+            (descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: recorder,
+                probeResult: try probeResult(profile: setup.profile, versions: descriptor.contractVersions)
+            ) as any AgentAdapterFactory)
+        }
         let registry = try AgentAdapterRegistry(compiledPresentations: [setup.presentation], compiledAdapters: compiled)
-        let first = try negotiate(registry, adapterID: compiled[0].0.adapterID, profile: setup.profile)
-        let second = try negotiate(registry, adapterID: compiled[1].0.adapterID, profile: setup.profile)
+        let first = try await negotiate(registry, adapterID: compiled[0].0.adapterID, profile: setup.profile)
+        let second = try await negotiate(registry, adapterID: compiled[1].0.adapterID, profile: setup.profile)
         let source = try await registry.makeSession(contract: first, resumeFrom: nil) { _ in .accepted }
         try await source.start()
         #expect(await recorder.ingest(try candidate(sequence: 5)) == .accepted)
@@ -713,9 +1088,13 @@ struct AgentAdapterRegistryTests {
         let foreignRecorder = FactoryRecorder()
         let foreignRegistry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
-            compiledAdapters: [(compiled[0].0, RecordingFactory(id: compiled[0].0.factoryID, recorder: foreignRecorder))]
+            compiledAdapters: [(compiled[0].0, RecordingFactory(
+                id: compiled[0].0.factoryID,
+                recorder: foreignRecorder,
+                probeResult: try probeResult(profile: setup.profile, versions: compiled[0].0.contractVersions)
+            ))]
         )
-        let foreign = try negotiate(foreignRegistry, adapterID: compiled[0].0.adapterID, profile: setup.profile)
+        let foreign = try await negotiate(foreignRegistry, adapterID: compiled[0].0.adapterID, profile: setup.profile)
         await #expect(throws: AdapterSessionError.checkpointMismatch) {
             _ = try await foreignRegistry.makeSession(contract: foreign, resumeFrom: checkpoint) { _ in .accepted }
         }
@@ -746,29 +1125,33 @@ struct AgentAdapterRegistryTests {
             maximumProfiles: [setup.profile, alternate]
         )
         let recorder = FactoryRecorder()
+        let probes = ProbeResultSequence([
+            try probeResult(profile: setup.profile, versions: range(1, 0, 1, 4)),
+            try probeResult(profile: setup.profile, versions: range(1, 0, 1, 3)),
+            try probeResult(profile: alternate, versions: range(1, 0, 1, 4))
+        ])
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
-            compiledAdapters: [(expanded, RecordingFactory(id: descriptor.factoryID, recorder: recorder))]
+            compiledAdapters: [(expanded, SequencedRecordingFactory(
+                id: descriptor.factoryID,
+                probes: probes,
+                sessionRecorder: recorder
+            ))]
         )
-        let sourceContract = try negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
+        let sourceContract = try await negotiate(registry, adapterID: descriptor.adapterID, profile: setup.profile)
         let source = try await registry.makeSession(contract: sourceContract, resumeFrom: nil) { _ in .accepted }
         try await source.start()
         #expect(await recorder.ingest(try candidate(sequence: 1)) == .accepted)
         let checkpoint = try await registry.makeCheckpoint(for: source)
 
-        let olderVersion = try registry.negotiate(
-            adapterID: descriptor.adapterID,
-            offeredProfiles: [setup.profile],
-            offeredVersions: range(1, 0, 1, 3),
-            policy: policy()
-        )
+        let olderOffer = try await registry.probe(adapterID: descriptor.adapterID)
+        let olderVersion = try registry.negotiate(offer: olderOffer, policy: policy())
         await #expect(throws: AdapterSessionError.checkpointMismatch) {
             _ = try await registry.makeSession(contract: olderVersion, resumeFrom: checkpoint) { _ in .accepted }
         }
+        let alternateOffer = try await registry.probe(adapterID: descriptor.adapterID)
         let alternateProfile = try registry.negotiate(
-            adapterID: descriptor.adapterID,
-            offeredProfiles: [alternate],
-            offeredVersions: range(1, 0, 1, 4),
+            offer: alternateOffer,
             policy: AdapterNegotiationPolicy(
                 allowedVersions: range(1, 0, 1, 4),
                 transportPreference: [.authenticatedLocalIPC],
@@ -781,7 +1164,7 @@ struct AgentAdapterRegistryTests {
         #expect(await recorder.calls == 1)
     }
 
-    @Test func policyIgnoresOfferOrder() throws {
+    @Test func policyIgnoresOfferOrder() async throws {
         let setup = try fixtures()
         let local = try AdapterCapabilityProfile(
             transport: .authenticatedLocalIPC,
@@ -800,36 +1183,62 @@ struct AgentAdapterRegistryTests {
             adapterID: descriptor.adapterID, agentID: descriptor.agentID, factoryID: descriptor.factoryID,
             contractVersions: descriptor.contractVersions, maximumProfiles: [setup.profile, local, richerLocal]
         )
-        let completeRegistry = try AgentAdapterRegistry(
-            compiledPresentations: [setup.presentation], compiledAdapters: [(complete, setup.adapters[0].1)]
-        )
         let offers = [setup.profile, local, richerLocal]
         let permutations = [offers, Array(offers.reversed()), [local, setup.profile, richerLocal]]
-        let selections = try permutations.map { offered in
-            try completeRegistry.negotiate(
-                adapterID: descriptor.adapterID, offeredProfiles: Array(offered),
-                offeredVersions: range(1, 0, 1, 4),
+        let probes = try permutations.map { offered in
+            try AdapterProbeResult(
+                detectedVendorVersion: DetectedVendorVersion("test-vendor-1.0"),
+                detectedSchema: nil,
+                offeredProfiles: Array(offered),
+                offeredContractVersions: range(1, 0, 1, 4)
+            )
+        }
+        let completeRegistry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(complete, SequencedRecordingFactory(
+                id: descriptor.factoryID,
+                probes: ProbeResultSequence(probes),
+                sessionRecorder: nil
+            ))]
+        )
+        var selections: [NegotiatedAdapterContract] = []
+        for _ in permutations {
+            let offer = try await completeRegistry.probe(adapterID: descriptor.adapterID)
+            selections.append(try completeRegistry.negotiate(
+                offer: offer,
                 policy: AdapterNegotiationPolicy(
                     allowedVersions: range(1, 0, 1, 4),
                     transportPreference: [.authenticatedLocalIPC, .ownedStandardIO],
                     acceptedAuthentication: [.ownedChildPipe, .authenticatedPeer]
                 )
-            )
+            ))
         }
         #expect(selections.allSatisfy { $0 == selections[0] })
         #expect(selections[0].profile.transport == .authenticatedLocalIPC)
     }
 
-    @Test func escalationFails() throws {
+    @Test func escalationFails() async throws {
         let setup = try fixtures()
-        let registry = try AgentAdapterRegistry(compiledPresentations: [setup.presentation], compiledAdapters: setup.adapters)
+        let descriptor = setup.adapters[0].0
         let excessive = try AdapterCapabilityProfile(
             transport: .ownedStandardIO,
             lifecycle: AdapterLifecycleCapabilities(signals: lifecycleSignals(), evidence: [.tool]),
             delivery: AdapterDeliverySemantics(ordering: .ordered, minimumAuthentication: .ownedChildPipe)
         )
+        let recorder = AuthorityFactoryRecorder()
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, AuthorityTestFactory(
+                id: descriptor.factoryID,
+                probeResult: try probeResult(profile: excessive, versions: descriptor.contractVersions),
+                probeFailure: nil,
+                sessionFailure: nil,
+                recorder: recorder
+            ))]
+        )
+        let offer = try await registry.probe(adapterID: descriptor.adapterID)
         #expect(throws: AdapterNegotiationError.offeredProfileExceedsMaximum) {
-            _ = try negotiate(registry, adapterID: setup.adapters[0].0.adapterID, profile: excessive)
+            _ = try registry.negotiate(offer: offer, policy: policy())
         }
     }
 
@@ -856,10 +1265,14 @@ struct AgentAdapterRegistryTests {
         )
         func pair(_ suffix: String) throws -> (AdapterDescriptor, any AgentAdapterFactory) {
             let factoryID = try AdapterFactoryID(validating: "pine.codex.\(suffix).factory")
-            return (AdapterDescriptor(
+            let descriptor = AdapterDescriptor(
                 adapterID: try AdapterID(validating: "pine:codex:\(suffix)"), agentID: agent, factoryID: factoryID,
                 contractVersions: range(1, 0, 1, 4), maximumProfiles: [profile]
-            ), RegistryTestFactory(id: factoryID))
+            )
+            return (descriptor, RegistryTestFactory(
+                id: factoryID,
+                probeResult: try probeResult(profile: profile, versions: descriptor.contractVersions)
+            ))
         }
         return (presentation, twoAdapters ? [try pair("stdio"), try pair("rpc")] : [try pair("stdio")], profile)
     }
@@ -867,21 +1280,22 @@ struct AgentAdapterRegistryTests {
     private func mismatchContract(from setup: (
         presentation: AgentPresentationDescriptor,
         adapters: [(AdapterDescriptor, any AgentAdapterFactory)], profile: AdapterCapabilityProfile
-    )) throws -> NegotiatedAdapterContract {
+    )) async throws -> NegotiatedAdapterContract {
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation], compiledAdapters: setup.adapters
         )
-        return try negotiate(registry, adapterID: setup.adapters[1].0.adapterID, profile: setup.profile)
+        return try await negotiate(registry, adapterID: setup.adapters[1].0.adapterID, profile: setup.profile)
     }
 
     private func negotiate(
         _ registry: AgentAdapterRegistry, adapterID: AdapterID, profile: AdapterCapabilityProfile
-    ) throws -> NegotiatedAdapterContract {
-        try registry.negotiate(
-            adapterID: adapterID, offeredProfiles: [profile], offeredVersions: range(1, 1, 1, 9),
+    ) async throws -> NegotiatedAdapterContract {
+        let offer = try await registry.probe(adapterID: adapterID)
+        return try registry.negotiate(
+            offer: offer,
             policy: AdapterNegotiationPolicy(
-                allowedVersions: range(1, 0, 1, 8), transportPreference: [.ownedStandardIO],
-                acceptedAuthentication: [.ownedChildPipe]
+                allowedVersions: range(1, 0, 1, 8), transportPreference: [profile.transport],
+                acceptedAuthentication: [profile.minimumAuthentication]
             )
         )
     }
@@ -898,6 +1312,18 @@ struct AgentAdapterRegistryTests {
             allowedVersions: range(1, 0, 1, 4),
             transportPreference: [.ownedStandardIO],
             acceptedAuthentication: [.ownedChildPipe]
+        )
+    }
+
+    private func probeResult(
+        profile: AdapterCapabilityProfile,
+        versions: PineAdapterContractVersionRange
+    ) throws -> AdapterProbeResult {
+        try AdapterProbeResult(
+            detectedVendorVersion: DetectedVendorVersion("test-vendor-1.0"),
+            detectedSchema: nil,
+            offeredProfiles: [profile],
+            offeredContractVersions: versions
         )
     }
 
@@ -933,6 +1359,7 @@ struct AgentAdapterRegistryTests {
 nonisolated private struct RecordingFactory: AgentAdapterFactory {
     let id: AdapterFactoryID
     let recorder: FactoryRecorder
+    let probeResult: AdapterProbeResult
     var emitDuringMake = false
     var failure: AdapterSessionError?
     var returnedContract: NegotiatedAdapterContract?
@@ -942,7 +1369,7 @@ nonisolated private struct RecordingFactory: AgentAdapterFactory {
     var cancelDuringStart = false
     var cancelBeforeReturning = false
     var startHold: StartHold?
-    func probe() async throws -> AdapterProbeResult { throw AdapterProbeError.unavailable(.permanent) }
+    func probe() async throws -> AdapterProbeResult { probeResult }
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
         await recorder.record(request: request)
         if emitDuringMake {
@@ -1020,52 +1447,115 @@ nonisolated private struct MismatchingFactory: AgentAdapterFactory {
 
 nonisolated private struct CancellingFactory: AgentAdapterFactory {
     let id: AdapterFactoryID
-    func probe() async throws -> AdapterProbeResult { throw CancellationError() }
+    let probeResult: AdapterProbeResult
+    func probe() async throws -> AdapterProbeResult { probeResult }
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
         throw CancellationError()
     }
 }
 
-private actor StartHold {
-    private var arrived = false
-    private var released = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+nonisolated private struct ProbeCancellingFactory: AgentAdapterFactory {
+    let id: AdapterFactoryID
+    func probe() async throws -> AdapterProbeResult { throw CancellationError() }
+    func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
+        throw AdapterSessionError.launchFailed(.permanent)
+    }
+}
+
+private actor TestSignal {
+    private var isSignalled = false
+    private var nextWaiterID: UInt64 = 0
+    private var waiters: [UInt64: CheckedContinuation<Void, Never>] = [:]
+    private var cancelledBeforeRegistration = Set<UInt64>()
+    private var resolvedBeforeCancellation = Set<UInt64>()
 
     func wait() async {
-        arrived = true
-        guard !released else { return }
-        await withCheckedContinuation { waiters.append($0) }
+        guard !isSignalled, !Task.isCancelled else { return }
+        nextWaiterID += 1
+        let waiterID = nextWaiterID
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if isSignalled || Task.isCancelled
+                    || cancelledBeforeRegistration.remove(waiterID) != nil {
+                    resolvedBeforeCancellation.insert(waiterID)
+                    continuation.resume()
+                } else {
+                    waiters[waiterID] = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.cancel(waiterID) }
+        }
+    }
+
+    func signal() {
+        guard !isSignalled else { return }
+        isSignalled = true
+        let retained = Array(waiters.values)
+        waiters.removeAll(keepingCapacity: false)
+        cancelledBeforeRegistration.removeAll(keepingCapacity: false)
+        resolvedBeforeCancellation.removeAll(keepingCapacity: false)
+        retained.forEach { $0.resume() }
+    }
+
+    private func cancel(_ waiterID: UInt64) {
+        guard !isSignalled else { return }
+        if resolvedBeforeCancellation.remove(waiterID) != nil { return }
+        if let waiter = waiters.removeValue(forKey: waiterID) {
+            waiter.resume()
+        } else {
+            cancelledBeforeRegistration.insert(waiterID)
+        }
+    }
+}
+
+private actor StartHold {
+    private let arrival = TestSignal()
+    private let releaseSignal = TestSignal()
+
+    func wait() async {
+        await arrival.signal()
+        await releaseSignal.wait()
     }
 
     func waitUntilArrived() async {
-        while !arrived { await Task.yield() }
+        await arrival.wait()
     }
 
-    func release() {
-        released = true
-        waiters.forEach { $0.resume() }
-        waiters.removeAll(keepingCapacity: false)
+    func release() async {
+        await releaseSignal.signal()
     }
 }
 
 private actor CompletionController {
-    private var arrived = Set<UInt64>()
-    private var released = Set<UInt64>()
-    private var continuations: [UInt64: [CheckedContinuation<Void, Never>]] = [:]
+    private var arrivals: [UInt64: TestSignal] = [:]
+    private var releases: [UInt64: TestSignal] = [:]
 
     func wait(sequence: UInt64?) async {
         guard let sequence else { return }
-        arrived.insert(sequence)
-        guard !released.contains(sequence) else { return }
-        await withCheckedContinuation { continuations[sequence, default: []].append($0) }
+        let arrival = signal(for: sequence, in: &arrivals)
+        let release = signal(for: sequence, in: &releases)
+        await arrival.signal()
+        await release.wait()
     }
 
     func waitUntilArrived(_ sequence: UInt64) async {
-        while !arrived.contains(sequence) { await Task.yield() }
+        let arrival = signal(for: sequence, in: &arrivals)
+        await arrival.wait()
     }
 
-    func release(_ sequence: UInt64) {
-        released.insert(sequence)
-        continuations.removeValue(forKey: sequence)?.forEach { $0.resume() }
+    func release(_ sequence: UInt64) async {
+        let release = signal(for: sequence, in: &releases)
+        await release.signal()
+    }
+
+    private func signal(
+        for sequence: UInt64,
+        in signals: inout [UInt64: TestSignal]
+    ) -> TestSignal {
+        if let existing = signals[sequence] { return existing }
+        let created = TestSignal()
+        signals[sequence] = created
+        return created
     }
 }

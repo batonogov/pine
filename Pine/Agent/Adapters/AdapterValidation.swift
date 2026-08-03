@@ -10,6 +10,42 @@ nonisolated struct NegotiatedAdapterContract: Equatable, Sendable {
     let profile: AdapterCapabilityProfile
 }
 
+/// Discovery metadata and authority minted only after a registry-owned factory probe succeeds.
+nonisolated struct AgentAdapterOffer: Sendable, CustomStringConvertible,
+    CustomDebugStringConvertible, CustomReflectable {
+    fileprivate let registryID: UUID
+    fileprivate let agentID: AgentID
+    fileprivate let adapterID: AdapterID
+    fileprivate let factoryID: AdapterFactoryID
+    fileprivate let probeResult: AdapterProbeResult
+
+    var detectedVendorVersion: DetectedVendorVersion { probeResult.detectedVendorVersion }
+    var detectedSchema: DetectedVendorVersion? { probeResult.detectedSchema }
+
+    fileprivate init(
+        registryID: UUID,
+        agentID: AgentID,
+        adapterID: AdapterID,
+        factoryID: AdapterFactoryID,
+        probeResult: AdapterProbeResult
+    ) {
+        self.registryID = registryID
+        self.agentID = agentID
+        self.adapterID = adapterID
+        self.factoryID = factoryID
+        self.probeResult = probeResult
+    }
+
+    var description: String { "<redacted:agent-adapter-offer>" }
+    var debugDescription: String { description }
+    var customMirror: Mirror {
+        Mirror(self, children: [
+            "detectedVendorVersion": detectedVendorVersion.description,
+            "detectedSchema": detectedSchema?.description as Any
+        ])
+    }
+}
+
 /// A registry-minted request. Factories can consume, but cannot construct, session authority.
 nonisolated struct AgentAdapterSessionRequest: Sendable {
     let contract: NegotiatedAdapterContract
@@ -125,6 +161,7 @@ private actor SourceSessionState {
     private var latestAcceptedPosition: AdapterSourcePosition?
     private var checkpointedSequence: UInt64?
     private var pendingCandidates: [AdapterCandidate] = []
+    private var activationRemaining = 0
     private var inFlightCount = 0
     private let pendingLimit = AgentAdapterRegistry.startBufferLimit
 
@@ -143,10 +180,17 @@ private actor SourceSessionState {
     }
 
     func admit(_ candidate: AdapterCandidate) -> SourceAdmission {
-        guard canAcceptPayload() else { return .rejected(.revoked) }
-        let isBuffering = lifecycle == .starting || lifecycle == .flushing
-        if isBuffering, pendingCandidates.count >= pendingLimit {
+        switch lifecycle {
+        case .ready, .retired:
+            return .rejected(.revoked)
+        case .flushing:
             return .rejected(.droppedInvalid)
+        case .starting:
+            guard pendingCandidates.count < pendingLimit else {
+                return .rejected(.droppedInvalid)
+            }
+        case .active:
+            break
         }
         if let sequence = candidate.sourcePosition?.sourceSequence {
             guard sequence > highestAdmittedSequence else {
@@ -154,7 +198,7 @@ private actor SourceSessionState {
             }
             highestAdmittedSequence = sequence
         }
-        if isBuffering {
+        if lifecycle == .starting {
             pendingCandidates.append(candidate)
             return .buffered
         }
@@ -167,18 +211,26 @@ private actor SourceSessionState {
         guard !Task.isCancelled else {
             lifecycle = .retired
             pendingCandidates.removeAll(keepingCapacity: false)
+            activationRemaining = 0
             return .cancelled
         }
+        activationRemaining = pendingCandidates.count
         lifecycle = .flushing
         return .committed
     }
 
     func nextBuffered() -> AdapterCandidate? {
         guard lifecycle == .flushing else { return nil }
-        guard !pendingCandidates.isEmpty else {
+        guard activationRemaining > 0 else {
             lifecycle = .active
             return nil
         }
+        guard !pendingCandidates.isEmpty else {
+            activationRemaining = 0
+            lifecycle = .retired
+            return nil
+        }
+        activationRemaining -= 1
         inFlightCount += 1
         return pendingCandidates.removeFirst()
     }
@@ -193,6 +245,7 @@ private actor SourceSessionState {
         if outcome == .revoked {
             lifecycle = .retired
             pendingCandidates.removeAll(keepingCapacity: false)
+            activationRemaining = 0
             return .revoked
         }
         if outcome == .accepted, let position = candidate.sourcePosition,
@@ -217,6 +270,7 @@ private actor SourceSessionState {
     func revoke() {
         lifecycle = .retired
         pendingCandidates.removeAll(keepingCapacity: false)
+        activationRemaining = 0
     }
 }
 
@@ -325,7 +379,7 @@ nonisolated enum AdapterRegistrationError: Error, Equatable, Sendable {
 }
 
 nonisolated enum AdapterNegotiationError: Error, Equatable, Sendable {
-    case unknownAdapter, invalidPolicyRange, noCommonVersion, noCommonProfile, offeredProfileExceedsMaximum
+    case offerMismatch, invalidPolicyRange, noCommonVersion, noCommonProfile, offeredProfileExceedsMaximum
 }
 
 nonisolated struct AdapterNegotiationPolicy: Sendable {
@@ -467,19 +521,36 @@ nonisolated struct AgentAdapterRegistry: Sendable {
         )
     }
 
+    func probe(adapterID: AdapterID) async throws -> AgentAdapterOffer {
+        guard let pair = adapters[adapterID] else { throw AdapterProbeError.unknownAdapter }
+        let result = try await pair.1.probe()
+        return AgentAdapterOffer(
+            registryID: registryID,
+            agentID: pair.0.agentID,
+            adapterID: pair.0.adapterID,
+            factoryID: pair.0.factoryID,
+            probeResult: result
+        )
+    }
+
     func negotiate(
-        adapterID: AdapterID,
-        offeredProfiles: [AdapterCapabilityProfile],
-        offeredVersions: PineAdapterContractVersionRange,
+        offer: AgentAdapterOffer,
         policy: AdapterNegotiationPolicy
     ) throws -> NegotiatedAdapterContract {
-        guard let pair = adapters[adapterID] else { throw AdapterNegotiationError.unknownAdapter }
-        guard policy.allowedVersions.isValid, offeredVersions.isValid else { throw AdapterNegotiationError.invalidPolicyRange }
+        guard offer.registryID == registryID,
+              let pair = adapters[offer.adapterID],
+              pair.0.agentID == offer.agentID,
+              pair.0.adapterID == offer.adapterID,
+              pair.0.factoryID == offer.factoryID else {
+            throw AdapterNegotiationError.offerMismatch
+        }
+        guard policy.allowedVersions.isValid else { throw AdapterNegotiationError.invalidPolicyRange }
         guard !policy.transportPreference.isEmpty,
-              Set(policy.transportPreference).count == policy.transportPreference.count,
-              offeredProfiles.count <= 16, Set(offeredProfiles).count == offeredProfiles.count else {
+              Set(policy.transportPreference).count == policy.transportPreference.count else {
             throw AdapterNegotiationError.invalidPolicyRange
         }
+        let offeredProfiles = offer.probeResult.offeredProfiles
+        let offeredVersions = offer.probeResult.offeredContractVersions
         let lower = max(max(pair.0.contractVersions.minimum, offeredVersions.minimum), policy.allowedVersions.minimum)
         let upper = min(min(pair.0.contractVersions.maximum, offeredVersions.maximum), policy.allowedVersions.maximum)
         guard lower <= upper else { throw AdapterNegotiationError.noCommonVersion }
@@ -493,7 +564,7 @@ nonisolated struct AgentAdapterRegistry: Sendable {
         }.first
         guard let selected else { throw AdapterNegotiationError.noCommonProfile }
         return NegotiatedAdapterContract(
-            registryID: registryID, agentID: pair.0.agentID, adapterID: adapterID, factoryID: pair.0.factoryID,
+            registryID: registryID, agentID: pair.0.agentID, adapterID: offer.adapterID, factoryID: pair.0.factoryID,
             version: upper, profile: selected
         )
     }
