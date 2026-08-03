@@ -5,9 +5,72 @@
 //  Created by Федор Батоногов on 09.03.2026.
 //
 
+import Darwin
+import Dispatch
 import SwiftUI
 import SwiftTerm
 import os
+
+nonisolated enum AcknowledgedPTYWriter {
+    static func write(_ bytes: [UInt8], to borrowedDescriptor: Int32) async -> Bool {
+        await write(
+            bytes,
+            to: borrowedDescriptor,
+            didAcquireDescriptor: {}
+        )
+    }
+
+    #if DEBUG
+    static func writeForTesting(
+        _ bytes: [UInt8],
+        to borrowedDescriptor: Int32,
+        didAcquireDescriptor: @escaping @Sendable () -> Void
+    ) async -> Bool {
+        await write(
+            bytes,
+            to: borrowedDescriptor,
+            didAcquireDescriptor: didAcquireDescriptor
+        )
+    }
+    #endif
+
+    static func acknowledgesCompletion(
+        error: Int32,
+        remainingByteCount: Int
+    ) -> Bool {
+        error == 0 && remainingByteCount == 0
+    }
+
+    private static func write(
+        _ bytes: [UInt8],
+        to borrowedDescriptor: Int32,
+        didAcquireDescriptor: @escaping @Sendable () -> Void
+    ) async -> Bool {
+        let descriptor = Darwin.fcntl(
+            borrowedDescriptor,
+            F_DUPFD_CLOEXEC,
+            0
+        )
+        guard descriptor >= 0 else { return false }
+        defer { Darwin.close(descriptor) }
+        didAcquireDescriptor()
+        let data = bytes.withUnsafeBytes { DispatchData(bytes: $0) }
+        return await withCheckedContinuation { continuation in
+            DispatchIO.write(
+                toFileDescriptor: descriptor,
+                data: data,
+                runningHandlerOn: DispatchQueue.global(qos: .userInitiated)
+            ) { remaining, error in
+                continuation.resume(returning:
+                    AcknowledgedPTYWriter.acknowledgesCompletion(
+                        error: error,
+                        remainingByteCount: remaining?.count ?? 0
+                    )
+                )
+            }
+        }
+    }
+}
 
 /// Pine-specific terminal view wrapper.
 ///
@@ -1605,6 +1668,7 @@ final class TerminalTab: Identifiable, Hashable {
     let stableLabel: String
     let terminalView: LocalProcessTerminalView
     fileprivate(set) var isTerminated = false
+    private var didReportLifecycleEnd = false
     /// The AppKit container currently presenting `terminalView`.
     ///
     /// A pane maximize/restore can keep outgoing and incoming SwiftUI
@@ -1659,6 +1723,10 @@ final class TerminalTab: Identifiable, Hashable {
     /// Stored separately so the nonisolated `deinit` can remove the observer
     /// from the exact center that registered it.
     private let themeNotificationCenter: NotificationCenter
+    /// Value-only lifecycle callback installed by the terminal coordinator.
+    /// The tab never exposes its process or view to the durable task registry.
+    @ObservationIgnored
+    var onLifecycleEnded: ((UUID) -> Void)?
 
     init(
         name: String,
@@ -1875,9 +1943,21 @@ final class TerminalTab: Identifiable, Hashable {
     }
 
     func stop() {
+        if !didReportLifecycleEnd {
+            didReportLifecycleEnd = true
+            onLifecycleEnded?(id)
+        }
         guard !isTerminated else { return }
         isTerminated = true
         terminalView.terminate()
+    }
+
+    func processDidTerminate() {
+        if !didReportLifecycleEnd {
+            didReportLifecycleEnd = true
+            onLifecycleEnded?(id)
+        }
+        isTerminated = true
     }
 
     /// Forces SwiftTerm to mark the entire visible buffer as dirty and asks
@@ -2071,10 +2151,24 @@ final class TerminalTab: Identifiable, Hashable {
 
     /// Sends the given text to the terminal process as keyboard input.
     /// The text is written to the PTY as if the user typed it.
-    func sendText(_ text: String) {
-        guard isProcessRunning else { return }
+    @discardableResult
+    func sendText(_ text: String) -> Bool {
+        guard isProcessRunning else { return false }
         let data = Array(text.utf8)
         terminalView.process.send(data: data[...])
+        return true
+    }
+
+    /// Duplicates SwiftTerm's public PTY descriptor before suspension, writes
+    /// launch input through that owned lease, and resumes only after DispatchIO
+    /// reports that every byte was accepted. SwiftTerm may close its descriptor
+    /// while the write is pending without redirecting bytes after descriptor reuse.
+    func sendTextAcknowledged(_ text: String) async -> Bool {
+        guard isProcessRunning else { return false }
+        let descriptor = terminalView.process.childfd
+        guard descriptor >= 0 else { return false }
+        let bytes = Array(text.utf8)
+        return await AcknowledgedPTYWriter.write(bytes, to: descriptor)
     }
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }
@@ -2095,6 +2189,6 @@ class TerminalTabDelegate: NSObject, LocalProcessTerminalViewDelegate {
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
-        tab?.isTerminated = true
+        tab?.processDidTerminate()
     }
 }

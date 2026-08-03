@@ -292,7 +292,7 @@ struct AgentStatusSummaryTests {
         }
     }
 
-    @Test func presentationHonorsExplicitLocaleForCountAndLiveness() {
+    @Test func presentationHonorsExplicitLocaleForCountStateAndLiveness() {
         let stale = statusSummary(
             agentType: .claudeCode,
             state: .waitingInput,
@@ -313,7 +313,7 @@ struct AgentStatusSummaryTests {
         #expect(russian.countText == "1 сессия агента")
         #expect(
             russian.detailTexts
-                == ["Claude Code: Waiting for input — Устарела"]
+                == ["Claude Code: Ожидает ввода — Устарела"]
         )
     }
 

@@ -583,20 +583,24 @@ enum Strings {
     }
 
     // MARK: - Agent state labels (#1245)
-    static var agentStateIdle: String {
-        String(localized: "agentState.idle", defaultValue: "Idle")
+    static func agentStateIdle(locale: Locale = .current) -> String {
+        localizedString(forKey: "agentState.idle", fallback: "Idle", locale: locale)
     }
-    static var agentStateThinking: String {
-        String(localized: "agentState.thinking", defaultValue: "Thinking")
+    static func agentStateThinking(locale: Locale = .current) -> String {
+        localizedString(forKey: "agentState.thinking", fallback: "Thinking", locale: locale)
     }
-    static var agentStateExecuting: String {
-        String(localized: "agentState.executing", defaultValue: "Executing")
+    static func agentStateExecuting(locale: Locale = .current) -> String {
+        localizedString(forKey: "agentState.executing", fallback: "Executing", locale: locale)
     }
-    static var agentStateWaitingInput: String {
-        String(localized: "agentState.waitingInput", defaultValue: "Waiting for input")
+    static func agentStateWaitingInput(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentState.waitingInput",
+            fallback: "Waiting for input",
+            locale: locale
+        )
     }
-    static var agentStateDone: String {
-        String(localized: "agentState.done", defaultValue: "Done")
+    static func agentStateDone(locale: Locale = .current) -> String {
+        localizedString(forKey: "agentState.done", fallback: "Done", locale: locale)
     }
 
     // MARK: - Agent Attention overlay (#1112)
@@ -1527,6 +1531,7 @@ enum Strings {
     static let tabRevealInSidebar: LocalizedStringKey = "tab.revealInSidebar"
     static let tabRevealInFinder: LocalizedStringKey = "tab.revealInFinder"
     static let tabCloseTabDisabledPinned: LocalizedStringKey = "tab.closeTabDisabledPinned"
+    static let agentResumeTask: LocalizedStringKey = "agent.resumeTask"
     static let tabMoveLeading: LocalizedStringKey = "tab.moveLeading"
     static let tabMoveTrailing: LocalizedStringKey = "tab.moveTrailing"
     static let tabMoveToPreviousPane: LocalizedStringKey = "tab.moveToPreviousPane"
@@ -1765,6 +1770,14 @@ enum Strings {
 
     static var terminalActiveProcessWarningQuit: String {
         String(localized: "terminal.activeProcessWarning.quit")
+    }
+
+    static var activeUserTasksPreventQuitTitle: String {
+        String(localized: "task.activePreventQuit.title")
+    }
+
+    static var activeUserTasksPreventQuitMessage: String {
+        String(localized: "task.activePreventQuit.message")
     }
 
     static var terminalTabCloseWarningTitle: String {

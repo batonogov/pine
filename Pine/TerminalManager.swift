@@ -30,6 +30,21 @@ final class TerminalManager {
     /// privately so it cannot be mutated after construction.
     private let agentDetectionProcessRunner: ProcessRunner
 
+    /// Application-lifetime registry and canonical project scope. The
+    /// registry itself retains value metadata only; terminal objects retain no
+    /// back-reference from it.
+    private let agentTaskRegistry: AgentTaskRegistry?
+    @ObservationIgnored
+    private var agentTaskProject: AgentTaskProjectIdentity?
+    @ObservationIgnored
+    private var agentTaskCallbacksFrozen = false
+    @ObservationIgnored
+    private var agentTaskWindowOpen = true
+    @ObservationIgnored
+    private var launchReservations: [UUID: AgentTaskLaunchReservation] = [:]
+    @ObservationIgnored
+    private var launchWritesInFlight: Set<UUID> = []
+
     /// `true` once agent-detection polling has started. Read-only diagnostic /
     /// test hook. Delegates to the coordinator's `isRunning` so it correctly
     /// reports `false` after a future `stop()`.
@@ -47,8 +62,354 @@ final class TerminalManager {
     /// here (rather than exposed as a mutable property) so the coordinator's
     /// runner is fixed for the manager's lifetime — matches the init-param
     /// injection pattern used by `ExternalFileFormatter` / `FileFormatter`.
-    init(agentDetectionProcessRunner: @escaping ProcessRunner = runRealProcess) {
+    init(
+        agentDetectionProcessRunner: @escaping ProcessRunner = runRealProcess,
+        agentTaskRegistry: AgentTaskRegistry? = nil
+    ) {
         self.agentDetectionProcessRunner = agentDetectionProcessRunner
+        self.agentTaskRegistry = agentTaskRegistry
+    }
+
+    /// Receives the already canonical root from `ProjectRegistry`; this method
+    /// performs no filesystem work on MainActor.
+    func configureAgentTaskProject(_ projectURL: URL) {
+        let path = projectURL.standardizedFileURL.path
+        agentTaskProject = AgentTaskProjectIdentity(
+            canonicalProjectPath: path,
+            canonicalWorktreePath: path
+        )
+    }
+
+    func setAgentTaskWindowOpen(_ isOpen: Bool) {
+        agentTaskWindowOpen = isOpen
+    }
+
+    func configureAgentLifecycle(for tab: TerminalTab) {
+        guard let agentTaskRegistry, let project = agentTaskProject else { return }
+        tab.onLifecycleEnded = { [weak self, weak agentTaskRegistry] terminalID in
+            if let reservation = self?.launchReservations.removeValue(
+                forKey: terminalID
+            ) {
+                agentTaskRegistry?.cancelLaunch(reservation)
+            }
+            agentTaskRegistry?.markTerminalClosed(
+                terminalID: terminalID,
+                project: project
+            )
+        }
+    }
+
+    func agentTerminalDidMove(_ tab: TerminalTab, to paneID: PaneID) {
+        guard let project = agentTaskProject else { return }
+        agentTaskRegistry?.updateRoute(
+            terminalID: tab.id,
+            project: project,
+            route: AgentTaskRoute(
+                paneID: paneID.id,
+                tabID: tab.id,
+                terminalID: tab.id
+            )
+        )
+    }
+
+    func agentTaskContext(for tab: TerminalTab) -> AgentTaskBridgeContext? {
+        guard let paneManager,
+              let project = agentTaskProject,
+              let paneID = paneManager.terminalPaneIDs.first(where: { paneID in
+                  paneManager.terminalState(for: paneID)?
+                      .terminalTabs.contains(where: { $0 === tab }) == true
+              }) else {
+            return nil
+        }
+        return AgentTaskBridgeContext(
+            project: project,
+            route: AgentTaskRoute(
+                paneID: paneID.id,
+                tabID: tab.id,
+                terminalID: tab.id,
+                availability: agentTaskWindowOpen ? .available : .background
+            ),
+            origin: .discoveredInTerminal
+        )
+    }
+
+    func bridgeAgentSession(
+        _ session: AgentSession,
+        replacing previous: AgentSession?,
+        in tab: TerminalTab,
+        reservation: AgentTaskLaunchReservation? = nil
+    ) {
+        guard !agentTaskCallbacksFrozen,
+              let base = agentTaskContext(for: tab),
+              let agentTaskRegistry else { return }
+        let ownedReservation = reservation ?? launchReservations[tab.id]
+        let context = AgentTaskBridgeContext(
+            project: base.project,
+            route: base.route,
+            origin: ownedReservation == nil
+                ? .discoveredInTerminal
+                : .pineLaunched,
+            observedAt: base.observedAt
+        )
+        agentTaskRegistry.bridge(
+            session,
+            replacing: previous,
+            context: context,
+            reservation: ownedReservation
+        )
+        if let ownedReservation,
+           !agentTaskRegistry.isLaunchPending(ownedReservation) {
+            launchReservations[tab.id] = nil
+        }
+    }
+
+    /// Captures the detector boundary and reserves durable identity for the
+    /// exact terminal launch. The caller must invoke this immediately before
+    /// starting the process and cancel on launch failure.
+    func prepareAgentLaunch(
+        in tab: TerminalTab,
+        descriptor: AgentDescriptor,
+        title: String? = nil,
+        objective: String? = nil
+    ) -> AgentTaskLaunchResult {
+        guard !agentTaskCallbacksFrozen,
+              let base = agentTaskContext(for: tab),
+              let agentTaskRegistry else { return .rejected }
+        if let reservation = launchReservations[tab.id] {
+            guard !agentTaskRegistry.isLaunchPending(reservation) else {
+                return .rejected
+            }
+            launchReservations[tab.id] = nil
+        }
+        let boundary = Date()
+        let context = AgentTaskBridgeContext(
+            project: base.project,
+            route: base.route,
+            origin: .pineLaunched,
+            observedAt: boundary
+        )
+        let result = agentTaskRegistry.preparePineLaunch(
+            descriptor: descriptor,
+            context: context,
+            title: title,
+            objective: objective,
+            boundary: AgentTaskLaunchBoundary(
+                generationFloor: agentDetector.processGenerationFloor,
+                capturedAt: boundary
+            )
+        )
+        if case .reserved(let reservation) = result {
+            launchReservations[tab.id] = reservation
+        }
+        return result
+    }
+
+    /// Owns the exact production handoff for Pine's existing Send to Terminal
+    /// action. Only a single known executable token receives launch authority;
+    /// arbitrary shell text remains untrusted detector input.
+    static func exactAgentLaunchDescriptor(
+        for command: String
+    ) -> AgentDescriptor? {
+        let token = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard command == token,
+              !token.isEmpty,
+              !token.contains(where: { $0.isWhitespace }),
+              let agentType = AgentType.resolve(fromProcessName: token),
+              agentType.cliNames.contains(token) else { return nil }
+        return AgentDescriptor(
+            agentType: agentType,
+            launchExecutable: token
+        )
+    }
+
+    func launchAgentCommand(
+        _ command: String,
+        descriptor: AgentDescriptor,
+        in tab: TerminalTab
+    ) async -> AgentTaskLaunchResult {
+        await performAgentLaunch(
+            command,
+            descriptor: descriptor,
+            in: tab
+        ) {
+            await tab.sendTextAcknowledged(command + "\n")
+        }
+    }
+
+#if DEBUG
+    var agentCallbacksFrozenForTesting: Bool {
+        agentTaskCallbacksFrozen
+    }
+
+    func launchAgentCommandForTesting(
+        _ command: String,
+        descriptor: AgentDescriptor,
+        in tab: TerminalTab,
+        acknowledgedWrite: () async -> Bool
+    ) async -> AgentTaskLaunchResult {
+        await performAgentLaunch(
+            command,
+            descriptor: descriptor,
+            in: tab,
+            acknowledgedWrite: acknowledgedWrite
+        )
+    }
+#endif
+
+    private func performAgentLaunch(
+        _ command: String,
+        descriptor: AgentDescriptor,
+        in tab: TerminalTab,
+        acknowledgedWrite: () async -> Bool
+    ) async -> AgentTaskLaunchResult {
+        guard Self.exactAgentLaunchDescriptor(for: command) == descriptor else {
+            return .rejected
+        }
+        guard agentTaskRegistry != nil,
+              agentTaskContext(for: tab) != nil else {
+            return await acknowledgedWrite()
+                ? .sentWithoutReservation
+                : .rejected
+        }
+        guard !launchWritesInFlight.contains(tab.id) else {
+            return .rejected
+        }
+        if let existing = launchReservations[tab.id],
+           agentTaskRegistry?.isLaunchPending(existing) == true {
+            return .rejected
+        }
+        let result = prepareAgentLaunch(
+            in: tab,
+            descriptor: descriptor,
+            title: nil,
+            objective: nil
+        )
+        guard case .reserved(let reservation) = result else {
+            return .rejected
+        }
+        launchWritesInFlight.insert(tab.id)
+        let acknowledged = await acknowledgedWrite()
+        launchWritesInFlight.remove(tab.id)
+        guard acknowledged else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .rejected
+        }
+        guard launchReservations[tab.id] == reservation,
+              agentTaskRegistry?.armLaunch(reservation) == true else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .sentWithoutReservation
+        }
+        return .reserved(reservation)
+    }
+
+    func cancelAgentLaunch(in tab: TerminalTab) {
+        guard let reservation = launchReservations[tab.id] else { return }
+        cancelAgentLaunch(reservation, in: tab)
+    }
+
+    private func cancelAgentLaunch(
+        _ reservation: AgentTaskLaunchReservation,
+        in tab: TerminalTab
+    ) {
+        if launchReservations[tab.id] == reservation {
+            launchReservations[tab.id] = nil
+        }
+        agentTaskRegistry?.cancelLaunch(reservation)
+    }
+
+    func resumeAgentTaskCommand(
+        taskID: UUID,
+        command: String,
+        in tab: TerminalTab
+    ) async -> AgentTaskLaunchResult {
+        guard let agentTaskRegistry,
+              let task = agentTaskRegistry.task(for: taskID),
+              task.descriptor.launchExecutable == command,
+              Self.exactAgentLaunchDescriptor(for: command) == task.descriptor,
+              !launchWritesInFlight.contains(tab.id) else {
+            return .rejected
+        }
+        let result = prepareAgentResume(taskID: taskID, in: tab)
+        guard case .reserved(let reservation) = result else { return result }
+        launchWritesInFlight.insert(tab.id)
+        let acknowledged = await tab.sendTextAcknowledged(command + "\n")
+        launchWritesInFlight.remove(tab.id)
+        guard acknowledged else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .rejected
+        }
+        guard launchReservations[tab.id] == reservation,
+              agentTaskRegistry.armLaunch(reservation) else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .sentWithoutReservation
+        }
+        return .reserved(reservation)
+    }
+
+    func prepareAgentResume(
+        taskID: UUID,
+        in tab: TerminalTab
+    ) -> AgentTaskLaunchResult {
+        guard !agentTaskCallbacksFrozen,
+              let base = agentTaskContext(for: tab),
+              let agentTaskRegistry else { return .rejected }
+        if let reservation = launchReservations[tab.id] {
+            guard !agentTaskRegistry.isLaunchPending(reservation) else {
+                return .rejected
+            }
+            launchReservations[tab.id] = nil
+        }
+        let capturedAt = Date()
+        let context = AgentTaskBridgeContext(
+            project: base.project,
+            route: base.route,
+            origin: .pineLaunched,
+            observedAt: capturedAt
+        )
+        let result = agentTaskRegistry.prepareResume(
+            taskID: taskID,
+            context: context,
+            boundary: AgentTaskLaunchBoundary(
+                generationFloor: agentDetector.processGenerationFloor,
+                capturedAt: capturedAt
+            )
+        )
+        if case .reserved(let reservation) = result {
+            launchReservations[tab.id] = reservation
+        }
+        return result
+    }
+
+    func refreshAgentTasks() {
+        guard !agentTaskCallbacksFrozen else { return }
+        agentTaskRegistry?.refresh(sessions: agentDetector.detectedSessions)
+    }
+
+    func markAgentEvidenceUnavailable() {
+        guard !agentTaskCallbacksFrozen else { return }
+        agentTaskRegistry?.markEvidenceUnavailable(
+            sessionIDs: agentDetector.detectedSessions.map(\.id)
+        )
+    }
+
+    /// Stops polling and invalidates already captured generations before the
+    /// app takes its final durable-task snapshot. Late callbacks are ignored.
+    func freezeAgentTasksForTermination() {
+        guard !agentTaskCallbacksFrozen else { return }
+        agentTaskCallbacksFrozen = true
+        agentCoordinator?.stop()
+    }
+
+    func cancelAgentTaskTermination() {
+        guard agentTaskCallbacksFrozen else { return }
+        agentTaskCallbacksFrozen = false
+        if paneManager?.allTerminalTabs.isEmpty == false {
+            if let agentCoordinator {
+                agentCoordinator.start()
+            } else {
+                ensureAgentDetectionStarted()
+            }
+        }
     }
 
     // MARK: - Tab creation

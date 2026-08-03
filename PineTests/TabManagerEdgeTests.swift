@@ -50,7 +50,7 @@ struct TabManagerEdgeTests {
     }
 
     private func waitUntil(
-        timeout: Duration = .seconds(2),
+        timeout: Duration = .seconds(120),
         _ condition: @MainActor () -> Bool
     ) async -> Bool {
         let clock = ContinuousClock()

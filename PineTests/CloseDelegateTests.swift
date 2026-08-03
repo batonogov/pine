@@ -51,6 +51,7 @@ struct CloseDelegateTests {
         to projectManager: ProjectManager,
         in directory: URL
     ) throws {
+        projectManager.primaryTabManager.autoSavePreferenceProvider = { false }
         let fileURL = directory.appendingPathComponent("dirty.swift")
         try "original".write(
             to: fileURL,

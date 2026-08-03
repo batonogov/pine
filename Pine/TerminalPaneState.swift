@@ -45,6 +45,8 @@ final class TerminalPaneState {
     /// Called after terminal identities are inserted or removed so a live
     /// global switcher can reconcile independently of SwiftUI rendering.
     var onTabInventoryChanged: (() -> Void)?
+    /// Applies project-scoped lifecycle wiring to every newly created tab.
+    var onTabCreated: ((TerminalTab) -> Void)?
 
     /// Monotonically increasing counter for unique terminal tab names.
     private var nextTabNumber = 1
@@ -93,6 +95,7 @@ final class TerminalPaneState {
             themeSettings: themeSettings
         )
         tab.configure(workingDirectory: workingDirectory)
+        onTabCreated?(tab)
         terminalTabs.append(tab)
         activeTerminalID = tab.id
         pendingFocusTabID = tab.id

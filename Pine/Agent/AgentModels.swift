@@ -145,13 +145,21 @@ enum AgentState: Equatable, Sendable {
     /// Resolved through ``Strings`` so the same label is used everywhere —
     /// attention overlay, status bar, terminal badges, and accessibility —
     /// and is localized across the 9 supported languages (#1245).
+    @MainActor
     var displayName: String {
+        displayName(locale: .current)
+    }
+
+    /// Localized state label in an explicitly selected language. Status-bar
+    /// snapshots and previews must not mix this with the host's locale.
+    @MainActor
+    func displayName(locale: Locale) -> String {
         switch self {
-        case .idle: Strings.agentStateIdle
-        case .thinking: Strings.agentStateThinking
-        case .executing: Strings.agentStateExecuting
-        case .waitingInput: Strings.agentStateWaitingInput
-        case .done: Strings.agentStateDone
+        case .idle: Strings.agentStateIdle(locale: locale)
+        case .thinking: Strings.agentStateThinking(locale: locale)
+        case .executing: Strings.agentStateExecuting(locale: locale)
+        case .waitingInput: Strings.agentStateWaitingInput(locale: locale)
+        case .done: Strings.agentStateDone(locale: locale)
         }
     }
 
@@ -217,6 +225,12 @@ final class AgentSession: Identifiable {
     /// When the session started.
     let startedAt: Date
 
+    /// Immutable evidence for the process generation backing this run. The
+    /// detector binds it once after creating the legacy session model; tests
+    /// and pre-#1302 migration may leave it absent. Evidence-free sessions
+    /// remain terminal-local and are never bridged into durable tasks.
+    private(set) var processEvidence: AgentProcessEvidence?
+
     /// Optional human-readable description of the task the agent is working on.
     var currentTask: String?
 
@@ -245,6 +259,7 @@ final class AgentSession: Identifiable {
         self.agentType = agentType
         self.state = state
         self.startedAt = startedAt
+        self.processEvidence = nil
         self.liveness = liveness
         self.lastObservedAt = observedAt
         self.lastObservationStamp = AgentObservationStamp(
@@ -256,6 +271,15 @@ final class AgentSession: Identifiable {
         self.currentTask = currentTask
         self.filesModified = filesModified
         self.filesRead = filesRead
+    }
+
+    /// Binds process identity exactly once. Reusing an `AgentSession` object for
+    /// a restarted command is forbidden; the detector must create a new run.
+    @discardableResult
+    func bindProcessEvidence(_ evidence: AgentProcessEvidence) -> Bool {
+        guard processEvidence == nil else { return false }
+        processEvidence = evidence
+        return true
     }
 
     /// Records a successful observation. Kept internal to centralize mutable

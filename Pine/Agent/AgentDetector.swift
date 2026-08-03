@@ -46,19 +46,23 @@ nonisolated struct DetectedProcess: Sendable, Equatable {
     let cpuTime: Int?
     /// Stable process-start discriminator from `ps lstart=`.
     let startIdentifier: String?
+    /// High-resolution OS process start time, when `proc_pidinfo` proves it.
+    let preciseStartedAt: Date?
 
     init(
         pid: Int32,
         command: String,
         cwd: URL? = nil,
         cpuTime: Int? = nil,
-        startIdentifier: String? = nil
+        startIdentifier: String? = nil,
+        preciseStartedAt: Date? = nil
     ) {
         self.pid = pid
         self.command = command
         self.cwd = cwd
         self.cpuTime = cpuTime
         self.startIdentifier = startIdentifier
+        self.preciseStartedAt = preciseStartedAt
     }
 }
 
@@ -107,9 +111,20 @@ final class AgentDetector {
 
     /// Stable process-start value seen for each tracked pid.
     private var startIdentifierByPID: [Int32: String] = [:]
+    /// Authoritative microsecond process start seen for each tracked pid.
+    private var preciseStartByPID: [Int32: Date] = [:]
+
+    /// Monotonic detector-owned process generation. It advances for every
+    /// newly recognised process, including PID reuse and command replacement.
+    private var nextProcessGeneration: UInt64 = 0
+
+    /// Runtime-only causal floor captured by a terminal launch owner
+    /// immediately before spawning a process.
+    var processGenerationFloor: UInt64 { nextProcessGeneration }
 
     /// Supplies monotonic process uptime. Injected for deterministic tests.
     private let uptimeProvider: @Sendable () -> TimeInterval
+    private let maxSessionHistory: Int
 
     /// Latest accepted poll, successful or failed. Older whole snapshots are
     /// discarded before they can refine, revive, or terminate sessions.
@@ -117,11 +132,13 @@ final class AgentDetector {
 
     init(
         staleAfter: TimeInterval = 300,
+        maxSessionHistory: Int = 512,
         uptimeProvider: @escaping @Sendable () -> TimeInterval = {
             ProcessInfo.processInfo.systemUptime
         }
     ) {
         livenessTracker = AgentSessionLivenessTracker(staleAfter: staleAfter)
+        self.maxSessionHistory = max(1, maxSessionHistory)
         self.uptimeProvider = uptimeProvider
     }
 
@@ -204,11 +221,21 @@ final class AgentDetector {
                 } else {
                     false
                 }
+                let preciseStartChanged = if let previousStart = preciseStartByPID[process.pid],
+                                             let currentStart = process.preciseStartedAt {
+                    previousStart != currentStart
+                } else {
+                    false
+                }
+                let preciseAuthorityLost = preciseStartByPID[process.pid] != nil
+                    && process.preciseStartedAt == nil
 
                 // A pid may exec another agent or be recycled for the same
                 // command. A changed lstart value proves a new generation;
                 // cumulative CPU regression is the conservative fallback.
-                if existing.agentType != resolved || startChanged || cpuRegressed {
+                if existing.agentType != resolved || startChanged
+                    || preciseStartChanged || preciseAuthorityLost
+                    || cpuRegressed {
                     if let terminatedID = markDone(pid: process.pid) {
                         newlyTerminated.insert(terminatedID)
                     }
@@ -229,6 +256,10 @@ final class AgentDetector {
                 if startIdentifierByPID[process.pid] == nil,
                    let startIdentifier = process.startIdentifier {
                     startIdentifierByPID[process.pid] = startIdentifier
+                }
+                if preciseStartByPID[process.pid] == nil,
+                   let preciseStartedAt = process.preciseStartedAt {
+                    preciseStartByPID[process.pid] = preciseStartedAt
                 }
                 if let cpu = process.cpuTime {
                     if let previousCPU, existing.state != .done {
@@ -313,6 +344,7 @@ final class AgentDetector {
         guard let session = sessionsByPID.removeValue(forKey: pid) else { return nil }
         lastCpuTimeByPID.removeValue(forKey: pid)
         startIdentifierByPID.removeValue(forKey: pid)
+        preciseStartByPID.removeValue(forKey: pid)
         livenessTracker.recordTermination(of: session)
         session.state = .done
         return session.id
@@ -324,6 +356,13 @@ final class AgentDetector {
         agentType: AgentType,
         observation: AgentObservationStamp
     ) {
+        while detectedSessions.count >= maxSessionHistory,
+              let doneIndex = detectedSessions.firstIndex(where: {
+                  $0.state == .done
+              }) {
+            detectedSessions.remove(at: doneIndex)
+        }
+        guard detectedSessions.count < maxSessionHistory else { return }
         let session = AgentSession(
             agentType: agentType,
             state: .idle,
@@ -333,6 +372,19 @@ final class AgentDetector {
             observationGeneration: observation.generation,
             observationSequence: observation.sequence
         )
+        guard nextProcessGeneration < UInt64.max else {
+            return
+        }
+        nextProcessGeneration += 1
+        _ = session.bindProcessEvidence(
+            AgentProcessEvidence(
+                processIdentifier: process.pid,
+                processGeneration: nextProcessGeneration,
+                startIdentifier: process.startIdentifier,
+                observedStartedAt: process.preciseStartedAt ?? observation.wallTime,
+                startIsAuthoritative: process.preciseStartedAt != nil
+            )
+        )
         sessionsByPID[process.pid] = session
         detectedSessions.append(session)
         if let cpu = process.cpuTime {
@@ -341,16 +393,21 @@ final class AgentDetector {
         if let startIdentifier = process.startIdentifier {
             startIdentifierByPID[process.pid] = startIdentifier
         }
+        if let preciseStartedAt = process.preciseStartedAt {
+            preciseStartByPID[process.pid] = preciseStartedAt
+        }
     }
 
     /// Produces a stamp newer than any explicit coordinator stamp already
     /// accepted, preserving the convenient direct API for in-process callers.
     private func nextLocalObservation(at wallTime: Date) -> AgentObservationStamp {
-        AgentObservationStamp(
+        let prior = latestSnapshotStamp?.sequence ?? 0
+        let sequence = AgentMonotonicCounter.next(after: prior) ?? UInt64.max
+        return AgentObservationStamp(
             wallTime: wallTime,
             uptime: uptimeProvider(),
             generation: latestSnapshotStamp?.generation ?? 0,
-            sequence: (latestSnapshotStamp?.sequence ?? 0) &+ 1
+            sequence: sequence
         )
     }
 
@@ -391,20 +448,26 @@ final class AgentDetector {
     /// the *second* token as the real CLI, resolving its basename and stripping
     /// a common script extension. A second token that is not a known agent
     /// (e.g. `server.js`) still resolves to `.generic` and is not tracked.
-    static func extractExecutableName(from command: String) -> String {
+    nonisolated static func extractExecutableName(from command: String) -> String {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
+        let arguments = trimmed.split(
+            separator: " ",
+            omittingEmptySubsequences: true
+        ).map(String.init)
+        return extractExecutableName(arguments: arguments)
+    }
 
-        let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
-        guard let firstToken = tokens.first else { return "" }
-        let firstBase = (String(firstToken) as NSString).lastPathComponent
+    nonisolated static func extractExecutableName(
+        arguments: [String]
+    ) -> String {
+        guard let firstToken = arguments.first else { return "" }
+        let firstBase = (firstToken as NSString).lastPathComponent
 
-        // Interpreter-wrapper form: `node /path/pi`, `python3 …/aider`, …
-        // The second token is the real CLI; resolve its basename and strip a
-        // common script extension so `claude.js` → `claude`.
-        if Self.interpreterWrappers.contains(firstBase.lowercased()), tokens.count >= 2 {
-            let scriptBase = (String(tokens[1]) as NSString).lastPathComponent
-            return Self.strippingScriptExtension(scriptBase)
+        if interpreterWrappers.contains(firstBase.lowercased()),
+           arguments.count >= 2 {
+            let scriptBase = (arguments[1] as NSString).lastPathComponent
+            return strippingScriptExtension(scriptBase)
         }
         return firstBase
     }
@@ -412,7 +475,7 @@ final class AgentDetector {
     /// Interpreter executable basenames that wrap a script CLI. When the first
     /// token of a command is one of these, the second token holds the real CLI.
     /// Lowercased; compared case-insensitively.
-    private static let interpreterWrappers: Set<String> = [
+    nonisolated private static let interpreterWrappers: Set<String> = [
         "node", "node.exe",
         "python", "python3", "python3.exe",
         "ruby", "ruby.exe",
@@ -424,13 +487,15 @@ final class AgentDetector {
 
     /// Script-file extensions stripped from a wrapped script's basename so
     /// `node …/claude.js` resolves to `claude`.
-    private static let scriptExtensions: Set<String> = [
+    nonisolated private static let scriptExtensions: Set<String> = [
         "js", "mjs", "cjs", "ts", "mts", "cts",
     ]
 
     /// Returns `name` with a single trailing script extension removed (if any),
     /// preserving the original casing of the stem.
-    private static func strippingScriptExtension(_ name: String) -> String {
+    nonisolated private static func strippingScriptExtension(
+        _ name: String
+    ) -> String {
         let lower = name.lowercased()
         for ext in scriptExtensions where lower.hasSuffix("." + ext) {
             return String(name.dropLast(ext.count + 1))

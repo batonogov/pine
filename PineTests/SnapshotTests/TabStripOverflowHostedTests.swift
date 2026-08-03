@@ -36,6 +36,7 @@ struct TabStripOverflowHostedTests {
 
     private struct TerminalHarness: View {
         let paneManager: PaneManager
+        let projectRegistry: ProjectRegistry
         let paneID: PaneID
         let terminalState: TerminalPaneState
 
@@ -45,6 +46,7 @@ struct TabStripOverflowHostedTests {
                 terminalState: terminalState
             )
             .environment(paneManager)
+            .environment(projectRegistry)
             .overlay(alignment: .topLeading) {
                 TabInsertionIndicator(x: 164)
             }
@@ -90,6 +92,7 @@ struct TabStripOverflowHostedTests {
     @Test("Overflowing terminal strip snapshots active and indicator states")
     func terminalOverflow() throws {
         let paneManager = PaneManager()
+        let projectRegistry = ProjectRegistry()
         let paneID = paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
         let terminalState = try #require(paneManager.terminalState(for: paneID))
         terminalState.terminalTabs = (1...7).map { TerminalTab(name: "Terminal \($0)") }
@@ -99,6 +102,7 @@ struct TabStripOverflowHostedTests {
             try assertSnapshot(
                 of: TerminalHarness(
                     paneManager: paneManager,
+                    projectRegistry: projectRegistry,
                     paneID: paneID,
                     terminalState: terminalState
                 ),

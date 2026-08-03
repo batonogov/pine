@@ -65,6 +65,21 @@ final class PaneManager {
         }
     }
 
+    /// Applies project-scoped lifecycle wiring to every terminal tab without
+    /// making the durable registry retain pane, tab, view, or process objects.
+    var configureTerminalTab: ((TerminalTab) -> Void)? {
+        didSet {
+            guard let configureTerminalTab else { return }
+            allTerminalTabs.forEach(configureTerminalTab)
+            terminalStates.values.forEach {
+                $0.onTabCreated = configureTerminalTab
+            }
+        }
+    }
+
+    /// Reports value-only terminal route changes after a completed tab move.
+    var terminalTabDidMove: ((TerminalTab, PaneID) -> Void)?
+
     /// Saved root before maximize, for restore.
     private(set) var savedRootBeforeMaximize: PaneNode?
 
@@ -1162,6 +1177,7 @@ final class PaneManager {
         // Special case: removing the only leaf in the tree → replace it with
         // a fresh empty editor leaf so the user always has a destination.
         if root.leafCount == 1, root.firstLeafID == paneID {
+            terminalStates[paneID]?.terminalTabs.forEach { $0.stop() }
             tabManagers[paneID] = nil
             terminalStates[paneID] = nil
             let newID = PaneID()
@@ -1175,6 +1191,7 @@ final class PaneManager {
         guard root.leafCount > 1,
               let newRoot = root.removing(paneID) else { return }
 
+        terminalStates[paneID]?.terminalTabs.forEach { $0.stop() }
         tabManagers[paneID] = nil
         terminalStates[paneID] = nil
         root = newRoot
@@ -1517,6 +1534,7 @@ final class PaneManager {
             srcState.activeTerminalID = srcState.terminalTabs.last?.id
         }
         activePaneID = targetID
+        terminalTabDidMove?(tab, targetID)
         if srcState.terminalTabs.isEmpty {
             removePane(sourceID)
         }
@@ -1555,6 +1573,7 @@ final class PaneManager {
         }
 
         activePaneID = newID
+        terminalTabDidMove?(tab, newID)
 
         if srcState.terminalTabs.isEmpty {
             removePane(sourceID)
@@ -1609,6 +1628,7 @@ final class PaneManager {
         newState.activeTerminalID = tab.id
         newState.pendingFocusTabID = tab.id
         activePaneID = newID
+        terminalTabDidMove?(tab, newID)
         recordTabActivation(paneID: newID, tabID: tab.id, contentType: .terminal)
         reconcileGlobalTabSwitcherAfterInventoryChange()
         return true
@@ -1698,6 +1718,12 @@ final class PaneManager {
                 break
             }
         }
+
+        // A restored layout replaces runtime terminal identity. Report every
+        // discarded terminal exactly once before publishing the new tree.
+        terminalStates.values
+            .flatMap(\.terminalTabs)
+            .forEach { $0.stop() }
 
         // Replace root and tab managers atomically
         root = node
@@ -2239,6 +2265,7 @@ final class PaneManager {
 
     private func makeTerminalPaneState(for paneID: PaneID) -> TerminalPaneState {
         let terminalState = TerminalPaneState()
+        terminalState.onTabCreated = configureTerminalTab
         trackTerminalActivations(in: terminalState, paneID: paneID)
         return terminalState
     }

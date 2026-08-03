@@ -57,6 +57,16 @@ struct AlertTemplateTests {
         #expect(buttons[1].title == Strings.dialogCancel)
     }
 
+    @Test("activeUserTasksPreventQuit has one safe OK button")
+    func activeUserTasksPreventQuitButtons() {
+        let template = AlertTemplate.activeUserTasksPreventQuit
+        let alert = template.makeAlert(messageText: "Test")
+        let buttons = alert.buttons
+        #expect(buttons.count == 1)
+        #expect(buttons[0].title == Strings.dialogOK)
+        #expect(alert.alertStyle == .warning)
+    }
+
     @Test("externalModifyConflict has Reload / Keep")
     func externalModifyConflictButtons() {
         let template = AlertTemplate.externalModifyConflict

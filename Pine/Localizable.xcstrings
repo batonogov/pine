@@ -506,6 +506,66 @@
         }
       }
     },
+    "agent.resumeTask": {
+      "comment": "Terminal tab context menu for explicitly resuming a paused durable agent task.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent-Aufgabe fortsetzen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume Agent Task"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reanudar tarea del agente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reprendre la tâche de l’agent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントタスクを再開"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 작업 재개"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retomar tarefa do agente"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Возобновить задачу агента"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复智能体任务"
+          }
+        }
+      }
+    },
     "agentHistory.emptyMessage": {
       "comment": "Agent History: empty-state explanation (#1073).",
       "extractionState": "manual",
@@ -14149,6 +14209,126 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消固定标签页"
+          }
+        }
+      }
+    },
+    "task.activePreventQuit.message": {
+      "comment": "Alert message explaining why Quit is refused while a user task owns an execution.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine kann nicht beendet werden, solange eine Benutzeraufgabe noch einen laufenden Prozess besitzt. Brechen Sie die Aufgabe ab und warten Sie, bis die Bereinigung abgeschlossen ist. Beenden Sie Pine anschließend erneut."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine cannot quit while a user task still owns a running process. Cancel the task and wait for cleanup to finish, then quit again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine no puede salir mientras una tarea de usuario siga controlando un proceso en ejecución. Cancela la tarea y espera a que termine la limpieza; después, vuelve a salir."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine ne peut pas quitter tant qu’une tâche utilisateur contrôle encore un processus en cours. Annulez la tâche et attendez la fin du nettoyage, puis quittez à nouveau."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ユーザータスクが実行中のプロセスを保持している間は Pine を終了できません。タスクをキャンセルし、クリーンアップの完了を待ってから、もう一度終了してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 작업이 실행 중인 프로세스를 소유하고 있는 동안에는 Pine을 종료할 수 없습니다. 작업을 취소하고 정리가 끝날 때까지 기다린 후 다시 종료하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Pine não pode sair enquanto uma tarefa do usuário ainda controlar um processo em execução. Cancele a tarefa, aguarde a conclusão da limpeza e tente sair novamente."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine не может завершить работу, пока пользовательская задача управляет запущенным процессом. Отмените задачу, дождитесь завершения очистки и повторите выход."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当用户任务仍拥有正在运行的进程时，Pine 无法退出。请取消该任务并等待清理完成，然后再次退出。"
+          }
+        }
+      }
+    },
+    "task.activePreventQuit.title": {
+      "comment": "Alert title when Quit is refused because a user task still owns an execution.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktive Aufgaben werden noch ausgeführt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active Tasks Are Still Running"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía hay tareas activas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Des tâches actives sont toujours en cours"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクティブなタスクがまだ実行中です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "활성 작업이 아직 실행 중입니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ainda há tarefas ativas em execução"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Активные задачи ещё выполняются"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活动任务仍在运行"
           }
         }
       }

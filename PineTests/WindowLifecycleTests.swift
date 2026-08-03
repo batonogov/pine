@@ -35,6 +35,14 @@ struct WindowLifecycleTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    private func updateContent(
+        _ content: String,
+        in project: ProjectManager
+    ) {
+        project.primaryTabManager.autoSavePreferenceProvider = { false }
+        project.primaryTabManager.updateContent(content)
+    }
+
     // MARK: - onDisappear logic (handleProjectWindowDisappear)
 
     @Test func closingLastProjectTriggersShowWelcome() throws {
@@ -144,7 +152,7 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// dirty")
+        updateContent("// dirty", in: project)
 
         let delegate = AppDelegate()
         delegate.registry = registry
@@ -159,12 +167,42 @@ struct WindowLifecycleTests {
             saveAll: { _, _ in
                 saveAttempts += 1
                 return false
-            }
+            },
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
         #expect(presentedTemplates == [.unsavedChangesBulk])
         #expect(saveAttempts == 1)
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func terminationDeadlineBoundsHungAlertPresenter() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// dirty", in: project)
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let deadlineProbe = TerminationDeadlineProbe()
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { _, _, _, _ in
+                try? await Task.sleep(for: .seconds(10))
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + .milliseconds(25),
+            terminationDeadlineObserver: deadlineProbe.record
+        )
+
+        #expect(!result)
+        #expect(
+            deadlineProbe.elapsedNanoseconds.map { $0 < 1_000_000_000 } == true
+        )
         #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
     }
@@ -177,7 +215,7 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// dirty")
+        updateContent("// dirty", in: project)
 
         let delegate = AppDelegate()
         delegate.registry = registry
@@ -196,7 +234,8 @@ struct WindowLifecycleTests {
                 saveAttempts += 1
                 return true
             },
-            applicationContext: fallbackContext
+            applicationContext: fallbackContext,
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
@@ -214,18 +253,20 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// first dirty state")
+        updateContent("// first dirty state", in: project)
 
         let delegate = AppDelegate()
         delegate.registry = registry
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
                 #expect(template == .unsavedChangesBulk)
-                project.primaryTabManager.updateContent(
-                    "// changed while quit sheet was visible"
+                updateContent(
+                    "// changed while quit sheet was visible",
+                    in: project
                 )
                 return .alertSecondButtonReturn
-            }
+            },
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
@@ -242,7 +283,7 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        project.primaryTabManager.updateContent("// discarded")
+        updateContent("// discarded", in: project)
         project.recoveryManager?.snapshotDirtyTabs(project.allTabs)
         #expect(project.recoveryManager?.pendingRecoveryEntries().isEmpty == false)
         let delegate = AppDelegate()
@@ -252,7 +293,8 @@ struct WindowLifecycleTests {
             presentAlert: { template, _, _, _ in
                 #expect(template == .unsavedChangesBulk)
                 return .alertSecondButtonReturn
-            }
+            },
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(result)
@@ -280,8 +322,8 @@ struct WindowLifecycleTests {
         )
         firstProject.primaryTabManager.openTab(url: firstFile)
         secondProject.primaryTabManager.openTab(url: secondFile)
-        firstProject.primaryTabManager.updateContent("// first dirty")
-        secondProject.primaryTabManager.updateContent("// second dirty")
+        updateContent("// first dirty", in: firstProject)
+        updateContent("// second dirty", in: secondProject)
         let delegate = AppDelegate()
         delegate.registry = registry
         var promptCount = 0
@@ -293,7 +335,8 @@ struct WindowLifecycleTests {
                 return promptCount == 1
                     ? .alertSecondButtonReturn
                     : .alertThirdButtonReturn
-            }
+            },
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
@@ -306,12 +349,12 @@ struct WindowLifecycleTests {
         await secondProject.workspace.waitForLoadingComplete()
     }
 
-    @Test func quitTaskTimeoutRetainsProjectAndCleanupOwnership() async throws {
+    @Test func quitRefusesWhileUserTaskOwnsExecution() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
-        let run = project.taskRunStore.start(makeTaskRun(id: "timeout"))
+        let run = project.taskRunStore.start(makeTaskRun(id: "active"))
         let probe = TerminationTaskProbe(waitResult: false)
         project.taskRunStore.registerCancellation(
             probe.makeCancellation(),
@@ -319,14 +362,20 @@ struct WindowLifecycleTests {
         )
         let delegate = AppDelegate()
         delegate.registry = registry
+        var presentedTemplates: [AlertTemplate] = []
 
         let result = await delegate.confirmApplicationTermination(
-            userTaskShutdownDeadline: .now()
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 1
         )
 
         #expect(!result)
-        #expect(probe.cancellationCount == 1)
-        #expect(probe.waitCount == 1)
+        #expect(presentedTemplates == [.activeUserTasksPreventQuit])
+        #expect(probe.cancellationCount == 0)
+        #expect(probe.waitCount == 0)
         #expect(project.hasOutstandingUserTaskExecution)
         #expect(registry.isProjectOpen(dir))
         #expect(!registry.destroyAllProjects())
@@ -334,18 +383,18 @@ struct WindowLifecycleTests {
 
         project.taskRunStore.finishRun(
             id: run.id,
-            outcome: makeTaskOutcome(id: "timeout"),
-            cancelled: true
+            outcome: makeTaskOutcome(id: "active"),
+            cancelled: false
         )
         #expect(registry.destroyAllProjects())
     }
 
-    @Test func quitWaitsForTaskCleanupBeforeAllowingTeardown() async throws {
+    @Test func quitNeverKillsTaskWhoseCleanupWouldFitDeadline() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
-        let run = project.taskRunStore.start(makeTaskRun(id: "success"))
+        let run = project.taskRunStore.start(makeTaskRun(id: "active"))
         let probe = TerminationTaskProbe(waitResult: true)
         project.taskRunStore.registerCancellation(
             probe.makeCancellation(),
@@ -355,56 +404,69 @@ struct WindowLifecycleTests {
         delegate.registry = registry
 
         let result = await delegate.confirmApplicationTermination(
-            userTaskShutdownDeadline: .now() + 1
+            presentAlert: { template, _, _, _ in
+                #expect(template == .activeUserTasksPreventQuit)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 1
         )
 
-        #expect(result)
-        #expect(probe.cancellationCount == 1)
-        #expect(probe.waitCount == 1)
-        #expect(!project.hasOutstandingUserTaskExecution)
-        #expect(project.taskRunStore.runs.isEmpty)
+        #expect(!result)
+        #expect(probe.cancellationCount == 0)
+        #expect(probe.waitCount == 0)
+        #expect(project.hasOutstandingUserTaskExecution)
+        #expect(project.taskRunStore.runs.count == 1)
+        #expect(!registry.destroyAllProjects())
+
+        project.taskRunStore.finishRun(
+            id: run.id,
+            outcome: makeTaskOutcome(id: "active"),
+            cancelled: false
+        )
         #expect(registry.destroyAllProjects())
     }
 
-    @Test func quitRevalidatesEditsMadeDuringTaskCleanup() async throws {
+    @Test func taskStartedDuringQuitDoesNotCommitDiscard() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
-        let run = project.taskRunStore.start(makeTaskRun(id: "delayed"))
-        let gate = TerminationWaitGate()
-        project.taskRunStore.registerCancellation(
-            UserTaskCancellation(
-                terminate: { true },
-                waitForCompletion: { deadline in
-                    gate.waitForRelease(until: deadline)
-                }
-            ),
-            forRunID: run.id
-        )
+        updateContent("// keep after refused quit", in: project)
+        let probe = TerminationTaskProbe(waitResult: true)
+        var run: UserTaskRun?
         let delegate = AppDelegate()
         delegate.registry = registry
 
-        let decision = Task { @MainActor in
-            await delegate.confirmApplicationTermination(
-                userTaskShutdownDeadline: .now() + 2
-            )
-        }
-        defer { gate.release() }
-        for _ in 0..<200 where !gate.didStartWaiting {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        #expect(gate.didStartWaiting)
-        project.primaryTabManager.updateContent("// edited during cleanup")
-        gate.release()
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .unsavedChangesBulk)
+                let started = project.taskRunStore.start(
+                    makeTaskRun(id: "late-active")
+                )
+                project.taskRunStore.registerCancellation(
+                    probe.makeCancellation(),
+                    forRunID: started.id
+                )
+                run = started
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 2
+        )
 
-        let result = await decision.value
         #expect(!result)
+        #expect(probe.cancellationCount == 0)
+        #expect(probe.waitCount == 0)
         #expect(project.hasUnsavedChanges)
         #expect(project.primaryTabManager.activeTab?.content ==
-                "// edited during cleanup")
+                "// keep after refused quit")
+        let activeRun = try #require(run)
+        project.taskRunStore.finishRun(
+            id: activeRun.id,
+            outcome: makeTaskOutcome(id: "late-active"),
+            cancelled: false
+        )
         await project.workspace.waitForLoadingComplete()
     }
 
@@ -646,6 +708,24 @@ struct WindowLifecycleTests {
     }
 }
 
+nonisolated private final class TerminationDeadlineProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let started = DispatchTime.now().uptimeNanoseconds
+    private var recordedElapsedNanoseconds: UInt64?
+
+    var elapsedNanoseconds: UInt64? {
+        lock.withLock { recordedElapsedNanoseconds }
+    }
+
+    func record() {
+        lock.withLock {
+            guard recordedElapsedNanoseconds == nil else { return }
+            recordedElapsedNanoseconds =
+                DispatchTime.now().uptimeNanoseconds - started
+        }
+    }
+}
+
 nonisolated private final class TerminationTaskProbe: @unchecked Sendable {
     private let lock = NSLock()
     private let waitResult: Bool
@@ -679,26 +759,5 @@ nonisolated private final class TerminationTaskProbe: @unchecked Sendable {
                 return waitResult
             }
         )
-    }
-}
-
-nonisolated private final class TerminationWaitGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private let releaseSemaphore = DispatchSemaphore(value: 0)
-    private var startedWaiting = false
-
-    var didStartWaiting: Bool {
-        lock.withLock { startedWaiting }
-    }
-
-    func waitForRelease(until deadline: DispatchTime) -> Bool {
-        lock.withLock {
-            startedWaiting = true
-        }
-        return releaseSemaphore.wait(timeout: deadline) == .success
-    }
-
-    func release() {
-        releaseSemaphore.signal()
     }
 }

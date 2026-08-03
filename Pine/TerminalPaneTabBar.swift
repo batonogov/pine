@@ -15,6 +15,7 @@ struct TerminalPaneTabBar: View {
     var workingDirectory: URL?
     var projectManager: ProjectManager? = nil
     @Environment(PaneManager.self) private var paneManager
+    @Environment(ProjectRegistry.self) private var projectRegistry
     @State private var tabFrames: [UUID: CGRect] = [:]
     @State private var autoScrollSession = TabStripAutoScrollSession()
 
@@ -59,6 +60,47 @@ struct TerminalPaneTabBar: View {
             // Remove the pane if no tabs remain
             if terminalState.terminalTabs.isEmpty {
                 paneManager.removePane(paneID)
+            }
+        }
+    }
+
+    private func agentResumeActions(
+        for tab: TerminalTab
+    ) -> [TerminalAgentResumeAction] {
+        guard let projectManager,
+              let projectURL = projectManager.rootURL else { return [] }
+        return projectRegistry.agentTasks.tasks.compactMap { task in
+            guard projectRegistry.agentTasks.canResumeTask(task.id),
+                  task.project.canonicalWorktreePath == projectURL.path,
+                  let command = task.descriptor.launchExecutable else {
+                return nil
+            }
+            let taskID = task.id
+            let displayName = task.descriptor.agentType.displayName
+            let created = task.createdAt.formatted(
+                date: .abbreviated,
+                time: .shortened
+            )
+            let context = task.title ?? task.objective ?? created
+            let suffix = "\(context) · \(taskID.uuidString.prefix(8))"
+            return TerminalAgentResumeAction(
+                id: taskID,
+                title: "\(displayName) — \(suffix)"
+            ) {
+                Task { @MainActor in
+                    guard let route = await projectRegistry.resolveAgentTaskRoute(
+                        taskID,
+                        targetTerminalID: tab.id
+                    ),
+                    route.terminalID == tab.id else {
+                        return
+                    }
+                    _ = await projectManager.terminal.resumeAgentTaskCommand(
+                        taskID: taskID,
+                        command: command,
+                        in: tab
+                    )
+                }
             }
         }
     }
@@ -204,7 +246,10 @@ struct TerminalPaneTabBar: View {
                                                 contentType: .terminal,
                                                 action: .nextPane
                                             )
-                                        } : nil
+                                        } : nil,
+                                        agentResumeActions: agentResumeActions(
+                                            for: tab
+                                        )
                                     )
                                     .opacity(isDragged ? 0.4 : 1.0)
                                     .scaleEffect(isDragged ? 0.95 : 1.0)
