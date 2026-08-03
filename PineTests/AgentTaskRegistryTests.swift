@@ -980,8 +980,8 @@ struct AgentTaskRegistryTests {
         let observed = makeSession(
             pid: 1_109,
             generation: 1,
-            agentType: .codex,
-            preciseStartedAt: Date().addingTimeInterval(60)
+            preciseStartedAt: Date().addingTimeInterval(60),
+            agentType: .codex
         )
         manager.terminal.bridgeAgentSession(
             observed,
@@ -1022,8 +1022,8 @@ struct AgentTaskRegistryTests {
         let launched = makeSession(
             pid: 1_110,
             generation: 2,
-            agentType: .codex,
-            preciseStartedAt: Date().addingTimeInterval(120)
+            preciseStartedAt: Date().addingTimeInterval(120),
+            agentType: .codex
         )
         manager.terminal.bridgeAgentSession(
             launched,
@@ -1196,8 +1196,8 @@ struct AgentTaskRegistryTests {
         let launched = makeSession(
             pid: 1_495,
             generation: 2,
-            agentType: .codex,
-            preciseStartedAt: Date().addingTimeInterval(60)
+            preciseStartedAt: Date().addingTimeInterval(60),
+            agentType: .codex
         )
         manager.terminal.bridgeAgentSession(
             launched,
@@ -1733,7 +1733,7 @@ struct AgentTaskRegistryTests {
                 replacing: nil,
                 context: context(
                     project: identity,
-                    routeSeed: UInt8(152 + offset)
+                    routeSeed: 152 + offset
                 )
             )
 
@@ -2192,7 +2192,7 @@ struct AgentTaskRegistryTests {
         await store.releaseFirstSave()
         await store.waitUntilFirstSaveReturned()
 
-        session.updateState(.thinking)
+        session.state = .thinking
         registry.refresh(sessions: [session])
         #expect(await registry.flushPersistence() == .saved)
         #expect(await store.retryUsedPublishedRevision())
@@ -2424,7 +2424,10 @@ struct AgentTaskRegistryTests {
             routeSeed: 147,
             origin: .pineLaunched
         )
-        let firstBoundary = launchBoundary(generation: 1, at: launchContext.observedAt)
+        let firstBoundary = AgentTaskLaunchBoundary(
+            generationFloor: 0,
+            capturedAt: launchContext.observedAt
+        )
         let firstReservation: AgentTaskLaunchReservation
         switch registry.preparePineLaunch(
             descriptor: AgentDescriptor(
@@ -2446,8 +2449,7 @@ struct AgentTaskRegistryTests {
         let first = makeSession(
             pid: 1_397,
             generation: 1,
-            startedAt: launchContext.observedAt.addingTimeInterval(1),
-            preciseStart: launchContext.observedAt.addingTimeInterval(1)
+            preciseStartedAt: launchContext.observedAt.addingTimeInterval(1)
         )
         registry.bridge(
             first,
@@ -2458,9 +2460,9 @@ struct AgentTaskRegistryTests {
         first.applyLiveness(.terminated)
         registry.bridge(first, replacing: first, context: launchContext)
         let before = try #require(registry.task(for: firstReservation.taskID))
-        let resumeBoundary = launchBoundary(
-            generation: 2,
-            at: launchContext.observedAt.addingTimeInterval(2)
+        let resumeBoundary = AgentTaskLaunchBoundary(
+            generationFloor: 1,
+            capturedAt: launchContext.observedAt.addingTimeInterval(2)
         )
         let resume: AgentTaskLaunchReservation
         switch registry.prepareResume(
@@ -2477,8 +2479,7 @@ struct AgentTaskRegistryTests {
         let second = makeSession(
             pid: 1_398,
             generation: 2,
-            startedAt: launchContext.observedAt.addingTimeInterval(3),
-            preciseStart: launchContext.observedAt.addingTimeInterval(3)
+            preciseStartedAt: launchContext.observedAt.addingTimeInterval(3)
         )
 
         registry.bridge(
@@ -3305,7 +3306,7 @@ private actor SelectiveAgentTaskStore: AgentTaskPersisting {
         guard project.persistenceKey != failingProjectKey else {
             return .rejected(.transientIO)
         }
-        let decision = authorization?.publishForTesting({ true }) ?? .published
+        let decision = authorization?.publishForTesting(operation: { true }) ?? .published
         switch decision {
         case .published:
             savedTaskCounts[project.persistenceKey] = tasks.count
