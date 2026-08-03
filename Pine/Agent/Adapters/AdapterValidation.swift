@@ -779,6 +779,15 @@ private actor AdapterCleanupSupervisor {
 
 nonisolated private final class CoreBoundSessionLifetime: Sendable {
     nonisolated static let cleanupGrace = Duration.seconds(5)
+
+    nonisolated private struct CleanupContext: Sendable {
+        let state: SourceSessionState
+        let underlying: any AgentAdapterSession
+        let cleanupPermit: AdapterCleanupPermit
+        let confirmedCleanup: BoundedAdapterStop
+        let deadlineSleeper: AdapterDeadlineSleeper
+    }
+
     let state: SourceSessionState
     let underlying: any AgentAdapterSession
     let cleanupPermit: AdapterCleanupPermit
@@ -799,11 +808,7 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
 
     func requestStop(deadline: ContinuousClock.Instant) async -> BoundedAdapterStop {
         await Self.prepareStop(
-            state: state,
-            underlying: underlying,
-            cleanupPermit: cleanupPermit,
-            confirmedCleanup: confirmedCleanup,
-            deadlineSleeper: deadlineSleeper,
+            context: cleanupContext,
             deadline: deadline
         )
     }
@@ -832,58 +837,55 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
         let confirmedCleanup = confirmedCleanup
         let deadlineSleeper = deadlineSleeper
         let deadline = ContinuousClock.now.advanced(by: Self.cleanupGrace)
+        let context = CleanupContext(
+            state: state,
+            underlying: underlying,
+            cleanupPermit: cleanupPermit,
+            confirmedCleanup: confirmedCleanup,
+            deadlineSleeper: deadlineSleeper
+        )
         Task.detached {
             await CoreBoundSessionLifetime.performStop(
-                state: state,
-                underlying: underlying,
-                cleanupPermit: cleanupPermit,
-                confirmedCleanup: confirmedCleanup,
-                deadlineSleeper: deadlineSleeper,
+                context: context,
                 deadline: deadline
             )
         }
     }
 
-    nonisolated private static func performStop(
-        state: SourceSessionState,
-        underlying: any AgentAdapterSession,
-        cleanupPermit: AdapterCleanupPermit,
-        confirmedCleanup: BoundedAdapterStop,
-        deadlineSleeper: AdapterDeadlineSleeper,
-        deadline: ContinuousClock.Instant
-    ) async {
-        let sharedCompletion = await prepareStop(
+    private var cleanupContext: CleanupContext {
+        CleanupContext(
             state: state,
             underlying: underlying,
             cleanupPermit: cleanupPermit,
             confirmedCleanup: confirmedCleanup,
-            deadlineSleeper: deadlineSleeper,
+            deadlineSleeper: deadlineSleeper
+        )
+    }
+
+    nonisolated private static func performStop(
+        context: CleanupContext,
+        deadline: ContinuousClock.Instant
+    ) async {
+        let sharedCompletion = await prepareStop(
+            context: context,
             deadline: deadline
         )
         await waitForSharedCleanup(
             sharedCompletion,
-            deadlineSleeper: deadlineSleeper,
+            deadlineSleeper: context.deadlineSleeper,
             deadline: deadline
         )
     }
 
     nonisolated private static func prepareStop(
-        state: SourceSessionState,
-        underlying: any AgentAdapterSession,
-        cleanupPermit: AdapterCleanupPermit,
-        confirmedCleanup: BoundedAdapterStop,
-        deadlineSleeper: AdapterDeadlineSleeper,
+        context: CleanupContext,
         deadline: ContinuousClock.Instant
     ) async -> BoundedAdapterStop {
-        let directive = await state.beginStop()
+        let directive = await context.state.beginStop()
         switch directive {
         case .start(let completion):
             startSharedCleanup(
-                state: state,
-                underlying: underlying,
-                cleanupPermit: cleanupPermit,
-                confirmedCleanup: confirmedCleanup,
-                deadlineSleeper: deadlineSleeper,
+                context: context,
                 completion: completion,
                 deadline: deadline
             )
@@ -894,11 +896,7 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
     }
 
     nonisolated private static func startSharedCleanup(
-        state: SourceSessionState,
-        underlying: any AgentAdapterSession,
-        cleanupPermit: AdapterCleanupPermit,
-        confirmedCleanup: BoundedAdapterStop,
-        deadlineSleeper: AdapterDeadlineSleeper,
+        context: CleanupContext,
         completion: BoundedAdapterStop,
         deadline: ContinuousClock.Instant
     ) {
@@ -906,11 +904,11 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
             let boundedWork = BoundedAdapterStop()
             let countdown = AdapterStopCountdown(
                 remaining: 2,
-                completion: confirmedCleanup
+                completion: context.confirmedCleanup
             )
             let ticket = await AdapterCleanupSupervisor.shared.submit(
-                underlying,
-                permit: cleanupPermit,
+                context.underlying,
+                permit: context.cleanupPermit,
                 deadline: deadline
             )
             let adapterWait = Task.detached {
@@ -918,22 +916,22 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
                 await countdown.arrive()
             }
             let drainWait = Task.detached {
-                await state.waitUntilDrained()
+                await context.state.waitUntilDrained()
                 await countdown.arrive()
             }
             let confirmedWait = Task.detached {
-                await confirmedCleanup.wait()
+                await context.confirmedCleanup.wait()
                 await boundedWork.complete()
             }
             let timeout = Task.detached {
-                await deadlineSleeper.sleep(until: deadline)
+                await context.deadlineSleeper.sleep(until: deadline)
                 await boundedWork.complete()
             }
             await boundedWork.wait()
             await AdapterCleanupSupervisor.shared.cancel(ticket)
             confirmedWait.cancel()
             timeout.cancel()
-            await state.revoke()
+            await context.state.revoke()
             await completion.complete()
             _ = (adapterWait, drainWait)
         }

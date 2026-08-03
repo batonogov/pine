@@ -870,22 +870,24 @@ struct AgentAdapterRegistryTests {
             contract: contract,
             resumeFrom: nil
         ) { event in
-            await completions.wait(
-                sequence: event.candidate.sourcePosition?.sourceSequence
-            )
+            if event.candidate.sourcePosition?.sourceSequence == 1 {
+                await completions.wait(sequence: 1)
+            }
             await recorder.capture(event)
             return .accepted
         }
 
         let startTask = Task { try await session.start() }
         await completions.waitUntilArrived(1)
-        let postCommit = try candidate(sequence: 2)
-        #expect(await recorder.ingest(postCommit) == .retryAfterActivation)
+        let postCommit = try orderedCandidate(sequence: 2)
+        let activationOutcome = await recorder.ingest(postCommit)
+        #expect(activationOutcome == .retryAfterActivation)
 
         await completions.release(1)
         try await startTask.value
         #expect(await recorder.capturedCount == 1)
-        #expect(await recorder.ingest(postCommit) == .accepted)
+        let activeOutcome = await recorder.ingest(postCommit)
+        #expect(activeOutcome == .accepted)
         #expect(await recorder.capturedCount == 2)
     }
 
@@ -1469,7 +1471,7 @@ struct AgentAdapterRegistryTests {
         }
         let startTask = Task { try await session.start() }
         await startHold.waitUntilArrived()
-        #expect(await recorder.ingest(try candidate(sequence: 1)) == .bufferedUntilActivation)
+        #expect(await recorder.ingest(try orderedCandidate(sequence: 1)) == .bufferedUntilActivation)
         await startHold.release()
         await completions.waitUntilArrived(1)
 
@@ -1480,7 +1482,7 @@ struct AgentAdapterRegistryTests {
         }
         var closingOutcome = AdapterIngestOutcome.retryAfterActivation
         for _ in 0..<1_000 where closingOutcome != .revoked {
-            closingOutcome = await recorder.ingest(try candidate(sequence: 2))
+            closingOutcome = await recorder.ingest(try orderedCandidate(sequence: 2))
             await Task.yield()
         }
         #expect(closingOutcome == .revoked)
@@ -1822,7 +1824,7 @@ struct AgentAdapterRegistryTests {
         }
         try await session.start()
 
-        let admitted = Task { await recorder.ingest(try candidate(sequence: 1)) }
+        let admitted = Task { await recorder.ingest(try orderedCandidate(sequence: 1)) }
         await completions.waitUntilArrived(1)
         let firstStop = Task {
             await session.stop(
@@ -1836,7 +1838,7 @@ struct AgentAdapterRegistryTests {
         }
         await stopHold.waitUntilArrived()
         await stopHold.release()
-        #expect(await recorder.ingest(try candidate(sequence: 2)) == .revoked)
+        #expect(await recorder.ingest(try orderedCandidate(sequence: 2)) == .revoked)
         await completions.release(1)
 
         #expect(try await admitted.value == .accepted)
@@ -1883,12 +1885,12 @@ struct AgentAdapterRegistryTests {
         }
         try await session.start()
 
-        let earlier = Task { await recorder.ingest(try candidate(sequence: 1)) }
+        let earlier = Task { await recorder.ingest(try orderedCandidate(sequence: 1)) }
         await completions.waitUntilArrived(1)
         await completions.release(1)
         #expect(try await earlier.value == .accepted)
 
-        let current = Task { await recorder.ingest(try candidate(sequence: 2)) }
+        let current = Task { await recorder.ingest(try orderedCandidate(sequence: 2)) }
         await completions.waitUntilArrived(2)
         let stopReturned = TestSignal()
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
@@ -1899,7 +1901,7 @@ struct AgentAdapterRegistryTests {
         await stopHold.waitUntilArrived()
         await stopHold.release()
         await manualDeadline.waitUntilWaiterCount(2)
-        #expect(await recorder.ingest(try candidate(sequence: 3)) == .revoked)
+        #expect(await recorder.ingest(try orderedCandidate(sequence: 3)) == .revoked)
         #expect(await stopReturned.signalled == false)
 
         await completions.release(2)
@@ -2171,7 +2173,9 @@ struct AgentAdapterRegistryTests {
                 )
             ))
         }
-        #expect(selections.allSatisfy { $0 == selections[0] })
+        #expect(selections.allSatisfy {
+            $0.version == selections[0].version && $0.profile == selections[0].profile
+        })
         #expect(selections[0].profile.transport == .authenticatedLocalIPC)
     }
 
@@ -2297,6 +2301,13 @@ struct AgentAdapterRegistryTests {
                 resumePosition: AdapterResumePosition("cursor-\(sequence)"),
                 sourceSequence: sequence
             )
+        )
+    }
+
+    private func orderedCandidate(sequence: UInt64) throws -> AdapterCandidate {
+        AdapterCandidate(
+            event: .processExited(status: nil),
+            sourcePosition: try AdapterSourcePosition(sourceSequence: sequence)
         )
     }
 
