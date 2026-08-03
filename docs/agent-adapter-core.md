@@ -61,7 +61,8 @@ The adapter-facing payload contains the opaque vendor
 cursor plus the last accepted source event identity and sequence; the private
 binding contains no credential, task, project, terminal, process, or routing
 authority. Resume reserves the checkpoint exclusively before factory invocation,
-commits its one-shot consumption only after a contract-matching session activates,
+commits its one-shot consumption at the core-owned activation boundary immediately
+before any frozen startup candidate can reach downstream,
 and rolls the reservation back on construction failure, failed start,
 cancellation, stop-before-start, or abandoned construction. It requires
 the same registry and exact negotiated contract before the payload reaches a
@@ -74,11 +75,11 @@ synchronous actor transition, freezing exactly that finite batch before
 draining it. Ingress during the drain is rejected without advancing source
 ordering, so it cannot extend startup and receives the explicit
 `retryAfterActivation` outcome rather than a permanent-invalid result. The same
-sequence can retry after the session becomes active. Failure or
-cancellation before the commit discards
-it without publication; downstream revocation or cancellation after the commit
-may retire the live session, but cannot retroactively turn `start()` into a
-failed transaction. Minting a checkpoint
+sequence can retry after the session becomes active. Failure or cancellation
+before the commit discards the reservation without publication. Stop,
+downstream revocation, or cancellation after the commit may make `start()` fail,
+but cannot reopen the consumed authority after buffered publication has become
+possible. Minting a checkpoint
 requires an active session with no in-flight downstream delivery and atomically
 retires the source sink, so the original and
 resumed attempts cannot fork one logical source sequence. The logical source
@@ -124,8 +125,10 @@ security boundary. Strict duplicate-key, integer-token, nesting, source-envelope
 and schema parsing belong to the future authenticated framed-ingress slice.
 
 Every async throwing factory/session seam propagates `CancellationError`
-unchanged. `stop(deadline:)` first closes admission, then supervises already
-admitted deliveries and adapter cleanup outside caller cancellation. It returns
-when both finish or the shared deadline expires, preserves the actual downstream
-outcome for work admitted before closing, and then cancels unfinished cleanup.
+unchanged, and core checks cancellation again after an untrusted factory returns.
+`stop(deadline:)` first closes admission, then starts at most one shared adapter
+cleanup per session and supervises the current set of already admitted deliveries
+outside caller cancellation. Concurrent callers share that cleanup while retaining
+their own return deadlines. Stop preserves the actual downstream outcome for work
+admitted before closing and cancels unfinished cleanup at the initiating deadline.
 It does not claim forced termination when an implementation ignores cancellation.

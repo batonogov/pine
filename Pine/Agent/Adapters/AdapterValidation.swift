@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Synchronization
 
 nonisolated struct NegotiatedAdapterContract: Equatable, Sendable {
     fileprivate let registryID: UUID
@@ -170,30 +171,41 @@ nonisolated struct AdapterResumeCheckpoint: Sendable, CustomStringConvertible,
 }
 
 // swiftlint:disable:next private_over_fileprivate
-fileprivate actor OneShotAuthorityGate {
+nonisolated fileprivate final class OneShotAuthorityGate: Sendable {
     private enum State: Equatable { case available, reserved(UUID), consumed }
-    private var state = State.available
+    private let state = Mutex(State.available)
 
     func consume() -> Bool {
-        guard state == .available else { return false }
-        state = .consumed
-        return true
+        state.withLock {
+            guard $0 == .available else { return false }
+            $0 = .consumed
+            return true
+        }
     }
 
     func reserve(_ reservationID: UUID) -> Bool {
-        guard state == .available else { return false }
-        state = .reserved(reservationID)
-        return true
+        state.withLock {
+            guard $0 == .available else { return false }
+            $0 = .reserved(reservationID)
+            return true
+        }
     }
 
-    func commit(_ reservationID: UUID) {
-        guard state == .reserved(reservationID) else { return }
-        state = .consumed
+    func commit(_ reservationID: UUID) -> Bool {
+        state.withLock {
+            guard $0 == .reserved(reservationID) else { return false }
+            $0 = .consumed
+            return true
+        }
     }
 
-    func rollback(_ reservationID: UUID) {
-        guard state == .reserved(reservationID) else { return }
-        state = .available
+    @discardableResult
+    func rollback(_ reservationID: UUID) -> Bool {
+        state.withLock {
+            guard $0 == .reserved(reservationID) else { return false }
+            $0 = .available
+            return true
+        }
     }
 }
 
@@ -206,20 +218,30 @@ nonisolated private final class OneShotAuthorityReservation: Sendable {
         self.reservationID = reservationID
     }
 
-    func commit() async {
-        await gate.commit(reservationID)
+    @discardableResult
+    func commit() -> Bool {
+        gate.commit(reservationID)
     }
 
-    func rollback() async {
-        await gate.rollback(reservationID)
+    @discardableResult
+    func rollback() -> Bool {
+        gate.rollback(reservationID)
     }
 
     deinit {
-        let gate = gate
-        let reservationID = reservationID
-        Task.detached {
-            await gate.rollback(reservationID)
-        }
+        gate.rollback(reservationID)
+    }
+}
+
+nonisolated private final class OneShotAuthorityLease: Sendable {
+    private let reservation: OneShotAuthorityReservation
+
+    init(reservation: OneShotAuthorityReservation) {
+        self.reservation = reservation
+    }
+
+    deinit {
+        reservation.rollback()
     }
 }
 
@@ -233,6 +255,11 @@ nonisolated private enum SourceActivationResult: Equatable, Sendable {
     case committed, cancelled, rejected
 }
 
+nonisolated private enum SourceStopDirective: Sendable {
+    case start(BoundedAdapterStop)
+    case wait(BoundedAdapterStop)
+}
+
 private actor SourceSessionState {
     private enum Lifecycle { case ready, starting, flushing, active, closing, retired }
     private var lifecycle = Lifecycle.ready
@@ -242,11 +269,16 @@ private actor SourceSessionState {
     private var pendingCandidates: [AdapterCandidate] = []
     private var activationRemaining = 0
     private var inFlightCount = 0
-    private let drainCompletion = BoundedAdapterStop()
+    private var drainWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var cancelledDrainWaiters = Set<UUID>()
+    private var resolvedDrainWaiters = Set<UUID>()
+    private var stopCompletion: BoundedAdapterStop?
+    private let authority: OneShotAuthorityReservation
     private let pendingLimit = AgentAdapterRegistry.startBufferLimit
 
-    init(baseline: UInt64) {
+    init(baseline: UInt64, authority: OneShotAuthorityReservation) {
         highestAdmittedSequence = baseline
+        self.authority = authority
     }
 
     func beginStart() -> Bool {
@@ -292,7 +324,14 @@ private actor SourceSessionState {
             lifecycle = .retired
             pendingCandidates.removeAll(keepingCapacity: false)
             activationRemaining = 0
+            authority.rollback()
             return .cancelled
+        }
+        guard authority.commit() else {
+            lifecycle = .retired
+            pendingCandidates.removeAll(keepingCapacity: false)
+            activationRemaining = 0
+            return .rejected
         }
         activationRemaining = pendingCandidates.count
         lifecycle = .flushing
@@ -315,13 +354,23 @@ private actor SourceSessionState {
         return pendingCandidates.removeFirst()
     }
 
+    func finishActivation() -> SourceActivationResult {
+        if Task.isCancelled {
+            lifecycle = .retired
+            pendingCandidates.removeAll(keepingCapacity: false)
+            activationRemaining = 0
+            return .cancelled
+        }
+        return lifecycle == .active ? .committed : .rejected
+    }
+
     func complete(
         _ candidate: AdapterCandidate,
         outcome: AdapterIngestOutcome
-    ) async -> AdapterIngestOutcome {
+    ) -> AdapterIngestOutcome {
         guard inFlightCount > 0 else { return .revoked }
         inFlightCount -= 1
-        if inFlightCount == 0 { await drainCompletion.complete() }
+        resumeDrainWaitersIfNeeded()
         if outcome == .revoked {
             lifecycle = .retired
             pendingCandidates.removeAll(keepingCapacity: false)
@@ -348,26 +397,70 @@ private actor SourceSessionState {
         return position
     }
 
-    func beginStop() async {
-        guard lifecycle != .retired else {
-            await drainCompletion.complete()
-            return
+    func failStart() {
+        if lifecycle == .ready || lifecycle == .starting {
+            authority.rollback()
         }
-        lifecycle = .closing
-        pendingCandidates.removeAll(keepingCapacity: false)
-        activationRemaining = 0
-        if inFlightCount == 0 { await drainCompletion.complete() }
-    }
-
-    func waitUntilDrained() async {
-        await drainCompletion.wait()
-    }
-
-    func revoke() async {
         lifecycle = .retired
         pendingCandidates.removeAll(keepingCapacity: false)
         activationRemaining = 0
-        await drainCompletion.complete()
+        resumeDrainWaitersIfNeeded()
+    }
+
+    func beginStop() -> SourceStopDirective {
+        if let stopCompletion { return .wait(stopCompletion) }
+        let completion = BoundedAdapterStop()
+        stopCompletion = completion
+        if lifecycle == .ready || lifecycle == .starting {
+            authority.rollback()
+        }
+        if lifecycle != .retired { lifecycle = .closing }
+        pendingCandidates.removeAll(keepingCapacity: false)
+        activationRemaining = 0
+        resumeDrainWaitersIfNeeded()
+        return .start(completion)
+    }
+
+    func waitUntilDrained() async {
+        guard inFlightCount > 0, !Task.isCancelled else { return }
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if inFlightCount == 0 || Task.isCancelled
+                    || cancelledDrainWaiters.remove(waiterID) != nil {
+                    resolvedDrainWaiters.insert(waiterID)
+                    continuation.resume()
+                } else {
+                    drainWaiters[waiterID] = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelDrainWaiter(waiterID) }
+        }
+    }
+
+    func revoke() {
+        lifecycle = .retired
+        pendingCandidates.removeAll(keepingCapacity: false)
+        activationRemaining = 0
+        resumeDrainWaitersIfNeeded()
+    }
+
+    private func resumeDrainWaitersIfNeeded() {
+        guard inFlightCount == 0 else { return }
+        let retained = drainWaiters
+        drainWaiters.removeAll(keepingCapacity: false)
+        resolvedDrainWaiters.formUnion(retained.keys)
+        retained.values.forEach { $0.resume() }
+    }
+
+    private func cancelDrainWaiter(_ waiterID: UUID) {
+        if let waiter = drainWaiters.removeValue(forKey: waiterID) {
+            resolvedDrainWaiters.insert(waiterID)
+            waiter.resume()
+        } else if resolvedDrainWaiters.remove(waiterID) == nil {
+            cancelledDrainWaiters.insert(waiterID)
+        }
     }
 }
 
@@ -421,8 +514,7 @@ private actor ValidatingAgentEventSink: AgentEventSink {
                 break
             }
         }
-        if Task.isCancelled { await state.revoke() }
-        return .committed
+        return await state.finishActivation()
     }
 
     private func deliver(_ candidate: AdapterCandidate) async -> AdapterIngestOutcome {
@@ -438,25 +530,44 @@ private actor ValidatingAgentEventSink: AgentEventSink {
 
 private actor BoundedAdapterStop {
     private var completed = false
-    private var waiter: CheckedContinuation<Void, Never>?
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var cancelledBeforeRegistration = Set<UUID>()
+    private var resolvedBeforeCancellation = Set<UUID>()
 
     func wait() async {
-        guard !completed else { return }
-        await withCheckedContinuation { continuation in
-            if completed {
-                continuation.resume()
-            } else {
-                waiter = continuation
+        guard !completed, !Task.isCancelled else { return }
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if completed || Task.isCancelled
+                    || cancelledBeforeRegistration.remove(waiterID) != nil {
+                    resolvedBeforeCancellation.insert(waiterID)
+                    continuation.resume()
+                } else {
+                    waiters[waiterID] = continuation
+                }
             }
+        } onCancel: {
+            Task { await self.cancel(waiterID) }
         }
     }
 
     func complete() {
         guard !completed else { return }
         completed = true
-        let retained = waiter
-        waiter = nil
-        retained?.resume()
+        let retained = waiters
+        waiters.removeAll(keepingCapacity: false)
+        resolvedBeforeCancellation.formUnion(retained.keys)
+        retained.values.forEach { $0.resume() }
+    }
+
+    private func cancel(_ waiterID: UUID) {
+        if let waiter = waiters.removeValue(forKey: waiterID) {
+            resolvedBeforeCancellation.insert(waiterID)
+            waiter.resume()
+        } else if resolvedBeforeCancellation.remove(waiterID) == nil {
+            cancelledBeforeRegistration.insert(waiterID)
+        }
     }
 }
 
@@ -468,51 +579,89 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
     let state: SourceSessionState
     let sink: ValidatingAgentEventSink
     let underlying: any AgentAdapterSession
-    let authority: OneShotAuthorityReservation
+    let authorityLease: OneShotAuthorityLease
 
     func start() async throws {
         guard await state.beginStart() else {
             throw AdapterSessionError.invalidLifecycle
         }
         do { try await underlying.start() } catch {
-            await state.revoke()
-            await authority.rollback()
+            await state.failStart()
             throw error
         }
         switch await sink.activate() {
         case .committed:
-            await authority.commit()
+            return
         case .cancelled:
-            await authority.rollback()
             throw CancellationError()
         case .rejected:
-            await authority.rollback()
             throw AdapterSessionError.invalidLifecycle
         }
     }
 
     func stop(deadline: ContinuousClock.Instant) async {
-        await state.beginStop()
-        await authority.rollback()
-        let completion = BoundedAdapterStop()
-        let cleanup = Task.detached {
-            async let adapterStop: Void = underlying.stop(deadline: deadline)
-            async let admittedDeliveries: Void = state.waitUntilDrained()
-            _ = await (adapterStop, admittedDeliveries)
+        let directive = await state.beginStop()
+        let sharedCompletion: BoundedAdapterStop
+        switch directive {
+        case .start(let completion):
+            sharedCompletion = completion
+            startSharedCleanup(completion: completion, deadline: deadline)
+        case .wait(let completion):
+            sharedCompletion = completion
+        }
+        await waitForSharedCleanup(sharedCompletion, deadline: deadline)
+    }
+
+    private func startSharedCleanup(
+        completion: BoundedAdapterStop,
+        deadline: ContinuousClock.Instant
+    ) {
+        let state = state
+        let underlying = underlying
+        Task.detached {
+            let boundedWork = BoundedAdapterStop()
+            let cleanup = Task.detached {
+                async let adapterStop: Void = underlying.stop(deadline: deadline)
+                async let admittedDeliveries: Void = state.waitUntilDrained()
+                _ = await (adapterStop, admittedDeliveries)
+                await boundedWork.complete()
+            }
+            let timeout = Task.detached {
+                do {
+                    try await ContinuousClock().sleep(until: deadline)
+                } catch {
+                    // Cancellation means cleanup completed before the deadline.
+                }
+                await boundedWork.complete()
+            }
+            await boundedWork.wait()
+            cleanup.cancel()
+            timeout.cancel()
+            await state.revoke()
             await completion.complete()
+        }
+    }
+
+    private func waitForSharedCleanup(
+        _ sharedCompletion: BoundedAdapterStop,
+        deadline: ContinuousClock.Instant
+    ) async {
+        let localCompletion = BoundedAdapterStop()
+        let sharedWait = Task.detached {
+            await sharedCompletion.wait()
+            await localCompletion.complete()
         }
         let timeout = Task.detached {
             do {
                 try await ContinuousClock().sleep(until: deadline)
             } catch {
-                // Cancellation means the cleanup completed before the deadline.
+                // Cancellation means shared cleanup completed first.
             }
-            await completion.complete()
+            await localCompletion.complete()
         }
-        await completion.wait()
-        cleanup.cancel()
+        await localCompletion.wait()
+        sharedWait.cancel()
         timeout.cancel()
-        await state.revoke()
     }
 }
 
@@ -610,7 +759,7 @@ nonisolated struct AgentAdapterRegistry: Sendable {
         }
         let authorityGate = checkpoint?.gate ?? contract.freshSessionGate
         let reservationID = UUID()
-        guard await authorityGate.reserve(reservationID) else {
+        guard authorityGate.reserve(reservationID) else {
             if checkpoint != nil { throw AdapterSessionError.checkpointAlreadyConsumed }
             throw AdapterSessionError.contractAlreadyConsumed
         }
@@ -618,9 +767,13 @@ nonisolated struct AgentAdapterRegistry: Sendable {
             gate: authorityGate,
             reservationID: reservationID
         )
+        let authorityLease = OneShotAuthorityLease(reservation: authority)
         let namespace = checkpoint?.namespace ?? SourceNamespace()
         let attempt = SourceAttempt()
-        let state = SourceSessionState(baseline: checkpoint?.lastSourceSequence ?? 0)
+        let state = SourceSessionState(
+            baseline: checkpoint?.lastSourceSequence ?? 0,
+            authority: authority
+        )
         let sink = ValidatingAgentEventSink(
             contract: contract,
             namespace: namespace,
@@ -630,9 +783,10 @@ nonisolated struct AgentAdapterRegistry: Sendable {
         )
         let request = AgentAdapterSessionRequest(contract: contract, resumeFrom: checkpoint, sink: sink)
         do {
+            try Task.checkCancellation()
             let session = try await resolved.makeSession(request)
+            try Task.checkCancellation()
             guard session.contract == contract else {
-                await state.revoke()
                 throw AdapterSessionError.contractMismatch
             }
             return CoreBoundAdapterSession(
@@ -643,11 +797,10 @@ nonisolated struct AgentAdapterRegistry: Sendable {
                 state: state,
                 sink: sink,
                 underlying: session,
-                authority: authority
+                authorityLease: authorityLease
             )
         } catch {
-            await authority.rollback()
-            await state.revoke()
+            await state.failStart()
             throw error
         }
     }
@@ -697,7 +850,7 @@ nonisolated struct AgentAdapterRegistry: Sendable {
               pair.0.factoryID == offer.factoryID else {
             throw AdapterNegotiationError.offerMismatch
         }
-        guard await offer.gate.consume() else {
+        guard offer.gate.consume() else {
             throw AdapterNegotiationError.offerMismatch
         }
         guard policy.allowedVersions.isValid else { throw AdapterNegotiationError.invalidPolicyRange }
