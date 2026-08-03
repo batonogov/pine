@@ -564,11 +564,30 @@ final class AgentTaskRegistry {
     /// A closed project window leaves terminal processes alive in Pine's
     /// background project registry. Only route presentation changes.
     func setWindowOpen(_ isOpen: Bool, projectPath: String) {
+        setWindowOpen(isOpen) {
+            $0.canonicalProjectPath == projectPath
+        }
+    }
+
+    /// Updates only one project/worktree window. Multiple managed worktrees
+    /// deliberately share `canonicalProjectPath`, so closing one must not
+    /// background sibling agent runs.
+    func setWindowOpen(
+        _ isOpen: Bool,
+        project: AgentTaskProjectIdentity
+    ) {
+        setWindowOpen(isOpen) { $0 == project }
+    }
+
+    private func setWindowOpen(
+        _ isOpen: Bool,
+        matchesProject: (AgentTaskProjectIdentity) -> Bool
+    ) {
         expireClaims()
         guard !isTerminating else { return }
         var projects = Set<AgentTaskProjectIdentity>()
         for key in Array(pendingClaims.keys)
-        where key.project.canonicalProjectPath == projectPath {
+        where matchesProject(key.project) {
             guard var claim = pendingClaims[key] else { continue }
             if isOpen, claim.route.availability == .background {
                 claim.route.availability = .available
@@ -580,7 +599,7 @@ final class AgentTaskRegistry {
             pendingClaims[key] = claim
         }
         for (_, taskID) in taskIDByTerminal
-        where task(for: taskID)?.project.canonicalProjectPath == projectPath {
+        where task(for: taskID).map({ matchesProject($0.project) }) == true {
             guard let index = taskIndex(for: taskID) else { continue }
             let availability = tasks[index].route.availability
             if isOpen, availability == .background {

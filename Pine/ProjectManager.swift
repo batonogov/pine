@@ -981,9 +981,17 @@ final class ProjectManager {
             await workspace.openFolder(context: context)
         }
     }
-    func loadDirectory(url: URL) {
+    func loadDirectory(
+        url: URL,
+        agentTaskProject: AgentTaskProjectIdentity? = nil
+    ) {
         workspace.loadDirectory(url: url)
-        terminal.configureAgentTaskProject(url)
+        terminal.configureAgentTaskProject(
+            agentTaskProject ?? AgentTaskProjectIdentity(
+                canonicalProjectPath: url.path,
+                canonicalWorktreePath: url.path
+            )
+        )
         setupRecovery(projectURL: url)
         agentHistory.updateProjectRoot(url)
         synchronizeAgentHandoff(projectRoot: url)
