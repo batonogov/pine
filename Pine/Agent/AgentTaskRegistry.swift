@@ -1443,7 +1443,7 @@ final class AgentTaskRegistry {
 
     private func acceptedProcessForNewRun(
         _ session: AgentSession
-    ) -> AgentRuntimeProcessIdentity? {
+    ) -> AgentProcessEvidence? {
         guard historicalTaskIDByRunID[session.id] != nil
                 || historicalTaskIDByRunID.count < limits.maxHistoricalRunIDs,
               let process = session.processEvidence,
