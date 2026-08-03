@@ -88,9 +88,9 @@ nonisolated struct AgentTaskStoreHooks: Sendable {
     let shouldSync: @Sendable (AgentTaskSyncTarget) -> Bool
 
     init(
+        phase: @escaping @Sendable (AgentTaskStorePhase) -> Void = { _ in },
         didSync: @escaping @Sendable (AgentTaskSyncTarget) -> Void = { _ in },
-        shouldSync: @escaping @Sendable (AgentTaskSyncTarget) -> Bool = { _ in true },
-        phase: @escaping @Sendable (AgentTaskStorePhase) -> Void = { _ in }
+        shouldSync: @escaping @Sendable (AgentTaskSyncTarget) -> Bool = { _ in true }
     ) {
         self.phase = phase
         self.didSync = didSync

@@ -437,9 +437,13 @@ struct AgentTaskStoreRaceTests {
                 return true
             }
         }
-        let didEnter = await Task.detached {
-            entered.wait(timeout: .now() + 1) == .success
-        }.value
+        let didEnter = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(
+                    returning: entered.wait(timeout: .now() + 1) == .success
+                )
+            }
+        }
         #expect(didEnter)
         let clock = ContinuousClock()
         let started = clock.now
@@ -507,7 +511,6 @@ struct AgentTaskStoreRaceTests {
             storageRoot: fixture.storage,
             configuration: AgentTaskStoreConfiguration(
                 hooks: AgentTaskStoreHooks(
-                    shouldSync: { $0 != .metadataFile },
                     phase: { phase in
                         if case .beforeRetireMutation = phase {
                             StoreRacePOSIX.replaceTemporaryPath(
@@ -515,7 +518,8 @@ struct AgentTaskStoreRaceTests {
                                 with: replacement.path
                             )
                         }
-                    }
+                    },
+                    shouldSync: { $0 != .metadataFile }
                 )
             )
         )
