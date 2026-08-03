@@ -156,6 +156,52 @@ struct AgentInboxTests {
         ) == .routeStale)
     }
 
+    @Test("notification navigation rejects a replacement during window presentation")
+    func notificationNavigationRejectsReplacementRace() async throws {
+        let fixture = try InboxProjectFixture()
+        defer { fixture.cleanup() }
+        let taskRegistry = AgentTaskRegistry()
+        let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let state = try #require(manager.paneManager.terminalState(for: pane))
+        let tab = try #require(state.terminalTabs.first)
+        let original = makeSession(seed: 45, state: .waitingInput)
+        manager.terminal.bridgeAgentSession(original, replacing: nil, in: tab)
+        tab.agentSession = original
+        let taskID = try #require(taskRegistry.taskID(forSessionID: original.id))
+        let identity = AgentNotificationRouteIdentity(
+            taskID: taskID,
+            runID: original.id,
+            processGeneration: 45
+        )
+
+        let result = await projectRegistry.navigateToAgentTaskFromInbox(
+            taskID,
+            openProjectWindow: { _ in },
+            waitUntilPresented: { _ in
+                original.applyLiveness(.terminated)
+                let replacement = makeSession(seed: 46, state: .executing)
+                manager.terminal.bridgeAgentSession(
+                    replacement,
+                    replacing: original,
+                    in: tab
+                )
+                tab.agentSession = replacement
+                return true
+            },
+            activateApplication: { _ in },
+            expectedNotificationRoute: identity
+        )
+
+        #expect(result == .routeStale)
+        #expect(taskRegistry.task(for: taskID)?.isUnread == true)
+    }
+
     @Test("background navigation reopens the exact project before resolving")
     func backgroundProjectNavigation() async throws {
         let fixture = try InboxProjectFixture()

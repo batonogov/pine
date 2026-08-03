@@ -12,6 +12,9 @@ nonisolated enum AccessibilityID {
     static let agentHandoffReadOnlyContextToggle =
         "agentHandoffReadOnlyContextToggle"
     static let agentHandoffStatus = "agentHandoffStatus"
+    static let agentNotificationSettings = "agentNotificationSettings"
+    static let agentNotificationEnableButton = "agentNotificationEnableButton"
+    static let agentNotificationMainToggle = "agentNotificationMainToggle"
     static let generalFontSizeSlider = "generalFontSizeSlider"
     static let generalSettingsPane = "generalSettingsPane"
     static let keyBindingsSettingsPane = "keyBindingsSettingsPane"

@@ -70,6 +70,8 @@ struct PineApp: App {
             PineSettingsView(
                 lspSettings: registry.lspSettings,
                 handoffSettings: .shared,
+                notificationController: appDelegate.agentNotifications,
+                agentTasks: registry.agentTasks,
                 shellSettings: .shared,
                 editorSettings: .shared
             )
@@ -862,6 +864,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     /// Central project registry — created early so it's available for AppKit fallback.
     var registry = ProjectRegistry()
 
+    /// Application-wide, permission-gated agent notification coordinator.
+    lazy var agentNotifications = AgentNotificationController(
+        registry: registry.agentTasks,
+        settings: .shared,
+        isPresented: { [weak self] taskID in
+            self?.registry.isAgentTaskPresented(taskID) ?? false
+        },
+        openTask: { [weak self] identity in
+            self?.openAgentTaskFromNotification(identity)
+        }
+    )
+
     // MARK: - Quick terminal (#1113)
 
     /// Owner of the global drop-down terminal session + its system-wide hotkey.
@@ -907,6 +921,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     func showAgentInbox() {
         openNamedWindow?("agent-inbox")
         NSApp.activate()
+    }
+
+    private func openAgentTaskFromNotification(
+        _ identity: AgentNotificationRouteIdentity
+    ) {
+        guard registry.agentTasks.matchesNotificationRoute(identity) else {
+            showAgentInbox()
+            return
+        }
+        guard openProjectWindow != nil else {
+            showAgentInbox()
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await registry.navigateToAgentTaskFromInbox(
+                identity.taskID,
+                openProjectWindow: { [weak self] url in
+                    self?.openProjectWindow?(url)
+                },
+                expectedNotificationRoute: identity
+            )
+            guard case .focused = result else {
+                // The explicit user action still lands on truthful durable
+                // history when the exact process generation is gone.
+                showAgentInbox()
+                return
+            }
+        }
     }
 
     /// Reference to the Welcome NSWindow, captured via WelcomeWindowCapture.
@@ -1180,6 +1223,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        agentNotifications.start()
 
         // The key-down half is routed through the single precedence monitor
         // below; this installs Control-release and owner-window cancellation.
@@ -1723,6 +1767,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        agentNotifications.stop()
         // Save sessions before terminating processes.
         for (_, pm) in registry.openProjects {
             pm.finalizeAgentSessionsForHistory()
@@ -1781,6 +1826,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             let shouldTerminate = await confirmApplicationTermination()
             terminationDecisionTask = nil
             isTerminating = shouldTerminate
+            if shouldTerminate { agentNotifications.stop() }
             reply(shouldTerminate)
         }
         return .terminateLater

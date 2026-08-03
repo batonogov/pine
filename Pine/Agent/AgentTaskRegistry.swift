@@ -64,7 +64,14 @@ nonisolated private struct AgentTaskTerminationRollback: Sendable {
 @MainActor
 @Observable
 final class AgentTaskRegistry {
-    private(set) var tasks: [AgentTask] = []
+    private(set) var tasks: [AgentTask] = [] {
+        didSet {
+            guard oldValue != tasks else { return }
+            for observer in Array(taskChangeObservers.values) {
+                observer(oldValue, tasks)
+            }
+        }
+    }
     private(set) var loadStatusByProject:
         [String: AgentTaskMetadataLoadStatus] = [:]
     private(set) var saveResultByProject:
@@ -139,6 +146,10 @@ final class AgentTaskRegistry {
     private let flushTail: Duration
     @ObservationIgnored
     private let abandonedPersistenceLimit = 2
+    @ObservationIgnored
+    private var taskChangeObservers: [
+        UUID: @MainActor ([AgentTask], [AgentTask]) -> Void
+    ] = [:]
 
     init(
         persistence: any AgentTaskPersisting = AgentTaskMetadataStore(),
@@ -163,6 +174,30 @@ final class AgentTaskRegistry {
 
     func task(for id: UUID) -> AgentTask? {
         tasks.first { $0.id == id }
+    }
+
+    func matchesNotificationRoute(
+        _ identity: AgentNotificationRouteIdentity
+    ) -> Bool {
+        guard let task = task(for: identity.taskID),
+              let run = task.runs.last else { return false }
+        return run.id == identity.runID
+            && run.process.processGeneration == identity.processGeneration
+    }
+
+    /// Observes ordered, value-only snapshots without exposing persistence or
+    /// terminal ownership internals. The returned token must be removed by the
+    /// application-lifetime consumer when it stops.
+    func addTaskChangeObserver(
+        _ observer: @escaping @MainActor ([AgentTask], [AgentTask]) -> Void
+    ) -> UUID {
+        let token = UUID()
+        taskChangeObservers[token] = observer
+        return token
+    }
+
+    func removeTaskChangeObserver(_ token: UUID) {
+        taskChangeObservers.removeValue(forKey: token)
     }
 
     /// Explicitly changes Inbox review state. Merely reading or rendering the

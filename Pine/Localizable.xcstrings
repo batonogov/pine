@@ -30762,6 +30762,227 @@
         }
       }
     },
+    "agentNotifications.action.mute": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Diesen Task stummschalten" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Mute This Task" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Silenciar esta tarea" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Désactiver cette tâche" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このタスクをミュート" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 작업 알림 끄기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Silenciar esta tarefa" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Отключить для этой задачи" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "静音此任务" } }
+      }
+    },
+    "agentNotifications.action.open": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sitzung öffnen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Open Session" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Abrir sesión" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir la session" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "セッションを開く" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "세션 열기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir sessão" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Открыть сессию" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "打开会话" } }
+      }
+    },
+    "agentNotifications.agents": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Agenten" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Agents" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Agentes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Agents" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェント" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Agentes" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Агенты" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能体" } }
+      }
+    },
+    "agentNotifications.event.completed": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Abgeschlossen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Completed" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Completada" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Terminée" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "完了" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "완료됨" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Concluída" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Завершено" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已完成" } }
+      }
+    },
+    "agentNotifications.event.failed": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Fehlgeschlagen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Failed" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Falló" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Échec" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "失敗" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실패" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Falhou" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Ошибка" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "失败" } }
+      }
+    },
+    "agentNotifications.event.processEnded": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Prozess beendet" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Process ended" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Proceso finalizado" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Processus terminé" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロセス終了" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "프로세스 종료됨" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Processo encerrado" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Процесс завершён" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "进程已结束" } }
+      }
+    },
+    "agentNotifications.event.waiting": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wartet auf Antwort" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting for reply" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Esperando respuesta" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente de réponse" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "返信待ち" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "응답 대기 중" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Aguardando resposta" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Ожидает ответа" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "等待回复" } }
+      }
+    },
+    "agentNotifications.events": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Ereignisse" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Events" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Eventos" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Événements" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "イベント" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이벤트" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Eventos" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "События" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "事件" } }
+      }
+    },
+    "agentNotifications.focusHelp": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Fokus und Systemeinstellungen können Hinweise verzögern oder ausblenden." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Focus and system notification settings may delay or hide alerts." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Concentración y los ajustes del sistema pueden retrasar u ocultar avisos." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Concentration et les réglages système peuvent retarder ou masquer les alertes." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "集中モードやシステム設定により通知が遅延または非表示になる場合があります。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "집중 모드 및 시스템 설정에 따라 알림이 지연되거나 숨겨질 수 있습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Foco e os ajustes do sistema podem atrasar ou ocultar alertas." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Фокусирование и системные настройки могут задерживать или скрывать уведомления." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "专注模式和系统通知设置可能会延迟或隐藏提醒。" } }
+      }
+    },
+    "agentNotifications.master": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Agentenmitteilungen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Agent notifications" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Notificaciones de agentes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Notifications des agents" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェント通知" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트 알림" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Notificações de agentes" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Уведомления агентов" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能体通知" } }
+      }
+    },
+    "agentNotifications.permission.denied": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Mitteilungen sind in den Systemeinstellungen deaktiviert." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Notifications are disabled in System Settings." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Las notificaciones están desactivadas en Ajustes del Sistema." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les notifications sont désactivées dans Réglages Système." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "システム設定で通知が無効です。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "시스템 설정에서 알림이 비활성화되어 있습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "As notificações estão desativadas nos Ajustes do Sistema." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Уведомления отключены в Системных настройках." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "系统设置中已关闭通知。" } }
+      }
+    },
+    "agentNotifications.permission.enable": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Mitteilungen erlauben…" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Allow Notifications…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Permitir notificaciones…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Autoriser les notifications…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "通知を許可…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "알림 허용…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Permitir notificações…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Разрешить уведомления…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "允许通知…" } }
+      }
+    },
+    "agentNotifications.permission.explanation": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine meldet nur bedeutsame Zustandswechsel, wenn die zugehörige Sitzung nicht sichtbar ist. Inhalte und Ausgaben werden nie eingeschlossen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine alerts only on meaningful state changes while the relevant session is not visible. Prompts and output are never included." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine avisa solo de cambios importantes cuando la sesión relevante no está visible. Nunca incluye solicitudes ni salida." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine signale uniquement les changements importants lorsque la session concernée n’est pas visible. Les requêtes et sorties ne sont jamais incluses." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pine は関連セッションが表示されていない場合に重要な状態変化だけを通知します。プロンプトや出力は含まれません。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine은 관련 세션이 보이지 않을 때 의미 있는 상태 변경만 알립니다. 프롬프트와 출력은 포함하지 않습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine alerta apenas mudanças importantes quando a sessão relevante não está visível. Prompts e saídas nunca são incluídos." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine сообщает только о важных изменениях, когда нужная сессия не видна. Запросы и вывод никогда не включаются." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅当相关会话不可见时，Pine 才会提醒重要状态变化，且绝不包含提示或输出。" } }
+      }
+    },
+    "agentNotifications.permission.openSettings": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Systemeinstellungen öffnen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Open System Settings" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Abrir Ajustes del Sistema" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir Réglages Système" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "システム設定を開く" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "시스템 설정 열기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir Ajustes do Sistema" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Открыть Системные настройки" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "打开系统设置" } }
+      }
+    },
+    "agentNotifications.projects": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Projekte" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Projects" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Proyectos" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Projets" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロジェクト" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "프로젝트" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Projetos" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Проекты" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目" } }
+      }
+    },
+    "agentNotifications.settings.title": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Agentenmitteilungen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Agent Notifications" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Notificaciones de agentes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Notifications des agents" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェント通知" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트 알림" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Notificações de agentes" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Уведомления агентов" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能体通知" } }
+      }
+    },
+    "agentNotifications.tasks": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgaben" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Tasks" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Tareas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tâches" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスク" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Tarefas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Задачи" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "任务" } }
+      }
+    },
     "agentInbox.empty": {
       "comment": "Shown when the Agent Inbox has no tasks.",
       "isCommentAutoGenerated": false,
