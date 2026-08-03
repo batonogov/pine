@@ -242,6 +242,87 @@ struct AgentInboxTests {
         )))
     }
 
+    @Test("explicit new session preserves history and routes one exact terminal")
+    func explicitNewSessionRecovery() async throws {
+        let fixture = try InboxProjectFixture()
+        defer { fixture.cleanup() }
+        let taskRegistry = AgentTaskRegistry()
+        let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        manager.terminal.lastActiveTerminalPaneID = pane
+        let state = try #require(manager.paneManager.terminalState(for: pane))
+        let originalTab = try #require(state.activeTab)
+        let projectIdentity = project(fixture.project.standardizedFileURL.path)
+        let routeContext = AgentTaskBridgeContext(
+            project: projectIdentity,
+            route: AgentTaskRoute(
+                paneID: pane.id,
+                tabID: originalTab.id,
+                terminalID: originalTab.id
+            ),
+            origin: .pineLaunched,
+            observedAt: Date(timeIntervalSince1970: 50)
+        )
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        let launch = taskRegistry.preparePineLaunch(
+            descriptor: descriptor,
+            context: routeContext,
+            title: "Recovery fixture",
+            objective: "Finish the release",
+            boundary: AgentTaskLaunchBoundary(
+                generationFloor: 50,
+                capturedAt: routeContext.observedAt
+            )
+        )
+        let reservation: AgentTaskLaunchReservation
+        guard case .reserved(let value) = launch else {
+            Issue.record("Expected Pine-owned launch reservation")
+            return
+        }
+        reservation = value
+        #expect(taskRegistry.armLaunch(reservation))
+        let session = makeSession(seed: 51, state: .executing)
+        taskRegistry.bridge(
+            session,
+            replacing: nil,
+            context: routeContext,
+            reservation: reservation
+        )
+        let taskID = try #require(taskRegistry.taskID(forSessionID: session.id))
+        session.applyLiveness(.terminated)
+        taskRegistry.bridge(
+            session,
+            replacing: session,
+            context: routeContext
+        )
+        let historicalTask = try #require(taskRegistry.task(for: taskID))
+        #expect(historicalTask.lifecycle == .paused)
+
+        let result = await projectRegistry.recoverAgentTaskFromInbox(
+            taskID,
+            action: .startNewSession,
+            openProjectWindow: { _ in },
+            waitUntilPresented: { _ in true },
+            activateApplication: { _ in }
+        )
+        guard case .openedNewSession(let terminalID) = result else {
+            Issue.record("Expected one fresh terminal")
+            return
+        }
+        #expect(state.terminalTabs.map(\.id) == [originalTab.id, terminalID])
+        #expect(state.activeTerminalID == terminalID)
+        #expect(state.pendingFocusTabID == terminalID)
+        #expect(taskRegistry.task(for: taskID) == historicalTask)
+    }
+
     private func makeTask(
         seed: Int,
         project path: String,
