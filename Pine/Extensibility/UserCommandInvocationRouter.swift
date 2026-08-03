@@ -88,6 +88,12 @@ enum UserCommandInvocationRouter {
                 object: nil
             )
 
+        case .showAgentInbox:
+            notificationCenter.post(
+                name: .showAgentInbox,
+                object: nil
+            )
+
         case .goToLine, .symbolNavigator, .quickOpen, .commandPalette:
             notificationCenter.post(
                 name: Notification.Name(command.notificationKey),

@@ -165,6 +165,41 @@ final class AgentTaskRegistry {
         tasks.first { $0.id == id }
     }
 
+    /// Explicitly changes Inbox review state. Merely reading or rendering the
+    /// registry never calls this method, so opening the Inbox cannot clear a
+    /// badge as a side effect.
+    @discardableResult
+    func setReviewed(_ reviewed: Bool, taskID: UUID) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              tasks[index].isUnread == reviewed else {
+            return false
+        }
+        tasks[index].isUnread = !reviewed
+        markDirty(tasks[index].project)
+        return true
+    }
+
+    /// Removes a finished/stale task from Inbox history without destroying a
+    /// live ownership route. Dismissed metadata remains durable until bounded
+    /// retention safely reclaims it.
+    @discardableResult
+    func dismissTask(_ taskID: UUID, at timestamp: Date = Date()) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              tasks[index].runs.last?.liveness != .live,
+              tasks[index].lifecycle != .active,
+              tasks[index].lifecycle != .dismissed else {
+            return false
+        }
+        tasks[index].lifecycle = .dismissed
+        tasks[index].attention = .none
+        tasks[index].isUnread = false
+        tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
+        markDirty(tasks[index].project)
+        return true
+    }
+
     func taskID(forSessionID sessionID: UUID) -> UUID? {
         taskIDByRunID[sessionID]
     }

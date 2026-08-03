@@ -106,6 +106,8 @@ nonisolated extension UserCommand {
             String(localized: "menu.agentActivity")
         case .showAgentHistory:
             String(localized: "menu.agentHistory")
+        case .showAgentInbox:
+            String(localized: "menu.agentInbox")
         case .toggleTerminal:
             String(localized: "terminal.toggle")
         case .newTerminalTab:
@@ -149,7 +151,8 @@ nonisolated extension UserCommand {
         case .increaseFontSize, .decreaseFontSize, .resetFontSize,
              .toggleWordWrap, .toggleMinimap, .toggleBlame, .togglePreview,
              .revealFileInFinder, .revealProjectInFinder,
-             .showAgentActivity, .showAgentHistory, .showProblems:
+             .showAgentActivity, .showAgentHistory, .showAgentInbox,
+             .showProblems:
             .view
         case .nextDiagnostic, .previousDiagnostic:
             .edit
@@ -253,6 +256,8 @@ nonisolated extension UserCommand {
             MenuIcons.agentActivity
         case .showAgentHistory:
             MenuIcons.agentHistory
+        case .showAgentInbox:
+            MenuIcons.agentInbox
         case .toggleTerminal:
             MenuIcons.toggleTerminal
         case .newTerminalTab:
@@ -282,7 +287,7 @@ nonisolated extension UserCommand {
         switch self {
         case .openFolder, .clearRecentProjects,
              .increaseFontSize, .decreaseFontSize,
-             .resetFontSize, .editKeybindings, .editTasks,
+             .resetFontSize, .showAgentInbox, .editKeybindings, .editTasks,
              .reloadUserConfiguration:
             .always
         case .newFile, .openFile,
@@ -391,6 +396,8 @@ nonisolated extension UserCommand {
         case .revealProjectInFinder, .showAgentActivity,
              .showAgentHistory:
             value = nil
+        case .showAgentInbox:
+            value = "cmd+shift+i"
         case .toggleTerminal:
             value = "cmd+`"
         case .newTerminalTab:

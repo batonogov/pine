@@ -83,6 +83,9 @@ extension Notification.Name {
     // MARK: - Agent Activity Panel (vision #933, Phase 2 — #1072)
     static let showAgentActivity = Notification.Name("showAgentActivity")
 
+    /// Opens the application-level cross-project Agent Inbox (#1305).
+    static let showAgentInbox = Notification.Name("showAgentInbox")
+
     // MARK: - Agent history (#1073)
     /// Shows the persistent agent-history timeline sheet.
     static let showAgentHistory = Notification.Name("showAgentHistory")

@@ -43,6 +43,7 @@ nonisolated enum AccessibilityID {
     static let welcomeRecentProjectsList = "welcomeRecentProjectsList"
     static let welcomeSearchField = "welcomeSearchField"
     static let welcomeSearchToggle = "welcomeSearchToggle"
+    static let welcomeAgentInboxButton = "welcomeAgentInboxButton"
     static func welcomeRecentProject(_ name: String) -> String { "welcomeRecentProject_\(name)" }
 
     // MARK: - Main editor window
@@ -195,6 +196,15 @@ nonisolated enum AccessibilityID {
     static let agentAttentionOverlay = "agentAttentionOverlay"
     static func agentAttentionRow(_ id: UUID) -> String {
         "agentAttentionRow_\(id.uuidString)"
+    }
+
+    // MARK: - Agent Inbox
+    static let agentInbox = "agentInbox"
+    static let agentInboxList = "agentInboxList"
+    static let agentInboxEmpty = "agentInboxEmpty"
+    static let agentInboxNavigationStatus = "agentInboxNavigationStatus"
+    static func agentInboxRow(_ id: UUID) -> String {
+        "agentInboxRow_\(id.uuidString)"
     }
 
     // MARK: - Global Tab Switcher overlay (#1239)

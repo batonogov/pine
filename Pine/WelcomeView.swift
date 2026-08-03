@@ -97,6 +97,15 @@ struct WelcomeView: View {
                 .controlSize(.large)
                 .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
 
+                Button {
+                    openWindow(id: "agent-inbox")
+                    NSApp.activate()
+                } label: {
+                    Label(Strings.menuAgentInbox, systemImage: MenuIcons.agentInbox)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier(AccessibilityID.welcomeAgentInboxButton)
+
                 Spacer()
             }
             .frame(width: 260)

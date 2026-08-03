@@ -85,6 +85,7 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case revealProjectInFinder
     case showAgentActivity
     case showAgentHistory
+    case showAgentInbox
     case toggleTerminal
     case newTerminalTab
     case findInTerminal
@@ -143,6 +144,7 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
         case .revealProjectInFinder: "user.revealProjectInFinder"
         case .showAgentActivity: "showAgentActivity"
         case .showAgentHistory: "showAgentHistory"
+        case .showAgentInbox: "showAgentInbox"
         case .toggleTerminal: "user.toggleTerminal"
         case .newTerminalTab: "user.newTerminalTab"
         case .findInTerminal: "findInTerminal"

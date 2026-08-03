@@ -28,7 +28,8 @@ struct PineAppMenuCommandsTests {
                 checkForUpdatesAction: {}
             ),
             toggleQuickTerminal: {},
-            recentProjects: { [] }
+            recentProjects: { [] },
+            showAgentInbox: {}
         )
         // `body` is `some Commands` — we can't introspect it, but forcing
         // evaluation verifies the view-builder closure compiles and runs
@@ -44,7 +45,7 @@ struct PineAppMenuCommandsTests {
     @Test
     func notificationNamesAreUniqueAndNonEmpty() {
         let names: [Notification.Name] = [
-            .newFile, .openFile, .openRecentProject,
+            .newFile, .openFile, .openRecentProject, .showAgentInbox,
             .clearRecentProjects, .openFolder,
             .closeTab, .closeWindow, .goToLine,
             .findInFile, .findAndReplace, .findNext, .findPrevious,
