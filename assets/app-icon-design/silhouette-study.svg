@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1080">
+  <rect width="1600" height="1080" fill="#F5F5F7"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, sans-serif" fill="#17181A">
+    <text x="90" y="90" font-size="44" font-weight="700">Pine app icon — silhouette study</text>
+    <text x="90" y="132" font-size="22" fill="#64666A">Identity first: black artwork, no color, material, highlights, glow, or shadow</text>
+  </g>
+
+  <g transform="translate(74 190)">
+    <rect width="452" height="560" rx="32" fill="#FFFFFF"/>
+    <text x="32" y="52" font-family="-apple-system, sans-serif" font-size="25" font-weight="650" fill="#17181A">1  Clean reconstruction</text>
+    <text x="32" y="84" font-family="-apple-system, sans-serif" font-size="18" fill="#74767A">Familiar, but fragments at small sizes</text>
+    <g transform="translate(-10 80) scale(.46)" fill="#17181A">
+      <path d="M512 510c24 0 47 5 68 16l205 100c36 18 36 58 0 76L580 802c-42 21-94 21-136 0L239 702c-36-18-36-58 0-76l205-100c21-11 44-16 68-16Z"/>
+      <path d="M512 330c24 0 47 5 68 16l205 100c36 18 36 58 0 76L580 622c-42 21-94 21-136 0L239 522c-36-18-36-58 0-76l205-100c21-11 44-16 68-16Z"/>
+      <path d="M512 150c24 0 47 5 68 16l205 100c36 18 36 58 0 76L580 442c-42 21-94 21-136 0L239 342c-36-18-36-58 0-76l205-100c21-11 44-16 68-16Z"/>
+    </g>
+    <text x="32" y="522" font-family="-apple-system, sans-serif" font-size="18" fill="#74767A">Rejected: equal weight + oversized gaps</text>
+  </g>
+
+  <g transform="translate(574 190)">
+    <rect width="452" height="560" rx="32" fill="#FFFFFF" stroke="#17181A" stroke-width="5"/>
+    <text x="32" y="52" font-family="-apple-system, sans-serif" font-size="25" font-weight="650" fill="#17181A">2  Compact Stack</text>
+    <text x="32" y="84" font-family="-apple-system, sans-serif" font-size="18" fill="#525458">Selected production direction</text>
+    <g transform="translate(-10 78) scale(.46)" fill="#17181A">
+      <path d="M512 442c28 0 54 6 78 18l225 110c39 19 39 63 0 83L590 763c-49 24-107 24-156 0L209 653c-39-20-39-64 0-83l225-110c24-12 50-18 78-18Z"/>
+      <path d="M486 342c24 0 47 6 69 16l204 100c36 18 36 58 0 76L555 634c-43 21-95 21-138 0L213 534c-36-18-36-58 0-76l204-100c22-10 45-16 69-16Z"/>
+      <path d="M536 250c21 0 42 5 61 14l148 73c35 17 35 55 0 73l-148 72c-38 19-84 19-122 0l-148-72c-35-18-35-56 0-73l148-73c19-9 40-14 61-14Z"/>
+    </g>
+    <text x="32" y="500" font-family="-apple-system, sans-serif" font-size="18" fill="#525458">One compact mass; width rhythm and ± offset</text>
+    <text x="32" y="528" font-family="-apple-system, sans-serif" font-size="18" fill="#525458">preserve layer order without relying on color.</text>
+  </g>
+
+  <g transform="translate(1074 190)">
+    <rect width="452" height="560" rx="32" fill="#FFFFFF"/>
+    <text x="32" y="52" font-family="-apple-system, sans-serif" font-size="25" font-weight="650" fill="#17181A">3  Dynamic Stack</text>
+    <text x="32" y="84" font-family="-apple-system, sans-serif" font-size="18" fill="#74767A">More motion, less calm and optical balance</text>
+    <g transform="translate(-10 78) scale(.46)" fill="#17181A">
+      <path transform="rotate(-3 512 615)" d="M512 442c28 0 54 6 78 18l225 110c39 19 39 63 0 83L590 763c-49 24-107 24-156 0L209 653c-39-20-39-64 0-83l225-110c24-12 50-18 78-18Z"/>
+      <path transform="rotate(2 486 500)" d="M486 342c24 0 47 6 69 16l204 100c36 18 36 58 0 76L555 634c-43 21-95 21-138 0L213 534c-36-18-36-58 0-76l204-100c22-10 45-16 69-16Z"/>
+      <path transform="rotate(-4 536 376)" d="M536 250c21 0 42 5 61 14l148 73c35 17 35 55 0 73l-148 72c-38 19-84 19-122 0l-148-72c-35-18-35-56 0-73l148-73c19-9 40-14 61-14Z"/>
+    </g>
+    <text x="32" y="522" font-family="-apple-system, sans-serif" font-size="18" fill="#74767A">Rejected: rotation competes with Liquid Glass</text>
+  </g>
+
+  <g transform="translate(90 820)">
+    <text x="0" y="0" font-family="-apple-system, sans-serif" font-size="27" font-weight="650" fill="#17181A">Compact Stack reduction test</text>
+    <text x="0" y="38" font-family="-apple-system, sans-serif" font-size="18" fill="#64666A">Same geometry at 64, 32, and 16 pt; normal and reversed</text>
+
+    <g transform="translate(500 -62)">
+      <g transform="scale(.10)" fill="#17181A">
+        <path d="M512 442c28 0 54 6 78 18l225 110c39 19 39 63 0 83L590 763c-49 24-107 24-156 0L209 653c-39-20-39-64 0-83l225-110c24-12 50-18 78-18Z"/>
+        <path d="M486 342c24 0 47 6 69 16l204 100c36 18 36 58 0 76L555 634c-43 21-95 21-138 0L213 534c-36-18-36-58 0-76l204-100c22-10 45-16 69-16Z"/>
+        <path d="M536 250c21 0 42 5 61 14l148 73c35 17 35 55 0 73l-148 72c-38 19-84 19-122 0l-148-72c-35-18-35-56 0-73l148-73c19-9 40-14 61-14Z"/>
+      </g>
+      <text x="20" y="125" font-family="-apple-system, sans-serif" font-size="17" fill="#64666A">64</text>
+    </g>
+
+    <g transform="translate(650 -28)">
+      <g transform="scale(.05)" fill="#17181A">
+        <path d="M512 442c28 0 54 6 78 18l225 110c39 19 39 63 0 83L590 763c-49 24-107 24-156 0L209 653c-39-20-39-64 0-83l225-110c24-12 50-18 78-18Z"/>
+        <path d="M486 342c24 0 47 6 69 16l204 100c36 18 36 58 0 76L555 634c-43 21-95 21-138 0L213 534c-36-18-36-58 0-76l204-100c22-10 45-16 69-16Z"/>
+        <path d="M536 250c21 0 42 5 61 14l148 73c35 17 35 55 0 73l-148 72c-38 19-84 19-122 0l-148-72c-35-18-35-56 0-73l148-73c19-9 40-14 61-14Z"/>
+      </g>
+      <text x="7" y="87" font-family="-apple-system, sans-serif" font-size="17" fill="#64666A">32</text>
+    </g>
+
+    <g transform="translate(755 -9)">
+      <g transform="scale(.025)" fill="#17181A">
+        <path d="M512 442c28 0 54 6 78 18l225 110c39 19 39 63 0 83L590 763c-49 24-107 24-156 0L209 653c-39-20-39-64 0-83l225-110c24-12 50-18 78-18Z"/>
+        <path d="M486 342c24 0 47 6 69 16l204 100c36 18 36 58 0 76L555 634c-43 21-95 21-138 0L213 534c-36-18-36-58 0-76l204-100c22-10 45-16 69-16Z"/>
+        <path d="M536 250c21 0 42 5 61 14l148 73c35 17 35 55 0 73l-148 72c-38 19-84 19-122 0l-148-72c-35-18-35-56 0-73l148-73c19-9 40-14 61-14Z"/>
+      </g>
+      <text x="-1" y="69" font-family="-apple-system, sans-serif" font-size="17" fill="#64666A">16</text>
+    </g>
+
+    <g transform="translate(870 -80)">
+      <rect width="370" height="170" rx="24" fill="#17181A"/>
+      <g transform="translate(40 17) scale(.13)" fill="#FFFFFF">
+        <path d="M512 442c28 0 54 6 78 18l225 110c39 19 39 63 0 83L590 763c-49 24-107 24-156 0L209 653c-39-20-39-64 0-83l225-110c24-12 50-18 78-18Z"/>
+        <path d="M486 342c24 0 47 6 69 16l204 100c36 18 36 58 0 76L555 634c-43 21-95 21-138 0L213 534c-36-18-36-58 0-76l204-100c22-10 45-16 69-16Z"/>
+        <path d="M536 250c21 0 42 5 61 14l148 73c35 17 35 55 0 73l-148 72c-38 19-84 19-122 0l-148-72c-35-18-35-56 0-73l148-73c19-9 40-14 61-14Z"/>
+      </g>
+    </g>
+  </g>
+</svg>

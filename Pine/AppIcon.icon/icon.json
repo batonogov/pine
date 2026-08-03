@@ -1,30 +1,156 @@
 {
   "color-space-for-untagged-svg-colors" : "display-p3",
-  "fill" : "automatic",
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.90196,0.96863,0.95686,1.00000"
+  },
+  "fill-specializations" : [
+    {
+      "appearance" : "dark",
+      "value" : {
+        "automatic-gradient" : "extended-srgb:0.05098,0.47843,0.54118,1.00000"
+      }
+    },
+    {
+      "appearance" : "tinted",
+      "value" : {
+        "automatic-gradient" : "extended-srgb:0.14510,0.17255,0.18039,1.00000"
+      }
+    }
+  ],
   "groups" : [
     {
+      "name" : "Lower Plate",
       "layers" : [
         {
-          "glass" : false,
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "extended-srgb:0.18431,0.47451,0.90980,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "extended-srgb:0.29412,0.56078,0.94902,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "extended-srgb:0.36078,0.36078,0.36078,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
           "hidden" : false,
-          "image-name" : "934E5864-8B57-432B-8C99-014C3F1BA95C.png",
-          "name" : "934E5864-8B57-432B-8C99-014C3F1BA95C",
+          "image-name" : "01-bottom-plate.svg",
+          "name" : "Lower Blue Plate",
           "position" : {
-            "scale" : 1.21,
+            "scale" : 1.25,
             "translation-in-points" : [
-              -1.2100000000000364,
-              23
+              0,
+              0
             ]
           }
         }
       ],
       "shadow" : {
         "kind" : "neutral",
-        "opacity" : 0.5
+        "opacity" : 0.24
       },
       "translucency" : {
         "enabled" : true,
-        "value" : 0.5
+        "value" : 0.18
+      }
+    },
+    {
+      "name" : "Mint Plate",
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "extended-srgb:0.09412,0.79216,0.63137,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "extended-srgb:0.21176,0.86667,0.70196,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "extended-srgb:0.65098,0.65098,0.65098,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "02-mint-plate.svg",
+          "name" : "Focal Mint Plate",
+          "position" : {
+            "scale" : 1.25,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.2
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.12
+      }
+    },
+    {
+      "name" : "Upper Plate",
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "extended-srgb:0.45098,0.80000,0.86275,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "extended-srgb:0.69020,0.92157,0.94118,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "extended-srgb:0.90980,0.90980,0.90980,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "03-top-plate.svg",
+          "name" : "Upper Cyan Plate",
+          "position" : {
+            "scale" : 1.25,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.18
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.1
       }
     }
   ],

@@ -30,6 +30,9 @@ final class ScreenshotTests: PineUITestCase {
     // MARK: - Welcome Window
 
     func testCaptureWelcomeWindow() throws {
+        // Marketing captures must never inherit personal project history from
+        // the machine that generated them.
+        app.launchArguments += ["--clear-recent-projects"]
         launchClean()
 
         let welcomeWindow = app.windows["welcome"]

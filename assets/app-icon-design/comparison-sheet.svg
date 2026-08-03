@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 1760">
+  <rect width="2100" height="1760" fill="#F5F5F7"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, sans-serif" fill="#17181A">
+    <text x="90" y="82" font-size="44" font-weight="700">Pine Compact Stack — Icon Composer review</text>
+    <text x="90" y="124" font-size="22" fill="#64666A">Apple-rendered output from the same three editable SVG layers</text>
+
+    <g font-size="19" font-weight="650" text-anchor="middle">
+      <text x="300" y="180">Default</text>
+      <text x="600" y="180">Dark</text>
+      <text x="900" y="180">Tinted Light</text>
+      <text x="1200" y="180">Tinted Dark</text>
+      <text x="1500" y="180">Clear Light</text>
+      <text x="1800" y="180">Clear Dark</text>
+    </g>
+
+    <text x="100" y="350" font-size="23" font-weight="650" text-anchor="middle" transform="rotate(-90 100 350)">macOS 26 renderer</text>
+    <text x="100" y="680" font-size="23" font-weight="650" text-anchor="middle" transform="rotate(-90 100 680)">macOS 27 renderer</text>
+  </g>
+
+  <g>
+    <image href="previews/macos-26/default-512.png" x="170" y="220" width="260" height="260"/>
+    <image href="previews/macos-26/dark-512.png" x="470" y="220" width="260" height="260"/>
+    <image href="previews/macos-26/tinted-light-512.png" x="770" y="220" width="260" height="260"/>
+    <image href="previews/macos-26/tinted-dark-512.png" x="1070" y="220" width="260" height="260"/>
+    <image href="previews/macos-26/clear-light-512.png" x="1370" y="220" width="260" height="260"/>
+    <image href="previews/macos-26/clear-dark-512.png" x="1670" y="220" width="260" height="260"/>
+
+    <image href="previews/macos-27/default-512.png" x="170" y="550" width="260" height="260"/>
+    <image href="previews/macos-27/dark-512.png" x="470" y="550" width="260" height="260"/>
+    <image href="previews/macos-27/tinted-light-512.png" x="770" y="550" width="260" height="260"/>
+    <image href="previews/macos-27/tinted-dark-512.png" x="1070" y="550" width="260" height="260"/>
+    <image href="previews/macos-27/clear-light-512.png" x="1370" y="550" width="260" height="260"/>
+    <image href="previews/macos-27/clear-dark-512.png" x="1670" y="550" width="260" height="260"/>
+  </g>
+
+  <line x1="90" y1="880" x2="2010" y2="880" stroke="#D6D7DA" stroke-width="2"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, sans-serif" fill="#17181A">
+    <text x="90" y="940" font-size="29" font-weight="650">Flat source art</text>
+    <text x="90" y="974" font-size="18" fill="#64666A">No glass, shadow, highlight, translucency, or outer mask</text>
+  </g>
+  <g transform="translate(90 1000) scale(.43)">
+    <rect width="1024" height="1024" fill="#E6F7F4"/>
+    <path fill="#2F79E8" d="M512 442c28 0 54 6 78 18l225 110c39 19 39 63 0 83L590 763c-49 24-107 24-156 0L209 653c-39-20-39-64 0-83l225-110c24-12 50-18 78-18Z"/>
+    <path fill="#18CAA1" d="M486 342c24 0 47 6 69 16l204 100c36 18 36 58 0 76L555 634c-43 21-95 21-138 0L213 534c-36-18-36-58 0-76l204-100c22-10 45-16 69-16Z"/>
+    <path fill="#73CCDC" d="M536 250c21 0 42 5 61 14l148 73c35 17 35 55 0 73l-148 72c-38 19-84 19-122 0l-148-72c-35-18-35-56 0-73l148-73c19-9 40-14 61-14Z"/>
+  </g>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, sans-serif" fill="#17181A">
+    <text x="620" y="940" font-size="29" font-weight="650">Small-size reduction</text>
+    <text x="620" y="974" font-size="18" fill="#64666A">macOS 27 exports · 4× pixel inspection</text>
+    <text x="620" y="1045" font-size="18" font-weight="650">Default</text>
+    <text x="620" y="1315" font-size="18" font-weight="650">Dark</text>
+  </g>
+
+  <g>
+    <image href="previews/macos-27/default-16.png" x="720" y="1010" width="64" height="64"/>
+    <image href="previews/macos-27/default-32.png" x="835" y="978" width="128" height="128"/>
+    <image href="previews/macos-27/default-64.png" x="1020" y="990" width="256" height="256"/>
+    <image href="previews/macos-27/dark-16.png" x="720" y="1280" width="64" height="64"/>
+    <image href="previews/macos-27/dark-32.png" x="835" y="1248" width="128" height="128"/>
+    <image href="previews/macos-27/dark-64.png" x="1020" y="1290" width="256" height="256"/>
+  </g>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, sans-serif" fill="#64666A" font-size="16" text-anchor="middle">
+    <text x="752" y="1095">16 pt</text>
+    <text x="899" y="1128">32 pt</text>
+    <text x="1148" y="1270">64 pt</text>
+    <text x="752" y="1365">16 pt</text>
+    <text x="899" y="1398">32 pt</text>
+    <text x="1148" y="1568">64 pt</text>
+  </g>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, sans-serif" fill="#17181A">
+    <text x="1390" y="940" font-size="29" font-weight="650">Background samples</text>
+    <text x="1390" y="974" font-size="18" fill="#64666A">Transparent corners expose the simulated context</text>
+  </g>
+  <g>
+    <rect x="1390" y="1010" width="280" height="280" rx="32" fill="#FFFFFF"/>
+    <image href="previews/macos-27/default-512.png" x="1420" y="1040" width="220" height="220"/>
+    <rect x="1700" y="1010" width="280" height="280" rx="32" fill="#222326"/>
+    <image href="previews/macos-27/dark-512.png" x="1730" y="1040" width="220" height="220"/>
+    <rect x="1390" y="1320" width="280" height="280" rx="32" fill="#8A8D92"/>
+    <image href="previews/macos-27/clear-light-512.png" x="1420" y="1350" width="220" height="220"/>
+    <rect x="1700" y="1320" width="280" height="280" rx="32" fill="#094FAE"/>
+    <image href="previews/macos-27/tinted-dark-512.png" x="1730" y="1350" width="220" height="220"/>
+  </g>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, sans-serif" fill="#64666A" font-size="17" text-anchor="middle">
+    <text x="1530" y="1632">light</text>
+    <text x="1840" y="1632">dark / saturated</text>
+  </g>
+
+  <text x="90" y="1705" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" fill="#64666A">Source: Pine/AppIcon.icon · Exporter: scripts/export-app-icon-previews.sh · Tint sample: spectrum 0.46 / strength 0.72</text>
+</svg>
