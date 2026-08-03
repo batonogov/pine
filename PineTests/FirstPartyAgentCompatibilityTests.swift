@@ -88,6 +88,10 @@ struct FirstPartyAgentCompatibilityTests {
             contentsOf: sourceRoot.appending(path: "docs/pine-2.0-release-notes.md"),
             encoding: .utf8
         )
+        let releaseMatrix = try String(
+            contentsOf: sourceRoot.appending(path: "docs/pine-2.0-agent-release-matrix.md"),
+            encoding: .utf8
+        )
 
         for record in FirstPartyAgentCompatibilityCatalog.records {
             #expect(matrix.contains(record.displayName))
@@ -99,6 +103,13 @@ struct FirstPartyAgentCompatibilityTests {
             #expect(matrix.contains("issues/\(followUp)"))
         }
         #expect(releaseNotes.contains("(agent-compatibility.md)"))
+        #expect(releaseNotes.contains("(pine-2.0-agent-release-matrix.md)"))
+        #expect(matrix.contains("(pine-2.0-agent-release-matrix.md)"))
+        #expect(releaseMatrix.contains("macOS 26"))
+        #expect(releaseMatrix.contains("macOS 27"))
+        for record in FirstPartyAgentCompatibilityCatalog.records {
+            #expect(releaseMatrix.contains(record.displayName))
+        }
     }
 
     private func loadFixture() throws -> Fixture {

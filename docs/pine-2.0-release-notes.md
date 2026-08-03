@@ -14,7 +14,9 @@ while preserving explicit trust and privacy boundaries.
   launch, resume, and lifecycle limitations.
 
 See the [CLI agent compatibility matrix](agent-compatibility.md) for verified
-versions, support tiers, signal sources, trust levels, and current limitations.
+versions, support tiers, signal sources, trust levels, and current limitations,
+and the [Pine 2.0 agent release matrix](pine-2.0-agent-release-matrix.md) for the
+automated gates and manual OS/renderer checklist.
 
 This document is a release-candidate draft. The final notes will also include
 the Agent Inbox, actionable notifications, durable resume, completion briefs,

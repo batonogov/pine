@@ -17,8 +17,9 @@ import Foundation
 // Seed  53–60: FuzzConfigValidatorTests (yamllint=53, shellcheck=54, terraform=55,
 //              hadolint=56, builtinYAML=57, dockerfile=58, shell=59, detector=60)
 // Seed  61:    FuzzGoToLineParserTests
+// Seed  62–65: FuzzAgentBoundaryTests (envelope=62, values=63, trust=64, redaction=65)
 //
-// Next available seed: 62
+// Next available seed: 66
 //
 // Iteration count: each random-input fuzz test runs 100 iterations. With the
 // deterministic SplitMix64 PRNG this still exercises ample edge cases while
