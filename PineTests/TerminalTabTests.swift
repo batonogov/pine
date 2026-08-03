@@ -57,9 +57,13 @@ struct TerminalTabTests {
                 _ = release.wait(timeout: .now() + 2)
             }
         }
-        let didAcquire = await Task.detached {
-            acquired.wait(timeout: .now() + 1) == .success
-        }.value
+        let didAcquire = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(
+                    returning: acquired.wait(timeout: .now() + 1) == .success
+                )
+            }
+        }
         try #require(didAcquire)
         Darwin.close(borrowedDescriptor)
         let replacement = Darwin.open(
