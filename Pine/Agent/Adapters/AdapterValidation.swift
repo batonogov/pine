@@ -329,6 +329,7 @@ private actor SourceSessionState {
     private var highestAdmittedSequence: UInt64
     private var latestAcceptedPosition: AdapterSourcePosition?
     private var checkpointedSequence: UInt64?
+    private var pendingCheckpointPosition: AdapterSourcePosition?
     private var pendingCandidates: [AdapterCandidate] = []
     private var activationRemaining = 0
     private var inFlightCount = 0
@@ -448,14 +449,22 @@ private actor SourceSessionState {
     }
 
     func checkpointPosition() -> AdapterSourcePosition? {
+        if let pendingCheckpointPosition { return pendingCheckpointPosition }
         guard lifecycle == .active, inFlightCount == 0,
               pendingCandidates.isEmpty,
               let position = latestAcceptedPosition,
               let sequence = position.sourceSequence,
               sequence > (checkpointedSequence ?? 0) else { return nil }
         checkpointedSequence = sequence
+        pendingCheckpointPosition = position
         lifecycle = .retired
         return position
+    }
+
+    func finalizeCheckpoint() -> Bool {
+        guard pendingCheckpointPosition != nil else { return false }
+        pendingCheckpointPosition = nil
+        return true
     }
 
     func failStart() {
@@ -574,6 +583,8 @@ private actor BoundedAdapterStop {
     private var completed = false
     private var waiters: [UUID: AsyncContinuationGate] = [:]
 
+    var isCompleted: Bool { completed }
+
     func wait() async {
         guard !completed, !Task.isCancelled else { return }
         let waiterID = UUID()
@@ -589,6 +600,41 @@ private actor BoundedAdapterStop {
         let retained = Array(waiters.values)
         waiters.removeAll(keepingCapacity: false)
         retained.forEach { $0.resolve() }
+    }
+}
+
+nonisolated struct AdapterDeadlineSleeper: Sendable {
+    nonisolated static let live = AdapterDeadlineSleeper { deadline in
+        try? await ContinuousClock().sleep(until: deadline)
+    }
+
+    private let operation: @Sendable (ContinuousClock.Instant) async -> Void
+
+    init(operation: @escaping @Sendable (ContinuousClock.Instant) async -> Void) {
+        self.operation = operation
+    }
+
+    func sleep(until deadline: ContinuousClock.Instant) async {
+        await operation(deadline)
+    }
+}
+
+nonisolated private final class AsyncBooleanDecision: Sendable {
+    private let value = Mutex<Bool?>(nil)
+    private let completion = AsyncContinuationGate()
+
+    func resolve(_ proposed: Bool) {
+        let accepted = value.withLock {
+            guard $0 == nil else { return false }
+            $0 = proposed
+            return true
+        }
+        if accepted { completion.resolve() }
+    }
+
+    func wait() async -> Bool {
+        await completion.wait()
+        return value.withLock { $0 ?? false }
     }
 }
 
@@ -732,26 +778,49 @@ private actor AdapterCleanupSupervisor {
 }
 
 nonisolated private final class CoreBoundSessionLifetime: Sendable {
-    nonisolated private static let abandonmentGrace = Duration.seconds(5)
+    nonisolated static let cleanupGrace = Duration.seconds(5)
     let state: SourceSessionState
     let underlying: any AgentAdapterSession
     let cleanupPermit: AdapterCleanupPermit
+    private let deadlineSleeper: AdapterDeadlineSleeper
+    private let confirmedCleanup = BoundedAdapterStop()
 
     init(
         state: SourceSessionState,
         underlying: any AgentAdapterSession,
-        cleanupPermit: AdapterCleanupPermit
+        cleanupPermit: AdapterCleanupPermit,
+        deadlineSleeper: AdapterDeadlineSleeper
     ) {
         self.state = state
         self.underlying = underlying
         self.cleanupPermit = cleanupPermit
+        self.deadlineSleeper = deadlineSleeper
     }
 
-    func stop(deadline: ContinuousClock.Instant) async {
-        await Self.performStop(
+    func requestStop(deadline: ContinuousClock.Instant) async -> BoundedAdapterStop {
+        await Self.prepareStop(
             state: state,
             underlying: underlying,
             cleanupPermit: cleanupPermit,
+            confirmedCleanup: confirmedCleanup,
+            deadlineSleeper: deadlineSleeper,
+            deadline: deadline
+        )
+    }
+
+    func stop(deadline: ContinuousClock.Instant) async {
+        let sharedCompletion = await requestStop(deadline: deadline)
+        await Self.waitForSharedCleanup(
+            sharedCompletion,
+            deadlineSleeper: deadlineSleeper,
+            deadline: deadline
+        )
+    }
+
+    func waitForConfirmedCleanup(until deadline: ContinuousClock.Instant) async -> Bool {
+        await Self.waitForConfirmation(
+            confirmedCleanup,
+            deadlineSleeper: deadlineSleeper,
             deadline: deadline
         )
     }
@@ -760,12 +829,16 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
         let state = state
         let underlying = underlying
         let cleanupPermit = cleanupPermit
-        let deadline = ContinuousClock.now.advanced(by: Self.abandonmentGrace)
+        let confirmedCleanup = confirmedCleanup
+        let deadlineSleeper = deadlineSleeper
+        let deadline = ContinuousClock.now.advanced(by: Self.cleanupGrace)
         Task.detached {
             await CoreBoundSessionLifetime.performStop(
                 state: state,
                 underlying: underlying,
                 cleanupPermit: cleanupPermit,
+                confirmedCleanup: confirmedCleanup,
+                deadlineSleeper: deadlineSleeper,
                 deadline: deadline
             )
         }
@@ -775,30 +848,57 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
         state: SourceSessionState,
         underlying: any AgentAdapterSession,
         cleanupPermit: AdapterCleanupPermit,
+        confirmedCleanup: BoundedAdapterStop,
+        deadlineSleeper: AdapterDeadlineSleeper,
         deadline: ContinuousClock.Instant
     ) async {
+        let sharedCompletion = await prepareStop(
+            state: state,
+            underlying: underlying,
+            cleanupPermit: cleanupPermit,
+            confirmedCleanup: confirmedCleanup,
+            deadlineSleeper: deadlineSleeper,
+            deadline: deadline
+        )
+        await waitForSharedCleanup(
+            sharedCompletion,
+            deadlineSleeper: deadlineSleeper,
+            deadline: deadline
+        )
+    }
+
+    nonisolated private static func prepareStop(
+        state: SourceSessionState,
+        underlying: any AgentAdapterSession,
+        cleanupPermit: AdapterCleanupPermit,
+        confirmedCleanup: BoundedAdapterStop,
+        deadlineSleeper: AdapterDeadlineSleeper,
+        deadline: ContinuousClock.Instant
+    ) async -> BoundedAdapterStop {
         let directive = await state.beginStop()
-        let sharedCompletion: BoundedAdapterStop
         switch directive {
         case .start(let completion):
-            sharedCompletion = completion
             startSharedCleanup(
                 state: state,
                 underlying: underlying,
                 cleanupPermit: cleanupPermit,
+                confirmedCleanup: confirmedCleanup,
+                deadlineSleeper: deadlineSleeper,
                 completion: completion,
                 deadline: deadline
             )
+            return completion
         case .wait(let completion):
-            sharedCompletion = completion
+            return completion
         }
-        await waitForSharedCleanup(sharedCompletion, deadline: deadline)
     }
 
     nonisolated private static func startSharedCleanup(
         state: SourceSessionState,
         underlying: any AgentAdapterSession,
         cleanupPermit: AdapterCleanupPermit,
+        confirmedCleanup: BoundedAdapterStop,
+        deadlineSleeper: AdapterDeadlineSleeper,
         completion: BoundedAdapterStop,
         deadline: ContinuousClock.Instant
     ) {
@@ -806,7 +906,7 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
             let boundedWork = BoundedAdapterStop()
             let countdown = AdapterStopCountdown(
                 remaining: 2,
-                completion: boundedWork
+                completion: confirmedCleanup
             )
             let ticket = await AdapterCleanupSupervisor.shared.submit(
                 underlying,
@@ -821,26 +921,27 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
                 await state.waitUntilDrained()
                 await countdown.arrive()
             }
+            let confirmedWait = Task.detached {
+                await confirmedCleanup.wait()
+                await boundedWork.complete()
+            }
             let timeout = Task.detached {
-                do {
-                    try await ContinuousClock().sleep(until: deadline)
-                } catch {
-                    // Cancellation means cleanup completed before the deadline.
-                }
+                await deadlineSleeper.sleep(until: deadline)
                 await boundedWork.complete()
             }
             await boundedWork.wait()
             await AdapterCleanupSupervisor.shared.cancel(ticket)
-            adapterWait.cancel()
-            drainWait.cancel()
+            confirmedWait.cancel()
             timeout.cancel()
             await state.revoke()
             await completion.complete()
+            _ = (adapterWait, drainWait)
         }
     }
 
     nonisolated private static func waitForSharedCleanup(
         _ sharedCompletion: BoundedAdapterStop,
+        deadlineSleeper: AdapterDeadlineSleeper,
         deadline: ContinuousClock.Instant
     ) async {
         let localCompletion = BoundedAdapterStop()
@@ -849,16 +950,33 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
             await localCompletion.complete()
         }
         let timeout = Task.detached {
-            do {
-                try await ContinuousClock().sleep(until: deadline)
-            } catch {
-                // Cancellation means shared cleanup completed first.
-            }
+            await deadlineSleeper.sleep(until: deadline)
             await localCompletion.complete()
         }
         await localCompletion.wait()
         sharedWait.cancel()
         timeout.cancel()
+    }
+
+    nonisolated private static func waitForConfirmation(
+        _ confirmation: BoundedAdapterStop,
+        deadlineSleeper: AdapterDeadlineSleeper,
+        deadline: ContinuousClock.Instant
+    ) async -> Bool {
+        if await confirmation.isCompleted { return true }
+        let decision = AsyncBooleanDecision()
+        let confirmationWait = Task.detached {
+            await confirmation.wait()
+            decision.resolve(true)
+        }
+        let timeout = Task.detached {
+            await deadlineSleeper.sleep(until: deadline)
+            decision.resolve(false)
+        }
+        let result = await decision.wait()
+        confirmationWait.cancel()
+        timeout.cancel()
+        return result
     }
 }
 
@@ -920,11 +1038,13 @@ nonisolated struct AgentAdapterRegistry: Sendable {
     private let adapters: [AdapterID: (AdapterDescriptor, any AgentAdapterFactory)]
     private let registryID: UUID
     private let cleanupCapacity: AdapterCleanupCapacity
+    private let deadlineSleeper: AdapterDeadlineSleeper
 
     init(
         compiledPresentations: [AgentPresentationDescriptor],
         compiledAdapters: [(AdapterDescriptor, any AgentAdapterFactory)],
-        cleanupCapacity: AdapterCleanupCapacity = .shared
+        cleanupCapacity: AdapterCleanupCapacity = .shared,
+        deadlineSleeper: AdapterDeadlineSleeper = .live
     ) throws {
         guard compiledPresentations.count <= 128, compiledAdapters.count <= 128 else {
             throw AdapterRegistrationError.tooManyEntries
@@ -964,6 +1084,7 @@ nonisolated struct AgentAdapterRegistry: Sendable {
         adapters = adapterMap
         registryID = UUID()
         self.cleanupCapacity = cleanupCapacity
+        self.deadlineSleeper = deadlineSleeper
     }
 
     private func factory(for contract: NegotiatedAdapterContract) throws -> any AgentAdapterFactory {
@@ -1019,18 +1140,21 @@ nonisolated struct AgentAdapterRegistry: Sendable {
             downstream: downstream
         )
         let request = AgentAdapterSessionRequest(contract: contract, resumeFrom: checkpoint, sink: sink)
+        var guardedLifetime: CoreBoundSessionLifetime?
         do {
             try Task.checkCancellation()
             let session = try await resolved.makeSession(request)
+            let lifetime = CoreBoundSessionLifetime(
+                state: state,
+                underlying: session,
+                cleanupPermit: cleanupPermit,
+                deadlineSleeper: deadlineSleeper
+            )
+            guardedLifetime = lifetime
             try Task.checkCancellation()
             guard session.contract == contract else {
                 throw AdapterSessionError.contractMismatch
             }
-            let lifetime = CoreBoundSessionLifetime(
-                state: state,
-                underlying: session,
-                cleanupPermit: cleanupPermit
-            )
             return CoreBoundAdapterSession(
                 contract: contract,
                 registryID: registryID,
@@ -1042,6 +1166,11 @@ nonisolated struct AgentAdapterRegistry: Sendable {
             )
         } catch {
             await state.failStart()
+            if let guardedLifetime {
+                _ = await guardedLifetime.requestStop(
+                    deadline: ContinuousClock.now.advanced(by: CoreBoundSessionLifetime.cleanupGrace)
+                )
+            }
             throw error
         }
     }
@@ -1056,6 +1185,15 @@ nonisolated struct AgentAdapterRegistry: Sendable {
               let resumePosition = position.resumePosition,
               let lastSourceEvent = position.sourceEvent,
               let lastSourceSequence = position.sourceSequence else {
+            throw AdapterSessionError.checkpointUnavailable
+        }
+        try Task.checkCancellation()
+        let deadline = ContinuousClock.now.advanced(by: CoreBoundSessionLifetime.cleanupGrace)
+        _ = await source.lifetime.requestStop(deadline: deadline)
+        let cleanupConfirmed = await source.lifetime.waitForConfirmedCleanup(until: deadline)
+        try Task.checkCancellation()
+        guard cleanupConfirmed,
+              await source.state.finalizeCheckpoint() else {
             throw AdapterSessionError.checkpointUnavailable
         }
         return AdapterResumeCheckpoint(
