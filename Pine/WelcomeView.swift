@@ -97,6 +97,18 @@ struct WelcomeView: View {
                 .controlSize(.large)
                 .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
 
+                Button {
+                    if let appDelegate {
+                        appDelegate.showAgentInbox()
+                    } else {
+                        openWindow(id: "agent-inbox")
+                    }
+                } label: {
+                    Label(Strings.menuAgentInbox, systemImage: MenuIcons.agentInbox)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier(AccessibilityID.welcomeAgentInboxButton)
+
                 Spacer()
             }
             .frame(width: 260)

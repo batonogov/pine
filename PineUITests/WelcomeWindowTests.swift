@@ -32,6 +32,51 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(openFolderButton), "Open Folder button should be visible")
     }
 
+    func testAgentInboxOpensFromWelcomeWithoutClosingWelcome() throws {
+        launchClean()
+
+        let welcomeWindow = app.windows["welcome"]
+        XCTAssertTrue(waitForExistence(welcomeWindow))
+        let inboxButton = app.buttons["welcomeAgentInboxButton"]
+        XCTAssertTrue(
+            waitForExistence(inboxButton),
+            "Agent Inbox should be available before a project is open"
+        )
+
+        inboxButton.click()
+
+        let inbox = app.descendants(matching: .any)["agentInbox"].firstMatch
+        XCTAssertTrue(waitForExistence(inbox), "Agent Inbox should open")
+        XCTAssertTrue(
+            waitForExistence(
+                app.descendants(matching: .any)["agentInboxEmpty"].firstMatch
+            ),
+            "A fresh Inbox should show its empty state"
+        )
+        XCTAssertTrue(
+            welcomeWindow.exists,
+            "Opening Agent Inbox must not switch or close projects implicitly"
+        )
+    }
+
+    func testAgentInboxOpensFromViewMenuInProject() throws {
+        let url = try createTempProject(files: ["hello.swift": "// hi\n"])
+        projectURLs.append(url)
+        launchWithProject(url)
+
+        clickMenuBarItem("View")
+        let inboxItem = app.menuItems["Agent Inbox"]
+        XCTAssertTrue(waitForExistence(inboxItem))
+        inboxItem.click()
+
+        let inbox = app.descendants(matching: .any)["agentInbox"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(inbox),
+            "Agent Inbox should be available from every project window"
+        )
+        XCTAssertTrue(app.scrollViews["sidebar"].exists)
+    }
+
     func testWelcomeWindowShowsPineTitle() throws {
         launchClean()
 

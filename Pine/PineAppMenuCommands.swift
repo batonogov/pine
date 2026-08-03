@@ -35,6 +35,7 @@ struct PineAppMenuCommands: Commands {
     /// AppDelegate. The closure keeps hosted tests inert while preserving
     /// observation of `ProjectRegistry.recentProjects` in the menu body.
     let recentProjects: () -> [URL]
+    let showAgentInbox: () -> Void
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage("minimapVisible") private var minimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var blameVisible = true
@@ -686,6 +687,15 @@ struct PineAppMenuCommands: Commands {
             .disabled(focusedProject?.workspace.rootURL == nil)
 
             Divider()
+
+            Button {
+                showAgentInbox()
+            } label: {
+                Label(Strings.menuAgentInbox, systemImage: MenuIcons.agentInbox)
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .showAgentInbox)
+            )
 
             Button {
                 AgentActivityPresentationRouter.postRequest(

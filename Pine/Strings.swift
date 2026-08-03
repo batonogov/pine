@@ -607,6 +607,31 @@ enum Strings {
     static let agentAttentionTitle: LocalizedStringKey = "agentAttention.title"
     static let agentAttentionEmpty: LocalizedStringKey = "agentAttention.empty"
 
+    // MARK: - Cross-project Agent Inbox (#1305)
+    static let menuAgentInbox: LocalizedStringKey = "menu.agentInbox"
+    static let agentInboxTitle: LocalizedStringKey = "menu.agentInbox"
+    static let agentInboxEmpty: LocalizedStringKey = "agentInbox.empty"
+    static let agentInboxNeedsAttention: LocalizedStringKey =
+        "agentInbox.section.needsAttention"
+    static let agentInboxFailed: LocalizedStringKey =
+        "agentInbox.section.failed"
+    static let agentInboxCompletedUnread: LocalizedStringKey =
+        "agentInbox.section.completedUnread"
+    static let agentInboxWorking: LocalizedStringKey =
+        "agentInbox.section.working"
+    static let agentInboxHistory: LocalizedStringKey =
+        "agentInbox.section.history"
+    static let agentInboxLastVerified: LocalizedStringKey =
+        "agentInbox.lastVerified"
+    static let agentInboxOpen: LocalizedStringKey = "agentInbox.open"
+    static let agentInboxMarkRead: LocalizedStringKey =
+        "agentInbox.markRead"
+    static let agentInboxMarkUnread: LocalizedStringKey =
+        "agentInbox.markUnread"
+    static let agentInboxDismiss: LocalizedStringKey = "agentInbox.dismiss"
+    static let agentInboxRouteUnavailable: LocalizedStringKey =
+        "agentInbox.routeUnavailable"
+
     // MARK: - Agent History & Undo (#1073)
     static let menuAgentHistory: LocalizedStringKey = "menu.agentHistory"
     static let agentHistoryTitle: LocalizedStringKey = "agentHistory.title"

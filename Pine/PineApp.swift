@@ -37,9 +37,25 @@ struct PineApp: App {
                 },
                 recentProjects: { [weak appDelegate] in
                     appDelegate?.registry.recentProjects ?? []
+                },
+                showAgentInbox: { [weak appDelegate] in
+                    appDelegate?.showAgentInbox()
                 }
             )
         }
+
+        Window(Strings.agentInboxTitle, id: "agent-inbox") {
+            AgentInboxView(registry: registry)
+                .environment(registry)
+                .background {
+                    AppDelegateBridge(
+                        appDelegate: appDelegate,
+                        registry: registry
+                    )
+                }
+        }
+        .defaultSize(width: 720, height: 560)
+        .defaultLaunchBehavior(.suppressed)
 
         Window(Strings.welcomeTitle, id: "welcome") {
             WelcomeView(registry: registry, appDelegate: appDelegate)
@@ -888,6 +904,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     /// Closure to open a project SwiftUI window by URL, set by PineApp on launch.
     var openProjectWindow: ((URL) -> Void)?
 
+    func showAgentInbox() {
+        openNamedWindow?("agent-inbox")
+        NSApp.activate()
+    }
+
     /// Reference to the Welcome NSWindow, captured via WelcomeWindowCapture.
     /// Used for reliable show/hide — SwiftUI's dismissWindow/openWindow breaks
     /// after a few cycles on singleton Window scenes.
@@ -1443,6 +1464,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             .closeWindow,
             .openRecentProject,
             .clearRecentProjects,
+            .showAgentInbox,
         ] {
             center.addObserver(
                 self,
@@ -1469,6 +1491,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     @objc private func handleNativeCommand(_ notification: Notification) {
         precondition(Thread.isMainThread)
         switch notification.name {
+        case .showAgentInbox:
+            showAgentInbox()
+
         case .openRecentProject:
             guard let url = notification.userInfo?["url"] as? URL else {
                 return

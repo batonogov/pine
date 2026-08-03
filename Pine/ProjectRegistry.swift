@@ -7,6 +7,13 @@
 
 import SwiftUI
 
+nonisolated enum AgentInboxNavigationResult: Equatable, Sendable {
+    case focused(AgentTaskRoute)
+    case taskMissing
+    case projectUnavailable
+    case routeStale
+}
+
 /// Manages open projects and recent project history.
 /// Each project directory maps to a single ProjectManager instance.
 @MainActor
@@ -256,6 +263,88 @@ final class ProjectRegistry: LSPSettingsObserver {
               ),
               !backgroundProjects.contains(projectURL) else { return nil }
         return matches[0]
+    }
+
+    /// Opens (when necessary), re-resolves, and focuses one exact live agent
+    /// route. Every suspension is followed by the same task/run/process
+    /// validation used by `resolveAgentTaskRoute`; a replacement shell or PID
+    /// generation therefore degrades to `.routeStale` without navigation.
+    func navigateToAgentTaskFromInbox(
+        _ taskID: UUID,
+        openProjectWindow: @escaping @MainActor (URL) -> Void,
+        waitUntilPresented: (@MainActor (ProjectManager) async -> Bool)? = nil,
+        activateApplication: (@MainActor (ProjectManager) -> Void)? = nil
+    ) async -> AgentInboxNavigationResult {
+        guard let initialTask = agentTasks.task(for: taskID) else {
+            return .taskMissing
+        }
+        guard initialTask.lifecycle == .active,
+              initialTask.route.availability != .missing else {
+            return .routeStale
+        }
+
+        let rawURL = URL(
+            fileURLWithPath: initialTask.project.canonicalProjectPath,
+            isDirectory: true
+        )
+        let projectURL = await Task.detached {
+            Self.canonicalProjectURL(rawURL)
+        }.value
+        guard projectURL.path == initialTask.project.canonicalProjectPath,
+              projectURL.path == initialTask.project.canonicalWorktreePath,
+              let manager = projectManager(for: projectURL),
+              manager.rootURL == projectURL else {
+            return .projectUnavailable
+        }
+
+        if initialTask.route.availability == .background {
+            openProjectWindow(projectURL)
+        }
+        let presented = if let waitUntilPresented {
+            await waitUntilPresented(manager)
+        } else {
+            await manager.awaitDialogOwnerWindow() != nil
+        }
+        guard presented else { return .projectUnavailable }
+
+        guard let route = await resolveAgentTaskRoute(taskID),
+              let currentTask = agentTasks.task(for: taskID),
+              currentTask.lifecycle == .active,
+              currentTask.route == route,
+              currentTask.route.availability == .available,
+              let run = currentTask.runs.last,
+              run.liveness == .live,
+              run.endedAt == nil,
+              agentTasks.isExactLiveOwner(
+                  taskID: taskID,
+                  terminalID: route.terminalID,
+                  runID: run.id
+              ) else {
+            return .routeStale
+        }
+
+        let activate: @MainActor () -> Void
+        if let activateApplication {
+            activate = { activateApplication(manager) }
+        } else if let window = manager.dialogOwnerWindow {
+            activate = {
+                if window.isMiniaturized { window.deminiaturize(nil) }
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate()
+            }
+        } else {
+            return .projectUnavailable
+        }
+
+        guard manager.paneManager.selectTerminalTab(
+            route.tabID,
+            in: PaneID(id: route.paneID)
+        ) else {
+            return .routeStale
+        }
+        _ = agentTasks.setReviewed(true, taskID: taskID)
+        activate()
+        return .focused(route)
     }
 
     private func resolvePausedAgentTaskRoute(
