@@ -130,8 +130,10 @@ factory returns. `stop(deadline:)` first closes admission, then starts at most o
 shared adapter cleanup per session and supervises the current set of already
 admitted deliveries outside caller cancellation. Concurrent callers share that
 cleanup while retaining their own return deadlines. Stop preserves the actual
-downstream outcome for work admitted before closing and cancels unfinished cleanup
-at the initiating deadline.
-An adapter cleanup that ignores cancellation remains explicitly tracked in a
-fixed-capacity process-wide quarantine; saturation does not launch additional
-unbounded cleanup tasks. This slice does not claim forced in-process termination.
+downstream outcome for work admitted before closing and cancels the supervised
+adapter task at the initiating deadline. Cleanup capacity is reserved before a
+core-bound session is exposed; construction fails with
+`cleanupCapacityUnavailable` when no permit remains. A cleanup that ignores
+cancellation keeps its pre-reserved process-wide quarantine slot until it exits,
+so quarantine remains bounded without denying cleanup to an already-issued
+session. This slice does not claim forced in-process termination.

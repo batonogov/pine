@@ -326,6 +326,95 @@ struct AgentAdapterRegistryTests {
         _ = replacement
     }
 
+    @Test func cleanupCapacityIsReservedBeforeExposureAndReleasedOnAbandonment() async throws {
+        let setup = try fixtures()
+        let descriptor = setup.adapters[0].0
+        let recorder = FactoryRecorder()
+        let capacity = AdapterCleanupCapacity(limit: 1)
+        let registry = try AgentAdapterRegistry(
+            compiledPresentations: [setup.presentation],
+            compiledAdapters: [(descriptor, RecordingFactory(
+                id: descriptor.factoryID,
+                recorder: recorder,
+                probeResult: try probeResult(
+                    profile: setup.profile,
+                    versions: descriptor.contractVersions
+                )
+            ))],
+            cleanupCapacity: capacity
+        )
+        let firstContract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let secondContract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        var first: (any AgentAdapterSession)? = try await registry.makeSession(
+            contract: firstContract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+        #expect(first != nil)
+        #expect(capacity.reservedCount == 1)
+        await #expect(throws: AdapterSessionError.cleanupCapacityUnavailable) {
+            _ = try await registry.makeSession(
+                contract: secondContract,
+                resumeFrom: nil
+            ) { _ in .accepted }
+        }
+
+        first = nil
+        #expect(capacity.reservedCount == 0)
+        var replacement: (any AgentAdapterSession)? = try await registry.makeSession(
+            contract: secondContract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+        #expect(replacement != nil)
+        #expect(capacity.reservedCount == 1)
+        replacement = nil
+        #expect(capacity.reservedCount == 0)
+    }
+
+    @Test func continuationGateResolvesEveryRegistrationCancellationOrdering() async {
+        let resolvedBeforeRegistration = AsyncContinuationGate()
+        resolvedBeforeRegistration.resolve()
+        resolvedBeforeRegistration.resolve()
+        await resolvedBeforeRegistration.wait()
+        #expect(resolvedBeforeRegistration.isResolved)
+
+        let cancelledBeforeRegistration = AsyncContinuationGate()
+        let cancelledTask = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await cancelledBeforeRegistration.wait()
+        }
+        await cancelledTask.value
+        #expect(cancelledBeforeRegistration.isResolved)
+
+        let registeredBeforeResolution = AsyncContinuationGate()
+        let registeredTask = Task { await registeredBeforeResolution.wait() }
+        for _ in 0..<1_000 where !registeredBeforeResolution.hasRegisteredWaiter {
+            await Task.yield()
+        }
+        #expect(registeredBeforeResolution.hasRegisteredWaiter)
+        registeredBeforeResolution.resolve()
+        registeredBeforeResolution.resolve()
+        await registeredTask.value
+        #expect(registeredBeforeResolution.isResolved)
+
+        for _ in 0..<128 {
+            let raced = AsyncContinuationGate()
+            let task = Task { await raced.wait() }
+            task.cancel()
+            raced.resolve()
+            raced.resolve()
+            await task.value
+            #expect(raced.isResolved)
+        }
+    }
+
     @Test func strictSubsetProbeOfferNegotiatesAndActivates() async throws {
         let setup = try fixtures()
         let base = setup.adapters[0].0
@@ -1400,10 +1489,11 @@ struct AgentAdapterRegistryTests {
         #expect(await stopHold.observedCallerCancellation == false)
     }
 
-    @Test func stopReturnsByDeadlineWhenAdapterDoesNotCooperate() async throws {
+    @Test func stopCancelsCooperativeCleanupAtDeadlineAndReleasesCapacity() async throws {
         let setup = try fixtures()
         let descriptor = setup.adapters[0].0
         let stopHold = StopHold()
+        let capacity = AdapterCleanupCapacity(limit: 1)
         let registry = try AgentAdapterRegistry(
             compiledPresentations: [setup.presentation],
             compiledAdapters: [(descriptor, StopTestFactory(
@@ -1413,9 +1503,15 @@ struct AgentAdapterRegistryTests {
                     versions: descriptor.contractVersions
                 ),
                 stopHold: stopHold
-            ))]
+            ))],
+            cleanupCapacity: capacity
         )
         let contract = try await negotiate(
+            registry,
+            adapterID: descriptor.adapterID,
+            profile: setup.profile
+        )
+        let replacementContract = try await negotiate(
             registry,
             adapterID: descriptor.adapterID,
             profile: setup.profile
@@ -1437,9 +1533,21 @@ struct AgentAdapterRegistryTests {
 
         await stopHold.waitUntilArrived()
         let returnedAt = await stopTask.value
+        await stopHold.waitUntilFinished()
         watchdog.cancel()
         await stopHold.release()
         #expect(returnedAt <= deadline.advanced(by: .seconds(1)))
+        #expect(await stopHold.observedCancellationAtExit == true)
+        #expect(capacity.reservedCount == 0)
+
+        var replacement: (any AgentAdapterSession)? = try await registry.makeSession(
+            contract: replacementContract,
+            resumeFrom: nil
+        ) { _ in .accepted }
+        #expect(replacement != nil)
+        #expect(capacity.reservedCount == 1)
+        replacement = nil
+        #expect(capacity.reservedCount == 0)
     }
 
     @Test func stopPreservesAcceptedOutcomeForAlreadyAdmittedDelivery() async throws {
@@ -2081,7 +2189,9 @@ nonisolated private struct StopTestSession: AgentAdapterSession {
 private actor StopHold {
     private let arrival = TestSignal()
     private let releaseSignal = TestSignal()
+    private let finished = TestSignal()
     private(set) var observedCallerCancellation: Bool?
+    private(set) var observedCancellationAtExit: Bool?
     private(set) var callCount = 0
 
     func wait() async {
@@ -2091,10 +2201,16 @@ private actor StopHold {
         }
         await arrival.signal()
         await releaseSignal.wait()
+        observedCancellationAtExit = Task.isCancelled
+        await finished.signal()
     }
 
     func waitUntilArrived() async {
         await arrival.wait()
+    }
+
+    func waitUntilFinished() async {
+        await finished.wait()
     }
 
     func release() async {

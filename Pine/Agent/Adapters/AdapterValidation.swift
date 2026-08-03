@@ -245,7 +245,7 @@ nonisolated private final class OneShotAuthorityLease: Sendable {
     }
 }
 
-nonisolated private final class AsyncContinuationGate: Sendable {
+nonisolated final class AsyncContinuationGate: Sendable {
     private enum State: Sendable {
         case pendingRegistration
         case registered(CheckedContinuation<Void, Never>)
@@ -254,7 +254,31 @@ nonisolated private final class AsyncContinuationGate: Sendable {
 
     private let state = Mutex(State.pendingRegistration)
 
-    func register(_ continuation: CheckedContinuation<Void, Never>) {
+    var isResolved: Bool {
+        state.withLock {
+            if case .resolved = $0 { return true }
+            return false
+        }
+    }
+
+    var hasRegisteredWaiter: Bool {
+        state.withLock {
+            if case .registered = $0 { return true }
+            return false
+        }
+    }
+
+    func wait() async {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                register(continuation)
+            }
+        } onCancel: {
+            resolve()
+        }
+    }
+
+    private func register(_ continuation: CheckedContinuation<Void, Never>) {
         let resumeImmediately = state.withLock {
             switch $0 {
             case .pendingRegistration:
@@ -463,13 +487,7 @@ private actor SourceSessionState {
         let waiterID = UUID()
         let waiter = AsyncContinuationGate()
         drainWaiters[waiterID] = waiter
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                waiter.register(continuation)
-            }
-        } onCancel: {
-            waiter.resolve()
-        }
+        await waiter.wait()
         drainWaiters.removeValue(forKey: waiterID)
     }
 
@@ -561,13 +579,7 @@ private actor BoundedAdapterStop {
         let waiterID = UUID()
         let waiter = AsyncContinuationGate()
         waiters[waiterID] = waiter
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                waiter.register(continuation)
-            }
-        } onCancel: {
-            waiter.resolve()
-        }
+        await waiter.wait()
         waiters.removeValue(forKey: waiterID)
     }
 
@@ -581,7 +593,91 @@ private actor BoundedAdapterStop {
 }
 
 nonisolated private struct AdapterCleanupTicket: Sendable {
+    let operationID: UUID
     let completion: BoundedAdapterStop
+}
+
+nonisolated final class AdapterCleanupCapacity: Sendable {
+    nonisolated static let shared = AdapterCleanupCapacity(limit: 64)
+    private let limit: Int
+    private let reservations = Mutex(Set<UUID>())
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+    }
+
+    fileprivate func reserve() -> AdapterCleanupPermit? {
+        let reservationID = UUID()
+        let accepted = reservations.withLock {
+            guard $0.count < limit else { return false }
+            $0.insert(reservationID)
+            return true
+        }
+        guard accepted else { return nil }
+        return AdapterCleanupPermit(
+            capacity: self,
+            reservationID: reservationID
+        )
+    }
+
+    fileprivate func release(_ reservationID: UUID) {
+        _ = reservations.withLock { $0.remove(reservationID) }
+    }
+
+    var reservedCount: Int {
+        reservations.withLock { $0.count }
+    }
+}
+
+nonisolated private final class AdapterCleanupPermit: Sendable {
+    private enum State: Sendable {
+        case reserved
+        case submitted(AdapterCleanupTicket)
+        case released
+    }
+
+    let reservationID: UUID
+    private let capacity: AdapterCleanupCapacity
+    private let state = Mutex(State.reserved)
+
+    init(capacity: AdapterCleanupCapacity, reservationID: UUID) {
+        self.capacity = capacity
+        self.reservationID = reservationID
+    }
+
+    func beginSubmission(_ proposed: AdapterCleanupTicket) -> (AdapterCleanupTicket, Bool) {
+        state.withLock {
+            switch $0 {
+            case .reserved:
+                $0 = .submitted(proposed)
+                return (proposed, true)
+            case .submitted(let existing):
+                return (existing, false)
+            case .released:
+                return (proposed, false)
+            }
+        }
+    }
+
+    func release() {
+        let shouldRelease = state.withLock {
+            guard case .released = $0 else {
+                $0 = .released
+                return true
+            }
+            return false
+        }
+        if shouldRelease { capacity.release(reservationID) }
+    }
+
+    deinit {
+        let shouldRelease = state.withLock {
+            guard case .reserved = $0 else { return false }
+            $0 = .released
+            return true
+        }
+        if shouldRelease { capacity.release(reservationID) }
+    }
 }
 
 private actor AdapterStopCountdown {
@@ -602,24 +698,32 @@ private actor AdapterStopCountdown {
 
 private actor AdapterCleanupSupervisor {
     nonisolated static let shared = AdapterCleanupSupervisor()
-    nonisolated static let capacity = 64
     private var operations: [UUID: Task<Void, Never>] = [:]
 
     func submit(
         _ session: any AgentAdapterSession,
+        permit: AdapterCleanupPermit,
         deadline: ContinuousClock.Instant
-    ) -> AdapterCleanupTicket? {
-        guard operations.count < Self.capacity else { return nil }
-        let operationID = UUID()
-        let completion = BoundedAdapterStop()
+    ) -> AdapterCleanupTicket {
+        let proposed = AdapterCleanupTicket(
+            operationID: permit.reservationID,
+            completion: BoundedAdapterStop()
+        )
+        let (ticket, isNew) = permit.beginSubmission(proposed)
+        guard isNew else { return ticket }
         let supervisor = self
         let task = Task.detached {
             await session.stop(deadline: deadline)
-            await completion.complete()
-            await supervisor.finished(operationID)
+            permit.release()
+            await ticket.completion.complete()
+            await supervisor.finished(ticket.operationID)
         }
-        operations[operationID] = task
-        return AdapterCleanupTicket(completion: completion)
+        operations[ticket.operationID] = task
+        return ticket
+    }
+
+    func cancel(_ ticket: AdapterCleanupTicket) {
+        operations[ticket.operationID]?.cancel()
     }
 
     private func finished(_ operationID: UUID) {
@@ -636,6 +740,7 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
     let sink: ValidatingAgentEventSink
     let underlying: any AgentAdapterSession
     let authorityLease: OneShotAuthorityLease
+    let cleanupPermit: AdapterCleanupPermit
 
     func start() async throws {
         guard await state.beginStart() else {
@@ -682,13 +787,12 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
             )
             let ticket = await AdapterCleanupSupervisor.shared.submit(
                 underlying,
+                permit: cleanupPermit,
                 deadline: deadline
             )
-            let adapterWait = ticket.map { ticket in
-                Task.detached {
-                    await ticket.completion.wait()
-                    await countdown.arrive()
-                }
+            let adapterWait = Task.detached {
+                await ticket.completion.wait()
+                await countdown.arrive()
             }
             let drainWait = Task.detached {
                 await state.waitUntilDrained()
@@ -703,7 +807,8 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
                 await boundedWork.complete()
             }
             await boundedWork.wait()
-            adapterWait?.cancel()
+            await AdapterCleanupSupervisor.shared.cancel(ticket)
+            adapterWait.cancel()
             drainWait.cancel()
             timeout.cancel()
             await state.revoke()
@@ -757,10 +862,12 @@ nonisolated struct AgentAdapterRegistry: Sendable {
     private let presentations: [AgentID: AgentPresentationDescriptor]
     private let adapters: [AdapterID: (AdapterDescriptor, any AgentAdapterFactory)]
     private let registryID: UUID
+    private let cleanupCapacity: AdapterCleanupCapacity
 
     init(
         compiledPresentations: [AgentPresentationDescriptor],
-        compiledAdapters: [(AdapterDescriptor, any AgentAdapterFactory)]
+        compiledAdapters: [(AdapterDescriptor, any AgentAdapterFactory)],
+        cleanupCapacity: AdapterCleanupCapacity = .shared
     ) throws {
         guard compiledPresentations.count <= 128, compiledAdapters.count <= 128 else {
             throw AdapterRegistrationError.tooManyEntries
@@ -799,6 +906,7 @@ nonisolated struct AgentAdapterRegistry: Sendable {
         presentations = presentationMap
         adapters = adapterMap
         registryID = UUID()
+        self.cleanupCapacity = cleanupCapacity
     }
 
     private func factory(for contract: NegotiatedAdapterContract) throws -> any AgentAdapterFactory {
@@ -825,6 +933,9 @@ nonisolated struct AgentAdapterRegistry: Sendable {
                   checkpoint.sourceContract == contract else {
                 throw AdapterSessionError.checkpointMismatch
             }
+        }
+        guard let cleanupPermit = cleanupCapacity.reserve() else {
+            throw AdapterSessionError.cleanupCapacityUnavailable
         }
         let authorityGate = checkpoint?.gate ?? contract.freshSessionGate
         let reservationID = UUID()
@@ -866,7 +977,8 @@ nonisolated struct AgentAdapterRegistry: Sendable {
                 state: state,
                 sink: sink,
                 underlying: session,
-                authorityLease: authorityLease
+                authorityLease: authorityLease,
+                cleanupPermit: cleanupPermit
             )
         } catch {
             await state.failStart()

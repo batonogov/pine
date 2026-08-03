@@ -37,6 +37,7 @@ nonisolated enum AdapterSessionError: Error, Equatable, Sendable {
     case checkpointUnavailable
     case checkpointAlreadyConsumed
     case contractAlreadyConsumed
+    case cleanupCapacityUnavailable
     case invalidLifecycle
 }
 nonisolated enum AdapterIngestOutcome: Equatable, Sendable {
