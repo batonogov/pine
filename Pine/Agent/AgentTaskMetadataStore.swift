@@ -16,6 +16,9 @@ nonisolated struct AgentTaskPersistenceLimits: Sendable {
     let maxFileBytes: Int
     let maxAgentIdentifierBytes: Int
     let maxProcessStartBytes: Int
+    let maxVendorProviderBytes: Int
+    let maxVendorIdentityBytes: Int
+    let maxExecutableVersionBytes: Int
     let maxTitleBytes: Int
     let maxObjectiveBytes: Int
 
@@ -31,6 +34,9 @@ nonisolated struct AgentTaskPersistenceLimits: Sendable {
         self.maxFileBytes = max(1_024, maxFileBytes)
         maxAgentIdentifierBytes = 128
         maxProcessStartBytes = 512
+        maxVendorProviderBytes = 128
+        maxVendorIdentityBytes = 1_024
+        maxExecutableVersionBytes = 256
         maxTitleBytes = 256
         maxObjectiveBytes = 2_048
     }
@@ -1951,6 +1957,20 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               run.lastObservedAt >= run.startedAt,
               validOptionalDate(run.endedAt) else {
             return false
+        }
+        if let identity = run.vendorIdentity {
+            guard validText(
+                identity.provider,
+                maximum: limits.maxVendorProviderBytes,
+                allowsEmpty: false
+            ), validText(
+                identity.opaqueIdentifier,
+                maximum: limits.maxVendorIdentityBytes,
+                allowsEmpty: false
+            ), validOptionalText(
+                identity.executableVersion,
+                maximum: limits.maxExecutableVersionBytes
+            ) else { return false }
         }
         if let endedAt = run.endedAt, endedAt < run.startedAt {
             return false

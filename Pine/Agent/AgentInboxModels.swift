@@ -44,6 +44,12 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
             && liveness == .live
             && routeAvailability != .missing
     }
+
+    var canRecover: Bool {
+        !canNavigateToLiveRun
+            && (lifecycle == .paused || lifecycle == .completed)
+            && liveness != .live
+    }
 }
 
 nonisolated struct AgentInboxSection: Identifiable, Equatable, Sendable {

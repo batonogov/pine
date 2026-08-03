@@ -631,6 +631,18 @@ enum Strings {
     static let agentInboxDismiss: LocalizedStringKey = "agentInbox.dismiss"
     static let agentInboxRouteUnavailable: LocalizedStringKey =
         "agentInbox.routeUnavailable"
+    static let agentInboxResumeSession: LocalizedStringKey =
+        "agentInbox.resumeSession"
+    static let agentInboxNewSession: LocalizedStringKey =
+        "agentInbox.newSession"
+    static let agentInboxCopyObjective: LocalizedStringKey =
+        "agentInbox.copyObjective"
+    static let agentInboxOpenedNewSession: LocalizedStringKey =
+        "agentInbox.openedNewSession"
+    static let agentInboxResumedSession: LocalizedStringKey =
+        "agentInbox.resumedSession"
+    static let agentInboxRecoveryUnavailable: LocalizedStringKey =
+        "agentInbox.recoveryUnavailable"
 
     // MARK: - Agent notifications (#1306)
     static let agentNotificationsSettingsTitle: LocalizedStringKey =

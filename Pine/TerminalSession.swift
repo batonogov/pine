@@ -1628,6 +1628,14 @@ struct TerminalSearchMatch {
     let length: Int
 }
 
+/// Optional first child for a terminal tab. Keeping the executable and argv
+/// separate prevents recovery and extension launches from passing through a
+/// login shell or re-parsing opaque values.
+nonisolated struct TerminalInitialProcess: Equatable, Sendable {
+    let executablePath: String
+    let arguments: [String]
+}
+
 // MARK: - Модель вкладки терминала
 
 /// Одна вкладка терминала. Содержит SwiftTerm LocalProcessTerminalView.
@@ -1701,6 +1709,11 @@ final class TerminalTab: Identifiable, Hashable {
     private let agentHandoffSettings: AgentHandoffSettings
     private var processStarted = false
     private var workingDirectory: URL?
+    private var initialProcess: TerminalInitialProcess?
+
+    /// Value-only diagnostic used to prove that recovery keeps argv separate
+    /// before SwiftTerm starts the child.
+    var configuredInitialProcess: TerminalInitialProcess? { initialProcess }
 
     /// KVO observation token for `NSApp.effectiveAppearance` — re-applies
     /// palette and background when the user switches between light/dark mode.
@@ -1836,8 +1849,12 @@ final class TerminalTab: Identifiable, Hashable {
     }
 
     /// Сохраняет рабочую директорию для отложенного запуска
-    func configure(workingDirectory: URL?) {
+    func configure(
+        workingDirectory: URL?,
+        initialProcess: TerminalInitialProcess? = nil
+    ) {
         self.workingDirectory = workingDirectory
+        self.initialProcess = initialProcess
     }
 
     /// Builds the environment dictionary for the terminal child process.
@@ -1933,9 +1950,12 @@ final class TerminalTab: Identifiable, Hashable {
         let envStrings = env.map { "\($0.key)=\($0.value)" }
         let dir = resolveWorkingDirectory()
 
+        let executable = initialProcess?.executablePath
+            ?? shellSettings.resolvedShellPath
+        let arguments = initialProcess?.arguments ?? shellSettings.shellArgs
         terminalView.startProcess(
-            executable: shellSettings.resolvedShellPath,
-            args: shellSettings.shellArgs,
+            executable: executable,
+            args: arguments,
             environment: envStrings,
             execName: nil,
             currentDirectory: dir

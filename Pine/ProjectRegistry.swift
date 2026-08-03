@@ -14,6 +14,16 @@ nonisolated enum AgentInboxNavigationResult: Equatable, Sendable {
     case routeStale
 }
 
+nonisolated enum AgentInboxRecoveryResult: Equatable, Sendable {
+    case openedNewSession(terminalID: UUID)
+    case resumed(terminalID: UUID)
+    case taskMissing
+    case projectUnavailable
+    case unavailable(AgentTaskRecoveryUnavailableReason)
+    case changedWhilePreparing
+    case launchRejected
+}
+
 /// Manages open projects and recent project history.
 /// Each project directory maps to a single ProjectManager instance.
 @MainActor
@@ -43,6 +53,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     private static let maxRecentProjects = 10
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let fileManager: FileManager
+    @ObservationIgnored private let agentRecoveryInspector: AgentTaskRecoveryInspector
 
     /// Serializes settings lifecycle changes so rapid Apply/Reset operations
     /// cannot race each other across projects.
@@ -54,6 +65,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,
         agentTasks: AgentTaskRegistry = AgentTaskRegistry(),
+        agentRecoveryInspector: AgentTaskRecoveryInspector = AgentTaskRecoveryInspector(),
         clearRecentProjects: Bool = CommandLine.arguments.contains(
             "--clear-recent-projects"
         )
@@ -62,6 +74,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         self.agentTasks = agentTasks
         self.defaults = defaults
         self.fileManager = fileManager
+        self.agentRecoveryInspector = agentRecoveryInspector
         if clearRecentProjects {
             defaults.removeObject(forKey: Self.recentProjectsKey)
         }
@@ -381,6 +394,110 @@ final class ProjectRegistry: LSPSettingsObserver {
         _ = agentTasks.setReviewed(true, taskID: taskID)
         activate()
         return .focused(route)
+    }
+
+    /// Recovers a durable task only after an explicit Inbox action. The task,
+    /// project binding, executable and adapter version are inspected again
+    /// after the project window is presented and immediately before launch.
+    func recoverAgentTaskFromInbox(
+        _ taskID: UUID,
+        action: AgentTaskRecoveryAction,
+        openProjectWindow: @escaping @MainActor (URL) -> Void,
+        waitUntilPresented: (@MainActor (ProjectManager) async -> Bool)? = nil,
+        activateApplication: (@MainActor (ProjectManager) -> Void)? = nil
+    ) async -> AgentInboxRecoveryResult {
+        guard let initialTask = agentTasks.task(for: taskID) else {
+            return .taskMissing
+        }
+        let rawURL = URL(
+            fileURLWithPath: initialTask.project.canonicalWorktreePath,
+            isDirectory: true
+        )
+        let projectURL = await Task.detached {
+            Self.canonicalProjectURL(rawURL)
+        }.value
+        guard projectURL.path == initialTask.project.canonicalWorktreePath,
+              let manager = projectManager(for: projectURL),
+              manager.rootURL == projectURL else {
+            return .projectUnavailable
+        }
+
+        if backgroundProjects.contains(projectURL) {
+            openProjectWindow(projectURL)
+        }
+        let presented = if let waitUntilPresented {
+            await waitUntilPresented(manager)
+        } else {
+            await manager.awaitDialogOwnerWindow() != nil
+        }
+        guard presented else { return .projectUnavailable }
+        guard agentTasks.task(for: taskID) == initialTask else {
+            return .changedWhilePreparing
+        }
+
+        let evaluation = await agentRecoveryInspector.inspect(
+            task: initialTask,
+            action: action
+        )
+        guard agentTasks.task(for: taskID) == initialTask else {
+            return .changedWhilePreparing
+        }
+        guard case .ready(let plan) = evaluation else {
+            if case .unavailable(let reason) = evaluation {
+                return .unavailable(reason)
+            }
+            return .launchRejected
+        }
+
+        let result = manager.terminal.launchAgentRecovery(plan)
+        let terminalID: UUID
+        switch result {
+        case .openedNewSession(let id):
+            terminalID = id
+        case .resumed(let id):
+            terminalID = id
+        case .rejected:
+            return .launchRejected
+        }
+        guard let route = resolveAgentRecoveryTerminal(
+            terminalID,
+            in: manager
+        ), manager.paneManager.selectTerminalTab(
+            route.tabID,
+            in: PaneID(id: route.paneID)
+        ) else { return .launchRejected }
+
+        if let activateApplication {
+            activateApplication(manager)
+        } else if let window = manager.dialogOwnerWindow {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+        }
+        return switch result {
+        case .openedNewSession: .openedNewSession(terminalID: terminalID)
+        case .resumed: .resumed(terminalID: terminalID)
+        case .rejected: .launchRejected
+        }
+    }
+
+    private func resolveAgentRecoveryTerminal(
+        _ terminalID: UUID,
+        in manager: ProjectManager
+    ) -> AgentTaskRoute? {
+        var routes: [AgentTaskRoute] = []
+        for paneID in manager.paneManager.terminalPaneIDs {
+            guard manager.paneManager.terminalState(for: paneID)?
+                .terminalTabs.contains(where: { $0.id == terminalID }) == true else {
+                continue
+            }
+            routes.append(AgentTaskRoute(
+                paneID: paneID.id,
+                tabID: terminalID,
+                terminalID: terminalID
+            ))
+        }
+        return routes.count == 1 ? routes[0] : nil
     }
 
     private func matches(

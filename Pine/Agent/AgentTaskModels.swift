@@ -152,10 +152,27 @@ nonisolated enum AgentRunLiveness: String, Codable, Sendable {
 }
 
 /// Opaque vendor identity is an adapter hint, never Pine identity or authority.
-/// It is intentionally excluded from persisted `AgentTaskRun` metadata.
-nonisolated struct AgentVendorSessionIdentity: Equatable, Sendable {
+///
+/// It is persisted only in Pine's mode-0600 task metadata so a documented
+/// adapter can offer an explicit resume after restart. Presentation code must
+/// never render either value, and launch code must pass the identifier as one
+/// argument instead of interpolating it into a shell command.
+nonisolated struct AgentVendorSessionIdentity: Codable, Equatable, Sendable {
     let provider: String
     let opaqueIdentifier: String
+    /// Exact executable version observed when the adapter issued the identity.
+    /// A resume is rejected when the immediately re-probed version differs.
+    let executableVersion: String?
+
+    init(
+        provider: String,
+        opaqueIdentifier: String,
+        executableVersion: String? = nil
+    ) {
+        self.provider = provider
+        self.opaqueIdentifier = opaqueIdentifier
+        self.executableVersion = executableVersion
+    }
 }
 
 /// Process-start evidence that prevents PID reuse from extending an old run.
@@ -245,6 +262,7 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
         case startedAt
         case lastObservedAt
         case endedAt
+        case vendorIdentity
     }
 
     init(_ input: AgentTaskRunInput) {
@@ -271,7 +289,10 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
         startedAt = try values.decode(Date.self, forKey: .startedAt)
         lastObservedAt = try values.decode(Date.self, forKey: .lastObservedAt)
         endedAt = try values.decodeIfPresent(Date.self, forKey: .endedAt)
-        vendorIdentity = nil
+        vendorIdentity = try values.decodeIfPresent(
+            AgentVendorSessionIdentity.self,
+            forKey: .vendorIdentity
+        )
     }
 }
 

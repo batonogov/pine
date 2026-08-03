@@ -87,14 +87,20 @@ final class TerminalPaneState {
     }
 
     @discardableResult
-    func addTab(workingDirectory: URL?) -> TerminalTab {
+    func addTab(
+        workingDirectory: URL?,
+        initialProcess: TerminalInitialProcess? = nil
+    ) -> TerminalTab {
         let number = nextTabNumber
         nextTabNumber += 1
         let tab = TerminalTab(
             name: Strings.terminalNumberedName(number),
             themeSettings: themeSettings
         )
-        tab.configure(workingDirectory: workingDirectory)
+        tab.configure(
+            workingDirectory: workingDirectory,
+            initialProcess: initialProcess
+        )
         onTabCreated?(tab)
         terminalTabs.append(tab)
         activeTerminalID = tab.id

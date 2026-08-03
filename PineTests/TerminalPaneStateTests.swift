@@ -24,6 +24,19 @@ struct TerminalPaneStateTests {
         #expect(state.activeTerminalID == tab.id)
     }
 
+    @Test func addTab_keepsDirectExecutableAndArgumentsSeparate() {
+        let state = TerminalPaneState()
+        let process = TerminalInitialProcess(
+            executablePath: "/usr/local/bin/agent",
+            arguments: ["resume", "opaque; $(never-evaluate)"]
+        )
+        let tab = state.addTab(
+            workingDirectory: URL(fileURLWithPath: "/tmp"),
+            initialProcess: process
+        )
+        #expect(tab.configuredInitialProcess == process)
+    }
+
     @Test func addMultipleTabs_activeIsLast() {
         let state = TerminalPaneState()
         _ = state.addTab(workingDirectory: nil)

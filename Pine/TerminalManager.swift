@@ -8,6 +8,12 @@
 
 import SwiftUI
 
+nonisolated enum AgentTaskRecoveryLaunchResult: Equatable, Sendable {
+    case openedNewSession(terminalID: UUID)
+    case resumed(terminalID: UUID)
+    case rejected
+}
+
 @MainActor
 @Observable
 final class TerminalManager {
@@ -413,6 +419,73 @@ final class TerminalManager {
     }
 
     // MARK: - Tab creation
+
+    /// Applies a freshly inspected recovery plan. Vendor resume is reserved
+    /// and armed before SwiftUI can mount the tab and start its direct child.
+    /// A failed reservation removes the unstarted tab and leaves prior task
+    /// history untouched.
+    func launchAgentRecovery(
+        _ plan: AgentTaskRecoveryPlan
+    ) -> AgentTaskRecoveryLaunchResult {
+        guard let pm = paneManager,
+              let project = agentTaskProject,
+              project == plan.project,
+              project.canonicalWorktreePath
+                == plan.workingDirectory.standardizedFileURL.path else {
+            return .rejected
+        }
+        let initialProcess = plan.process.map {
+            TerminalInitialProcess(
+                executablePath: $0.executablePath,
+                arguments: $0.arguments
+            )
+        }
+        guard let (paneID, tab) = createTerminalTabForRecovery(
+            workingDirectory: plan.workingDirectory,
+            initialProcess: initialProcess
+        ) else { return .rejected }
+
+        switch plan.action {
+        case .startNewSession:
+            return .openedNewSession(terminalID: tab.id)
+        case .resumeVendorSession:
+            let result = prepareAgentResume(taskID: plan.taskID, in: tab)
+            guard case .reserved(let reservation) = result,
+                  agentTaskRegistry?.armLaunch(reservation) == true else {
+                cancelAgentLaunch(in: tab)
+                pm.terminalState(for: paneID)?.removeTab(id: tab.id)
+                return .rejected
+            }
+            return .resumed(terminalID: tab.id)
+        }
+    }
+
+    private func createTerminalTabForRecovery(
+        workingDirectory: URL,
+        initialProcess: TerminalInitialProcess?
+    ) -> (PaneID, TerminalTab)? {
+        guard let pm = paneManager else { return nil }
+        ensureAgentDetectionStarted()
+        if let paneID = lastActiveTerminalPaneID,
+           let state = pm.terminalState(for: paneID) {
+            let tab = state.addTab(
+                workingDirectory: workingDirectory,
+                initialProcess: initialProcess
+            )
+            pm.activePaneID = paneID
+            return (paneID, tab)
+        }
+        let paneID = pm.createTerminalPaneAtBottom(
+            workingDirectory: workingDirectory,
+            initialProcess: initialProcess
+        )
+        lastActiveTerminalPaneID = paneID
+        pm.pruneEmptyEditorLeaves()
+        guard let tab = pm.terminalState(for: paneID)?.activeTab else {
+            return nil
+        }
+        return (paneID, tab)
+    }
 
     /// Creates a terminal tab in the last-used terminal pane.
     /// If no terminal pane exists, creates one below the given editor pane.

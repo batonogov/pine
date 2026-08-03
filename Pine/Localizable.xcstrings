@@ -31643,6 +31643,90 @@
         }
       }
     },
+    "agentInbox.copyObjective": {
+      "comment": "Copies the saved task objective without exposing terminal output.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Ziel kopieren" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Objective" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Copiar objetivo" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier l’objectif" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "目的をコピー" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "목표 복사" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Copiar objetivo" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Скопировать цель" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制目标" } }
+      }
+    },
+    "agentInbox.newSession": {
+      "comment": "Opens a fresh shell in the task worktree; it does not continue the vendor conversation.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Neue Sitzung" } },
+        "en": { "stringUnit": { "state": "translated", "value": "New Session" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Nueva sesión" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nouvelle session" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "新しいセッション" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "새 세션" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nova sessão" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Новая сессия" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建会话" } }
+      }
+    },
+    "agentInbox.openedNewSession": {
+      "comment": "Confirms that recovery opened a fresh shell, not the previous vendor conversation.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Neue Sitzung geöffnet" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Opened a new session" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Se abrió una sesión nueva" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nouvelle session ouverte" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "新しいセッションを開きました" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "새 세션을 열었습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nova sessão aberta" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Открыта новая сессия" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已打开新会话" } }
+      }
+    },
+    "agentInbox.recoveryUnavailable": {
+      "comment": "Shown when task recovery fails validation without exposing sensitive details.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sichere Wiederherstellung nicht verfügbar" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Safe recovery is unavailable" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La recuperación segura no está disponible" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La récupération sécurisée est indisponible" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "安全な復元は利用できません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "안전한 복구를 사용할 수 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A recuperação segura não está disponível" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Безопасное восстановление недоступно" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "安全恢复不可用" } }
+      }
+    },
+    "agentInbox.resumeSession": {
+      "comment": "Explicitly resumes a vendor conversation when a documented adapter validates it.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sitzung fortsetzen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Resume Session" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Reanudar sesión" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Reprendre la session" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "セッションを再開" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "세션 재개" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Retomar sessão" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Продолжить сессию" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "继续会话" } }
+      }
+    },
+    "agentInbox.resumedSession": {
+      "comment": "Confirms a validated vendor conversation resume.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sitzung fortgesetzt" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Session resumed" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Sesión reanudada" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Session reprise" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "セッションを再開しました" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "세션을 재개했습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Sessão retomada" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сессия продолжена" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "会话已继续" } }
+      }
+    },
     "agentInbox.routeUnavailable": {
       "comment": "Shown when an Inbox route cannot be verified.",
       "isCommentAutoGenerated": false,
