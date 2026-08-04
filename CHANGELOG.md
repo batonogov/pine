@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.0.0](https://github.com/batonogov/pine/compare/v1.38.1...v2.0.0) (2026-08-04)
+
+
+### Features
+
+* add polished branded DMG installer ([#1300](https://github.com/batonogov/pine/issues/1300)) ([d2b01a8](https://github.com/batonogov/pine/commit/d2b01a8e5efc1c44897eab6bc225f3f930b067c6))
+* **agent:** add actionable task notifications ([#1322](https://github.com/batonogov/pine/issues/1322)) ([f3c9c14](https://github.com/batonogov/pine/commit/f3c9c147ef1f24c04de35d11899ba5825ec1d792))
+* **agent:** add cross-project Agent Inbox ([#1324](https://github.com/batonogov/pine/issues/1324)) ([a3669ee](https://github.com/batonogov/pine/commit/a3669ee7af0a355c13a02f0acd9ea4fd8e28979c))
+* **agent:** add durable cross-project agent tasks ([#1302](https://github.com/batonogov/pine/issues/1302)) ([#1313](https://github.com/batonogov/pine/issues/1313)) ([dc272b0](https://github.com/batonogov/pine/commit/dc272b031a7fa1aa8587844aadfe24ad67bac6e7))
+* **agent:** add evidence-based completion briefs ([#1325](https://github.com/batonogov/pine/issues/1325)) ([3cac544](https://github.com/batonogov/pine/commit/3cac54427055988d377028d9bb341ea070faa9ec))
+* **agent:** add first-party compatibility matrix ([#1321](https://github.com/batonogov/pine/issues/1321)) ([9e73901](https://github.com/batonogov/pine/commit/9e739010da4843dc558d077e9f5a0a974f847dbb))
+* **agent:** add five first-party detection adapters ([#1328](https://github.com/batonogov/pine/issues/1328)) ([9085385](https://github.com/batonogov/pine/commit/9085385121ba6fe6a56ebd2ee88a37469ed62fcd))
+* **agent:** add isolated worktree workflows ([#1326](https://github.com/batonogov/pine/issues/1326)) ([3702e58](https://github.com/batonogov/pine/commit/3702e58c6c351664a67df3a781d98b632addad84))
+* **agent:** add safe agent task recovery ([#1323](https://github.com/batonogov/pine/issues/1323)) ([e649f46](https://github.com/batonogov/pine/commit/e649f46e7dec3bba447f6d7de9f46f23ffb6d207))
+* **agent:** add vendor-neutral adapter core ([#1303](https://github.com/batonogov/pine/issues/1303)) ([#1314](https://github.com/batonogov/pine/issues/1314)) ([a9a0180](https://github.com/batonogov/pine/commit/a9a0180051244918cd964e5b4fee1f885ebf4ae9))
+* refresh app icon for Pine 2.0 ([#1315](https://github.com/batonogov/pine/issues/1315)) ([3b299c5](https://github.com/batonogov/pine/commit/3b299c5ab2b9848fa3ca57b43656f60c510470af))
+
+
+### Miscellaneous
+
+* prepare Pine 2.0 release candidate ([#1329](https://github.com/batonogov/pine/issues/1329)) ([13e7091](https://github.com/batonogov/pine/commit/13e709130ca846905c14af1f1409b348b45c7f00))
+
 ## [1.38.1](https://github.com/batonogov/pine/compare/v1.38.0...v1.38.1) (2026-07-31)
 
 
