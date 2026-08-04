@@ -54,6 +54,8 @@ final class ProjectRegistry: LSPSettingsObserver {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let fileManager: FileManager
     @ObservationIgnored private let agentRecoveryInspector: AgentTaskRecoveryInspector
+    @ObservationIgnored
+    private var agentTaskProjectsByRoot: [URL: AgentTaskProjectIdentity] = [:]
 
     /// Serializes settings lifecycle changes so rapid Apply/Reset operations
     /// cannot race each other across projects.
@@ -87,7 +89,68 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// Returns nil if the directory no longer exists on disk.
     func projectManager(for projectURL: URL) -> ProjectManager? {
         let canonical = canonicalProjectURL(projectURL)
+        return projectManager(
+            forCanonicalWorktree: canonical,
+            identity: AgentTaskProjectIdentity(
+                canonicalProjectPath: canonical.path,
+                canonicalWorktreePath: canonical.path
+            )
+        )
+    }
+
+    /// Opens a Pine-managed worktree while retaining the owning repository as
+    /// the shared project scope. Sibling worktrees therefore remain comparable
+    /// without sharing terminal, task, event, checkpoint, or notification IDs.
+    func projectManager(for worktree: AgentManagedWorktree) -> ProjectManager? {
+        let repository = canonicalProjectURL(worktree.repositoryRoot)
+        let managedRoot = canonicalProjectURL(worktree.managedRoot)
+        let worktreeRoot = canonicalProjectURL(worktree.worktreeRoot)
+        guard repository == worktree.repositoryRoot.standardizedFileURL,
+              managedRoot == worktree.managedRoot.standardizedFileURL,
+              worktreeRoot == worktree.worktreeRoot.standardizedFileURL,
+              worktreeRoot.deletingLastPathComponent() == managedRoot else {
+            return nil
+        }
+        return projectManager(
+            forCanonicalWorktree: worktreeRoot,
+            identity: AgentTaskProjectIdentity(
+                canonicalProjectPath: repository.path,
+                canonicalWorktreePath: worktreeRoot.path
+            )
+        )
+    }
+
+    /// Reopens a persisted exact project/worktree scope after both paths have
+    /// been canonicalized again. This is used by Inbox navigation and recovery.
+    private func projectManager(
+        for identity: AgentTaskProjectIdentity
+    ) -> ProjectManager? {
+        let project = canonicalProjectURL(URL(
+            fileURLWithPath: identity.canonicalProjectPath,
+            isDirectory: true
+        ))
+        let worktree = canonicalProjectURL(URL(
+            fileURLWithPath: identity.canonicalWorktreePath,
+            isDirectory: true
+        ))
+        guard project.path == identity.canonicalProjectPath,
+              worktree.path == identity.canonicalWorktreePath else {
+            return nil
+        }
+        return projectManager(
+            forCanonicalWorktree: worktree,
+            identity: identity
+        )
+    }
+
+    private func projectManager(
+        forCanonicalWorktree canonical: URL,
+        identity: AgentTaskProjectIdentity
+    ) -> ProjectManager? {
         if let existing = openProjects[canonical] {
+            guard agentTaskProjectsByRoot[canonical] == identity else {
+                return nil
+            }
             // Verify directory still exists when reopening from background
             if backgroundProjects.contains(canonical) {
                 var isDir: ObjCBool = false
@@ -110,10 +173,11 @@ final class ProjectRegistry: LSPSettingsObserver {
                         }
                     }
                     openProjects.removeValue(forKey: canonical)
+                    agentTaskProjectsByRoot.removeValue(forKey: canonical)
                     backgroundProjects.remove(canonical)
                     agentTasks.setWindowOpen(
                         false,
-                        projectPath: canonical.path
+                        project: identity
                     )
                     existing.terminal.setAgentTaskWindowOpen(false)
                     recentProjects.removeAll { $0 == canonical }
@@ -121,7 +185,7 @@ final class ProjectRegistry: LSPSettingsObserver {
                     return nil
                 }
                 backgroundProjects.remove(canonical)
-                agentTasks.setWindowOpen(true, projectPath: canonical.path)
+                agentTasks.setWindowOpen(true, project: identity)
                 existing.terminal.setAgentTaskWindowOpen(true)
             }
             addToRecent(canonical)
@@ -135,17 +199,19 @@ final class ProjectRegistry: LSPSettingsObserver {
             saveRecentProjects()
             return nil
         }
-        let identity = AgentTaskProjectIdentity(
-            canonicalProjectPath: canonical.path,
-            canonicalWorktreePath: canonical.path
-        )
+        var isProjectDir: ObjCBool = false
+        guard fileManager.fileExists(
+            atPath: identity.canonicalProjectPath,
+            isDirectory: &isProjectDir
+        ), isProjectDir.boolValue else { return nil }
         agentTasks.registerProject(identity)
         let pm = ProjectManager(
             lspSettings: lspSettings,
             agentTaskRegistry: agentTasks
         )
-        pm.loadDirectory(url: canonical)
+        pm.loadDirectory(url: canonical, agentTaskProject: identity)
         openProjects[canonical] = pm
+        agentTaskProjectsByRoot[canonical] = identity
         addToRecent(canonical)
         #if DEBUG
         seedAgentRecoveryUITestFixture(
@@ -256,7 +322,9 @@ final class ProjectRegistry: LSPSettingsObserver {
         let canonical = canonicalProjectURL(url)
         guard openProjects[canonical] != nil else { return }
         backgroundProjects.insert(canonical)
-        agentTasks.setWindowOpen(false, projectPath: canonical.path)
+        if let identity = agentTaskProjectsByRoot[canonical] {
+            agentTasks.setWindowOpen(false, project: identity)
+        }
         openProjects[canonical]?.terminal.setAgentTaskWindowOpen(false)
     }
 
@@ -282,11 +350,12 @@ final class ProjectRegistry: LSPSettingsObserver {
                   runID: run.id
               ) else { return false }
         let projectURL = URL(
-            fileURLWithPath: task.project.canonicalProjectPath,
+            fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
         ).standardizedFileURL
         guard !backgroundProjects.contains(projectURL),
               let manager = openProjects[projectURL],
+              agentTaskProjectsByRoot[projectURL] == task.project,
               manager.rootURL == projectURL,
               manager.paneManager.activePaneID.id == task.route.paneID,
               manager.paneManager.terminalState(
@@ -324,7 +393,7 @@ final class ProjectRegistry: LSPSettingsObserver {
                   runID: run.id
               ) else { return nil }
         let rawURL = URL(
-            fileURLWithPath: task.project.canonicalProjectPath,
+            fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
         )
         let projectURL = await Task.detached {
@@ -345,8 +414,8 @@ final class ProjectRegistry: LSPSettingsObserver {
               ),
               !backgroundProjects.contains(projectURL),
               let manager = openProjects[projectURL],
+              agentTaskProjectsByRoot[projectURL] == task.project,
               manager.rootURL == projectURL,
-              projectURL.path == task.project.canonicalProjectPath,
               projectURL.path == task.project.canonicalWorktreePath else {
             return nil
         }
@@ -412,15 +481,14 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
 
         let rawURL = URL(
-            fileURLWithPath: initialTask.project.canonicalProjectPath,
+            fileURLWithPath: initialTask.project.canonicalWorktreePath,
             isDirectory: true
         )
         let projectURL = await Task.detached {
             Self.canonicalProjectURL(rawURL)
         }.value
-        guard projectURL.path == initialTask.project.canonicalProjectPath,
-              projectURL.path == initialTask.project.canonicalWorktreePath,
-              let manager = projectManager(for: projectURL),
+        guard projectURL.path == initialTask.project.canonicalWorktreePath,
+              let manager = projectManager(for: initialTask.project),
               manager.rootURL == projectURL else {
             return .projectUnavailable
         }
@@ -497,7 +565,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             Self.canonicalProjectURL(rawURL)
         }.value
         guard projectURL.path == initialTask.project.canonicalWorktreePath,
-              let manager = projectManager(for: projectURL),
+              let manager = projectManager(for: initialTask.project),
               manager.rootURL == projectURL else {
             return .projectUnavailable
         }
@@ -607,6 +675,7 @@ final class ProjectRegistry: LSPSettingsObserver {
               agentTasks.canResumeTask(task.id),
               !backgroundProjects.contains(projectURL),
               let manager = openProjects[projectURL],
+              agentTaskProjectsByRoot[projectURL] == task.project,
               manager.rootURL == projectURL,
               projectURL.path == task.project.canonicalWorktreePath else {
             return nil
@@ -715,6 +784,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             pm.shutdownLanguageServers()
         }
         openProjects.removeAll()
+        agentTaskProjectsByRoot.removeAll()
         backgroundProjects.removeAll()
         detachedTaskCleanupProjects.removeAll()
         return true

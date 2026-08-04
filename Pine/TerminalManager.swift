@@ -76,14 +76,18 @@ final class TerminalManager {
         self.agentTaskRegistry = agentTaskRegistry
     }
 
-    /// Receives the already canonical root from `ProjectRegistry`; this method
-    /// performs no filesystem work on MainActor.
+    /// Receives an already validated identity from `ProjectRegistry`; this
+    /// method performs no filesystem work on MainActor.
+    func configureAgentTaskProject(_ project: AgentTaskProjectIdentity) {
+        agentTaskProject = project
+    }
+
     func configureAgentTaskProject(_ projectURL: URL) {
         let path = projectURL.standardizedFileURL.path
-        agentTaskProject = AgentTaskProjectIdentity(
+        configureAgentTaskProject(AgentTaskProjectIdentity(
             canonicalProjectPath: path,
             canonicalWorktreePath: path
-        )
+        ))
     }
 
     func setAgentTaskWindowOpen(_ isOpen: Bool) {
