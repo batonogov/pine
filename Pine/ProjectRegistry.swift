@@ -174,12 +174,13 @@ final class ProjectRegistry: LSPSettingsObserver {
                 return
             }
             let startedAt = Date()
+            let terminalID = UUID()
             let context = AgentTaskBridgeContext(
                 project: project,
                 route: AgentTaskRoute(
                     paneID: UUID(),
-                    tabID: UUID(),
-                    terminalID: UUID()
+                    tabID: terminalID,
+                    terminalID: terminalID
                 ),
                 origin: .pineLaunched,
                 observedAt: startedAt
