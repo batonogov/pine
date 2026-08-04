@@ -277,6 +277,22 @@
         "SyntaxHighlighterPerformanceTests/testViewportHighlightVsFullHighlight5000Lines": {
             "baseline_seconds": 0.200,
             "description": "Viewport vs full highlight comparison for 5000 lines"
+        },
+        "AgentWorkflowPerformanceTests/testProcessPolling500Agents": {
+            "baseline_seconds": 1.000,
+            "description": "Reconcile one synthetic process poll containing 500 agents"
+        },
+        "AgentWorkflowPerformanceTests/testEventEnvelopeIngestion1000Events": {
+            "baseline_seconds": 1.000,
+            "description": "Decode 1000 bounded agent provenance envelopes"
+        },
+        "AgentWorkflowPerformanceTests/testRegistryRefresh500Tasks": {
+            "baseline_seconds": 1.000,
+            "description": "Refresh 500 durable agent task runs"
+        },
+        "AgentWorkflowPerformanceTests/testInboxProjectionAndNotificationCoalescing500Tasks": {
+            "baseline_seconds": 1.000,
+            "description": "Project and coalesce Inbox notification transitions for 500 tasks"
         }
     }
 }

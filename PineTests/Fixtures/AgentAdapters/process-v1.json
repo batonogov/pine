@@ -1,5 +1,7 @@
 {
   "schemaVersion": 1,
+  "fixtureVersion": "2026-08-03",
+  "sanitization": "Synthetic commands and lifecycle events only; no prompts, output, credentials, home paths, or repository paths.",
   "agents": [
     {
       "stableIdentifier": "pi",
@@ -36,5 +38,54 @@
       "testedVersion": "0.53.1",
       "commands": ["gemini", "node /opt/homebrew/bin/gemini.js"]
     }
-  ]
+  ],
+  "fakeExecutable": {
+    "protocolVersion": 1,
+    "scenarios": [
+      {
+        "name": "working",
+        "expectedExitStatus": 0,
+        "expectedStates": ["started", "working"]
+      },
+      {
+        "name": "waiting",
+        "expectedExitStatus": 0,
+        "expectedStates": ["started", "waiting"]
+      },
+      {
+        "name": "completion",
+        "expectedExitStatus": 0,
+        "expectedStates": ["started", "completed"]
+      },
+      {
+        "name": "failure",
+        "expectedExitStatus": 17,
+        "expectedStates": ["started", "failed"]
+      },
+      {
+        "name": "malformed",
+        "expectedExitStatus": 0,
+        "expectedStates": [],
+        "malformed": true
+      },
+      {
+        "name": "delayed",
+        "expectedExitStatus": 0,
+        "expectedStates": ["started", "working"],
+        "minimumDelayMilliseconds": 25
+      },
+      {
+        "name": "pid-reuse",
+        "expectedExitStatus": 0,
+        "expectedStates": ["started", "replaced"],
+        "expectedGenerations": [1, 2]
+      },
+      {
+        "name": "process-replacement",
+        "expectedExitStatus": 0,
+        "expectedStates": ["started", "replaced"],
+        "expectedProcessIdentifiers": [4100, 4200]
+      }
+    ]
+  }
 }

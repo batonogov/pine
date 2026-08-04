@@ -5,6 +5,10 @@ that Pine observed a supported executable in one of its terminal process
 trees. It does not mean that Pine can read a provider's private state, infer a
 successful completion, or resume a provider session.
 
+The executable release procedure, automated gate inventory, OS/renderer test
+matrix, and accessibility checklist live in the
+[Pine 2.0 agent release matrix](pine-2.0-agent-release-matrix.md).
+
 The checked-in catalog schema is version 1. The versions below were verified
 on August 3, 2026 against sanitized command-shape fixtures; Pi, Codex, and
 OpenCode were also checked against locally installed binaries. Links point to
