@@ -685,6 +685,130 @@ enum Strings {
     static let agentHistoryRevertButton: LocalizedStringKey = "agentHistory.revertButton"
     static let agentHistoryReviewChangesButton: LocalizedStringKey =
         "agentHistory.reviewChangesButton"
+    static let agentCompletionTitle: LocalizedStringKey =
+        "agentCompletion.title"
+    static let agentCompletionShowButton: LocalizedStringKey =
+        "agentCompletion.showButton"
+    static let agentCompletionChanges: LocalizedStringKey =
+        "agentCompletion.changes"
+    static let agentCompletionVerification: LocalizedStringKey =
+        "agentCompletion.verification"
+    static let agentCompletionCommands: LocalizedStringKey =
+        "agentCompletion.commands"
+    static let agentCompletionGaps: LocalizedStringKey =
+        "agentCompletion.gaps"
+    static let agentCompletionAgentReport: LocalizedStringKey =
+        "agentCompletion.agentReport"
+    static let agentCompletionNoChanges: LocalizedStringKey =
+        "agentCompletion.noChanges"
+    static let agentCompletionNoCommands: LocalizedStringKey =
+        "agentCompletion.noCommands"
+    static let agentCompletionOverlap: LocalizedStringKey =
+        "agentCompletion.overlap"
+
+    static func agentCompletionVerifiedTests(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentCompletion.verifiedTests %lld",
+            fallback: "%lld verified test runs",
+            locale: locale
+        )
+        return String(format: format, locale: locale, Int64(count))
+    }
+
+    static func agentCompletionObserved(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentCompletion.evidence.observed",
+            fallback: "Observed",
+            locale: locale
+        )
+    }
+
+    static func agentCompletionAgentReported(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentCompletion.evidence.agentReported",
+            fallback: "Agent-reported",
+            locale: locale
+        )
+    }
+
+    static func agentCompletionGapProvenance(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentCompletion.gap.provenance",
+            fallback: "Structured provenance is unavailable.",
+            locale: locale
+        )
+    }
+
+    static func agentCompletionGapRecovered(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentCompletion.gap.recovered",
+            fallback: "Provenance was recovered and may be incomplete.",
+            locale: locale
+        )
+    }
+
+    static func agentCompletionGapChanges(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentCompletion.gap.changes",
+            fallback: "No file changes have verified attribution.",
+            locale: locale
+        )
+    }
+
+    static func agentCompletionGapCommands(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentCompletion.gap.commands",
+            fallback: "No commands have structured evidence.",
+            locale: locale
+        )
+    }
+
+    static func agentCompletionGapTests(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentCompletion.gap.tests",
+            fallback: "No successful test run has verified evidence.",
+            locale: locale
+        )
+    }
+
+    static func agentCompletionGapStatistics(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentCompletion.gap.statistics %lld",
+            fallback: "Exact diff statistics are unavailable for %lld files.",
+            locale: locale
+        )
+        return String(format: format, locale: locale, Int64(count))
+    }
+
+    static func agentCompletionGapOverlaps(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentCompletion.gap.overlaps %lld",
+            fallback: "%lld files have overlapping or ambiguous edits.",
+            locale: locale
+        )
+        return String(format: format, locale: locale, Int64(count))
+    }
     static let agentHistoryUndoUnavailable: LocalizedStringKey = "agentHistory.undoUnavailable"
     static let agentHistoryUndoUnavailableReason: LocalizedStringKey = "agentHistory.undoUnavailableReason"
     static let agentHistoryRevertConfirmTitle: LocalizedStringKey = "agentHistory.revertConfirmTitle"

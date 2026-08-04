@@ -255,6 +255,10 @@ nonisolated enum AccessibilityID {
     static let agentHistoryRevertButton = "agentHistoryRevertButton"
     static let agentHistoryUndoUnavailable = "agentHistoryUndoUnavailable"
     static let agentHistoryRevertedBadge = "agentHistoryRevertedBadge"
+    static let agentCompletionBrief = "agentCompletionBrief"
+    static let agentCompletionShowButton = "agentCompletionShowButton"
+    static let agentCompletionReviewChanges =
+        "agentCompletionReviewChanges"
     static let agentHistoryRecoveryNotice = "agentHistoryRecoveryNotice"
     static func agentHistoryRecoveryRecord(_ name: String) -> String {
         "agentHistoryRecoveryRecord_\(name)"

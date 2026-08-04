@@ -773,7 +773,11 @@ struct AgentHistoryPresenter: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $isPresented) {
-                AgentHistoryView(store: store, isPresented: $isPresented)
+                AgentHistoryView(
+                    store: store,
+                    isPresented: $isPresented,
+                    activities: projectManager.agentActivity.actions
+                )
             }
             .onReceive(NotificationCenter.default.publisher(for: .showAgentHistory)) { notification in
                 guard ContentView.shouldHandleTargetedCommand(

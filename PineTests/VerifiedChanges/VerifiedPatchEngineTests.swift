@@ -1054,6 +1054,202 @@ struct VerifiedPatchPreparationTests {
     }
 }
 
+@Suite("Verified Patch Selection")
+struct VerifiedPatchSelectionTests {
+    @Test("One verified hunk reverts without touching accepted hunks")
+    func selectedHunk() throws {
+        let before = file("""
+        human-old
+        stable-0
+        stable-1
+        old-one
+        stable-a
+        stable-b
+        stable-c
+        stable-d
+        stable-e
+        old-two
+        stable-2
+        stable-3
+        """)
+        let after = file("""
+        human-old
+        stable-0
+        stable-1
+        agent-one
+        stable-a
+        stable-b
+        stable-c
+        stable-d
+        stable-e
+        agent-two
+        stable-2
+        stable-3
+        """)
+        let current = file("""
+        human-new
+        stable-0
+        stable-1
+        agent-one
+        stable-a
+        stable-b
+        stable-c
+        stable-d
+        stable-e
+        agent-two
+        stable-2
+        stable-3
+        """)
+        let patch = try singlePatch(before: before, after: after)
+        let prepared = try requirePrepared(
+            patch,
+            files: ["file.txt": current]
+        )
+        let operation = try #require(prepared.operations.first)
+        #expect(operation.mode == .checkedText)
+        #expect(operation.resolvedTextHunks.count == 2)
+
+        let selected = try #require(try? selection(
+            [.hunks(operationID: operation.operationID, indices: [0])],
+            from: prepared
+        ))
+        let outcome = VerifiedPatchEngine.applySelection(
+            selected,
+            currentSnapshot: snapshot(["file.txt": current])
+        )
+        guard case .applied(let result, let previews) = outcome else {
+            Issue.record("Expected selected hunk to apply")
+            return
+        }
+        #expect(text(try #require(result.files["file.txt"])) == """
+        human-new
+        stable-0
+        stable-1
+        old-one
+        stable-a
+        stable-b
+        stable-c
+        stable-d
+        stable-e
+        agent-two
+        stable-2
+        stable-3
+        """)
+        #expect(previews.count == 1)
+        #expect(previews[0].hunks.count == 1)
+    }
+
+    @Test("Concurrent edits to unselected paths are preserved")
+    func unselectedConcurrentPath() throws {
+        let after = file("agent\n")
+        let patch = try singlePatch(before: file("before\n"), after: after)
+        let prepared = try requirePrepared(
+            patch,
+            files: [
+                "file.txt": after,
+                "unrelated.txt": file("first\n")
+            ]
+        )
+        let operation = try #require(prepared.operations.first)
+        let selected = try #require(try? selection(
+            [.operation(operation.operationID)],
+            from: prepared
+        ))
+
+        let outcome = VerifiedPatchEngine.applySelection(
+            selected,
+            currentSnapshot: snapshot([
+                "file.txt": after,
+                "unrelated.txt": file("changed later\n")
+            ])
+        )
+        guard case .applied(let result, _) = outcome else {
+            Issue.record("Expected selection to preserve unrelated path")
+            return
+        }
+        #expect(text(try #require(result.files["file.txt"])) == "before\n")
+        #expect(text(try #require(result.files["unrelated.txt"])) == "changed later\n")
+    }
+
+    @Test("A stale selected path fails atomically")
+    func staleSelectedPath() throws {
+        let after = file("agent\n")
+        let patch = try singlePatch(before: file("before\n"), after: after)
+        let prepared = try requirePrepared(
+            patch,
+            files: ["file.txt": after]
+        )
+        let operation = try #require(prepared.operations.first)
+        let selected = try #require(try? selection(
+            [.operation(operation.operationID)],
+            from: prepared
+        ))
+
+        let outcome = VerifiedPatchEngine.applySelection(
+            selected,
+            currentSnapshot: snapshot([
+                "file.txt": file("changed after review\n")
+            ])
+        )
+        guard case .conflicted(let conflicts) = outcome else {
+            Issue.record("Expected stale selection conflict")
+            return
+        }
+        #expect(conflicts.count == 1)
+        #expect(conflicts[0].reason == .snapshotChangedAfterPreparation)
+    }
+
+    @Test("Exact, empty, duplicate, and unknown selections fail closed")
+    func invalidSelections() throws {
+        let after = file(Data([0x00, 0x01]))
+        let patch = try singlePatch(before: file(Data([0x02])), after: after)
+        let prepared = try requirePrepared(
+            patch,
+            files: ["file.txt": after]
+        )
+        let operation = try #require(prepared.operations.first)
+
+        #expect(selectionResult([], from: prepared) == .emptySelection)
+        #expect(selectionResult([
+            .operation(operation.operationID),
+            .operation(operation.operationID)
+        ], from: prepared) == .duplicateOperation(operation.operationID))
+        #expect(selectionResult([
+            .hunks(operationID: operation.operationID, indices: [0])
+        ], from: prepared) == .hunkSelectionRequiresCheckedText(
+            operation.operationID
+        ))
+
+        let unknownID = VerifiedPatchOperationID(
+            patchID: id(250),
+            transitionIDs: operation.operationID.transitionIDs
+        )
+        #expect(selectionResult([
+            .operation(unknownID)
+        ], from: prepared) == .unknownOperation(unknownID))
+    }
+
+    private func selection(
+        _ choices: [VerifiedPatchReviewSelection],
+        from prepared: PreparedInverse
+    ) throws -> VerifiedPreparedSelection {
+        switch VerifiedPatchEngine.prepareSelection(choices, from: prepared) {
+        case .success(let value): value
+        case .failure(let failure): throw failure
+        }
+    }
+
+    private func selectionResult(
+        _ choices: [VerifiedPatchReviewSelection],
+        from prepared: PreparedInverse
+    ) -> VerifiedPatchSelectionFailure? {
+        switch VerifiedPatchEngine.prepareSelection(choices, from: prepared) {
+        case .success: nil
+        case .failure(let failure): failure
+        }
+    }
+}
+
 @Suite("Verified Patch Budgets")
 struct VerifiedPatchBudgetTests {
     @Test("Per-file byte limit accepts limit and rejects +1")

@@ -719,6 +719,196 @@ nonisolated enum VerifiedPatchEngine {
         )
     }
 
+    /// Produces a bounded selection from a fully prepared inverse.
+    ///
+    /// This is still display/simulation data, not filesystem authority. A
+    /// live coordinator must revalidate the complete owner-private evidence,
+    /// root, HEAD, index, and selected path descriptors before one atomic
+    /// transaction. Unselected operations are accepted by omission and are
+    /// never rewritten, staged, checked out, or discarded.
+    static func prepareSelection(
+        _ selections: [VerifiedPatchReviewSelection],
+        from prepared: PreparedInverse
+    ) -> Result<VerifiedPreparedSelection, VerifiedPatchSelectionFailure> {
+        do {
+            try validatePrepared(prepared)
+        } catch {
+            return .failure(.invalidPreparedInverse)
+        }
+        guard !selections.isEmpty else {
+            return .failure(.emptySelection)
+        }
+        guard selections.count <= VerifiedPatchLimits.maximumOperationCount else {
+            return .failure(.resourceLimitExceeded)
+        }
+
+        var seen: Set<VerifiedPatchOperationID> = []
+        var selectedOperations: [VerifiedPreparedInverseOperation] = []
+        for selection in selections {
+            let operationID: VerifiedPatchOperationID = switch selection {
+            case .operation(let id): id
+            case .hunks(let id, _): id
+            }
+            guard seen.insert(operationID).inserted else {
+                return .failure(.duplicateOperation(operationID))
+            }
+            guard let operation = prepared.operations.first(where: {
+                $0.operationID == operationID
+            }) else {
+                return .failure(.unknownOperation(operationID))
+            }
+            switch selection {
+            case .operation:
+                selectedOperations.append(operation)
+            case .hunks(_, let indices):
+                switch selectedTextOperation(
+                    operation,
+                    indices: indices
+                ) {
+                case .success(let selected):
+                    selectedOperations.append(selected)
+                case .failure(let failure):
+                    return .failure(failure)
+                }
+            }
+        }
+        return .success(VerifiedPreparedSelection(
+            prepared: prepared,
+            selections: selections,
+            operations: selectedOperations
+        ))
+    }
+
+    /// Recomputes the selection, checks its exact prepared shape, and applies
+    /// it to a fresh value snapshot atomically. A stale selected path fails;
+    /// concurrent changes to unselected paths are preserved byte-for-byte.
+    static func applySelection(
+        _ selection: VerifiedPreparedSelection,
+        currentSnapshot: VerifiedPatchWorkspaceSnapshot
+    ) -> VerifiedCheckedSelectionResult {
+        do {
+            try validateSnapshot(currentSnapshot)
+        } catch {
+            return .conflicted([VerifiedPatchConflict(
+                operationID: nil,
+                path: nil,
+                reason: .invalidCurrentSnapshot
+            )])
+        }
+        let rebuilt: VerifiedPreparedSelection
+        switch prepareSelection(
+            selection.selections,
+            from: selection.prepared
+        ) {
+        case .failure(let failure):
+            return .invalid(failure)
+        case .success(let value):
+            rebuilt = value
+        }
+        guard rebuilt == selection else {
+            return .invalid(.invalidPreparedInverse)
+        }
+
+        for operation in selection.operations {
+            for expectation in operation.expectations {
+                guard currentSnapshot.files[expectation.path]
+                        == expectation.state else {
+                    return .conflicted([VerifiedPatchConflict(
+                        operationID: operation.operationID,
+                        path: expectation.path,
+                        reason: .snapshotChangedAfterPreparation
+                    )])
+                }
+            }
+        }
+        var transformed = currentSnapshot.files
+        for operation in selection.operations {
+            for result in operation.results {
+                transformed[result.path] = result.state
+            }
+        }
+        let finalSnapshot = VerifiedPatchWorkspaceSnapshot(files: transformed)
+        do {
+            try validateSnapshot(finalSnapshot)
+        } catch {
+            return .conflicted([VerifiedPatchConflict(
+                operationID: nil,
+                path: nil,
+                reason: .resourceLimitExceeded
+            )])
+        }
+        return .applied(
+            snapshot: finalSnapshot,
+            previews: selection.operations.map(\.preview)
+        )
+    }
+
+    private static func selectedTextOperation(
+        _ operation: VerifiedPreparedInverseOperation,
+        indices: Set<Int>
+    ) -> Result<VerifiedPreparedInverseOperation, VerifiedPatchSelectionFailure> {
+        guard operation.mode == .checkedText else {
+            return .failure(.hunkSelectionRequiresCheckedText(
+                operation.operationID
+            ))
+        }
+        guard !indices.isEmpty else {
+            return .failure(.emptyHunkSelection(operation.operationID))
+        }
+        let sortedIndices = indices.sorted()
+        for index in sortedIndices where
+            !operation.resolvedTextHunks.indices.contains(index) {
+            return .failure(.invalidHunkIndex(
+                operationID: operation.operationID,
+                index: index
+            ))
+        }
+        guard operation.expectations.count == 1,
+              operation.results.count == 1,
+              let current = operation.expectations[0].state,
+              current.kind == .regularFile else {
+            return .failure(.invalidPreparedInverse)
+        }
+        let hunks = sortedIndices.map { operation.resolvedTextHunks[$0] }
+        guard let content = VerifiedTextPatch.applyingPreparedHunks(
+            hunks,
+            to: current.content
+        ) else {
+            return .failure(.resourceLimitExceeded)
+        }
+        let result = VerifiedPatchFileState(
+            content: content,
+            kind: current.kind,
+            posixMode: current.posixMode
+        )
+        let originalPreview = operation.preview
+        guard originalPreview.hunks.count
+                == operation.resolvedTextHunks.count else {
+            return .failure(.invalidPreparedInverse)
+        }
+        let preview = VerifiedInverseOperationPreview(
+            operationID: originalPreview.operationID,
+            kind: .applyTextHunks,
+            sourcePath: originalPreview.sourcePath,
+            destinationPath: originalPreview.destinationPath,
+            expectedCurrent: current.stateIdentity,
+            result: result.stateIdentity,
+            hunks: sortedIndices.map { originalPreview.hunks[$0] }
+        )
+        return .success(VerifiedPreparedInverseOperation(
+            operationID: operation.operationID,
+            kind: operation.kind,
+            mode: .checkedText,
+            expectations: operation.expectations,
+            results: [VerifiedPreparedPathResult(
+                path: operation.results[0].path,
+                state: result
+            )],
+            resolvedTextHunks: hunks,
+            preview: preview
+        ))
+    }
+
     /// Revalidates both authorship and nested journal audit evidence.
     ///
     /// Success is still not mutation authority. The caller must continue into
