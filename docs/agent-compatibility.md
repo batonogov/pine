@@ -23,6 +23,11 @@ the upstream projects used to verify the remaining current releases.
 | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | `github-copilot-cli`, `copilot` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
 | [Aider](https://github.com/Aider-AI/aider) | `aider` | 0.86.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `gemini` | 0.53.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
+| [Amp](https://ampcode.com/manual) | `amp` | 0.0.1785747753-g51f676 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Streaming JSON was reviewed but is disabled until Pine can authenticate and bind the launch transport. |
+| [Cursor Agent](https://docs.cursor.com/en/cli/overview) | `cursor-agent` | 2026.07.23-e383d2b | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | JSON is limited to Pine-launched print mode; interactive sessions stay detected-only and `--force` is never enabled. |
+| [Goose](https://github.com/aaif-goose/goose) | `goose` | 1.45.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | ACP was reviewed but is disabled until Pine provides authenticated, bounded stdio negotiation. |
+| [Qwen Code](https://github.com/QwenLM/qwen-code) | `qwen` | 0.21.4 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Machine-readable output was reviewed but is not trusted from an ambient terminal. |
+| [Crush](https://github.com/charmbracelet/crush) | `crush` | 0.88.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Workspace/SSE is experimental and not enabled without a registry-minted authenticated connection. |
 
 ## Tier meanings
 
@@ -49,25 +54,24 @@ Accordingly, the compatibility layer must not trigger a success notification,
 resume an old conversation, or mark an attention request solely from process
 timing or terminal text.
 
-## Pre-freeze candidate evaluation
+## Structured-interface evaluation
 
-On August 3, 2026, Pine also evaluated the five actively maintained macOS
-terminal agents named in issue #1304. A candidate qualifies for a separate
-adapter review when it has a documented macOS CLI, a stable executable name,
-current first-party documentation or releases, and a credible integration path
-that does not require scraping ANSI presentation. Qualification does not grant
-support in Pine 2.0; each adapter must pass the same offline fixtures,
-provenance, fail-closed, privacy, and compatibility gates as the initial seven.
+On August 3, 2026, Pine evaluated the five additional macOS terminal agents
+named in issue #1304. Their exact executable aliases are now first-party
+detected adapters. The reviewed structured interfaces remain disabled because
+Pine does not yet launch and authenticate those transports. This prevents
+ambient terminal JSON, local services, private databases, configuration, logs,
+and desktop notifications from acquiring authority.
 
-| Candidate | Evidence reviewed | Evaluation | Follow-up |
+| Adapter | Evidence reviewed | Pine 2.0 decision | Tracking |
 | --- | --- | --- | --- |
-| Amp | Documented `amp` CLI and newline-delimited streaming JSON input/output | Qualifies; assess structured tier, keep detected fallback | [#1316](https://github.com/batonogov/pine/issues/1316) |
-| Cursor Agent | Documented `cursor-agent`, version output, opaque resume IDs, and JSON/stream-JSON print modes | Qualifies; structured print mode only, interactive mode detected unless documented | [#1317](https://github.com/batonogov/pine/issues/1317) |
-| Goose | macOS `goose` CLI, active v1.45.0 release, and documented ACP server support | Qualifies; prefer standards-based ACP negotiation | [#1318](https://github.com/batonogov/pine/issues/1318) |
-| Qwen Code | macOS `qwen` CLI and active v0.21.4 release | Qualifies for detected tier; no TUI/slash-command scraping | [#1319](https://github.com/batonogov/pine/issues/1319) |
-| Crush | macOS `crush` CLI, active v0.88.0 release, and documented local workspace/SSE design | Qualifies for protocol review; experimental or unauthenticated paths remain detected | [#1320](https://github.com/batonogov/pine/issues/1320) |
+| Amp | Documented `amp` CLI and newline-delimited streaming JSON input/output | Detected; structured transport disabled | [#1316](https://github.com/batonogov/pine/issues/1316) |
+| Cursor Agent | Documented `cursor-agent`, version output, opaque resume IDs, and JSON/stream-JSON print modes | Detected; explicit resume and structured print transport disabled | [#1317](https://github.com/batonogov/pine/issues/1317) |
+| Goose | macOS `goose` CLI, v1.45.0, and documented ACP server support | Detected; ACP transport disabled | [#1318](https://github.com/batonogov/pine/issues/1318) |
+| Qwen Code | macOS `qwen` CLI, v0.21.4, and documented JSON/stream-JSON output | Detected; structured transport disabled | [#1319](https://github.com/batonogov/pine/issues/1319) |
+| Crush | macOS `crush` CLI, v0.88.0, and documented local workspace/SSE design | Detected; experimental server transport disabled | [#1320](https://github.com/batonogov/pine/issues/1320) |
 
-The review used the candidates' official manuals or repositories linked in
-their follow-up issues. They remain outside the initial Pine 2.0 compatibility
-set so the first-party matrix can be reviewed and shipped without silently
-expanding its trust surface.
+The sanitized protocol fixture covers documented messages plus malformed,
+reordered, replay/duplicate where applicable, oversized, and future inputs.
+Every case remains process-only and therefore cannot emit waiting or successful
+completion, persist an opaque provider ID, or resume a provider session.

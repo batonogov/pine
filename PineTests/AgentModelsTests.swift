@@ -22,6 +22,11 @@ struct AgentModelsTests {
         #expect(AgentType.pi.displayName == "Pi")
         #expect(AgentType.openCode.displayName == "OpenCode")
         #expect(AgentType.gemini.displayName == "Gemini CLI")
+        #expect(AgentType.amp.displayName == "Amp")
+        #expect(AgentType.cursorAgent.displayName == "Cursor Agent")
+        #expect(AgentType.goose.displayName == "Goose")
+        #expect(AgentType.qwenCode.displayName == "Qwen Code")
+        #expect(AgentType.crush.displayName == "Crush")
         #expect(AgentType.generic(name: "Custom").displayName == "Custom")
     }
 
@@ -35,13 +40,19 @@ struct AgentModelsTests {
         #expect(AgentType.pi.cliNames == ["pi"])
         #expect(AgentType.openCode.cliNames == ["opencode"])
         #expect(AgentType.gemini.cliNames == ["gemini"])
+        #expect(AgentType.amp.cliNames == ["amp"])
+        #expect(AgentType.cursorAgent.cliNames == ["cursor-agent"])
+        #expect(AgentType.goose.cliNames == ["goose"])
+        #expect(AgentType.qwenCode.cliNames == ["qwen"])
+        #expect(AgentType.crush.cliNames == ["crush"])
         // Generic agents have no known CLI names.
         #expect(AgentType.generic(name: "Custom").cliNames.isEmpty)
     }
 
     @Test func color_isDistinctAndNotClearPerAgent() {
         let agents: [AgentType] = [
-            .claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini, .generic(name: "X"),
+            .claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
+            .amp, .cursorAgent, .goose, .qwenCode, .crush, .generic(name: "X"),
         ]
 
         // Every case must resolve to a concrete, non-transparent color.
@@ -52,6 +63,7 @@ struct AgentModelsTests {
         // Known agents must return distinct colors so UI badges stay distinguishable.
         let known = [
             AgentType.claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
+            .amp, .cursorAgent, .goose, .qwenCode, .crush,
         ]
         for i in known.indices {
             for j in (i + 1)..<known.count {
@@ -90,6 +102,14 @@ struct AgentModelsTests {
         #expect(AgentType.resolve(fromProcessName: "gemini") == .gemini)
     }
 
+    @Test func resolveReturnsExtendedFirstPartyAgentsForExactNames() {
+        #expect(AgentType.resolve(fromProcessName: "amp") == .amp)
+        #expect(AgentType.resolve(fromProcessName: "cursor-agent") == .cursorAgent)
+        #expect(AgentType.resolve(fromProcessName: "goose") == .goose)
+        #expect(AgentType.resolve(fromProcessName: "qwen") == .qwenCode)
+        #expect(AgentType.resolve(fromProcessName: "crush") == .crush)
+    }
+
     @Test func pi_isDistinctFromGenericNamedPi() {
         // .pi is a first-class case and must not collapse into a generic
         // agent whose free-form name happens to be "pi".
@@ -103,6 +123,11 @@ struct AgentModelsTests {
         #expect(AgentType.resolve(fromProcessName: "PI") == .pi)
         #expect(AgentType.resolve(fromProcessName: "OPENCODE") == .openCode)
         #expect(AgentType.resolve(fromProcessName: "GEMINI") == .gemini)
+        #expect(AgentType.resolve(fromProcessName: "AMP") == .amp)
+        #expect(AgentType.resolve(fromProcessName: "CURSOR-AGENT") == .cursorAgent)
+        #expect(AgentType.resolve(fromProcessName: "GOOSE") == .goose)
+        #expect(AgentType.resolve(fromProcessName: "QWEN") == .qwenCode)
+        #expect(AgentType.resolve(fromProcessName: "CRUSH") == .crush)
     }
 
     @Test func resolve_trimsWhitespace() {

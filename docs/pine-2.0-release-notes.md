@@ -5,13 +5,16 @@ while preserving explicit trust and privacy boundaries.
 
 ## Agent compatibility foundation
 
-- Recognizes Pi, Codex, Claude Code, OpenCode, GitHub Copilot CLI, Aider, and
-  Gemini CLI by exact executable aliases.
+- Recognizes Pi, Codex, Claude Code, OpenCode, GitHub Copilot CLI, Aider,
+  Gemini CLI, Amp, Cursor Agent, Goose, Qwen Code, and Crush by exact
+  executable aliases.
 - Keeps unsupported and lookalike executables on the generic terminal path.
 - Separates presentation metadata from capability negotiation so detection
   cannot silently grant structured access.
 - Ships sanitized, versioned compatibility fixtures and documents notification,
   launch, resume, and lifecycle limitations.
+- Keeps reviewed Amp/Cursor/Goose/Qwen/Crush structured interfaces disabled
+  until Pine can authenticate and bind each Pine-launched transport.
 
 See the [CLI agent compatibility matrix](agent-compatibility.md) for verified
 versions, support tiers, signal sources, trust levels, and current limitations,

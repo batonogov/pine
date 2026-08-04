@@ -211,6 +211,11 @@ extension AgentType {
         case .pi: "pi"
         case .openCode: "openCode"
         case .gemini: "gemini"
+        case .amp: "amp"
+        case .cursorAgent: "cursorAgent"
+        case .goose: "goose"
+        case .qwenCode: "qwenCode"
+        case .crush: "crush"
         case .generic(let name): "generic:\(name)"
         }
     }
@@ -229,6 +234,11 @@ extension AgentType {
         case "pi": self = .pi
         case "openCode": self = .openCode
         case "gemini": self = .gemini
+        case "amp": self = .amp
+        case "cursorAgent": self = .cursorAgent
+        case "goose": self = .goose
+        case "qwenCode": self = .qwenCode
+        case "crush": self = .crush
         default:
             guard stableIdentifier.hasPrefix("generic:") else { return nil }
             let name = String(stableIdentifier.dropFirst("generic:".count))

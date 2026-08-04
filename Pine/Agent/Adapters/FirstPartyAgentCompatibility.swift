@@ -109,6 +109,41 @@ nonisolated enum FirstPartyAgentCompatibilityCatalog {
             upstream: "https://github.com/google-gemini/gemini-cli",
             versions: ["0.53.1"]
         ),
+        reviewedRecord(
+            id: "amp",
+            name: "Amp",
+            aliases: ["amp"],
+            source: ("https://ampcode.com/manual", ["0.0.1785747753-g51f676"]),
+            interface: "--execute --stream-json / --stream-json-input"
+        ),
+        reviewedRecord(
+            id: "cursorAgent",
+            name: "Cursor Agent",
+            aliases: ["cursor-agent"],
+            source: ("https://docs.cursor.com/en/cli/overview", ["2026.07.23-e383d2b"]),
+            interface: "--print --output-format json|stream-json"
+        ),
+        reviewedRecord(
+            id: "goose",
+            name: "Goose",
+            aliases: ["goose"],
+            source: ("https://github.com/aaif-goose/goose", ["1.45.0"]),
+            interface: "ACP over stdio"
+        ),
+        reviewedRecord(
+            id: "qwenCode",
+            name: "Qwen Code",
+            aliases: ["qwen"],
+            source: ("https://github.com/QwenLM/qwen-code", ["0.21.4"]),
+            interface: "--output-format json|stream-json"
+        ),
+        reviewedRecord(
+            id: "crush",
+            name: "Crush",
+            aliases: ["crush"],
+            source: ("https://github.com/charmbracelet/crush", ["0.88.0"]),
+            interface: "experimental workspace SSE"
+        ),
     ]
 
     static func record(stableIdentifier: String) -> FirstPartyAgentCompatibilityRecord? {
@@ -140,6 +175,31 @@ nonisolated enum FirstPartyAgentCompatibilityCatalog {
             resumeCapability: .newSessionOnly,
             notificationAccuracy: .processTerminationOnly,
             limitations: "No documented structured event channel is enabled; attention and completion remain unverified."
+        )
+    }
+
+    private static func reviewedRecord(
+        id: String,
+        name: String,
+        aliases: Set<String>,
+        source: (upstream: String, versions: [String]),
+        interface: String
+    ) -> FirstPartyAgentCompatibilityRecord {
+        FirstPartyAgentCompatibilityRecord(
+            schemaVersion: schemaVersion,
+            stableIdentifier: id,
+            displayName: name,
+            executableAliases: aliases,
+            upstreamURL: source.upstream,
+            testedVersions: source.versions,
+            supportTier: .detected,
+            eventSource: .processSnapshot,
+            trustLevel: .observedProcessGeneration,
+            launchCapability: .manualTerminal,
+            resumeCapability: .newSessionOnly,
+            notificationAccuracy: .processTerminationOnly,
+            limitations: "Reviewed \(interface) is not enabled until Pine can authenticate and bind "
+                + "its transport; malformed, reordered, oversized, future-schema, and ambient events fail closed."
         )
     }
 }

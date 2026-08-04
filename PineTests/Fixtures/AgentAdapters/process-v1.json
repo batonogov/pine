@@ -37,6 +37,31 @@
       "stableIdentifier": "gemini",
       "testedVersion": "0.53.1",
       "commands": ["gemini", "node /opt/homebrew/bin/gemini.js"]
+    },
+    {
+      "stableIdentifier": "amp",
+      "testedVersion": "0.0.1785747753-g51f676",
+      "commands": ["amp", "/opt/homebrew/bin/amp"]
+    },
+    {
+      "stableIdentifier": "cursorAgent",
+      "testedVersion": "2026.07.23-e383d2b",
+      "commands": ["cursor-agent", "/usr/local/bin/cursor-agent"]
+    },
+    {
+      "stableIdentifier": "goose",
+      "testedVersion": "1.45.0",
+      "commands": ["goose", "/opt/homebrew/bin/goose"]
+    },
+    {
+      "stableIdentifier": "qwenCode",
+      "testedVersion": "0.21.4",
+      "commands": ["qwen", "node /opt/homebrew/bin/qwen.js"]
+    },
+    {
+      "stableIdentifier": "crush",
+      "testedVersion": "0.88.0",
+      "commands": ["crush", "/opt/homebrew/bin/crush"]
     }
   ],
   "fakeExecutable": {

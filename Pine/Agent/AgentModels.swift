@@ -30,6 +30,16 @@ enum AgentType: Equatable, Sendable {
     case openCode
     /// Google Gemini CLI (`gemini`).
     case gemini
+    /// Sourcegraph Amp (`amp`).
+    case amp
+    /// Cursor Agent CLI (`cursor-agent`).
+    case cursorAgent
+    /// Goose (`goose`).
+    case goose
+    /// Qwen Code (`qwen`).
+    case qwenCode
+    /// Charmbracelet Crush (`crush`).
+    case crush
     /// Any other/unrecognised agent, identified by a free-form name.
     case generic(name: String)
 
@@ -43,6 +53,11 @@ enum AgentType: Equatable, Sendable {
         case .pi: "Pi"
         case .openCode: "OpenCode"
         case .gemini: "Gemini CLI"
+        case .amp: "Amp"
+        case .cursorAgent: "Cursor Agent"
+        case .goose: "Goose"
+        case .qwenCode: "Qwen Code"
+        case .crush: "Crush"
         case .generic(let name): name
         }
     }
@@ -69,6 +84,11 @@ enum AgentType: Equatable, Sendable {
         case .pi: .systemTeal
         case .openCode: .systemPink
         case .gemini: .systemIndigo
+        case .amp: .systemMint
+        case .cursorAgent: .systemCyan
+        case .goose: .systemYellow
+        case .qwenCode: .systemRed
+        case .crush: .systemBrown
         case .generic: .systemGray
         }
     }

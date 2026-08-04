@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "2026-08-03",
+  "maximumEventBytes": 65536,
+  "sanitization": "Synthetic envelopes only; content fields, credentials, paths, provider state, and opaque identifiers are omitted.",
+  "agents": [
+    {
+      "stableIdentifier": "amp",
+      "authority": "pine-launched-authenticated-transport-only",
+      "interface": "stream-json",
+      "cases": [
+        {"name": "documented-init", "inputBytes": 48, "wire": "{\"type\":\"system\",\"subtype\":\"init\"}"},
+        {"name": "documented-completion", "inputBytes": 53, "wire": "{\"type\":\"result\",\"subtype\":\"success\"}"},
+        {"name": "malformed", "inputBytes": 1, "wire": "{"},
+        {"name": "reordered", "inputBytes": 53, "wire": "{\"type\":\"result\",\"subtype\":\"success\"}"},
+        {"name": "oversized", "inputBytes": 65537, "wire": "{\"type\":\"assistant\"}"},
+        {"name": "future-schema", "inputBytes": 38, "wire": "{\"type\":\"pine_future_event\"}"}
+      ]
+    },
+    {
+      "stableIdentifier": "cursorAgent",
+      "authority": "pine-launched-authenticated-transport-only",
+      "interface": "print-stream-json",
+      "cases": [
+        {"name": "version", "inputBytes": 24, "wire": "2026.07.23-e383d2b"},
+        {"name": "json", "inputBytes": 35, "wire": "{\"type\":\"result\",\"subtype\":\"success\"}"},
+        {"name": "stream-json", "inputBytes": 35, "wire": "{\"type\":\"system\",\"subtype\":\"init\"}"},
+        {"name": "resume-explicit", "inputBytes": 29, "wire": "{\"resume\":\"opaque-redacted\"}"},
+        {"name": "malformed", "inputBytes": 1, "wire": "{"},
+        {"name": "oversized", "inputBytes": 65537, "wire": "{\"type\":\"assistant\"}"},
+        {"name": "future-schema", "inputBytes": 31, "wire": "{\"type\":\"future\"}"}
+      ]
+    },
+    {
+      "stableIdentifier": "goose",
+      "authority": "pine-launched-authenticated-transport-only",
+      "interface": "acp-stdio",
+      "cases": [
+        {"name": "negotiation", "inputBytes": 57, "wire": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}"},
+        {"name": "ordering", "inputBytes": 61, "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"session/notification\"}"},
+        {"name": "replay", "inputBytes": 49, "wire": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"},
+        {"name": "malformed", "inputBytes": 1, "wire": "{"},
+        {"name": "oversized", "inputBytes": 65537, "wire": "{\"jsonrpc\":\"2.0\"}"},
+        {"name": "future-schema", "inputBytes": 55, "wire": "{\"jsonrpc\":\"3.0\",\"method\":\"future/event\"}"}
+      ]
+    },
+    {
+      "stableIdentifier": "qwenCode",
+      "authority": "pine-launched-authenticated-transport-only",
+      "interface": "stream-json",
+      "cases": [
+        {"name": "version", "inputBytes": 6, "wire": "0.21.4"},
+        {"name": "process", "inputBytes": 18, "wire": "{\"type\":\"system\"}"},
+        {"name": "documented-stream", "inputBytes": 21, "wire": "{\"type\":\"assistant\"}"},
+        {"name": "malformed", "inputBytes": 1, "wire": "{"},
+        {"name": "reordered", "inputBytes": 18, "wire": "{\"type\":\"result\"}"},
+        {"name": "oversized", "inputBytes": 65537, "wire": "{\"type\":\"assistant\"}"},
+        {"name": "future-schema", "inputBytes": 18, "wire": "{\"type\":\"future\"}"}
+      ]
+    },
+    {
+      "stableIdentifier": "crush",
+      "authority": "pine-launched-authenticated-transport-only",
+      "interface": "experimental-workspace-sse",
+      "cases": [
+        {"name": "session", "inputBytes": 41, "wire": "event: session\\ndata: {\"state\":\"busy\"}\\n\\n"},
+        {"name": "reconnect", "inputBytes": 24, "wire": "id: 2\\nevent: workspace\\n\\n"},
+        {"name": "duplicate", "inputBytes": 24, "wire": "id: 1\\nevent: workspace\\n\\n"},
+        {"name": "reordered", "inputBytes": 24, "wire": "id: 0\\nevent: workspace\\n\\n"},
+        {"name": "malformed", "inputBytes": 5, "wire": "data:"},
+        {"name": "oversized", "inputBytes": 65537, "wire": "event: workspace"},
+        {"name": "future-schema", "inputBytes": 21, "wire": "event: future\\n\\n"}
+      ]
+    }
+  ]
+}
