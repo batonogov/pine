@@ -1449,10 +1449,17 @@ final class PaneManager {
     /// Adds a terminal tab through the pane owner so creation and focus
     /// routing cannot disagree about the active pane.
     @discardableResult
-    func addTerminalTab(in paneID: PaneID, workingDirectory: URL?) -> TerminalTab? {
+    func addTerminalTab(
+        in paneID: PaneID,
+        workingDirectory: URL?,
+        initialProcess: TerminalInitialProcess? = nil
+    ) -> TerminalTab? {
         guard let terminalState = terminalStates[paneID] else { return nil }
         activePaneID = paneID
-        let tab = terminalState.addTab(workingDirectory: workingDirectory)
+        let tab = terminalState.addTab(
+            workingDirectory: workingDirectory,
+            initialProcess: initialProcess
+        )
         recordTabActivation(paneID: paneID, tabID: tab.id, contentType: .terminal)
         return tab
     }
@@ -1487,7 +1494,10 @@ final class PaneManager {
     /// Creates a terminal pane spanning the full width at the bottom of the editor area.
     /// Wraps the entire current root in a vertical split with the terminal below.
     @discardableResult
-    func createTerminalPaneAtBottom(workingDirectory: URL?) -> PaneID {
+    func createTerminalPaneAtBottom(
+        workingDirectory: URL?,
+        initialProcess: TerminalInitialProcess? = nil
+    ) -> PaneID {
         let newID = PaneID()
         let terminalLeaf = PaneNode.leaf(newID, .terminal)
         root = .split(.vertical, first: root, second: terminalLeaf, ratio: 0.6)
@@ -1495,7 +1505,10 @@ final class PaneManager {
         let state = makeTerminalPaneState(for: newID)
         terminalStates[newID] = state
         activePaneID = newID
-        state.addTab(workingDirectory: workingDirectory)
+        state.addTab(
+            workingDirectory: workingDirectory,
+            initialProcess: initialProcess
+        )
         return newID
     }
 

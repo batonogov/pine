@@ -511,17 +511,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Terminal (29 tests)
+          # Shard 1 — Terminal (31 tests)
           - shard-name: "Terminal"
             test-classes: >-
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
-              -only-testing:PineUITests/AgentAttentionKeyboardUITests
-          # Shard 2 — Welcome & Session (30 tests)
+              -only-testing:PineUITests/SessionRestoreTests
+          # Shard 2 — Welcome & Session (31 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
-              -only-testing:PineUITests/SessionRestoreTests
+              -only-testing:PineUITests/AgentAttentionKeyboardUITests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
           # Shard 3 — Navigation (31 tests)

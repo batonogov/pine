@@ -1972,7 +1972,7 @@ struct AgentTaskRegistryTests {
         #expect(loaded.tasks.isEmpty)
     }
 
-    @Test("persisted metadata excludes session-private content")
+    @Test("persisted metadata excludes content and keeps bounded recovery identity")
     func persistencePrivacy() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
@@ -2030,7 +2030,7 @@ struct AgentTaskRegistryTests {
         #expect(!persisted.contains(secretPrompt))
         #expect(!persisted.contains(terminalOutput))
         #expect(!persisted.contains(credential))
-        #expect(!persisted.contains(vendorCanary))
+        #expect(persisted.contains(vendorCanary))
         #expect(!persisted.contains("environment"))
         #expect(!persisted.contains("transcript"))
         #expect(!persisted.contains("prompt"))
@@ -2063,8 +2063,15 @@ struct AgentTaskRegistryTests {
         let run = try #require((task["runs"] as? [[String: Any]])?.first)
         #expect(Set(run.keys) == [
             "id", "lastObservedAt", "liveness", "process", "startedAt",
-            "state", "terminalID",
+            "state", "terminalID", "vendorIdentity",
         ])
+        let vendorIdentity = try #require(
+            run["vendorIdentity"] as? [String: Any]
+        )
+        #expect(Set(vendorIdentity.keys) == [
+            "opaqueIdentifier", "provider",
+        ])
+        #expect(vendorIdentity["opaqueIdentifier"] as? String == vendorCanary)
         let process = try #require(run["process"] as? [String: Any])
         #expect(Set(process.keys) == [
             "observedStartedAt", "processGeneration",
@@ -2072,7 +2079,7 @@ struct AgentTaskRegistryTests {
         let forbiddenKeys: Set<String> = [
             "prompt", "command", "arguments", "environment", "output",
             "transcript", "fileContents", "activitySummary", "credentials",
-            "vendorIdentity", "processIdentifier", "startIdentifier",
+            "processIdentifier", "startIdentifier",
         ]
         func assertNoForbiddenKeys(_ value: Any) {
             if let object = value as? [String: Any] {
@@ -2083,6 +2090,12 @@ struct AgentTaskRegistryTests {
             }
         }
         assertNoForbiddenKeys(root)
+
+        let loaded = await store.load(project: identity)
+        #expect(
+            loaded.tasks.first?.runs.first?.vendorIdentity
+                == privateTask.runs.first?.vendorIdentity
+        )
     }
 
     @Test("schema v1 metadata migrates to revisioned v2")

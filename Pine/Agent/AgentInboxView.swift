@@ -165,6 +165,26 @@ struct AgentInboxView: View {
                 )
             }
             if row.lifecycle != .active, row.liveness != .live {
+                if row.canRecover {
+                    Divider()
+                    Button(Strings.agentInboxResumeSession) {
+                        recover(row.id, action: .resumeVendorSession)
+                    }
+                    Button(Strings.agentInboxNewSession) {
+                        recover(row.id, action: .startNewSession)
+                    }
+                    if let objective = registry.agentTasks.task(
+                        for: row.id
+                    )?.objective {
+                        Button(Strings.agentInboxCopyObjective) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(
+                                objective,
+                                forType: .string
+                            )
+                        }
+                    }
+                }
                 Divider()
                 Button(Strings.agentInboxDismiss, role: .destructive) {
                     _ = registry.agentTasks.dismissTask(row.id)
@@ -237,7 +257,35 @@ struct AgentInboxView: View {
 
     private func activateSelection() {
         guard let selectedTaskID else { return }
-        navigate(to: selectedTaskID)
+        if snapshot.rows.first(where: { $0.id == selectedTaskID })?
+            .canRecover == true {
+            recover(selectedTaskID, action: .startNewSession)
+        } else {
+            navigate(to: selectedTaskID)
+        }
+    }
+
+    private func recover(
+        _ taskID: UUID,
+        action: AgentTaskRecoveryAction
+    ) {
+        navigationMessage = nil
+        Task { @MainActor in
+            let result = await registry.recoverAgentTaskFromInbox(
+                taskID,
+                action: action,
+                openProjectWindow: { url in openWindow(value: url) }
+            )
+            switch result {
+            case .openedNewSession:
+                navigationMessage = Strings.agentInboxOpenedNewSession
+            case .resumed:
+                navigationMessage = Strings.agentInboxResumedSession
+            case .taskMissing, .projectUnavailable, .unavailable,
+                    .changedWhilePreparing, .launchRejected:
+                navigationMessage = Strings.agentInboxRecoveryUnavailable
+            }
+        }
     }
 
     private func navigate(to taskID: UUID) {
