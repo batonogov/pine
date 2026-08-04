@@ -149,7 +149,6 @@ final class ProjectRegistry: LSPSettingsObserver {
         addToRecent(canonical)
         #if DEBUG
         seedAgentRecoveryUITestFixture(
-            manager: pm,
             project: identity
         )
         #endif
@@ -161,33 +160,26 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// recovery XCUITest. A second launch loads the persisted card instead of
     /// seeding another one, exercising the real restore boundary.
     private func seedAgentRecoveryUITestFixture(
-        manager: ProjectManager,
         project: AgentTaskProjectIdentity
     ) {
         guard ProcessInfo.processInfo.arguments.contains(
             "--ui-test-agent-recovery"
         ) else { return }
-        Task { @MainActor [weak self, weak manager] in
-            guard let self, let manager else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             _ = await agentTasks.flushPersistence(
                 maximumDuration: .seconds(2)
             )
             guard !agentTasks.tasks.contains(where: { $0.project == project }) else {
                 return
             }
-            let paneID = manager.paneManager.createTerminalPaneAtBottom(
-                workingDirectory: manager.rootURL
-            )
-            manager.terminal.lastActiveTerminalPaneID = paneID
-            guard let tab = manager.paneManager.terminalState(for: paneID)?
-                .activeTab else { return }
             let startedAt = Date()
             let context = AgentTaskBridgeContext(
                 project: project,
                 route: AgentTaskRoute(
-                    paneID: paneID.id,
-                    tabID: tab.id,
-                    terminalID: tab.id
+                    paneID: UUID(),
+                    tabID: UUID(),
+                    terminalID: UUID()
                 ),
                 origin: .pineLaunched,
                 observedAt: startedAt
