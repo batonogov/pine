@@ -81,6 +81,13 @@ final class ProjectRegistry: LSPSettingsObserver {
             defaults.removeObject(forKey: Self.recentProjectsKey)
         }
         loadRecentProjects()
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(
+            "--ui-test-agent-inbox-marketing"
+        ) {
+            agentTasks.seedMarketingInboxForUITesting()
+        }
+        #endif
         lspSettings.addObserver(self)
     }
 
