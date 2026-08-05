@@ -126,8 +126,14 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
         _ rhs: AgentInboxRow
     ) -> Bool {
         if lhs.isUnread != rhs.isUnread { return lhs.isUnread }
-        if lhs.lastVerifiedActivityAt != rhs.lastVerifiedActivityAt {
-            return lhs.lastVerifiedActivityAt > rhs.lastVerifiedActivityAt
+        // Sort by the run's start time, not the polling-driven
+        // `lastVerifiedActivityAt`. `startedAt` is write-once stable for an
+        // existing row, so rows never re-order on every detection poll —
+        // which previously made the list flicker when a single missed poll
+        // inverted two tasks' activity timestamps (#1336).
+        // `lastVerifiedActivityAt` is retained on the row for display only.
+        if lhs.startedAt != rhs.startedAt {
+            return lhs.startedAt > rhs.startedAt
         }
         return lhs.id.uuidString < rhs.id.uuidString
     }

@@ -61,6 +61,110 @@ struct AgentInboxTests {
         #expect(snapshot.rows.allSatisfy { !$0.agentName.isEmpty })
     }
 
+    @Test("row order stays stable when polling-driven activity timestamps flip")
+    func rowOrderStableAcrossPollFlips() throws {
+        // Two working tasks with write-once-stable start times.
+        let startedNewer = Date(timeIntervalSince1970: 10_000)
+        let startedOlder = startedNewer.addingTimeInterval(-60)
+        let taskNewer = makeWorkingTask(
+            seed: 1,
+            project: "/tmp/sort-newer",
+            runStartedAt: startedNewer,
+            lastObservedAt: startedNewer
+        )
+        let taskOlder = makeWorkingTask(
+            seed: 2,
+            project: "/tmp/sort-older",
+            runStartedAt: startedOlder,
+            lastObservedAt: startedOlder
+        )
+
+        // Poll 1: the newer-started task also has the freshest activity
+        // timestamp. Both the old and new sort agree here.
+        var poll1Newer = taskNewer
+        poll1Newer.runs[0].lastObservedAt = startedNewer.addingTimeInterval(100)
+        var poll1Older = taskOlder
+        poll1Older.runs[0].lastObservedAt = startedOlder.addingTimeInterval(10)
+        let snapshot1 = AgentInboxSnapshot(tasks: [poll1Newer, poll1Older])
+
+        // Poll 2: the activity timestamps FLIP — the older-started task now
+        // has the freshest activity timestamp. Under the old
+        // (polling-driven) sort the rows would swap; under the new stable
+        // sort they must NOT move.
+        var poll2Newer = taskNewer
+        poll2Newer.runs[0].lastObservedAt = startedNewer.addingTimeInterval(10)
+        var poll2Older = taskOlder
+        poll2Older.runs[0].lastObservedAt = startedOlder.addingTimeInterval(100)
+        let snapshot2 = AgentInboxSnapshot(tasks: [poll2Newer, poll2Older])
+
+        let working1 = try #require(
+            snapshot1.sections.first(where: { $0.id == .working })
+        )
+        let working2 = try #require(
+            snapshot2.sections.first(where: { $0.id == .working })
+        )
+
+        // `startedAt` is stable, so the newer-started row leads in BOTH
+        // snapshots even though `lastVerifiedActivityAt` flipped between polls.
+        #expect(working1.rows.map(\.id) == [taskNewer.id, taskOlder.id])
+        #expect(working2.rows.map(\.id) == [taskNewer.id, taskOlder.id])
+    }
+
+    @Test("unread rows lead regardless of startedAt")
+    func unreadLeadsOverStartedAt() throws {
+        let startedNewer = Date(timeIntervalSince1970: 10_000)
+        let startedOlder = startedNewer.addingTimeInterval(-60)
+        // Unread task started OLDER; read task started NEWER.
+        let unread = makeWorkingTask(
+            seed: 10,
+            project: "/tmp/sort-unread",
+            runStartedAt: startedOlder,
+            lastObservedAt: startedOlder,
+            unread: true
+        )
+        let read = makeWorkingTask(
+            seed: 11,
+            project: "/tmp/sort-read",
+            runStartedAt: startedNewer,
+            lastObservedAt: startedNewer,
+            unread: false
+        )
+
+        let snapshot = AgentInboxSnapshot(tasks: [read, unread])
+        let working = try #require(
+            snapshot.sections.first(where: { $0.id == .working })
+        )
+        // Unread leads even though it started earlier than the read task.
+        #expect(working.rows.map(\.id) == [unread.id, read.id])
+    }
+
+    @Test("identical startedAt ignores polling timestamp and uses id tiebreak")
+    func identicalStartedAtUsesIdTiebreak() throws {
+        let started = Date(timeIntervalSince1970: 10_000)
+        // Same start time; the second task has a much fresher activity
+        // timestamp, which the new sort must ignore.
+        let taskA = makeWorkingTask(
+            seed: 21,
+            project: "/tmp/sort-a",
+            runStartedAt: started,
+            lastObservedAt: started
+        )
+        let taskB = makeWorkingTask(
+            seed: 22,
+            project: "/tmp/sort-b",
+            runStartedAt: started,
+            lastObservedAt: started.addingTimeInterval(99)
+        )
+
+        let expected = [taskA.id, taskB.id]
+            .sorted { $0.uuidString < $1.uuidString }
+        let snapshot = AgentInboxSnapshot(tasks: [taskA, taskB])
+        let working = try #require(
+            snapshot.sections.first(where: { $0.id == .working })
+        )
+        #expect(working.rows.map(\.id) == expected)
+    }
+
     @Test("render projection never marks unread tasks reviewed")
     func projectionHasNoReviewSideEffect() throws {
         let registry = AgentTaskRegistry()
@@ -362,6 +466,49 @@ struct AgentInboxTests {
         task.updatedAt = observedAt
         task.route.availability = liveness == .live ? .available : .missing
         task.lifecycle = liveness == .live ? .active : .paused
+        return task
+    }
+
+    /// Builds a working-section task whose row-level sort keys can be set
+    /// independently: `runStartedAt` becomes the write-once-stable
+    /// `startedAt`, while `lastObservedAt` becomes the polling-driven
+    /// `lastVerifiedActivityAt`.
+    private func makeWorkingTask(
+        seed: Int,
+        project path: String,
+        runStartedAt: Date,
+        lastObservedAt: Date,
+        unread: Bool = false
+    ) -> AgentTask {
+        let identity = project(path)
+        let routeContext = context(identity: identity, seed: seed)
+        var task = AgentTask(
+            descriptor: AgentDescriptor(agentType: .codex),
+            context: routeContext,
+            title: "Task \(seed)",
+            createdAt: runStartedAt
+        )
+        task.runs = [AgentTaskRun(AgentTaskRunInput(
+            id: uuid(seed + 3_000),
+            terminalID: routeContext.route.terminalID,
+            process: AgentProcessEvidence(
+                processIdentifier: Int32(seed),
+                processGeneration: UInt64(seed),
+                startIdentifier: "verified-\(seed)",
+                observedStartedAt: runStartedAt,
+                startIsAuthoritative: true
+            ),
+            status: AgentTaskRunStatus(
+                state: .executing,
+                liveness: .live,
+                observedAt: lastObservedAt
+            )
+        ))]
+        task.isUnread = unread
+        task.lastActivityAt = lastObservedAt
+        task.updatedAt = lastObservedAt
+        task.route.availability = .available
+        task.lifecycle = .active
         return task
     }
 
