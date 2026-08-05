@@ -4,15 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pine — The Native macOS Code Editor for CLI Agent Workflows</title>
-    <meta name="description" content="Pine is a native macOS code editor for CLI agents, with a cross-project Agent Inbox, private notifications, LSP, Git context, and no Electron.">
+    <meta name="description" content="The agent stays in the terminal. The code stays in view. Pine brings them together in a native macOS editor for CLI-agent workflows.">
     <meta property="og:title" content="Pine — The Native macOS Code Editor for CLI Agent Workflows">
-    <meta property="og:description" content="Keep agents in the terminal and every task in view with a cross-project Inbox, private notifications, LSP, and Git context.">
+    <meta property="og:description" content="The agent stays in the terminal. The code stays in view. Pine brings them together in a native macOS editor for CLI-agent workflows.">
     <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
     <meta property="og:url" content="https://batonogov.github.io/pine/">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Pine — The Native macOS Code Editor for CLI Agent Workflows">
-    <meta name="twitter:description" content="Keep agents in the terminal and every task in view with a cross-project Inbox, private notifications, LSP, and Git context.">
+    <meta name="twitter:description" content="The agent stays in the terminal. The code stays in view. Pine brings them together in a native macOS editor for CLI-agent workflows.">
     <meta name="twitter:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
     <meta name="theme-color" content="#07110d">
     <link rel="canonical" href="https://batonogov.github.io/pine/">
@@ -235,6 +235,10 @@
             color: var(--muted-strong);
             font-size: clamp(19px, 2.2vw, 22px);
             line-height: 1.58;
+        }
+
+        .hero-tagline {
+            white-space: pre-line;
         }
 
         .hero-proof {
@@ -1028,7 +1032,7 @@
                 <div class="hero-copy">
                     <div class="eyebrow" data-i18n="hero.eyebrow">Native · Agent-aware · No Electron</div>
                     <h1 data-i18n="hero.title">A native Mac editor built for the age of CLI agents.</h1>
-                    <p data-i18n="hero.desc">Keep the agent in the terminal and the code in view. Pine reflects agent activity, file changes, diagnostics, and git context without turning into another AI dashboard.</p>
+                    <p class="hero-tagline" data-i18n="hero.desc">The agent stays in the terminal.&#10;The code stays in view.&#10;Pine brings them together.</p>
                     <div class="hero-proof">
                         <span data-i18n="hero.noElectron">No Electron</span>
                         <span data-i18n="hero.minimalDeps">Agent-aware workflow</span>
@@ -1256,7 +1260,7 @@
                 "header.cta": "Download",
                 "hero.eyebrow": "Native · Agent-aware · No Electron",
                 "hero.title": "A native Mac editor built for the age of CLI agents.",
-                "hero.desc": "Keep the agent in the terminal and the code in view. Pine reflects agent activity, file changes, diagnostics, and git context without turning into another AI dashboard.",
+                "hero.desc": "The agent stays in the terminal.\nThe code stays in view.\nPine brings them together.",
                 "hero.noElectron": "No Electron",
                 "hero.minimalDeps": "Agent-aware workflow",
                 "hero.terminal": "Editor + terminal panes",
@@ -1344,11 +1348,11 @@
                 "install.shellNote": "Build from source with <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> if you want the full native stack on your machine.",
                 "footer.text": "Pine is open source and built for macOS developers who work with code and CLI agents.",
                 "meta.title": "Pine — The Native macOS Code Editor for CLI Agent Workflows",
-                "meta.description": "Pine is a native macOS code editor for CLI agents, with a cross-project Agent Inbox, private notifications, LSP, Git context, and no Electron.",
+                "meta.description": "The agent stays in the terminal. The code stays in view. Pine brings them together in a native macOS editor for CLI-agent workflows.",
                 "meta.ogTitle": "Pine — The Native macOS Code Editor for CLI Agent Workflows",
-                "meta.ogDescription": "Keep agents in the terminal and every task in view with a cross-project Inbox, private notifications, LSP, and Git context.",
+                "meta.ogDescription": "The agent stays in the terminal. The code stays in view. Pine brings them together in a native macOS editor for CLI-agent workflows.",
                 "meta.twitterTitle": "Pine — The Native macOS Code Editor for CLI Agent Workflows",
-                "meta.twitterDescription": "Keep agents in the terminal and every task in view with a cross-project Inbox, private notifications, LSP, and Git context."
+                "meta.twitterDescription": "The agent stays in the terminal. The code stays in view. Pine brings them together in a native macOS editor for CLI-agent workflows."
             },
             ru: {
                 "nav.why": "Почему Pine",
@@ -1358,7 +1362,7 @@
                 "header.cta": "Скачать",
                 "hero.eyebrow": "Нативный · Видит агентов · Без Electron",
                 "hero.title": "Нативный Mac-редактор для эпохи CLI-агентов.",
-                "hero.desc": "Агент остаётся в терминале, а код — перед глазами. Pine показывает активность агентов, изменения файлов, диагностику и Git-контекст, не превращаясь в очередную AI-панель.",
+                "hero.desc": "Агент остаётся в терминале.\nКод остаётся перед глазами.\nPine объединяет их.",
                 "hero.noElectron": "Без Electron",
                 "hero.minimalDeps": "Работа с учётом агентов",
                 "hero.terminal": "Редактор и терминал в панелях",
@@ -1446,11 +1450,11 @@
                 "install.shellNote": "Если хочется полностью нативный стек на Mac, Pine можно собрать из исходников командой <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>.",
                 "footer.text": "Pine — редактор с открытым исходным кодом для разработчиков macOS, которые работают с кодом и CLI-агентами.",
                 "meta.title": "Pine — нативный редактор кода для macOS и CLI-агентов",
-                "meta.description": "Pine — нативный редактор macOS для CLI-агентов: общие Входящие агентов, приватные уведомления, LSP, Git-контекст и никакого Electron.",
+                "meta.description": "Агент остаётся в терминале. Код остаётся перед глазами. Pine объединяет их в нативном редакторе macOS для работы с CLI-агентами.",
                 "meta.ogTitle": "Pine — нативный редактор кода для macOS и CLI-агентов",
-                "meta.ogDescription": "Агенты остаются в терминале, а все задачи — во Входящих разных проектов с приватными уведомлениями, LSP и Git-контекстом.",
+                "meta.ogDescription": "Агент остаётся в терминале. Код остаётся перед глазами. Pine объединяет их в нативном редакторе macOS для работы с CLI-агентами.",
                 "meta.twitterTitle": "Pine — нативный редактор кода для macOS и CLI-агентов",
-                "meta.twitterDescription": "Агенты остаются в терминале, а все задачи — во Входящих разных проектов с приватными уведомлениями, LSP и Git-контекстом."
+                "meta.twitterDescription": "Агент остаётся в терминале. Код остаётся перед глазами. Pine объединяет их в нативном редакторе macOS для работы с CLI-агентами."
             },
             de: {
                 "nav.why": "Warum Pine",
@@ -1460,7 +1464,7 @@
                 "header.cta": "Download",
                 "hero.eyebrow": "Nativ · Agentenbewusst · Kein Electron",
                 "hero.title": "Ein nativer Mac-Editor für das Zeitalter der CLI-Agenten.",
-                "hero.desc": "Lassen Sie den Agenten im Terminal und den Code im Blick. Pine zeigt Agentenaktivität, Dateiänderungen, Diagnosen und Git-Kontext, ohne zu einem weiteren KI-Dashboard zu werden.",
+                "hero.desc": "Der Agent bleibt im Terminal.\nDer Code bleibt im Blick.\nPine bringt beides zusammen.",
                 "hero.noElectron": "Kein Electron",
                 "hero.minimalDeps": "Agentenbewusster Workflow",
                 "hero.terminal": "Editor- und Terminal-Bereiche",
@@ -1548,11 +1552,11 @@
                 "install.shellNote": "Aus den Quellen bauen mit <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>, wenn Sie den vollen nativen Stack auf Ihrem Mac wollen.",
                 "footer.text": "Pine ist Open Source und für macOS-Entwickler gebaut, die mit Code und CLI-Agenten arbeiten.",
                 "meta.title": "Pine — Nativer macOS-Code-Editor für CLI-Agenten",
-                "meta.description": "Pine ist ein nativer macOS-Code-Editor für CLI-Agenten mit projektübergreifendem Agenten-Posteingang, privaten Hinweisen, LSP, Git-Kontext und ohne Electron.",
+                "meta.description": "Der Agent bleibt im Terminal. Der Code bleibt im Blick. Pine bringt beides in einem nativen macOS-Editor für CLI-Agenten zusammen.",
                 "meta.ogTitle": "Pine — Nativer macOS-Code-Editor für CLI-Agenten",
-                "meta.ogDescription": "Agenten bleiben im Terminal, alle Aufgaben im projektübergreifenden Posteingang – mit privaten Hinweisen, LSP und Git-Kontext.",
+                "meta.ogDescription": "Der Agent bleibt im Terminal. Der Code bleibt im Blick. Pine bringt beides in einem nativen macOS-Editor für CLI-Agenten zusammen.",
                 "meta.twitterTitle": "Pine — Nativer macOS-Code-Editor für CLI-Agenten",
-                "meta.twitterDescription": "Agenten bleiben im Terminal, alle Aufgaben im projektübergreifenden Posteingang – mit privaten Hinweisen, LSP und Git-Kontext."
+                "meta.twitterDescription": "Der Agent bleibt im Terminal. Der Code bleibt im Blick. Pine bringt beides in einem nativen macOS-Editor für CLI-Agenten zusammen."
             },
             es: {
                 "nav.why": "Por qué Pine",
@@ -1562,7 +1566,7 @@
                 "header.cta": "Descargar",
                 "hero.eyebrow": "Nativo · Consciente de agentes · Sin Electron",
                 "hero.title": "Un editor nativo para Mac creado para la era de los agentes CLI.",
-                "hero.desc": "Mantén el agente en la terminal y el código a la vista. Pine muestra la actividad de los agentes, los cambios de archivos, los diagnósticos y el contexto de Git sin convertirse en otro panel de IA.",
+                "hero.desc": "El agente permanece en la terminal.\nEl código permanece a la vista.\nPine los reúne.",
                 "hero.noElectron": "Sin Electron",
                 "hero.minimalDeps": "Flujo consciente de agentes",
                 "hero.terminal": "Paneles de editor y terminal",
@@ -1650,11 +1654,11 @@
                 "install.shellNote": "Compila desde el código fuente con <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> si quieres el stack nativo completo en tu Mac.",
                 "footer.text": "Pine es open source y está hecho para desarrolladores de macOS que trabajan con código y agentes CLI.",
                 "meta.title": "Pine — Editor nativo de macOS para agentes CLI",
-                "meta.description": "Pine es un editor nativo de macOS para agentes CLI con Bandeja de agentes entre proyectos, avisos privados, LSP, contexto Git y sin Electron.",
+                "meta.description": "El agente permanece en la terminal. El código permanece a la vista. Pine los reúne en un editor nativo de macOS para agentes CLI.",
                 "meta.ogTitle": "Pine — Editor nativo de macOS para agentes CLI",
-                "meta.ogDescription": "Agentes en la terminal y todas las tareas en una bandeja entre proyectos, con avisos privados, LSP y contexto Git.",
+                "meta.ogDescription": "El agente permanece en la terminal. El código permanece a la vista. Pine los reúne en un editor nativo de macOS para agentes CLI.",
                 "meta.twitterTitle": "Pine — Editor nativo de macOS para agentes CLI",
-                "meta.twitterDescription": "Agentes en la terminal y todas las tareas en una bandeja entre proyectos, con avisos privados, LSP y contexto Git."
+                "meta.twitterDescription": "El agente permanece en la terminal. El código permanece a la vista. Pine los reúne en un editor nativo de macOS para agentes CLI."
             },
             fr: {
                 "nav.why": "Pourquoi Pine",
@@ -1664,7 +1668,7 @@
                 "header.cta": "Télécharger",
                 "hero.eyebrow": "Natif · Conscient des agents · Sans Electron",
                 "hero.title": "Un éditeur Mac natif conçu pour l'ère des agents CLI.",
-                "hero.desc": "Gardez l'agent dans le terminal et le code à l'écran. Pine affiche l'activité des agents, les changements de fichiers, les diagnostics et le contexte Git sans devenir un nouveau tableau de bord IA.",
+                "hero.desc": "L’agent reste dans le terminal.\nLe code reste à l’écran.\nPine les réunit.",
                 "hero.noElectron": "Sans Electron",
                 "hero.minimalDeps": "Workflow conscient des agents",
                 "hero.terminal": "Volets éditeur et terminal",
@@ -1752,11 +1756,11 @@
                 "install.shellNote": "Compilez depuis les sources avec <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> si vous voulez le stack natif complet sur votre Mac.",
                 "footer.text": "Pine est open source et conçu pour les développeurs macOS qui travaillent avec du code et des agents CLI.",
                 "meta.title": "Pine — Éditeur macOS natif pour les agents CLI",
-                "meta.description": "Pine est un éditeur macOS natif pour agents CLI avec boîte interprojets, alertes privées, LSP, contexte Git et sans Electron.",
+                "meta.description": "L’agent reste dans le terminal. Le code reste à l’écran. Pine les réunit dans un éditeur macOS natif pour les agents CLI.",
                 "meta.ogTitle": "Pine — Éditeur macOS natif pour les agents CLI",
-                "meta.ogDescription": "Les agents restent dans le terminal et toutes les tâches dans une boîte interprojets, avec alertes privées, LSP et contexte Git.",
+                "meta.ogDescription": "L’agent reste dans le terminal. Le code reste à l’écran. Pine les réunit dans un éditeur macOS natif pour les agents CLI.",
                 "meta.twitterTitle": "Pine — Éditeur macOS natif pour les agents CLI",
-                "meta.twitterDescription": "Les agents restent dans le terminal et toutes les tâches dans une boîte interprojets, avec alertes privées, LSP et contexte Git."
+                "meta.twitterDescription": "L’agent reste dans le terminal. Le code reste à l’écran. Pine les réunit dans un éditeur macOS natif pour les agents CLI."
             },
             ja: {
                 "nav.why": "Pine とは",
@@ -1766,7 +1770,7 @@
                 "header.cta": "ダウンロード",
                 "hero.eyebrow": "ネイティブ · エージェント対応 · Electron 不要",
                 "hero.title": "CLI エージェント時代のためのネイティブ Mac エディタ。",
-                "hero.desc": "エージェントはターミナルに、コードは視界に。Pine はエージェントの活動、ファイル変更、診断、Git コンテキストを表示し、AI ダッシュボードにはなりません。",
+                "hero.desc": "エージェントはターミナルに。\nコードは視界に。\nPine が両者をつなぎます。",
                 "hero.noElectron": "Electron 不要",
                 "hero.minimalDeps": "エージェント対応ワークフロー",
                 "hero.terminal": "エディタ＋ターミナルペイン",
@@ -1854,11 +1858,11 @@
                 "install.shellNote": "Mac でフルネイティブスタックが必要なら、<code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> でソースからビルドできます。",
                 "footer.text": "Pine は、コードと CLI エージェントで作業する macOS 開発者のためのオープンソースエディタです。",
                 "meta.title": "Pine — CLI エージェント向けネイティブ macOS エディタ",
-                "meta.description": "Pine は CLI エージェント向けのネイティブ macOS エディタ。プロジェクト横断の受信箱、プライベート通知、LSP、Git コンテキストを備え、Electron は不要。",
+                "meta.description": "エージェントはターミナルに。コードは視界に。Pine が両者をつなぐ、CLI エージェント向けのネイティブ macOS エディタです。",
                 "meta.ogTitle": "Pine — CLI エージェント向けネイティブ macOS エディタ",
-                "meta.ogDescription": "エージェントはターミナルに、全タスクはプロジェクト横断の受信箱に。プライベート通知、LSP、Git コンテキストを搭載。",
+                "meta.ogDescription": "エージェントはターミナルに。コードは視界に。Pine が両者をつなぐ、CLI エージェント向けのネイティブ macOS エディタです。",
                 "meta.twitterTitle": "Pine — CLI エージェント向けネイティブ macOS エディタ",
-                "meta.twitterDescription": "エージェントはターミナルに、全タスクはプロジェクト横断の受信箱に。プライベート通知、LSP、Git コンテキストを搭載。"
+                "meta.twitterDescription": "エージェントはターミナルに。コードは視界に。Pine が両者をつなぐ、CLI エージェント向けのネイティブ macOS エディタです。"
             },
             ko: {
                 "nav.why": "왜 Pine인가",
@@ -1868,7 +1872,7 @@
                 "header.cta": "다운로드",
                 "hero.eyebrow": "네이티브 · 에이전트 인식 · Electron 없음",
                 "hero.title": "CLI 에이전트 시대를 위한 네이티브 Mac 편집기.",
-                "hero.desc": "에이전트는 터미널에, 코드는 시야에 둡니다. Pine은 또 다른 AI 대시보드가 되지 않으면서 에이전트 활동, 파일 변경, 진단, Git 컨텍스트를 보여줍니다.",
+                "hero.desc": "에이전트는 터미널에 남습니다.\n코드는 시야에 남습니다.\nPine이 둘을 하나로 연결합니다.",
                 "hero.noElectron": "Electron 없음",
                 "hero.minimalDeps": "에이전트 인식 워크플로",
                 "hero.terminal": "편집기 + 터미널 패널",
@@ -1956,11 +1960,11 @@
                 "install.shellNote": "Mac에서 풀 네이티브 스택을 원하면 <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>로 소스에서 빌드하세요.",
                 "footer.text": "Pine은 코드와 CLI 에이전트로 작업하는 macOS 개발자를 위한 오픈 소스 편집기입니다.",
                 "meta.title": "Pine — CLI 에이전트를 위한 네이티브 macOS 편집기",
-                "meta.description": "Pine은 CLI 에이전트용 네이티브 macOS 편집기입니다. 프로젝트 간 받은편지함, 비공개 알림, LSP, Git 컨텍스트를 제공하며 Electron이 없습니다.",
+                "meta.description": "에이전트는 터미널에 남습니다. 코드는 시야에 남습니다. Pine은 둘을 연결하는 CLI 에이전트용 네이티브 macOS 편집기입니다.",
                 "meta.ogTitle": "Pine — CLI 에이전트를 위한 네이티브 macOS 편집기",
-                "meta.ogDescription": "에이전트는 터미널에, 모든 작업은 프로젝트 간 받은편지함에. 비공개 알림, LSP, Git 컨텍스트 제공.",
+                "meta.ogDescription": "에이전트는 터미널에 남습니다. 코드는 시야에 남습니다. Pine은 둘을 연결하는 CLI 에이전트용 네이티브 macOS 편집기입니다.",
                 "meta.twitterTitle": "Pine — CLI 에이전트를 위한 네이티브 macOS 편집기",
-                "meta.twitterDescription": "에이전트는 터미널에, 모든 작업은 프로젝트 간 받은편지함에. 비공개 알림, LSP, Git 컨텍스트 제공."
+                "meta.twitterDescription": "에이전트는 터미널에 남습니다. 코드는 시야에 남습니다. Pine은 둘을 연결하는 CLI 에이전트용 네이티브 macOS 편집기입니다."
             },
             "pt-BR": {
                 "nav.why": "Por que Pine",
@@ -1970,7 +1974,7 @@
                 "header.cta": "Baixar",
                 "hero.eyebrow": "Nativo · Consciente de agentes · Sem Electron",
                 "hero.title": "Um editor nativo para Mac feito para a era dos agentes CLI.",
-                "hero.desc": "Mantenha o agente no terminal e o código à vista. Pine mostra atividade dos agentes, mudanças de arquivos, diagnósticos e contexto Git sem virar mais um painel de IA.",
+                "hero.desc": "O agente permanece no terminal.\nO código permanece à vista.\nO Pine une os dois.",
                 "hero.noElectron": "Sem Electron",
                 "hero.minimalDeps": "Fluxo consciente de agentes",
                 "hero.terminal": "Painéis de editor e terminal",
@@ -2058,11 +2062,11 @@
                 "install.shellNote": "Compile a partir do código-fonte com <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> se quiser o stack nativo completo no seu Mac.",
                 "footer.text": "Pine é open source e feito para desenvolvedores macOS que trabalham com código e agentes CLI.",
                 "meta.title": "Pine — Editor macOS nativo para agentes CLI",
-                "meta.description": "Pine é um editor macOS nativo para agentes CLI com Caixa de agentes entre projetos, alertas privados, LSP, contexto Git e sem Electron.",
+                "meta.description": "O agente permanece no terminal. O código permanece à vista. O Pine une os dois em um editor macOS nativo para agentes CLI.",
                 "meta.ogTitle": "Pine — Editor macOS nativo para agentes CLI",
-                "meta.ogDescription": "Agentes no terminal e todas as tarefas em uma caixa entre projetos, com alertas privados, LSP e contexto Git.",
+                "meta.ogDescription": "O agente permanece no terminal. O código permanece à vista. O Pine une os dois em um editor macOS nativo para agentes CLI.",
                 "meta.twitterTitle": "Pine — Editor macOS nativo para agentes CLI",
-                "meta.twitterDescription": "Agentes no terminal e todas as tarefas em uma caixa entre projetos, com alertas privados, LSP e contexto Git."
+                "meta.twitterDescription": "O agente permanece no terminal. O código permanece à vista. O Pine une os dois em um editor macOS nativo para agentes CLI."
             },
             "zh-Hans": {
                 "nav.why": "为什么选 Pine",
@@ -2072,7 +2076,7 @@
                 "header.cta": "下载",
                 "hero.eyebrow": "原生 · 感知代理 · 无 Electron",
                 "hero.title": "为 CLI 代理时代打造的原生 Mac 编辑器。",
-                "hero.desc": "让代理留在终端，让代码始终可见。Pine 展示代理活动、文件变化、诊断和 Git 上下文，而不会变成另一个 AI 仪表盘。",
+                "hero.desc": "智能体留在终端。\n代码始终在眼前。\nPine 将二者连接起来。",
                 "hero.noElectron": "无 Electron",
                 "hero.minimalDeps": "代理感知工作流",
                 "hero.terminal": "编辑器与终端窗格",
@@ -2160,11 +2164,11 @@
                 "install.shellNote": "如果你想要完整的原生技术栈，可以用 <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> 从源码构建。",
                 "footer.text": "Pine 是为使用代码和 CLI 代理工作的 macOS 开发者打造的开源编辑器。",
                 "meta.title": "Pine — 面向 CLI 代理的原生 macOS 编辑器",
-                "meta.description": "Pine 是面向 CLI 智能体的原生 macOS 编辑器，提供跨项目收件箱、私密通知、LSP 和 Git 上下文，无 Electron。",
+                "meta.description": "智能体留在终端。代码始终在眼前。Pine 将二者连接在面向 CLI 智能体的原生 macOS 编辑器中。",
                 "meta.ogTitle": "Pine — 面向 CLI 代理的原生 macOS 编辑器",
-                "meta.ogDescription": "智能体留在终端，所有任务集中于跨项目收件箱，并提供私密通知、LSP 和 Git 上下文。",
+                "meta.ogDescription": "智能体留在终端。代码始终在眼前。Pine 将二者连接在面向 CLI 智能体的原生 macOS 编辑器中。",
                 "meta.twitterTitle": "Pine — 面向 CLI 代理的原生 macOS 编辑器",
-                "meta.twitterDescription": "智能体留在终端，所有任务集中于跨项目收件箱，并提供私密通知、LSP 和 Git 上下文。"
+                "meta.twitterDescription": "智能体留在终端。代码始终在眼前。Pine 将二者连接在面向 CLI 智能体的原生 macOS 编辑器中。"
             }
         };
 

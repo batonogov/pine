@@ -12,7 +12,11 @@
   <img src="assets/screenshot-editor.png" width="800" alt="Pine Editor — syntax highlighting, minimap, and Liquid Glass UI">
 </p>
 
-Pine keeps CLI agents in the terminal and the code in view. It reflects agent activity, file changes, diagnostics, and Git context across a fast native workspace without turning into another AI dashboard. Built with SwiftUI and AppKit for macOS 26 Liquid Glass — no Electron runtime.
+> **The agent stays in the terminal.**<br>
+> **The code stays in view.**<br>
+> **Pine brings them together.**
+
+Pine reflects agent activity, file changes, diagnostics, and Git context across a fast native workspace without turning into another AI dashboard. Built with SwiftUI and AppKit for macOS 26 Liquid Glass — no Electron runtime.
 
 ## Features
 
