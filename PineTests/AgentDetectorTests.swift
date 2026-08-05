@@ -1007,6 +1007,183 @@ struct AgentDetectorTests {
         #expect(detector.detectedSessions.count == 3)
     }
 
+    // MARK: - CPU-time hysteresis (#1338)
+
+    @Test func executingAgentStaysExecutingForFlatPollsBelowThreshold() throws {
+        // A busy-but-network-bound agent barely burns CPU while waiting on an
+        // API response. Flat polls below the threshold must NOT downgrade an
+        // executing session to .waitingInput (#1338).
+        let threshold = AgentDetector.waitingInputFlatPollThreshold
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 700, command: "claude", cpuTime: 100),
+        ])
+        let session = try #require(detector.session(forPID: 700))
+
+        // A CPU advance promotes to .executing.
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 700, command: "claude", cpuTime: 110),
+        ])
+        #expect(session.state == .executing)
+
+        // (threshold - 1) flat polls: still executing.
+        for _ in 0..<(threshold - 1) {
+            detector.processSnapshotDidUpdate([
+                DetectedProcess(pid: 700, command: "claude", cpuTime: 110),
+            ])
+        }
+        #expect(session.state == .executing)
+    }
+
+    @Test func flatCpuAtThresholdDowngradesToWaitingInput() throws {
+        // Only a sustained flat streak (threshold consecutive polls) justifies
+        // reading a session as idle at a prompt.
+        let threshold = AgentDetector.waitingInputFlatPollThreshold
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 701, command: "claude", cpuTime: 100),
+        ])
+        let session = try #require(detector.session(forPID: 701))
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 701, command: "claude", cpuTime: 110),
+        ])
+        #expect(session.state == .executing)
+
+        for _ in 0..<threshold {
+            detector.processSnapshotDidUpdate([
+                DetectedProcess(pid: 701, command: "claude", cpuTime: 110),
+            ])
+        }
+        #expect(session.state == .waitingInput)
+    }
+
+    @Test func cpuAdvanceResetsFlatPollCounter() throws {
+        // A single CPU tick must reset the flat-poll streak and re-promote to
+        // .executing, so the streak restarts from zero.
+        let threshold = AgentDetector.waitingInputFlatPollThreshold
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 702, command: "claude", cpuTime: 100),
+        ])
+        let session = try #require(detector.session(forPID: 702))
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 702, command: "claude", cpuTime: 110),
+        ])
+        #expect(session.state == .executing)
+
+        // Build a near-threshold streak.
+        for _ in 0..<(threshold - 1) {
+            detector.processSnapshotDidUpdate([
+                DetectedProcess(pid: 702, command: "claude", cpuTime: 110),
+            ])
+        }
+        #expect(session.state == .executing)
+
+        // One CPU tick resets the streak.
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 702, command: "claude", cpuTime: 120),
+        ])
+        #expect(session.state == .executing)
+
+        // After the reset, (threshold - 1) flat polls must NOT downgrade —
+        // they would if the counter had not been cleared.
+        for _ in 0..<(threshold - 1) {
+            detector.processSnapshotDidUpdate([
+                DetectedProcess(pid: 702, command: "claude", cpuTime: 120),
+            ])
+        }
+        #expect(session.state == .executing)
+    }
+
+    @Test func idleAgentNeedsThresholdFlatPollsBeforeWaitingInput() throws {
+        // A freshly detected (.idle) session is also protected by hysteresis:
+        // it is not flipped to .waitingInput on the first flat poll.
+        let threshold = AgentDetector.waitingInputFlatPollThreshold
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 703, command: "claude", cpuTime: 50),
+        ])
+        let session = try #require(detector.session(forPID: 703))
+        #expect(session.state == .idle)
+
+        for _ in 0..<(threshold - 1) {
+            detector.processSnapshotDidUpdate([
+                DetectedProcess(pid: 703, command: "claude", cpuTime: 50),
+            ])
+        }
+        #expect(session.state == .idle)
+
+        // Reaching the threshold downgrades to .waitingInput.
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 703, command: "claude", cpuTime: 50),
+        ])
+        #expect(session.state == .waitingInput)
+    }
+
+    @Test func doneSessionIsNeverDowngradedToWaitingInput() throws {
+        // A terminated (.done) session is disassociated from its pid, so it is
+        // never refined again. Pin that it keeps .done instead of being flipped
+        // to .waitingInput when the recycled pid reports flat CPU evidence.
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 704, command: "claude", cpuTime: 5),
+        ])
+        let session = try #require(detector.session(forPID: 704))
+
+        detector.processSnapshotDidUpdate([])
+        #expect(session.state == .done)
+
+        // Recycle the pid with flat CPU; the old session must stay .done.
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 704, command: "claude", cpuTime: 5),
+        ])
+        #expect(session.state == .done)
+        let recycled = try #require(detector.session(forPID: 704))
+        #expect(recycled !== session)
+        #expect(recycled.state == .idle)
+    }
+
+    @Test func flatPollCounterIsPurgedOnTermination() throws {
+        // The flat-poll streak must not leak across pid reuse: a recycled
+        // session tolerates (threshold - 1) flat polls without flipping.
+        let threshold = AgentDetector.waitingInputFlatPollThreshold
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 705, command: "claude", cpuTime: 10),
+        ])
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 705, command: "claude", cpuTime: 12),
+        ])
+        let done = detector.detectedSessions[0]
+        #expect(done.state == .executing)
+
+        // Build a near-threshold streak, then terminate.
+        for _ in 0..<(threshold - 1) {
+            detector.processSnapshotDidUpdate([
+                DetectedProcess(pid: 705, command: "claude", cpuTime: 12),
+            ])
+        }
+        #expect(done.state == .executing)
+        detector.processSnapshotDidUpdate([])
+        #expect(done.state == .done)
+
+        // Recycle.
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 705, command: "claude", cpuTime: 10),
+        ])
+        let recycled = try #require(detector.session(forPID: 705))
+        #expect(recycled !== done)
+
+        // (threshold - 1) flat polls must NOT downgrade the fresh session —
+        // they would if the stale streak had leaked across termination.
+        for _ in 0..<(threshold - 1) {
+            detector.processSnapshotDidUpdate([
+                DetectedProcess(pid: 705, command: "claude", cpuTime: 10),
+            ])
+        }
+        #expect(recycled.state != .waitingInput)
+    }
+
     private func stamp(
         _ wallTime: Date,
         uptime: TimeInterval,

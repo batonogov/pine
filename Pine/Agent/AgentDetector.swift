@@ -39,8 +39,12 @@ nonisolated struct DetectedProcess: Sendable, Equatable {
     let cwd: URL?
     /// Cumulative CPU time in seconds (from `ps -eo ... cputime=`). Used by
     /// `AgentDetector.processSnapshotDidUpdate(_:)` to refine
-    /// `.idle` → `.executing` / `.waitingInput`: a session whose CPU time
-    /// stopped advancing between two snapshots is idle at a prompt (#1112).
+    /// `.idle` → `.executing` / `.waitingInput`. A CPU-time advance promotes a
+    /// session to `.executing`; only
+    /// `AgentDetector.waitingInputFlatPollThreshold` consecutive flat polls
+    /// (no CPU growth) downgrade it to `.waitingInput` (#1112, #1338).
+    /// Network-bound LLM agents barely burn CPU while blocked on an API
+    /// response, so a single flat poll must not read as "idle at a prompt".
     /// `nil` when the snapshot did not carry CPU time (legacy parse path,
     /// unit tests) — the detector leaves the state untouched in that case.
     let cpuTime: Int?
@@ -108,6 +112,20 @@ final class AgentDetector {
     /// `processSnapshotDidUpdate(_:)` to refine state. Cleared in `markDone`
     /// so pid reuse starts a fresh baseline (#1112).
     private var lastCpuTimeByPID: [Int32: Int] = [:]
+
+    /// Consecutive CPU-flat polls seen for each tracked pid. A session is only
+    /// downgraded to `.waitingInput` once this reaches
+    /// `waitingInputFlatPollThreshold`, so a busy-but-network-bound agent is
+    /// not flipped by a single flat poll (#1338). Reset to 0 on a CPU advance
+    /// and purged in `markDone` alongside `lastCpuTimeByPID`.
+    private var flatPollCountByPID: [Int32: Int] = [:]
+
+    /// Number of consecutive CPU-flat polls required before a tracked session
+    /// is downgraded from `.executing` / `.idle` to `.waitingInput`. At the
+    /// default 2-second detection poll interval this is roughly six seconds
+    /// of inactivity, which absorbs the network-bound thinking pauses of LLM
+    /// agents (#1338).
+    static let waitingInputFlatPollThreshold = 3
 
     /// Stable process-start value seen for each tracked pid.
     private var startIdentifierByPID: [Int32: String] = [:]
@@ -263,9 +281,23 @@ final class AgentDetector {
                 }
                 if let cpu = process.cpuTime {
                     if let previousCPU, existing.state != .done {
-                        existing.state = cpu > previousCPU
-                            ? .executing
-                            : .waitingInput
+                        if cpu > previousCPU {
+                            // A CPU advance means real local work: promote to
+                            // `.executing` and clear the flat-poll streak.
+                            existing.state = .executing
+                            flatPollCountByPID[process.pid] = 0
+                        } else {
+                            // CPU did not advance. Network-bound LLM agents
+                            // sleep while waiting on an API response, so a
+                            // single flat poll must not read as "idle at a
+                            // prompt" — require a sustained streak before
+                            // downgrading to `.waitingInput` (#1338).
+                            let flatCount = (flatPollCountByPID[process.pid] ?? 0) + 1
+                            flatPollCountByPID[process.pid] = flatCount
+                            if flatCount >= Self.waitingInputFlatPollThreshold {
+                                existing.state = .waitingInput
+                            }
+                        }
                     }
                     lastCpuTimeByPID[process.pid] = cpu
                 }
@@ -343,6 +375,7 @@ final class AgentDetector {
     private func markDone(pid: Int32) -> UUID? {
         guard let session = sessionsByPID.removeValue(forKey: pid) else { return nil }
         lastCpuTimeByPID.removeValue(forKey: pid)
+        flatPollCountByPID.removeValue(forKey: pid)
         startIdentifierByPID.removeValue(forKey: pid)
         preciseStartByPID.removeValue(forKey: pid)
         livenessTracker.recordTermination(of: session)
