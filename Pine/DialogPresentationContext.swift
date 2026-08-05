@@ -643,6 +643,7 @@ extension NSSavePanel {
     ) async -> NSApplication.ModalResponse {
         guard let capturedOwner = context.nsWindow,
               DialogPresenter.isEligibleApplicationOwner(capturedOwner) else {
+            Logger.app.debug("runSheet aborted: owner missing or ineligible (#1344)")
             return .abort
         }
         return await context.present(

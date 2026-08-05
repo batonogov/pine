@@ -322,6 +322,36 @@ final class ProjectRegistry: LSPSettingsObserver {
         return canonical
     }
 
+    /// Opens a project via folder picker, first waiting for the project
+    /// window to bind a dialog owner (#1344).
+    ///
+    /// Project scenes bind their AppKit owner asynchronously
+    /// (`WindowCloseInterceptor` → `DialogPresenter.register` →
+    /// `bindDialogOwnerWindow`), so callers that capture the presentation
+    /// context synchronously — e.g. the toolbar Open Folder button and the
+    /// `openNewProject()` duplicates — fire into a `nil` owner right after a
+    /// window appears or is replaced, and `NSSavePanel.runSheet` silently
+    /// aborts. This bounds the wait on `awaitDialogOwnerWindow`, then presents
+    /// the panel anchored to the freshly bound owner. Returns `nil` if the
+    /// owner never becomes eligible or the user cancels.
+    @discardableResult
+    func openProjectViaPanel(
+        for projectManager: ProjectManager,
+        maximumAttempts: Int = 80,
+        waitForNextAttempt: (@MainActor () async -> Void)? = nil,
+        isEligible: (@MainActor (NSWindow) -> Bool)? = nil
+    ) async -> URL? {
+        guard await projectManager.awaitDialogOwnerWindow(
+            maximumAttempts: maximumAttempts,
+            waitForNextAttempt: waitForNextAttempt,
+            isEligible: isEligible
+        ) != nil else {
+            return nil
+        }
+        let context = DialogPresenter.forProject(projectManager)
+        return await openProjectViaPanel(context: context)
+    }
+
     /// Closes the project window but keeps the ProjectManager alive. Terminal
     /// sessions and user tasks continue in the background; reopening the
     /// project restores access to their current state and output history.

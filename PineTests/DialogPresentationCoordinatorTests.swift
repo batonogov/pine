@@ -397,6 +397,50 @@ struct DialogPresentationCoordinatorTests {
         DialogPresenter.ownerDidClose(window)
     }
 
+    @Test("NSSavePanel runSheet aborts without presenting for an ineligible owner (#1344)")
+    func savePanelAbortsForIneligibleOwner() async {
+        // Mirrors the NSAlert guard above. NSSavePanel.runSheet previously
+        // returned .abort silently for an unbound owner, leaving no trace that
+        // the Open Folder flow had fired into a missing dialog anchor.
+        let window = NSWindow()
+        let context = DialogPresentationContext(window: window)
+        let panel = NSSavePanel()
+
+        let response = await panel.runSheet(on: context)
+
+        #expect(response == .abort)
+        #expect(window.attachedSheet == nil)
+        DialogPresenter.ownerDidClose(window)
+    }
+
+    @Test("folder picker waits for the project owner to bind before presenting (#1344)")
+    func folderPickerWaitsForProjectOwner() async {
+        // The toolbar Open Folder button and the openNewProject() duplicates
+        // used to capture the presentation context synchronously and abort
+        // when the project window had not bound its owner yet. The
+        // owner-awaiting entry point must keep polling instead.
+        let registry = ProjectRegistry()
+        let projectManager = ProjectManager()
+        var waitCount = 0
+
+        let url = await registry.openProjectViaPanel(
+            for: projectManager,
+            maximumAttempts: 4,
+            waitForNextAttempt: {
+                waitCount += 1
+                await Task.yield()
+            },
+            // Owner never becomes eligible, so the panel is never reached;
+            // the only observable side effect is the bounded wait loop.
+            isEligible: { _ in false }
+        )
+
+        #expect(url == nil)
+        // Without the awaited-owner wait this would be 0 (immediate abort on
+        // a nil context), which is exactly the #1344 silent no-op regression.
+        #expect(waitCount == 4)
+    }
+
     @Test("application owner eligibility rejects hidden and miniaturized states")
     func applicationOwnerEligibility() {
         #expect(
