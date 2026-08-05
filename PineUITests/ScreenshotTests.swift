@@ -75,16 +75,12 @@ final class ScreenshotTests: PineUITestCase {
             waitForExistence(inboxWindow, timeout: 10),
             "Agent Inbox window should appear"
         )
-        // SwiftUI may create the new window behind Welcome on macOS 27.
-        // Close Welcome after the Inbox exists so no window covers the shot.
-        let closeWelcome = welcomeWindow.buttons[
-            XCUIIdentifierCloseWindow
-        ].firstMatch
-        XCTAssertTrue(closeWelcome.exists, "Welcome close button should exist")
-        closeWelcome.click()
+        // The marketing launch path hides every SwiftUI/AppKit Welcome owner.
+        // This avoids closing only one of the duplicate fallback windows that
+        // macOS 26 can expose to XCUITest.
         XCTAssertTrue(
             welcomeWindow.waitForNonExistence(timeout: 5),
-            "Welcome should close before capturing Agent Inbox"
+            "Welcome should hide before capturing Agent Inbox"
         )
         let releaseTask = inboxWindow.buttons.matching(
             NSPredicate(
