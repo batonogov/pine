@@ -327,7 +327,6 @@ struct ContentView: View {
                     } else {
                         // Warn before stopping tabs with foreground processes.
                         // Presented as a window-scoped sheet (issue #1241).
-                        let context = DialogPresenter.forProject(projectManager)
                         let targetPaneIDs = Set(paneManager.terminalPaneIDs)
                         let targetTabs = terminal.allTerminalTabs
                         let targetTabIDs = Set(targetTabs.map(\.id))
@@ -336,6 +335,13 @@ struct ContentView: View {
                                 for: targetTabs
                             )
                         Task { @MainActor in
+                            // Resolve the owner resiliently: a transiently-nil
+                            // weak project→window anchor during scene
+                            // restoration must not silently abort the close
+                            // (#1335 H3).
+                            let context = await TabCloseHelper.terminalCloseContext(
+                                for: projectManager
+                            )
                             guard await TabCloseHelper.confirmTerminalProcessStop(
                                 tabs: targetTabs,
                                 context: context

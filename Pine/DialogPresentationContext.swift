@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import os
 
 /// Identity for an in-flight destructive dialog workflow. A repeated user
 /// gesture with the same key is rejected while the original request is active
@@ -20,6 +21,18 @@ enum DialogRequestKey: Hashable {
         tabIDs: Set<UUID>,
         foregroundProcesses: Set<TerminalForegroundProcessIdentity>
     )
+}
+
+extension DialogRequestKey {
+    /// Concise, privacy-safe representation for `os_log` diagnostics (#1335).
+    var logDescription: String {
+        switch self {
+        case let .editorTabs(_, tabIDs):
+            return "editorTabs(\(tabIDs.count))"
+        case let .terminalTabs(tabIDs, foregroundProcesses):
+            return "terminalTabs(tabs:\(tabIDs.count), fg:\(foregroundProcesses.count))"
+        }
+    }
 }
 
 /// Serializes every native dialog belonging to one window.
@@ -76,6 +89,17 @@ final class WindowDialogCoordinator {
     private let onOwnerClose: () -> Void
     private(set) var isOwnerClosed = false
 
+    /// Polls the owner while a queued request is blocked by a foreign
+    /// (framework/SwiftUI) sheet, and bounds how long a queued request may
+    /// wait so the queue can never wedge permanently (#1335 H2).
+    private let watchdogInterval: TimeInterval
+    private let watchdogMaxAttempts: Int
+    private var queuedWatchdog: Task<Void, Never>?
+
+    /// Production watchdog cadence: re-check every 0.5 s for up to ~30 s.
+    static let defaultWatchdogInterval: TimeInterval = 0.5
+    static let defaultWatchdogMaxAttempts: Int = 60
+
     var pendingRequestCount: Int {
         queuedRequests.count + (activeRequest == nil ? 0 : 1)
     }
@@ -83,10 +107,14 @@ final class WindowDialogCoordinator {
     init(
         ownerWindow: NSWindow,
         notificationCenter: NotificationCenter = .default,
+        watchdogInterval: TimeInterval = WindowDialogCoordinator.defaultWatchdogInterval,
+        watchdogMaxAttempts: Int = WindowDialogCoordinator.defaultWatchdogMaxAttempts,
         onOwnerClose: @escaping () -> Void = {}
     ) {
         self.ownerWindow = ownerWindow
         self.notificationCenter = notificationCenter
+        self.watchdogInterval = watchdogInterval
+        self.watchdogMaxAttempts = watchdogMaxAttempts
         self.onOwnerClose = onOwnerClose
         closeObserver = notificationCenter.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -167,6 +195,7 @@ final class WindowDialogCoordinator {
                     $0.deduplicationKey == deduplicationKey
                 })
             if isDuplicate {
+                Logger.app.debug("present aborted: duplicate request key \(deduplicationKey.logDescription, privacy: .public) (#1335 H1)")
                 return .abort
             }
         }
@@ -196,6 +225,7 @@ final class WindowDialogCoordinator {
     func ownerDidClose() {
         guard !isOwnerClosed else { return }
         isOwnerClosed = true
+        disarmQueuedPresentationWatchdog()
 
         if let activeRequest {
             self.activeRequest = nil
@@ -239,7 +269,15 @@ final class WindowDialogCoordinator {
         // SwiftUI and framework-owned sheets do not enter this coordinator.
         // Wait for them to finish instead of asking AppKit to attach a second
         // sheet to the same window.
-        guard ownerWindow.attachedSheet == nil else { return }
+        guard ownerWindow.attachedSheet == nil else {
+            // A foreign sheet may occupy the owner without emitting
+            // `didEndSheetNotification` (notably SwiftUI sheets). Without a
+            // watchdog a queued request could wait forever for a signal that
+            // never arrives, so poll the owner on a bounded cadence (#1335 H2).
+            armQueuedPresentationWatchdog()
+            return
+        }
+        disarmQueuedPresentationWatchdog()
 
         let request = queuedRequests.removeFirst()
         activeRequest = request
@@ -249,6 +287,51 @@ final class WindowDialogCoordinator {
                 self.finish(request, response: response)
             }
         }
+    }
+
+    /// Arms the foreign-sheet watchdog for the front queued request. Polls the
+    /// owner on `watchdogInterval`; once the foreign sheet clears the queued
+    /// request is presented, and after `watchdogMaxAttempts` the front request
+    /// is resolved as `.abort` so the queue can never wedge permanently.
+    private func armQueuedPresentationWatchdog() {
+        guard queuedWatchdog == nil else { return }
+        let interval = watchdogInterval
+        let maxAttempts = watchdogMaxAttempts
+        Logger.app.debug("queued request blocked by an attached foreign sheet; arming presentation watchdog (#1335 H2)")
+        queuedWatchdog = Task { @MainActor [weak self] in
+            for _ in 0..<maxAttempts {
+                if Task.isCancelled { return }
+                try? await Task.sleep(
+                    nanoseconds: UInt64(interval * 1_000_000_000)
+                )
+                guard let self, !self.isOwnerClosed else { return }
+                // Re-evaluate: if the foreign sheet cleared this starts the
+                // queued request (and disarms the watchdog). Otherwise it is
+                // a no-op and the loop keeps polling.
+                self.presentNextIfPossible()
+                if Task.isCancelled { return }
+            }
+            // Bound elapsed with the foreign sheet still attached: resolve the
+            // front request so the queue is not wedged forever.
+            guard let self else { return }
+            Logger.app.debug("queued request aborted after watchdog bound — owner still has an attached foreign sheet (#1335 H2)")
+            self.abortFrontQueuedRequest()
+        }
+    }
+
+    private func disarmQueuedPresentationWatchdog() {
+        queuedWatchdog?.cancel()
+        queuedWatchdog = nil
+    }
+
+    /// Resolves the front queued request as `.abort` and re-evaluates so any
+    /// remaining queued requests get their own bounded watchdog turn.
+    private func abortFrontQueuedRequest() {
+        disarmQueuedPresentationWatchdog()
+        guard !queuedRequests.isEmpty else { return }
+        let request = queuedRequests.removeFirst()
+        request.resolve(.abort)
+        presentNextIfPossible()
     }
 
     private func finish(
@@ -533,6 +616,7 @@ extension NSAlert {
     ) async -> NSApplication.ModalResponse {
         guard let capturedOwner = context.nsWindow,
               DialogPresenter.isEligibleApplicationOwner(capturedOwner) else {
+            Logger.app.debug("runSheet aborted: owner missing or ineligible (#1335 H3)")
             return .abort
         }
         return await context.present(

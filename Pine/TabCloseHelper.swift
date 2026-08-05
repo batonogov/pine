@@ -21,6 +21,96 @@ nonisolated struct TerminalForegroundProcessIdentity: Hashable, Sendable {
     let processGroupID: Int32
 }
 
+/// Per-tab coverage captured when a destructive terminal close/stop is
+/// authorized. An AI-agent tab (#1335) is covered by its stable
+/// agent-session identity rather than its volatile foreground process group:
+/// agents constantly spawn short-lived children, so the foreground pgid
+/// churns on nearly every poll and must not invalidate a confirmation the
+/// user already gave.
+nonisolated enum TerminalTabCloseCoverage: Hashable, Sendable {
+    /// A non-agent tab is covered by an exact foreground process-group
+    /// generation. A new process group in the same tab is a new
+    /// authorization generation (existing safety semantics).
+    case foregroundProcess(TerminalForegroundProcessIdentity)
+    /// An agent tab is covered by its stable agent-session identity.
+    case agentSession(sessionID: UUID)
+}
+
+/// Snapshot of the destructive-process coverage authorized for a set of
+/// terminal tabs. Re-checked after the user answers the confirmation sheet so
+/// a confirmation cannot be silently invalidated by the normal process-group
+/// churn of an AI-agent tab (#1335).
+@MainActor
+struct TerminalTabCloseAuthorization {
+    private let coverage: [UUID: TerminalTabCloseCoverage]
+    private let foregroundIdentities: Set<TerminalForegroundProcessIdentity>
+
+    /// `true` when at least one tab has a running agent session or foreground
+    /// process and therefore needs confirmation.
+    var requiresConfirmation: Bool { !coverage.isEmpty }
+
+    /// Deduplication key. Agent tabs contribute only their (stable) tab id —
+    /// never a volatile foreground pgid — so repeated close gestures on the
+    /// same agent tab collapse to one in-flight request.
+    var deduplicationKey: DialogRequestKey {
+        .terminalTabs(
+            tabIDs: Set(coverage.keys),
+            foregroundProcesses: foregroundIdentities
+        )
+    }
+
+    static func authorizing(tabs: [TerminalTab]) -> TerminalTabCloseAuthorization {
+        var coverage: [UUID: TerminalTabCloseCoverage] = [:]
+        var foregroundIdentities: Set<TerminalForegroundProcessIdentity> = []
+        for tab in tabs {
+            if let sessionID = tab.agentSession?.id {
+                coverage[tab.id] = .agentSession(sessionID: sessionID)
+            } else if tab.foregroundProcessID > 0 {
+                let identity = TerminalForegroundProcessIdentity(
+                    tabID: tab.id,
+                    processGroupID: tab.foregroundProcessID
+                )
+                coverage[tab.id] = .foregroundProcess(identity)
+                foregroundIdentities.insert(identity)
+            }
+        }
+        return TerminalTabCloseAuthorization(
+            coverage: coverage,
+            foregroundIdentities: foregroundIdentities
+        )
+    }
+
+    /// `true` when every authorized tab is still covered by the identity
+    /// captured at authorization time. A process that exited while the sheet
+    /// was visible is always covered (nothing remains to protect).
+    func stillCovers(_ tabs: [TerminalTab]) -> Bool {
+        for tab in tabs {
+            // A tab with nothing to protect at authorization time (idle
+            // shell, no agent session, no foreground process) is absent from
+            // `coverage`. It has nothing to re-check, so skip it — otherwise a
+            // mixed idle+active bulk close set would be silently aborted
+            // right after the user confirmed (#1335 review finding).
+            guard let captured = coverage[tab.id] else { continue }
+            switch captured {
+            case .agentSession(let sessionID):
+                // Same agent session: covered (pgid churn is normal agent
+                // behaviour). The agent having exited (session cleared) is
+                // also covered — there is nothing left to protect.
+                guard tab.agentSession?.id == sessionID
+                    || tab.agentSession == nil else { return false }
+            case .foregroundProcess(let identity):
+                let current = tab.foregroundProcessID
+                // Process exited: covered. A new non-zero process group is a
+                // new, unauthorized generation.
+                if current > 0, current != identity.processGroupID {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+}
+
 @MainActor
 enum TabCloseHelper {
 
@@ -354,21 +444,20 @@ enum TabCloseHelper {
         context: DialogPresentationContext = .unscoped,
         presentAlert: (@MainActor () async -> NSApplication.ModalResponse)? = nil
     ) async -> Bool {
-        let authorizedProcesses = foregroundProcessSnapshot(for: tabs)
-        guard !authorizedProcesses.isEmpty else { return true }
+        // An agent tab is authorized by its stable session identity rather
+        // than its volatile foreground pgid, so the normal child-process
+        // churn of an AI agent cannot silently abort a confirmation (#1335).
+        let authorization = TerminalTabCloseAuthorization.authorizing(tabs: tabs)
+        guard authorization.requiresConfirmation else { return true }
         guard await confirmTerminalStop(
             hasForegroundProcess: true,
             context: context,
-            deduplicationKey: .terminalTabs(
-                tabIDs: Set(tabs.map(\.id)),
-                foregroundProcesses: authorizedProcesses
-            ),
+            deduplicationKey: authorization.deduplicationKey,
             presentAlert: presentAlert
         ) else {
             return false
         }
-        return foregroundProcessSnapshot(for: tabs)
-            .isSubset(of: authorizedProcesses)
+        return authorization.stillCovers(tabs)
     }
 
     static func foregroundProcessSnapshot(
@@ -389,5 +478,31 @@ enum TabCloseHelper {
         by authorized: Set<TerminalForegroundProcessIdentity>
     ) -> Bool {
         current.isSubset(of: authorized)
+    }
+
+    /// Resolves a presentation context for a terminal close/stop, resilient
+    /// to a transiently-missing project owner (#1335 H3).
+    ///
+    /// `DialogPresenter.forProject` reads a weak project→window anchor that
+    /// can be `nil` for a brief moment during SwiftUI scene restoration. A
+    /// close captured at that instant would otherwise resolve to an unscoped
+    /// context and silently abort. This resolves the project owner, falls
+    /// back to the key project window, and retries once after a short
+    /// main-queue hop so a transient miss does not lose the close gesture.
+    static func terminalCloseContext(
+        for projectManager: ProjectManager?
+    ) async -> DialogPresentationContext {
+        func resolve() -> DialogPresentationContext {
+            guard let projectManager else { return .unscoped }
+            let projectContext = DialogPresenter.forProject(projectManager)
+            if projectContext.nsWindow != nil { return projectContext }
+            let keyContext = DialogPresenter.forKeyProject()
+            return keyContext.nsWindow != nil ? keyContext : projectContext
+        }
+
+        let first = resolve()
+        if first.nsWindow != nil { return first }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        return resolve()
     }
 }
