@@ -44,10 +44,14 @@ struct AgentAttentionStateTests {
         detector.processSnapshotDidUpdate([
             DetectedProcess(pid: 100, command: "codex", cpuTime: 12),
         ])
-        // Next poll: CPU time unchanged — agent is idle at a prompt.
-        detector.processSnapshotDidUpdate([
-            DetectedProcess(pid: 100, command: "codex", cpuTime: 12),
-        ])
+        // CPU time unchanged across polls — agent is idle at a prompt. The
+        // detector now requires `waitingInputFlatPollThreshold` consecutive
+        // flat polls before downgrading (#1338 hysteresis), so drive that many.
+        for _ in 0..<AgentDetector.waitingInputFlatPollThreshold {
+            detector.processSnapshotDidUpdate([
+                DetectedProcess(pid: 100, command: "codex", cpuTime: 12),
+            ])
+        }
         #expect(detector.detectedSessions[0].state == .waitingInput)
     }
 
@@ -62,9 +66,13 @@ struct AgentAttentionStateTests {
         ])
         #expect(detector.detectedSessions[0].state == .executing)
 
-        detector.processSnapshotDidUpdate([
-            DetectedProcess(pid: 100, command: "claude", cpuTime: 3),
-        ])
+        // A single flat poll no longer flips to .waitingInput (#1338
+        // hysteresis); drive the threshold count of flat polls to reach it.
+        for _ in 0..<AgentDetector.waitingInputFlatPollThreshold {
+            detector.processSnapshotDidUpdate([
+                DetectedProcess(pid: 100, command: "claude", cpuTime: 3),
+            ])
+        }
         #expect(detector.detectedSessions[0].state == .waitingInput)
 
         detector.processSnapshotDidUpdate([
