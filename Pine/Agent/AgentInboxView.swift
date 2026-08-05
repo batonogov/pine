@@ -23,11 +23,12 @@ struct AgentInboxView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Label(Strings.agentInboxTitle, systemImage: MenuIcons.agentInbox)
-                    .font(.title2.weight(.semibold))
-                Spacer()
-                if let navigationMessage {
+            // The window title bar already names the Agent Inbox; show a
+            // transient banner only when a navigation/recovery message is
+            // active (#1339 — removed the duplicate in-window header label).
+            if let navigationMessage {
+                HStack {
+                    Spacer()
                     Label(navigationMessage, systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -35,10 +36,10 @@ struct AgentInboxView: View {
                             AccessibilityID.agentInboxNavigationStatus
                         )
                 }
-            }
-            .padding()
+                .padding()
 
-            Divider()
+                Divider()
+            }
 
             if snapshot.isEmpty {
                 ContentUnavailableView {
@@ -53,6 +54,7 @@ struct AgentInboxView: View {
         .frame(minWidth: 420, idealWidth: 720, minHeight: 360, idealHeight: 560)
         .focusable()
         .focused($hasKeyboardFocus)
+        .focusEffectDisabled()
         .onAppear {
             synchronizeSelection()
             hasKeyboardFocus = true
