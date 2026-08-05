@@ -7,15 +7,18 @@
     <meta name="description" content="Pine is a native macOS code editor for CLI agents, with a cross-project Agent Inbox, private notifications, LSP, Git context, and no Electron.">
     <meta property="og:title" content="Pine — The Native macOS Code Editor for CLI Agent Workflows">
     <meta property="og:description" content="Keep agents in the terminal and every task in view with a cross-project Inbox, private notifications, LSP, and Git context.">
-    <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
+    <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-agent-inbox.png">
+    <meta property="og:image:alt" content="Pine Agent Inbox showing agent tasks across projects">
     <meta property="og:url" content="https://batonogov.github.io/pine/">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Pine — The Native macOS Code Editor for CLI Agent Workflows">
     <meta name="twitter:description" content="Keep agents in the terminal and every task in view with a cross-project Inbox, private notifications, LSP, and Git context.">
-    <meta name="twitter:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-agent-inbox.png">
+    <meta name="twitter:image:alt" content="Pine Agent Inbox showing agent tasks across projects">
     <meta name="theme-color" content="#07110d">
     <link rel="canonical" href="https://batonogov.github.io/pine/">
+    <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/batonogov/pine/main/assets/pine-app-icon.png">
     <style>
         * {
             box-sizing: border-box;
@@ -120,12 +123,10 @@
             letter-spacing: -0.03em;
         }
 
-        .brand-mark {
-            width: 12px;
-            height: 12px;
-            border-radius: 999px;
-            background: linear-gradient(135deg, var(--accent-strong), var(--accent));
-            box-shadow: 0 0 24px rgba(126, 242, 176, 0.48);
+        .brand-logo {
+            width: 30px;
+            height: 30px;
+            filter: drop-shadow(0 7px 14px rgba(86, 207, 139, 0.2));
         }
 
         .nav {
@@ -205,6 +206,24 @@
         .hero-copy > *:nth-child(4) { animation-delay: 0.3s; }
         .hero-copy > *:nth-child(5) { animation-delay: 0.38s; }
         .hero-copy > *:nth-child(6) { animation-delay: 0.46s; }
+        .hero-copy > *:nth-child(7) { animation-delay: 0.54s; }
+
+        .hero-identity {
+            display: inline-flex;
+            align-items: center;
+            gap: 16px;
+            width: fit-content;
+            color: var(--text);
+            font-size: 17px;
+            font-weight: 750;
+            letter-spacing: -0.03em;
+        }
+
+        .hero-logo {
+            width: 88px;
+            height: 88px;
+            filter: drop-shadow(0 20px 32px rgba(86, 207, 139, 0.18));
+        }
 
         .eyebrow {
             display: inline-flex;
@@ -422,6 +441,10 @@
             margin: 0;
         }
 
+        .screenshot-gallery figure.featured {
+            grid-column: 1 / -1;
+        }
+
         .screenshot-trigger {
             display: block;
             width: 100%;
@@ -629,6 +652,68 @@
             margin-top: 10px;
             color: var(--muted-strong);
             font-size: 15px;
+        }
+
+        .release-card {
+            display: grid;
+            grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+            gap: 42px;
+            align-items: center;
+            padding: 38px;
+            overflow: hidden;
+            border: 1px solid rgba(126, 242, 176, 0.24);
+            border-radius: var(--radius-xl);
+            background:
+                radial-gradient(circle at 10% 10%, rgba(126, 242, 176, 0.15), transparent 34%),
+                radial-gradient(circle at 90% 90%, rgba(47, 121, 232, 0.12), transparent 32%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--shadow);
+        }
+
+        .release-copy h2 {
+            max-width: 8ch;
+        }
+
+        .release-copy p {
+            margin-top: 18px;
+            color: var(--muted-strong);
+            font-size: 18px;
+        }
+
+        .release-copy .btn {
+            margin-top: 24px;
+        }
+
+        .release-list {
+            display: grid;
+            gap: 12px;
+            list-style: none;
+        }
+
+        .release-list li {
+            position: relative;
+            padding: 18px 18px 18px 52px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            background: rgba(7, 17, 13, 0.48);
+            color: var(--muted-strong);
+            font-size: 16px;
+        }
+
+        .release-list li::before {
+            content: "✓";
+            position: absolute;
+            top: 16px;
+            left: 18px;
+            display: grid;
+            width: 24px;
+            height: 24px;
+            place-items: center;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--accent-strong);
+            font-size: 13px;
+            font-weight: 800;
         }
 
         .compare-grid {
@@ -886,7 +971,8 @@
             .install-panel,
             .compare-grid,
             .feature-grid,
-            .mini-grid {
+            .mini-grid,
+            .release-card {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
@@ -930,7 +1016,8 @@
             .install-panel,
             .compare-grid,
             .feature-grid,
-            .mini-grid {
+            .mini-grid,
+            .release-card {
                 grid-template-columns: 1fr;
             }
 
@@ -988,6 +1075,10 @@
                 grid-template-columns: 1fr;
             }
 
+            .screenshot-gallery figure.featured {
+                grid-column: span 1;
+            }
+
             footer {
                 flex-direction: column;
                 align-items: flex-start;
@@ -999,10 +1090,11 @@
     <div class="page">
         <header class="site-header">
             <a class="brand" href="#">
-                <span class="brand-mark" aria-hidden="true"></span>
+                <img class="brand-logo" src="https://raw.githubusercontent.com/batonogov/pine/main/assets/pine-app-icon.png" alt="" aria-hidden="true">
                 <span>Pine</span>
             </a>
             <nav class="nav">
+                <a href="#new" data-i18n="nav.new">Pine 2.0</a>
                 <a href="#why" data-i18n="nav.why">Why Pine</a>
                 <a href="#features" data-i18n="nav.features">Features</a>
                 <a href="#install" data-i18n="nav.install">Install</a>
@@ -1026,6 +1118,10 @@
         <main>
             <section class="hero">
                 <div class="hero-copy">
+                    <div class="hero-identity">
+                        <img class="hero-logo" src="https://raw.githubusercontent.com/batonogov/pine/main/assets/pine-app-icon.png" alt="Pine app icon">
+                        <span>Pine 2.0</span>
+                    </div>
                     <div class="eyebrow" data-i18n="hero.eyebrow">Native · Agent-aware · No Electron</div>
                     <h1 data-i18n="hero.title">A native Mac editor built for the age of CLI agents.</h1>
                     <p data-i18n="hero.desc">Keep the agent in the terminal and the code in view. Pine reflects agent activity, file changes, diagnostics, and git context without turning into another AI dashboard.</p>
@@ -1050,7 +1146,7 @@
                     <div class="shot-window">
                         <div class="shot-card-stack">
                             <div class="shot-card">
-                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine editor screenshot" data-i18n-alt="hero.alt">
+                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-agent-inbox.png" alt="Pine Agent Inbox showing agent tasks across projects" data-i18n-alt="screenshots.alt0">
                             </div>
                             <div class="shot-chip chip-one" data-i18n="hero.chipTabs">Agent activity</div>
                             <div class="shot-chip chip-two" data-i18n="hero.chipTerminal">Split terminal panes</div>
@@ -1082,6 +1178,23 @@
                         <h3 data-i18n="mini.practicalTitle">Git where it matters</h3>
                         <p data-i18n="mini.practicalDesc">Status in the tree, branch switching, and diff markers directly in the editor.</p>
                     </article>
+                </div>
+            </section>
+
+            <section class="section" id="new">
+                <div class="release-card">
+                    <div class="release-copy">
+                        <span class="section-kicker" data-i18n="release.kicker">New in Pine 2.0</span>
+                        <h2 data-i18n="release.title">Agent work finally has a home.</h2>
+                        <p data-i18n="release.desc">Pine 2.0 turns scattered terminal sessions into a durable, recoverable workflow while keeping the terminal as the source of truth.</p>
+                        <a class="btn btn-secondary" href="https://github.com/batonogov/pine/releases/tag/v2.0.0" data-i18n="release.cta">Read the 2.0 release notes</a>
+                    </div>
+                    <ul class="release-list">
+                        <li data-i18n="release.li1">Cross-project Agent Inbox with exact routing back to live sessions</li>
+                        <li data-i18n="release.li2">Isolated worktrees, safe task recovery, and evidence-based completion briefs</li>
+                        <li data-i18n="release.li3">Actionable private notifications and first-party CLI-agent adapters</li>
+                        <li data-i18n="release.li4">A polished branded DMG installer and a completely new Pine icon</li>
+                    </ul>
                 </div>
             </section>
 
@@ -1168,6 +1281,10 @@
                     <h2 data-i18n="screenshots.title">See Pine in action.</h2>
                 </div>
                 <div class="screenshot-gallery">
+                    <figure class="featured">
+                        <button class="screenshot-trigger" type="button"><img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-agent-inbox.png" alt="Pine Agent Inbox showing agent tasks across projects" data-i18n-alt="screenshots.alt0" loading="lazy"></button>
+                        <figcaption data-i18n="screenshots.cap0">Agent Inbox keeps work from every project in one place</figcaption>
+                    </figure>
                     <figure>
                         <button class="screenshot-trigger" type="button"><img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-welcome.png" alt="Pine welcome window with recent projects" data-i18n-alt="screenshots.alt1" loading="lazy"></button>
                         <figcaption data-i18n="screenshots.cap1">Welcome window with recent projects</figcaption>
@@ -1249,6 +1366,7 @@
     <script>
         var T = {
             en: {
+                "nav.new": "Pine 2.0",
                 "nav.why": "Why Pine",
                 "nav.features": "Features",
                 "nav.install": "Install",
@@ -1280,6 +1398,14 @@
                 "mini.practicalKicker": "Practical",
                 "mini.practicalTitle": "Git where it matters",
                 "mini.practicalDesc": "Status in the tree, branch switching, and diff markers directly in the editor.",
+                "release.kicker": "New in Pine 2.0",
+                "release.title": "Agent work finally has a home.",
+                "release.desc": "Pine 2.0 turns scattered terminal sessions into a durable, recoverable workflow while keeping the terminal as the source of truth.",
+                "release.cta": "Read the 2.0 release notes",
+                "release.li1": "Cross-project Agent Inbox with exact routing back to live sessions",
+                "release.li2": "Isolated worktrees, safe task recovery, and evidence-based completion briefs",
+                "release.li3": "Actionable private notifications and first-party CLI-agent adapters",
+                "release.li4": "A polished branded DMG installer and a completely new Pine icon",
                 "why.kicker": "Why Pine",
                 "why.title": "Built for the gap between bloated editors and full IDEs.",
                 "why.desc": "Pine keeps the parts that matter in day-to-day coding and cuts the layers that usually slow editors down.",
@@ -1315,6 +1441,8 @@
                 "features.06desc": "Auto-save, session and cursor restoration, large-file handling, auto-updates, nine localizations, VoiceOver, reduced motion, and no Electron runtime.",
                 "screenshots.kicker": "Screenshots",
                 "screenshots.title": "See Pine in action.",
+                "screenshots.alt0": "Pine Agent Inbox showing agent tasks across projects",
+                "screenshots.cap0": "Agent Inbox keeps work from every project in one place",
                 "screenshots.alt1": "Pine welcome window with recent projects",
                 "screenshots.cap1": "Welcome window with recent projects",
                 "screenshots.alt2": "Pine code editor with syntax highlighting and file tree",
@@ -1351,6 +1479,7 @@
                 "meta.twitterDescription": "Keep agents in the terminal and every task in view with a cross-project Inbox, private notifications, LSP, and Git context."
             },
             ru: {
+                "nav.new": "Pine 2.0",
                 "nav.why": "Почему Pine",
                 "nav.features": "Возможности",
                 "nav.install": "Установка",
@@ -1382,6 +1511,14 @@
                 "mini.practicalKicker": "Практичный",
                 "mini.practicalTitle": "Git там, где он нужен",
                 "mini.practicalDesc": "Статусы файлов, переключение веток и маркеры изменений прямо рядом с кодом.",
+                "release.kicker": "Новое в Pine 2.0",
+                "release.title": "У работы агентов наконец появилось своё место.",
+                "release.desc": "Pine 2.0 превращает разрозненные терминальные сессии в надёжный восстанавливаемый процесс, сохраняя терминал источником правды.",
+                "release.cta": "Читать заметки о выпуске 2.0",
+                "release.li1": "Общие Входящие агентов для всех проектов с точным возвратом к активной сессии",
+                "release.li2": "Изолированные worktree, безопасное восстановление задач и подтверждённые фактами отчёты о завершении",
+                "release.li3": "Полезные приватные уведомления и встроенные адаптеры CLI-агентов",
+                "release.li4": "Отполированный фирменный DMG и совершенно новая иконка Pine",
                 "why.kicker": "Почему Pine",
                 "why.title": "Для тех, кому редакторы стали тяжеловаты, а IDE все еще перебор.",
                 "why.desc": "Pine оставляет все, что нужно в повседневной работе, и убирает слои, которые обычно только тормозят.",
@@ -1417,6 +1554,8 @@
                 "features.06desc": "Автосохранение, восстановление сессии и курсора, большие файлы, автообновления, девять языков интерфейса, VoiceOver, уменьшение движения и никакого Electron.",
                 "screenshots.kicker": "Скриншоты",
                 "screenshots.title": "Pine в действии.",
+                "screenshots.alt0": "Входящие агентов Pine с задачами из разных проектов",
+                "screenshots.cap0": "Входящие агентов собирают работу из всех проектов в одном месте",
                 "screenshots.alt1": "Окно приветствия Pine со списком недавних проектов",
                 "screenshots.cap1": "Окно приветствия с недавними проектами",
                 "screenshots.alt2": "Редактор Pine с подсветкой синтаксиса и деревом файлов",
@@ -1453,6 +1592,7 @@
                 "meta.twitterDescription": "Агенты остаются в терминале, а все задачи — во Входящих разных проектов с приватными уведомлениями, LSP и Git-контекстом."
             },
             de: {
+                "nav.new": "Pine 2.0",
                 "nav.why": "Warum Pine",
                 "nav.features": "Funktionen",
                 "nav.install": "Installation",
@@ -1484,6 +1624,14 @@
                 "mini.practicalKicker": "Praktisch",
                 "mini.practicalTitle": "Git dort, wo es zählt",
                 "mini.practicalDesc": "Status im Dateibaum, Branch-Wechsel und Diff-Markierungen direkt im Editor.",
+                "release.kicker": "Neu in Pine 2.0",
+                "release.title": "Agentenarbeit hat endlich ein Zuhause.",
+                "release.desc": "Pine 2.0 macht aus verstreuten Terminalsitzungen einen dauerhaften, wiederherstellbaren Workflow und lässt das Terminal die Quelle der Wahrheit bleiben.",
+                "release.cta": "Versionshinweise zu 2.0 lesen",
+                "release.li1": "Projektübergreifender Agenten-Posteingang mit exakter Rückkehr zu laufenden Sitzungen",
+                "release.li2": "Isolierte Worktrees, sichere Aufgabenwiederherstellung und evidenzbasierte Abschlussberichte",
+                "release.li3": "Nützliche private Hinweise und integrierte Adapter für CLI-Agenten",
+                "release.li4": "Ein polierter Marken-DMG-Installer und ein völlig neues Pine-Symbol",
                 "why.kicker": "Warum Pine",
                 "why.title": "Für die Lücke zwischen aufgeblähten Editoren und vollständigen IDEs.",
                 "why.desc": "Pine behält die Teile, die im täglichen Coding wichtig sind, und entfernt die Schichten, die Editoren normalerweise verlangsamen.",
@@ -1519,6 +1667,8 @@
                 "features.06desc": "Auto-Save, Sitzungs- und Cursor-Wiederherstellung, große Dateien, Auto-Updates, neun Lokalisierungen, VoiceOver, reduzierte Bewegung und keine Electron-Runtime.",
                 "screenshots.kicker": "Screenshots",
                 "screenshots.title": "Pine in Aktion.",
+                "screenshots.alt0": "Pine Agenten-Posteingang mit Aufgaben aus mehreren Projekten",
+                "screenshots.cap0": "Der Agenten-Posteingang bündelt Arbeit aus allen Projekten",
                 "screenshots.alt1": "Pine-Willkommensfenster mit letzten Projekten",
                 "screenshots.cap1": "Willkommensfenster mit letzten Projekten",
                 "screenshots.alt2": "Pine-Code-Editor mit Syntaxhervorhebung und Dateibaum",
@@ -1555,6 +1705,7 @@
                 "meta.twitterDescription": "Agenten bleiben im Terminal, alle Aufgaben im projektübergreifenden Posteingang – mit privaten Hinweisen, LSP und Git-Kontext."
             },
             es: {
+                "nav.new": "Pine 2.0",
                 "nav.why": "Por qué Pine",
                 "nav.features": "Funciones",
                 "nav.install": "Instalar",
@@ -1586,6 +1737,14 @@
                 "mini.practicalKicker": "Práctico",
                 "mini.practicalTitle": "Git donde importa",
                 "mini.practicalDesc": "Estado en el árbol, cambio de rama y marcadores de diff directamente en el editor.",
+                "release.kicker": "Novedades de Pine 2.0",
+                "release.title": "El trabajo de los agentes por fin tiene un hogar.",
+                "release.desc": "Pine 2.0 convierte sesiones de terminal dispersas en un flujo duradero y recuperable, manteniendo la terminal como fuente de verdad.",
+                "release.cta": "Leer las notas de la versión 2.0",
+                "release.li1": "Agent Inbox entre proyectos con retorno exacto a las sesiones activas",
+                "release.li2": "Worktrees aislados, recuperación segura y resúmenes de finalización basados en evidencias",
+                "release.li3": "Notificaciones privadas útiles y adaptadores integrados para agentes CLI",
+                "release.li4": "Un instalador DMG de marca pulido y un icono de Pine completamente nuevo",
                 "why.kicker": "Por qué Pine",
                 "why.title": "Para el hueco entre editores inflados e IDEs completos.",
                 "why.desc": "Pine conserva lo que importa en el día a día y elimina las capas que suelen frenar a los editores.",
@@ -1621,6 +1780,8 @@
                 "features.06desc": "Autoguardado, restauración de sesión y cursor, archivos grandes, actualizaciones, nueve idiomas, VoiceOver, movimiento reducido y sin runtime de Electron.",
                 "screenshots.kicker": "Capturas",
                 "screenshots.title": "Pine en acción.",
+                "screenshots.alt0": "Agent Inbox de Pine con tareas de varios proyectos",
+                "screenshots.cap0": "Agent Inbox reúne el trabajo de todos los proyectos",
                 "screenshots.alt1": "Ventana de bienvenida de Pine con proyectos recientes",
                 "screenshots.cap1": "Ventana de bienvenida con proyectos recientes",
                 "screenshots.alt2": "Editor Pine con resaltado de sintaxis y árbol de archivos",
@@ -1657,6 +1818,7 @@
                 "meta.twitterDescription": "Agentes en la terminal y todas las tareas en una bandeja entre proyectos, con avisos privados, LSP y contexto Git."
             },
             fr: {
+                "nav.new": "Pine 2.0",
                 "nav.why": "Pourquoi Pine",
                 "nav.features": "Fonctionnalités",
                 "nav.install": "Installation",
@@ -1688,6 +1850,14 @@
                 "mini.practicalKicker": "Pratique",
                 "mini.practicalTitle": "Git là où ça compte",
                 "mini.practicalDesc": "Statut dans l'arborescence, changement de branche et marqueurs de diff directement dans l'éditeur.",
+                "release.kicker": "Nouveautés de Pine 2.0",
+                "release.title": "Le travail des agents a enfin sa place.",
+                "release.desc": "Pine 2.0 transforme des sessions de terminal dispersées en un workflow durable et récupérable, tout en gardant le terminal comme source de vérité.",
+                "release.cta": "Lire les notes de version 2.0",
+                "release.li1": "Agent Inbox multi-projets avec retour précis aux sessions actives",
+                "release.li2": "Worktrees isolés, récupération sûre des tâches et bilans fondés sur des preuves",
+                "release.li3": "Notifications privées utiles et adaptateurs intégrés pour agents CLI",
+                "release.li4": "Un installateur DMG soigné aux couleurs de Pine et une toute nouvelle icône",
                 "why.kicker": "Pourquoi Pine",
                 "why.title": "Pour l'espace entre les éditeurs bloated et les IDE complets.",
                 "why.desc": "Pine garde ce qui compte au quotidien et supprime les couches qui ralentissent habituellement les éditeurs.",
@@ -1723,6 +1893,8 @@
                 "features.06desc": "Sauvegarde auto, restauration de session et du curseur, grands fichiers, mises à jour, neuf langues, VoiceOver, mouvements réduits et aucun runtime Electron.",
                 "screenshots.kicker": "Captures",
                 "screenshots.title": "Pine en action.",
+                "screenshots.alt0": "Agent Inbox de Pine avec des tâches de plusieurs projets",
+                "screenshots.cap0": "Agent Inbox rassemble le travail de tous les projets",
                 "screenshots.alt1": "Fenêtre d'accueil de Pine avec projets récents",
                 "screenshots.cap1": "Fenêtre d'accueil avec projets récents",
                 "screenshots.alt2": "Éditeur Pine avec coloration syntaxique et arborescence",
@@ -1759,6 +1931,7 @@
                 "meta.twitterDescription": "Les agents restent dans le terminal et toutes les tâches dans une boîte interprojets, avec alertes privées, LSP et contexte Git."
             },
             ja: {
+                "nav.new": "Pine 2.0",
                 "nav.why": "Pine とは",
                 "nav.features": "機能",
                 "nav.install": "インストール",
@@ -1790,6 +1963,14 @@
                 "mini.practicalKicker": "実用的",
                 "mini.practicalTitle": "必要な場所に Git",
                 "mini.practicalDesc": "ファイルツリーにステータス、ブランチ切替、エディタに直接 diff マーカー。",
+                "release.kicker": "Pine 2.0 の新機能",
+                "release.title": "エージェントの仕事に、ついに居場所ができました。",
+                "release.desc": "Pine 2.0 は、散在するターミナルセッションを永続的で復元可能なワークフローにまとめ、ターミナルを信頼できる情報源として保ちます。",
+                "release.cta": "2.0 リリースノートを読む",
+                "release.li1": "プロジェクト横断の Agent Inbox から実行中セッションへ正確に戻る",
+                "release.li2": "分離された worktree、安全なタスク復旧、根拠に基づく完了レポート",
+                "release.li3": "役立つプライベート通知と標準搭載の CLI エージェントアダプタ",
+                "release.li4": "洗練されたブランド DMG インストーラと完全に新しい Pine アイコン",
                 "why.kicker": "Pine とは",
                 "why.title": "肥大化したエディタとフル IDE の間のギャップに。",
                 "why.desc": "Pine は日々のコーディングで重要な部分を残し、通常エディタを遅くするレイヤーを削除します。",
@@ -1825,6 +2006,8 @@
                 "features.06desc": "自動保存、セッションとカーソルの復元、大容量ファイル、自動更新、9言語、VoiceOver、視差効果の軽減、Electron ランタイムなし。",
                 "screenshots.kicker": "スクリーンショット",
                 "screenshots.title": "Pine の動作画面。",
+                "screenshots.alt0": "複数プロジェクトのエージェントタスクを表示する Pine Agent Inbox",
+                "screenshots.cap0": "Agent Inbox がすべてのプロジェクトの仕事を一か所に集約",
                 "screenshots.alt1": "最近のプロジェクト付き Pine ウェルカムウィンドウ",
                 "screenshots.cap1": "最近のプロジェクト付きウェルカムウィンドウ",
                 "screenshots.alt2": "シンタックスハイライトとファイルツリーを備えた Pine コードエディタ",
@@ -1861,6 +2044,7 @@
                 "meta.twitterDescription": "エージェントはターミナルに、全タスクはプロジェクト横断の受信箱に。プライベート通知、LSP、Git コンテキストを搭載。"
             },
             ko: {
+                "nav.new": "Pine 2.0",
                 "nav.why": "왜 Pine인가",
                 "nav.features": "기능",
                 "nav.install": "설치",
@@ -1892,6 +2076,14 @@
                 "mini.practicalKicker": "실용적",
                 "mini.practicalTitle": "필요한 곳에 Git",
                 "mini.practicalDesc": "파일 트리에 상태, 브랜치 전환, 편집기에 직접 diff 마커.",
+                "release.kicker": "Pine 2.0의 새로운 기능",
+                "release.title": "에이전트 작업에 드디어 하나의 공간이 생겼습니다.",
+                "release.desc": "Pine 2.0은 흩어진 터미널 세션을 지속 가능하고 복구 가능한 워크플로로 모으면서 터미널을 신뢰할 수 있는 정보원으로 유지합니다.",
+                "release.cta": "2.0 릴리스 노트 보기",
+                "release.li1": "프로젝트 전체 Agent Inbox에서 실행 중인 세션으로 정확히 돌아가기",
+                "release.li2": "격리된 worktree, 안전한 작업 복구, 근거 기반 완료 보고서",
+                "release.li3": "유용한 비공개 알림과 기본 제공 CLI 에이전트 어댑터",
+                "release.li4": "완성도 높은 브랜드 DMG 설치 프로그램과 완전히 새로운 Pine 아이콘",
                 "why.kicker": "왜 Pine인가",
                 "why.title": "비대한 편집기와 풀 IDE 사이의 빈 공간을 위해.",
                 "why.desc": "Pine은 일상적인 코딩에서 중요한 부분을 유지하고 편집기를 느리게 만드는 레이어를 제거합니다.",
@@ -1927,6 +2119,8 @@
                 "features.06desc": "자동 저장, 세션과 커서 복원, 대용량 파일, 자동 업데이트, 9개 언어, VoiceOver, 동작 줄이기, Electron 런타임 없음.",
                 "screenshots.kicker": "스크린샷",
                 "screenshots.title": "Pine 실행 화면.",
+                "screenshots.alt0": "여러 프로젝트의 에이전트 작업을 보여 주는 Pine Agent Inbox",
+                "screenshots.cap0": "Agent Inbox가 모든 프로젝트의 작업을 한곳에 모읍니다",
                 "screenshots.alt1": "최근 프로젝트가 있는 Pine 환영 창",
                 "screenshots.cap1": "최근 프로젝트가 있는 환영 창",
                 "screenshots.alt2": "구문 강조와 파일 트리가 있는 Pine 코드 편집기",
@@ -1963,6 +2157,7 @@
                 "meta.twitterDescription": "에이전트는 터미널에, 모든 작업은 프로젝트 간 받은편지함에. 비공개 알림, LSP, Git 컨텍스트 제공."
             },
             "pt-BR": {
+                "nav.new": "Pine 2.0",
                 "nav.why": "Por que Pine",
                 "nav.features": "Recursos",
                 "nav.install": "Instalação",
@@ -1994,6 +2189,14 @@
                 "mini.practicalKicker": "Prático",
                 "mini.practicalTitle": "Git onde importa",
                 "mini.practicalDesc": "Status na árvore, troca de branch e marcadores de diff direto no editor.",
+                "release.kicker": "Novidades do Pine 2.0",
+                "release.title": "O trabalho dos agentes finalmente tem um lugar.",
+                "release.desc": "O Pine 2.0 transforma sessões de terminal dispersas em um fluxo durável e recuperável, mantendo o terminal como fonte da verdade.",
+                "release.cta": "Ler as notas da versão 2.0",
+                "release.li1": "Agent Inbox entre projetos com retorno exato às sessões ativas",
+                "release.li2": "Worktrees isolados, recuperação segura de tarefas e resumos de conclusão baseados em evidências",
+                "release.li3": "Notificações privadas úteis e adaptadores integrados para agentes CLI",
+                "release.li4": "Um instalador DMG de marca refinado e um ícone do Pine totalmente novo",
                 "why.kicker": "Por que Pine",
                 "why.title": "Para o espaço entre editores inchados e IDEs completas.",
                 "why.desc": "Pine mantém o que importa no dia a dia e remove as camadas que costumam deixar os editores lentos.",
@@ -2029,6 +2232,8 @@
                 "features.06desc": "Auto-save, restauração de sessão e cursor, arquivos grandes, atualizações, nove idiomas, VoiceOver, movimento reduzido e sem runtime Electron.",
                 "screenshots.kicker": "Capturas",
                 "screenshots.title": "Pine em ação.",
+                "screenshots.alt0": "Agent Inbox do Pine com tarefas de vários projetos",
+                "screenshots.cap0": "O Agent Inbox reúne o trabalho de todos os projetos",
                 "screenshots.alt1": "Janela de boas-vindas do Pine com projetos recentes",
                 "screenshots.cap1": "Janela de boas-vindas com projetos recentes",
                 "screenshots.alt2": "Editor Pine com destaque de sintaxe e árvore de arquivos",
@@ -2065,6 +2270,7 @@
                 "meta.twitterDescription": "Agentes no terminal e todas as tarefas em uma caixa entre projetos, com alertas privados, LSP e contexto Git."
             },
             "zh-Hans": {
+                "nav.new": "Pine 2.0",
                 "nav.why": "为什么选 Pine",
                 "nav.features": "功能",
                 "nav.install": "安装",
@@ -2096,6 +2302,14 @@
                 "mini.practicalKicker": "实用",
                 "mini.practicalTitle": "Git 在需要的地方",
                 "mini.practicalDesc": "文件树中的状态、分支切换和编辑器中的 diff 标记。",
+                "release.kicker": "Pine 2.0 新功能",
+                "release.title": "智能体工作终于有了统一归处。",
+                "release.desc": "Pine 2.0 将分散的终端会话整合为持久且可恢复的工作流，同时让终端继续作为真实来源。",
+                "release.cta": "阅读 2.0 版本说明",
+                "release.li1": "跨项目 Agent Inbox，并可准确返回正在运行的会话",
+                "release.li2": "隔离的 worktree、安全的任务恢复和基于证据的完成报告",
+                "release.li3": "实用的私密通知和内置 CLI 智能体适配器",
+                "release.li4": "精心设计的品牌 DMG 安装程序和全新的 Pine 图标",
                 "why.kicker": "为什么选 Pine",
                 "why.title": "为臃肿编辑器和完整 IDE 之间的空白而生。",
                 "why.desc": "Pine 保留日常编码中重要的部分，去除通常拖慢编辑器的层层负担。",
@@ -2131,6 +2345,8 @@
                 "features.06desc": "自动保存、会话和光标恢复、大文件处理、自动更新、九种语言、VoiceOver、减少动态效果，无 Electron 运行时。",
                 "screenshots.kicker": "截图",
                 "screenshots.title": "Pine 实际效果。",
+                "screenshots.alt0": "显示多个项目智能体任务的 Pine Agent Inbox",
+                "screenshots.cap0": "Agent Inbox 将所有项目的工作集中在一处",
                 "screenshots.alt1": "带最近项目的 Pine 欢迎窗口",
                 "screenshots.cap1": "带最近项目的欢迎窗口",
                 "screenshots.alt2": "带语法高亮和文件树的 Pine 代码编辑器",

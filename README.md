@@ -1,4 +1,8 @@
-# Pine
+<p align="center">
+  <img src="assets/pine-app-icon.png" width="144" alt="Pine app icon">
+</p>
+
+<h1 align="center">Pine</h1>
 
 [![CI](https://github.com/batonogov/pine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/batonogov/pine/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/batonogov/pine)](https://github.com/batonogov/pine/releases/latest)
@@ -13,6 +17,19 @@
 </p>
 
 Pine keeps CLI agents in the terminal and the code in view. It reflects agent activity, file changes, diagnostics, and Git context across a fast native workspace without turning into another AI dashboard. Built with SwiftUI and AppKit for macOS 26 Liquid Glass — no Electron runtime.
+
+## New in Pine 2.0
+
+<p align="center">
+  <img src="assets/screenshot-agent-inbox.png" width="760" alt="Pine Agent Inbox showing agent tasks across projects">
+</p>
+
+- **Cross-project Agent Inbox** keeps durable tasks together and routes back to the exact live session
+- **Safer agent workflows** add isolated worktrees, task recovery, and evidence-based completion briefs
+- **Useful signals without surveillance** provide actionable, privacy-bounded notifications and first-party CLI-agent adapters
+- **A polished release experience** brings a branded DMG installer and Pine's new app icon
+
+See the [Pine 2.0 release notes](https://github.com/batonogov/pine/releases/tag/v2.0.0) for the complete changelog.
 
 ## Features
 

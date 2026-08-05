@@ -48,6 +48,61 @@ final class ScreenshotTests: PineUITestCase {
         attachScreenshot(screenshot, name: "screenshot-welcome")
     }
 
+    // MARK: - Agent Inbox
+
+    func testCaptureAgentInbox() throws {
+        app.launchArguments += [
+            "--clear-recent-projects",
+            "--ui-test-agent-inbox-marketing",
+        ]
+        launchClean()
+
+        let welcomeWindow = app.windows["welcome"]
+        XCTAssertTrue(
+            waitForExistence(welcomeWindow, timeout: 10),
+            "Welcome window should appear"
+        )
+
+        let inboxButton = app.buttons["welcomeAgentInboxButton"]
+        XCTAssertTrue(
+            waitForExistence(inboxButton, timeout: 5),
+            "Agent Inbox should be available from Welcome"
+        )
+        inboxButton.click()
+
+        let inboxWindow = app.windows["Agent Inbox"]
+        XCTAssertTrue(
+            waitForExistence(inboxWindow, timeout: 10),
+            "Agent Inbox window should appear"
+        )
+        // SwiftUI may create the new window behind Welcome on macOS 27.
+        // Close Welcome after the Inbox exists so no window covers the shot.
+        let closeWelcome = welcomeWindow.buttons[
+            XCUIIdentifierCloseWindow
+        ].firstMatch
+        XCTAssertTrue(closeWelcome.exists, "Welcome close button should exist")
+        closeWelcome.click()
+        XCTAssertTrue(
+            welcomeWindow.waitForNonExistence(timeout: 5),
+            "Welcome should close before capturing Agent Inbox"
+        )
+        let releaseTask = inboxWindow.buttons.matching(
+            NSPredicate(
+                format: "label CONTAINS %@",
+                "Approve the release announcement"
+            )
+        ).firstMatch
+        XCTAssertTrue(
+            waitForExistence(releaseTask, timeout: 5),
+            "Marketing tasks should populate Agent Inbox"
+        )
+
+        Thread.sleep(forTimeInterval: 1.0)
+
+        let screenshot = inboxWindow.screenshot()
+        attachScreenshot(screenshot, name: "screenshot-agent-inbox")
+    }
+
     // MARK: - Editor with File
 
     func testCaptureEditorWithFile() throws {

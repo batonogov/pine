@@ -172,6 +172,157 @@ final class AgentTaskRegistry {
         self.flushTail = flushTail
     }
 
+    #if DEBUG
+    /// Seeds stable, human-readable rows for the opt-in marketing screenshot.
+    /// The fixture is presentation-only: it is never persisted or indexed as
+    /// live terminal ownership, and production builds contain no entry point.
+    func seedMarketingInboxForUITesting(at referenceDate: Date = Date()) {
+        guard tasks.isEmpty else { return }
+        tasks = [
+            marketingTask(.init(
+                seed: 1,
+                projectName: "Pine Demo",
+                worktreeName: nil,
+                title: "Approve the release announcement",
+                agentType: .codex,
+                state: .waitingInput,
+                liveness: .live,
+                lifecycle: .active,
+                attention: .waitingInput,
+                isUnread: true,
+                startedSecondsAgo: 7 * 60,
+                verifiedSecondsAgo: 18
+            ), referenceDate: referenceDate),
+            marketingTask(.init(
+                seed: 2,
+                projectName: "Launch Site",
+                worktreeName: nil,
+                title: "Verify signed DMG and Homebrew install",
+                agentType: .claudeCode,
+                state: .done,
+                liveness: .terminated,
+                lifecycle: .completed,
+                attention: .completed,
+                isUnread: true,
+                startedSecondsAgo: 18 * 60,
+                verifiedSecondsAgo: 2 * 60
+            ), referenceDate: referenceDate),
+            marketingTask(.init(
+                seed: 3,
+                projectName: "Pine Demo",
+                worktreeName: "release-2.0",
+                title: "Capture Agent Inbox screenshots",
+                agentType: .gemini,
+                state: .executing,
+                liveness: .live,
+                lifecycle: .active,
+                attention: .none,
+                isUnread: false,
+                startedSecondsAgo: 4 * 60,
+                verifiedSecondsAgo: 8
+            ), referenceDate: referenceDate),
+            marketingTask(.init(
+                seed: 4,
+                projectName: "Documentation",
+                worktreeName: nil,
+                title: "Translate the Pine 2.0 highlights",
+                agentType: .openCode,
+                state: .thinking,
+                liveness: .live,
+                lifecycle: .active,
+                attention: .none,
+                isUnread: false,
+                startedSecondsAgo: 2 * 60,
+                verifiedSecondsAgo: 5
+            ), referenceDate: referenceDate),
+        ]
+    }
+
+    private struct MarketingTaskFixture {
+        let seed: Int
+        let projectName: String
+        let worktreeName: String?
+        let title: String
+        let agentType: AgentType
+        let state: AgentRunState
+        let liveness: AgentRunLiveness
+        let lifecycle: AgentTaskLifecycle
+        let attention: AgentTaskAttention
+        let isUnread: Bool
+        let startedSecondsAgo: TimeInterval
+        let verifiedSecondsAgo: TimeInterval
+    }
+
+    private func marketingTask(
+        _ fixture: MarketingTaskFixture,
+        referenceDate: Date
+    ) -> AgentTask {
+        let projectPath = "/Pine Marketing/\(fixture.projectName)"
+        let worktreePath = fixture.worktreeName.map {
+            "\(projectPath)/.pine-worktrees/\($0)"
+        } ?? projectPath
+        let terminalID = marketingUUID(fixture.seed + 1_000)
+        let observedAt = referenceDate.addingTimeInterval(
+            -fixture.verifiedSecondsAgo
+        )
+        let startedAt = referenceDate.addingTimeInterval(
+            -fixture.startedSecondsAgo
+        )
+        let context = AgentTaskBridgeContext(
+            project: AgentTaskProjectIdentity(
+                canonicalProjectPath: projectPath,
+                canonicalWorktreePath: worktreePath
+            ),
+            route: AgentTaskRoute(
+                paneID: marketingUUID(fixture.seed),
+                tabID: terminalID,
+                terminalID: terminalID,
+                availability: fixture.liveness == .live
+                    ? .available
+                    : .missing
+            ),
+            origin: .pineLaunched,
+            observedAt: startedAt
+        )
+        var task = AgentTask(
+            descriptor: AgentDescriptor(agentType: fixture.agentType),
+            context: context,
+            title: fixture.title,
+            objective: fixture.title,
+            createdAt: startedAt
+        )
+        task.runs = [AgentTaskRun(AgentTaskRunInput(
+            id: marketingUUID(fixture.seed + 2_000),
+            terminalID: terminalID,
+            process: AgentProcessEvidence(
+                processIdentifier: Int32(20_000 + fixture.seed),
+                processGeneration: UInt64(fixture.seed),
+                startIdentifier: "marketing-fixture-\(fixture.seed)",
+                observedStartedAt: startedAt,
+                startIsAuthoritative: true
+            ),
+            status: AgentTaskRunStatus(
+                state: fixture.state,
+                liveness: fixture.liveness,
+                observedAt: observedAt
+            )
+        ))]
+        task.lifecycle = fixture.lifecycle
+        task.attention = fixture.attention
+        task.isUnread = fixture.isUnread
+        task.updatedAt = observedAt
+        task.lastActivityAt = observedAt
+        task.completedAt = fixture.lifecycle == .completed ? observedAt : nil
+        return task
+    }
+
+    private func marketingUUID(_ seed: Int) -> UUID {
+        let suffix = String(format: "%012llX", UInt64(seed))
+        return UUID(uuidString: "00000000-0000-0000-0000-\(suffix)")
+            ?? UUID()
+    }
+    #endif
+
     func task(for id: UUID) -> AgentTask? {
         tasks.first { $0.id == id }
     }
