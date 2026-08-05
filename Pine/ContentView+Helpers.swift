@@ -182,9 +182,8 @@ extension ContentView {
 extension ContentView {
 
     func openNewProject() {
-        let context = DialogPresenter.forProject(projectManager)
         Task { @MainActor in
-            guard let url = await registry.openProjectViaPanel(context: context) else { return }
+            guard let url = await registry.openProjectViaPanel(for: projectManager) else { return }
             openWindow(value: url)
         }
     }
