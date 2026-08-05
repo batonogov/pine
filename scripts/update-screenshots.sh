@@ -34,6 +34,7 @@ CODE_SIGNING_ALLOWED="${PINE_SCREENSHOT_CODE_SIGNING_ALLOWED:-NO}"
 ## not fail the build.
 REQUIRED_NAMES=(
   "screenshot-welcome"
+  "screenshot-agent-inbox"
   "screenshot-editor"
   "screenshot-terminal"
   "screenshot-markdown"

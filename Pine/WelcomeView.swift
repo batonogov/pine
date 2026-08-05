@@ -100,6 +100,13 @@ struct WelcomeView: View {
                 Button {
                     openWindow(id: "agent-inbox")
                     NSApp.activate()
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains(
+                        "--ui-test-agent-inbox-marketing"
+                    ) {
+                        appDelegate?.hideWelcome()
+                    }
+                    #endif
                 } label: {
                     Label(Strings.menuAgentInbox, systemImage: MenuIcons.agentInbox)
                 }
