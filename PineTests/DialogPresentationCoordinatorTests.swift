@@ -602,6 +602,104 @@ struct DialogPresentationCoordinatorTests {
 
         #expect(events == ["first-start", "first-end", "second"])
     }
+
+    // MARK: - Foreign-sheet watchdog (#1335 H2)
+    //
+    // A foreign (framework/SwiftUI) sheet occupying the owner blocks a queued
+    // native request. SwiftUI sheets do not reliably emit
+    // `didEndSheetNotification`, so without a watchdog the request could wait
+    // forever for a signal that never arrives. The coordinator polls the
+    // owner on a bounded cadence and, once the foreign sheet clears, presents
+    // the queued request; after the bound it aborts so the queue can never
+    // wedge permanently.
+
+    @Test("queued request presents via watchdog when didEndSheet is not delivered")
+    func watchdogAdvancesBlockedRequestWithoutNotification() async {
+        let owner = makeVisibleWindow()
+        let foreignSheet = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        // Empty notification center: the coordinator never receives
+        // didEndSheet, so only the watchdog can advance the queued request.
+        let coordinator = WindowDialogCoordinator(
+            ownerWindow: owner,
+            notificationCenter: NotificationCenter(),
+            watchdogInterval: 0.01,
+            watchdogMaxAttempts: 500
+        )
+        var startCount = 0
+        var completion: ((NSApplication.ModalResponse) -> Void)?
+        defer {
+            coordinator.ownerDidClose()
+            owner.orderOut(nil)
+        }
+
+        owner.beginSheet(foreignSheet) { _ in }
+        let response = Task {
+            await coordinator.present(
+                start: { _, callback in
+                    startCount += 1
+                    completion = callback
+                },
+                cancel: { _ in }
+            )
+        }
+        await settle()
+        #expect(startCount == 0) // blocked by the foreign sheet
+
+        // End the foreign sheet. NSWindow posts didEndSheet to .default, which
+        // the coordinator does not observe here — only the watchdog re-checks.
+        owner.endSheet(foreignSheet, returnCode: .cancel)
+        for _ in 0..<2000 {
+            if startCount == 1 { break }
+            await Task.yield()
+        }
+        #expect(startCount == 1)
+
+        if let completion {
+            completion(.alertFirstButtonReturn)
+        } else {
+            coordinator.ownerDidClose()
+        }
+        #expect(await response.value == .alertFirstButtonReturn)
+    }
+
+    @Test("a request blocked past the watchdog bound aborts instead of hanging forever")
+    func blockedRequestAbortsAfterWatchdogBound() async {
+        let owner = makeVisibleWindow()
+        let foreignSheet = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let coordinator = WindowDialogCoordinator(
+            ownerWindow: owner,
+            notificationCenter: NotificationCenter(),
+            watchdogInterval: 0.01,
+            watchdogMaxAttempts: 3
+        )
+        var started = false
+        defer {
+            coordinator.ownerDidClose()
+            owner.orderOut(nil)
+        }
+
+        owner.beginSheet(foreignSheet) { _ in } // foreign sheet never ends
+        let response = Task {
+            await coordinator.present(
+                start: { _, _ in started = true },
+                cancel: { _ in }
+            )
+        }
+
+        // Bound is ~30 ms; the request must resolve (abort) rather than hang.
+        #expect(await response.value == .abort)
+        #expect(!started)
+    }
 }
 
 @Suite("Dialog flow regressions")

@@ -41,12 +41,11 @@ struct TerminalPaneTabBar: View {
     }
 
     private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
-        let context = if let projectManager {
-            DialogPresenter.forProject(projectManager)
-        } else {
-            DialogPresentationContext.unscoped
-        }
+        let project = projectManager
         Task { @MainActor in
+            // Resolve the owner inside the task, resilient to a transiently-
+            // nil weak anchor during SwiftUI scene restoration (#1335 H3).
+            let context = await TabCloseHelper.terminalCloseContext(for: project)
             guard await TabCloseHelper.confirmTerminalProcessStop(
                 tabs: [tab],
                 context: context
