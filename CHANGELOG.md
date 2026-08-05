@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.0.1](https://github.com/batonogov/pine/compare/v2.0.0...v2.0.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **agent:** add CPU-time hysteresis to stop waiting-input flip-flop ([#1341](https://github.com/batonogov/pine/issues/1341)) ([d177c94](https://github.com/batonogov/pine/commit/d177c949ac039827749efd483a8b53adfda23806))
+* **agent:** Agent Inbox window polish — focus ring, duplicate title, RU label ([#1340](https://github.com/batonogov/pine/issues/1340)) ([e5e02b2](https://github.com/batonogov/pine/commit/e5e02b26bbe49c4892859ec0c34d3311252461d5))
+* **agent:** stabilize Agent Inbox row order against polling-driven timestamps ([#1342](https://github.com/batonogov/pine/issues/1342)) ([675a7ac](https://github.com/batonogov/pine/commit/675a7acc87e81a2d267e9a5c984a41782b978f72)), closes [#1336](https://github.com/batonogov/pine/issues/1336)
+* **editor:** wait for dialog owner before Open Folder panel ([#1344](https://github.com/batonogov/pine/issues/1344)) ([#1345](https://github.com/batonogov/pine/issues/1345)) ([7cec7aa](https://github.com/batonogov/pine/commit/7cec7aa24c79f2fefae9993eaf070848a3904f0f))
+* **terminal:** close-tab confirmation robustness for agent tabs ([#1343](https://github.com/batonogov/pine/issues/1343)) ([9ec88a2](https://github.com/batonogov/pine/commit/9ec88a22ea3ba63dce725493a67c4d1be3a81217))
+
+
+### Documentation
+
+* establish agent-terminal tagline ([#1333](https://github.com/batonogov/pine/issues/1333)) ([a17df51](https://github.com/batonogov/pine/commit/a17df51d7b131d2fb94f07cf2febe1ec858c56e6))
+* showcase Pine 2.0 release ([#1332](https://github.com/batonogov/pine/issues/1332)) ([9dc672c](https://github.com/batonogov/pine/commit/9dc672cba6b509937478249c496ecced8d7d3769))
+
 ## [2.0.0](https://github.com/batonogov/pine/compare/v1.38.1...v2.0.0) (2026-08-04)
 
 
