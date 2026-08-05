@@ -245,4 +245,26 @@ struct TerminalProcessConfirmationTests {
             Issue.record("expected terminalTabs dedup key")
         }
     }
+
+    @Test func mixedIdleAndAgentTabs_idleTabDoesNotInvalidateConfirmation() {
+        // Bulk close (hide-all toggle / pane close) passes ALL terminal tabs
+        // — including idle shells — to `confirmTerminalProcessStop`. An idle
+        // tab (no agent session, no foreground process) is absent from
+        // `coverage`; it must NOT cause `stillCovers` to abort an otherwise-
+        // covered authorization, or every mixed idle+active bulk close would
+        // silently no-op right after the user confirmed (#1335 review finding).
+        let idleTab = TerminalTab(name: "Shell")
+        let agentTab = TerminalTab(name: "Claude")
+        agentTab.agentSession = AgentSession(agentType: .claudeCode)
+
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [idleTab, agentTab]
+        )
+
+        #expect(authorization.requiresConfirmation)
+        // The idle tab is skipped; the agent tab is still covered.
+        #expect(authorization.stillCovers([idleTab, agentTab]))
+        // Tab order in the re-check must not matter.
+        #expect(authorization.stillCovers([agentTab, idleTab]))
+    }
 }

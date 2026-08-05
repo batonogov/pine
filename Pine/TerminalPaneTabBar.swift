@@ -380,11 +380,6 @@ struct TerminalPaneTabBar: View {
             // Close terminal pane
             Button {
                 // Warn if any tab has a foreground process (window-scoped sheet, #1241)
-                let context = if let projectManager {
-                    DialogPresenter.forProject(projectManager)
-                } else {
-                    DialogPresentationContext.unscoped
-                }
                 let targetTabs = terminalState.terminalTabs
                 let targetTabIDs = Set(targetTabs.map(\.id))
                 let authorizedForegroundProcesses =
@@ -392,6 +387,12 @@ struct TerminalPaneTabBar: View {
                         for: targetTabs
                     )
                 Task { @MainActor in
+                    // Resolve the owner resiliently (#1335 H3): a
+                    // transiently-nil weak anchor during scene restoration
+                    // must not silently abort the close.
+                    let context = await TabCloseHelper.terminalCloseContext(
+                        for: projectManager
+                    )
                     guard await TabCloseHelper.confirmTerminalProcessStop(
                         tabs: targetTabs,
                         context: context

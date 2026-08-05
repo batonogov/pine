@@ -85,7 +85,12 @@ struct TerminalTabCloseAuthorization {
     /// was visible is always covered (nothing remains to protect).
     func stillCovers(_ tabs: [TerminalTab]) -> Bool {
         for tab in tabs {
-            guard let captured = coverage[tab.id] else { return false }
+            // A tab with nothing to protect at authorization time (idle
+            // shell, no agent session, no foreground process) is absent from
+            // `coverage`. It has nothing to re-check, so skip it — otherwise a
+            // mixed idle+active bulk close set would be silently aborted
+            // right after the user confirmed (#1335 review finding).
+            guard let captured = coverage[tab.id] else { continue }
             switch captured {
             case .agentSession(let sessionID):
                 // Same agent session: covered (pgid churn is normal agent
