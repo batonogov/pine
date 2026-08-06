@@ -129,6 +129,7 @@ extension TerminalTheme {
         dracula,
         nord,
         github,
+        digitalRain,
     ]
 
     /// The default theme identifier.
@@ -402,6 +403,86 @@ extension TerminalTheme {
             cursor: TerminalPaletteEntry(red: 0xE6, green: 0xED, blue: 0xF3),
             selection: TerminalPaletteEntry(red: 0x39, green: 0x35, blue: 0x3F),
             link: TerminalPaletteEntry(red: 0x58, green: 0xA6, blue: 0xFF)
+        )
+    )
+
+    // MARK: Digital Rain
+
+    /// Digital Rain — an original phosphor-green palette inspired by the
+    /// classic "digital rain" aesthetic. The dark variant is near-black with a
+    /// faint green undertone and a phosphor-green foreground; green, teal and
+    /// pale green dominate the ANSI grid, while red / yellow / blue / magenta
+    /// stay clearly distinct so `git diff`, compiler errors and TUI apps keep
+    /// reading correctly. The light variant is a "green CRT day" — a pale
+    /// green-grey background with a dark forest-green foreground and ANSI
+    /// colors darkened for legibility.
+    ///
+    /// Palette invariants (locked by `DigitalRainThemeTests`):
+    /// - every ANSI slot clears 3:1 against its own background;
+    /// - every bright slot (8...15) is strictly lighter than its normal
+    ///   counterpart (0...7), in both schemes;
+    /// - slot 0 is a dim-but-legible grey-green rather than the background.
+    ///   Pine runs SwiftTerm with `useBrightColors = false`, which collapses
+    ///   the 256-color index 8 onto 0 (see `TerminalPalette.ghostTextOverride`),
+    ///   so a slot 0 that matches the background makes zsh-autosuggestions
+    ///   ghost text invisible — the defect tracked for Nord light in #1350.
+    ///   Slot 0 is kept dimmer than the foreground so ghost text still reads
+    ///   as a hint, not as body text.
+    ///
+    /// The palette is authored from scratch and the name is deliberately
+    /// neutral and non-trademarked — no third-party theme file is derived from.
+    static let digitalRain = TerminalTheme(
+        id: "digital-rain",
+        nameKey: "terminal.theme.digital-rain.name",
+        light: TerminalColorScheme(
+            ansiColors: [
+                .init(red: 0x5A, green: 0x78, blue: 0x62), // 0  black (ghost text — mid green-grey)
+                .init(red: 0xC0, green: 0x20, blue: 0x2E), // 1  red
+                .init(red: 0x1F, green: 0x7A, blue: 0x3A), // 2  green
+                .init(red: 0x9A, green: 0x67, blue: 0x00), // 3  yellow (dark gold)
+                .init(red: 0x1A, green: 0x5F, blue: 0xB4), // 4  blue
+                .init(red: 0x8E, green: 0x24, blue: 0xAA), // 5  magenta
+                .init(red: 0x0F, green: 0x7C, blue: 0x8A), // 6  cyan
+                .init(red: 0x4A, green: 0x5A, blue: 0x4A), // 7  white (dark green-grey)
+                .init(red: 0x6B, green: 0x83, blue: 0x71), // 8  bright black
+                .init(red: 0xD6, green: 0x3A, blue: 0x47), // 9  bright red
+                .init(red: 0x2A, green: 0x8F, blue: 0x3F), // 10 bright green
+                .init(red: 0xA3, green: 0x76, blue: 0x00), // 11 bright yellow
+                .init(red: 0x2E, green: 0x74, blue: 0xD6), // 12 bright blue
+                .init(red: 0xA2, green: 0x3A, blue: 0xB8), // 13 bright magenta
+                .init(red: 0x15, green: 0x87, blue: 0x7A), // 14 bright cyan
+                .init(red: 0x66, green: 0x78, blue: 0x66), // 15 bright white
+            ],
+            background: TerminalPaletteEntry(red: 0xDC, green: 0xEB, blue: 0xDC),
+            foreground: TerminalPaletteEntry(red: 0x0E, green: 0x3D, blue: 0x1E),
+            cursor: TerminalPaletteEntry(red: 0x0A, green: 0x2E, blue: 0x16),
+            selection: TerminalPaletteEntry(red: 0xA6, green: 0xCF, blue: 0xA6),
+            link: TerminalPaletteEntry(red: 0x0C, green: 0x6E, blue: 0x5A)
+        ),
+        dark: TerminalColorScheme(
+            ansiColors: [
+                .init(red: 0x35, green: 0x6B, blue: 0x49), // 0  black (ghost text — dim green)
+                .init(red: 0xFF, green: 0x33, blue: 0x44), // 1  red
+                .init(red: 0x00, green: 0xC8, blue: 0x53), // 2  green
+                .init(red: 0xFF, green: 0xD2, blue: 0x3F), // 3  yellow
+                .init(red: 0x33, green: 0xA1, blue: 0xFF), // 4  blue
+                .init(red: 0xB2, green: 0x67, blue: 0xFF), // 5  magenta
+                .init(red: 0x1F, green: 0xE0, blue: 0xB0), // 6  cyan
+                .init(red: 0x7A, green: 0xF0, blue: 0xA0), // 7  white (pale phosphor)
+                .init(red: 0x4E, green: 0x74, blue: 0x59), // 8  bright black (TUI borders)
+                .init(red: 0xFF, green: 0x55, blue: 0x66), // 9  bright red
+                .init(red: 0x00, green: 0xFF, blue: 0x66), // 10 bright green (full phosphor)
+                .init(red: 0xFF, green: 0xE0, blue: 0x66), // 11 bright yellow
+                .init(red: 0x5B, green: 0xB8, blue: 0xFF), // 12 bright blue
+                .init(red: 0xCB, green: 0x8A, blue: 0xFF), // 13 bright magenta
+                .init(red: 0x5C, green: 0xFF, blue: 0xD8), // 14 bright cyan
+                .init(red: 0xDC, green: 0xFF, blue: 0xE6), // 15 bright white (milky green-white)
+            ],
+            background: TerminalPaletteEntry(red: 0x0A, green: 0x0E, blue: 0x0A),
+            foreground: TerminalPaletteEntry(red: 0x00, green: 0xE0, blue: 0x56),
+            cursor: TerminalPaletteEntry(red: 0x00, green: 0xFF, blue: 0x66),
+            selection: TerminalPaletteEntry(red: 0x14, green: 0x30, blue: 0x18),
+            link: TerminalPaletteEntry(red: 0x3D, green: 0xFF, blue: 0xE0)
         )
     )
 }

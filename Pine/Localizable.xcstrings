@@ -31361,6 +31361,21 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "跟随系统" } }
       }
     },
+    "terminal.theme.digital-rain.name": {
+      "comment": "Display name of the built-in Digital Rain terminal theme.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Digital Rain" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Digital Rain" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Digital Rain" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Digital Rain" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Digital Rain" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Digital Rain" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Digital Rain" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Digital Rain" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Digital Rain" } }
+      }
+    },
     "terminal.theme.dracula.name": {
       "comment": "Display name of the built-in Dracula terminal theme.",
       "extractionState": "manual",
