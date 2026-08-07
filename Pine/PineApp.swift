@@ -689,11 +689,14 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             }
         }
 
-        let authorizedTerminalProcesses =
-            TabCloseHelper.foregroundProcessSnapshot(
-                for: projectManager.terminal.allTerminalTabs
-            )
-        if !authorizedTerminalProcesses.isEmpty {
+        // Authorize by stable identity, never by the volatile foreground pgid:
+        // an agent tab churns process groups on nearly every poll, so a pgid
+        // snapshot taken before the sheet is already stale when the user
+        // answers it, and the close would silently abort (#1335, #1348).
+        let terminalAuthorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: projectManager.terminal.allTerminalTabs
+        )
+        if terminalAuthorization.requiresConfirmation {
             let terminalResponse = if let closeAlertPresenter {
                 await closeAlertPresenter(
                     .terminalTabCloseWarning,
@@ -714,13 +717,8 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         }
 
         let currentDirtyTabs = projectManager.allDirtyTabs
-        let currentTerminalProcesses =
-            TabCloseHelper.foregroundProcessSnapshot(
-                for: projectManager.terminal.allTerminalTabs
-            )
-        guard TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
-            currentTerminalProcesses,
-            by: authorizedTerminalProcesses
+        guard terminalAuthorization.stillCovers(
+            projectManager.terminal.allTerminalTabs
         ) else {
             return .cancel
         }
@@ -1940,8 +1938,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         var discardAuthorizations: [
             ObjectIdentifier: DirtyEditorContentAuthorization
         ] = [:]
-        var authorizedTerminalProcesses: [
-            ObjectIdentifier: Set<TerminalForegroundProcessIdentity>
+        // Keyed by project. Authorization is by stable identity (agent session
+        // id / process-group generation), never by a raw pgid snapshot, so an
+        // agent spawning children while the sheet is up cannot invalidate the
+        // Quit the user just confirmed (#1335, #1348).
+        var terminalAuthorizations: [
+            ObjectIdentifier: TerminalTabCloseAuthorization
         ] = [:]
 
         for projectManager in projects {
@@ -2018,16 +2020,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             }
         }
 
-        for projectManager in projects where projectManager.terminal.hasActiveProcesses {
+        for projectManager in projects {
             guard registry.openProjects.values.contains(where: {
                 $0 === projectManager
             }) else {
                 continue
             }
-            let activeTerminalProcesses =
-                TabCloseHelper.foregroundProcessSnapshot(
-                    for: projectManager.terminal.allTerminalTabs
+            // Record an authorization for every surviving project, including
+            // those with nothing running: the final revalidation needs a
+            // captured baseline per project to distinguish "was idle, still
+            // idle" from "appeared after the snapshot".
+            let authorization = TerminalTabCloseAuthorization.authorizing(
+                tabs: projectManager.terminal.allTerminalTabs
             )
+            terminalAuthorizations[ObjectIdentifier(projectManager)] =
+                authorization
+            guard authorization.requiresConfirmation else { continue }
             let projectContext = DialogPresenter.forProject(projectManager)
             let hasEligibleProjectOwner = projectContext.nsWindow.map {
                 DialogPresenter.isEligibleApplicationOwner($0)
@@ -2063,8 +2071,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             guard response == .alertFirstButtonReturn else {
                 return false
             }
-            authorizedTerminalProcesses[ObjectIdentifier(projectManager)] =
-                activeTerminalProcesses
         }
 
         // Runtime pane/tab IDs cannot be trusted across relaunch. Reserve a
@@ -2127,16 +2133,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 return false
             }
 
-            let allowedTerminalProcesses =
-                authorizedTerminalProcesses[identifier] ?? []
-            let currentTerminalProcesses =
-                TabCloseHelper.foregroundProcessSnapshot(
-                    for: projectManager.terminal.allTerminalTabs
-                )
-            guard TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
-                currentTerminalProcesses,
-                by: allowedTerminalProcesses
+            // A project that appeared after the snapshot was never presented
+            // to the user. An idle one is still safe to tear down; anything
+            // running in it is unauthorized and must cancel Quit.
+            guard let authorization = terminalAuthorizations[identifier] else {
+                guard !TerminalTabCloseAuthorization.authorizing(
+                    tabs: projectManager.terminal.allTerminalTabs
+                ).requiresConfirmation else {
+                    Logger.app.error(
+                        "Quit aborted: project with running processes opened during the termination handshake"
+                    )
+                    await rollbackAgentTasks()
+                    return false
+                }
+                continue
+            }
+            guard authorization.stillCovers(
+                projectManager.terminal.allTerminalTabs
             ) else {
+                Logger.app.error(
+                    "Quit aborted: terminal authorization no longer covers the project"
+                )
                 await rollbackAgentTasks()
                 return false
             }

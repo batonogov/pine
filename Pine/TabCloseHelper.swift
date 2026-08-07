@@ -460,26 +460,6 @@ enum TabCloseHelper {
         return authorization.stillCovers(tabs)
     }
 
-    static func foregroundProcessSnapshot(
-        for tabs: [TerminalTab]
-    ) -> Set<TerminalForegroundProcessIdentity> {
-        Set(tabs.compactMap { tab in
-            let processGroupID = tab.foregroundProcessID
-            guard processGroupID > 0 else { return nil }
-            return TerminalForegroundProcessIdentity(
-                tabID: tab.id,
-                processGroupID: processGroupID
-            )
-        })
-    }
-
-    nonisolated static func foregroundProcessSnapshotIsAuthorized(
-        _ current: Set<TerminalForegroundProcessIdentity>,
-        by authorized: Set<TerminalForegroundProcessIdentity>
-    ) -> Bool {
-        current.isSubset(of: authorized)
-    }
-
     /// Resolves a presentation context for a terminal close/stop, resilient
     /// to a transiently-missing project owner (#1335 H3).
     ///
