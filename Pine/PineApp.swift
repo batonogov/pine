@@ -1699,7 +1699,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
            ) {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate()
-            registry.projectManager(for: canonical)
+            // Touch the registered project manager (no-op side effect; result
+            // intentionally unused) so the Open Recent path mirrors the normal
+            // open path that resolves the manager for the canonical URL.
+            _ = registry.projectManager(for: canonical)
             hideWelcome()
             return true
         }

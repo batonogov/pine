@@ -319,11 +319,14 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     /// Writes a framed JSON-RPC message to the server's stdin.
     /// No-op when the process is not running.
     func send(_ payload: [String: Any]) {
+        // Box as @unchecked Sendable so the payload can cross the
+        // nonisolated ioQueue boundary (see `deliver` / `SendableJSONBox`).
+        let box = SendableJSONBox(payload)
         ioQueue.async { [weak self] in
             guard let self,
                   let pipe = self.stdinPipe,
                   self.process?.isRunning == true else { return }
-            let framed = LSPMessageFraming.frame(payload)
+            let framed = LSPMessageFraming.frame(box.value)
             do {
                 try pipe.fileHandleForWriting.write(contentsOf: framed)
             } catch {
@@ -1349,7 +1352,10 @@ extension LSPClient: LSPClientProtocol {
 }
 
 /// Error wrapping a JSON-RPC error object.
-nonisolated struct LSPError: Error {
+nonisolated struct LSPError: Error, @unchecked Sendable {
+    // `@unchecked Sendable`: the `[String: Any]` JSON-RPC error object is not
+    // statically Sendable (`Any` cannot be), but it is a freshly decoded,
+    // effectively-immutable payload — same pattern as `SendableJSONBox`.
     let error: [String: Any]
 }
 

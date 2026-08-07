@@ -713,15 +713,21 @@ final class PaneManager {
     // they can be touched from `deinit`, which is nonisolated even on a
     // @MainActor class. All real reads/writes happen on the main thread.
 
+    // `@ObservationIgnored` + `nonisolated(unsafe)`: this is internal cleanup
+    // state, not UI-observable. Without `@ObservationIgnored` the `@Observable`
+    // macro manages the property and warns "`nonisolated(unsafe)` has no
+    // effect"; `nonisolated` alone is illegal on a mutable stored property.
+    // Excluded from observation so `nonisolated(unsafe)` takes effect and
+    // `deinit` can touch it.
     /// NSEvent monitor for mouse-up cleanup of drop overlays (in-app).
-    nonisolated(unsafe) private var mouseUpMonitor: Any?
+    @ObservationIgnored nonisolated(unsafe) private var mouseUpMonitor: Any?
 
     /// NSEvent monitor for mouse-up cleanup that fires even when the cursor
     /// is released outside the app window.
-    nonisolated(unsafe) private var globalMouseUpMonitor: Any?
+    @ObservationIgnored nonisolated(unsafe) private var globalMouseUpMonitor: Any?
 
     /// Notification observers for window/app deactivation cleanup.
-    nonisolated(unsafe) private var deactivationObservers: [NSObjectProtocol] = []
+    @ObservationIgnored nonisolated(unsafe) private var deactivationObservers: [NSObjectProtocol] = []
 
     /// Provider that returns `true` when the user is currently holding any
     /// mouse button down (i.e. a drag is potentially in progress).
@@ -764,23 +770,29 @@ final class PaneManager {
     /// Polling timer that periodically checks whether stale overlays should
     /// be cleared. Started lazily when an overlay first appears, stopped when
     /// none remain. ~120ms cadence keeps overhead negligible.
-    nonisolated(unsafe) private var staleDropPollTimer: Timer?
+    @ObservationIgnored nonisolated(unsafe) private var staleDropPollTimer: Timer?
 
     /// Starts the stale-overlay polling timer if not already running.
     /// Called by drop delegates whenever they set a drop zone.
     func startStaleDropPollingIfNeeded() {
         guard staleDropPollTimer == nil else { return }
         // Timer scheduled on the main run loop fires on the main thread, and
-        // PaneManager is @MainActor, so no extra DispatchQueue.main.async hop
-        // is needed inside the callback.
+        // PaneManager is @MainActor. `MainActor.assumeIsolated` asserts that
+        // main-thread invariant for the compiler so isolated members can be
+        // touched without a `DispatchQueue.main.async` hop. The non-Sendable
+        // `Timer` argument is kept out of the @MainActor closure and
+        // invalidated in the outer callback based on the returned flag.
         let timer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] t in
-            guard let self else { t.invalidate(); return }
-            if !self.hasActiveDropZones {
-                t.invalidate()
-                self.staleDropPollTimer = nil
-                return
+            let stop = MainActor.assumeIsolated {
+                guard let self else { return true }
+                if !self.hasActiveDropZones {
+                    self.staleDropPollTimer = nil
+                    return true
+                }
+                self.clearStaleDropZonesIfNoDragActive()
+                return false
             }
-            self.clearStaleDropZonesIfNoDragActive()
+            if stop { t.invalidate() }
         }
         staleDropPollTimer = timer
     }
