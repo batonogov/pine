@@ -244,8 +244,8 @@ struct AgentInboxToolbarBadgeTests {
         registry.agentTasks.setTasksForTesting([waiting])
         #expect(registry.agentInboxAttentionCount(for: tempDir) == 1)
 
-        // Reviewing the task clears its attention state — it leaves
-        // needs-attention even though it is still active.
+        // Reviewing the task clears its attention state — it drops out of
+        // the needs-attention section while still being active.
         var reviewed = waiting
         reviewed.attention = .none
         reviewed.isUnread = false

@@ -856,6 +856,9 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// project windows from showing each other's attention counts; a global
     /// dock-tile badge is a follow-up.
     func agentInboxAttentionCount(for projectURL: URL) -> Int {
+        // Cheap guard: avoid building a full snapshot on every ContentView
+        // body eval when there are no durable tasks at all (the common case).
+        guard !agentTasks.tasks.isEmpty else { return 0 }
         let canonical = canonicalProjectURL(projectURL)
         guard let identity = agentTaskProjectsByRoot[canonical] else { return 0 }
         let snapshot = AgentInboxSnapshot(tasks: agentTasks.tasks)
@@ -866,9 +869,10 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard let needsAttention = snapshot.sections.first(where: {
             $0.id == .needsAttention
         }) else { return 0 }
+        // Rows in the needs-attention section are already needs-attention by
+        // construction, so only the per-project filter remains.
         return needsAttention.rows.filter { row in
-            row.section == .needsAttention
-                && row.projectPath == identity.canonicalProjectPath
+            row.projectPath == identity.canonicalProjectPath
                 && row.worktreePath == identity.canonicalWorktreePath
         }.count
     }
