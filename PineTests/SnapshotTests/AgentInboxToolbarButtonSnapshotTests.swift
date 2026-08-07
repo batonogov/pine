@@ -165,6 +165,43 @@ struct AgentInboxToolbarButtonSnapshotTests {
         )
     }
 
+    /// The reference comparison cannot be trusted to notice the dot going
+    /// missing: it covers roughly 50 of this canvas's 1024 pixels, so losing
+    /// it moves the mean absolute difference by about 0.024 — inside the
+    /// tolerance any cross-machine rasterization drift would demand. Assert
+    /// the dot is drawn directly, comparing two renders from the same machine
+    /// so the check holds whatever the reference was recorded on.
+    @Test("the dot is actually drawn when a task needs attention")
+    func dotIsDrawn() throws {
+        if SnapshotHarness.isHeadless { return }
+
+        let quiet = try SnapshotHarness.render(
+            view: pinned(count: 0),
+            size: Self.buttonSize,
+            appearance: .light
+        )
+        let attentive = try SnapshotHarness.render(
+            view: pinned(count: 1),
+            size: Self.buttonSize,
+            appearance: .light
+        )
+
+        let delta = maxChannelDelta(
+            quiet,
+            attentive,
+            width: Int(Self.buttonSize.width),
+            height: Int(Self.buttonSize.height)
+        )
+        let maxDelta = try #require(delta, "Missing pixels")
+        #expect(
+            maxDelta > 0.25,
+            """
+            The attention dot is not being drawn (max channel delta \
+            \(maxDelta) between the quiet and attentive renders).
+            """
+        )
+    }
+
     /// The dot is numberless on purpose: its size must not track the count,
     /// or it starts reaching past the toolbar's circular item chrome again.
     @Test("the dot is identical for one task and for many")
