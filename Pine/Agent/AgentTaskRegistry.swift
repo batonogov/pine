@@ -326,8 +326,20 @@ final class AgentTaskRegistry {
     /// flow. Used by unit tests that exercise presentation-layer projections
     /// (e.g. the project-window toolbar attention badge #1337) without
     /// spinning up terminals.
+    ///
+    /// Rebuilds the run and terminal lookup indexes so the registry is not
+    /// left describing tasks it can no longer resolve. Reservation state
+    /// (pending claims, termination grace) and persistence bookkeeping are
+    /// deliberately untouched: this seam feeds read-only projections, it does
+    /// not drive the launch state machine.
     func setTasksForTesting(_ newTasks: [AgentTask]) {
+        taskIDByRunID.removeAll()
+        historicalTaskIDByRunID.removeAll()
+        taskIDByTerminal.removeAll()
         tasks = newTasks
+        for task in newTasks {
+            indexLiveTask(task)
+        }
     }
     #endif
 

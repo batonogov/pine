@@ -55,7 +55,27 @@ final class ProjectRegistry: LSPSettingsObserver {
     @ObservationIgnored private let fileManager: FileManager
     @ObservationIgnored private let agentRecoveryInspector: AgentTaskRecoveryInspector
     @ObservationIgnored
-    private var agentTaskProjectsByRoot: [URL: AgentTaskProjectIdentity] = [:]
+    private var agentTaskProjectsByRoot: [URL: AgentTaskProjectIdentity] = [:] {
+        didSet {
+            // Opening or closing a project window changes which identities the
+            // attention badge projects onto (#1337). Funnelled through `didSet`
+            // so every mutation site stays in sync without remembering to call
+            // the recompute by hand.
+            guard oldValue != agentTaskProjectsByRoot else { return }
+            recomputeAgentInboxAttentionCounts()
+        }
+    }
+
+    /// Per-project count of durable agent tasks in the Inbox's
+    /// `needsAttention` section, keyed by canonical project URL (#1337).
+    ///
+    /// Deliberately a cache rather than a computed property: it is read from
+    /// `ContentView.body`, and computing it on demand would make every project
+    /// window's root view observe the whole durable task array — any task
+    /// mutation anywhere would then rebuild an `AgentInboxSnapshot` per window
+    /// per body pass. Recomputing on task change instead means windows are
+    /// invalidated only when a count they display actually moves.
+    private var agentInboxAttentionCounts: [URL: Int] = [:]
 
     /// Serializes settings lifecycle changes so rapid Apply/Reset operations
     /// cannot race each other across projects.
@@ -89,6 +109,12 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
         #endif
         lspSettings.addObserver(self)
+        // Keeps the toolbar attention badge current (#1337). The token is not
+        // retained: this registry owns `agentTasks`, so the observer cannot
+        // outlive its target, and the closure holds `self` weakly.
+        _ = agentTasks.addTaskChangeObserver { [weak self] _, tasks in
+            self?.recomputeAgentInboxAttentionCounts(tasks: tasks)
+        }
     }
 
     /// Returns the ProjectManager for a given project URL, creating one if needed.
@@ -850,31 +876,55 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// the per-project toolbar badge (#1337).
     ///
     /// Returns 0 for unknown/closed projects and for projects with no tasks
-    /// awaiting input. Reuses ``AgentInboxSnapshot`` so the count always
-    /// matches what the Inbox view shows for the same `needsAttention`
-    /// section. Per-project scoping (rather than a global count) keeps sibling
-    /// project windows from showing each other's attention counts; a global
-    /// dock-tile badge is a follow-up.
+    /// awaiting input. Reads the cache maintained by
+    /// ``recomputeAgentInboxAttentionCounts(tasks:)``, so this is O(1) and safe
+    /// to call from a view body. Per-project scoping (rather than a global
+    /// count) keeps sibling project windows from showing each other's
+    /// attention counts; a global dock-tile badge is a follow-up.
     func agentInboxAttentionCount(for projectURL: URL) -> Int {
-        // Cheap guard: avoid building a full snapshot on every ContentView
-        // body eval when there are no durable tasks at all (the common case).
-        guard !agentTasks.tasks.isEmpty else { return 0 }
-        let canonical = canonicalProjectURL(projectURL)
-        guard let identity = agentTaskProjectsByRoot[canonical] else { return 0 }
-        let snapshot = AgentInboxSnapshot(tasks: agentTasks.tasks)
-        // Read only the needs-attention section instead of flattening every
-        // section's rows — the badge is evaluated on each ContentView body
-        // pass, so avoid the O(sections) flatMap when only one section is
-        // relevant (#1337).
+        agentInboxAttentionCounts[canonicalProjectURL(projectURL)] ?? 0
+    }
+
+    /// Rebuilds ``agentInboxAttentionCounts`` from a durable task snapshot.
+    ///
+    /// Called once per task mutation and once per project open/close, never
+    /// from a view body. Reuses ``AgentInboxSnapshot`` so the badge always
+    /// agrees with the `needsAttention` section the Inbox renders, and groups
+    /// rows by project identity so all open windows are updated in a single
+    /// O(rows + windows) pass rather than one filter per window.
+    private func recomputeAgentInboxAttentionCounts(
+        tasks: [AgentTask]? = nil
+    ) {
+        let tasks = tasks ?? agentTasks.tasks
+        var counts: [URL: Int] = [:]
+        defer {
+            // Assigning an equal value still fires an observation transaction,
+            // which would invalidate every project window's root view on any
+            // task mutation. Durable tasks churn far more often than the
+            // attention count moves, so only publish real changes.
+            if agentInboxAttentionCounts != counts {
+                agentInboxAttentionCounts = counts
+            }
+        }
+        guard !tasks.isEmpty, !agentTaskProjectsByRoot.isEmpty else { return }
+        let snapshot = AgentInboxSnapshot(tasks: tasks)
         guard let needsAttention = snapshot.sections.first(where: {
             $0.id == .needsAttention
-        }) else { return 0 }
-        // Rows in the needs-attention section are already needs-attention by
-        // construction, so only the per-project filter remains.
-        return needsAttention.rows.filter { row in
-            row.projectPath == identity.canonicalProjectPath
-                && row.worktreePath == identity.canonicalWorktreePath
-        }.count
+        }) else { return }
+        // Rows in this section are needs-attention by construction, so only
+        // the per-project grouping remains.
+        var countsByIdentity: [AgentTaskProjectIdentity: Int] = [:]
+        for row in needsAttention.rows {
+            let identity = AgentTaskProjectIdentity(
+                canonicalProjectPath: row.projectPath,
+                canonicalWorktreePath: row.worktreePath
+            )
+            countsByIdentity[identity, default: 0] += 1
+        }
+        for (url, identity) in agentTaskProjectsByRoot {
+            guard let count = countsByIdentity[identity] else { continue }
+            counts[url] = count
+        }
     }
 
     // MARK: - Language Server Settings

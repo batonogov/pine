@@ -33007,13 +33007,27 @@
       "localizations": {
         "de": { "stringUnit": { "state": "translated", "value": "Agenten-Posteingang öffnen" } },
         "en": { "stringUnit": { "state": "translated", "value": "Open the Agent Inbox" } },
-        "es": { "stringUnit": { "state": "translated", "value": "Abrir la bandeja de entrada del agente" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Abrir la bandeja de agentes" } },
         "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir la boîte de réception des agents" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "エージェント受信箱を開く" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェント受信トレイを開く" } },
         "ko": { "stringUnit": { "state": "translated", "value": "에이전트 받은편지함 열기" } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir a caixa de entrada do agente" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Открыть папку входящих агента" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir a caixa de entrada dos agentes" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Открыть входящие от агентов" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "打开智能体收件箱" } }
+      }
+    },
+    "agentInbox.toolbar.joined %@ %@": {
+      "comment": "Agent Inbox toolbar button tooltip and VoiceOver label. %1$@ is the Inbox name or the tooltip, %2$@ the pluralized attention phrase; reorder the arguments where the language requires it (#1337).",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "%1$@, %2$@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@, %2$@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "%1$@, %2$@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%1$@, %2$@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "%1$@、%2$@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%1$@, %2$@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%1$@, %2$@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "%1$@, %2$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$@，%2$@" } }
       }
     },
     "agentInbox.toolbar.attentionCount %lld": {

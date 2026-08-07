@@ -647,6 +647,28 @@ enum Strings {
     // MARK: - Agent Inbox toolbar button (#1337)
     static let agentInboxToolbarTooltip: LocalizedStringKey =
         "agentInbox.toolbar.tooltip"
+
+    /// Resolved `String` form of ``agentInboxToolbarTooltip``.
+    static func agentInboxToolbarTooltipText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentInbox.toolbar.tooltip",
+            fallback: "Open the Agent Inbox",
+            locale: locale
+        )
+    }
+
+    /// Resolved `String` form of ``agentInboxTitle``, for composing VoiceOver
+    /// labels — a `LocalizedStringKey` cannot be interpolated into one.
+    static func agentInboxTitleText(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "menu.agentInbox",
+            fallback: "Agent Inbox",
+            locale: locale
+        )
+    }
+
     static func agentInboxToolbarAttentionCount(
         _ count: Int,
         locale: Locale = .current
@@ -656,6 +678,27 @@ enum Strings {
             fallback: "%lld tasks need attention",
             count: count,
             locale: locale
+        )
+    }
+
+    /// Joins a lead phrase (the Inbox name, or the tooltip) with the
+    /// pluralized attention phrase. Kept as a localizable format rather than a
+    /// hardcoded `", "` so languages that order the two parts differently can
+    /// swap `%1$@` and `%2$@`.
+    static func agentInboxToolbarJoined(
+        lead: String,
+        attention: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentInbox.toolbar.joined %@ %@",
+            fallback: "%1$@, %2$@",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [lead, attention]
         )
     }
 
