@@ -203,6 +203,7 @@ nonisolated enum AccessibilityID {
 
     // MARK: - Agent Inbox
     static let agentInbox = "agentInbox"
+    static let agentInboxToolbarButton = "agentInboxToolbarButton"
     static let agentInboxList = "agentInboxList"
     static let agentInboxEmpty = "agentInboxEmpty"
     static let agentInboxNavigationStatus = "agentInboxNavigationStatus"

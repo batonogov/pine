@@ -33001,6 +33001,159 @@
           }
         }
       }
+    },
+    "agentInbox.toolbar.tooltip": {
+      "comment": "Tooltip for the Agent Inbox toolbar button in the project window (#1337).",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Agenten-Posteingang öffnen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Open the Agent Inbox" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Abrir la bandeja de entrada del agente" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir la boîte de réception des agents" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェント受信箱を開く" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트 받은편지함 열기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir a caixa de entrada do agente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Открыть папку входящих агента" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "打开智能体收件箱" } }
+      }
+    },
+    "agentInbox.toolbar.attentionCount %lld": {
+      "comment": "Accessibility label suffix for the Agent Inbox toolbar badge: how many tasks need attention. %lld is pluralized (#1337).",
+      "localizations": {
+        "de": {
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": { "stringUnit": { "state": "translated", "value": "%lld Aufgabe erfordert Aufmerksamkeit" } },
+                  "other": { "stringUnit": { "state": "translated", "value": "%lld Aufgaben erfordern Aufmerksamkeit" } }
+                }
+              }
+            }
+          },
+          "stringUnit": { "state": "translated", "value": "%#@count@" }
+        },
+        "en": {
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": { "stringUnit": { "state": "translated", "value": "%lld task needs attention" } },
+                  "other": { "stringUnit": { "state": "translated", "value": "%lld tasks need attention" } }
+                }
+              }
+            }
+          },
+          "stringUnit": { "state": "translated", "value": "%#@count@" }
+        },
+        "es": {
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": { "stringUnit": { "state": "translated", "value": "%lld tarea requiere atención" } },
+                  "other": { "stringUnit": { "state": "translated", "value": "%lld tareas requieren atención" } }
+                }
+              }
+            }
+          },
+          "stringUnit": { "state": "translated", "value": "%#@count@" }
+        },
+        "fr": {
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": { "stringUnit": { "state": "translated", "value": "%lld tâche nécessite de l’attention" } },
+                  "other": { "stringUnit": { "state": "translated", "value": "%lld tâches nécessitent de l’attention" } }
+                }
+              }
+            }
+          },
+          "stringUnit": { "state": "translated", "value": "%#@count@" }
+        },
+        "ja": {
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": { "stringUnit": { "state": "translated", "value": "%lld 件のタスクが対応を待っています" } }
+                }
+              }
+            }
+          },
+          "stringUnit": { "state": "translated", "value": "%#@count@" }
+        },
+        "ko": {
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": { "stringUnit": { "state": "translated", "value": "%lld개 작업이 주의를 기다립니다" } }
+                }
+              }
+            }
+          },
+          "stringUnit": { "state": "translated", "value": "%#@count@" }
+        },
+        "pt-BR": {
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": { "stringUnit": { "state": "translated", "value": "%lld tarefa precisa de atenção" } },
+                  "other": { "stringUnit": { "state": "translated", "value": "%lld tarefas precisam de atenção" } }
+                }
+              }
+            }
+          },
+          "stringUnit": { "state": "translated", "value": "%#@count@" }
+        },
+        "ru": {
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": { "stringUnit": { "state": "translated", "value": "%lld задача требует внимания" } },
+                  "few": { "stringUnit": { "state": "translated", "value": "%lld задачи требуют внимания" } },
+                  "many": { "stringUnit": { "state": "translated", "value": "%lld задач требуют внимания" } },
+                  "other": { "stringUnit": { "state": "translated", "value": "%lld задачи требуют внимания" } }
+                }
+              }
+            }
+          },
+          "stringUnit": { "state": "translated", "value": "%#@count@" }
+        },
+        "zh-Hans": {
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": { "stringUnit": { "state": "translated", "value": "%lld 个任务需要关注" } }
+                }
+              }
+            }
+          },
+          "stringUnit": { "state": "translated", "value": "%#@count@" }
+        }
+      }
     }
   },
   "version": "1.1"

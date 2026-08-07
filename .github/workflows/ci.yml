@@ -523,6 +523,7 @@ jobs:
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
+              -only-testing:PineUITests/AgentInboxToolbarButtonTests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
           # Shard 3 — Navigation (31 tests)

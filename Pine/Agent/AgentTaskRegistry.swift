@@ -321,6 +321,14 @@ final class AgentTaskRegistry {
         return UUID(uuidString: "00000000-0000-0000-0000-\(suffix)")
             ?? UUID()
     }
+
+    /// Test-only injection of durable tasks, bypassing the launch/bridge
+    /// flow. Used by unit tests that exercise presentation-layer projections
+    /// (e.g. the project-window toolbar attention badge #1337) without
+    /// spinning up terminals.
+    func setTasksForTesting(_ newTasks: [AgentTask]) {
+        tasks = newTasks
+    }
     #endif
 
     func task(for id: UUID) -> AgentTask? {

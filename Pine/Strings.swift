@@ -644,6 +644,21 @@ enum Strings {
     static let agentInboxRecoveryUnavailable: LocalizedStringKey =
         "agentInbox.recoveryUnavailable"
 
+    // MARK: - Agent Inbox toolbar button (#1337)
+    static let agentInboxToolbarTooltip: LocalizedStringKey =
+        "agentInbox.toolbar.tooltip"
+    static func agentInboxToolbarAttentionCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        localizedPluralString(
+            forKey: "agentInbox.toolbar.attentionCount %lld",
+            fallback: "%lld tasks need attention",
+            count: count,
+            locale: locale
+        )
+    }
+
     // MARK: - Agent notifications (#1306)
     static let agentNotificationsSettingsTitle: LocalizedStringKey =
         "agentNotifications.settings.title"

@@ -843,6 +843,29 @@ final class ProjectRegistry: LSPSettingsObserver {
         openProjects[canonicalProjectURL(url)] != nil
     }
 
+    // MARK: - Agent Inbox
+
+    /// Number of durable agent tasks currently in the Agent Inbox's
+    /// "needs attention" section, scoped to one open project window. Drives
+    /// the per-project toolbar badge (#1337).
+    ///
+    /// Returns 0 for unknown/closed projects and for projects with no tasks
+    /// awaiting input. Reuses ``AgentInboxSnapshot`` so the count always
+    /// matches what the Inbox view shows for the same `needsAttention`
+    /// section. Per-project scoping (rather than a global count) keeps sibling
+    /// project windows from showing each other's attention counts; a global
+    /// dock-tile badge is a follow-up.
+    func agentInboxAttentionCount(for projectURL: URL) -> Int {
+        let canonical = canonicalProjectURL(projectURL)
+        guard let identity = agentTaskProjectsByRoot[canonical] else { return 0 }
+        let snapshot = AgentInboxSnapshot(tasks: agentTasks.tasks)
+        return snapshot.rows.filter { row in
+            row.section == .needsAttention
+                && row.projectPath == identity.canonicalProjectPath
+                && row.worktreePath == identity.canonicalWorktreePath
+        }.count
+    }
+
     // MARK: - Language Server Settings
 
     func lspSettingsDidChange(_ change: LSPSettingsChange) {
