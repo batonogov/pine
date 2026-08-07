@@ -21,7 +21,7 @@ struct AgentInboxToolbarBadgeTests {
             .appendingPathComponent("PineBadge-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             at: tempDir,
-            withDirectories: true
+            withIntermediateDirectories: true
         )
         return tempDir
     }
@@ -226,8 +226,8 @@ struct AgentInboxToolbarBadgeTests {
         #expect(registry.agentInboxAttentionCount(for: tempDir) == 0)
     }
 
-    @Test("reacts to task changes — dismissed tasks leave the count")
-    func reactsToTaskChanges() throws {
+    @Test("reviewed tasks leave the needs-attention count")
+    func reviewedTasksLeaveTheCount() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -244,11 +244,34 @@ struct AgentInboxToolbarBadgeTests {
         registry.agentTasks.setTasksForTesting([waiting])
         #expect(registry.agentInboxAttentionCount(for: tempDir) == 1)
 
-        // Simulate the user reviewing the task — it leaves needs-attention.
+        // Reviewing the task clears its attention state — it leaves
+        // needs-attention even though it is still active.
         var reviewed = waiting
         reviewed.attention = .none
         reviewed.isUnread = false
         registry.agentTasks.setTasksForTesting([reviewed])
+        #expect(registry.agentInboxAttentionCount(for: tempDir) == 0)
+    }
+
+    @Test("dismissed tasks are excluded from the snapshot entirely")
+    func dismissedTasksExcluded() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let registry = ProjectRegistry()
+        _ = registry.projectManager(for: tempDir)
+        let identity = self.identity(for: tempDir, in: registry)
+
+        var dismissed = makeTask(
+            seed: 1, identity: identity,
+            state: .waitingInput, liveness: .live,
+            attention: .waitingInput, unread: true
+        )
+        // `AgentInboxSnapshot` drops `.dismissed` tasks before classification,
+        // so a dismissed waiting-input task must not count.
+        dismissed.lifecycle = .dismissed
+
+        registry.agentTasks.setTasksForTesting([dismissed])
         #expect(registry.agentInboxAttentionCount(for: tempDir) == 0)
     }
 }

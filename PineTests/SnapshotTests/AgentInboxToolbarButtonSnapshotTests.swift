@@ -21,7 +21,7 @@ struct AgentInboxToolbarButtonSnapshotTests {
     /// The button is a single toolbar glyph; render it with enough padding
     /// that the red attention capsule (offset onto the icon's corner) is not
     /// clipped at the bitmap edge.
-    private static let buttonSize = NSSize(width: 56, height: 40)
+    private static let buttonSize = NSSize(width: 64, height: 44)
 
     // The badge capsule uses solid `.red` and the glyph uses a system tint,
     // both of which are stable across machines; default tolerance is enough.

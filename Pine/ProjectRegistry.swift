@@ -859,7 +859,14 @@ final class ProjectRegistry: LSPSettingsObserver {
         let canonical = canonicalProjectURL(projectURL)
         guard let identity = agentTaskProjectsByRoot[canonical] else { return 0 }
         let snapshot = AgentInboxSnapshot(tasks: agentTasks.tasks)
-        return snapshot.rows.filter { row in
+        // Read only the needs-attention section instead of flattening every
+        // section's rows — the badge is evaluated on each ContentView body
+        // pass, so avoid the O(sections) flatMap when only one section is
+        // relevant (#1337).
+        guard let needsAttention = snapshot.sections.first(where: {
+            $0.id == .needsAttention
+        }) else { return 0 }
+        return needsAttention.rows.filter { row in
             row.section == .needsAttention
                 && row.projectPath == identity.canonicalProjectPath
                 && row.worktreePath == identity.canonicalWorktreePath

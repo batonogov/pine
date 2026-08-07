@@ -518,7 +518,7 @@ jobs:
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
               -only-testing:PineUITests/SessionRestoreTests
-          # Shard 2 — Welcome & Session (31 tests)
+          # Shard 2 — Welcome & Session (33 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests

@@ -33,7 +33,6 @@ struct AgentInboxToolbarButton: View {
         .buttonStyle(.borderless)
         .accessibilityIdentifier(AccessibilityID.agentInboxToolbarButton)
         .accessibilityLabel(Text(verbatim: accessibilityLabel))
-        .accessibilityHint(Strings.agentInboxOpen)
         .help(Strings.agentInboxToolbarTooltip)
     }
 
