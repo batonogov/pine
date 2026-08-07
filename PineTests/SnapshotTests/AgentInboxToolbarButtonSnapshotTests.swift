@@ -18,14 +18,17 @@ import Testing
 @MainActor
 struct AgentInboxToolbarButtonSnapshotTests {
 
-    /// The button is a single toolbar glyph; render it with enough padding
-    /// that the red attention capsule (offset onto the icon's corner) is not
-    /// clipped at the bitmap edge.
+    // The button is a single toolbar glyph; render it with enough padding
+    // that the red attention capsule (offset onto the icon's corner) is not
+    // clipped at the bitmap edge.
     private static let buttonSize = NSSize(width: 64, height: 44)
 
-    // The badge capsule uses solid `.red` and the glyph uses a system tint,
-    // both of which are stable across machines; default tolerance is enough.
-    private static let tolerance = 0.01
+    // The badge capsule + the SF Symbol glyph use borderless system rendering
+    // whose anti-aliasing varies ~2–3% between a developer Mac (Retina, a
+    // given Xcode 27 build) and the CI runner's 1× virtual display. The harness
+    // allocates a 1× bitmap so dimensions are stable, but pixel-level diff
+    // still drifts on the badge/text edges — same situation as StatusBarView.
+    private static let tolerance = 0.03
 
     private func button(count: Int) -> some View {
         AgentInboxToolbarButton(attentionCount: count) {}
