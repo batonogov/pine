@@ -374,6 +374,20 @@ jobs:
             --started-at "$TEST_STARTED_AT" \
             --github-summary
 
+      # Snapshot references must be recorded on a runner: a developer Mac
+      # rasterizes SF Symbols and text differently enough to sit outside the
+      # per-test tolerance. When a snapshot test fails the harness writes the
+      # runner's own render next to the reference, so publishing those makes
+      # "re-record from CI" possible without a local render.
+      - name: Upload Snapshot Renders
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: snapshot-actual-renders
+          path: PineTests/SnapshotTests/__Snapshots__/*.actual.png
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Detect Flaky Tests
         if: success() || failure()
         id: flaky
@@ -518,11 +532,12 @@ jobs:
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
               -only-testing:PineUITests/SessionRestoreTests
-          # Shard 2 — Welcome & Session (31 tests)
+          # Shard 2 — Welcome & Session (33 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
+              -only-testing:PineUITests/AgentInboxToolbarButtonTests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
           # Shard 3 — Navigation (31 tests)

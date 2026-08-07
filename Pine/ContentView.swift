@@ -103,6 +103,18 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
+        .toolbar {
+            // Agent Inbox entry point in the project window toolbar (#1337).
+            // Additive to the existing ⌘⇧I chord and Window menu item.
+            ToolbarItem(placement: .primaryAction) {
+                AgentInboxToolbarButton(
+                    attentionCount: agentInboxAttentionCount
+                ) {
+                    openWindow(id: "agent-inbox")
+                    NSApp.activate()
+                }
+            }
+        }
         .background {
             BranchSubtitleClickHandler(
                 gitProvider: workspace.gitProvider,
@@ -428,6 +440,14 @@ struct ContentView: View {
             isGitRepo: workspace.gitProvider.isGitRepository,
             branchName: workspace.gitProvider.currentBranch
         )
+    }
+
+    /// Number of the focused project's durable agent tasks currently in the
+    /// Agent Inbox "needs attention" section. Drives the toolbar badge
+    /// (#1337). Returns 0 before the project URL is bound.
+    private var agentInboxAttentionCount: Int {
+        guard let rootURL = workspace.rootURL else { return 0 }
+        return registry.agentInboxAttentionCount(for: rootURL)
     }
 
     /// Builds the toolbar subtitle for the current git branch.
