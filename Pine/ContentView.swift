@@ -345,10 +345,6 @@ struct ContentView: View {
                         let targetPaneIDs = Set(paneManager.terminalPaneIDs)
                         let targetTabs = terminal.allTerminalTabs
                         let targetTabIDs = Set(targetTabs.map(\.id))
-                        let authorizedForegroundProcesses =
-                            TabCloseHelper.foregroundProcessSnapshot(
-                                for: targetTabs
-                            )
                         Task { @MainActor in
                             // Resolve the owner resiliently: a transiently-nil
                             // weak project→window anchor during scene
@@ -361,19 +357,18 @@ struct ContentView: View {
                                 tabs: targetTabs,
                                 context: context
                             ) else { return }
+                            // `confirmTerminalProcessStop` already revalidates
+                            // process coverage through the stable-identity
+                            // authorization. Re-checking a volatile pgid here
+                            // silently discarded the user's confirmation
+                            // whenever an agent spawned a child (#1348); only
+                            // the pane/tab composition still needs a guard.
                             let currentPaneIDs = Set(paneManager.terminalPaneIDs)
-                            let currentTabs = terminal.allTerminalTabs
-                            let currentTabIDs = Set(currentTabs.map(\.id))
-                            let currentForegroundProcesses =
-                                TabCloseHelper.foregroundProcessSnapshot(
-                                    for: currentTabs
-                                )
+                            let currentTabIDs = Set(
+                                terminal.allTerminalTabs.map(\.id)
+                            )
                             guard currentPaneIDs.isSubset(of: targetPaneIDs),
-                                  currentTabIDs.isSubset(of: targetTabIDs),
-                                  TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
-                                      currentForegroundProcesses,
-                                      by: authorizedForegroundProcesses
-                                  ) else {
+                                  currentTabIDs.isSubset(of: targetTabIDs) else {
                                 return
                             }
                             // Hide all terminal panes

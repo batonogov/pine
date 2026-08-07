@@ -382,10 +382,6 @@ struct TerminalPaneTabBar: View {
                 // Warn if any tab has a foreground process (window-scoped sheet, #1241)
                 let targetTabs = terminalState.terminalTabs
                 let targetTabIDs = Set(targetTabs.map(\.id))
-                let authorizedForegroundProcesses =
-                    TabCloseHelper.foregroundProcessSnapshot(
-                        for: targetTabs
-                    )
                 Task { @MainActor in
                     // Resolve the owner resiliently (#1335 H3): a
                     // transiently-nil weak anchor during scene restoration
@@ -397,17 +393,14 @@ struct TerminalPaneTabBar: View {
                         tabs: targetTabs,
                         context: context
                     ) else { return }
+                    // `confirmTerminalProcessStop` already revalidates process
+                    // coverage through the stable-identity authorization.
+                    // Re-checking a volatile pgid here silently discarded the
+                    // user's confirmation whenever an agent spawned a child
+                    // (#1348); only the tab composition still needs a guard.
                     let currentTabs = terminalState.terminalTabs
                     let currentTabIDs = Set(currentTabs.map(\.id))
-                    let currentForegroundProcesses =
-                        TabCloseHelper.foregroundProcessSnapshot(
-                            for: currentTabs
-                        )
-                    guard currentTabIDs.isSubset(of: targetTabIDs),
-                          TabCloseHelper.foregroundProcessSnapshotIsAuthorized(
-                              currentForegroundProcesses,
-                              by: authorizedForegroundProcesses
-                          ) else {
+                    guard currentTabIDs.isSubset(of: targetTabIDs) else {
                         return
                     }
                     // Stop all tabs and remove pane
