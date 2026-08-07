@@ -18,7 +18,10 @@ struct TerminalThemeSettingsTests {
     func builtInThemeShape() {
         let themes = TerminalTheme.builtIn
 
-        #expect(themes.map(\.id) == ["pine", "solarized", "dracula", "nord", "github"])
+        #expect(
+            themes.map(\.id)
+                == ["pine", "solarized", "dracula", "nord", "github", "digital-rain"]
+        )
         #expect(Set(themes.map(\.id)).count == themes.count)
         #expect(themes.allSatisfy { !$0.nameKey.isEmpty })
         #expect(themes.allSatisfy { $0.light.ansiColors.count == 16 })
@@ -275,6 +278,7 @@ struct TerminalThemeLocalizationTests {
         "terminal.appearance.alwaysDark",
         "terminal.appearance.alwaysLight",
         "terminal.appearance.followSystem",
+        "terminal.theme.digital-rain.name",
         "terminal.theme.dracula.name",
         "terminal.theme.github.name",
         "terminal.theme.nord.name",
@@ -318,6 +322,39 @@ struct TerminalThemeLocalizationTests {
                     ).isEmpty
                 )
             }
+        }
+    }
+
+    /// Guards the class of bug where a new built-in theme ships with a name key
+    /// that was never added to the catalog — the picker would then render the
+    /// raw key ("terminal.theme.digital-rain.name") as the theme's name.
+    @Test("Every built-in theme's name key exists in the catalog")
+    func everyBuiltInThemeNameKeyIsTranslated() throws {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let projectRoot = testURL.deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let catalogURL = projectRoot.appendingPathComponent(
+            "Pine/Localizable.xcstrings"
+        )
+        let data = try Data(contentsOf: catalogURL)
+        let root = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let catalog = try #require(root["strings"] as? [String: Any])
+
+        for theme in TerminalTheme.builtIn {
+            #expect(
+                Self.keys.contains(theme.nameKey),
+                "\(theme.nameKey) is missing from the localization coverage list"
+            )
+            let entry = try #require(
+                catalog[theme.nameKey] as? [String: Any],
+                "\(theme.nameKey) is missing from Localizable.xcstrings"
+            )
+            let localizations = try #require(
+                entry["localizations"] as? [String: Any]
+            )
+            #expect(Set(localizations.keys) == Set(Self.languages))
         }
     }
 }
