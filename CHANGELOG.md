@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.1.0](https://github.com/batonogov/pine/compare/v2.0.1...v2.1.0) (2026-08-07)
+
+
+### Features
+
+* **agent:** add Agent Inbox toolbar button with attention badge ([#1337](https://github.com/batonogov/pine/issues/1337)) ([#1353](https://github.com/batonogov/pine/issues/1353)) ([4320b16](https://github.com/batonogov/pine/commit/4320b1699b96068cae508b585a56c9129de0fc8a))
+* **terminal:** add "Digital Rain" phosphor-green theme ([#1351](https://github.com/batonogov/pine/issues/1351)) ([fc42dd1](https://github.com/batonogov/pine/commit/fc42dd177fca1771bd0e87d2880e0526dd4d2c3c))
+
+
+### Bug Fixes
+
+* **terminal:** authorize bulk close and quit by stable agent identity ([#1356](https://github.com/batonogov/pine/issues/1356)) ([dbc4058](https://github.com/batonogov/pine/commit/dbc4058d47fadc4fd8ad1390e81e0b566ba991b6))
+
 ## [2.0.1](https://github.com/batonogov/pine/compare/v2.0.0...v2.0.1) (2026-08-05)
 
 
