@@ -260,6 +260,78 @@ struct ProjectRegistryTests {
         #expect(registry.destroyAllProjects())
     }
 
+    @Test func aggregatedTaskShutdownFailureRetainsEveryOwner() async throws {
+        let firstDirectory = try makeTempDirectory()
+        let secondDirectory = try makeTempDirectory()
+        defer {
+            cleanup(firstDirectory)
+            cleanup(secondDirectory)
+        }
+
+        let registry = ProjectRegistry()
+        let first = try #require(
+            registry.projectManager(for: firstDirectory)
+        )
+        let second = try #require(
+            registry.projectManager(for: secondDirectory)
+        )
+        let history = first.taskRunStore.start(
+            makeTaskRun(id: "retained-history")
+        )
+        first.taskRunStore.finishRun(
+            id: history.id,
+            outcome: makeTaskOutcome(id: "retained-history"),
+            cancelled: false
+        )
+        let firstActive = first.taskRunStore.start(
+            makeTaskRun(id: "first-active")
+        )
+        let secondActive = second.taskRunStore.start(
+            makeTaskRun(id: "second-active")
+        )
+        let completedProbe = ProjectTaskCancellationProbe()
+        let timedOutProbe = ProjectTaskCancellationProbe(waitResult: false)
+        first.taskRunStore.registerCancellation(
+            completedProbe.makeCancellation(),
+            forRunID: firstActive.id
+        )
+        second.taskRunStore.registerCancellation(
+            timedOutProbe.makeCancellation(),
+            forRunID: secondActive.id
+        )
+
+        let authorization = registry.captureUserTaskShutdownAuthorization()
+        let didShutdown = await registry.shutdownUserTasks(
+            authorizedBy: authorization,
+            until: .now()
+        )
+
+        #expect(!didShutdown)
+        #expect(completedProbe.cancellationCount == 1)
+        #expect(completedProbe.waitCount == 1)
+        #expect(timedOutProbe.cancellationCount == 1)
+        #expect(timedOutProbe.waitCount == 1)
+        #expect(first.taskRunStore.run(forID: firstActive.id) === firstActive)
+        #expect(first.taskRunStore.run(forID: history.id) === history)
+        #expect(history.combinedOutput == "done")
+        #expect(
+            second.taskRunStore.run(forID: secondActive.id) === secondActive
+        )
+        #expect(first.hasOutstandingUserTaskExecution)
+        #expect(second.hasOutstandingUserTaskExecution)
+
+        first.taskRunStore.finishRun(
+            id: firstActive.id,
+            outcome: makeTaskOutcome(id: "first-active"),
+            cancelled: true
+        )
+        second.taskRunStore.finishRun(
+            id: secondActive.id,
+            outcome: makeTaskOutcome(id: "second-active"),
+            cancelled: true
+        )
+    }
+
     // MARK: - Recent projects
 
     @Test func recentProjectsAddedOnOpen() throws {

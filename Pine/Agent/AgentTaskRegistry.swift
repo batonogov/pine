@@ -140,6 +140,8 @@ final class AgentTaskRegistry {
     @ObservationIgnored
     private var claimExpiryTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored
+    private var rollbackPersistenceRetryTask: Task<Void, Never>?
+    @ObservationIgnored
     private let monotonicNow: @Sendable () -> ContinuousClock.Instant
     @ObservationIgnored
     private let claimTTL: Duration
@@ -878,6 +880,8 @@ final class AgentTaskRegistry {
     /// This is not task completion and does not manufacture user attention.
     func prepareForApplicationTermination(at timestamp: Date = Date()) {
         guard !isTerminating else { return }
+        rollbackPersistenceRetryTask?.cancel()
+        rollbackPersistenceRetryTask = nil
         expireClaims()
         isTerminating = true
         let now = monotonicNow()
@@ -946,6 +950,9 @@ final class AgentTaskRegistry {
         // Runtime admission and bounded claim expiry are restored regardless.
         isRollingBackApplicationTermination = false
         finishTerminationCancellation()
+        if !rollbackWasSaved {
+            scheduleRollbackPersistenceRetry()
+        }
         return rollbackWasSaved
     }
 
@@ -989,6 +996,43 @@ final class AgentTaskRegistry {
             installClaim(claim, key: key)
         }
         terminationClaimRemaining.removeAll(keepingCapacity: true)
+    }
+
+    /// A failed bounded rollback must thaw the live application, but the
+    /// restored snapshot remains dirty until it is actually durable. Retry in
+    /// the background with bounded backoff so a later crash cannot indefinitely
+    /// reload the paused/missing termination snapshot.
+    private func scheduleRollbackPersistenceRetry() {
+        rollbackPersistenceRetryTask?.cancel()
+        rollbackPersistenceRetryTask = Task { @MainActor [weak self] in
+            var delay = Duration.milliseconds(100)
+            while !Task.isCancelled {
+                guard let self else { return }
+                let retryable = dirtyProjects.filter {
+                    registeredProjects.contains($0)
+                        && !quarantinedProjects.contains($0)
+                        && !unpersistableDirtyProjects.contains($0)
+                }
+                guard !retryable.isEmpty else {
+                    rollbackPersistenceRetryTask = nil
+                    return
+                }
+                persistenceRetryBlocked.subtract(retryable)
+                retryable.forEach(scheduleSaveIfReady)
+                if await flushPersistence(
+                    maximumDuration: min(flushTotal, .seconds(2))
+                ) == .saved {
+                    rollbackPersistenceRetryTask = nil
+                    return
+                }
+                do {
+                    try await ContinuousClock().sleep(for: delay)
+                } catch {
+                    return
+                }
+                delay = min(delay * 2, .seconds(5))
+            }
+        }
     }
 
     /// Waits for loads and every queued save, with a five-second total and

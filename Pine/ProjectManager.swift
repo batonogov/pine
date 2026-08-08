@@ -12,6 +12,7 @@ import SwiftUI
 nonisolated enum PreparedPaneSaveCommitResult: Sendable, Equatable {
     case saved
     case invalidated
+    case timedOut
     case failed(message: String)
 }
 
@@ -41,11 +42,23 @@ final class ProjectManager {
         let tabManager: TabManager
         let tab: EditorTab
         var destination: URL?
+        var expectedDestinationState: TerminationDestinationState?
     }
 
     struct PreparedPaneSavePlan {
         fileprivate let entries: [PlannedTabSave]
         fileprivate let dirtyAuthorization: DirtyEditorContentAuthorization
+
+        var standardizedDestinationURLs: [URL] {
+            entries.compactMap { planned in
+                (planned.destination ?? planned.tab.fileURL)?
+                    .standardizedFileURL
+            }
+        }
+
+        var plannedTabIDs: Set<UUID> {
+            Set(entries.map(\.tab.id))
+        }
     }
 
     struct PreparedTerminationPaneSavePlan {
@@ -134,6 +147,12 @@ final class ProjectManager {
         }
         return panel.url
     }
+    @ObservationIgnored
+    var terminationSaveInstaller: @Sendable (
+        TerminationStagedSave
+    ) async -> TerminationSaveInstallResult = { staged in
+        await TerminationSaveCoordinator.install(staged)
+    }
 
     /// Returns the TabManager for the currently focused pane.
     /// Falls back to the primary ``primaryTabManager`` when no editor pane is active.
@@ -154,6 +173,24 @@ final class ProjectManager {
     /// All dirty tabs across all panes.
     var allDirtyTabs: [EditorTab] {
         paneManager.tabManagers.values.flatMap(\.dirtyTabs)
+    }
+
+    func freezeAutoSaveForTermination() {
+        paneManager.allTabManagers.forEach {
+            $0.freezeAutoSaveForTermination()
+        }
+    }
+
+    func cancelAutoSaveTerminationFreeze() {
+        paneManager.allTabManagers.forEach {
+            $0.cancelAutoSaveTerminationFreeze()
+        }
+    }
+
+    func finishAutoSaveTerminationFreeze() {
+        paneManager.allTabManagers.forEach {
+            $0.finishAutoSaveTerminationFreeze()
+        }
     }
 
     /// Validates an exact dirty-buffer authorization across every editor
@@ -229,7 +266,8 @@ final class ProjectManager {
                 return PlannedTabSave(
                     tabManager: tabManager,
                     tab: tab,
-                    destination: nil
+                    destination: nil,
+                    expectedDestinationState: nil
                 )
             }
         }
@@ -240,6 +278,23 @@ final class ProjectManager {
             $0.tab.kind == .text && !$0.tab.isTruncated
         }) else {
             return .invalidated
+        }
+
+        // Capture already-backed destinations before any Save As panel can
+        // suspend. Staging and install later reject an external write or
+        // pathname replacement instead of overwriting it silently.
+        for index in savePlan.indices {
+            guard let destination = savePlan[index].tab.fileURL else {
+                continue
+            }
+            do {
+                savePlan[index].expectedDestinationState = try await
+                    TerminationSaveCoordinator.captureDestinationState(
+                        at: destination
+                    )
+            } catch {
+                return .invalidated
+            }
         }
 
         // Collect every untitled destination before the first disk write.
@@ -255,6 +310,14 @@ final class ProjectManager {
                 return .cancelledByUser
             }
             savePlan[index].destination = destination
+            do {
+                savePlan[index].expectedDestinationState = try await
+                    TerminationSaveCoordinator.captureDestinationState(
+                        at: destination
+                    )
+            } catch {
+                return .invalidated
+            }
         }
 
         // A panel may suspend long enough for a tab to close, become saved,
@@ -367,7 +430,9 @@ final class ProjectManager {
         let requests = plan.entries.compactMap { planned
             -> TerminationSaveRequest? in
             guard let destination = planned.destination
-                    ?? planned.tab.fileURL else {
+                    ?? planned.tab.fileURL,
+                  let expectedDestinationState =
+                    planned.expectedDestinationState else {
                 return nil
             }
             let settings = planned.tabManager.editorSettings
@@ -377,6 +442,7 @@ final class ProjectManager {
                 content: planned.tab.content,
                 originalURL: planned.tab.fileURL,
                 destination: destination,
+                expectedDestinationState: expectedDestinationState,
                 encodingRawValue: planned.tab.encoding.rawValue,
                 settings: EditorSaveSettingsSnapshot(
                     insertFinalNewline: settings.insertFinalNewline,
@@ -409,14 +475,22 @@ final class ProjectManager {
         }
     }
 
-    /// Performs only the short atomic-replacement and model-update half of a
-    /// staged termination save. Once the first replacement begins there is no
-    /// competing timeout task that can report failure while later files keep
-    /// mutating behind the user's back.
+    func terminationSaveDestinationsStillMatch(
+        _ plan: PreparedTerminationPaneSavePlan
+    ) async -> Bool {
+        await TerminationSaveCoordinator.destinationStatesAreCurrent(
+            plan.staged
+        )
+    }
+
+    /// Installs staged files serially off-main. The deadline is checked before
+    /// every install and after every in-flight atomic syscall. An individual
+    /// rename cannot be interrupted safely, so its model reconciliation always
+    /// completes before a timeout is reported.
     func commitStagedSaveAllPaneTabsForTermination(
         _ plan: PreparedTerminationPaneSavePlan,
         until deadline: DispatchTime
-    ) -> PreparedPaneSaveCommitResult {
+    ) async -> PreparedPaneSaveCommitResult {
         let source = plan.source
         guard DispatchTime.now().uptimeNanoseconds
                 < deadline.uptimeNanoseconds,
@@ -437,28 +511,49 @@ final class ProjectManager {
 
         for (index, pair) in zip(source.entries, plan.staged).enumerated() {
             let (entry, staged) = pair
-            do {
-                guard TerminationSaveCoordinator
-                    .stagingIdentityIsCurrent(staged) else {
-                    throw CocoaError(.fileReadCorruptFile)
-                }
-                try Self.atomicallyInstallStagedSave(staged)
-            } catch {
+            guard DispatchTime.now().uptimeNanoseconds
+                    < deadline.uptimeNanoseconds else {
                 cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index))
                 )
-                return .failed(message: error.localizedDescription)
+                return .timedOut
             }
-            guard entry.tabManager.applyTerminationStagedSave(
+            guard preparedEntryStillValid(entry) else {
+                cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index))
+                )
+                return .invalidated
+            }
+            switch await terminationSaveInstaller(staged) {
+            case .failed(let message):
+                cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index))
+                )
+                return .failed(message: message)
+            case .installed:
+                break
+            }
+            // The install allowed MainActor reentrancy. Preserve any edit
+            // made while the syscall was in flight as dirty against the exact
+            // content that is now durable on disk.
+            guard entry.tabManager.reconcileTerminationStagedSave(
                 request: staged.request,
                 savedContent: staged.preparedContent
             ) else {
-                // No suspension occurs between validation and this update, so
-                // reaching this branch is an internal invariant violation.
                 Logger.app.critical(
                     "Termination save model changed during atomic commit"
                 )
+                cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index + 1))
+                )
                 return .invalidated
+            }
+            if DispatchTime.now().uptimeNanoseconds
+                    >= deadline.uptimeNanoseconds {
+                cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index + 1))
+                )
+                return .timedOut
             }
         }
         return .saved
@@ -478,23 +573,21 @@ final class ProjectManager {
         }
     }
 
-    private static func atomicallyInstallStagedSave(
-        _ staged: TerminationStagedSave
-    ) throws {
-        let fileManager = FileManager.default
-        if fileManager.fileExists(atPath: staged.request.destination.path) {
-            _ = try fileManager.replaceItemAt(
-                staged.request.destination,
-                withItemAt: staged.stagingURL,
-                backupItemName: nil,
-                options: []
-            )
-        } else {
-            try fileManager.moveItem(
-                at: staged.stagingURL,
-                to: staged.request.destination
-            )
+    private func preparedEntryStillValid(_ planned: PlannedTabSave) -> Bool {
+        guard paneManager.allTabManagers.contains(where: {
+            $0 === planned.tabManager
+        }),
+              let current = planned.tabManager.tabs.first(where: {
+                  $0.id == planned.tab.id
+              }) else {
+            return false
         }
+        return current.isDirty
+            && current.kind == .text
+            && !current.isTruncated
+            && current.contentVersion == planned.tab.contentVersion
+            && current.content == planned.tab.content
+            && current.fileURL == planned.tab.fileURL
     }
 
     private func preparedSavePlanStillValid(
@@ -552,7 +645,7 @@ final class ProjectManager {
         switch commitPreparedSaveAllPaneTabs(plan) {
         case .saved:
             return true
-        case .invalidated:
+        case .invalidated, .timedOut:
             return false
         case .failed(let message):
             _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
@@ -1626,6 +1719,22 @@ final class ProjectManager {
         await taskRunStore.waitForShutdown(
             authorizedBy: authorization,
             until: deadline
+        )
+    }
+
+    func userTaskShutdownIsPreparedForCommit(
+        authorizedBy authorization: UserTaskExecutionAuthorization
+    ) -> Bool {
+        taskRunStore.shutdownIsPreparedForCommit(
+            authorizedBy: authorization
+        )
+    }
+
+    func commitPreparedUserTaskShutdown(
+        authorizedBy authorization: UserTaskExecutionAuthorization
+    ) {
+        taskRunStore.commitPreparedShutdown(
+            authorizedBy: authorization
         )
     }
 

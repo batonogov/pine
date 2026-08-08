@@ -112,13 +112,28 @@ nonisolated final class AgentDetectionCoordinator {
     }
 
     @MainActor func stop() {
-        guard isRunning else { return }
+        guard suspendPolling() else { return }
+        terminalManager?.markAgentEvidenceUnavailable()
+        clearAllTabSessions()
+    }
+
+    /// Stops polling for the final termination snapshot without changing the
+    /// tab-local session identities that an already granted close authorization
+    /// covers. The normal ``stop()`` path still clears those sessions.
+    @MainActor func suspendForTermination() {
+        _ = suspendPolling()
+    }
+
+    /// Invalidates the active generation before cancelling its timer so an
+    /// already captured background result cannot mutate state after suspension.
+    @MainActor @discardableResult
+    private func suspendPolling() -> Bool {
+        guard isRunning else { return false }
         isRunning = false
         lifecycleGate.end()
         timer?.cancel()
         timer = nil
-        terminalManager?.markAgentEvidenceUnavailable()
-        clearAllTabSessions()
+        return true
     }
 
     deinit {

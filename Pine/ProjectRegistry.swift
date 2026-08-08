@@ -98,6 +98,8 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// metadata registration while that registry has frozen admission.
     @ObservationIgnored
     private(set) var isProjectAdmissionFrozenForTermination = false
+    @ObservationIgnored
+    private var isAutoSaveFrozenForTermination = false
 
     init(
         lspSettings: LSPSettings = .shared,
@@ -260,6 +262,9 @@ final class ProjectRegistry: LSPSettingsObserver {
             lspSettings: lspSettings,
             agentTaskRegistry: agentTasks
         )
+        if isAutoSaveFrozenForTermination {
+            pm.freezeAutoSaveForTermination()
+        }
         pm.loadDirectory(url: canonical, agentTaskProject: identity)
         openProjects[canonical] = pm
         agentTaskProjectsByRoot[canonical] = identity
@@ -792,6 +797,37 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
     }
 
+    func freezeAutoSaveForTermination() {
+        guard !isAutoSaveFrozenForTermination else { return }
+        isAutoSaveFrozenForTermination = true
+        openProjects.values.forEach { $0.freezeAutoSaveForTermination() }
+        detachedTaskCleanupProjects.values.forEach {
+            $0.freezeAutoSaveForTermination()
+        }
+    }
+
+    func cancelAutoSaveTerminationFreeze() {
+        guard isAutoSaveFrozenForTermination else { return }
+        isAutoSaveFrozenForTermination = false
+        openProjects.values.forEach {
+            $0.cancelAutoSaveTerminationFreeze()
+        }
+        detachedTaskCleanupProjects.values.forEach {
+            $0.cancelAutoSaveTerminationFreeze()
+        }
+    }
+
+    func finishAutoSaveTerminationFreeze() {
+        guard isAutoSaveFrozenForTermination else { return }
+        isAutoSaveFrozenForTermination = false
+        openProjects.values.forEach {
+            $0.finishAutoSaveTerminationFreeze()
+        }
+        detachedTaskCleanupProjects.values.forEach {
+            $0.finishAutoSaveTerminationFreeze()
+        }
+    }
+
     @discardableResult
     func cancelAgentTaskTermination(
         maximumDuration: Duration? = nil
@@ -912,14 +948,65 @@ final class ProjectRegistry: LSPSettingsObserver {
             allCompleted = allCompleted && didComplete
         }
 
+        // Waiting is only the prepare phase. Revalidate every original owner
+        // and every owner admitted during a suspension before clearing any
+        // store, so one later timeout or launch cannot erase an earlier
+        // owner's runs and output when application shutdown rolls back.
+        guard allCompleted,
+              projectManagers.allSatisfy({ projectManager in
+                  let captured = authorization.byOwner[
+                      ObjectIdentifier(projectManager)
+                  ] ?? UserTaskExecutionAuthorization()
+                  return projectManager
+                      .userTaskShutdownIsPreparedForCommit(
+                          authorizedBy: captured
+                      )
+              }),
+              userTaskShutdownAuthorizationStillCovers(authorization) else {
+            return false
+        }
+
+        // Application Quit performs its final dirty/terminal authorization
+        // recheck after this prepare phase. It commits every prepared store
+        // only after that global check succeeds.
+        return true
+    }
+
+    func userTaskShutdownIsPreparedForCommit(
+        _ authorization: UserTaskShutdownAuthorization
+    ) -> Bool {
+        userTaskOwners.allSatisfy { projectManager in
+            let captured = authorization.byOwner[
+                ObjectIdentifier(projectManager)
+            ] ?? UserTaskExecutionAuthorization()
+            return projectManager.userTaskShutdownIsPreparedForCommit(
+                authorizedBy: captured
+            )
+        } && userTaskShutdownAuthorizationStillCovers(authorization)
+    }
+
+    @discardableResult
+    func commitPreparedUserTaskShutdown(
+        _ authorization: UserTaskShutdownAuthorization
+    ) -> Bool {
+        guard userTaskShutdownIsPreparedForCommit(authorization) else {
+            return false
+        }
+        // No suspension is allowed between the aggregate preflight above and
+        // the last commit below. Main-actor isolation makes this one global
+        // commit boundary for all prepared project stores.
+        for projectManager in userTaskOwners {
+            let captured = authorization.byOwner[
+                ObjectIdentifier(projectManager)
+            ] ?? UserTaskExecutionAuthorization()
+            projectManager.commitPreparedUserTaskShutdown(
+                authorizedBy: captured
+            )
+        }
         detachedTaskCleanupProjects = detachedTaskCleanupProjects.filter {
             $0.value.hasOutstandingUserTaskExecution
         }
-
-        // A project or task may have appeared while process waits ran off the
-        // main actor. Treat that as an incomplete shutdown so Quit fails
-        // closed instead of dropping its execution ownership.
-        return allCompleted && !userTaskOwners.contains(where: {
+        return !userTaskOwners.contains(where: {
             $0.hasOutstandingUserTaskExecution
         })
     }
@@ -928,10 +1015,12 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// call boundary, so it cannot cancel executions created after an await.
     @discardableResult
     func shutdownUserTasks(until deadline: DispatchTime) async -> Bool {
-        await shutdownUserTasks(
-            authorizedBy: captureUserTaskShutdownAuthorization(),
+        let authorization = captureUserTaskShutdownAuthorization()
+        guard await shutdownUserTasks(
+            authorizedBy: authorization,
             until: deadline
-        )
+        ) else { return false }
+        return commitPreparedUserTaskShutdown(authorization)
     }
 
     /// Fully destroys all project managers after task cleanup has completed.

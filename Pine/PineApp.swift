@@ -1962,6 +1962,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         let projects = registry.openProjects
             .sorted { $0.key.path.localizedStandardCompare($1.key.path) == .orderedAscending }
             .map(\.value)
+        var terminationCommitted = false
+        registry.freezeAutoSaveForTermination()
+        defer {
+            if terminationCommitted {
+                registry.finishAutoSaveTerminationFreeze()
+            } else {
+                registry.cancelAutoSaveTerminationFreeze()
+            }
+        }
         let preflightTerminalAuthorizations = Dictionary(
             uniqueKeysWithValues: projects.map {
                 (
@@ -2017,6 +2026,52 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         let fallbackContext = applicationContext
             ?? DialogPresenter.forApplicationWindow()
 
+        func hasEligibleOwner(
+            _ context: DialogPresentationContext
+        ) -> Bool {
+            context.nsWindow.map {
+                DialogPresenter.isEligibleApplicationOwner($0)
+            } ?? false
+        }
+
+        func resolveFreshApplicationContext() -> DialogPresentationContext {
+            if let applicationContext {
+                // An injected presenter may intentionally use an off-screen
+                // synthetic owner. Native sheets still require live eligibility.
+                if presentAlert != nil || hasEligibleOwner(applicationContext) {
+                    return applicationContext
+                }
+            }
+            let currentContext = DialogPresenter.forApplicationWindow()
+            if hasEligibleOwner(currentContext) {
+                return currentContext
+            }
+            if presentAlert == nil {
+                // The previously captured owner may have closed while another
+                // project sheet was up. Restore/create a discoverable owner at
+                // the point of use rather than reusing that stale authority.
+                prepareApplicationDialogOwner()
+                return DialogPresenter.forApplicationWindow()
+            }
+            // Injected presenters do not require a native owner. Preserve their
+            // explicit context while still preferring a live replacement above.
+            return applicationContext ?? fallbackContext
+        }
+
+        func resolveFreshDecisionContext(
+            preferredProject: ProjectManager? = nil
+        ) -> DialogPresentationContext {
+            if let preferredProject {
+                let projectContext = DialogPresenter.forProject(
+                    preferredProject
+                )
+                if hasEligibleOwner(projectContext) {
+                    return projectContext
+                }
+            }
+            return resolveFreshApplicationContext()
+        }
+
         func presentTerminationAlert(
             _ template: AlertTemplate,
             context: DialogPresentationContext,
@@ -2066,6 +2121,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             )
         }
 
+        func presentTerminationDecision(
+            _ template: AlertTemplate,
+            preferredProject: ProjectManager? = nil,
+            title: String,
+            message: String
+        ) async -> NSApplication.ModalResponse? {
+            let context = resolveFreshDecisionContext(
+                preferredProject: preferredProject
+            )
+            guard presentAlert != nil || hasEligibleOwner(context) else {
+                await presentTerminationFailure()
+                return nil
+            }
+            let response = await presentTerminationAlert(
+                template,
+                context: context,
+                title: title,
+                message: message
+            )
+            // Native `.abort` means the sheet lost its captured owner; Cancel
+            // has its own button response and must remain the only silent exit.
+            if presentAlert == nil, response == .abort {
+                await presentTerminationFailure()
+                return nil
+            }
+            return response
+        }
+
         var discardAuthorizations: [
             ObjectIdentifier: DirtyEditorContentAuthorization
         ] = [:]
@@ -2079,7 +2162,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         var agentLaunchAuthorizations: [
             ObjectIdentifier: PineAgentLaunchAuthorization
         ] = [:]
-        var saveRequests: [(ProjectManager, DialogPresentationContext)] = []
+        var saveRequests: [ProjectManager] = []
         var preparedSavePlans: [
             ObjectIdentifier: ProjectManager.PreparedPaneSavePlan
         ] = [:]
@@ -2091,14 +2174,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         var userTaskAuthorization = preflightUserTaskAuthorization
 
         if requiresAttention {
-            let response = await presentTerminationAlert(
+            guard let response = await presentTerminationDecision(
                 .applicationQuitSummary,
-                context: fallbackContext,
                 title: Strings.applicationQuitSummaryTitle,
                 message: Strings.applicationQuitSummaryMessage(
                     max(attentionProjectCount, 1)
                 )
-            )
+            ) else { return false }
             switch response {
             case .alertFirstButtonReturn:
                 reviewIndividually = true
@@ -2123,27 +2205,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 }) else {
                     continue
                 }
-                let projectContext = DialogPresenter.forProject(projectManager)
-                let hasEligibleProjectOwner = projectContext.nsWindow.map {
-                    DialogPresenter.isEligibleApplicationOwner($0)
-                } ?? false
-                let context = hasEligibleProjectOwner
-                    ? projectContext
-                    : fallbackContext
                 let dirty = projectManager.allDirtyTabs
                 guard !dirty.isEmpty else { continue }
 
                 let fileList = dirty.map { "  • \($0.fileName)" }
                     .joined(separator: "\n")
-                let response = await presentTerminationAlert(
+                guard let response = await presentTerminationDecision(
                     .unsavedChangesBulk,
-                    context: context,
+                    preferredProject: projectManager,
                     title: Strings.unsavedChangesTitle,
                     message: Strings.unsavedChangesListMessage(fileList)
-                )
+                ) else { return false }
                 switch response {
                 case .alertFirstButtonReturn:
-                    saveRequests.append((projectManager, context))
+                    saveRequests.append(projectManager)
                 case .alertSecondButtonReturn:
                     discardAuthorizations[ObjectIdentifier(projectManager)] =
                         DirtyEditorContentAuthorization(tabs: dirty)
@@ -2170,19 +2245,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                         || launchAuthorization.requiresConfirmation else {
                     continue
                 }
-                let projectContext = DialogPresenter.forProject(projectManager)
-                let hasEligibleProjectOwner = projectContext.nsWindow.map {
-                    DialogPresenter.isEligibleApplicationOwner($0)
-                } ?? false
-                let context = hasEligibleProjectOwner
-                    ? projectContext
-                    : fallbackContext
-                let response = await presentTerminationAlert(
+                guard let response = await presentTerminationDecision(
                     .terminalActiveProcessWarning,
-                    context: context,
+                    preferredProject: projectManager,
                     title: Strings.terminalActiveProcessWarningTitle,
                     message: Strings.terminalActiveProcessWarningMessage
-                )
+                ) else { return false }
                 guard response == .alertFirstButtonReturn else {
                     return false
                 }
@@ -2191,12 +2259,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             let displayedUserTaskAuthorization =
                 registry.captureUserTaskShutdownAuthorization()
             if displayedUserTaskAuthorization.requiresConfirmation {
-                let response = await presentTerminationAlert(
+                guard let response = await presentTerminationDecision(
                     .activeUserTasksPreventQuit,
-                    context: fallbackContext,
                     title: Strings.activeUserTasksPreventQuitTitle,
                     message: Strings.activeUserTasksPreventQuitMessage
-                )
+                ) else { return false }
                 guard response == .alertFirstButtonReturn else {
                     return false
                 }
@@ -2219,18 +2286,55 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // Collect every Save-As destination before rebasing the duration.
         // These native panels are human decisions, not bounded machine work.
         if saveAll == nil {
-            for (projectManager, context) in saveRequests {
+            for projectManager in saveRequests {
+                let context = resolveFreshDecisionContext(
+                    preferredProject: projectManager
+                )
+                guard presentAlert != nil || hasEligibleOwner(context) else {
+                    await presentTerminationFailure()
+                    return false
+                }
                 switch await projectManager.prepareSaveAllPaneTabs(
                     context: context
                 ) {
                 case .ready(let plan):
                     preparedSavePlans[ObjectIdentifier(projectManager)] = plan
                 case .cancelledByUser:
+                    if presentAlert == nil, !hasEligibleOwner(context) {
+                        await presentTerminationFailure()
+                    }
                     return false
                 case .invalidated:
                     await presentTerminationFailure()
                     return false
                 }
+            }
+
+            // Save All is one application-wide transaction. A destination
+            // chosen in one project must not alias another prepared save or a
+            // clean/open tab in any project, otherwise two clean buffers can
+            // claim one final on-disk value.
+            let destinationURLs = preparedSavePlans.values.flatMap(
+                \.standardizedDestinationURLs
+            )
+            let plannedTabIDs = preparedSavePlans.values.reduce(
+                into: Set<UUID>()
+            ) { result, plan in
+                result.formUnion(plan.plannedTabIDs)
+            }
+            let unplannedOpenURLs = Set(
+                registry.openProjects.values.flatMap(\.allTabs).compactMap {
+                    plannedTabIDs.contains($0.id)
+                        ? nil
+                        : $0.fileURL?.standardizedFileURL
+                }
+            )
+            guard destinationURLs.count == Set(destinationURLs).count,
+                  destinationURLs.allSatisfy({
+                      !unplannedOpenURLs.contains($0)
+                  }) else {
+                await presentTerminationFailure()
+                return false
             }
         }
 
@@ -2250,7 +2354,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
 
         if let saveAll {
-            for (projectManager, context) in saveRequests {
+            for projectManager in saveRequests {
+                let context = resolveFreshDecisionContext(
+                    preferredProject: projectManager
+                )
                 let saveResult = await valueBeforeTerminationDeadline(
                     terminationDeadline,
                     deadlineObserver: terminationDeadlineObserver,
@@ -2267,7 +2374,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 }
             }
         } else {
-            for (projectManager, _) in saveRequests {
+            for projectManager in saveRequests {
                 guard let plan = preparedSavePlans[
                     ObjectIdentifier(projectManager)
                 ] else {
@@ -2313,7 +2420,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 }
             }
 
-            for (projectManager, _) in saveRequests {
+            // Validate every target before the first destructive install. The
+            // atomic installer repeats the check and displaces existing files
+            // with RENAME_SWAP to close the remaining pathname race.
+            for projectManager in saveRequests {
+                guard let plan = preparedTerminationSavePlans[
+                    ObjectIdentifier(projectManager)
+                ],
+                      await projectManager
+                        .terminationSaveDestinationsStillMatch(plan) else {
+                    cleanupPreparedTerminationSaves()
+                    await presentTerminationFailure()
+                    return false
+                }
+            }
+
+            for projectManager in saveRequests {
                 guard let plan = preparedTerminationSavePlans[
                     ObjectIdentifier(projectManager)
                 ] else {
@@ -2321,7 +2443,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     await presentTerminationFailure()
                     return false
                 }
-                switch projectManager
+                switch await projectManager
                     .commitStagedSaveAllPaneTabsForTermination(
                         plan,
                         until: terminationDeadline
@@ -2342,6 +2464,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     )
                     return false
                 case .invalidated:
+                    cleanupPreparedTerminationSaves()
+                    await presentTerminationFailure()
+                    return false
+                case .timedOut:
+                    terminationDeadlineObserver()
                     cleanupPreparedTerminationSaves()
                     await presentTerminationFailure()
                     return false
@@ -2466,6 +2593,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
 
+        var preparedUserTaskShutdown = false
         if registry.hasOutstandingUserTaskExecution {
             guard await registry.shutdownUserTasks(
                 authorizedBy: userTaskAuthorization,
@@ -2475,6 +2603,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 await presentTerminationFailure()
                 return false
             }
+            preparedUserTaskShutdown = true
         }
 
         // Task cleanup suspends off-main. Revalidate destructive state once
@@ -2485,8 +2614,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
 
+        guard !preparedUserTaskShutdown
+                || registry.userTaskShutdownIsPreparedForCommit(
+                    userTaskAuthorization
+                ) else {
+            await rollbackAgentTasks()
+            await presentTerminationFailure()
+            return false
+        }
+
         // Two-phase destructive commit: no project is mutated until every
-        // project/terminal authorization and task-ownership checks above pass.
+        // project/terminal/task and editor authorization above passes.
+        for projectManager in registry.openProjects.values {
+            let identifier = ObjectIdentifier(projectManager)
+            if let authorization = discardAuthorizations[identifier],
+               !projectManager.canCommitDiscard(authorization) {
+                await rollbackAgentTasks()
+                await presentTerminationFailure()
+                return false
+            }
+        }
         for projectManager in registry.openProjects.values {
             let identifier = ObjectIdentifier(projectManager)
             if let authorization = discardAuthorizations[identifier],
@@ -2499,7 +2646,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 return false
             }
         }
+        if preparedUserTaskShutdown,
+           !registry.commitPreparedUserTaskShutdown(
+                userTaskAuthorization
+           ) {
+            Logger.app.critical(
+                "Prepared user-task shutdown changed during synchronous commit"
+            )
+            await rollbackAgentTasks()
+            await presentTerminationFailure()
+            return false
+        }
 
+        terminationCommitted = true
         return true
     }
 }

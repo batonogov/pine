@@ -192,6 +192,32 @@ struct TerminalManagerCoordinatorTests {
         #expect(terminal.isAgentDetectionPolling)
     }
 
+    @Test func terminationFreezePreservesAgentAuthorization() throws {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager(
+            agentDetectionProcessRunner: Self.noOpProcessRunner
+        )
+        terminal.paneManager = paneManager
+
+        terminal.createTerminalTab(
+            relativeTo: paneManager.activePaneID,
+            workingDirectory: nil
+        )
+        #expect(terminal.isAgentDetectionPolling)
+
+        let tab = try #require(terminal.allTerminalTabs.first)
+        let session = AgentSession(agentType: .claudeCode)
+        tab.agentSession = session
+        tab.foregroundProcessIDOverrideForTesting = 42
+        let authorization = TerminalTabCloseAuthorization.authorizing(tabs: [tab])
+
+        terminal.freezeAgentTasksForTermination()
+
+        #expect(!terminal.isAgentDetectionPolling)
+        #expect(tab.agentSession === session)
+        #expect(authorization.stillCovers([tab]))
+    }
+
     @Test func startTerminals_bootsAgentDetection() {
         let paneManager = PaneManager()
         let terminal = TerminalManager(agentDetectionProcessRunner: Self.noOpProcessRunner)

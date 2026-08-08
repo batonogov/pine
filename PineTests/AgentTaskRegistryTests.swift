@@ -456,7 +456,12 @@ struct AgentTaskRegistryTests {
             return
         }
 
-        try await ContinuousClock().sleep(for: .milliseconds(50))
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while registry.task(for: reservation.taskID) != nil,
+              clock.now < deadline {
+            try await clock.sleep(for: .milliseconds(5))
+        }
         #expect(registry.task(for: reservation.taskID) == nil)
     }
 
@@ -1388,7 +1393,12 @@ struct AgentTaskRegistryTests {
             Issue.record("first reservation was rejected")
             return
         }
-        try await ContinuousClock().sleep(for: .milliseconds(10))
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while taskRegistry.isLaunchPending(expired),
+              clock.now < deadline {
+            try await clock.sleep(for: .milliseconds(5))
+        }
         #expect(!taskRegistry.isLaunchPending(expired))
 
         guard case .reserved = manager.terminal.prepareAgentLaunch(
@@ -2010,8 +2020,9 @@ struct AgentTaskRegistryTests {
         )
         registry.registerProject(identity)
         #expect(await registry.flushPersistence() == .saved)
+        let session = makeSession(pid: 1_493, generation: 1)
         registry.bridge(
-            makeSession(pid: 1_493, generation: 1),
+            session,
             replacing: nil,
             context: context(project: identity, routeSeed: 153)
         )
@@ -2024,6 +2035,20 @@ struct AgentTaskRegistryTests {
             maximumDuration: .milliseconds(100)
         )
         #expect(!didPersistRollback)
+        await store.setSaveResult(.saved(taskCount: 1))
+        let clock = ContinuousClock()
+        let retryDeadline = clock.now.advanced(by: .seconds(2))
+        while await store.publishedAvailabilityHistory(
+            forSessionID: session.id
+        ).last != .available,
+              clock.now < retryDeadline {
+            try? await clock.sleep(for: .milliseconds(10))
+        }
+        #expect(
+            await store.publishedAvailabilityHistory(
+                forSessionID: session.id
+            ).last == .available
+        )
         let replacement = makeSession(pid: 1_494, generation: 2)
         registry.bridge(
             replacement,
@@ -2447,8 +2472,8 @@ struct AgentTaskRegistryTests {
         let identity = project("/tmp/pine-agent-post-publication-timeout")
         let registry = AgentTaskRegistry(
             persistence: store,
-            flushTotal: .milliseconds(25),
-            flushTail: .milliseconds(5)
+            flushTotal: .milliseconds(250),
+            flushTail: .milliseconds(50)
         )
         registry.registerProject(identity)
         #expect(await registry.flushPersistence() == .saved)

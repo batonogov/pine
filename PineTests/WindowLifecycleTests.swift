@@ -9,9 +9,15 @@ import Testing
 
 @testable import Pine
 
-@Suite("Window Lifecycle Tests")
+@Suite("Window Lifecycle Tests", .serialized)
 @MainActor
 struct WindowLifecycleTests {
+    private func makeRegistry() -> ProjectRegistry {
+        ProjectRegistry(agentTasks: AgentTaskRegistry(
+            persistence: WindowLifecycleAgentTaskStore()
+        ))
+    }
+
     private func settle() async {
         for _ in 0..<8 {
             await Task.yield()
@@ -49,7 +55,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         _ = registry.projectManager(for: dir)
 
         let delegate = AppDelegate()
@@ -72,7 +78,7 @@ struct WindowLifecycleTests {
         let dir2 = try makeTempDirectory()
         defer { cleanup(dir1); cleanup(dir2) }
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         _ = registry.projectManager(for: dir1)
         _ = registry.projectManager(for: dir2)
 
@@ -96,7 +102,7 @@ struct WindowLifecycleTests {
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let pm = try #require(registry.projectManager(for: dir))
         pm.primaryTabManager.openTab(url: file)
 
@@ -125,7 +131,7 @@ struct WindowLifecycleTests {
         let file1 = try makeTempFile(in: dir1, name: "a.swift")
         let file2 = try makeTempFile(in: dir2, name: "b.swift")
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let pm1 = try #require(registry.projectManager(for: dir1))
         let pm2 = try #require(registry.projectManager(for: dir2))
         pm1.primaryTabManager.openTab(url: file1)
@@ -149,7 +155,7 @@ struct WindowLifecycleTests {
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// dirty", in: project)
@@ -188,7 +194,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let destination = dir.appendingPathComponent("saved.swift")
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         _ = try #require(project.createUntitledFile())
         updateContent("// saved after a slow panel", in: project)
@@ -225,7 +231,7 @@ struct WindowLifecycleTests {
     @Test func cancellingQuitSavePanelDoesNotShowMachineFailure() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         _ = try #require(project.createUntitledFile())
         updateContent("// keep", in: project)
@@ -258,7 +264,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let destination = dir.appendingPathComponent("first.swift")
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         _ = try #require(project.createUntitledFile())
         updateContent("// first dirty", in: project)
@@ -302,7 +308,7 @@ struct WindowLifecycleTests {
         }
         let firstFile = try makeTempFile(in: firstDirectory, name: "first.swift")
         let secondFile = try makeTempFile(in: secondDirectory, name: "second.swift")
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let first = try #require(registry.projectManager(for: firstDirectory))
         let second = try #require(registry.projectManager(for: secondDirectory))
         first.primaryTabManager.openTab(url: firstFile)
@@ -337,7 +343,7 @@ struct WindowLifecycleTests {
 
     @Test func cleanPreflightFailureResolvesOwnerLazily() async {
         let delegate = AppDelegate()
-        delegate.registry = ProjectRegistry()
+        delegate.registry = makeRegistry()
         let owner = NSWindow()
         let expectedContext = DialogPresentationContext(window: owner)
         defer { DialogPresenter.ownerDidClose(owner) }
@@ -364,10 +370,155 @@ struct WindowLifecycleTests {
         #expect(presentedOwner === owner)
     }
 
+    @Test func laterReviewPromptUsesReplacementProjectOwner() async throws {
+        let root = try makeTempDirectory()
+        defer { cleanup(root) }
+        let firstDirectory = root.appendingPathComponent("a-first")
+        let secondDirectory = root.appendingPathComponent("b-second")
+        try FileManager.default.createDirectory(
+            at: firstDirectory,
+            withIntermediateDirectories: false
+        )
+        try FileManager.default.createDirectory(
+            at: secondDirectory,
+            withIntermediateDirectories: false
+        )
+        let firstFile = try makeTempFile(in: firstDirectory, name: "first.swift")
+        let secondFile = try makeTempFile(in: secondDirectory, name: "second.swift")
+        let registry = makeRegistry()
+        let first = try #require(registry.projectManager(for: firstDirectory))
+        let second = try #require(registry.projectManager(for: secondDirectory))
+        first.primaryTabManager.openTab(url: firstFile)
+        second.primaryTabManager.openTab(url: secondFile)
+        updateContent("// first dirty", in: first)
+        updateContent("// second dirty", in: second)
+
+        let firstWindow = NSWindow()
+        let oldSecondWindow = NSWindow()
+        let newSecondWindow = NSWindow()
+        firstWindow.orderFront(nil)
+        oldSecondWindow.orderFront(nil)
+        let applicationContext = DialogPresenter.register(
+            window: firstWindow,
+            projectManager: first
+        )
+        DialogPresenter.register(
+            window: oldSecondWindow,
+            projectManager: second
+        )
+        defer {
+            for window in [firstWindow, oldSecondWindow, newSecondWindow] {
+                DialogPresenter.ownerDidClose(window)
+                window.orderOut(nil)
+            }
+        }
+
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var reviewPromptCount = 0
+        var laterPromptOwner: NSWindow?
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, context, _, _ in
+                if template == .applicationQuitSummary {
+                    return .alertFirstButtonReturn
+                }
+                #expect(template == .unsavedChangesBulk)
+                reviewPromptCount += 1
+                if reviewPromptCount == 1 {
+                    #expect(context.nsWindow === firstWindow)
+                    DialogPresenter.ownerDidClose(oldSecondWindow)
+                    oldSecondWindow.orderOut(nil)
+                    newSecondWindow.orderFront(nil)
+                    DialogPresenter.register(
+                        window: newSecondWindow,
+                        projectManager: second
+                    )
+                    return .alertSecondButtonReturn
+                }
+                laterPromptOwner = context.nsWindow
+                return .alertThirdButtonReturn
+            },
+            applicationContext: applicationContext,
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(reviewPromptCount == 2)
+        #expect(laterPromptOwner === newSecondWindow)
+        #expect(first.hasUnsavedChanges)
+        #expect(second.hasUnsavedChanges)
+        await first.workspace.waitForLoadingComplete()
+        await second.workspace.waitForLoadingComplete()
+    }
+
+    @Test func saveAsUsesReplacementProjectOwnerAfterReview() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        _ = try #require(project.createUntitledFile())
+        updateContent("// keep unsaved", in: project)
+
+        let oldWindow = NSWindow()
+        let newWindow = NSWindow()
+        oldWindow.orderFront(nil)
+        let oldContext = DialogPresenter.register(
+            window: oldWindow,
+            projectManager: project
+        )
+        defer {
+            for window in [oldWindow, newWindow] {
+                DialogPresenter.ownerDidClose(window)
+                window.orderOut(nil)
+            }
+        }
+        var saveAsOwner: NSWindow?
+        var saveAsCount = 0
+        project.saveDestinationChooser = { _, _, context in
+            saveAsCount += 1
+            saveAsOwner = context.nsWindow
+            return nil
+        }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presented: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presented.append(template)
+                if template == .unsavedChangesBulk {
+                    DialogPresenter.ownerDidClose(oldWindow)
+                    oldWindow.orderOut(nil)
+                    newWindow.orderFront(nil)
+                    DialogPresenter.register(
+                        window: newWindow,
+                        projectManager: project
+                    )
+                }
+                return .alertFirstButtonReturn
+            },
+            applicationContext: oldContext,
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(
+            presented == [
+                .applicationQuitSummary,
+                .unsavedChangesBulk,
+            ]
+        )
+        #expect(saveAsCount == 1)
+        #expect(saveAsOwner === newWindow)
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func detailedQuitSaveFailureUsesReboundProjectOwner() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         _ = try #require(project.createUntitledFile())
         updateContent("// cannot stage", in: project)
@@ -447,7 +598,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// dirty", in: project)
@@ -484,7 +635,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// dirty", in: project)
@@ -525,7 +676,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// dirty before timeout", in: project)
@@ -575,7 +726,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// captured dirty", in: project)
@@ -628,7 +779,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let tabManager = project.primaryTabManager
         tabManager.openTab(url: file)
@@ -652,7 +803,7 @@ struct WindowLifecycleTests {
         let stagedPlan = try #require(staged.1)
 
         project.paneManager.removePane(project.paneManager.activePaneID)
-        let result = project.commitStagedSaveAllPaneTabsForTermination(
+        let result = await project.commitStagedSaveAllPaneTabsForTermination(
             stagedPlan,
             until: .now() + 5
         )
@@ -664,11 +815,182 @@ struct WindowLifecycleTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    @Test func applicationSaveRejectsCrossProjectDestinationAlias() async throws {
+        let firstRoot = try makeTempDirectory()
+        let secondRoot = try makeTempDirectory()
+        defer { cleanup(firstRoot); cleanup(secondRoot) }
+        let destination = firstRoot.appendingPathComponent("shared.swift")
+        let registry = makeRegistry()
+        let first = try #require(registry.projectManager(for: firstRoot))
+        let second = try #require(registry.projectManager(for: secondRoot))
+        _ = try #require(first.createUntitledFile())
+        _ = try #require(second.createUntitledFile())
+        updateContent("// first", in: first)
+        updateContent("// second", in: second)
+        first.saveDestinationChooser = { _, _, _ in destination }
+        second.saveDestinationChooser = { _, _, _ in destination }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presented: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presented.append(template)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+        #expect(first.hasUnsavedChanges)
+        #expect(second.hasUnsavedChanges)
+        #expect(presented.last == .applicationQuitFailure)
+        await first.workspace.waitForLoadingComplete()
+        await second.workspace.waitForLoadingComplete()
+    }
+
+    @Test func destinationCreatedDuringStagingIsNotOverwritten() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let destination = dir.appendingPathComponent("created.swift")
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        _ = try #require(project.createUntitledFile())
+        updateContent("// captured dirty", in: project)
+        project.saveDestinationChooser = { _, _, _ in destination }
+        let probe = BlockingFormatterProbe()
+        defer { probe.release() }
+        let suiteName = "WindowLifecycleTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = EditorSettings(defaults: defaults)
+        settings.formatOnSave = true
+        project.primaryTabManager.editorSettings = settings
+        project.primaryTabManager.fileFormatters = FileFormatterRegistry(
+            formatters: [probe.formatter()]
+        )
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let quit = Task { @MainActor in
+            await delegate.confirmApplicationTermination(
+                presentAlert: { _, _, _, _ in .alertFirstButtonReturn },
+                terminationDeadlineOverride: .now() + 5
+            )
+        }
+
+        #expect(await probe.waitUntilStarted())
+        try "external".write(
+            to: destination,
+            atomically: false,
+            encoding: .utf8
+        )
+        probe.release()
+        let result = await quit.value
+
+        #expect(!result)
+        #expect(
+            try String(contentsOf: destination, encoding: .utf8)
+                == "external"
+        )
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func quitAnywayCancelsPendingAutoSaveBeforeDecision() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let tabs = project.primaryTabManager
+        tabs.openTab(url: file)
+        tabs.autoSavePreferenceProvider = { true }
+        tabs.setAutoSaveDelay(0.05)
+        tabs.updateContent("// must be discarded")
+        #expect(tabs.hasScheduledAutoSave)
+        let delegate = AppDelegate()
+        delegate.registry = registry
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .applicationQuitSummary)
+                try? await Task.sleep(for: .milliseconds(200))
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(result)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "// test.swift")
+        #expect(tabs.activeTab?.content == "// test.swift")
+        #expect(!tabs.hasScheduledAutoSave)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func stagedCommitStopsBeforeNextFileAfterDeadline() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let firstURL = try makeTempFile(in: dir, name: "first.swift")
+        let secondURL = try makeTempFile(in: dir, name: "second.swift")
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o750],
+            ofItemAtPath: firstURL.path
+        )
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let tabs = project.primaryTabManager
+        tabs.autoSavePreferenceProvider = { false }
+        tabs.openTab(url: firstURL)
+        tabs.updateContent("// first dirty")
+        tabs.openTab(url: secondURL)
+        tabs.updateContent("// second dirty")
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready save plan")
+            return
+        }
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+        let stagedPlan = try #require(staged.1)
+        let installer = DelayedTerminationInstallerProbe()
+        project.terminationSaveInstaller = { staged in
+            await installer.install(staged)
+        }
+
+        let result = await project.commitStagedSaveAllPaneTabsForTermination(
+            stagedPlan,
+            until: .now() + .milliseconds(50)
+        )
+
+        #expect(result == .timedOut)
+        #expect(installer.installCount == 1)
+        #expect(
+            try String(contentsOf: firstURL, encoding: .utf8)
+                == "// first dirty\n"
+        )
+        #expect(
+            try String(contentsOf: secondURL, encoding: .utf8)
+                == "// second.swift"
+        )
+        let firstAttributes = try FileManager.default.attributesOfItem(
+            atPath: firstURL.path
+        )
+        #expect(firstAttributes[.posixPermissions] as? Int == 0o750)
+        #expect(tabs.tabs.first(where: { $0.fileURL == firstURL })?.isDirty == false)
+        #expect(tabs.tabs.first(where: { $0.fileURL == secondURL })?.isDirty == true)
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func replacedStagingFileIsRejectedBeforeInstall() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// captured dirty", in: project)
@@ -702,7 +1024,7 @@ struct WindowLifecycleTests {
             encoding: .utf8
         )
 
-        let result = project.commitStagedSaveAllPaneTabsForTermination(
+        let result = await project.commitStagedSaveAllPaneTabsForTermination(
             stagedPlan,
             until: .now() + 5
         )
@@ -712,6 +1034,10 @@ struct WindowLifecycleTests {
             return
         }
         #expect(try String(contentsOf: file, encoding: .utf8) == "// test.swift")
+        #expect(
+            try String(contentsOf: stagingURL, encoding: .utf8)
+                == "substituted"
+        )
         #expect(project.primaryTabManager.activeTab?.content ==
                 "// captured dirty")
         #expect(project.hasUnsavedChanges)
@@ -723,7 +1049,7 @@ struct WindowLifecycleTests {
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// dirty", in: project)
@@ -762,7 +1088,7 @@ struct WindowLifecycleTests {
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// first dirty state", in: project)
@@ -801,7 +1127,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// discarded", in: project)
@@ -834,7 +1160,7 @@ struct WindowLifecycleTests {
         }
         let firstFile = try makeTempFile(in: firstDirectory, name: "first.swift")
         let secondFile = try makeTempFile(in: secondDirectory, name: "second.swift")
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let firstProject = try #require(
             registry.projectManager(for: firstDirectory)
         )
@@ -876,7 +1202,7 @@ struct WindowLifecycleTests {
     @Test func quitFailureIsVisibleWhenUserTaskCleanupDoesNotFinish() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let run = project.taskRunStore.start(makeTaskRun(id: "active"))
         let probe = TerminationTaskProbe(waitResult: false)
@@ -923,7 +1249,7 @@ struct WindowLifecycleTests {
     @Test func quitAnywayStopsUserTaskAndQuits() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let run = project.taskRunStore.start(makeTaskRun(id: "active"))
         let probe = TerminationTaskProbe(waitResult: true)
@@ -950,11 +1276,63 @@ struct WindowLifecycleTests {
         #expect(registry.destroyAllProjects())
     }
 
+    @Test func lateDirtyStateRetainsPreparedUserTaskHistory() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        let run = project.taskRunStore.start(makeTaskRun(id: "active"))
+        let probe = BlockingTerminationTaskProbe()
+        project.taskRunStore.registerCancellation(
+            probe.makeCancellation(),
+            forRunID: run.id
+        )
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presentedTemplates: [AlertTemplate] = []
+
+        let quit = Task { @MainActor in
+            await delegate.confirmApplicationTermination(
+                presentAlert: { template, _, _, _ in
+                    presentedTemplates.append(template)
+                    return template == .applicationQuitSummary
+                        ? .alertSecondButtonReturn
+                        : .alertFirstButtonReturn
+                },
+                terminationDeadlineOverride: .now() + 5
+            )
+        }
+
+        #expect(await probe.waitUntilStarted())
+        project.primaryTabManager.updateContent("// late dirty")
+        probe.release()
+        let result = await quit.value
+
+        #expect(!result)
+        #expect(
+            presentedTemplates == [
+                .applicationQuitSummary,
+                .applicationQuitFailure,
+            ]
+        )
+        #expect(project.taskRunStore.runs.contains(where: { $0.id == run.id }))
+        #expect(project.hasOutstandingUserTaskExecution)
+        #expect(project.hasUnsavedChanges)
+        project.taskRunStore.finishRun(
+            id: run.id,
+            outcome: makeTaskOutcome(id: "active"),
+            cancelled: true
+        )
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func taskStartedDuringQuitDoesNotCommitDiscard() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// keep after refused quit", in: project)
@@ -1007,7 +1385,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
         updateContent("// keep late task", in: project)
@@ -1084,7 +1462,7 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let pm = ProjectManager()
         let delegate = AppDelegate()
         let window = NSWindow()
@@ -1109,7 +1487,7 @@ struct WindowLifecycleTests {
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let pm = ProjectManager()
         pm.primaryTabManager.openTab(url: file)
 
@@ -1137,7 +1515,7 @@ struct WindowLifecycleTests {
         let file1 = try makeTempFile(in: dir, name: "a.swift")
         let file2 = try makeTempFile(in: dir, name: "b.swift")
 
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let pm = ProjectManager()
         pm.primaryTabManager.openTab(url: file1)
         pm.primaryTabManager.openTab(url: file2)
@@ -1293,6 +1671,23 @@ struct WindowLifecycleTests {
     }
 }
 
+private actor WindowLifecycleAgentTaskStore:
+    AgentTaskPersisting {
+    func load(
+        project: AgentTaskProjectIdentity
+    ) async -> AgentTaskMetadataLoadResult {
+        AgentTaskMetadataLoadResult(status: .missing, tasks: [])
+    }
+
+    func save(
+        tasks: [AgentTask],
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult {
+        .saved(taskCount: tasks.count)
+    }
+}
+
 nonisolated private final class TerminationDeadlineProbe: @unchecked Sendable {
     private let lock = NSLock()
     private let started = DispatchTime.now().uptimeNanoseconds
@@ -1345,7 +1740,7 @@ nonisolated private final class BlockingFormatterProbe: @unchecked Sendable {
     }
 
     func waitUntilStarted(
-        maximumDuration: Duration = .seconds(2)
+        maximumDuration: Duration = .seconds(5)
     ) async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: maximumDuration)
@@ -1357,6 +1752,22 @@ nonisolated private final class BlockingFormatterProbe: @unchecked Sendable {
             }
         }
         return didStart
+    }
+}
+
+nonisolated private final class DelayedTerminationInstallerProbe:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var installs = 0
+
+    var installCount: Int { lock.withLock { installs } }
+
+    func install(
+        _ staged: TerminationStagedSave
+    ) async -> TerminationSaveInstallResult {
+        lock.withLock { installs += 1 }
+        try? await Task.sleep(for: .milliseconds(100))
+        return await TerminationSaveCoordinator.install(staged)
     }
 }
 
@@ -1393,5 +1804,44 @@ nonisolated private final class TerminationTaskProbe: @unchecked Sendable {
                 return waitResult
             }
         )
+    }
+}
+
+nonisolated private final class BlockingTerminationTaskProbe:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+    private var started = false
+
+    var didStart: Bool { lock.withLock { started } }
+
+    func makeCancellation() -> UserTaskCancellation {
+        UserTaskCancellation(
+            terminate: { true },
+            waitForCompletion: { [self] _ in
+                lock.withLock { started = true }
+                releaseSemaphore.wait()
+                return true
+            }
+        )
+    }
+
+    func release() {
+        releaseSemaphore.signal()
+    }
+
+    func waitUntilStarted(
+        maximumDuration: Duration = .seconds(5)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: maximumDuration)
+        while !didStart, clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
+        }
+        return didStart
     }
 }

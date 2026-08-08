@@ -23,11 +23,17 @@ import Foundation
 import Testing
 @testable import Pine
 
-@Suite("Bulk Close Agent Authorization (#1348)")
+@Suite("Bulk Close Agent Authorization (#1348)", .serialized)
 @MainActor
 struct BulkCloseAgentAuthorizationTests {
 
     // MARK: - Fixtures
+
+    private func makeRegistry() -> ProjectRegistry {
+        ProjectRegistry(agentTasks: AgentTaskRegistry(
+            persistence: BulkCloseAgentTaskStore()
+        ))
+    }
 
     private func makeTempDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
@@ -69,7 +75,7 @@ struct BulkCloseAgentAuthorizationTests {
     func windowCloseWarnsAboutRunningAgent() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         try addAgentTerminalTab(to: project)
 
@@ -101,7 +107,7 @@ struct BulkCloseAgentAuthorizationTests {
     func confirmedWindowCloseSurvivesChurn() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let tab = try addAgentTerminalTab(to: project)
         let sessionID = try #require(tab.agentSession?.id)
@@ -132,7 +138,7 @@ struct BulkCloseAgentAuthorizationTests {
     func newAgentRunDuringSheetCancelsWindowClose() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let tab = try addAgentTerminalTab(to: project)
 
@@ -164,7 +170,7 @@ struct BulkCloseAgentAuthorizationTests {
     func agentExitDuringSheetStillClosesWindow() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let tab = try addAgentTerminalTab(to: project)
 
@@ -202,7 +208,7 @@ struct BulkCloseAgentAuthorizationTests {
             cleanup(firstDirectory)
             cleanup(secondDirectory)
         }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let firstProject = try #require(
             registry.projectManager(for: firstDirectory)
         )
@@ -243,7 +249,7 @@ struct BulkCloseAgentAuthorizationTests {
             cleanup(activeDirectory)
             cleanup(idleDirectory)
         }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let activeProject = try #require(
             registry.projectManager(for: activeDirectory)
         )
@@ -290,7 +296,7 @@ struct BulkCloseAgentAuthorizationTests {
     func confirmedQuitSurvivesChurn() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let tab = try addAgentTerminalTab(to: project)
         let sessionID = try #require(tab.agentSession?.id)
@@ -312,7 +318,7 @@ struct BulkCloseAgentAuthorizationTests {
     func newAgentRunDuringQuitSheetCancelsTermination() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let tab = try addAgentTerminalTab(to: project)
 
@@ -346,7 +352,7 @@ struct BulkCloseAgentAuthorizationTests {
     func idleProjectDoesNotBlockQuit() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
 
@@ -374,7 +380,7 @@ struct BulkCloseAgentAuthorizationTests {
         // scenario: every window closed, agents alive, ⌘Q).
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let tab = try addAgentTerminalTab(to: project)
         registry.closeProjectWindow(dir)
@@ -402,7 +408,7 @@ struct BulkCloseAgentAuthorizationTests {
     func decliningQuitWarningCancelsTermination() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
-        let registry = ProjectRegistry()
+        let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         try addAgentTerminalTab(to: project)
 
@@ -416,6 +422,22 @@ struct BulkCloseAgentAuthorizationTests {
 
         #expect(!result)
         await project.workspace.waitForLoadingComplete()
+    }
+}
+
+private actor BulkCloseAgentTaskStore: AgentTaskPersisting {
+    func load(
+        project: AgentTaskProjectIdentity
+    ) async -> AgentTaskMetadataLoadResult {
+        AgentTaskMetadataLoadResult(status: .missing, tasks: [])
+    }
+
+    func save(
+        tasks: [AgentTask],
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult {
+        .saved(taskCount: tasks.count)
     }
 }
 

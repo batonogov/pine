@@ -463,7 +463,7 @@ final class TerminalManager {
     func freezeAgentTasksForTermination() {
         guard !agentTaskCallbacksFrozen else { return }
         agentTaskCallbacksFrozen = true
-        agentCoordinator?.stop()
+        agentCoordinator?.suspendForTermination()
     }
 
     func cancelAgentTaskTermination() {
