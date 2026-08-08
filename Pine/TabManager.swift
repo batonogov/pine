@@ -899,7 +899,8 @@ final class TabManager {
     @discardableResult
     func applyTerminationStagedSave(
         request: TerminationSaveRequest,
-        savedContent: String
+        savedContent: String,
+        metadata: TerminationInstalledFileMetadata
     ) -> Bool {
         guard let index = tabs.firstIndex(where: {
             $0.id == request.tabID
@@ -908,6 +909,8 @@ final class TabManager {
               tabs[index].kind == .text,
               !tabs[index].isTruncated,
               tabs[index].contentVersion == request.contentVersion,
+              tabs[index].persistenceGeneration
+                == request.persistenceGeneration,
               tabs[index].content == request.content,
               tabs[index].fileURL == request.originalURL else {
             return false
@@ -917,8 +920,8 @@ final class TabManager {
         tabs[index].content = savedContent
         tabs[index].url = request.destination
         tabs[index].savedContent = savedContent
-        tabs[index].lastModDate = modDate(for: request.destination)
-        tabs[index].fileSizeBytes = fileSize(url: request.destination)
+        tabs[index].lastModDate = metadata.modificationDate
+        tabs[index].fileSizeBytes = metadata.size
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
             tabs[index].recomputeContentCaches()
@@ -946,13 +949,16 @@ final class TabManager {
     @discardableResult
     func reconcileTerminationStagedSave(
         request: TerminationSaveRequest,
-        savedContent: String
+        savedContent: String,
+        metadata: TerminationInstalledFileMetadata
     ) -> Bool {
         guard let index = tabs.firstIndex(where: {
             $0.id == request.tabID
         }),
               tabs[index].kind == .text,
               !tabs[index].isTruncated,
+              tabs[index].persistenceGeneration
+                == request.persistenceGeneration,
               tabs[index].fileURL == request.originalURL else {
             return false
         }
@@ -967,8 +973,8 @@ final class TabManager {
         }
         tabs[index].url = request.destination
         tabs[index].savedContent = savedContent
-        tabs[index].lastModDate = modDate(for: request.destination)
-        tabs[index].fileSizeBytes = fileSize(url: request.destination)
+        tabs[index].lastModDate = metadata.modificationDate
+        tabs[index].fileSizeBytes = metadata.size
         if !requestIsStillCurrent {
             tabs[index].recomputeContentCaches()
         }

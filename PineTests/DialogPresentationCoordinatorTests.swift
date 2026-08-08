@@ -744,6 +744,59 @@ struct DialogPresentationCoordinatorTests {
         #expect(await response.value == .abort)
         #expect(!started)
     }
+
+    @Test("a termination request outlives the generic foreign-sheet watchdog")
+    func terminationRequestWaitsPastWatchdogBound() async {
+        let owner = makeVisibleWindow()
+        let foreignSheet = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let coordinator = WindowDialogCoordinator(
+            ownerWindow: owner,
+            notificationCenter: NotificationCenter(),
+            watchdogInterval: 0.01,
+            watchdogMaxAttempts: 3
+        )
+        var started = false
+        var completion: ((NSApplication.ModalResponse) -> Void)?
+        defer {
+            coordinator.ownerDidClose()
+            owner.orderOut(nil)
+        }
+
+        owner.beginSheet(foreignSheet) { _ in }
+        let response = Task {
+            await coordinator.present(
+                waitPolicy: .waitUntilOwnerAvailable,
+                start: { _, callback in
+                    started = true
+                    completion = callback
+                },
+                cancel: { _ in }
+            )
+        }
+
+        // Cross several watchdog bounds. A human Quit decision must remain
+        // queued instead of turning the framework sheet into a silent abort.
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(!started)
+
+        owner.endSheet(foreignSheet, returnCode: .cancel)
+        for _ in 0..<100 {
+            if started { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(started)
+        if let completion {
+            completion(.alertFirstButtonReturn)
+        } else {
+            coordinator.ownerDidClose()
+        }
+        #expect(await response.value == .alertFirstButtonReturn)
+    }
 }
 
 @Suite("Dialog flow regressions")

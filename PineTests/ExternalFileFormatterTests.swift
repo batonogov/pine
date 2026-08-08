@@ -145,6 +145,32 @@ struct ExternalFileFormatterTests {
         #expect(result == "hello world")
     }
 
+    @Test("Timeout kills a TERM-ignoring process group and closes pipes")
+    func timeoutKillsProcessGroup() {
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: ProcessRunResult?
+        nonisolated(unsafe) var elapsed: TimeInterval = 0
+
+        DispatchQueue.global().async {
+            let start = Date()
+            result = runRealProcess(
+                executablePath: "/bin/sh",
+                arguments: [
+                    "-c",
+                    "trap '' TERM; sleep 10 & wait",
+                ],
+                stdin: "",
+                timeout: 0.2
+            )
+            elapsed = Date().timeIntervalSince(start)
+            semaphore.signal()
+        }
+
+        #expect(semaphore.wait(timeout: .now() + 1) == .success)
+        #expect(result?.timedOut == true)
+        #expect(elapsed < 0.5)
+    }
+
     // MARK: - Registry integration
 
     @Test("ExternalFileFormatter works in FileFormatterRegistry")

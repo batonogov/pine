@@ -116,6 +116,13 @@ nonisolated enum AgentTaskAttention: String, Codable, Sendable {
     case failed
 }
 
+/// Honest durable state for a Pine-owned launch that reached the PTY but was
+/// interrupted by application termination before detector evidence arrived.
+/// No PID, process generation, or start time is inferred for this marker.
+nonisolated enum AgentTaskLaunchInterruption: String, Codable, Sendable {
+    case acknowledgedBeforeVerification
+}
+
 /// A run's last reported state, kept separate from evidence freshness.
 nonisolated enum AgentRunState: String, Codable, Sendable {
     case idle
@@ -314,6 +321,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     var attention: AgentTaskAttention
     var title: String?
     var objective: String?
+    var launchInterruption: AgentTaskLaunchInterruption?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -331,6 +339,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case attention
         case title
         case objective
+        case launchInterruption
     }
 
     init(
@@ -356,6 +365,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         attention = .none
         self.title = title
         self.objective = objective
+        launchInterruption = nil
     }
 }
 

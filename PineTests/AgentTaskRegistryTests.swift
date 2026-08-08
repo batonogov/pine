@@ -1116,8 +1116,8 @@ struct AgentTaskRegistryTests {
         #expect(await store.savedTaskCounts().last == 0)
     }
 
-    @Test("acknowledged initial launch is not published before observation")
-    func armedInitialLaunchIsNotPersisted() async throws {
+    @Test("acknowledged launch becomes durable only when Quit interrupts it")
+    func armedInitialLaunchPersistsOnlyAsQuitInterruption() async throws {
         let identity = project("/tmp/pine-agent-armed-persistence")
         let store = ScriptedAgentTaskStore()
         let registry = AgentTaskRegistry(persistence: store)
@@ -1148,13 +1148,107 @@ struct AgentTaskRegistryTests {
 
         registry.prepareForApplicationTermination()
         #expect(await registry.flushPersistence() == .saved)
-        #expect(await store.savedTaskCounts().last == 0)
+        #expect(await store.savedTaskCounts().last == 1)
+        let interrupted = try #require(registry.task(for: reservation.taskID))
+        #expect(interrupted.runs.isEmpty)
+        #expect(
+            interrupted.launchInterruption
+                == .acknowledgedBeforeVerification
+        )
         #expect(await registry.cancelApplicationTerminationAndFlush())
         #expect(await store.savedTaskCounts().last == 0)
+        #expect(
+            registry.task(for: reservation.taskID)?.launchInterruption == nil
+        )
 
         registry.cancelLaunch(reservation)
         #expect(await registry.flushPersistence() == .saved)
         #expect(await store.savedTaskCounts().last == 0)
+    }
+
+    @Test("Quit-interrupted acknowledged launch reloads without fake evidence")
+    func acknowledgedLaunchInterruptionSurvivesRelaunch() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let writer = AgentTaskRegistry(persistence: store)
+        writer.registerProject(identity)
+        #expect(await writer.flushPersistence() == .saved)
+        let launchContext = context(
+            project: identity,
+            routeSeed: 672,
+            origin: .pineLaunched
+        )
+        guard case .reserved(let launch) = writer.preparePineLaunch(
+            descriptor: AgentDescriptor(
+                agentType: .claudeCode,
+                launchExecutable: "claude"
+            ),
+            context: launchContext,
+            title: "Interrupted launch",
+            objective: nil
+        ) else {
+            Issue.record("reservation was rejected")
+            return
+        }
+        #expect(writer.armLaunch(launch))
+
+        writer.prepareForApplicationTermination()
+        #expect(await writer.flushPersistence() == .saved)
+        let stored = try #require(await store.load(project: identity).tasks.first)
+        #expect(stored.id == launch.taskID)
+        #expect(stored.runs.isEmpty)
+        #expect(
+            stored.launchInterruption == .acknowledgedBeforeVerification
+        )
+
+        let reader = AgentTaskRegistry(persistence: store)
+        reader.registerProject(identity)
+        #expect(await reader.flushPersistence() == .saved)
+        let reloaded = try #require(reader.task(for: launch.taskID))
+        #expect(reloaded.runs.isEmpty)
+        #expect(
+            reloaded.launchInterruption == .acknowledgedBeforeVerification
+        )
+        #expect(reader.canResumeTask(launch.taskID))
+        #expect(
+            AgentInboxSnapshot(tasks: reader.tasks).rows.first?.canRecover
+                == true
+        )
+
+        let resumeContext = context(
+            project: identity,
+            routeSeed: 673,
+            origin: .pineLaunched
+        )
+        guard case .reserved(let resume) = reader.prepareResume(
+            taskID: launch.taskID,
+            context: resumeContext
+        ) else {
+            Issue.record("interrupted launch was not resumable")
+            return
+        }
+        #expect(reader.armLaunch(resume))
+        let observed = makeSession(
+            pid: 1_496,
+            generation: 7,
+            preciseStartedAt: Date().addingTimeInterval(1),
+            agentType: .claudeCode
+        )
+        reader.bridge(
+            observed,
+            replacing: nil,
+            context: resumeContext,
+            reservation: resume
+        )
+
+        let verified = try #require(reader.task(for: launch.taskID))
+        #expect(verified.launchInterruption == nil)
+        #expect(verified.runs.map(\.id) == [observed.id])
+        #expect(verified.runs.first?.process.processGeneration == 7)
+        #expect(verified.runs.first?.process.startIdentifier != nil)
+        #expect(verified.runs.first?.process.startIsAuthoritative == true)
     }
 
     @Test("successful launch acknowledgement survives Quit rollback")
@@ -1700,11 +1794,41 @@ struct AgentTaskRegistryTests {
         activeWithoutRun.route.availability = .missing
         #expect(await store.save(tasks: [activeWithoutRun], project: identity)
             == .saved(taskCount: 1))
+        activeWithoutRun.launchInterruption =
+            .acknowledgedBeforeVerification
+        #expect(await store.save(tasks: [activeWithoutRun], project: identity)
+            == .rejected(.invalidMetadata))
+
+        var interruptedPineLaunch = AgentTask(
+            descriptor: AgentDescriptor(
+                agentType: .claudeCode,
+                launchExecutable: "claude"
+            ),
+            context: context(
+                project: identity,
+                routeSeed: 212,
+                origin: .pineLaunched
+            )
+        )
+        interruptedPineLaunch.lifecycle = .paused
+        interruptedPineLaunch.route.availability = .missing
+        interruptedPineLaunch.launchInterruption =
+            .acknowledgedBeforeVerification
+        #expect(
+            await store.save(
+                tasks: [interruptedPineLaunch],
+                project: identity
+            ) == .saved(taskCount: 1)
+        )
 
         let registry = AgentTaskRegistry()
         let session = makeSession(pid: 2_211, generation: 1)
         registry.bridge(session, replacing: nil, context: discovered)
         var task = try #require(registry.tasks.first)
+        task.launchInterruption = .acknowledgedBeforeVerification
+        #expect(await store.save(tasks: [task], project: identity)
+            == .rejected(.invalidMetadata))
+        task.launchInterruption = nil
         task.attention = .waitingInput
         #expect(await store.save(tasks: [task], project: identity)
             == .rejected(.invalidMetadata))
@@ -2056,6 +2180,43 @@ struct AgentTaskRegistryTests {
             context: context(project: identity, routeSeed: 154)
         )
         #expect(registry.task(forSessionID: replacement.id) != nil)
+    }
+
+    @Test("zero-budget rollback retries after a late rejected quit tail")
+    func rollbackRetrySurvivesLateRejectedTerminationTail() async throws {
+        let identity = project("/tmp/pine-agent-rollback-tail-race")
+        let store = RollbackTailRaceAgentTaskStore()
+        let registry = AgentTaskRegistry(
+            persistence: store,
+            flushTotal: .seconds(120),
+            flushTail: .seconds(120)
+        )
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+        let session = makeSession(pid: 1_495, generation: 1)
+        registry.bridge(
+            session,
+            replacing: nil,
+            context: context(project: identity, routeSeed: 154)
+        )
+        #expect(await registry.flushPersistence() == .saved)
+
+        registry.prepareForApplicationTermination()
+        #expect(await store.waitForSuspendedTerminationSave())
+        #expect(
+            await registry.cancelApplicationTerminationAndFlush(
+                maximumDuration: .zero
+            ) == false
+        )
+
+        await store.releaseTerminationSaveAsRejected()
+        #expect(await store.waitForRestoredSave())
+        #expect(
+            await store.publishedAvailabilityHistory(
+                forSessionID: session.id
+            ).last == .available
+        )
+        #expect(await registry.flushPersistence() == .saved)
     }
 
     @Test("failed durable rollback still thaws project terminal callbacks")
@@ -3788,5 +3949,86 @@ private actor ScriptedAgentTaskStore: AgentTaskPersisting {
             }
         }
         return completedSaves >= expected
+    }
+}
+
+private actor RollbackTailRaceAgentTaskStore: AgentTaskPersisting {
+    private var saveCallCount = 0
+    private var terminationSaveContinuation: CheckedContinuation<Void, Never>?
+    private var publishedSnapshots: [[AgentTask]] = []
+
+    func load(
+        project: AgentTaskProjectIdentity
+    ) async -> AgentTaskMetadataLoadResult {
+        AgentTaskMetadataLoadResult(status: .missing, tasks: [])
+    }
+
+    func save(
+        tasks: [AgentTask],
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult {
+        saveCallCount += 1
+        let call = saveCallCount
+        if call == 2 {
+            await withCheckedContinuation { continuation in
+                terminationSaveContinuation = continuation
+            }
+            return .rejected(.ioFailure)
+        }
+        let decision: AgentTaskPublicationDecision
+        if let authorization {
+            decision = authorization.publishForTesting {
+                publishedSnapshots.append(tasks)
+                return true
+            }
+        } else {
+            publishedSnapshots.append(tasks)
+            decision = .published
+        }
+        switch decision {
+        case .published:
+            return .saved(taskCount: tasks.count)
+        case .failed:
+            return .rejected(.transientIO)
+        case .superseded:
+            return .rejected(.superseded)
+        }
+    }
+
+    func waitForSuspendedTerminationSave() async -> Bool {
+        await waitUntil { saveCallCount >= 2 }
+    }
+
+    func releaseTerminationSaveAsRejected() {
+        terminationSaveContinuation?.resume()
+        terminationSaveContinuation = nil
+    }
+
+    func waitForRestoredSave() async -> Bool {
+        await waitUntil { saveCallCount >= 3 }
+    }
+
+    func publishedAvailabilityHistory(
+        forSessionID sessionID: UUID
+    ) -> [AgentTaskRouteAvailability] {
+        publishedSnapshots.compactMap { snapshot in
+            snapshot.first(where: { task in
+                task.runs.contains(where: { $0.id == sessionID })
+            })?.route.availability
+        }
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while !condition(), clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
+        }
+        return condition()
     }
 }

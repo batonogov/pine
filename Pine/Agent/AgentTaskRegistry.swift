@@ -26,6 +26,7 @@ nonisolated enum AgentTaskLaunchResult: Equatable, Sendable {
 
 nonisolated private enum AgentTaskClaimKind: Sendable {
     case initialLaunch
+    case interruptedInitialLaunch
     case resume(previousRunID: UUID)
 }
 
@@ -54,6 +55,7 @@ nonisolated private struct AgentTaskTerminationRollback: Sendable {
     let liveness: AgentRunLiveness?
     let attention: AgentTaskAttention
     let updatedAt: Date
+    let launchInterruption: AgentTaskLaunchInterruption?
 }
 
 /// Application-lifetime durable task ownership. The registry is MainActor so
@@ -141,6 +143,9 @@ final class AgentTaskRegistry {
     private var claimExpiryTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored
     private var rollbackPersistenceRetryTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var rollbackPersistenceRetryProjects =
+        Set<AgentTaskProjectIdentity>()
     @ObservationIgnored
     private let monotonicNow: @Sendable () -> ContinuousClock.Instant
     @ObservationIgnored
@@ -406,6 +411,7 @@ final class AgentTaskRegistry {
         tasks[index].lifecycle = .dismissed
         tasks[index].attention = .none
         tasks[index].isUnread = false
+        tasks[index].launchInterruption = nil
         tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
         markDirty(tasks[index].project)
         return true
@@ -669,12 +675,20 @@ final class AgentTaskRegistry {
               validLaunchRoute(context.route),
               tasks[index].project == context.project,
               isResumableTask(at: index),
-              let prior = tasks[index].runs.last,
               pendingClaims[terminalKey(context)] == nil,
               taskIDByTerminal[terminalKey(context)] == nil else {
             return .rejected
         }
-        let previousRunID = prior.id
+        let kind: AgentTaskClaimKind
+        if let previousRunID = tasks[index].runs.last?.id {
+            kind = .resume(previousRunID: previousRunID)
+        } else {
+            guard tasks[index].launchInterruption
+                    == .acknowledgedBeforeVerification else {
+                return .rejected
+            }
+            kind = .interruptedInitialLaunch
+        }
         let reservation = AgentTaskLaunchReservation(
             taskID: taskID,
             token: UUID()
@@ -685,7 +699,7 @@ final class AgentTaskRegistry {
             project: context.project,
             route: context.route,
             descriptor: tasks[index].descriptor,
-            kind: .resume(previousRunID: previousRunID),
+            kind: kind,
             expectedRunCount: tasks[index].runs.count,
             generationFloor: boundary.generationFloor,
             launchBoundary: normalizedLaunchBoundary(boundary.capturedAt),
@@ -894,6 +908,13 @@ final class AgentTaskRegistry {
             claimExpiryTasks.removeValue(forKey: claim.token)?.cancel()
         }
         var changedProjects = Set<AgentTaskProjectIdentity>()
+        let acknowledgedInitialTaskIDs = Set(
+            pendingClaims.values.compactMap { claim -> UUID? in
+                guard case .initialLaunch = claim.kind,
+                      claim.state == .armed else { return nil }
+                return claim.taskID
+            }
+        )
         for taskIndex in tasks.indices {
             let runIndex = tasks[taskIndex].runs.indices.last
             terminationRollback[tasks[taskIndex].id] = AgentTaskTerminationRollback(
@@ -901,8 +922,14 @@ final class AgentTaskRegistry {
                 availability: tasks[taskIndex].route.availability,
                 liveness: runIndex.map { tasks[taskIndex].runs[$0].liveness },
                 attention: tasks[taskIndex].attention,
-                updatedAt: tasks[taskIndex].updatedAt
+                updatedAt: tasks[taskIndex].updatedAt,
+                launchInterruption: tasks[taskIndex].launchInterruption
             )
+            if acknowledgedInitialTaskIDs.contains(tasks[taskIndex].id),
+               tasks[taskIndex].runs.isEmpty {
+                tasks[taskIndex].launchInterruption =
+                    .acknowledgedBeforeVerification
+            }
             tasks[taskIndex].route.availability = .missing
             if let runIndex,
                tasks[taskIndex].runs[runIndex].liveness == .live {
@@ -938,7 +965,7 @@ final class AgentTaskRegistry {
     ) async -> Bool {
         guard isTerminating else { return true }
         isRollingBackApplicationTermination = true
-        restoreTerminationSnapshot()
+        _ = restoreTerminationSnapshot(trackingPersistence: true)
         for (project, isOpen) in windowOpenByProject {
             applyWindowOpen(isOpen) { $0 == project }
         }
@@ -951,7 +978,7 @@ final class AgentTaskRegistry {
         isRollingBackApplicationTermination = false
         finishTerminationCancellation()
         if !rollbackWasSaved {
-            scheduleRollbackPersistenceRetry()
+            ensureRollbackPersistenceRetryScheduled()
         }
         return rollbackWasSaved
     }
@@ -959,13 +986,15 @@ final class AgentTaskRegistry {
     #if DEBUG
     func cancelApplicationTermination() {
         guard isTerminating else { return }
-        restoreTerminationSnapshot()
+        _ = restoreTerminationSnapshot(trackingPersistence: false)
         isRollingBackApplicationTermination = false
         finishTerminationCancellation()
     }
     #endif
 
-    private func restoreTerminationSnapshot() {
+    private func restoreTerminationSnapshot(
+        trackingPersistence: Bool
+    ) -> Set<AgentTaskProjectIdentity> {
         var restoredProjects = Set<AgentTaskProjectIdentity>()
         for index in tasks.indices {
             if let rollback = terminationRollback[tasks[index].id] {
@@ -973,6 +1002,8 @@ final class AgentTaskRegistry {
                 tasks[index].route.availability = rollback.availability
                 tasks[index].attention = rollback.attention
                 tasks[index].updatedAt = rollback.updatedAt
+                tasks[index].launchInterruption =
+                    rollback.launchInterruption
                 if let runIndex = tasks[index].runs.indices.last,
                    let liveness = rollback.liveness {
                     tasks[index].runs[runIndex].liveness = liveness
@@ -980,7 +1011,11 @@ final class AgentTaskRegistry {
                 restoredProjects.insert(tasks[index].project)
             }
         }
+        if trackingPersistence {
+            rollbackPersistenceRetryProjects.formUnion(restoredProjects)
+        }
         restoredProjects.forEach(markDirty)
+        return restoredProjects
     }
 
     private func finishTerminationCancellation() {
@@ -1002,13 +1037,14 @@ final class AgentTaskRegistry {
     /// restored snapshot remains dirty until it is actually durable. Retry in
     /// the background with bounded backoff so a later crash cannot indefinitely
     /// reload the paused/missing termination snapshot.
-    private func scheduleRollbackPersistenceRetry() {
-        rollbackPersistenceRetryTask?.cancel()
+    private func ensureRollbackPersistenceRetryScheduled() {
+        guard rollbackPersistenceRetryTask == nil,
+              !rollbackPersistenceRetryProjects.isEmpty else { return }
         rollbackPersistenceRetryTask = Task { @MainActor [weak self] in
             var delay = Duration.milliseconds(100)
             while !Task.isCancelled {
                 guard let self else { return }
-                let retryable = dirtyProjects.filter {
+                let retryable = rollbackPersistenceRetryProjects.filter {
                     registeredProjects.contains($0)
                         && !quarantinedProjects.contains($0)
                         && !unpersistableDirtyProjects.contains($0)
@@ -1021,7 +1057,8 @@ final class AgentTaskRegistry {
                 retryable.forEach(scheduleSaveIfReady)
                 if await flushPersistence(
                     maximumDuration: min(flushTotal, .seconds(2))
-                ) == .saved {
+                ) == .saved,
+                   rollbackPersistenceRetryProjects.isEmpty {
                     rollbackPersistenceRetryTask = nil
                     return
                 }
@@ -1107,7 +1144,8 @@ final class AgentTaskRegistry {
         var stagedInterruptedTaskIDs = Set<UUID>()
         for loadedTask in result.tasks {
             if loadedTask.origin == .pineLaunched,
-               loadedTask.runs.isEmpty {
+               loadedTask.runs.isEmpty,
+               loadedTask.launchInterruption == nil {
                 needsNormalizedSave = true
                 continue
             }
@@ -1274,6 +1312,7 @@ final class AgentTaskRegistry {
         ))
         task.route = context.route
         task.runs.append(run)
+        task.launchInterruption = nil
         task.lifecycle = liveness == .terminated ? .paused : .active
         if liveness == .terminated {
             task.route.availability = .missing
@@ -1422,6 +1461,10 @@ final class AgentTaskRegistry {
         case .initialLaunch:
             return task.runs.isEmpty
                 && task.route.terminalID == claim.route.terminalID
+        case .interruptedInitialLaunch:
+            return task.runs.isEmpty
+                && task.launchInterruption
+                    == .acknowledgedBeforeVerification
         case .resume(let previousRunID):
             guard let previous = task.runs.last else { return false }
             let generationIsValid = previous.terminalID != context.route.terminalID
@@ -1592,18 +1635,21 @@ final class AgentTaskRegistry {
             return
         }
         persistenceSequence += 1
-        let pendingInitialTaskIDs = Set<UUID>(
+        let pendingUnverifiedTaskIDs = Set<UUID>(
             pendingClaims.values.compactMap { claim in
-                guard case .initialLaunch = claim.kind else { return nil }
+                guard case .initialLaunch = claim.kind,
+                      task(for: claim.taskID)?.launchInterruption == nil else {
+                    return nil
+                }
                 return claim.taskID
             }
         )
-        // A Pine-owned task is not durable until authoritative process
-        // evidence appends its first run. This covers both pre-ACK dormant and
-        // post-ACK armed claims, including snapshots taken during Quit.
+        // Dormant launch intent is runtime-only. During Quit, an armed launch
+        // instead carries an honest interruption marker with no fabricated
+        // process evidence and must survive the application relaunch.
         let snapshot = tasks.filter {
             $0.project == project
-                && !pendingInitialTaskIDs.contains($0.id)
+                && !pendingUnverifiedTaskIDs.contains($0.id)
         }
         let store = persistence
         let revision = persistenceRevision[project]
@@ -1661,11 +1707,16 @@ final class AgentTaskRegistry {
                     persistenceRetryBlocked.insert(project)
                 } else {
                     persistenceRetryBlocked.remove(project)
+                    rollbackPersistenceRetryProjects.remove(project)
                 }
             }
             if ownsTail {
                 let pendingProjects = Array(dirtyProjects)
                 pendingProjects.forEach(scheduleSaveIfReady)
+            }
+            if rollbackPersistenceRetryProjects.contains(project),
+               rollbackPersistenceRetryTask == nil {
+                ensureRollbackPersistenceRetryScheduled()
             }
         }
     }
@@ -1846,8 +1897,11 @@ final class AgentTaskRegistry {
               let executable = task.descriptor.launchExecutable,
               task.descriptor.agentType.cliNames.contains(executable),
               !executable.contains(where: { $0.isWhitespace }),
-              let tail = task.runs.last,
-              resumableTail(tail, taskID: task.id) else {
+              (task.launchInterruption == .acknowledgedBeforeVerification
+                && task.runs.isEmpty
+                || task.runs.last.map {
+                    resumableTail($0, taskID: task.id)
+                } == true) else {
             return false
         }
         return !pendingClaims.values.contains { $0.taskID == task.id }

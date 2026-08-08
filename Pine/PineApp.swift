@@ -2034,28 +2034,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             } ?? false
         }
 
+        func terminationContext(
+            _ context: DialogPresentationContext
+        ) -> DialogPresentationContext {
+            context.waitingUntilOwnerAvailable()
+        }
+
         func resolveFreshApplicationContext() -> DialogPresentationContext {
-            if let applicationContext {
+            if let applicationContext, applicationContext.nsWindow != nil {
                 // An injected presenter may intentionally use an off-screen
                 // synthetic owner. Native sheets still require live eligibility.
                 if presentAlert != nil || hasEligibleOwner(applicationContext) {
-                    return applicationContext
+                    return terminationContext(applicationContext)
                 }
             }
             let currentContext = DialogPresenter.forApplicationWindow()
             if hasEligibleOwner(currentContext) {
-                return currentContext
+                return terminationContext(currentContext)
             }
             if presentAlert == nil {
                 // The previously captured owner may have closed while another
                 // project sheet was up. Restore/create a discoverable owner at
                 // the point of use rather than reusing that stale authority.
                 prepareApplicationDialogOwner()
-                return DialogPresenter.forApplicationWindow()
+                return terminationContext(
+                    DialogPresenter.forApplicationWindow()
+                )
             }
             // Injected presenters do not require a native owner. Preserve their
             // explicit context while still preferring a live replacement above.
-            return applicationContext ?? fallbackContext
+            return terminationContext(applicationContext ?? fallbackContext)
         }
 
         func resolveFreshDecisionContext(
@@ -2066,7 +2074,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     preferredProject
                 )
                 if hasEligibleOwner(projectContext) {
-                    return projectContext
+                    return terminationContext(projectContext)
                 }
             }
             return resolveFreshApplicationContext()
@@ -2097,28 +2105,74 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 )
                 if let window = projectContext.nsWindow,
                    DialogPresenter.isEligibleApplicationOwner(window) {
-                    return projectContext
+                    return terminationContext(projectContext)
                 }
             }
             if let terminationFailureContext {
-                return terminationFailureContext()
+                let context = terminationFailureContext()
+                if presentAlert != nil || hasEligibleOwner(context) {
+                    return terminationContext(context)
+                }
             }
             if presentAlert == nil {
                 // A clean preflight may never have created or restored an
                 // owner. Resolve one lazily only after machine work fails.
                 prepareApplicationDialogOwner()
-                return DialogPresenter.forApplicationWindow()
+                return terminationContext(
+                    DialogPresenter.forApplicationWindow()
+                )
             }
-            return fallbackContext
+            return resolveFreshApplicationContext()
         }
 
-        func presentTerminationFailure() async {
-            _ = await presentTerminationAlert(
-                .applicationQuitFailure,
-                context: resolveTerminationFailureContext(),
-                title: Strings.applicationQuitFailureTitle,
-                message: Strings.applicationQuitFailureMessage
+        /// Machine failures are never user cancellation. Require the sole OK
+        /// response as proof that AppKit displayed the explanation. `.abort`
+        /// means presentation authority was lost, so retry on a freshly
+        /// resolved project/application owner. The fixed attempt bound avoids
+        /// recursive or infinite retry if the application cannot retain any
+        /// owner at all.
+        @discardableResult
+        func presentTerminationFailure(
+            _ template: AlertTemplate = .applicationQuitFailure,
+            preferredProject: ProjectManager? = nil,
+            title: String = Strings.applicationQuitFailureTitle,
+            message: String = Strings.applicationQuitFailureMessage
+        ) async -> Bool {
+            let maximumAttempts = 3
+            for attempt in 0..<maximumAttempts {
+                let context = resolveTerminationFailureContext(
+                    preferredProject: preferredProject
+                )
+                if presentAlert == nil, !hasEligibleOwner(context) {
+                    prepareApplicationDialogOwner()
+                    if attempt + 1 < maximumAttempts {
+                        await Task.yield()
+                    }
+                    continue
+                }
+                let response = await presentTerminationAlert(
+                    template,
+                    context: context,
+                    title: title,
+                    message: message
+                )
+                if response == .alertFirstButtonReturn {
+                    return true
+                }
+                Logger.app.error(
+                    "Quit failure explanation lost its dialog owner; retrying on a fresh owner"
+                )
+                if presentAlert == nil {
+                    prepareApplicationDialogOwner()
+                }
+                if attempt + 1 < maximumAttempts {
+                    await Task.yield()
+                }
+            }
+            Logger.app.critical(
+                "Quit failure explanation could not be displayed after bounded owner rebinding"
             )
+            return false
         }
 
         func presentTerminationDecision(
@@ -2127,26 +2181,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             title: String,
             message: String
         ) async -> NSApplication.ModalResponse? {
-            let context = resolveFreshDecisionContext(
-                preferredProject: preferredProject
-            )
-            guard presentAlert != nil || hasEligibleOwner(context) else {
-                await presentTerminationFailure()
-                return nil
+            let maximumAttempts = 3
+            for attempt in 0..<maximumAttempts {
+                let context = resolveFreshDecisionContext(
+                    preferredProject: preferredProject
+                )
+                if presentAlert == nil, !hasEligibleOwner(context) {
+                    prepareApplicationDialogOwner()
+                    if attempt + 1 < maximumAttempts {
+                        await Task.yield()
+                    }
+                    continue
+                }
+                let response = await presentTerminationAlert(
+                    template,
+                    context: context,
+                    title: title,
+                    message: message
+                )
+                // User cancellation has a template-specific button response.
+                // `.abort` is presentation loss and must rebind instead of
+                // being mistaken for that user decision.
+                if response != .abort {
+                    return response
+                }
+                Logger.app.error(
+                    "Quit decision lost its dialog owner; retrying on a fresh owner"
+                )
+                if presentAlert == nil {
+                    prepareApplicationDialogOwner()
+                }
+                if attempt + 1 < maximumAttempts {
+                    await Task.yield()
+                }
             }
-            let response = await presentTerminationAlert(
-                template,
-                context: context,
-                title: title,
-                message: message
-            )
-            // Native `.abort` means the sheet lost its captured owner; Cancel
-            // has its own button response and must remain the only silent exit.
-            if presentAlert == nil, response == .abort {
-                await presentTerminationFailure()
-                return nil
-            }
-            return response
+            await presentTerminationFailure()
+            return nil
         }
 
         var discardAuthorizations: [
@@ -2399,11 +2469,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     ] = stagedPlan
                 case .failed(let message):
                     cleanupPreparedTerminationSaves()
-                    _ = await presentTerminationAlert(
+                    await presentTerminationFailure(
                         .fileOperationErrorCritical,
-                        context: resolveTerminationFailureContext(
-                            preferredProject: projectManager
-                        ),
+                        preferredProject: projectManager,
                         title: Strings.fileOperationErrorTitle,
                         message: message
                     )
@@ -2421,14 +2489,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             }
 
             // Validate every target before the first destructive install. The
-            // atomic installer repeats the check and displaces existing files
-            // with RENAME_SWAP to close the remaining pathname race.
+            // atomic installer repeats the check and quarantines the exact
+            // authorized inode before a RENAME_EXCL install, closing the
+            // remaining pathname race without displacing a replacement.
             for projectManager in saveRequests {
                 guard let plan = preparedTerminationSavePlans[
                     ObjectIdentifier(projectManager)
                 ],
                       await projectManager
-                        .terminationSaveDestinationsStillMatch(plan) else {
+                        .terminationSaveDestinationsStillMatch(
+                            plan,
+                            until: terminationDeadline
+                        ) else {
                     cleanupPreparedTerminationSaves()
                     await presentTerminationFailure()
                     return false
@@ -2454,11 +2526,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     )
                 case .failed(let message):
                     cleanupPreparedTerminationSaves()
-                    _ = await presentTerminationAlert(
+                    await presentTerminationFailure(
                         .fileOperationErrorCritical,
-                        context: resolveTerminationFailureContext(
-                            preferredProject: projectManager
-                        ),
+                        preferredProject: projectManager,
                         title: Strings.fileOperationErrorTitle,
                         message: message
                     )

@@ -452,6 +452,125 @@ struct WindowLifecycleTests {
         await second.workspace.waitForLoadingComplete()
     }
 
+    @Test func quitDecisionRetriesAfterProjectOwnerCloses() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// keep after owner closes", in: project)
+
+        let oldWindow = NSWindow()
+        let newWindow = NSWindow()
+        oldWindow.orderFront(nil)
+        let applicationContext = DialogPresenter.register(
+            window: oldWindow,
+            projectManager: project
+        )
+        defer {
+            for window in [oldWindow, newWindow] {
+                DialogPresenter.ownerDidClose(window)
+                window.orderOut(nil)
+            }
+        }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var unsavedPromptOwners: [NSWindow?] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, context, _, _ in
+                if template == .applicationQuitSummary {
+                    return .alertFirstButtonReturn
+                }
+                #expect(template == .unsavedChangesBulk)
+                unsavedPromptOwners.append(context.nsWindow)
+                if unsavedPromptOwners.count == 1 {
+                    DialogPresenter.ownerDidClose(oldWindow)
+                    oldWindow.orderOut(nil)
+                    newWindow.orderFront(nil)
+                    DialogPresenter.register(
+                        window: newWindow,
+                        projectManager: project
+                    )
+                    return .abort
+                }
+                return .alertThirdButtonReturn
+            },
+            applicationContext: applicationContext,
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(unsavedPromptOwners.count == 2)
+        #expect(unsavedPromptOwners[0] === oldWindow)
+        #expect(unsavedPromptOwners[1] === newWindow)
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func quitFailureRetriesUntilAcknowledgementIsDisplayed() async {
+        let delegate = AppDelegate()
+        delegate.registry = makeRegistry()
+        let oldWindow = NSWindow()
+        let newWindow = NSWindow()
+        let oldContext = DialogPresentationContext(window: oldWindow)
+        let newContext = DialogPresentationContext(window: newWindow)
+        defer {
+            DialogPresenter.ownerDidClose(oldWindow)
+            DialogPresenter.ownerDidClose(newWindow)
+        }
+        var contextResolutionCount = 0
+        var presentedOwners: [NSWindow?] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, context, _, _ in
+                #expect(template == .applicationQuitFailure)
+                presentedOwners.append(context.nsWindow)
+                if presentedOwners.count == 1 {
+                    DialogPresenter.ownerDidClose(oldWindow)
+                    return .abort
+                }
+                return .alertFirstButtonReturn
+            },
+            terminationFailureContext: {
+                defer { contextResolutionCount += 1 }
+                return contextResolutionCount == 0
+                    ? oldContext
+                    : newContext
+            },
+            terminationDeadlineOverride: .now()
+        )
+
+        #expect(!result)
+        #expect(contextResolutionCount == 2)
+        #expect(presentedOwners.count == 2)
+        #expect(presentedOwners[0] === oldWindow)
+        #expect(presentedOwners[1] === newWindow)
+    }
+
+    @Test func quitFailureOwnerRetriesAreBounded() async {
+        let delegate = AppDelegate()
+        delegate.registry = makeRegistry()
+        let owner = NSWindow()
+        let context = DialogPresentationContext(window: owner)
+        defer { DialogPresenter.ownerDidClose(owner) }
+        var presentationCount = 0
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .applicationQuitFailure)
+                presentationCount += 1
+                return .abort
+            },
+            terminationFailureContext: { context },
+            terminationDeadlineOverride: .now()
+        )
+
+        #expect(!result)
+        #expect(presentationCount == 3)
+    }
+
     @Test func saveAsUsesReplacementProjectOwnerAfterReview() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
@@ -527,6 +646,7 @@ struct WindowLifecycleTests {
         }
         let oldWindow = NSWindow()
         let newWindow = NSWindow()
+        let replacementFailureWindow = NSWindow()
         oldWindow.orderFront(nil)
         let oldContext = DialogPresenter.register(
             window: oldWindow,
@@ -535,13 +655,15 @@ struct WindowLifecycleTests {
         defer {
             DialogPresenter.ownerDidClose(oldWindow)
             DialogPresenter.ownerDidClose(newWindow)
+            DialogPresenter.ownerDidClose(replacementFailureWindow)
             oldWindow.orderOut(nil)
             newWindow.orderOut(nil)
+            replacementFailureWindow.orderOut(nil)
         }
         let delegate = AppDelegate()
         delegate.registry = registry
         var presented: [AlertTemplate] = []
-        var errorOwner: NSWindow?
+        var errorOwners: [NSWindow?] = []
 
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, context, _, _ in
@@ -556,7 +678,17 @@ struct WindowLifecycleTests {
                     )
                 }
                 if template == .fileOperationErrorCritical {
-                    errorOwner = context.nsWindow
+                    errorOwners.append(context.nsWindow)
+                    if errorOwners.count == 1 {
+                        DialogPresenter.ownerDidClose(newWindow)
+                        newWindow.orderOut(nil)
+                        replacementFailureWindow.orderFront(nil)
+                        DialogPresenter.register(
+                            window: replacementFailureWindow,
+                            projectManager: project
+                        )
+                        return .abort
+                    }
                 }
                 return .alertFirstButtonReturn
             },
@@ -570,9 +702,12 @@ struct WindowLifecycleTests {
                 .applicationQuitSummary,
                 .unsavedChangesBulk,
                 .fileOperationErrorCritical,
+                .fileOperationErrorCritical,
             ]
         )
-        #expect(errorOwner === newWindow)
+        #expect(errorOwners.count == 2)
+        #expect(errorOwners[0] === newWindow)
+        #expect(errorOwners[1] === replacementFailureWindow)
         #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
     }
@@ -958,8 +1093,12 @@ struct WindowLifecycleTests {
         )
         let stagedPlan = try #require(staged.1)
         let installer = DelayedTerminationInstallerProbe()
-        project.terminationSaveInstaller = { staged in
-            await installer.install(staged)
+        project.terminationSaveInstaller = { staged, deadline, lateCompletion in
+            await installer.install(
+                staged,
+                until: deadline,
+                lateCompletion: lateCompletion
+            )
         }
 
         let result = await project.commitStagedSaveAllPaneTabsForTermination(
@@ -971,7 +1110,7 @@ struct WindowLifecycleTests {
         #expect(installer.installCount == 1)
         #expect(
             try String(contentsOf: firstURL, encoding: .utf8)
-                == "// first dirty\n"
+                == "// first.swift"
         )
         #expect(
             try String(contentsOf: secondURL, encoding: .utf8)
@@ -981,8 +1120,89 @@ struct WindowLifecycleTests {
             atPath: firstURL.path
         )
         #expect(firstAttributes[.posixPermissions] as? Int == 0o750)
-        #expect(tabs.tabs.first(where: { $0.fileURL == firstURL })?.isDirty == false)
+        #expect(tabs.tabs.first(where: { $0.fileURL == firstURL })?.isDirty == true)
         #expect(tabs.tabs.first(where: { $0.fileURL == secondURL })?.isDirty == true)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func lateTerminationInstallDoesNotRegressNewerSave() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let tabs = project.primaryTabManager
+        tabs.autoSavePreferenceProvider = { false }
+        tabs.openTab(url: file)
+        tabs.updateContent("// captured by termination")
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready save plan")
+            return
+        }
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+        let stagedPlan = try #require(staged.1)
+        let installer = PausedInstalledTerminationInstallerProbe()
+        defer { installer.release() }
+        project.terminationSaveInstaller = { staged, deadline, lateCompletion in
+            await installer.install(
+                staged,
+                until: deadline,
+                lateCompletion: lateCompletion
+            )
+        }
+        let commit = Task {
+            await project.commitStagedSaveAllPaneTabsForTermination(
+                stagedPlan,
+                until: .now() + .milliseconds(250)
+            )
+        }
+        #expect(await installer.waitUntilInstalled())
+
+        let result = await commit.value
+        #expect(result == .timedOut)
+        #expect(
+            try String(contentsOf: file, encoding: .utf8)
+                == "// captured by termination\n"
+        )
+
+        let newerContent = "// saved after timeout"
+        tabs.updateContent(newerContent)
+        let index = try #require(tabs.tabs.firstIndex(where: {
+            $0.fileURL == file
+        }))
+        #expect(try tabs.trySaveTab(at: index))
+        let savedTab = try #require(tabs.tabs.first(where: {
+            $0.fileURL == file
+        }))
+        let persistedContent = savedTab.content
+        #expect(persistedContent.hasPrefix(newerContent))
+        #expect(savedTab.savedContent == persistedContent)
+        let savedGeneration = savedTab.persistenceGeneration
+        let savedModificationDate = savedTab.lastModDate
+        let savedFileSize = savedTab.fileSizeBytes
+
+        installer.release()
+        #expect(await installer.waitUntilReturned())
+        await settle()
+
+        let reconciledTab = try #require(tabs.tabs.first(where: {
+            $0.fileURL == file
+        }))
+        #expect(reconciledTab.content == persistedContent)
+        #expect(reconciledTab.savedContent == persistedContent)
+        #expect(reconciledTab.persistenceGeneration == savedGeneration)
+        #expect(reconciledTab.lastModDate == savedModificationDate)
+        #expect(reconciledTab.fileSizeBytes == savedFileSize)
+        #expect(!reconciledTab.isDirty)
+        #expect(
+            try String(contentsOf: file, encoding: .utf8) == persistedContent
+        )
         await project.workspace.waitForLoadingComplete()
     }
 
@@ -1041,6 +1261,60 @@ struct WindowLifecycleTests {
         #expect(project.primaryTabManager.activeTab?.content ==
                 "// captured dirty")
         #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func concurrentReplacementBeforeQuarantineIsRestored() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// captured dirty", in: project)
+
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready termination save plan")
+            return
+        }
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+        let stagedPlan = try #require(staged.1)
+        project.terminationSaveInstaller = { staged, deadline, lateCompletion in
+            await TerminationSaveCoordinator.install(
+                staged,
+                until: deadline,
+                beforeDestinationQuarantine: {
+                    try? FileManager.default.removeItem(at: file)
+                    try? Data("external replacement".utf8).write(to: file)
+                },
+                lateCompletion: lateCompletion
+            )
+        }
+
+        let result = await project.commitStagedSaveAllPaneTabsForTermination(
+            stagedPlan,
+            until: .now() + 5
+        )
+
+        guard case .failed = result else {
+            Issue.record("Expected the raced install to fail")
+            return
+        }
+        #expect(
+            try String(contentsOf: file, encoding: .utf8)
+                == "external replacement"
+        )
+        #expect(project.hasUnsavedChanges)
+        let recoveryArtifacts = try FileManager.default
+            .contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasPrefix(".pine-save-recovery-") }
+        #expect(recoveryArtifacts.isEmpty)
         await project.workspace.waitForLoadingComplete()
     }
 
@@ -1763,11 +2037,92 @@ nonisolated private final class DelayedTerminationInstallerProbe:
     var installCount: Int { lock.withLock { installs } }
 
     func install(
-        _ staged: TerminationStagedSave
+        _: TerminationStagedSave,
+        until _: DispatchTime,
+        lateCompletion _: @escaping @Sendable (
+            TerminationSaveInstallResult
+        ) -> Void
     ) async -> TerminationSaveInstallResult {
         lock.withLock { installs += 1 }
         try? await Task.sleep(for: .milliseconds(100))
-        return await TerminationSaveCoordinator.install(staged)
+        return .failed(message: "The outer deadline did not win")
+    }
+}
+
+nonisolated private final class PausedInstalledTerminationInstallerProbe:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var released = false
+    private var installed = false
+    private var returned = false
+
+    var didInstall: Bool { lock.withLock { installed } }
+    var didReturn: Bool { lock.withLock { returned } }
+
+    func install(
+        _ staged: TerminationStagedSave,
+        until deadline: DispatchTime,
+        lateCompletion: @escaping @Sendable (
+            TerminationSaveInstallResult
+        ) -> Void
+    ) async -> TerminationSaveInstallResult {
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: deadline,
+            lateCompletion: lateCompletion
+        )
+        guard case .installed = result else { return result }
+        lock.withLock { installed = true }
+        await withCheckedContinuation { continuation in
+            let resumeImmediately = lock.withLock {
+                if released { return true }
+                releaseContinuation = continuation
+                return false
+            }
+            if resumeImmediately {
+                continuation.resume()
+            }
+        }
+        lock.withLock { returned = true }
+        return result
+    }
+
+    func release() {
+        let continuation = lock.withLock {
+            released = true
+            defer { releaseContinuation = nil }
+            return releaseContinuation
+        }
+        continuation?.resume()
+    }
+
+    func waitUntilInstalled(
+        maximumDuration: Duration = .seconds(5)
+    ) async -> Bool {
+        await wait(until: { self.didInstall }, maximumDuration: maximumDuration)
+    }
+
+    func waitUntilReturned(
+        maximumDuration: Duration = .seconds(5)
+    ) async -> Bool {
+        await wait(until: { self.didReturn }, maximumDuration: maximumDuration)
+    }
+
+    private func wait(
+        until condition: () -> Bool,
+        maximumDuration: Duration
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: maximumDuration)
+        while !condition(), clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
+        }
+        return condition()
     }
 }
 

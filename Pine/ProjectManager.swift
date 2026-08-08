@@ -23,11 +23,45 @@ nonisolated enum TerminationPaneSaveStageResult: Sendable {
     case timedOut
 }
 
+nonisolated private final class TerminationInstallAwaitResolver:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<
+        TerminationSaveInstallResult,
+        Never
+    >?
+
+    init(
+        _ continuation: CheckedContinuation<
+            TerminationSaveInstallResult,
+            Never
+        >
+    ) {
+        self.continuation = continuation
+    }
+
+    @discardableResult
+    func resolve(_ result: TerminationSaveInstallResult) -> Bool {
+        let continuation = lock.withLock {
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        guard let continuation else { return false }
+        continuation.resume(returning: result)
+        return true
+    }
+}
+
 /// Thin coordinator that owns the workspace, terminal, and tab managers.
 /// Passed via environment so views can access all sub-managers.
 @MainActor
 @Observable
 final class ProjectManager {
+    private static let terminationInstallDeadlineQueue = DispatchQueue(
+        label: "com.pine.project.termination-install-deadline",
+        qos: .userInteractive
+    )
     typealias SaveDestinationChooser = @MainActor (
         _ tab: EditorTab,
         _ projectRoot: URL?,
@@ -42,7 +76,6 @@ final class ProjectManager {
         let tabManager: TabManager
         let tab: EditorTab
         var destination: URL?
-        var expectedDestinationState: TerminationDestinationState?
     }
 
     struct PreparedPaneSavePlan {
@@ -118,6 +151,8 @@ final class ProjectManager {
     @ObservationIgnored
     private var dialogOperationGeneration = 0
     @ObservationIgnored
+    private var isAutoSaveFrozenForTermination = false
+    @ObservationIgnored
     private(set) lazy var paneManager = PaneManager(existingTabManager: primaryTabManager)
     /// Test seam and single native Save-panel implementation for Save,
     /// Save As, Save All, close-window, and Quit paths.
@@ -149,9 +184,15 @@ final class ProjectManager {
     }
     @ObservationIgnored
     var terminationSaveInstaller: @Sendable (
-        TerminationStagedSave
-    ) async -> TerminationSaveInstallResult = { staged in
-        await TerminationSaveCoordinator.install(staged)
+        TerminationStagedSave,
+        DispatchTime,
+        @escaping @Sendable (TerminationSaveInstallResult) -> Void
+    ) async -> TerminationSaveInstallResult = { staged, deadline, lateCompletion in
+        await TerminationSaveCoordinator.install(
+            staged,
+            until: deadline,
+            lateCompletion: lateCompletion
+        )
     }
 
     /// Returns the TabManager for the currently focused pane.
@@ -176,18 +217,24 @@ final class ProjectManager {
     }
 
     func freezeAutoSaveForTermination() {
+        guard !isAutoSaveFrozenForTermination else { return }
+        isAutoSaveFrozenForTermination = true
         paneManager.allTabManagers.forEach {
             $0.freezeAutoSaveForTermination()
         }
     }
 
     func cancelAutoSaveTerminationFreeze() {
+        guard isAutoSaveFrozenForTermination else { return }
+        isAutoSaveFrozenForTermination = false
         paneManager.allTabManagers.forEach {
             $0.cancelAutoSaveTerminationFreeze()
         }
     }
 
     func finishAutoSaveTerminationFreeze() {
+        guard isAutoSaveFrozenForTermination else { return }
+        isAutoSaveFrozenForTermination = false
         paneManager.allTabManagers.forEach {
             $0.finishAutoSaveTerminationFreeze()
         }
@@ -266,8 +313,7 @@ final class ProjectManager {
                 return PlannedTabSave(
                     tabManager: tabManager,
                     tab: tab,
-                    destination: nil,
-                    expectedDestinationState: nil
+                    destination: nil
                 )
             }
         }
@@ -278,23 +324,6 @@ final class ProjectManager {
             $0.tab.kind == .text && !$0.tab.isTruncated
         }) else {
             return .invalidated
-        }
-
-        // Capture already-backed destinations before any Save As panel can
-        // suspend. Staging and install later reject an external write or
-        // pathname replacement instead of overwriting it silently.
-        for index in savePlan.indices {
-            guard let destination = savePlan[index].tab.fileURL else {
-                continue
-            }
-            do {
-                savePlan[index].expectedDestinationState = try await
-                    TerminationSaveCoordinator.captureDestinationState(
-                        at: destination
-                    )
-            } catch {
-                return .invalidated
-            }
         }
 
         // Collect every untitled destination before the first disk write.
@@ -310,14 +339,6 @@ final class ProjectManager {
                 return .cancelledByUser
             }
             savePlan[index].destination = destination
-            do {
-                savePlan[index].expectedDestinationState = try await
-                    TerminationSaveCoordinator.captureDestinationState(
-                        at: destination
-                    )
-            } catch {
-                return .invalidated
-            }
         }
 
         // A panel may suspend long enough for a tab to close, become saved,
@@ -427,18 +448,40 @@ final class ProjectManager {
         guard preparedSavePlanStillValid(plan) else {
             return (.invalidated, nil)
         }
-        let requests = plan.entries.compactMap { planned
+        let destinations = plan.entries.compactMap { planned in
+            planned.destination ?? planned.tab.fileURL
+        }
+        guard destinations.count == plan.entries.count else {
+            return (.invalidated, nil)
+        }
+        let destinationStates: [TerminationDestinationState]
+        switch await TerminationSaveCoordinator.captureDestinationStates(
+            at: destinations,
+            until: deadline
+        ) {
+        case .captured(let captured):
+            destinationStates = captured
+        case .failed(let message):
+            return (.failed(message: message), nil)
+        case .timedOut:
+            return (.timedOut, nil)
+        }
+        guard destinationStates.count == plan.entries.count,
+              preparedSavePlanStillValid(plan) else {
+            return (.invalidated, nil)
+        }
+        let requests = zip(plan.entries, destinationStates).compactMap { pair
             -> TerminationSaveRequest? in
+            let (planned, expectedDestinationState) = pair
             guard let destination = planned.destination
-                    ?? planned.tab.fileURL,
-                  let expectedDestinationState =
-                    planned.expectedDestinationState else {
+                    ?? planned.tab.fileURL else {
                 return nil
             }
             let settings = planned.tabManager.editorSettings
             return TerminationSaveRequest(
                 tabID: planned.tab.id,
                 contentVersion: planned.tab.contentVersion,
+                persistenceGeneration: planned.tab.persistenceGeneration,
                 content: planned.tab.content,
                 originalURL: planned.tab.fileURL,
                 destination: destination,
@@ -476,10 +519,12 @@ final class ProjectManager {
     }
 
     func terminationSaveDestinationsStillMatch(
-        _ plan: PreparedTerminationPaneSavePlan
+        _ plan: PreparedTerminationPaneSavePlan,
+        until deadline: DispatchTime
     ) async -> Bool {
         await TerminationSaveCoordinator.destinationStatesAreCurrent(
-            plan.staged
+            plan.staged,
+            until: deadline
         )
     }
 
@@ -501,6 +546,8 @@ final class ProjectManager {
                   return staged.request.tabID == entry.tab.id
                       && staged.request.contentVersion
                           == entry.tab.contentVersion
+                      && staged.request.persistenceGeneration
+                          == entry.tab.persistenceGeneration
                       && staged.request.content == entry.tab.content
                       && staged.request.originalURL == entry.tab.fileURL
                       && staged.request.destination == destination
@@ -524,29 +571,58 @@ final class ProjectManager {
                 )
                 return .invalidated
             }
-            switch await terminationSaveInstaller(staged) {
+            let lateCompletion: @Sendable (
+                TerminationSaveInstallResult
+            ) -> Void = { [tabManager = entry.tabManager] result in
+                guard case .installed(let metadata) = result else { return }
+                Task { @MainActor in
+                    guard tabManager.tabs.first(where: {
+                        $0.id == staged.request.tabID
+                    })?.persistenceGeneration
+                        == staged.request.persistenceGeneration else {
+                        return
+                    }
+                    guard tabManager.reconcileTerminationStagedSave(
+                        request: staged.request,
+                        savedContent: staged.preparedContent,
+                        metadata: metadata
+                    ) else {
+                        Logger.app.critical(
+                            "Late termination save model reconciliation failed"
+                        )
+                        return
+                    }
+                }
+            }
+            switch await awaitTerminationSaveInstall(
+                staged,
+                until: deadline,
+                lateCompletion: lateCompletion
+            ) {
             case .failed(let message):
                 cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index))
                 )
                 return .failed(message: message)
-            case .installed:
-                break
-            }
-            // The install allowed MainActor reentrancy. Preserve any edit
-            // made while the syscall was in flight as dirty against the exact
-            // content that is now durable on disk.
-            guard entry.tabManager.reconcileTerminationStagedSave(
-                request: staged.request,
-                savedContent: staged.preparedContent
-            ) else {
-                Logger.app.critical(
-                    "Termination save model changed during atomic commit"
-                )
+            case .installed(let metadata):
+                guard entry.tabManager.reconcileTerminationStagedSave(
+                    request: staged.request,
+                    savedContent: staged.preparedContent,
+                    metadata: metadata
+                ) else {
+                    Logger.app.critical(
+                        "Termination save model changed during atomic commit"
+                    )
+                    cleanupTerminationStagedSaves(
+                        Array(plan.staged.dropFirst(index + 1))
+                    )
+                    return .invalidated
+                }
+            case .timedOut:
                 cleanupTerminationStagedSaves(
-                    Array(plan.staged.dropFirst(index + 1))
+                    Array(plan.staged.dropFirst(index))
                 )
-                return .invalidated
+                return .timedOut
             }
             if DispatchTime.now().uptimeNanoseconds
                     >= deadline.uptimeNanoseconds {
@@ -557,6 +633,40 @@ final class ProjectManager {
             }
         }
         return .saved
+    }
+
+    private func awaitTerminationSaveInstall(
+        _ staged: TerminationStagedSave,
+        until deadline: DispatchTime,
+        lateCompletion: @escaping @Sendable (
+            TerminationSaveInstallResult
+        ) -> Void
+    ) async -> TerminationSaveInstallResult {
+        guard DispatchTime.now().uptimeNanoseconds
+                < deadline.uptimeNanoseconds else {
+            return .timedOut
+        }
+        let installer = terminationSaveInstaller
+        return await withCheckedContinuation { continuation in
+            let resolver = TerminationInstallAwaitResolver(continuation)
+            let operationTask = Task {
+                let result = await installer(
+                    staged,
+                    deadline,
+                    lateCompletion
+                )
+                if !resolver.resolve(result) {
+                    lateCompletion(result)
+                }
+            }
+            Self.terminationInstallDeadlineQueue.asyncAfter(
+                deadline: deadline
+            ) {
+                if resolver.resolve(.timedOut) {
+                    operationTask.cancel()
+                }
+            }
+        }
     }
 
     func cleanupTerminationSavePlan(
@@ -586,6 +696,8 @@ final class ProjectManager {
             && current.kind == .text
             && !current.isTruncated
             && current.contentVersion == planned.tab.contentVersion
+            && current.persistenceGeneration
+                == planned.tab.persistenceGeneration
             && current.content == planned.tab.content
             && current.fileURL == planned.tab.fileURL
     }
@@ -611,6 +723,8 @@ final class ProjectManager {
                       && !current.isTruncated
                       && current.fileURL == planned.tab.fileURL
                       && current.contentVersion == planned.tab.contentVersion
+                      && current.persistenceGeneration
+                          == planned.tab.persistenceGeneration
                       && current.content == planned.tab.content
               }) else {
             return false
@@ -1083,6 +1197,9 @@ final class ProjectManager {
     /// created later by pane splits or session restoration.
     private func configureEditorTabManager(_ tabManager: TabManager) {
         tabManager.recoveryManager = recoveryManager
+        if isAutoSaveFrozenForTermination {
+            tabManager.freezeAutoSaveForTermination()
+        }
         tabManager.dialogContextProvider = { [weak self] in
             guard let self else { return .unscoped }
             return DialogPresenter.forProject(self)
