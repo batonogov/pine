@@ -57,9 +57,31 @@ struct AlertTemplateTests {
         #expect(buttons[1].title == Strings.dialogCancel)
     }
 
-    @Test("activeUserTasksPreventQuit has one safe OK button")
+    @Test("applicationQuitSummary has Review / Quit Anyway / Cancel")
+    func applicationQuitSummaryButtons() {
+        let template = AlertTemplate.applicationQuitSummary
+        let alert = template.makeAlert(messageText: "Test")
+        let buttons = alert.buttons
+        #expect(buttons.count == 3)
+        #expect(buttons[0].title == Strings.applicationQuitReview)
+        #expect(buttons[1].title == Strings.applicationQuitAnyway)
+        #expect(buttons[2].title == Strings.dialogCancel)
+    }
+
+    @Test("activeUserTasksPreventQuit has Quit Anyway / Cancel")
     func activeUserTasksPreventQuitButtons() {
         let template = AlertTemplate.activeUserTasksPreventQuit
+        let alert = template.makeAlert(messageText: "Test")
+        let buttons = alert.buttons
+        #expect(buttons.count == 2)
+        #expect(buttons[0].title == Strings.applicationQuitAnyway)
+        #expect(buttons[1].title == Strings.dialogCancel)
+        #expect(alert.alertStyle == .warning)
+    }
+
+    @Test("applicationQuitFailure has one safe OK button")
+    func applicationQuitFailureButtons() {
+        let template = AlertTemplate.applicationQuitFailure
         let alert = template.makeAlert(messageText: "Test")
         let buttons = alert.buttons
         #expect(buttons.count == 1)
@@ -148,6 +170,9 @@ struct AlertTemplateTests {
             .unsavedChangesBulk,
             .terminalTabCloseWarning,
             .terminalActiveProcessWarning,
+            .applicationQuitSummary,
+            .activeUserTasksPreventQuit,
+            .applicationQuitFailure,
             .externalModifyConflict,
             .fileDeletedSaveAs,
             .largeFileWarning,
@@ -211,6 +236,24 @@ struct AlertTemplateTests {
                 defaultIndex: 1,
                 cancelIndex: 1,
                 destructiveIndices: [0]
+            ),
+            .init(
+                template: .applicationQuitSummary,
+                defaultIndex: 0,
+                cancelIndex: 2,
+                destructiveIndices: [1]
+            ),
+            .init(
+                template: .activeUserTasksPreventQuit,
+                defaultIndex: 1,
+                cancelIndex: 1,
+                destructiveIndices: [0]
+            ),
+            .init(
+                template: .applicationQuitFailure,
+                defaultIndex: 0,
+                cancelIndex: nil,
+                destructiveIndices: []
             ),
             .init(
                 template: .externalModifyConflict,

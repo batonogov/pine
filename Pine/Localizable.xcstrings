@@ -11249,6 +11249,366 @@
         }
       }
     },
+    "quit.failure.message": {
+      "comment": "Alert message when Pine cannot safely finish bounded machine work during Quit.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine konnte den Zustand nicht sicher speichern oder laufende Arbeiten beenden. Prüfen Sie die betroffenen Projekte und versuchen Sie es erneut."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine couldn’t safely finish saving state or stopping running work. Review the affected projects and try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine no pudo terminar de guardar el estado o detener el trabajo en curso de forma segura. Revisa los proyectos afectados e inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine n’a pas pu terminer en toute sécurité l’enregistrement de l’état ou l’arrêt du travail en cours. Vérifiez les projets concernés et réessayez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine は状態の保存または実行中の作業の停止を安全に完了できませんでした。対象のプロジェクトを確認して、もう一度お試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine이 상태 저장 또는 실행 중인 작업 중지를 안전하게 완료하지 못했습니다. 영향을 받는 프로젝트를 검토한 후 다시 시도하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Pine não conseguiu concluir com segurança o salvamento do estado ou a interrupção do trabalho em execução. Revise os projetos afetados e tente novamente."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine не удалось безопасно завершить сохранение состояния или остановку выполняющейся работы. Проверьте затронутые проекты и повторите попытку."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine 无法安全地完成状态保存或停止正在运行的工作。请检查受影响的项目后重试。"
+          }
+        }
+      }
+    },
+    "quit.failure.title": {
+      "comment": "Alert title when bounded machine work prevents Quit from completing safely.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine konnte nicht beendet werden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine Couldn’t Quit"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine no pudo salir"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine n’a pas pu quitter"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine を終了できませんでした"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine을 종료할 수 없음"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Pine não pôde sair"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось завершить Pine"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine 无法退出"
+          }
+        }
+      }
+    },
+    "quit.summary.message %lld": {
+      "comment": "App-wide Quit summary. The value is the number of projects requiring review.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu prüfende Projekte: %lld.\n\nPrüfen Sie jedes Projekt vor dem Beenden, oder beenden Sie trotzdem, um ungesicherte Änderungen zu verwerfen und laufende Arbeiten zu stoppen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projects requiring attention: %lld.\n\nReview each project before quitting, or quit anyway to discard unsaved changes and stop running work."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proyectos que requieren atención: %lld.\n\nRevisa cada proyecto antes de salir o sal de todas formas para descartar los cambios sin guardar y detener el trabajo en curso."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projets nécessitant votre attention : %lld.\n\nVérifiez chaque projet avant de quitter, ou quittez quand même pour ignorer les modifications non enregistrées et arrêter le travail en cours."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認が必要なプロジェクト：%lld。\n\n終了前に各プロジェクトを確認するか、保存されていない変更を破棄して実行中の作業を停止し、そのまま終了してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검토가 필요한 프로젝트: %lld.\n\n종료하기 전에 각 프로젝트를 검토하거나, 저장되지 않은 변경 사항을 버리고 실행 중인 작업을 중지한 후 종료하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projetos que precisam de atenção: %lld.\n\nRevise cada projeto antes de sair ou saia mesmo assim para descartar alterações não salvas e interromper o trabalho em execução."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проектов, требующих внимания: %lld.\n\nПроверьте каждый проект перед выходом или выйдите всё равно, чтобы отбросить несохранённые изменения и остановить выполняющуюся работу."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要检查的项目：%lld。\n\n退出前请检查每个项目，或仍然退出以丢弃未保存的更改并停止正在运行的工作。"
+          }
+        }
+      }
+    },
+    "quit.summary.quitAnyway": {
+      "comment": "Destructive button that quits while discarding changes and stopping running work.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trotzdem beenden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit Anyway"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salir de todas formas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter quand même"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのまま終了"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그래도 종료"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sair mesmo assim"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Всё равно выйти"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍然退出"
+          }
+        }
+      }
+    },
+    "quit.summary.review": {
+      "comment": "Safe default button that reviews affected projects before Quit.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prüfen …"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisar…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifier…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검토…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisar…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверить…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查…"
+          }
+        }
+      }
+    },
+    "quit.summary.title": {
+      "comment": "Title of the single app-wide Quit summary.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vor dem Beenden prüfen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review Before Quitting"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisar antes de salir"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifier avant de quitter"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了前に確認"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료 전 검토"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisar antes de sair"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверка перед выходом"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出前检查"
+          }
+        }
+      }
+    },
     "recovery.discard": {
       "comment": "Button to discard recovered files after a crash.",
       "extractionState": "manual",
@@ -15414,61 +15774,61 @@
       }
     },
     "task.activePreventQuit.message": {
-      "comment": "Alert message explaining why Quit is refused while a user task owns an execution.",
+      "comment": "Alert message explaining that Quit Anyway stops active user tasks and waits for cleanup.",
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine kann nicht beendet werden, solange eine Benutzeraufgabe noch einen laufenden Prozess besitzt. Brechen Sie die Aufgabe ab und warten Sie, bis die Bereinigung abgeschlossen ist. Beenden Sie Pine anschließend erneut."
+            "value": "Beim Beenden werden aktive Benutzeraufgaben gestoppt und Pine wartet auf die Bereinigung ihrer Prozesse."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine cannot quit while a user task still owns a running process. Cancel the task and wait for cleanup to finish, then quit again."
+            "value": "Quitting will stop active user tasks and wait for their processes to finish cleanup."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine no puede salir mientras una tarea de usuario siga controlando un proceso en ejecución. Cancela la tarea y espera a que termine la limpieza; después, vuelve a salir."
+            "value": "Al salir se detendrán las tareas de usuario activas y Pine esperará a que sus procesos terminen la limpieza."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine ne peut pas quitter tant qu’une tâche utilisateur contrôle encore un processus en cours. Annulez la tâche et attendez la fin du nettoyage, puis quittez à nouveau."
+            "value": "Quitter arrêtera les tâches utilisateur actives et Pine attendra la fin du nettoyage de leurs processus."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ユーザータスクが実行中のプロセスを保持している間は Pine を終了できません。タスクをキャンセルし、クリーンアップの完了を待ってから、もう一度終了してください。"
+            "value": "終了するとアクティブなユーザータスクが停止され、Pine はそのプロセスのクリーンアップ完了を待ちます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사용자 작업이 실행 중인 프로세스를 소유하고 있는 동안에는 Pine을 종료할 수 없습니다. 작업을 취소하고 정리가 끝날 때까지 기다린 후 다시 종료하세요."
+            "value": "종료하면 활성 사용자 작업이 중지되고 Pine은 해당 프로세스의 정리가 완료될 때까지 기다립니다."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O Pine não pode sair enquanto uma tarefa do usuário ainda controlar um processo em execução. Cancele a tarefa, aguarde a conclusão da limpeza e tente sair novamente."
+            "value": "Sair interromperá as tarefas de usuário ativas, e o Pine aguardará a conclusão da limpeza de seus processos."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine не может завершить работу, пока пользовательская задача управляет запущенным процессом. Отмените задачу, дождитесь завершения очистки и повторите выход."
+            "value": "При выходе активные пользовательские задачи будут остановлены, а Pine дождётся завершения очистки их процессов."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当用户任务仍拥有正在运行的进程时，Pine 无法退出。请取消该任务并等待清理完成，然后再次退出。"
+            "value": "退出将停止活跃的用户任务，Pine 会等待其进程完成清理。"
           }
         }
       }

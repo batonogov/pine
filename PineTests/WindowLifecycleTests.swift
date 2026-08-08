@@ -172,13 +172,18 @@ struct WindowLifecycleTests {
         )
 
         #expect(!result)
-        #expect(presentedTemplates == [.unsavedChangesBulk])
+        #expect(
+            presentedTemplates == [
+                .applicationQuitSummary,
+                .unsavedChangesBulk,
+            ]
+        )
         #expect(saveAttempts == 1)
         #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
     }
 
-    @Test func terminationDeadlineBoundsHungAlertPresenter() async throws {
+    @Test func terminationDeadlineDoesNotBoundHumanDeliberation() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
@@ -189,17 +194,60 @@ struct WindowLifecycleTests {
         let delegate = AppDelegate()
         delegate.registry = registry
         let deadlineProbe = TerminationDeadlineProbe()
+        let started = DispatchTime.now().uptimeNanoseconds
 
         let result = await delegate.confirmApplicationTermination(
-            presentAlert: { _, _, _, _ in
-                try? await Task.sleep(for: .seconds(10))
+            presentAlert: { template, _, _, _ in
+                #expect(template == .applicationQuitSummary)
+                try? await Task.sleep(for: .milliseconds(150))
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + .milliseconds(100),
+            terminationDeadlineObserver: deadlineProbe.record
+        )
+
+        let elapsed = DispatchTime.now().uptimeNanoseconds - started
+        #expect(result)
+        #expect(elapsed >= 150_000_000)
+        #expect(deadlineProbe.elapsedNanoseconds == nil)
+        #expect(!project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func terminationDeadlineStillBoundsHungMachineWork() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// dirty", in: project)
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let deadlineProbe = TerminationDeadlineProbe()
+        var presentedTemplates: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
                 return .alertFirstButtonReturn
+            },
+            saveAll: { _, _ in
+                try? await Task.sleep(for: .seconds(10))
+                return true
             },
             terminationDeadlineOverride: .now() + .milliseconds(25),
             terminationDeadlineObserver: deadlineProbe.record
         )
 
         #expect(!result)
+        #expect(
+            presentedTemplates == [
+                .applicationQuitSummary,
+                .unsavedChangesBulk,
+                .applicationQuitFailure,
+            ]
+        )
         #expect(
             deadlineProbe.elapsedNanoseconds.map { $0 < 1_000_000_000 } == true
         )
@@ -226,7 +274,8 @@ struct WindowLifecycleTests {
         var presentedOwner: NSWindow?
 
         let result = await delegate.confirmApplicationTermination(
-            presentAlert: { _, context, _, _ in
+            presentAlert: { template, context, _, _ in
+                #expect(template == .applicationQuitSummary)
                 presentedOwner = context.nsWindow
                 return .alertThirdButtonReturn
             },
@@ -259,12 +308,21 @@ struct WindowLifecycleTests {
         delegate.registry = registry
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
-                #expect(template == .unsavedChangesBulk)
-                updateContent(
-                    "// changed while quit sheet was visible",
-                    in: project
-                )
-                return .alertSecondButtonReturn
+                switch template {
+                case .applicationQuitSummary:
+                    return .alertFirstButtonReturn
+                case .unsavedChangesBulk:
+                    updateContent(
+                        "// changed while quit sheet was visible",
+                        in: project
+                    )
+                    return .alertSecondButtonReturn
+                case .applicationQuitFailure:
+                    return .alertFirstButtonReturn
+                default:
+                    Issue.record("Unexpected Quit alert: \(template)")
+                    return .abort
+                }
             },
             terminationDeadlineOverride: .now() + 120
         )
@@ -291,7 +349,7 @@ struct WindowLifecycleTests {
 
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
-                #expect(template == .unsavedChangesBulk)
+                #expect(template == .applicationQuitSummary)
                 return .alertSecondButtonReturn
             },
             terminationDeadlineOverride: .now() + 120
@@ -330,6 +388,9 @@ struct WindowLifecycleTests {
 
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
+                if template == .applicationQuitSummary {
+                    return .alertFirstButtonReturn
+                }
                 #expect(template == .unsavedChangesBulk)
                 promptCount += 1
                 return promptCount == 1
@@ -349,7 +410,7 @@ struct WindowLifecycleTests {
         await secondProject.workspace.waitForLoadingComplete()
     }
 
-    @Test func quitRefusesWhileUserTaskOwnsExecution() async throws {
+    @Test func quitFailureIsVisibleWhenUserTaskCleanupDoesNotFinish() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let registry = ProjectRegistry()
@@ -367,15 +428,22 @@ struct WindowLifecycleTests {
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
                 presentedTemplates.append(template)
-                return .alertFirstButtonReturn
+                return template == .applicationQuitSummary
+                    ? .alertSecondButtonReturn
+                    : .alertFirstButtonReturn
             },
-            terminationDeadlineOverride: .now() + 1
+            terminationDeadlineOverride: .now() + 5
         )
 
         #expect(!result)
-        #expect(presentedTemplates == [.activeUserTasksPreventQuit])
-        #expect(probe.cancellationCount == 0)
-        #expect(probe.waitCount == 0)
+        #expect(
+            presentedTemplates == [
+                .applicationQuitSummary,
+                .applicationQuitFailure,
+            ]
+        )
+        #expect(probe.cancellationCount == 1)
+        #expect(probe.waitCount == 1)
         #expect(project.hasOutstandingUserTaskExecution)
         #expect(registry.isProjectOpen(dir))
         #expect(!registry.destroyAllProjects())
@@ -389,7 +457,7 @@ struct WindowLifecycleTests {
         #expect(registry.destroyAllProjects())
     }
 
-    @Test func quitNeverKillsTaskWhoseCleanupWouldFitDeadline() async throws {
+    @Test func quitAnywayStopsUserTaskAndQuits() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let registry = ProjectRegistry()
@@ -405,24 +473,17 @@ struct WindowLifecycleTests {
 
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
-                #expect(template == .activeUserTasksPreventQuit)
-                return .alertFirstButtonReturn
+                #expect(template == .applicationQuitSummary)
+                return .alertSecondButtonReturn
             },
-            terminationDeadlineOverride: .now() + 1
+            terminationDeadlineOverride: .now() + 5
         )
 
-        #expect(!result)
-        #expect(probe.cancellationCount == 0)
-        #expect(probe.waitCount == 0)
-        #expect(project.hasOutstandingUserTaskExecution)
-        #expect(project.taskRunStore.runs.count == 1)
-        #expect(!registry.destroyAllProjects())
-
-        project.taskRunStore.finishRun(
-            id: run.id,
-            outcome: makeTaskOutcome(id: "active"),
-            cancelled: false
-        )
+        #expect(result)
+        #expect(probe.cancellationCount == 1)
+        #expect(probe.waitCount == 1)
+        #expect(!project.hasOutstandingUserTaskExecution)
+        #expect(project.taskRunStore.runs.isEmpty)
         #expect(registry.destroyAllProjects())
     }
 
@@ -441,16 +502,25 @@ struct WindowLifecycleTests {
 
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
-                #expect(template == .unsavedChangesBulk)
-                let started = project.taskRunStore.start(
-                    makeTaskRun(id: "late-active")
-                )
-                project.taskRunStore.registerCancellation(
-                    probe.makeCancellation(),
-                    forRunID: started.id
-                )
-                run = started
-                return .alertSecondButtonReturn
+                switch template {
+                case .applicationQuitSummary:
+                    return .alertFirstButtonReturn
+                case .unsavedChangesBulk:
+                    let started = project.taskRunStore.start(
+                        makeTaskRun(id: "late-active")
+                    )
+                    project.taskRunStore.registerCancellation(
+                        probe.makeCancellation(),
+                        forRunID: started.id
+                    )
+                    run = started
+                    return .alertSecondButtonReturn
+                case .activeUserTasksPreventQuit:
+                    return .alertSecondButtonReturn
+                default:
+                    Issue.record("Unexpected Quit alert: \(template)")
+                    return .abort
+                }
             },
             terminationDeadlineOverride: .now() + 2
         )

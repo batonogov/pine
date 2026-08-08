@@ -1882,6 +1882,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         )
     }
 
+    /// Captures the test override as a duration, then rebases it after the
+    /// final user decision. Human deliberation must never consume Quit's
+    /// bounded machine-work budget (#1354).
+    private func terminationWorkBudgetNanoseconds(
+        overriding deadline: DispatchTime?
+    ) -> UInt64 {
+        guard let deadline else { return 30_000_000_000 }
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now < deadline.uptimeNanoseconds else { return 0 }
+        return deadline.uptimeNanoseconds - now
+    }
+
     private func valueBeforeTerminationDeadline<Value: Sendable>(
         _ deadline: DispatchTime,
         deadlineObserver: @escaping @Sendable () -> Void,
@@ -1914,11 +1926,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
     }
 
-    /// Runs all quit decisions asynchronously on their owning project
-    /// windows. Background projects fall back to one captured visible
-    /// application window (normally Welcome); with no live owner, native
-    /// presentation returns `.abort` and cancels Quit. Save failures also
-    /// cancel Quit.
+    /// Presents one application-wide Quit summary. The safe Review path walks
+    /// project-owned sheets only after the user opts in; Quit Anyway captures
+    /// stable discard/process authorizations in one step. The 30-second clock
+    /// starts after all human decisions and bounds only machine work.
     func confirmApplicationTermination(
         presentAlert: TerminationAlertPresenter? = nil,
         saveAll: TerminationSaveAll? = nil,
@@ -1926,16 +1937,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         terminationDeadlineOverride: DispatchTime? = nil,
         terminationDeadlineObserver: @escaping @Sendable () -> Void = {}
     ) async -> Bool {
-        let terminationDeadline = terminationDeadlineOverride
-            ?? DispatchTime.now() + .seconds(30)
+        let workBudgetNanoseconds = terminationWorkBudgetNanoseconds(
+            overriding: terminationDeadlineOverride
+        )
         let projects = registry.openProjects
             .sorted { $0.key.path.localizedStandardCompare($1.key.path) == .orderedAscending }
             .map(\.value)
+        let preflightTerminalAuthorizations = Dictionary(
+            uniqueKeysWithValues: projects.map {
+                (
+                    ObjectIdentifier($0),
+                    TerminalTabCloseAuthorization.authorizing(
+                        tabs: $0.terminal.allTerminalTabs
+                    )
+                )
+            }
+        )
+        let preflightDiscardAuthorizations: [
+            ObjectIdentifier: DirtyEditorContentAuthorization
+        ] = Dictionary(
+            uniqueKeysWithValues: projects.compactMap { projectManager in
+                let dirty = projectManager.allDirtyTabs
+                guard !dirty.isEmpty else { return nil }
+                return (
+                    ObjectIdentifier(projectManager),
+                    DirtyEditorContentAuthorization(tabs: dirty)
+                )
+            }
+        )
+        let attentionProjectCount = projects.filter {
+            !$0.allDirtyTabs.isEmpty
+                || preflightTerminalAuthorizations[
+                    ObjectIdentifier($0)
+                ]?.requiresConfirmation == true
+                || $0.hasOutstandingUserTaskExecution
+        }.count
+        let requiresAttention = attentionProjectCount > 0
+            || registry.hasOutstandingUserTaskExecution
         let needsNativeDecision = presentAlert == nil
-            && (registry.hasOutstandingUserTaskExecution
-                || projects.contains {
-                    !$0.allDirtyTabs.isEmpty || $0.terminal.hasActiveProcesses
-                })
+            && requiresAttention
         if applicationContext == nil, needsNativeDecision {
             // Quit can arrive from the Dock while Pine is hidden or every
             // project is miniaturized. Restore/create a discoverable owner
@@ -1945,36 +1985,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         let fallbackContext = applicationContext
             ?? DialogPresenter.forApplicationWindow()
 
-        // A cancellable Quit cannot safely start TERM/KILL: a later save,
-        // metadata barrier, or authorization check may still fail, but a
-        // destroyed process cannot be rolled back. Keep execution ownership
-        // intact and require the user to cancel the task explicitly first.
-        if registry.hasOutstandingUserTaskExecution {
-            _ = await valueBeforeTerminationDeadline(
-                terminationDeadline,
-                deadlineObserver: terminationDeadlineObserver,
-                onTimeout: {
-                    guard let window = fallbackContext.nsWindow,
-                          let sheet = window.attachedSheet else { return }
-                    window.endSheet(sheet, returnCode: .abort)
-                },
-                operation: {
-                    if let presentAlert {
-                        return await presentAlert(
-                            .activeUserTasksPreventQuit,
-                            fallbackContext,
-                            Strings.activeUserTasksPreventQuitTitle,
-                            Strings.activeUserTasksPreventQuitMessage
-                        )
-                    }
-                    return await AlertTemplate.activeUserTasksPreventQuit.runSheet(
-                        on: fallbackContext,
-                        messageText: Strings.activeUserTasksPreventQuitTitle,
-                        informativeText: Strings.activeUserTasksPreventQuitMessage
-                    )
-                }
+        func presentTerminationAlert(
+            _ template: AlertTemplate,
+            context: DialogPresentationContext,
+            title: String,
+            message: String
+        ) async -> NSApplication.ModalResponse {
+            if let presentAlert {
+                return await presentAlert(template, context, title, message)
+            }
+            return await template.runSheet(
+                on: context,
+                messageText: title,
+                informativeText: message
             )
-            return false
+        }
+
+        func presentTerminationFailure() async {
+            _ = await presentTerminationAlert(
+                .applicationQuitFailure,
+                context: fallbackContext,
+                title: Strings.applicationQuitFailureTitle,
+                message: Strings.applicationQuitFailureMessage
+            )
         }
 
         var discardAuthorizations: [
@@ -1987,130 +2020,147 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         var terminalAuthorizations: [
             ObjectIdentifier: TerminalTabCloseAuthorization
         ] = [:]
+        var saveRequests: [(ProjectManager, DialogPresentationContext)] = []
+        var quitAnyway = false
+        var reviewIndividually = false
+        var mayShutdownUserTasks = false
 
-        for projectManager in projects {
-            guard registry.openProjects.values.contains(where: {
-                $0 === projectManager
-            }) else {
-                continue
-            }
-            let projectContext = DialogPresenter.forProject(projectManager)
-            let hasEligibleProjectOwner = projectContext.nsWindow.map {
-                DialogPresenter.isEligibleApplicationOwner($0)
-            } ?? false
-            let context = hasEligibleProjectOwner
-                ? projectContext
-                : fallbackContext
-            let dirty = projectManager.allDirtyTabs
-            guard !dirty.isEmpty else { continue }
-
-            let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
-            let message = Strings.unsavedChangesListMessage(fileList)
-            let response = await valueBeforeTerminationDeadline(
-                terminationDeadline,
-                deadlineObserver: terminationDeadlineObserver,
-                onTimeout: {
-                    guard let window = context.nsWindow,
-                          let sheet = window.attachedSheet else { return }
-                    window.endSheet(sheet, returnCode: .abort)
-                },
-                operation: {
-                    if let presentAlert {
-                        return await presentAlert(
-                            .unsavedChangesBulk,
-                            context,
-                            Strings.unsavedChangesTitle,
-                            message
-                        )
-                    }
-                    return await AlertTemplate.unsavedChangesBulk.runSheet(
-                        on: context,
-                        messageText: Strings.unsavedChangesTitle,
-                        informativeText: message
-                    )
-                }
+        if requiresAttention {
+            let response = await presentTerminationAlert(
+                .applicationQuitSummary,
+                context: fallbackContext,
+                title: Strings.applicationQuitSummaryTitle,
+                message: Strings.applicationQuitSummaryMessage(
+                    max(attentionProjectCount, 1)
+                )
             )
-            guard let response else { return false }
             switch response {
             case .alertFirstButtonReturn:
-                let didSave = await valueBeforeTerminationDeadline(
-                    terminationDeadline,
-                    deadlineObserver: terminationDeadlineObserver,
-                    onTimeout: {
-                        guard let window = context.nsWindow,
-                              let sheet = window.attachedSheet else { return }
-                        window.endSheet(sheet, returnCode: .abort)
-                    },
-                    operation: {
-                        if let saveAll {
-                            return await saveAll(projectManager, context)
-                        }
-                        return await projectManager.saveAllPaneTabs(
-                            context: context
-                        )
-                    }
-                )
-                guard didSave == true else {
-                    return false
-                }
+                reviewIndividually = true
             case .alertSecondButtonReturn:
-                discardAuthorizations[ObjectIdentifier(projectManager)] =
-                    DirtyEditorContentAuthorization(tabs: dirty)
-                continue
+                quitAnyway = true
+                mayShutdownUserTasks = true
             default:
                 return false
             }
         }
 
-        for projectManager in projects {
-            guard registry.openProjects.values.contains(where: {
-                $0 === projectManager
-            }) else {
-                continue
+        if quitAnyway {
+            // The summary authorizes exactly the state that caused it to be
+            // presented. New dirty content or process generations that appear
+            // while the sheet is open still fail closed during revalidation.
+            discardAuthorizations = preflightDiscardAuthorizations
+            terminalAuthorizations = preflightTerminalAuthorizations
+        } else if reviewIndividually {
+            for projectManager in projects {
+                guard registry.openProjects.values.contains(where: {
+                    $0 === projectManager
+                }) else {
+                    continue
+                }
+                let projectContext = DialogPresenter.forProject(projectManager)
+                let hasEligibleProjectOwner = projectContext.nsWindow.map {
+                    DialogPresenter.isEligibleApplicationOwner($0)
+                } ?? false
+                let context = hasEligibleProjectOwner
+                    ? projectContext
+                    : fallbackContext
+                let dirty = projectManager.allDirtyTabs
+                guard !dirty.isEmpty else { continue }
+
+                let fileList = dirty.map { "  • \($0.fileName)" }
+                    .joined(separator: "\n")
+                let response = await presentTerminationAlert(
+                    .unsavedChangesBulk,
+                    context: context,
+                    title: Strings.unsavedChangesTitle,
+                    message: Strings.unsavedChangesListMessage(fileList)
+                )
+                switch response {
+                case .alertFirstButtonReturn:
+                    saveRequests.append((projectManager, context))
+                case .alertSecondButtonReturn:
+                    discardAuthorizations[ObjectIdentifier(projectManager)] =
+                        DirtyEditorContentAuthorization(tabs: dirty)
+                default:
+                    return false
+                }
             }
-            // Record an authorization for every surviving project, including
-            // those with nothing running: the final revalidation needs a
-            // captured baseline per project to distinguish "was idle, still
-            // idle" from "appeared after the snapshot".
-            let authorization = TerminalTabCloseAuthorization.authorizing(
-                tabs: projectManager.terminal.allTerminalTabs
-            )
-            terminalAuthorizations[ObjectIdentifier(projectManager)] =
-                authorization
-            guard authorization.requiresConfirmation else { continue }
-            let projectContext = DialogPresenter.forProject(projectManager)
-            let hasEligibleProjectOwner = projectContext.nsWindow.map {
-                DialogPresenter.isEligibleApplicationOwner($0)
-            } ?? false
-            let context = hasEligibleProjectOwner
-                ? projectContext
-                : fallbackContext
-            let response = await valueBeforeTerminationDeadline(
+
+            for projectManager in projects {
+                guard registry.openProjects.values.contains(where: {
+                    $0 === projectManager
+                }) else {
+                    continue
+                }
+                let identifier = ObjectIdentifier(projectManager)
+                let authorization = TerminalTabCloseAuthorization.authorizing(
+                    tabs: projectManager.terminal.allTerminalTabs
+                )
+                terminalAuthorizations[identifier] = authorization
+                guard authorization.requiresConfirmation else { continue }
+                let projectContext = DialogPresenter.forProject(projectManager)
+                let hasEligibleProjectOwner = projectContext.nsWindow.map {
+                    DialogPresenter.isEligibleApplicationOwner($0)
+                } ?? false
+                let context = hasEligibleProjectOwner
+                    ? projectContext
+                    : fallbackContext
+                let response = await presentTerminationAlert(
+                    .terminalActiveProcessWarning,
+                    context: context,
+                    title: Strings.terminalActiveProcessWarningTitle,
+                    message: Strings.terminalActiveProcessWarningMessage
+                )
+                guard response == .alertFirstButtonReturn else {
+                    return false
+                }
+            }
+
+            if registry.hasOutstandingUserTaskExecution {
+                let response = await presentTerminationAlert(
+                    .activeUserTasksPreventQuit,
+                    context: fallbackContext,
+                    title: Strings.activeUserTasksPreventQuitTitle,
+                    message: Strings.activeUserTasksPreventQuitMessage
+                )
+                guard response == .alertFirstButtonReturn else {
+                    return false
+                }
+                mayShutdownUserTasks = true
+            }
+        } else {
+            // No suspension point occurred after the empty preflight, so this
+            // captures the same idle baseline for final revalidation.
+            for projectManager in projects {
+                terminalAuthorizations[ObjectIdentifier(projectManager)] =
+                    TerminalTabCloseAuthorization.authorizing(
+                        tabs: projectManager.terminal.allTerminalTabs
+                    )
+            }
+        }
+
+        // Rebase the captured duration only after the final human response.
+        let terminationDeadline = DispatchTime.now() + .nanoseconds(
+            Int(clamping: workBudgetNanoseconds)
+        )
+
+        for (projectManager, context) in saveRequests {
+            let didSave = await valueBeforeTerminationDeadline(
                 terminationDeadline,
                 deadlineObserver: terminationDeadlineObserver,
-                onTimeout: {
-                    guard let window = context.nsWindow,
-                          let sheet = window.attachedSheet else { return }
-                    window.endSheet(sheet, returnCode: .abort)
-                },
+                onTimeout: {},
                 operation: {
-                    if let presentAlert {
-                        return await presentAlert(
-                            .terminalActiveProcessWarning,
-                            context,
-                            Strings.terminalActiveProcessWarningTitle,
-                            Strings.terminalActiveProcessWarningMessage
-                        )
+                    if let saveAll {
+                        return await saveAll(projectManager, context)
                     }
-                    return await AlertTemplate.terminalActiveProcessWarning.runSheet(
-                        on: context,
-                        messageText: Strings.terminalActiveProcessWarningTitle,
-                        informativeText: Strings.terminalActiveProcessWarningMessage
-                    )
+                    return await projectManager.saveAllPaneTabs(context: context)
                 }
             )
-            guard let response else { return false }
-            guard response == .alertFirstButtonReturn else {
+            guard didSave == true else {
+                if didSave == nil {
+                    await presentTerminationFailure()
+                }
                 return false
             }
         }
@@ -2121,9 +2171,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         let rollbackReserve: Duration = .seconds(2)
         guard let availablePersistenceTime = remainingTerminationDuration(
             until: terminationDeadline
-        ), availablePersistenceTime > rollbackReserve else {
+        ), availablePersistenceTime > .zero else {
+            terminationDeadlineObserver()
+            await presentTerminationFailure()
             return false
         }
+        let effectiveRollbackReserve = availablePersistenceTime > rollbackReserve
+            ? rollbackReserve
+            : .zero
         registry.freezeAgentTasksForTermination()
         registry.agentTasks.prepareForApplicationTermination()
         func rollbackAgentTasks() async {
@@ -2139,7 +2194,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 return
             }
         }
-        let persistenceBudget = availablePersistenceTime - rollbackReserve
+        let persistenceBudget = availablePersistenceTime
+            - effectiveRollbackReserve
         guard await registry.agentTasks.flushPersistence(
             maximumDuration: persistenceBudget
         ) == .saved else {
@@ -2147,58 +2203,83 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 "Agent task metadata did not reach a clean persistence barrier"
             )
             await rollbackAgentTasks()
+            await presentTerminationFailure()
             return false
         }
 
-        // Other project windows remain interactive while sheets and metadata
-        // waits are in flight. A task can therefore start after the initial
-        // refusal check; revalidate execution ownership after the final
-        // suspension point, before any editor discard is committed.
-        guard !registry.hasOutstandingUserTaskExecution else {
-            await rollbackAgentTasks()
-            return false
-        }
-
-        // Revalidate every destructive authorization after the final
-        // suspension point, immediately before committing Quit, so later
-        // edits/processes are never covered by an earlier answer.
-        for projectManager in registry.openProjects.values {
-            let identifier = ObjectIdentifier(projectManager)
-            let currentDirtyTabs = projectManager.allDirtyTabs
-            if let authorization = discardAuthorizations[identifier] {
-                guard authorization.covers(currentDirtyTabs) else {
-                    await rollbackAgentTasks()
+        func destructiveAuthorizationsStillCoverCurrentState() -> Bool {
+            for projectManager in registry.openProjects.values {
+                let identifier = ObjectIdentifier(projectManager)
+                let currentDirtyTabs = projectManager.allDirtyTabs
+                if let authorization = discardAuthorizations[identifier] {
+                    guard authorization.covers(currentDirtyTabs) else {
+                        return false
+                    }
+                } else if !currentDirtyTabs.isEmpty {
                     return false
                 }
-            } else if !currentDirtyTabs.isEmpty {
-                await rollbackAgentTasks()
-                return false
-            }
 
-            // A project that appeared after the snapshot was never presented
-            // to the user. An idle one is still safe to tear down; anything
-            // running in it is unauthorized and must cancel Quit.
-            guard let authorization = terminalAuthorizations[identifier] else {
-                guard !TerminalTabCloseAuthorization.authorizing(
-                    tabs: projectManager.terminal.allTerminalTabs
-                ).requiresConfirmation else {
+                // A project that appeared after the snapshot was never
+                // presented. An idle one is safe; running work is not.
+                guard let authorization = terminalAuthorizations[identifier]
+                else {
+                    guard !TerminalTabCloseAuthorization.authorizing(
+                        tabs: projectManager.terminal.allTerminalTabs
+                    ).requiresConfirmation else {
+                        Logger.app.error(
+                            "Quit aborted: project with running processes opened during the termination handshake"
+                        )
+                        return false
+                    }
+                    continue
+                }
+                guard authorization.stillCovers(
+                    projectManager.terminal.allTerminalTabs
+                ) else {
                     Logger.app.error(
-                        "Quit aborted: project with running processes opened during the termination handshake"
+                        "Quit aborted: terminal authorization no longer covers the project"
                     )
-                    await rollbackAgentTasks()
                     return false
                 }
-                continue
             }
-            guard authorization.stillCovers(
-                projectManager.terminal.allTerminalTabs
-            ) else {
-                Logger.app.error(
-                    "Quit aborted: terminal authorization no longer covers the project"
-                )
+            return true
+        }
+
+        guard destructiveAuthorizationsStillCoverCurrentState() else {
+            await rollbackAgentTasks()
+            await presentTerminationFailure()
+            return false
+        }
+
+        if registry.hasOutstandingUserTaskExecution {
+            guard mayShutdownUserTasks else {
                 await rollbackAgentTasks()
+                await presentTerminationFailure()
                 return false
             }
+            let reserveNanoseconds: UInt64 =
+                effectiveRollbackReserve == rollbackReserve
+                ? 2_000_000_000
+                : 0
+            let taskShutdownDeadline = DispatchTime(
+                uptimeNanoseconds:
+                    terminationDeadline.uptimeNanoseconds - reserveNanoseconds
+            )
+            guard await registry.shutdownUserTasks(
+                until: taskShutdownDeadline
+            ) else {
+                await rollbackAgentTasks()
+                await presentTerminationFailure()
+                return false
+            }
+        }
+
+        // Task cleanup suspends off-main. Revalidate destructive state once
+        // more before committing any editor discard.
+        guard destructiveAuthorizationsStillCoverCurrentState() else {
+            await rollbackAgentTasks()
+            await presentTerminationFailure()
+            return false
         }
 
         // Two-phase destructive commit: no project is mutated until every
@@ -2209,8 +2290,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                !projectManager.commitDiscard(
                    authorization,
                    postReloadNotifications: false
-               ) {
+                ) {
                 await rollbackAgentTasks()
+                await presentTerminationFailure()
                 return false
             }
         }

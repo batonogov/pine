@@ -790,8 +790,9 @@ final class ProjectRegistry: LSPSettingsObserver {
     }
 
     /// Whether any open or detached project still owns a user-task execution.
-    /// Application termination uses this as a fail-closed preflight and final
-    /// revalidation; it never sends TERM/KILL as part of a cancellable Quit.
+    /// Application termination uses this for its aggregated preflight and
+    /// final revalidation. Only an explicit Quit Anyway decision authorizes
+    /// bounded TERM/KILL cleanup before project ownership is destroyed.
     var hasOutstandingUserTaskExecution: Bool {
         userTaskOwners.contains { $0.hasOutstandingUserTaskExecution }
     }

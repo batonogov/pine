@@ -41,8 +41,14 @@ enum AlertTemplate: Sendable, Equatable {
     /// Quit / Cancel  — quitting the app with active terminal processes.
     case terminalActiveProcessWarning
 
-    /// OK — Quit is refused while a user task still owns an execution.
+    /// Review / Quit Anyway / Cancel — one app-wide summary for Quit.
+    case applicationQuitSummary
+
+    /// Quit Anyway / Cancel — stopping user tasks after opt-in review.
     case activeUserTasksPreventQuit
+
+    /// OK — machine work could not complete within the Quit budget.
+    case applicationQuitFailure
 
     // MARK: - External changes
 
@@ -231,7 +237,8 @@ extension AlertTemplate {
             return .critical
         case .unsavedChangesSingle, .unsavedChangesBulk,
              .terminalTabCloseWarning, .terminalActiveProcessWarning,
-             .activeUserTasksPreventQuit,
+             .applicationQuitSummary, .activeUserTasksPreventQuit,
+             .applicationQuitFailure,
              .externalModifyConflict, .fileDeletedSaveAs,
              .fileOperationErrorWarning, .largeFileWarning,
              .branchUncommittedChanges, .revertAllConfirmation:
@@ -250,7 +257,15 @@ extension AlertTemplate {
             return [Strings.terminalTabCloseWarningClose, Strings.dialogCancel]
         case .terminalActiveProcessWarning:
             return [Strings.terminalActiveProcessWarningQuit, Strings.dialogCancel]
+        case .applicationQuitSummary:
+            return [
+                Strings.applicationQuitReview,
+                Strings.applicationQuitAnyway,
+                Strings.dialogCancel,
+            ]
         case .activeUserTasksPreventQuit:
+            return [Strings.applicationQuitAnyway, Strings.dialogCancel]
+        case .applicationQuitFailure:
             return [Strings.dialogOK]
         case .externalModifyConflict:
             return [Strings.externalModifyReload, Strings.externalModifyKeep]
@@ -285,7 +300,11 @@ extension AlertTemplate {
             return [.destructive, [.default, .cancel]]
         case .terminalActiveProcessWarning:
             return [.destructive, [.default, .cancel]]
+        case .applicationQuitSummary:
+            return [.default, .destructive, .cancel]
         case .activeUserTasksPreventQuit:
+            return [.destructive, [.default, .cancel]]
+        case .applicationQuitFailure:
             return [.default]
         case .externalModifyConflict:
             // Reload discards local edits (destructive); Keep is the safe default.
