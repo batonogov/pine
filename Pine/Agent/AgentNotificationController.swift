@@ -47,6 +47,20 @@ final class SystemAgentNotificationCenter: NSObject,
     static let openActionIdentifier = "pine.agent.open"
     static let muteActionIdentifier = "pine.agent.mute"
 
+    /// Presentation options requested while Pine is frontmost. The system
+    /// default suppresses banners for the active app, so without
+    /// ``userNotificationCenter(_:willPresent:withCompletionHandler:)`` the
+    /// notifications a backgrounded project produced accumulate unseen in
+    /// Notification Center and surface as a burst once Pine stops being
+    /// frontmost (#1355).
+    ///
+    /// Suppression of an already-visible route stays with
+    /// `AgentNotificationController.process`, which skips delivery entirely
+    /// when `isPresented(taskID)` is true; that path never reaches
+    /// `willPresent`. The options here therefore always request the full set.
+    nonisolated static let foregroundPresentationOptions:
+        UNNotificationPresentationOptions = [.banner, .list, .sound]
+
     var responseHandler: ((AgentNotificationResponseAction) -> Void)?
     private let center: UNUserNotificationCenter
 
@@ -102,6 +116,15 @@ final class SystemAgentNotificationCenter: NSObject,
             content: content,
             trigger: nil
         ))
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler:
+            @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler(Self.foregroundPresentationOptions)
     }
 
     nonisolated func userNotificationCenter(

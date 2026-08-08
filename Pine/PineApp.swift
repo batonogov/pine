@@ -874,6 +874,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
     )
 
+    /// Application-wide visibility for background agent work: the Dock badge
+    /// and a balanced sudden-termination guard (#1355). Driven from the same
+    /// `AgentTaskRegistry` stream as the per-window Inbox badge (#1337), so
+    /// the count includes backgrounded projects whose windows have closed.
+    lazy var agentPresence = AgentPresenceController(
+        registry: registry.agentTasks
+    )
+
     // MARK: - Quick terminal (#1113)
 
     /// Owner of the global drop-down terminal session + its system-wide hotkey.
@@ -1222,6 +1230,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
         agentNotifications.start()
+        agentPresence.start()
 
         // The key-down half is routed through the single precedence monitor
         // below; this installs Control-release and owner-window cancellation.
@@ -1747,8 +1756,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
+
+        // Live agent runs are reachable with no window open (#1355). Each
+        // entry opens the Agent Inbox, the single surface that resumes,
+        // navigates, and dismisses a backgrounded task. Per-task terminal
+        // focus from the Dock is a follow-up.
+        let liveTasks = AgentPresenceController.liveTasks(for: registry.agentTasks.tasks)
+        for task in liveTasks {
+            let item = NSMenuItem(
+                title: AgentPresenceController.dockMenuAgentTitle(for: task),
+                action: #selector(dockMenuOpenAgentTask(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = task.id
+            menu.addItem(item)
+        }
+        if !liveTasks.isEmpty {
+            menu.addItem(.separator())
+        }
+
         let projects = Array(registry.recentProjects.prefix(10))
-        guard !projects.isEmpty else { return nil }
         for url in projects {
             let title = ProjectRegistry.recentProjectDisplayTitle(for: url)
             let item = NSMenuItem(title: title, action: #selector(dockMenuOpenProject(_:)), keyEquivalent: "")
@@ -1756,7 +1784,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             item.representedObject = url
             menu.addItem(item)
         }
-        return menu
+        return menu.items.isEmpty ? nil : menu
     }
 
     @objc func dockMenuOpenProject(_ sender: NSMenuItem) {
@@ -1764,8 +1792,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         requestOpenRecentProject(url)
     }
 
+    @objc func dockMenuOpenAgentTask(_ sender: NSMenuItem) {
+        // The represented taskID is captured for a future per-task focus
+        // path; today every entry routes to the Inbox so a background agent
+        // is reachable the instant Pine has no open window.
+        showAgentInbox()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         agentNotifications.stop()
+        agentPresence.stop()
         // Save sessions before terminating processes.
         for (_, pm) in registry.openProjects {
             pm.finalizeAgentSessionsForHistory()
@@ -1824,7 +1860,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             let shouldTerminate = await confirmApplicationTermination()
             terminationDecisionTask = nil
             isTerminating = shouldTerminate
-            if shouldTerminate { agentNotifications.stop() }
+            if shouldTerminate {
+                agentNotifications.stop()
+                agentPresence.stop()
+            }
             reply(shouldTerminate)
         }
         return .terminateLater
