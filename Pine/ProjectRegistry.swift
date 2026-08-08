@@ -24,6 +24,19 @@ nonisolated enum AgentInboxRecoveryResult: Equatable, Sendable {
     case launchRejected
 }
 
+/// App-wide snapshot of the exact user-task executions covered by one Quit
+/// decision, keyed by their owning ProjectManager identity.
+@MainActor
+struct UserTaskShutdownAuthorization {
+    fileprivate let byOwner: [
+        ObjectIdentifier: UserTaskExecutionAuthorization
+    ]
+
+    var requiresConfirmation: Bool {
+        byOwner.values.contains { $0.requiresConfirmation }
+    }
+}
+
 /// Manages open projects and recent project history.
 /// Each project directory maps to a single ProjectManager instance.
 @MainActor
@@ -81,6 +94,10 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// cannot race each other across projects.
     @ObservationIgnored
     private var lspSettingsChangeTask: Task<Void, Never>?
+    /// Prevents a ProjectManager from being created without a matching agent
+    /// metadata registration while that registry has frozen admission.
+    @ObservationIgnored
+    private(set) var isProjectAdmissionFrozenForTermination = false
 
     init(
         lspSettings: LSPSettings = .shared,
@@ -237,6 +254,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             atPath: identity.canonicalProjectPath,
             isDirectory: &isProjectDir
         ), isProjectDir.boolValue else { return nil }
+        guard !isProjectAdmissionFrozenForTermination else { return nil }
         agentTasks.registerProject(identity)
         let pm = ProjectManager(
             lspSettings: lspSettings,
@@ -765,6 +783,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     }
 
     func freezeAgentTasksForTermination() {
+        isProjectAdmissionFrozenForTermination = true
         for manager in openProjects.values {
             manager.terminal.freezeAgentTasksForTermination()
         }
@@ -780,12 +799,21 @@ final class ProjectRegistry: LSPSettingsObserver {
         let rollbackWasSaved = await agentTasks.cancelApplicationTerminationAndFlush(
             maximumDuration: maximumDuration
         )
-        for manager in openProjects.values {
+        for (url, manager) in openProjects {
+            let isWindowOpen = !backgroundProjects.contains(url)
+            if let identity = agentTaskProjectsByRoot[url] {
+                agentTasks.setWindowOpen(
+                    isWindowOpen,
+                    project: identity
+                )
+            }
+            manager.terminal.setAgentTaskWindowOpen(isWindowOpen)
             manager.terminal.cancelAgentTaskTermination()
         }
         for manager in detachedTaskCleanupProjects.values {
             manager.terminal.cancelAgentTaskTermination()
         }
+        isProjectAdmissionFrozenForTermination = false
         return rollbackWasSaved
     }
 
@@ -797,21 +825,72 @@ final class ProjectRegistry: LSPSettingsObserver {
         userTaskOwners.contains { $0.hasOutstandingUserTaskExecution }
     }
 
+    func captureUserTaskShutdownAuthorization()
+        -> UserTaskShutdownAuthorization {
+        UserTaskShutdownAuthorization(byOwner: Dictionary(
+            uniqueKeysWithValues: userTaskOwners.map { projectManager in
+                (
+                    ObjectIdentifier(projectManager),
+                    projectManager.captureUserTaskShutdownAuthorization()
+                )
+            }
+        ))
+    }
+
+    func userTaskShutdownAuthorizationStillCovers(
+        _ authorization: UserTaskShutdownAuthorization
+    ) -> Bool {
+        userTaskOwners.allSatisfy { projectManager in
+            let captured = authorization.byOwner[
+                ObjectIdentifier(projectManager)
+            ] ?? UserTaskExecutionAuthorization()
+            return projectManager.userTaskShutdownAuthorizationStillCovers(
+                captured
+            )
+        }
+    }
+
     /// Cancels and waits for all project-owned user tasks against one shared
     /// absolute deadline. Blocking process waits happen off the main actor.
     @discardableResult
-    func shutdownUserTasks(until deadline: DispatchTime) async -> Bool {
+    func shutdownUserTasks(
+        authorizedBy authorization: UserTaskShutdownAuthorization,
+        until deadline: DispatchTime
+    ) async -> Bool {
         // Snapshot before the first suspension point. Main-actor reentrancy may
         // otherwise mutate the registry while an iterator is held across an
         // `await`.
         let projectManagers = userTaskOwners
-        for projectManager in projectManagers {
-            projectManager.requestUserTaskShutdown()
+        guard projectManagers.allSatisfy({ projectManager in
+            let captured = authorization.byOwner[
+                ObjectIdentifier(projectManager)
+            ] ?? UserTaskExecutionAuthorization()
+            return projectManager.userTaskShutdownAuthorizationStillCovers(
+                captured
+            )
+        }) else {
+            return false
         }
         for projectManager in projectManagers {
-            _ = await projectManager.shutdownUserTasks(
+            let captured = authorization.byOwner[
+                ObjectIdentifier(projectManager)
+            ] ?? UserTaskExecutionAuthorization()
+            guard projectManager.requestUserTaskShutdown(
+                authorizedBy: captured
+            ) else {
+                return false
+            }
+        }
+        var allCompleted = true
+        for projectManager in projectManagers {
+            let captured = authorization.byOwner[
+                ObjectIdentifier(projectManager)
+            ] ?? UserTaskExecutionAuthorization()
+            let didComplete = await projectManager.waitForUserTaskShutdown(
+                authorizedBy: captured,
                 until: deadline
             )
+            allCompleted = allCompleted && didComplete
         }
 
         detachedTaskCleanupProjects = detachedTaskCleanupProjects.filter {
@@ -821,9 +900,19 @@ final class ProjectRegistry: LSPSettingsObserver {
         // A project or task may have appeared while process waits ran off the
         // main actor. Treat that as an incomplete shutdown so Quit fails
         // closed instead of dropping its execution ownership.
-        return !userTaskOwners.contains(where: {
+        return allCompleted && !userTaskOwners.contains(where: {
             $0.hasOutstandingUserTaskExecution
         })
+    }
+
+    /// Legacy project-teardown entry point. Its snapshot is captured at the
+    /// call boundary, so it cannot cancel executions created after an await.
+    @discardableResult
+    func shutdownUserTasks(until deadline: DispatchTime) async -> Bool {
+        await shutdownUserTasks(
+            authorizedBy: captureUserTaskShutdownAuthorization(),
+            until: deadline
+        )
     }
 
     /// Fully destroys all project managers after task cleanup has completed.

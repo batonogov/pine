@@ -522,7 +522,11 @@ struct UserTaskRunStoreTests {
             try? await Task.sleep(for: .milliseconds(5))
         }
         let lateRun = store.start(makeRun(taskID: "late"))
-        store.registerCancellation(.noop, forRunID: lateRun.id)
+        let lateCancellation = CancellationCounter()
+        store.registerCancellation(
+            makeCancellation(counter: lateCancellation),
+            forRunID: lateRun.id
+        )
         gate.release()
 
         let didShutdown = await shutdown.value
@@ -530,7 +534,30 @@ struct UserTaskRunStoreTests {
         #expect(store.run(forID: first.id) != nil)
         #expect(store.run(forID: lateRun.id) === lateRun)
         #expect(lateRun.state == .pending)
+        #expect(lateCancellation.value == 0)
         #expect(store.hasOutstandingExecutionOwnership)
+    }
+
+    @Test("A replacement run does not inherit an older shutdown decision")
+    func replacementRunDoesNotInheritShutdownAuthorization() {
+        let store = UserTaskRunStore()
+        let first = store.start(makeRun(taskID: "same-task"))
+        let authorization = store.captureShutdownAuthorization()
+        #expect(store.finishRun(
+            id: first.id,
+            outcome: outcome(exitCode: 0),
+            cancelled: false
+        ))
+        let replacement = store.start(makeRun(taskID: "same-task"))
+        let replacementCancellation = CancellationCounter()
+        store.registerCancellation(
+            makeCancellation(counter: replacementCancellation),
+            forRunID: replacement.id
+        )
+
+        #expect(!store.requestShutdown(authorizedBy: authorization))
+        #expect(replacementCancellation.value == 0)
+        #expect(replacement.state == .pending)
     }
 
     @Test("Elapsed time advances while active and freezes at completion")

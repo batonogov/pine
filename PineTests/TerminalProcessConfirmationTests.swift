@@ -243,4 +243,26 @@ struct TerminalProcessConfirmationTests {
         // Tab order in the re-check must not matter.
         #expect(authorization.stillCovers([agentTab, idleTab]))
     }
+
+    @Test func idleTabBecomingAgentInvalidatesAuthorization() {
+        let tab = TerminalTab(name: "Shell")
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+
+        tab.agentSession = AgentSession(agentType: .claudeCode)
+
+        #expect(!authorization.stillCovers([tab]))
+    }
+
+    @Test func newlyAddedAgentTabInvalidatesAuthorization() {
+        let original = TerminalTab(name: "Shell")
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [original]
+        )
+        let added = TerminalTab(name: "Claude")
+        added.agentSession = AgentSession(agentType: .claudeCode)
+
+        #expect(!authorization.stillCovers([original, added]))
+    }
 }

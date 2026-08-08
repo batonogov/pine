@@ -1374,7 +1374,8 @@ struct AgentTaskRegistryTests {
             limits: limits
         )
         let registry = AgentTaskRegistry()
-        let identity = project(fixture.project.path)
+        let canonical = ProjectRegistry.canonicalProjectURL(fixture.project)
+        let identity = project(canonical.path)
         let sharedContext = context(
             project: identity,
             routeSeed: 110,
@@ -1900,6 +1901,7 @@ struct AgentTaskRegistryTests {
             context: context(project: identity, routeSeed: 155)
         )
         #expect(await agentTasks.flushPersistence() == .saved)
+        #expect(await agentTasks.flushPersistence() == .saved)
         projects.freezeAgentTasksForTermination()
         #expect(manager.terminal.agentCallbacksFrozenForTesting)
         agentTasks.prepareForApplicationTermination()
@@ -1912,6 +1914,78 @@ struct AgentTaskRegistryTests {
 
         #expect(!didPersistRollback)
         #expect(!manager.terminal.agentCallbacksFrozenForTesting)
+        #expect(!projects.isProjectAdmissionFrozenForTermination)
+    }
+
+    @Test("rollback reconciles a window closed during termination freeze")
+    func rollbackReconcilesCloseDuringFreeze() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let canonical = ProjectRegistry.canonicalProjectURL(fixture.project)
+        let identity = project(canonical.path)
+        let store = ScriptedAgentTaskStore()
+        let agentTasks = AgentTaskRegistry(
+            persistence: store,
+            flushTotal: .seconds(120),
+            flushTail: .seconds(120)
+        )
+        let projects = ProjectRegistry(agentTasks: agentTasks)
+        _ = try #require(projects.projectManager(for: fixture.project))
+        let session = makeSession(pid: 1_497, generation: 1)
+        agentTasks.bridge(
+            session,
+            replacing: nil,
+            context: context(project: identity, routeSeed: 156)
+        )
+        #expect(await agentTasks.flushPersistence() == .saved)
+        #expect(agentTasks.task(forSessionID: session.id)?.route.availability
+                == .available)
+
+        projects.freezeAgentTasksForTermination()
+        agentTasks.prepareForApplicationTermination()
+        #expect(await agentTasks.flushPersistence() == .saved)
+        projects.closeProjectWindow(fixture.project)
+
+        #expect(await projects.cancelAgentTaskTermination())
+        #expect(agentTasks.task(forSessionID: session.id)?.route.availability
+                == .background)
+    }
+
+    @Test("rollback reconciles a background window reopened during freeze")
+    func rollbackReconcilesReopenDuringFreeze() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let canonical = ProjectRegistry.canonicalProjectURL(fixture.project)
+        let identity = project(canonical.path)
+        let store = ScriptedAgentTaskStore()
+        let agentTasks = AgentTaskRegistry(
+            persistence: store,
+            flushTotal: .seconds(120),
+            flushTail: .seconds(120)
+        )
+        let projects = ProjectRegistry(agentTasks: agentTasks)
+        let manager = try #require(
+            projects.projectManager(for: fixture.project)
+        )
+        let session = makeSession(pid: 1_498, generation: 1)
+        agentTasks.bridge(
+            session,
+            replacing: nil,
+            context: context(project: identity, routeSeed: 157)
+        )
+        #expect(await agentTasks.flushPersistence() == .saved)
+        projects.closeProjectWindow(fixture.project)
+        #expect(agentTasks.task(forSessionID: session.id)?.route.availability
+                == .background)
+
+        projects.freezeAgentTasksForTermination()
+        agentTasks.prepareForApplicationTermination()
+        #expect(await agentTasks.flushPersistence() == .saved)
+        #expect(projects.projectManager(for: fixture.project) === manager)
+
+        #expect(await projects.cancelAgentTaskTermination())
+        #expect(agentTasks.task(forSessionID: session.id)?.route.availability
+                == .available)
     }
 
     @Test("one rejected project cannot starve another project save")

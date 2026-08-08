@@ -85,12 +85,17 @@ struct TerminalTabCloseAuthorization {
     /// was visible is always covered (nothing remains to protect).
     func stillCovers(_ tabs: [TerminalTab]) -> Bool {
         for tab in tabs {
-            // A tab with nothing to protect at authorization time (idle
-            // shell, no agent session, no foreground process) is absent from
-            // `coverage`. It has nothing to re-check, so skip it — otherwise a
-            // mixed idle+active bulk close set would be silently aborted
-            // right after the user confirmed (#1335 review finding).
-            guard let captured = coverage[tab.id] else { continue }
+            // Idle tabs are absent from `coverage`, but they remain safe only
+            // while they are still idle. A foreground process or agent that
+            // appears after the prompt is a new destructive generation and
+            // must not inherit the earlier authorization.
+            guard let captured = coverage[tab.id] else {
+                guard tab.agentSession == nil,
+                      tab.foregroundProcessID <= 0 else {
+                    return false
+                }
+                continue
+            }
             switch captured {
             case .agentSession(let sessionID):
                 // Same agent session: covered (pgid churn is normal agent

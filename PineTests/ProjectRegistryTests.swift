@@ -90,6 +90,22 @@ struct ProjectRegistryTests {
         #expect(pm2 == nil)
     }
 
+    @Test func terminationFreezeBlocksNewProjectAdmissionUntilRollback() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+        let registry = ProjectRegistry()
+
+        registry.freezeAgentTasksForTermination()
+
+        #expect(registry.isProjectAdmissionFrozenForTermination)
+        #expect(registry.projectManager(for: tempDir) == nil)
+        #expect(registry.openProjects.isEmpty)
+
+        #expect(await registry.cancelAgentTaskTermination())
+        #expect(!registry.isProjectAdmissionFrozenForTermination)
+        #expect(registry.projectManager(for: tempDir) != nil)
+    }
+
     // MARK: - Close
 
     @Test func closeProjectKeepsInOpenProjectsAsBackground() throws {

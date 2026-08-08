@@ -215,10 +215,14 @@ struct BulkCloseAgentAuthorizationTests {
         let delegate = AppDelegate()
         delegate.registry = registry
         var presentedTemplates: [AlertTemplate] = []
+        var summaryMessage: String?
 
         let result = await delegate.confirmApplicationTermination(
-            presentAlert: { template, _, _, _ in
+            presentAlert: { template, _, _, message in
                 presentedTemplates.append(template)
+                if template == .applicationQuitSummary {
+                    summaryMessage = message
+                }
                 return .alertSecondButtonReturn
             },
             terminationDeadlineOverride: .now() + 120
@@ -226,8 +230,60 @@ struct BulkCloseAgentAuthorizationTests {
 
         #expect(result)
         #expect(presentedTemplates == [.applicationQuitSummary])
+        #expect(summaryMessage == Strings.applicationQuitSummaryMessage(2))
         await firstProject.workspace.waitForLoadingComplete()
         await secondProject.workspace.waitForLoadingComplete()
+    }
+
+    @Test("Idle terminal becoming an agent during summary cancels quit")
+    func idleTerminalBecomingAgentDuringSummaryCancelsQuit() async throws {
+        let activeDirectory = try makeTempDirectory()
+        let idleDirectory = try makeTempDirectory()
+        defer {
+            cleanup(activeDirectory)
+            cleanup(idleDirectory)
+        }
+        let registry = ProjectRegistry()
+        let activeProject = try #require(
+            registry.projectManager(for: activeDirectory)
+        )
+        let idleProject = try #require(
+            registry.projectManager(for: idleDirectory)
+        )
+        try addAgentTerminalTab(to: activeProject)
+        idleProject.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let idleTab = try #require(
+            idleProject.terminal.allTerminalTabs.first
+        )
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presentedTemplates: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                if template == .applicationQuitSummary {
+                    idleTab.agentSession = AgentSession(
+                        agentType: .claudeCode
+                    )
+                    return .alertSecondButtonReturn
+                }
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 120
+        )
+
+        #expect(!result)
+        #expect(
+            presentedTemplates == [
+                .applicationQuitSummary,
+                .applicationQuitFailure,
+            ]
+        )
+        await activeProject.workspace.waitForLoadingComplete()
+        await idleProject.workspace.waitForLoadingComplete()
     }
 
     @Test("Confirmed quit survives agent child-process churn")

@@ -176,11 +176,170 @@ struct WindowLifecycleTests {
             presentedTemplates == [
                 .applicationQuitSummary,
                 .unsavedChangesBulk,
+                .applicationQuitFailure,
             ]
         )
         #expect(saveAttempts == 1)
         #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func saveAsDeliberationDoesNotConsumeMachineDeadline() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let destination = dir.appendingPathComponent("saved.swift")
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        _ = try #require(project.createUntitledFile())
+        updateContent("// saved after a slow panel", in: project)
+        project.saveDestinationChooser = { _, _, _ in
+            try? await Task.sleep(for: .milliseconds(600))
+            return destination
+        }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let deadlineProbe = TerminationDeadlineProbe()
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                switch template {
+                case .applicationQuitSummary, .unsavedChangesBulk:
+                    return .alertFirstButtonReturn
+                default:
+                    Issue.record("Unexpected Quit alert: \(template)")
+                    return .abort
+                }
+            },
+            terminationDeadlineOverride: .now() + .milliseconds(500),
+            terminationDeadlineObserver: deadlineProbe.record
+        )
+
+        #expect(result)
+        #expect(deadlineProbe.elapsedNanoseconds == nil)
+        #expect(try String(contentsOf: destination, encoding: .utf8) ==
+                "// saved after a slow panel\n")
+        #expect(!project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func cancellingQuitSavePanelDoesNotShowMachineFailure() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        _ = try #require(project.createUntitledFile())
+        updateContent("// keep", in: project)
+        project.saveDestinationChooser = { _, _, _ in nil }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presentedTemplates: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(
+            presentedTemplates == [
+                .applicationQuitSummary,
+                .unsavedChangesBulk,
+            ]
+        )
+        #expect(project.hasUnsavedChanges)
+        #expect(project.primaryTabManager.activeTab?.fileURL == nil)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func multipleSlowReviewPromptsDoNotConsumeMachineDeadline() async throws {
+        let firstDirectory = try makeTempDirectory()
+        let secondDirectory = try makeTempDirectory()
+        defer {
+            cleanup(firstDirectory)
+            cleanup(secondDirectory)
+        }
+        let firstFile = try makeTempFile(in: firstDirectory, name: "first.swift")
+        let secondFile = try makeTempFile(in: secondDirectory, name: "second.swift")
+        let registry = ProjectRegistry()
+        let first = try #require(registry.projectManager(for: firstDirectory))
+        let second = try #require(registry.projectManager(for: secondDirectory))
+        first.primaryTabManager.openTab(url: firstFile)
+        second.primaryTabManager.openTab(url: secondFile)
+        updateContent("// first dirty", in: first)
+        updateContent("// second dirty", in: second)
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let deadlineProbe = TerminationDeadlineProbe()
+        var projectPromptCount = 0
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                if template == .applicationQuitSummary {
+                    return .alertFirstButtonReturn
+                }
+                #expect(template == .unsavedChangesBulk)
+                projectPromptCount += 1
+                try? await Task.sleep(for: .milliseconds(300))
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + .milliseconds(500),
+            terminationDeadlineObserver: deadlineProbe.record
+        )
+
+        #expect(result)
+        #expect(projectPromptCount == 2)
+        #expect(deadlineProbe.elapsedNanoseconds == nil)
+        await first.workspace.waitForLoadingComplete()
+        await second.workspace.waitForLoadingComplete()
+    }
+
+    @Test func cleanPreflightFailureResolvesOwnerLazily() async {
+        let delegate = AppDelegate()
+        delegate.registry = ProjectRegistry()
+        let owner = NSWindow()
+        let expectedContext = DialogPresentationContext(window: owner)
+        defer { DialogPresenter.ownerDidClose(owner) }
+        var contextResolutionCount = 0
+        var presentedOwner: NSWindow?
+        var presentedTemplates: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, context, _, _ in
+                presentedTemplates.append(template)
+                presentedOwner = context.nsWindow
+                return .alertFirstButtonReturn
+            },
+            terminationFailureContext: {
+                contextResolutionCount += 1
+                return expectedContext
+            },
+            terminationDeadlineOverride: .now()
+        )
+
+        #expect(!result)
+        #expect(contextResolutionCount == 1)
+        #expect(presentedTemplates == [.applicationQuitFailure])
+        #expect(presentedOwner === owner)
+    }
+
+    @Test func terminationBudgetAlwaysReservesRollback() {
+        let long = AppDelegate.terminationBudgetSplit(
+            availableNanoseconds: 30_000_000_000
+        )
+        #expect(long?.forwardNanoseconds == 28_000_000_000)
+        #expect(long?.rollbackNanoseconds == 2_000_000_000)
+
+        let short = AppDelegate.terminationBudgetSplit(
+            availableNanoseconds: 100_000_000
+        )
+        #expect(short?.forwardNanoseconds == 50_000_000)
+        #expect(short?.rollbackNanoseconds == 50_000_000)
+        #expect(AppDelegate.terminationBudgetSplit(
+            availableNanoseconds: 1
+        ) == nil)
     }
 
     @Test func terminationDeadlineDoesNotBoundHumanDeliberation() async throws {
@@ -198,17 +357,20 @@ struct WindowLifecycleTests {
 
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
-                #expect(template == .applicationQuitSummary)
-                try? await Task.sleep(for: .milliseconds(150))
-                return .alertSecondButtonReturn
+                if template == .applicationQuitSummary {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    return .alertSecondButtonReturn
+                }
+                Issue.record("Unexpected Quit alert: \(template)")
+                return .abort
             },
-            terminationDeadlineOverride: .now() + .milliseconds(100),
+            terminationDeadlineOverride: .now() + .milliseconds(500),
             terminationDeadlineObserver: deadlineProbe.record
         )
 
         let elapsed = DispatchTime.now().uptimeNanoseconds - started
         #expect(result)
-        #expect(elapsed >= 150_000_000)
+        #expect(elapsed >= 600_000_000)
         #expect(deadlineProbe.elapsedNanoseconds == nil)
         #expect(!project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
@@ -432,7 +594,7 @@ struct WindowLifecycleTests {
                     ? .alertSecondButtonReturn
                     : .alertFirstButtonReturn
             },
-            terminationDeadlineOverride: .now() + 5
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
@@ -476,7 +638,7 @@ struct WindowLifecycleTests {
                 #expect(template == .applicationQuitSummary)
                 return .alertSecondButtonReturn
             },
-            terminationDeadlineOverride: .now() + 5
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(result)
@@ -535,6 +697,58 @@ struct WindowLifecycleTests {
         project.taskRunStore.finishRun(
             id: activeRun.id,
             outcome: makeTaskOutcome(id: "late-active"),
+            cancelled: false
+        )
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func taskStartedAfterQuitAnywayIsNotCancelled() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// keep late task", in: project)
+        let probe = TerminationTaskProbe(waitResult: true)
+        var lateRun: UserTaskRun?
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presentedTemplates: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                if template == .applicationQuitSummary {
+                    let run = project.taskRunStore.start(
+                        makeTaskRun(id: "late-after-summary")
+                    )
+                    project.taskRunStore.registerCancellation(
+                        probe.makeCancellation(),
+                        forRunID: run.id
+                    )
+                    lateRun = run
+                    return .alertSecondButtonReturn
+                }
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(
+            presentedTemplates == [
+                .applicationQuitSummary,
+                .applicationQuitFailure,
+            ]
+        )
+        #expect(probe.cancellationCount == 0)
+        #expect(probe.waitCount == 0)
+        #expect(project.hasUnsavedChanges)
+        let run = try #require(lateRun)
+        project.taskRunStore.finishRun(
+            id: run.id,
+            outcome: makeTaskOutcome(id: "late-after-summary"),
             cancelled: false
         )
         await project.workspace.waitForLoadingComplete()

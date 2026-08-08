@@ -8,6 +8,12 @@
 import AppKit
 import SwiftUI
 
+nonisolated enum PreparedPaneSaveCommitResult: Sendable, Equatable {
+    case saved
+    case invalidated
+    case failed(message: String)
+}
+
 /// Thin coordinator that owns the workspace, terminal, and tab managers.
 /// Passed via environment so views can access all sub-managers.
 @MainActor
@@ -23,10 +29,21 @@ final class ProjectManager {
         _ context: DialogPresentationContext
     ) async -> URL?
 
-    private struct PlannedTabSave {
+    fileprivate struct PlannedTabSave {
         let tabManager: TabManager
         let tab: EditorTab
         var destination: URL?
+    }
+
+    struct PreparedPaneSavePlan {
+        fileprivate let entries: [PlannedTabSave]
+        fileprivate let dirtyAuthorization: DirtyEditorContentAuthorization
+    }
+
+    enum PaneSavePreparationResult {
+        case ready(PreparedPaneSavePlan)
+        case cancelledByUser
+        case invalidated
     }
 
     let workspace = WorkspaceManager()
@@ -185,9 +202,11 @@ final class ProjectManager {
         return true
     }
 
-    /// Window-scoped save-all used by close and termination decisions.
-    @discardableResult
-    func saveAllPaneTabs(context: DialogPresentationContext) async -> Bool {
+    /// Collects all human Save-As decisions without writing any file. Quit
+    /// performs this phase before starting its bounded machine-work clock.
+    func prepareSaveAllPaneTabs(
+        context: DialogPresentationContext
+    ) async -> PaneSavePreparationResult {
         var savePlan = paneManager.allTabManagers.flatMap { tabManager in
             tabManager.tabs.compactMap { tab -> PlannedTabSave? in
                 guard tab.isDirty else { return nil }
@@ -204,7 +223,7 @@ final class ProjectManager {
         guard savePlan.allSatisfy({
             $0.tab.kind == .text && !$0.tab.isTruncated
         }) else {
-            return false
+            return .invalidated
         }
 
         // Collect every untitled destination before the first disk write.
@@ -217,7 +236,7 @@ final class ProjectManager {
                 workspace.rootURL,
                 context
             ) else {
-                return false
+                return .cancelledByUser
             }
             savePlan[index].destination = destination
         }
@@ -235,8 +254,9 @@ final class ProjectManager {
                 && current.kind == .text
                 && !current.isTruncated
                 && current.fileURL == planned.tab.fileURL
+                && current.content == planned.tab.content
         }) else {
-            return false
+            return .invalidated
         }
 
         let effectiveDestinations = savePlan.compactMap { planned in
@@ -246,7 +266,7 @@ final class ProjectManager {
         guard effectiveDestinations.count == savePlan.count,
               Set(effectiveDestinations).count
                 == effectiveDestinations.count else {
-            return false
+            return .invalidated
         }
 
         // An untitled Save-As target must not alias a file already open in
@@ -266,39 +286,108 @@ final class ProjectManager {
         guard newDestinations.allSatisfy({
             !unplannedOpenDestinations.contains($0)
         }) else {
-            return false
+            return .invalidated
         }
 
-        for planned in savePlan {
+        return .ready(PreparedPaneSavePlan(
+            entries: savePlan,
+            dirtyAuthorization: DirtyEditorContentAuthorization(
+                tabs: allDirtyTabs
+            )
+        ))
+    }
+
+    /// Commits an already prepared Save All plan without presenting UI or
+    /// suspending. The whole plan is revalidated before the first write.
+    func commitPreparedSaveAllPaneTabs(
+        _ plan: PreparedPaneSavePlan
+    ) -> PreparedPaneSaveCommitResult {
+        guard plan.dirtyAuthorization.covers(allDirtyTabs),
+              plan.entries.allSatisfy({ planned in
+                  guard let current = planned.tabManager.tabs.first(where: {
+                      $0.id == planned.tab.id
+                  }) else {
+                      return false
+                  }
+                  return current.isDirty
+                      && current.kind == .text
+                      && !current.isTruncated
+                      && current.fileURL == planned.tab.fileURL
+                      && current.content == planned.tab.content
+              }) else {
+            return .invalidated
+        }
+
+        let effectiveDestinations = plan.entries.compactMap { planned in
+            (planned.destination ?? planned.tab.fileURL)?
+                .standardizedFileURL
+        }
+        guard effectiveDestinations.count == plan.entries.count,
+              Set(effectiveDestinations).count
+                == effectiveDestinations.count else {
+            return .invalidated
+        }
+        let plannedTabIDs = Set(plan.entries.map(\.tab.id))
+        let unplannedOpenDestinations = Set(
+            allTabs.compactMap { tab -> URL? in
+                guard !plannedTabIDs.contains(tab.id) else { return nil }
+                return tab.fileURL?.standardizedFileURL
+            }
+        )
+        guard plan.entries.compactMap(\.destination).allSatisfy({
+            !unplannedOpenDestinations.contains($0.standardizedFileURL)
+        }) else {
+            return .invalidated
+        }
+
+        for planned in plan.entries {
             if let destination = planned.destination {
                 do {
                     guard try planned.tabManager.saveTabAs(
                         tabID: planned.tab.id,
                         to: destination
                     ) else {
-                        return false
+                        return .invalidated
                     }
                 } catch {
-                    _ = await AlertTemplate.fileOperationErrorCritical
-                        .runSheet(
-                            on: context,
-                            messageText: Strings.fileOperationErrorTitle,
-                            informativeText: error.localizedDescription
-                        )
-                    return false
+                    return .failed(message: error.localizedDescription)
                 }
             } else {
-                guard await saveTab(
-                    tabID: planned.tab.id,
-                    in: planned.tabManager,
-                    forceSaveAs: false,
-                    context: context
-                ) else {
-                    return false
+                guard let index = planned.tabManager.tabs.firstIndex(where: {
+                    $0.id == planned.tab.id
+                }) else {
+                    return .invalidated
+                }
+                do {
+                    guard try planned.tabManager.trySaveTab(at: index) else {
+                        return .invalidated
+                    }
+                } catch {
+                    return .failed(message: error.localizedDescription)
                 }
             }
         }
-        return true
+        return .saved
+    }
+
+    /// Window-scoped save-all used by close and menu decisions.
+    @discardableResult
+    func saveAllPaneTabs(context: DialogPresentationContext) async -> Bool {
+        let prepared = await prepareSaveAllPaneTabs(context: context)
+        guard case .ready(let plan) = prepared else { return false }
+        switch commitPreparedSaveAllPaneTabs(plan) {
+        case .saved:
+            return true
+        case .invalidated:
+            return false
+        case .failed(let message):
+            _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                on: context,
+                messageText: Strings.fileOperationErrorTitle,
+                informativeText: message
+            )
+            return false
+        }
     }
 
     /// Resolves the editor pane a native File command should keep targeting
@@ -1335,6 +1424,35 @@ final class ProjectManager {
     /// and tasks alive.
     func requestUserTaskShutdown() {
         taskRunStore.requestShutdown()
+    }
+
+    func captureUserTaskShutdownAuthorization()
+        -> UserTaskExecutionAuthorization {
+        taskRunStore.captureShutdownAuthorization()
+    }
+
+    func userTaskShutdownAuthorizationStillCovers(
+        _ authorization: UserTaskExecutionAuthorization
+    ) -> Bool {
+        taskRunStore.shutdownAuthorizationStillCovers(authorization)
+    }
+
+    @discardableResult
+    func requestUserTaskShutdown(
+        authorizedBy authorization: UserTaskExecutionAuthorization
+    ) -> Bool {
+        taskRunStore.requestShutdown(authorizedBy: authorization)
+    }
+
+    @discardableResult
+    func waitForUserTaskShutdown(
+        authorizedBy authorization: UserTaskExecutionAuthorization,
+        until deadline: DispatchTime
+    ) async -> Bool {
+        await taskRunStore.waitForShutdown(
+            authorizedBy: authorization,
+            until: deadline
+        )
     }
 
     /// Waits for project-owned user tasks only until the shared absolute

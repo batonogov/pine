@@ -1894,6 +1894,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         return deadline.uptimeNanoseconds - now
     }
 
+    /// Reserves a durable rollback slice before any termination mutation.
+    /// Long budgets retain the existing 28s/2s policy; short budgets split in
+    /// half instead of silently proceeding with no rollback barrier.
+    nonisolated static func terminationBudgetSplit(
+        availableNanoseconds: UInt64
+    ) -> (forwardNanoseconds: UInt64, rollbackNanoseconds: UInt64)? {
+        guard availableNanoseconds >= 2 else { return nil }
+        let rollbackNanoseconds = min(
+            2_000_000_000,
+            availableNanoseconds / 2
+        )
+        guard rollbackNanoseconds > 0 else { return nil }
+        return (
+            availableNanoseconds - rollbackNanoseconds,
+            rollbackNanoseconds
+        )
+    }
+
     private func valueBeforeTerminationDeadline<Value: Sendable>(
         _ deadline: DispatchTime,
         deadlineObserver: @escaping @Sendable () -> Void,
@@ -1934,6 +1952,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         presentAlert: TerminationAlertPresenter? = nil,
         saveAll: TerminationSaveAll? = nil,
         applicationContext: DialogPresentationContext? = nil,
+        terminationFailureContext: (@MainActor () -> DialogPresentationContext)? = nil,
         terminationDeadlineOverride: DispatchTime? = nil,
         terminationDeadlineObserver: @escaping @Sendable () -> Void = {}
     ) async -> Bool {
@@ -1965,6 +1984,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 )
             }
         )
+        let preflightUserTaskAuthorization =
+            registry.captureUserTaskShutdownAuthorization()
         let attentionProjectCount = projects.filter {
             !$0.allDirtyTabs.isEmpty
                 || preflightTerminalAuthorizations[
@@ -1973,7 +1994,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 || $0.hasOutstandingUserTaskExecution
         }.count
         let requiresAttention = attentionProjectCount > 0
-            || registry.hasOutstandingUserTaskExecution
+            || preflightUserTaskAuthorization.requiresConfirmation
         let needsNativeDecision = presentAlert == nil
             && requiresAttention
         if applicationContext == nil, needsNativeDecision {
@@ -2002,9 +2023,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
 
         func presentTerminationFailure() async {
+            let context: DialogPresentationContext
+            if let terminationFailureContext {
+                context = terminationFailureContext()
+            } else if presentAlert == nil {
+                // A clean preflight may never have created or restored an
+                // owner. Resolve one lazily only after machine work fails.
+                prepareApplicationDialogOwner()
+                context = DialogPresenter.forApplicationWindow()
+            } else {
+                context = fallbackContext
+            }
             _ = await presentTerminationAlert(
                 .applicationQuitFailure,
-                context: fallbackContext,
+                context: context,
                 title: Strings.applicationQuitFailureTitle,
                 message: Strings.applicationQuitFailureMessage
             )
@@ -2021,9 +2053,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             ObjectIdentifier: TerminalTabCloseAuthorization
         ] = [:]
         var saveRequests: [(ProjectManager, DialogPresentationContext)] = []
+        var preparedSavePlans: [
+            ObjectIdentifier: ProjectManager.PreparedPaneSavePlan
+        ] = [:]
         var quitAnyway = false
         var reviewIndividually = false
-        var mayShutdownUserTasks = false
+        var userTaskAuthorization = preflightUserTaskAuthorization
 
         if requiresAttention {
             let response = await presentTerminationAlert(
@@ -2039,7 +2074,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 reviewIndividually = true
             case .alertSecondButtonReturn:
                 quitAnyway = true
-                mayShutdownUserTasks = true
             default:
                 return false
             }
@@ -2117,7 +2151,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 }
             }
 
-            if registry.hasOutstandingUserTaskExecution {
+            let displayedUserTaskAuthorization =
+                registry.captureUserTaskShutdownAuthorization()
+            if displayedUserTaskAuthorization.requiresConfirmation {
                 let response = await presentTerminationAlert(
                     .activeUserTasksPreventQuit,
                     context: fallbackContext,
@@ -2127,8 +2163,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 guard response == .alertFirstButtonReturn else {
                     return false
                 }
-                mayShutdownUserTasks = true
             }
+            userTaskAuthorization = displayedUserTaskAuthorization
         } else {
             // No suspension point occurred after the empty preflight, so this
             // captures the same idle baseline for final revalidation.
@@ -2140,27 +2176,61 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             }
         }
 
+        // Collect every Save-As destination before rebasing the duration.
+        // These native panels are human decisions, not bounded machine work.
+        if saveAll == nil {
+            for (projectManager, context) in saveRequests {
+                switch await projectManager.prepareSaveAllPaneTabs(
+                    context: context
+                ) {
+                case .ready(let plan):
+                    preparedSavePlans[ObjectIdentifier(projectManager)] = plan
+                case .cancelledByUser:
+                    return false
+                case .invalidated:
+                    await presentTerminationFailure()
+                    return false
+                }
+            }
+        }
+
         // Rebase the captured duration only after the final human response.
         let terminationDeadline = DispatchTime.now() + .nanoseconds(
             Int(clamping: workBudgetNanoseconds)
         )
 
         for (projectManager, context) in saveRequests {
-            let didSave = await valueBeforeTerminationDeadline(
+            let saveResult = await valueBeforeTerminationDeadline(
                 terminationDeadline,
                 deadlineObserver: terminationDeadlineObserver,
                 onTimeout: {},
                 operation: {
                     if let saveAll {
                         return await saveAll(projectManager, context)
+                            ? PreparedPaneSaveCommitResult.saved
+                            : PreparedPaneSaveCommitResult.invalidated
                     }
-                    return await projectManager.saveAllPaneTabs(context: context)
+                    guard let plan = preparedSavePlans[
+                        ObjectIdentifier(projectManager)
+                    ] else {
+                        return .invalidated
+                    }
+                    return projectManager.commitPreparedSaveAllPaneTabs(plan)
                 }
             )
-            guard didSave == true else {
-                if didSave == nil {
-                    await presentTerminationFailure()
-                }
+            switch saveResult {
+            case .saved:
+                break
+            case .failed(let message):
+                _ = await presentTerminationAlert(
+                    .fileOperationErrorCritical,
+                    context: context,
+                    title: Strings.fileOperationErrorTitle,
+                    message: message
+                )
+                return false
+            case .invalidated, nil:
+                await presentTerminationFailure()
                 return false
             }
         }
@@ -2168,17 +2238,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // Runtime pane/tab IDs cannot be trusted across relaunch. Reserve a
         // rollback slice before freezing so every failed Quit can durably
         // restore the pre-handshake snapshot within the same absolute budget.
-        let rollbackReserve: Duration = .seconds(2)
-        guard let availablePersistenceTime = remainingTerminationDuration(
-            until: terminationDeadline
-        ), availablePersistenceTime > .zero else {
+        let nowNanoseconds = DispatchTime.now().uptimeNanoseconds
+        guard nowNanoseconds < terminationDeadline.uptimeNanoseconds,
+              let budgetSplit = Self.terminationBudgetSplit(
+                  availableNanoseconds:
+                      terminationDeadline.uptimeNanoseconds - nowNanoseconds
+              ) else {
             terminationDeadlineObserver()
             await presentTerminationFailure()
             return false
         }
-        let effectiveRollbackReserve = availablePersistenceTime > rollbackReserve
-            ? rollbackReserve
-            : .zero
+        let forwardDeadline = DispatchTime(
+            uptimeNanoseconds:
+                terminationDeadline.uptimeNanoseconds
+                    - budgetSplit.rollbackNanoseconds
+        )
+
+        guard registry.userTaskShutdownAuthorizationStillCovers(
+            userTaskAuthorization
+        ) else {
+            await presentTerminationFailure()
+            return false
+        }
         registry.freezeAgentTasksForTermination()
         registry.agentTasks.prepareForApplicationTermination()
         func rollbackAgentTasks() async {
@@ -2194,8 +2275,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 return
             }
         }
-        let persistenceBudget = availablePersistenceTime
-            - effectiveRollbackReserve
+        guard let persistenceBudget = remainingTerminationDuration(
+            until: forwardDeadline
+        ) else {
+            await rollbackAgentTasks()
+            await presentTerminationFailure()
+            return false
+        }
         guard await registry.agentTasks.flushPersistence(
             maximumDuration: persistenceBudget
         ) == .saved else {
@@ -2242,7 +2328,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     return false
                 }
             }
-            return true
+            return registry.userTaskShutdownAuthorizationStillCovers(
+                userTaskAuthorization
+            )
         }
 
         guard destructiveAuthorizationsStillCoverCurrentState() else {
@@ -2252,21 +2340,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
 
         if registry.hasOutstandingUserTaskExecution {
-            guard mayShutdownUserTasks else {
-                await rollbackAgentTasks()
-                await presentTerminationFailure()
-                return false
-            }
-            let reserveNanoseconds: UInt64 =
-                effectiveRollbackReserve == rollbackReserve
-                ? 2_000_000_000
-                : 0
-            let taskShutdownDeadline = DispatchTime(
-                uptimeNanoseconds:
-                    terminationDeadline.uptimeNanoseconds - reserveNanoseconds
-            )
             guard await registry.shutdownUserTasks(
-                until: taskShutdownDeadline
+                authorizedBy: userTaskAuthorization,
+                until: forwardDeadline
             ) else {
                 await rollbackAgentTasks()
                 await presentTerminationFailure()
