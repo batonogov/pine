@@ -2031,6 +2031,30 @@ enum Strings {
         String(localized: "task.activePreventQuit.message")
     }
 
+    static var applicationQuitSummaryTitle: String {
+        String(localized: "quit.summary.title")
+    }
+
+    static func applicationQuitSummaryMessage(_ projectCount: Int) -> String {
+        String(localized: "quit.summary.message \(projectCount)")
+    }
+
+    static var applicationQuitReview: String {
+        String(localized: "quit.summary.review")
+    }
+
+    static var applicationQuitAnyway: String {
+        String(localized: "quit.summary.quitAnyway")
+    }
+
+    static var applicationQuitFailureTitle: String {
+        String(localized: "quit.failure.title")
+    }
+
+    static var applicationQuitFailureMessage: String {
+        String(localized: "quit.failure.message")
+    }
+
     static var terminalTabCloseWarningTitle: String {
         String(localized: "terminal.tabCloseWarning.title")
     }

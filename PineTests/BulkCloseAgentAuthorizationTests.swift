@@ -194,13 +194,23 @@ struct BulkCloseAgentAuthorizationTests {
 
     // MARK: - Application quit
 
-    @Test("Quit warns about a running agent that has no foreground pgid")
-    func quitWarnsAboutRunningAgent() async throws {
-        let dir = try makeTempDirectory()
-        defer { cleanup(dir) }
+    @Test("Quit summarizes agents from multiple projects in one alert")
+    func quitSummarizesAgentsAcrossProjects() async throws {
+        let firstDirectory = try makeTempDirectory()
+        let secondDirectory = try makeTempDirectory()
+        defer {
+            cleanup(firstDirectory)
+            cleanup(secondDirectory)
+        }
         let registry = ProjectRegistry()
-        let project = try #require(registry.projectManager(for: dir))
-        try addAgentTerminalTab(to: project)
+        let firstProject = try #require(
+            registry.projectManager(for: firstDirectory)
+        )
+        let secondProject = try #require(
+            registry.projectManager(for: secondDirectory)
+        )
+        try addAgentTerminalTab(to: firstProject)
+        try addAgentTerminalTab(to: secondProject)
 
         let delegate = AppDelegate()
         delegate.registry = registry
@@ -209,14 +219,15 @@ struct BulkCloseAgentAuthorizationTests {
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
                 presentedTemplates.append(template)
-                return .alertFirstButtonReturn
+                return .alertSecondButtonReturn
             },
             terminationDeadlineOverride: .now() + 120
         )
 
         #expect(result)
-        #expect(presentedTemplates == [.terminalActiveProcessWarning])
-        await project.workspace.waitForLoadingComplete()
+        #expect(presentedTemplates == [.applicationQuitSummary])
+        await firstProject.workspace.waitForLoadingComplete()
+        await secondProject.workspace.waitForLoadingComplete()
     }
 
     @Test("Confirmed quit survives agent child-process churn")
@@ -232,7 +243,7 @@ struct BulkCloseAgentAuthorizationTests {
         delegate.registry = registry
 
         let result = await delegate.confirmApplicationTermination(
-            presentAlert: { _, _, _, _ in .alertFirstButtonReturn },
+            presentAlert: { _, _, _, _ in .alertSecondButtonReturn },
             terminationDeadlineOverride: .now() + 120
         )
 
@@ -252,15 +263,26 @@ struct BulkCloseAgentAuthorizationTests {
         let delegate = AppDelegate()
         delegate.registry = registry
 
+        var presentedTemplates: [AlertTemplate] = []
         let result = await delegate.confirmApplicationTermination(
-            presentAlert: { _, _, _, _ in
-                tab.agentSession = AgentSession(agentType: .claudeCode)
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                if template == .applicationQuitSummary {
+                    tab.agentSession = AgentSession(agentType: .claudeCode)
+                    return .alertSecondButtonReturn
+                }
                 return .alertFirstButtonReturn
             },
             terminationDeadlineOverride: .now() + 120
         )
 
         #expect(!result)
+        #expect(
+            presentedTemplates == [
+                .applicationQuitSummary,
+                .applicationQuitFailure,
+            ]
+        )
         await project.workspace.waitForLoadingComplete()
     }
 
@@ -309,13 +331,13 @@ struct BulkCloseAgentAuthorizationTests {
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
                 presentedTemplates.append(template)
-                return .alertFirstButtonReturn
+                return .alertSecondButtonReturn
             },
             terminationDeadlineOverride: .now() + 120
         )
 
         #expect(result)
-        #expect(presentedTemplates == [.terminalActiveProcessWarning])
+        #expect(presentedTemplates == [.applicationQuitSummary])
         #expect(tab.agentSession != nil)
         await project.workspace.waitForLoadingComplete()
     }
@@ -332,7 +354,7 @@ struct BulkCloseAgentAuthorizationTests {
         delegate.registry = registry
 
         let result = await delegate.confirmApplicationTermination(
-            presentAlert: { _, _, _, _ in .alertSecondButtonReturn },
+            presentAlert: { _, _, _, _ in .alertThirdButtonReturn },
             terminationDeadlineOverride: .now() + 120
         )
 
