@@ -409,8 +409,7 @@ struct EditorTabBar: View {
                             paneManager.selectEditorTab(tab.id, in: paneID)
                         } label: {
                             Label {
-                                Text(tab.fileName)
-                                    + Text(tab.isDirty ? " \u{25CF}" : "")
+                                Text("\(tab.fileName)\(tab.isDirty ? " \u{25CF}" : "")")
                             } icon: {
                                 Image(systemName: tab.isPinned
                                       ? "pin.fill"
