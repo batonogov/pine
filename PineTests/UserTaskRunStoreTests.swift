@@ -521,6 +521,7 @@ struct UserTaskRunStoreTests {
         for _ in 0..<200 where !gate.didStartWaiting {
             try? await Task.sleep(for: .milliseconds(5))
         }
+        #expect(gate.didStartWaiting)
         let lateRun = store.start(makeRun(taskID: "late"))
         let lateCancellation = CancellationCounter()
         store.registerCancellation(
@@ -536,6 +537,47 @@ struct UserTaskRunStoreTests {
         #expect(lateRun.state == .pending)
         #expect(lateCancellation.value == 0)
         #expect(store.hasOutstandingExecutionOwnership)
+    }
+
+    @Test("A transient late run still invalidates shutdown authorization")
+    func transientLateRunInvalidatesShutdownAuthorization() async {
+        let store = UserTaskRunStore()
+        let first = store.start(makeRun(taskID: "first"))
+        let gate = ShutdownWaitGate()
+        store.registerCancellation(
+            UserTaskCancellation(
+                terminate: { true },
+                waitForCompletion: { deadline in
+                    gate.waitForRelease(until: deadline)
+                }
+            ),
+            forRunID: first.id
+        )
+        let shutdown = Task { @MainActor in
+            await store.shutdownAll(until: .now() + 2)
+        }
+        defer { gate.release() }
+
+        for _ in 0..<200 where !gate.didStartWaiting {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(gate.didStartWaiting)
+        let lateRun = store.start(makeRun(taskID: "transient-late"))
+        let lateCancellation = CancellationCounter()
+        store.registerCancellation(
+            makeCancellation(counter: lateCancellation),
+            forRunID: lateRun.id
+        )
+        #expect(store.finishRun(
+            id: lateRun.id,
+            outcome: outcome(exitCode: 0),
+            cancelled: false
+        ))
+        gate.release()
+
+        #expect(!(await shutdown.value))
+        #expect(lateCancellation.value == 0)
+        #expect(lateRun.state == .succeeded)
     }
 
     @Test("A replacement run does not inherit an older shutdown decision")

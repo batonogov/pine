@@ -99,11 +99,17 @@ struct TerminalTabCloseAuthorization {
             switch captured {
             case .agentSession(let sessionID):
                 // Same agent session: covered (pgid churn is normal agent
-                // behaviour). The agent having exited (session cleared) is
-                // also covered — there is nothing left to protect.
-                guard tab.agentSession?.id == sessionID
-                    || tab.agentSession == nil else { return false }
+                // behaviour). Once it exits, only a genuinely idle tab is
+                // covered; a replacement foreground job is a new generation.
+                if let currentSession = tab.agentSession {
+                    guard currentSession.id == sessionID else { return false }
+                } else if tab.foregroundProcessID > 0 {
+                    return false
+                }
             case .foregroundProcess(let identity):
+                // A newly detected agent is a different kind of destructive
+                // work even if its process-group observation is not ready yet.
+                guard tab.agentSession == nil else { return false }
                 let current = tab.foregroundProcessID
                 // Process exited: covered. A new non-zero process group is a
                 // new, unauthorized generation.

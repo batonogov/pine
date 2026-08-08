@@ -13,10 +13,9 @@ nonisolated private struct AgentTaskTerminalKey: Hashable, Sendable {
     let terminalID: UUID
 }
 
-nonisolated struct AgentTaskLaunchReservation: Equatable, Sendable {
+nonisolated struct AgentTaskLaunchReservation: Hashable, Sendable {
     let taskID: UUID
     fileprivate let token: UUID
-
 }
 
 nonisolated enum AgentTaskLaunchResult: Equatable, Sendable {
@@ -131,6 +130,10 @@ final class AgentTaskRegistry {
     private let publicationFence: AgentTaskPublicationFence
     @ObservationIgnored
     private var isTerminating = false
+    /// Window availability changes remain admissible while the rollback
+    /// snapshot is being reconciled and durably flushed. Every other agent
+    /// admission path stays frozen by `isTerminating`.
+    private var isRollingBackApplicationTermination = false
     @ObservationIgnored
     private var terminationRollback:
         [UUID: AgentTaskTerminationRollback] = [:]
@@ -754,8 +757,18 @@ final class AgentTaskRegistry {
         _ isOpen: Bool,
         matchesProject: (AgentTaskProjectIdentity) -> Bool
     ) {
-        expireClaims()
-        guard !isTerminating else { return }
+        if isTerminating {
+            guard isRollingBackApplicationTermination else { return }
+        } else {
+            expireClaims()
+        }
+        applyWindowOpen(isOpen, matchesProject: matchesProject)
+    }
+
+    private func applyWindowOpen(
+        _ isOpen: Bool,
+        matchesProject: (AgentTaskProjectIdentity) -> Bool
+    ) {
         var projects = Set<AgentTaskProjectIdentity>()
         for key in Array(pendingClaims.keys)
         where matchesProject(key.project) {
@@ -907,14 +920,31 @@ final class AgentTaskRegistry {
     func cancelApplicationTerminationAndFlush(
         maximumDuration: Duration? = nil
     ) async -> Bool {
+        await cancelApplicationTerminationAndFlush(
+            reconcilingWindowOpen: [:],
+            maximumDuration: maximumDuration
+        )
+    }
+
+    func cancelApplicationTerminationAndFlush(
+        reconcilingWindowOpen windowOpenByProject: [
+            AgentTaskProjectIdentity: Bool
+        ],
+        maximumDuration: Duration? = nil
+    ) async -> Bool {
         guard isTerminating else { return true }
+        isRollingBackApplicationTermination = true
         restoreTerminationSnapshot()
+        for (project, isOpen) in windowOpenByProject {
+            applyWindowOpen(isOpen) { $0 == project }
+        }
         let rollbackWasSaved = await flushPersistence(
             maximumDuration: maximumDuration
         ) == .saved
         // A failed durability barrier is surfaced to the caller, but it must
         // never leave the still-running application in termination mode.
         // Runtime admission and bounded claim expiry are restored regardless.
+        isRollingBackApplicationTermination = false
         finishTerminationCancellation()
         return rollbackWasSaved
     }
@@ -923,6 +953,7 @@ final class AgentTaskRegistry {
     func cancelApplicationTermination() {
         guard isTerminating else { return }
         restoreTerminationSnapshot()
+        isRollingBackApplicationTermination = false
         finishTerminationCancellation()
     }
     #endif

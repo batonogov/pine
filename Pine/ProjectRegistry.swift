@@ -796,17 +796,19 @@ final class ProjectRegistry: LSPSettingsObserver {
     func cancelAgentTaskTermination(
         maximumDuration: Duration? = nil
     ) async -> Bool {
-        let rollbackWasSaved = await agentTasks.cancelApplicationTerminationAndFlush(
-            maximumDuration: maximumDuration
+        let windowOpenByProject = Dictionary(
+            agentTaskProjectsByRoot.map { url, identity in
+                (identity, !backgroundProjects.contains(url))
+            },
+            uniquingKeysWith: { _, latest in latest }
         )
+        let rollbackWasSaved = await agentTasks
+            .cancelApplicationTerminationAndFlush(
+                reconcilingWindowOpen: windowOpenByProject,
+                maximumDuration: maximumDuration
+            )
         for (url, manager) in openProjects {
             let isWindowOpen = !backgroundProjects.contains(url)
-            if let identity = agentTaskProjectsByRoot[url] {
-                agentTasks.setWindowOpen(
-                    isWindowOpen,
-                    project: identity
-                )
-            }
             manager.terminal.setAgentTaskWindowOpen(isWindowOpen)
             manager.terminal.cancelAgentTaskTermination()
         }
@@ -815,6 +817,23 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
         isProjectAdmissionFrozenForTermination = false
         return rollbackWasSaved
+    }
+
+    @discardableResult
+    func cancelAgentTaskTermination(
+        until deadline: DispatchTime
+    ) async -> Bool {
+        let now = DispatchTime.now().uptimeNanoseconds
+        let remaining: Duration = if now < deadline.uptimeNanoseconds {
+            .nanoseconds(
+                Int64(clamping: deadline.uptimeNanoseconds - now)
+            )
+        } else {
+            .zero
+        }
+        return await cancelAgentTaskTermination(
+            maximumDuration: remaining
+        )
     }
 
     /// Whether any open or detached project still owns a user-task execution.

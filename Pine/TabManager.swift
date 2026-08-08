@@ -892,6 +892,54 @@ final class TabManager {
         return outcome.saved
     }
 
+    /// Applies the model half of a termination save after its destination was
+    /// atomically replaced from an off-main staged file. No formatter or file
+    /// write is performed here, so Quit never waits for those operations on
+    /// the main actor.
+    @discardableResult
+    func applyTerminationStagedSave(
+        request: TerminationSaveRequest,
+        savedContent: String
+    ) -> Bool {
+        guard let index = tabs.firstIndex(where: {
+            $0.id == request.tabID
+        }),
+              tabs[index].isDirty,
+              tabs[index].kind == .text,
+              !tabs[index].isTruncated,
+              tabs[index].contentVersion == request.contentVersion,
+              tabs[index].content == request.content,
+              tabs[index].fileURL == request.originalURL else {
+            return false
+        }
+        let contentChanged = savedContent != tabs[index].content
+        let backingChanged = tabs[index].fileURL != request.destination
+        tabs[index].content = savedContent
+        tabs[index].url = request.destination
+        tabs[index].savedContent = savedContent
+        tabs[index].lastModDate = modDate(for: request.destination)
+        tabs[index].fileSizeBytes = fileSize(url: request.destination)
+        if contentChanged {
+            tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
+        }
+        recoveryManager?.deleteRecoveryFile(for: request.tabID)
+        if backingChanged {
+            onTabInventoryChanged?()
+        }
+        if contentChanged {
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: [
+                    "url": request.destination,
+                    "text": savedContent,
+                ]
+            )
+        }
+        return true
+    }
+
     // MARK: - Reorder & Pin
 
     /// Removes a tab for an in-window pane transfer.

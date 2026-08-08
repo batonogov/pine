@@ -5,6 +5,7 @@
 //  Durable cross-project agent task identity and persistence (issue #1302).
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Pine
@@ -1212,6 +1213,157 @@ struct AgentTaskRegistryTests {
         #expect(taskRegistry.taskID(forSessionID: launched.id) == reservation.taskID)
     }
 
+    @Test("late acknowledged Pine launch invalidates Quit Anyway")
+    func lateAcknowledgedPineLaunchInvalidatesQuitAnyway() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let store = ScriptedAgentTaskStore(suspendFirstSave: true)
+        let taskRegistry = AgentTaskRegistry(persistence: store)
+        let projects = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projects.projectManager(for: fixture.project)
+        )
+        _ = try #require(manager.createUntitledFile())
+        manager.primaryTabManager.autoSavePreferenceProvider = { false }
+        manager.primaryTabManager.updateContent("keep this dirty buffer")
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let state = try #require(
+            manager.paneManager.terminalState(for: pane)
+        )
+        let tab = try #require(state.terminalTabs.first)
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        let writeGate = AgentLaunchWriteGate()
+        var launchTask: Task<AgentTaskLaunchResult, Never>?
+        var releaseTask: Task<Void, Never>?
+        var presented: [AlertTemplate] = []
+        let delegate = AppDelegate()
+        delegate.registry = projects
+
+        let didQuit = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presented.append(template)
+                if template == .applicationQuitSummary {
+                    launchTask = Task { @MainActor in
+                        await manager.terminal
+                            .launchAgentCommandForTesting(
+                                "codex",
+                                descriptor: descriptor,
+                                in: tab
+                            ) {
+                                await writeGate.waitForCompletion()
+                            }
+                    }
+                    #expect(await writeGate.waitUntilStarted())
+                    releaseTask = Task { @MainActor in
+                        #expect(await store.waitForFirstSave())
+                        #expect(manager.terminal.agentCallbacksFrozenForTesting)
+                        writeGate.finish(true)
+                        let clock = ContinuousClock()
+                        let deadline = clock.now.advanced(by: .seconds(2))
+                        while !manager.terminal
+                            .hasAcknowledgedAgentLaunchForTesting,
+                              clock.now < deadline {
+                            await Task.yield()
+                        }
+                        #expect(
+                            manager.terminal
+                                .hasAcknowledgedAgentLaunchForTesting
+                        )
+                        await store.releaseFirstSave()
+                    }
+                    return .alertSecondButtonReturn
+                }
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        await releaseTask?.value
+        let optionalLaunchResult = await launchTask?.value
+        guard let launchResult = optionalLaunchResult,
+              case .reserved(let reservation) = launchResult else {
+            let detail = String(describing: optionalLaunchResult)
+            Issue.record(
+                "late acknowledged launch lost its reservation: \(detail)"
+            )
+            return
+        }
+        #expect(!didQuit)
+        #expect(
+            presented == [
+                .applicationQuitSummary,
+                .applicationQuitFailure,
+            ]
+        )
+        #expect(manager.hasUnsavedChanges)
+        #expect(taskRegistry.isLaunchPending(reservation))
+        #expect(!manager.terminal.agentCallbacksFrozenForTesting)
+        #expect(!projects.isProjectAdmissionFrozenForTermination)
+
+        let admittedProject = fixture.root.appendingPathComponent(
+            "admitted-after-late-launch",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: admittedProject,
+            withIntermediateDirectories: false
+        )
+        #expect(projects.projectManager(for: admittedProject) != nil)
+    }
+
+    @Test("in-flight Pine launch alone contributes Quit attention")
+    func inFlightPineLaunchContributesQuitAttention() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let projects = ProjectRegistry()
+        let manager = try #require(
+            projects.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let state = try #require(
+            manager.paneManager.terminalState(for: pane)
+        )
+        let tab = try #require(state.terminalTabs.first)
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        let writeGate = AgentLaunchWriteGate()
+        let launchTask = Task { @MainActor in
+            await manager.terminal.launchAgentCommandForTesting(
+                "codex",
+                descriptor: descriptor,
+                in: tab
+            ) {
+                await writeGate.waitForCompletion()
+            }
+        }
+        #expect(await writeGate.waitUntilStarted())
+        let delegate = AppDelegate()
+        delegate.registry = projects
+        var presented: [AlertTemplate] = []
+
+        let didQuit = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presented.append(template)
+                return .alertThirdButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        writeGate.finish(false)
+        #expect(await launchTask.value == .rejected)
+        #expect(!didQuit)
+        #expect(presented == [.applicationQuitSummary])
+    }
+
     @Test("expired local reservation permits a new terminal launch")
     func expiredTerminalReservationCanBeReplaced() async throws {
         let fixture = try PersistenceFixture()
@@ -1915,6 +2067,15 @@ struct AgentTaskRegistryTests {
         #expect(!didPersistRollback)
         #expect(!manager.terminal.agentCallbacksFrozenForTesting)
         #expect(!projects.isProjectAdmissionFrozenForTermination)
+        let admittedProject = fixture.root.appendingPathComponent(
+            "admitted-after-failed-rollback",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: admittedProject,
+            withIntermediateDirectories: false
+        )
+        #expect(projects.projectManager(for: admittedProject) != nil)
     }
 
     @Test("rollback reconciles a window closed during termination freeze")
@@ -1949,6 +2110,11 @@ struct AgentTaskRegistryTests {
         #expect(await projects.cancelAgentTaskTermination())
         #expect(agentTasks.task(forSessionID: session.id)?.route.availability
                 == .background)
+        #expect(
+            await store.publishedAvailabilityHistory(
+                forSessionID: session.id
+            ).last == .background
+        )
     }
 
     @Test("rollback reconciles a background window reopened during freeze")
@@ -1986,6 +2152,11 @@ struct AgentTaskRegistryTests {
         #expect(await projects.cancelAgentTaskTermination())
         #expect(agentTasks.task(forSessionID: session.id)?.route.availability
                 == .available)
+        #expect(
+            await store.publishedAvailabilityHistory(
+                forSessionID: session.id
+            ).last == .available
+        )
     }
 
     @Test("one rejected project cannot starve another project save")
@@ -3561,6 +3732,16 @@ private actor ScriptedAgentTaskStore: AgentTaskPersisting {
 
     func savedTaskCounts() -> [Int] {
         publishedSnapshots.map(\.count)
+    }
+
+    func publishedAvailabilityHistory(
+        forSessionID sessionID: UUID
+    ) -> [AgentTaskRouteAvailability] {
+        publishedSnapshots.compactMap { snapshot in
+            snapshot.first(where: { task in
+                task.runs.contains(where: { $0.id == sessionID })
+            })?.route.availability
+        }
     }
 
     func saveCallCount() -> Int {

@@ -265,4 +265,30 @@ struct TerminalProcessConfirmationTests {
 
         #expect(!authorization.stillCovers([original, added]))
     }
+
+    @Test func agentReplacedByForegroundProcessInvalidatesAuthorization() {
+        let tab = TerminalTab(name: "Claude")
+        tab.agentSession = AgentSession(agentType: .claudeCode)
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+
+        tab.agentSession = nil
+        tab.foregroundProcessIDOverrideForTesting = 42
+
+        #expect(!authorization.stillCovers([tab]))
+    }
+
+    @Test func foregroundProcessReplacedByAgentInvalidatesAuthorization() {
+        let tab = TerminalTab(name: "Shell")
+        tab.foregroundProcessIDOverrideForTesting = 41
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+
+        tab.foregroundProcessIDOverrideForTesting = 0
+        tab.agentSession = AgentSession(agentType: .claudeCode)
+
+        #expect(!authorization.stillCovers([tab]))
+    }
 }

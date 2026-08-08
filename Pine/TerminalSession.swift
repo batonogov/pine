@@ -2066,7 +2066,16 @@ final class TerminalTab: Identifiable, Hashable {
     /// The process group ID of the foreground process in this terminal, or
     /// `-1` if the shell itself is in the foreground or the process is not
     /// running. Used by `AgentDetectionCoordinator` (#951).
+    #if DEBUG
+    var foregroundProcessIDOverrideForTesting: Int32?
+    #endif
+
     var foregroundProcessID: Int32 {
+        #if DEBUG
+        if let foregroundProcessIDOverrideForTesting {
+            return foregroundProcessIDOverrideForTesting
+        }
+        #endif
         guard isProcessRunning else { return -1 }
         let fd = terminalView.process.childfd
         guard fd >= 0 else { return -1 }

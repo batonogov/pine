@@ -14,13 +14,32 @@ import Foundation
 ///   be parsed, so save never blocks on malformed files.
 /// - **Sandbox-friendly** — pure-Swift formatters should not spawn external binaries.
 ///   For external tools, use `ExternalFileFormatter` which handles Process lifecycle.
-protocol FileFormatter: Sendable {
+nonisolated protocol FileFormatter: Sendable {
     /// Returns true when this formatter should be applied to the given file URL.
     func canFormat(url: URL) -> Bool
 
     /// Returns a formatted copy of `content`, or the original on any failure.
     /// The `url` is provided for blocklist checks and filename-based decisions.
     func format(_ content: String, url: URL) -> String
+
+    /// Deadline-aware variant used by application termination. Pure formatters
+    /// inherit the synchronous default; external formatters override it so the
+    /// child-process timeout never exceeds Quit's remaining shared budget.
+    func format(
+        _ content: String,
+        url: URL,
+        maximumDuration: TimeInterval
+    ) -> String
+}
+
+nonisolated extension FileFormatter {
+    func format(
+        _ content: String,
+        url: URL,
+        maximumDuration: TimeInterval
+    ) -> String {
+        format(content, url: url)
+    }
 }
 
 /// Formats JSON with 2-space indentation. Preserves the original text on
@@ -30,7 +49,7 @@ protocol FileFormatter: Sendable {
 /// `1.0` may become `1`, scientific notation changes form, and integers
 /// above 2^53 lose precision. Files with these patterns are skipped until
 /// a proper tokenizer-based formatter is written.
-struct JSONFileFormatter: FileFormatter {
+nonisolated struct JSONFileFormatter: FileFormatter {
     /// Files that must never be reformatted because their key order carries
     /// semantic meaning (npm, TypeScript, Composer, VS Code workspaces).
     private static let blocklist: Set<String> = [
@@ -87,7 +106,7 @@ struct JSONFileFormatter: FileFormatter {
 
 /// Formats YAML via `prettier --parser yaml`. Skips lock files and large files
 /// to avoid corrupting dependency trees or blocking the UI.
-struct YAMLFileFormatter: FileFormatter, Sendable {
+nonisolated struct YAMLFileFormatter: FileFormatter, Sendable {
     /// Lock files that must never be reformatted — reformatting changes
     /// content hashes and breaks dependency resolution.
     private static let blocklist: Set<String> = [
@@ -143,11 +162,26 @@ struct YAMLFileFormatter: FileFormatter, Sendable {
         guard content.utf8.count < Self.maxFormatSize else { return content }
         return formatter.format(content, url: url)
     }
+
+    func format(
+        _ content: String,
+        url: URL,
+        maximumDuration: TimeInterval
+    ) -> String {
+        let filename = url.lastPathComponent.lowercased()
+        if Self.blocklist.contains(filename) { return content }
+        guard content.utf8.count < Self.maxFormatSize else { return content }
+        return formatter.format(
+            content,
+            url: url,
+            maximumDuration: maximumDuration
+        )
+    }
 }
 
 /// Creates an HCL formatter that delegates to `terraform fmt -` or `tofu fmt -`.
 /// Prefers `terraform` when both are installed; gracefully no-ops when neither is found.
-enum HCLFileFormatter {
+nonisolated enum HCLFileFormatter {
     static func resolve(
         processRunner: @escaping ProcessRunner = runRealProcess,
         resolver: ExternalToolResolver = .fromEnvironment()
@@ -182,7 +216,7 @@ enum HCLFileFormatter {
 /// Formats shell scripts via `shfmt -i 2 -ci -bn`. Handles `.sh`, `.bash`, `.zsh` extensions
 /// and detects shell shebangs (`#!/bin/sh`, `#!/bin/bash`, `#!/usr/bin/env bash`, etc.)
 /// in extensionless files. Gracefully no-ops when `shfmt` is not installed.
-struct ShellFileFormatter: FileFormatter, Sendable {
+nonisolated struct ShellFileFormatter: FileFormatter, Sendable {
     /// Shell file extensions (lowercase, without dot).
     private static let shellExtensions: Set<String> = ["sh", "bash", "zsh"]
 
@@ -265,6 +299,24 @@ struct ShellFileFormatter: FileFormatter, Sendable {
         return formatter.format(content, url: url)
     }
 
+    func format(
+        _ content: String,
+        url: URL,
+        maximumDuration: TimeInterval
+    ) -> String {
+        guard content.utf8.count < Self.maxFormatSize else { return content }
+
+        let ext = url.pathExtension.lowercased()
+        if ext.isEmpty, !hasShellShebang(content) {
+            return content
+        }
+        return formatter.format(
+            content,
+            url: url,
+            maximumDuration: maximumDuration
+        )
+    }
+
     /// Checks whether the content starts with a shell shebang line.
     private func hasShellShebang(_ content: String) -> Bool {
         guard content.hasPrefix("#!") else { return false }
@@ -278,7 +330,7 @@ struct ShellFileFormatter: FileFormatter, Sendable {
 
 /// Composes an ordered list of formatters, applying the first whose `canFormat` returns
 /// true. The empty registry is a no-op — safe default for files with no known formatter.
-struct FileFormatterRegistry: Sendable {
+nonisolated struct FileFormatterRegistry: Sendable {
     let formatters: [FileFormatter]
 
     /// Default registry. Ships a pure-Swift JSON formatter. External tool formatters
@@ -298,6 +350,21 @@ struct FileFormatterRegistry: Sendable {
     func format(content: String, url: URL) -> String {
         for formatter in formatters where formatter.canFormat(url: url) {
             return formatter.format(content, url: url)
+        }
+        return content
+    }
+
+    func format(
+        content: String,
+        url: URL,
+        maximumDuration: TimeInterval
+    ) -> String {
+        for formatter in formatters where formatter.canFormat(url: url) {
+            return formatter.format(
+                content,
+                url: url,
+                maximumDuration: maximumDuration
+            )
         }
         return content
     }

@@ -1972,6 +1972,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 )
             }
         )
+        let preflightAgentLaunchAuthorizations = Dictionary(
+            uniqueKeysWithValues: projects.map {
+                (
+                    ObjectIdentifier($0),
+                    $0.terminal.capturePineAgentLaunchAuthorization()
+                )
+            }
+        )
         let preflightDiscardAuthorizations: [
             ObjectIdentifier: DirtyEditorContentAuthorization
         ] = Dictionary(
@@ -1989,6 +1997,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         let attentionProjectCount = projects.filter {
             !$0.allDirtyTabs.isEmpty
                 || preflightTerminalAuthorizations[
+                    ObjectIdentifier($0)
+                ]?.requiresConfirmation == true
+                || preflightAgentLaunchAuthorizations[
                     ObjectIdentifier($0)
                 ]?.requiresConfirmation == true
                 || $0.hasOutstandingUserTaskExecution
@@ -2022,21 +2033,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             )
         }
 
-        func presentTerminationFailure() async {
-            let context: DialogPresentationContext
+        func resolveTerminationFailureContext(
+            preferredProject: ProjectManager? = nil
+        ) -> DialogPresentationContext {
+            if let preferredProject {
+                let projectContext = DialogPresenter.forProject(
+                    preferredProject
+                )
+                if let window = projectContext.nsWindow,
+                   DialogPresenter.isEligibleApplicationOwner(window) {
+                    return projectContext
+                }
+            }
             if let terminationFailureContext {
-                context = terminationFailureContext()
-            } else if presentAlert == nil {
+                return terminationFailureContext()
+            }
+            if presentAlert == nil {
                 // A clean preflight may never have created or restored an
                 // owner. Resolve one lazily only after machine work fails.
                 prepareApplicationDialogOwner()
-                context = DialogPresenter.forApplicationWindow()
-            } else {
-                context = fallbackContext
+                return DialogPresenter.forApplicationWindow()
             }
+            return fallbackContext
+        }
+
+        func presentTerminationFailure() async {
             _ = await presentTerminationAlert(
                 .applicationQuitFailure,
-                context: context,
+                context: resolveTerminationFailureContext(),
                 title: Strings.applicationQuitFailureTitle,
                 message: Strings.applicationQuitFailureMessage
             )
@@ -2052,9 +2076,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         var terminalAuthorizations: [
             ObjectIdentifier: TerminalTabCloseAuthorization
         ] = [:]
+        var agentLaunchAuthorizations: [
+            ObjectIdentifier: PineAgentLaunchAuthorization
+        ] = [:]
         var saveRequests: [(ProjectManager, DialogPresentationContext)] = []
         var preparedSavePlans: [
             ObjectIdentifier: ProjectManager.PreparedPaneSavePlan
+        ] = [:]
+        var preparedTerminationSavePlans: [
+            ObjectIdentifier: ProjectManager.PreparedTerminationPaneSavePlan
         ] = [:]
         var quitAnyway = false
         var reviewIndividually = false
@@ -2085,6 +2115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             // while the sheet is open still fail closed during revalidation.
             discardAuthorizations = preflightDiscardAuthorizations
             terminalAuthorizations = preflightTerminalAuthorizations
+            agentLaunchAuthorizations = preflightAgentLaunchAuthorizations
         } else if reviewIndividually {
             for projectManager in projects {
                 guard registry.openProjects.values.contains(where: {
@@ -2132,7 +2163,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     tabs: projectManager.terminal.allTerminalTabs
                 )
                 terminalAuthorizations[identifier] = authorization
-                guard authorization.requiresConfirmation else { continue }
+                let launchAuthorization = projectManager.terminal
+                    .capturePineAgentLaunchAuthorization()
+                agentLaunchAuthorizations[identifier] = launchAuthorization
+                guard authorization.requiresConfirmation
+                        || launchAuthorization.requiresConfirmation else {
+                    continue
+                }
                 let projectContext = DialogPresenter.forProject(projectManager)
                 let hasEligibleProjectOwner = projectContext.nsWindow.map {
                     DialogPresenter.isEligibleApplicationOwner($0)
@@ -2173,6 +2210,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     TerminalTabCloseAuthorization.authorizing(
                         tabs: projectManager.terminal.allTerminalTabs
                     )
+                agentLaunchAuthorizations[ObjectIdentifier(projectManager)] =
+                    projectManager.terminal
+                        .capturePineAgentLaunchAuthorization()
             }
         }
 
@@ -2199,39 +2239,113 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             Int(clamping: workBudgetNanoseconds)
         )
 
-        for (projectManager, context) in saveRequests {
-            let saveResult = await valueBeforeTerminationDeadline(
-                terminationDeadline,
-                deadlineObserver: terminationDeadlineObserver,
-                onTimeout: {},
-                operation: {
-                    if let saveAll {
-                        return await saveAll(projectManager, context)
+        func cleanupPreparedTerminationSaves() {
+            for (identifier, plan) in preparedTerminationSavePlans {
+                guard let projectManager = projects.first(where: {
+                    ObjectIdentifier($0) == identifier
+                }) else { continue }
+                projectManager.cleanupTerminationSavePlan(plan)
+            }
+            preparedTerminationSavePlans.removeAll()
+        }
+
+        if let saveAll {
+            for (projectManager, context) in saveRequests {
+                let saveResult = await valueBeforeTerminationDeadline(
+                    terminationDeadline,
+                    deadlineObserver: terminationDeadlineObserver,
+                    onTimeout: {},
+                    operation: {
+                        await saveAll(projectManager, context)
                             ? PreparedPaneSaveCommitResult.saved
                             : PreparedPaneSaveCommitResult.invalidated
                     }
-                    guard let plan = preparedSavePlans[
-                        ObjectIdentifier(projectManager)
-                    ] else {
-                        return .invalidated
-                    }
-                    return projectManager.commitPreparedSaveAllPaneTabs(plan)
-                }
-            )
-            switch saveResult {
-            case .saved:
-                break
-            case .failed(let message):
-                _ = await presentTerminationAlert(
-                    .fileOperationErrorCritical,
-                    context: context,
-                    title: Strings.fileOperationErrorTitle,
-                    message: message
                 )
-                return false
-            case .invalidated, nil:
-                await presentTerminationFailure()
-                return false
+                guard saveResult == .saved else {
+                    await presentTerminationFailure()
+                    return false
+                }
+            }
+        } else {
+            for (projectManager, _) in saveRequests {
+                guard let plan = preparedSavePlans[
+                    ObjectIdentifier(projectManager)
+                ] else {
+                    cleanupPreparedTerminationSaves()
+                    await presentTerminationFailure()
+                    return false
+                }
+                let (stageResult, stagedPlan) = await projectManager
+                    .stagePreparedSaveAllPaneTabsForTermination(
+                        plan,
+                        until: terminationDeadline
+                    )
+                switch stageResult {
+                case .ready:
+                    guard let stagedPlan else {
+                        cleanupPreparedTerminationSaves()
+                        await presentTerminationFailure()
+                        return false
+                    }
+                    preparedTerminationSavePlans[
+                        ObjectIdentifier(projectManager)
+                    ] = stagedPlan
+                case .failed(let message):
+                    cleanupPreparedTerminationSaves()
+                    _ = await presentTerminationAlert(
+                        .fileOperationErrorCritical,
+                        context: resolveTerminationFailureContext(
+                            preferredProject: projectManager
+                        ),
+                        title: Strings.fileOperationErrorTitle,
+                        message: message
+                    )
+                    return false
+                case .invalidated:
+                    cleanupPreparedTerminationSaves()
+                    await presentTerminationFailure()
+                    return false
+                case .timedOut:
+                    terminationDeadlineObserver()
+                    cleanupPreparedTerminationSaves()
+                    await presentTerminationFailure()
+                    return false
+                }
+            }
+
+            for (projectManager, _) in saveRequests {
+                guard let plan = preparedTerminationSavePlans[
+                    ObjectIdentifier(projectManager)
+                ] else {
+                    cleanupPreparedTerminationSaves()
+                    await presentTerminationFailure()
+                    return false
+                }
+                switch projectManager
+                    .commitStagedSaveAllPaneTabsForTermination(
+                        plan,
+                        until: terminationDeadline
+                    ) {
+                case .saved:
+                    preparedTerminationSavePlans.removeValue(
+                        forKey: ObjectIdentifier(projectManager)
+                    )
+                case .failed(let message):
+                    cleanupPreparedTerminationSaves()
+                    _ = await presentTerminationAlert(
+                        .fileOperationErrorCritical,
+                        context: resolveTerminationFailureContext(
+                            preferredProject: projectManager
+                        ),
+                        title: Strings.fileOperationErrorTitle,
+                        message: message
+                    )
+                    return false
+                case .invalidated:
+                    cleanupPreparedTerminationSaves()
+                    await presentTerminationFailure()
+                    return false
+                }
             }
         }
 
@@ -2263,11 +2377,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         registry.freezeAgentTasksForTermination()
         registry.agentTasks.prepareForApplicationTermination()
         func rollbackAgentTasks() async {
-            let remaining = remainingTerminationDuration(
-                until: terminationDeadline
-            ) ?? .zero
             guard await registry.cancelAgentTaskTermination(
-                maximumDuration: remaining
+                until: terminationDeadline
             ) else {
                 Logger.app.error(
                     "Agent task rollback did not reach a clean persistence barrier"
@@ -2309,9 +2420,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 // presented. An idle one is safe; running work is not.
                 guard let authorization = terminalAuthorizations[identifier]
                 else {
-                    guard !TerminalTabCloseAuthorization.authorizing(
+                    let currentTerminalAuthorization =
+                        TerminalTabCloseAuthorization.authorizing(
                         tabs: projectManager.terminal.allTerminalTabs
-                    ).requiresConfirmation else {
+                    )
+                    let currentLaunchAuthorization = projectManager.terminal
+                        .capturePineAgentLaunchAuthorization()
+                    guard !currentTerminalAuthorization.requiresConfirmation,
+                          !currentLaunchAuthorization.requiresConfirmation else {
                         Logger.app.error(
                             "Quit aborted: project with running processes opened during the termination handshake"
                         )
@@ -2324,6 +2440,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 ) else {
                     Logger.app.error(
                         "Quit aborted: terminal authorization no longer covers the project"
+                    )
+                    return false
+                }
+                guard let launchAuthorization =
+                        agentLaunchAuthorizations[identifier],
+                      launchAuthorization.stillCovers(
+                          projectManager.terminal
+                              .capturePineAgentLaunchAuthorization()
+                      ) else {
+                    Logger.app.error(
+                        "Quit aborted: Pine agent-launch authorization no longer covers the project"
                     )
                     return false
                 }

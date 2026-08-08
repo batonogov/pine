@@ -6,12 +6,20 @@
 //
 
 import AppKit
+import os
 import SwiftUI
 
 nonisolated enum PreparedPaneSaveCommitResult: Sendable, Equatable {
     case saved
     case invalidated
     case failed(message: String)
+}
+
+nonisolated enum TerminationPaneSaveStageResult: Sendable {
+    case ready
+    case invalidated
+    case failed(message: String)
+    case timedOut
 }
 
 /// Thin coordinator that owns the workspace, terminal, and tab managers.
@@ -38,6 +46,11 @@ final class ProjectManager {
     struct PreparedPaneSavePlan {
         fileprivate let entries: [PlannedTabSave]
         fileprivate let dirtyAuthorization: DirtyEditorContentAuthorization
+    }
+
+    struct PreparedTerminationPaneSavePlan {
+        fileprivate let source: PreparedPaneSavePlan
+        fileprivate let staged: [TerminationStagedSave]
     }
 
     enum PaneSavePreparationResult {
@@ -207,6 +220,9 @@ final class ProjectManager {
     func prepareSaveAllPaneTabs(
         context: DialogPresentationContext
     ) async -> PaneSavePreparationResult {
+        let dirtyAuthorization = DirtyEditorContentAuthorization(
+            tabs: allDirtyTabs
+        )
         var savePlan = paneManager.allTabManagers.flatMap { tabManager in
             tabManager.tabs.compactMap { tab -> PlannedTabSave? in
                 guard tab.isDirty else { return nil }
@@ -244,7 +260,8 @@ final class ProjectManager {
         // A panel may suspend long enough for a tab to close, become saved,
         // change backing, or become truncated. Revalidate every captured
         // identity before committing any member of the plan.
-        guard savePlan.allSatisfy({ planned in
+        guard dirtyAuthorization.covers(allDirtyTabs),
+              savePlan.allSatisfy({ planned in
             guard let current = planned.tabManager.tabs.first(where: {
                 $0.id == planned.tab.id
             }) else {
@@ -291,9 +308,7 @@ final class ProjectManager {
 
         return .ready(PreparedPaneSavePlan(
             entries: savePlan,
-            dirtyAuthorization: DirtyEditorContentAuthorization(
-                tabs: allDirtyTabs
-            )
+            dirtyAuthorization: dirtyAuthorization
         ))
     }
 
@@ -302,41 +317,7 @@ final class ProjectManager {
     func commitPreparedSaveAllPaneTabs(
         _ plan: PreparedPaneSavePlan
     ) -> PreparedPaneSaveCommitResult {
-        guard plan.dirtyAuthorization.covers(allDirtyTabs),
-              plan.entries.allSatisfy({ planned in
-                  guard let current = planned.tabManager.tabs.first(where: {
-                      $0.id == planned.tab.id
-                  }) else {
-                      return false
-                  }
-                  return current.isDirty
-                      && current.kind == .text
-                      && !current.isTruncated
-                      && current.fileURL == planned.tab.fileURL
-                      && current.content == planned.tab.content
-              }) else {
-            return .invalidated
-        }
-
-        let effectiveDestinations = plan.entries.compactMap { planned in
-            (planned.destination ?? planned.tab.fileURL)?
-                .standardizedFileURL
-        }
-        guard effectiveDestinations.count == plan.entries.count,
-              Set(effectiveDestinations).count
-                == effectiveDestinations.count else {
-            return .invalidated
-        }
-        let plannedTabIDs = Set(plan.entries.map(\.tab.id))
-        let unplannedOpenDestinations = Set(
-            allTabs.compactMap { tab -> URL? in
-                guard !plannedTabIDs.contains(tab.id) else { return nil }
-                return tab.fileURL?.standardizedFileURL
-            }
-        )
-        guard plan.entries.compactMap(\.destination).allSatisfy({
-            !unplannedOpenDestinations.contains($0.standardizedFileURL)
-        }) else {
+        guard preparedSavePlanStillValid(plan) else {
             return .invalidated
         }
 
@@ -368,6 +349,199 @@ final class ProjectManager {
             }
         }
         return .saved
+    }
+
+    /// Stages every potentially slow formatter and data write away from the
+    /// main actor. Staging files live beside their destinations so the later
+    /// commit is a same-volume atomic replacement.
+    func stagePreparedSaveAllPaneTabsForTermination(
+        _ plan: PreparedPaneSavePlan,
+        until deadline: DispatchTime
+    ) async -> (
+        TerminationPaneSaveStageResult,
+        PreparedTerminationPaneSavePlan?
+    ) {
+        guard preparedSavePlanStillValid(plan) else {
+            return (.invalidated, nil)
+        }
+        let requests = plan.entries.compactMap { planned
+            -> TerminationSaveRequest? in
+            guard let destination = planned.destination
+                    ?? planned.tab.fileURL else {
+                return nil
+            }
+            let settings = planned.tabManager.editorSettings
+            return TerminationSaveRequest(
+                tabID: planned.tab.id,
+                contentVersion: planned.tab.contentVersion,
+                content: planned.tab.content,
+                originalURL: planned.tab.fileURL,
+                destination: destination,
+                encodingRawValue: planned.tab.encoding.rawValue,
+                settings: EditorSaveSettingsSnapshot(
+                    insertFinalNewline: settings.insertFinalNewline,
+                    stripTrailingWhitespace:
+                        settings.stripTrailingWhitespace,
+                    formatOnSave: settings.formatOnSave
+                ),
+                formatters: planned.tabManager.fileFormatters
+            )
+        }
+        guard requests.count == plan.entries.count else {
+            return (.invalidated, nil)
+        }
+        switch await TerminationSaveCoordinator.stage(
+            requests,
+            until: deadline
+        ) {
+        case .ready(let staged):
+            return (
+                .ready,
+                PreparedTerminationPaneSavePlan(
+                    source: plan,
+                    staged: staged
+                )
+            )
+        case .failed(let message):
+            return (.failed(message: message), nil)
+        case .timedOut:
+            return (.timedOut, nil)
+        }
+    }
+
+    /// Performs only the short atomic-replacement and model-update half of a
+    /// staged termination save. Once the first replacement begins there is no
+    /// competing timeout task that can report failure while later files keep
+    /// mutating behind the user's back.
+    func commitStagedSaveAllPaneTabsForTermination(
+        _ plan: PreparedTerminationPaneSavePlan,
+        until deadline: DispatchTime
+    ) -> PreparedPaneSaveCommitResult {
+        let source = plan.source
+        guard DispatchTime.now().uptimeNanoseconds
+                < deadline.uptimeNanoseconds,
+              preparedSavePlanStillValid(source),
+              plan.staged.count == source.entries.count,
+              zip(source.entries, plan.staged).allSatisfy({ entry, staged in
+                  let destination = entry.destination ?? entry.tab.fileURL
+                  return staged.request.tabID == entry.tab.id
+                      && staged.request.contentVersion
+                          == entry.tab.contentVersion
+                      && staged.request.content == entry.tab.content
+                      && staged.request.originalURL == entry.tab.fileURL
+                      && staged.request.destination == destination
+              }) else {
+            cleanupTerminationSavePlan(plan)
+            return .invalidated
+        }
+
+        for (index, pair) in zip(source.entries, plan.staged).enumerated() {
+            let (entry, staged) = pair
+            do {
+                guard TerminationSaveCoordinator
+                    .stagingIdentityIsCurrent(staged) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                try Self.atomicallyInstallStagedSave(staged)
+            } catch {
+                cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index))
+                )
+                return .failed(message: error.localizedDescription)
+            }
+            guard entry.tabManager.applyTerminationStagedSave(
+                request: staged.request,
+                savedContent: staged.preparedContent
+            ) else {
+                // No suspension occurs between validation and this update, so
+                // reaching this branch is an internal invariant violation.
+                Logger.app.critical(
+                    "Termination save model changed during atomic commit"
+                )
+                return .invalidated
+            }
+        }
+        return .saved
+    }
+
+    func cleanupTerminationSavePlan(
+        _ plan: PreparedTerminationPaneSavePlan
+    ) {
+        cleanupTerminationStagedSaves(plan.staged)
+    }
+
+    private func cleanupTerminationStagedSaves(
+        _ staged: [TerminationStagedSave]
+    ) {
+        Task.detached(priority: .utility) {
+            TerminationSaveCoordinator.cleanup(staged)
+        }
+    }
+
+    private static func atomicallyInstallStagedSave(
+        _ staged: TerminationStagedSave
+    ) throws {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: staged.request.destination.path) {
+            _ = try fileManager.replaceItemAt(
+                staged.request.destination,
+                withItemAt: staged.stagingURL,
+                backupItemName: nil,
+                options: []
+            )
+        } else {
+            try fileManager.moveItem(
+                at: staged.stagingURL,
+                to: staged.request.destination
+            )
+        }
+    }
+
+    private func preparedSavePlanStillValid(
+        _ plan: PreparedPaneSavePlan
+    ) -> Bool {
+        let liveTabManagers = paneManager.allTabManagers
+        guard plan.dirtyAuthorization.covers(allDirtyTabs),
+              plan.entries.allSatisfy({ planned in
+                  guard liveTabManagers.contains(where: {
+                      $0 === planned.tabManager
+                  }) else {
+                      return false
+                  }
+                  guard let current = planned.tabManager.tabs.first(where: {
+                      $0.id == planned.tab.id
+                  }) else {
+                      return false
+                  }
+                  return current.isDirty
+                      && current.kind == .text
+                      && !current.isTruncated
+                      && current.fileURL == planned.tab.fileURL
+                      && current.contentVersion == planned.tab.contentVersion
+                      && current.content == planned.tab.content
+              }) else {
+            return false
+        }
+
+        let effectiveDestinations = plan.entries.compactMap { planned in
+            (planned.destination ?? planned.tab.fileURL)?
+                .standardizedFileURL
+        }
+        guard effectiveDestinations.count == plan.entries.count,
+              Set(effectiveDestinations).count
+                == effectiveDestinations.count else {
+            return false
+        }
+        let plannedTabIDs = Set(plan.entries.map(\.tab.id))
+        let unplannedOpenDestinations = Set(
+            allTabs.compactMap { tab -> URL? in
+                guard !plannedTabIDs.contains(tab.id) else { return nil }
+                return tab.fileURL?.standardizedFileURL
+            }
+        )
+        return plan.entries.compactMap(\.destination).allSatisfy {
+            !unplannedOpenDestinations.contains($0.standardizedFileURL)
+        }
     }
 
     /// Window-scoped save-all used by close and menu decisions.

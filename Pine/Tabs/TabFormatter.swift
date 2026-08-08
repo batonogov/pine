@@ -7,6 +7,12 @@
 
 import Foundation
 
+nonisolated struct EditorSaveSettingsSnapshot: Sendable {
+    let insertFinalNewline: Bool
+    let stripTrailingWhitespace: Bool
+    let formatOnSave: Bool
+}
+
 /// Applies all enabled save-time transformations in the canonical order:
 /// 1. Language-aware formatter (e.g. JSON pretty-print), when `formatOnSave` is on
 ///    and a formatter claims this file type.
@@ -23,9 +29,37 @@ enum TabFormatter {
         settings: EditorSettings,
         formatters: FileFormatterRegistry
     ) -> String {
+        contentPreparedForSave(
+            content,
+            url: url,
+            settings: EditorSaveSettingsSnapshot(
+                insertFinalNewline: settings.insertFinalNewline,
+                stripTrailingWhitespace: settings.stripTrailingWhitespace,
+                formatOnSave: settings.formatOnSave
+            ),
+            formatters: formatters,
+            formatterMaximumDuration: nil
+        )
+    }
+
+    nonisolated static func contentPreparedForSave(
+        _ content: String,
+        url: URL,
+        settings: EditorSaveSettingsSnapshot,
+        formatters: FileFormatterRegistry,
+        formatterMaximumDuration: TimeInterval?
+    ) -> String {
         var result = content
         if settings.formatOnSave {
-            result = formatters.format(content: result, url: url)
+            if let formatterMaximumDuration {
+                result = formatters.format(
+                    content: result,
+                    url: url,
+                    maximumDuration: formatterMaximumDuration
+                )
+            } else {
+                result = formatters.format(content: result, url: url)
+            }
         }
         if settings.stripTrailingWhitespace {
             result = result.trailingWhitespaceStripped()

@@ -19,9 +19,14 @@ import Foundation
 @MainActor
 struct UserTaskExecutionAuthorization: Equatable {
     fileprivate let executionIDs: Set<UUID>
+    fileprivate let launchGeneration: UUID?
 
-    init(executionIDs: Set<UUID> = []) {
+    init(
+        executionIDs: Set<UUID> = [],
+        launchGeneration: UUID? = nil
+    ) {
         self.executionIDs = executionIDs
+        self.launchGeneration = launchGeneration
     }
 
     var requiresConfirmation: Bool { !executionIDs.isEmpty }
@@ -76,6 +81,10 @@ final class UserTaskRunStore {
     /// been released. This also covers the short race before a late handle is
     /// published on the main queue.
     private var unresolvedCleanupRunIDs: Set<UUID> = []
+    /// Changes for every accepted invocation and deliberately survives run
+    /// cleanup, so a transient late execution cannot disappear between Quit
+    /// authorization checks.
+    private var launchGeneration: UUID?
     private let maximumRuns: Int
     private let maximumRetainedOutputBytes: Int
 
@@ -95,6 +104,7 @@ final class UserTaskRunStore {
     /// progress. Returns the run so the caller can drive its state.
     @discardableResult
     func start(_ run: UserTaskRun) -> UserTaskRun {
+        launchGeneration = UUID()
         runs.insert(run, at: 0)
         isOutputVisible = true
         trimToCapacity()
@@ -292,7 +302,8 @@ final class UserTaskRunStore {
     func captureShutdownAuthorization() -> UserTaskExecutionAuthorization {
         pruneResolvedCleanupOwnership()
         return UserTaskExecutionAuthorization(
-            executionIDs: executionOwnershipRunIDs
+            executionIDs: executionOwnershipRunIDs,
+            launchGeneration: launchGeneration
         )
     }
 
@@ -301,7 +312,8 @@ final class UserTaskRunStore {
         _ authorization: UserTaskExecutionAuthorization
     ) -> Bool {
         pruneResolvedCleanupOwnership()
-        return executionOwnershipRunIDs.isSubset(
+        return launchGeneration == authorization.launchGeneration
+            && executionOwnershipRunIDs.isSubset(
             of: authorization.executionIDs
         )
     }
@@ -358,9 +370,11 @@ final class UserTaskRunStore {
             for: handles,
             until: deadline
         )
-        let hasUnauthorizedExecution = !executionOwnershipRunIDs.isSubset(
-            of: authorization.executionIDs
-        )
+        let hasUnauthorizedExecution =
+            launchGeneration != authorization.launchGeneration
+            || !executionOwnershipRunIDs.isSubset(
+                of: authorization.executionIDs
+            )
         let allCompleted = ownsEveryExecution
             && handlesCompleted
             && !hasUnauthorizedExecution

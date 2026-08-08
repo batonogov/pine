@@ -254,6 +254,45 @@ struct WindowLifecycleTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    @Test func newDirtyTabDuringQuitSavePanelInvalidatesPlan() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let destination = dir.appendingPathComponent("first.swift")
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        _ = try #require(project.createUntitledFile())
+        updateContent("// first dirty", in: project)
+        project.saveDestinationChooser = { _, _, _ in
+            _ = project.createUntitledFile()
+            project.activeTabManager.autoSavePreferenceProvider = { false }
+            project.activeTabManager.updateContent("// created during panel")
+            return destination
+        }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presentedTemplates: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(
+            presentedTemplates == [
+                .applicationQuitSummary,
+                .unsavedChangesBulk,
+                .applicationQuitFailure,
+            ]
+        )
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+        #expect(project.allDirtyTabs.count == 2)
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func multipleSlowReviewPromptsDoNotConsumeMachineDeadline() async throws {
         let firstDirectory = try makeTempDirectory()
         let secondDirectory = try makeTempDirectory()
@@ -325,6 +364,68 @@ struct WindowLifecycleTests {
         #expect(presentedOwner === owner)
     }
 
+    @Test func detailedQuitSaveFailureUsesReboundProjectOwner() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        _ = try #require(project.createUntitledFile())
+        updateContent("// cannot stage", in: project)
+        project.saveDestinationChooser = { _, _, _ in
+            dir.appendingPathComponent("missing-parent/file.swift")
+        }
+        let oldWindow = NSWindow()
+        let newWindow = NSWindow()
+        oldWindow.orderFront(nil)
+        let oldContext = DialogPresenter.register(
+            window: oldWindow,
+            projectManager: project
+        )
+        defer {
+            DialogPresenter.ownerDidClose(oldWindow)
+            DialogPresenter.ownerDidClose(newWindow)
+            oldWindow.orderOut(nil)
+            newWindow.orderOut(nil)
+        }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presented: [AlertTemplate] = []
+        var errorOwner: NSWindow?
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, context, _, _ in
+                presented.append(template)
+                if template == .unsavedChangesBulk {
+                    DialogPresenter.ownerDidClose(oldWindow)
+                    oldWindow.orderOut(nil)
+                    newWindow.orderFront(nil)
+                    DialogPresenter.register(
+                        window: newWindow,
+                        projectManager: project
+                    )
+                }
+                if template == .fileOperationErrorCritical {
+                    errorOwner = context.nsWindow
+                }
+                return .alertFirstButtonReturn
+            },
+            applicationContext: oldContext,
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(
+            presented == [
+                .applicationQuitSummary,
+                .unsavedChangesBulk,
+                .fileOperationErrorCritical,
+            ]
+        )
+        #expect(errorOwner === newWindow)
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func terminationBudgetAlwaysReservesRollback() {
         let long = AppDelegate.terminationBudgetSplit(
             availableNanoseconds: 30_000_000_000
@@ -370,7 +471,10 @@ struct WindowLifecycleTests {
 
         let elapsed = DispatchTime.now().uptimeNanoseconds - started
         #expect(result)
-        #expect(elapsed >= 600_000_000)
+        // ContinuousClock sleeps may wake within their platform tolerance;
+        // the assertion only needs to prove the 500 ms machine budget did
+        // not cap the user's decision time.
+        #expect(elapsed >= 550_000_000)
         #expect(deadlineProbe.elapsedNanoseconds == nil)
         #expect(!project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
@@ -413,6 +517,203 @@ struct WindowLifecycleTests {
         #expect(
             deadlineProbe.elapsedNanoseconds.map { $0 < 1_000_000_000 } == true
         )
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func realQuitSaveTimeoutLeavesTargetAndTabUntouched() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// dirty before timeout", in: project)
+        let probe = BlockingFormatterProbe()
+        defer { probe.release() }
+        let suiteName = "WindowLifecycleTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = EditorSettings(defaults: defaults)
+        settings.formatOnSave = true
+        project.primaryTabManager.editorSettings = settings
+        project.primaryTabManager.fileFormatters = FileFormatterRegistry(
+            formatters: [probe.formatter()]
+        )
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let deadlineProbe = TerminationDeadlineProbe()
+        var presented: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presented.append(template)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + .milliseconds(100),
+            terminationDeadlineObserver: deadlineProbe.record
+        )
+
+        #expect(!result)
+        #expect(probe.didStart)
+        #expect(deadlineProbe.elapsedNanoseconds != nil)
+        #expect(
+            presented == [
+                .applicationQuitSummary,
+                .unsavedChangesBulk,
+                .applicationQuitFailure,
+            ]
+        )
+        #expect(try String(contentsOf: file, encoding: .utf8) == "// test.swift")
+        #expect(project.primaryTabManager.activeTab?.content ==
+                "// dirty before timeout")
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func editBackDuringQuitSaveStagingInvalidatesGeneration() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// captured dirty", in: project)
+        let probe = BlockingFormatterProbe()
+        defer { probe.release() }
+        let suiteName = "WindowLifecycleTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = EditorSettings(defaults: defaults)
+        settings.formatOnSave = true
+        project.primaryTabManager.editorSettings = settings
+        project.primaryTabManager.fileFormatters = FileFormatterRegistry(
+            formatters: [probe.formatter()]
+        )
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presented: [AlertTemplate] = []
+        let quit = Task { @MainActor in
+            await delegate.confirmApplicationTermination(
+                presentAlert: { template, _, _, _ in
+                    presented.append(template)
+                    return .alertFirstButtonReturn
+                },
+                terminationDeadlineOverride: .now() + 5
+            )
+        }
+
+        #expect(await probe.waitUntilStarted())
+        project.primaryTabManager.updateContent("// edited during staging")
+        project.primaryTabManager.updateContent("// captured dirty")
+        probe.release()
+        let result = await quit.value
+
+        #expect(!result)
+        #expect(
+            presented == [
+                .applicationQuitSummary,
+                .unsavedChangesBulk,
+                .applicationQuitFailure,
+            ]
+        )
+        #expect(try String(contentsOf: file, encoding: .utf8) == "// test.swift")
+        #expect(project.primaryTabManager.activeTab?.content ==
+                "// captured dirty")
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func paneReplacementInvalidatesStagedTerminationSave() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let tabManager = project.primaryTabManager
+        tabManager.openTab(url: file)
+        updateContent("// captured dirty", in: project)
+
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready termination save plan")
+            return
+        }
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+        guard case .ready = staged.0 else {
+            Issue.record("Expected staged termination save artifacts")
+            return
+        }
+        let stagedPlan = try #require(staged.1)
+
+        project.paneManager.removePane(project.paneManager.activePaneID)
+        let result = project.commitStagedSaveAllPaneTabsForTermination(
+            stagedPlan,
+            until: .now() + 5
+        )
+
+        #expect(result == .invalidated)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "// test.swift")
+        #expect(tabManager.activeTab?.content == "// captured dirty")
+        #expect(tabManager.activeTab?.isDirty == true)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func replacedStagingFileIsRejectedBeforeInstall() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// captured dirty", in: project)
+
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready termination save plan")
+            return
+        }
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+        guard case .ready = staged.0 else {
+            Issue.record("Expected staged termination save artifacts")
+            return
+        }
+        let stagedPlan = try #require(staged.1)
+        let stagingURL = try #require(
+            FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: nil
+            ).first(where: { $0.lastPathComponent.hasPrefix(".pine-save-") })
+        )
+        try FileManager.default.removeItem(at: stagingURL)
+        try "substituted".write(
+            to: stagingURL,
+            atomically: false,
+            encoding: .utf8
+        )
+
+        let result = project.commitStagedSaveAllPaneTabsForTermination(
+            stagedPlan,
+            until: .now() + 5
+        )
+
+        guard case .failed = result else {
+            Issue.record("Expected substituted staging file to fail")
+            return
+        }
+        #expect(try String(contentsOf: file, encoding: .utf8) == "// test.swift")
+        #expect(project.primaryTabManager.activeTab?.content ==
+                "// captured dirty")
         #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
     }
@@ -1007,6 +1308,55 @@ nonisolated private final class TerminationDeadlineProbe: @unchecked Sendable {
             recordedElapsedNanoseconds =
                 DispatchTime.now().uptimeNanoseconds - started
         }
+    }
+}
+
+nonisolated private final class BlockingFormatterProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+    private var started = false
+
+    var didStart: Bool {
+        lock.withLock { started }
+    }
+
+    func formatter() -> ExternalFileFormatter {
+        ExternalFileFormatter(
+            toolPath: "/usr/bin/false",
+            toolName: "blocking-test-formatter",
+            extensions: ["swift"],
+            arguments: [],
+            processRunner: { [self] _, _, input, _ in
+                lock.withLock { started = true }
+                releaseSemaphore.wait()
+                return ProcessRunResult(
+                    stdout: input,
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            },
+            timeout: 30
+        )
+    }
+
+    func release() {
+        releaseSemaphore.signal()
+    }
+
+    func waitUntilStarted(
+        maximumDuration: Duration = .seconds(2)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: maximumDuration)
+        while !didStart, clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
+        }
+        return didStart
     }
 }
 

@@ -199,9 +199,19 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
     }
 
     func format(_ content: String, url: URL) -> String {
+        format(content, url: url, maximumDuration: timeout)
+    }
+
+    func format(
+        _ content: String,
+        url: URL,
+        maximumDuration: TimeInterval
+    ) -> String {
         guard let executablePath = toolPath else {
             return content
         }
+        let effectiveTimeout = min(timeout, maximumDuration)
+        guard effectiveTimeout > 0 else { return content }
 
         // Dispatch to a background queue so runRealProcess's main-thread
         // precondition is satisfied. The caller (trySaveTab) runs on main;
@@ -216,7 +226,7 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
                 executablePath,
                 self.arguments,
                 content,
-                self.timeout
+                effectiveTimeout
             )
             group.leave()
         }
