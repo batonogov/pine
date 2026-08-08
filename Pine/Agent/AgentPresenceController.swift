@@ -176,7 +176,7 @@ final class AgentPresenceController {
     /// Sorts live tasks newest-first by run start, then by stable id, matching
     /// `AgentInboxSnapshot.rowPrecedes` so the Dock list and the Inbox read in
     /// the same order.
-    private nonisolated static func rowPrecedes(_ lhs: AgentTask, _ rhs: AgentTask) -> Bool {
+    nonisolated private static func rowPrecedes(_ lhs: AgentTask, _ rhs: AgentTask) -> Bool {
         let lhsStarted = lhs.runs.last?.startedAt ?? lhs.createdAt
         let rhsStarted = rhs.runs.last?.startedAt ?? rhs.createdAt
         if lhsStarted != rhsStarted { return lhsStarted > rhsStarted }
