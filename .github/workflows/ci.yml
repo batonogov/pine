@@ -36,8 +36,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      SWIFTLINT_VERSION: "0.63.2"
-      SWIFTLINT_SHA256: "dd1017cfd20a1457f264590bcb5875a6ee06cd75b9a9d4f77cd43a552499143b"
+      # N-1 from latest stable (0.65.0): stay one release behind for lint-rule
+      # stability while keeping the pin current. Bump both fields together.
+      SWIFTLINT_VERSION: "0.64.1"
+      SWIFTLINT_SHA256: "d086685c2d0a6f6e19683250b132d0b1028de2936618152a358e4646ca065857"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
