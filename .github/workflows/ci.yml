@@ -85,6 +85,9 @@ jobs:
       - name: Tests for DMG packaging scripts
         run: bash scripts/tests/test-dmg-packaging.sh
 
+      - name: Tests for screenshot workflow coverage
+        run: bash scripts/tests/test-screenshot-workflow.sh
+
   build:
     name: Build for Testing
     runs-on: macos-26

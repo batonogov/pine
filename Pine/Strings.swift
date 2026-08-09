@@ -628,6 +628,13 @@ enum Strings {
         "agentInbox.markRead"
     static let agentInboxMarkUnread: LocalizedStringKey =
         "agentInbox.markUnread"
+    static func agentInboxUnread(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentInbox.unread",
+            fallback: "Unread",
+            locale: locale
+        )
+    }
     static let agentInboxDismiss: LocalizedStringKey = "agentInbox.dismiss"
     static let agentInboxRouteUnavailable: LocalizedStringKey =
         "agentInbox.routeUnavailable"

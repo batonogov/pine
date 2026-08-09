@@ -52,7 +52,12 @@ struct AgentCompletionBriefView: View {
                     .font(.system(size: 16))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Strings.dialogCancel)
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel(
+                Text(verbatim: AgentReadOnlySheetChrome.closeLabel(
+                    locale: locale
+                ))
+            )
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
@@ -252,5 +257,14 @@ struct AgentCompletionBriefView: View {
         case .failed: .red
         case .unknown: .secondary
         }
+    }
+}
+
+/// Shared semantics for read-only agent sheets. These surfaces do not have
+/// pending edits to cancel, so their dismiss control must be exposed as Close
+/// to VoiceOver while still accepting the standard Escape shortcut (#1372).
+enum AgentReadOnlySheetChrome {
+    static func closeLabel(locale: Locale = .current) -> String {
+        Strings.dialogClose(locale: locale)
     }
 }
