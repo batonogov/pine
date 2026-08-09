@@ -19,15 +19,26 @@ nonisolated struct PineAgentLaunchIdentity: Hashable, Sendable {
     let reservation: AgentTaskLaunchReservation
 }
 
+nonisolated struct PineAgentSettledLaunchIdentity: Hashable, Sendable {
+    let launch: PineAgentLaunchIdentity
+    let sessionID: UUID
+}
+
 @MainActor
 struct PineAgentLaunchAuthorization {
     fileprivate let identities: Set<PineAgentLaunchIdentity>
-    fileprivate let settledTaskIDsByTerminal: [UUID: UUID]
+    fileprivate let settledIdentities: Set<PineAgentSettledLaunchIdentity>
 
     var requiresConfirmation: Bool { !identities.isEmpty }
 
     func stillCovers(_ current: PineAgentLaunchAuthorization) -> Bool {
-        current.identities.isSubset(of: identities)
+        let authorizedLaunches = identities.union(
+            settledIdentities.map(\.launch)
+        )
+        return current.identities.isSubset(of: authorizedLaunches)
+            && current.settledIdentities.allSatisfy {
+                authorizedLaunches.contains($0.launch)
+            }
     }
 
     /// Covers an idle-to-foreground transition only when the current terminal
@@ -37,13 +48,15 @@ struct PineAgentLaunchAuthorization {
         in terminalID: UUID,
         current: PineAgentLaunchAuthorization
     ) -> Bool {
-        current.identities.contains { identity in
+        let authorizedLaunches = identities.union(
+            settledIdentities.map(\.launch)
+        )
+        return current.identities.contains { identity in
             identity.terminalID == terminalID
-                && identities.contains(identity)
-        } || identities.contains { identity in
-            identity.terminalID == terminalID
-                && current.settledTaskIDsByTerminal[terminalID]
-                    == identity.reservation.taskID
+                && authorizedLaunches.contains(identity)
+        } || current.settledIdentities.contains { settled in
+            settled.launch.terminalID == terminalID
+                && authorizedLaunches.contains(settled.launch)
         }
     }
 
@@ -95,6 +108,13 @@ final class TerminalManager {
     @ObservationIgnored
     private var acknowledgedAgentLaunches: [
         UUID: AgentTaskLaunchReservation
+    ] = [:]
+    /// Exact reservation-to-session lineage retained after the registry
+    /// consumes a launch claim. A durable task id can span many resumes and
+    /// is therefore never sufficient destructive authorization by itself.
+    @ObservationIgnored
+    private var settledAgentLaunches: [
+        UUID: PineAgentSettledLaunchIdentity
     ] = [:]
 
     /// `true` once agent-detection polling has started. Read-only diagnostic /
@@ -149,6 +169,7 @@ final class TerminalManager {
                 agentTaskRegistry?.cancelLaunch(reservation)
             }
             self?.acknowledgedAgentLaunches.removeValue(forKey: terminalID)
+            self?.settledAgentLaunches.removeValue(forKey: terminalID)
             agentTaskRegistry?.markTerminalClosed(
                 terminalID: terminalID,
                 project: project
@@ -200,6 +221,9 @@ final class TerminalManager {
               let base = agentTaskContext(for: tab),
               let agentTaskRegistry else { return }
         let ownedReservation = reservation ?? launchReservations[tab.id]
+        if settledAgentLaunches[tab.id]?.sessionID != session.id {
+            settledAgentLaunches[tab.id] = nil
+        }
         let context = AgentTaskBridgeContext(
             project: base.project,
             route: base.route,
@@ -214,6 +238,18 @@ final class TerminalManager {
             context: context,
             reservation: ownedReservation
         )
+        if let ownedReservation,
+           !agentTaskRegistry.isLaunchPending(ownedReservation),
+           agentTaskRegistry.taskID(forSessionID: session.id)
+                == ownedReservation.taskID {
+            settledAgentLaunches[tab.id] = PineAgentSettledLaunchIdentity(
+                launch: PineAgentLaunchIdentity(
+                    terminalID: tab.id,
+                    reservation: ownedReservation
+                ),
+                sessionID: session.id
+            )
+        }
         if let ownedReservation,
            !agentTaskRegistry.isLaunchPending(ownedReservation) {
             launchReservations[tab.id] = nil
@@ -251,18 +287,25 @@ final class TerminalManager {
                 reservation: reservation
             ))
         }
-        var settledTaskIDsByTerminal: [UUID: UUID] = [:]
-        for tab in allTerminalTabs {
-            guard let sessionID = tab.agentSession?.id,
-                  let taskID = agentTaskRegistry?
-                    .taskID(forSessionID: sessionID) else {
-                continue
+        let tabsByID = Dictionary(
+            uniqueKeysWithValues: allTerminalTabs.map { ($0.id, $0) }
+        )
+        let staleSettledTerminalIDs = settledAgentLaunches.compactMap { terminalID, settled in
+            guard let tab = tabsByID[terminalID],
+                  tab.agentSession?.id == settled.sessionID,
+                  agentTaskRegistry?.taskID(
+                      forSessionID: settled.sessionID
+                  ) == settled.launch.reservation.taskID else {
+                return terminalID
             }
-            settledTaskIDsByTerminal[tab.id] = taskID
+            return nil
+        }
+        for terminalID in staleSettledTerminalIDs {
+            settledAgentLaunches[terminalID] = nil
         }
         return PineAgentLaunchAuthorization(
             identities: identities,
-            settledTaskIDsByTerminal: settledTaskIDsByTerminal
+            settledIdentities: Set(settledAgentLaunches.values)
         )
     }
 

@@ -339,6 +339,90 @@ struct BulkCloseAgentAuthorizationTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    @Test("Settled launch authorization rejects same-task reservation replay")
+    func settledLaunchRejectsSameTaskReservationReplay() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let pane = project.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: dir
+        )
+        let tab = try #require(
+            project.paneManager.terminalState(for: pane)?.terminalTabs.first
+        )
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        guard case .reserved(let firstReservation) = await project.terminal
+                .launchAgentCommandForTesting(
+                    "codex",
+                    descriptor: descriptor,
+                    in: tab,
+                    acknowledgedWrite: { true }
+                ) else {
+            Issue.record("First launch was not reserved")
+            return
+        }
+        let firstAuthorization = project.terminal
+            .capturePineAgentLaunchAuthorization()
+        let firstSession = detectedSession(
+            agentType: .codex,
+            processID: 8_111,
+            generation: 10
+        )
+        project.terminal.bridgeAgentSession(
+            firstSession,
+            replacing: nil,
+            in: tab,
+            reservation: firstReservation
+        )
+        tab.agentSession = firstSession
+        #expect(firstAuthorization.coversLaunch(
+            in: tab.id,
+            current: project.terminal.capturePineAgentLaunchAuthorization()
+        ))
+
+        firstSession.applyLiveness(.terminated)
+        firstSession.state = .done
+        project.terminal.bridgeAgentSession(
+            firstSession,
+            replacing: firstSession,
+            in: tab
+        )
+        guard case .reserved(let secondReservation) = project.terminal
+                .prepareAgentResume(
+                    taskID: firstReservation.taskID,
+                    in: tab
+                ) else {
+            Issue.record("Second launch was not reserved")
+            return
+        }
+        #expect(secondReservation != firstReservation)
+        #expect(registry.agentTasks.armLaunch(secondReservation))
+        let secondSession = detectedSession(
+            agentType: .codex,
+            processID: 8_222,
+            generation: 11
+        )
+        project.terminal.bridgeAgentSession(
+            secondSession,
+            replacing: firstSession,
+            in: tab,
+            reservation: secondReservation
+        )
+        tab.agentSession = secondSession
+        let current = project.terminal.capturePineAgentLaunchAuthorization()
+
+        #expect(!firstAuthorization.stillCovers(current))
+        #expect(!firstAuthorization.coversLaunch(
+            in: tab.id,
+            current: current
+        ))
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test("Window close warns about a running agent that has no foreground pgid")
     func windowCloseWarnsAboutRunningAgent() async throws {
         let dir = try makeTempDirectory()
