@@ -147,7 +147,7 @@ final class ScreenshotTests: PineUITestCase {
 
     // MARK: - Terminal
 
-    func testMarketingShellFixtureIsProjectScopedAndCrossShell() throws {
+    func testMarketingShellFixtureStaysOutOfProjectAndCoversBothShells() throws {
         projectURL = try createTempProject(projectName: "Pine Demo")
         let projectURL = try XCTUnwrap(projectURL)
 
@@ -155,7 +155,13 @@ final class ScreenshotTests: PineUITestCase {
 
         XCTAssertEqual(
             configURL.deletingLastPathComponent().standardizedFileURL,
-            projectURL.standardizedFileURL
+            projectURL.deletingLastPathComponent().standardizedFileURL
+        )
+        XCTAssertFalse(
+            configURL.standardizedFileURL.path.hasPrefix(
+                projectURL.standardizedFileURL.path + "/"
+            ),
+            "Marketing shell fixtures must not appear in the project tree"
         )
         XCTAssertTrue(
             FileManager.default.fileExists(
@@ -209,10 +215,11 @@ final class ScreenshotTests: PineUITestCase {
     /// developer machines normally use zsh, so configure both login shells.
     @discardableResult
     private func configureMarketingShell(for projectURL: URL) throws -> URL {
-        let configURL = projectURL.appendingPathComponent(
-            ".pine-marketing-shell",
-            isDirectory: true
-        )
+        let configURL = projectURL.deletingLastPathComponent()
+            .appendingPathComponent(
+                ".pine-marketing-shell",
+                isDirectory: true
+            )
         try FileManager.default.createDirectory(at: configURL, withIntermediateDirectories: true)
 
         let zshConfiguration = #"""
