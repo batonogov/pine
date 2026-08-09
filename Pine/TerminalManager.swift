@@ -22,11 +22,33 @@ nonisolated struct PineAgentLaunchIdentity: Hashable, Sendable {
 @MainActor
 struct PineAgentLaunchAuthorization {
     fileprivate let identities: Set<PineAgentLaunchIdentity>
+    fileprivate let settledTaskIDsByTerminal: [UUID: UUID]
 
     var requiresConfirmation: Bool { !identities.isEmpty }
 
     func stillCovers(_ current: PineAgentLaunchAuthorization) -> Bool {
         current.identities.isSubset(of: identities)
+    }
+
+    /// Covers an idle-to-foreground transition only when the current terminal
+    /// still carries the exact Pine reservation captured by the user's Quit
+    /// decision. A raw tab id or a newly observed process group is insufficient.
+    func coversLaunch(
+        in terminalID: UUID,
+        current: PineAgentLaunchAuthorization
+    ) -> Bool {
+        current.identities.contains { identity in
+            identity.terminalID == terminalID
+                && identities.contains(identity)
+        } || identities.contains { identity in
+            identity.terminalID == terminalID
+                && current.settledTaskIDsByTerminal[terminalID]
+                    == identity.reservation.taskID
+        }
+    }
+
+    fileprivate var reservations: Set<AgentTaskLaunchReservation> {
+        Set(identities.map(\.reservation))
     }
 }
 
@@ -202,6 +224,15 @@ final class TerminalManager {
     func capturePineAgentLaunchAuthorization()
         -> PineAgentLaunchAuthorization {
         var identities = Set<PineAgentLaunchIdentity>()
+        let staleReservationTerminalIDs = launchReservations.compactMap { terminalID, reservation in
+            agentTaskRegistry?.isLaunchPending(reservation) == true
+                ? nil
+                : terminalID
+        }
+        for terminalID in staleReservationTerminalIDs {
+            launchReservations[terminalID] = nil
+            acknowledgedAgentLaunches[terminalID] = nil
+        }
         for (terminalID, reservation) in launchReservations {
             identities.insert(PineAgentLaunchIdentity(
                 terminalID: terminalID,
@@ -220,7 +251,70 @@ final class TerminalManager {
                 reservation: reservation
             ))
         }
-        return PineAgentLaunchAuthorization(identities: identities)
+        var settledTaskIDsByTerminal: [UUID: UUID] = [:]
+        for tab in allTerminalTabs {
+            guard let sessionID = tab.agentSession?.id,
+                  let taskID = agentTaskRegistry?
+                    .taskID(forSessionID: sessionID) else {
+                continue
+            }
+            settledTaskIDsByTerminal[tab.id] = taskID
+        }
+        return PineAgentLaunchAuthorization(
+            identities: identities,
+            settledTaskIDsByTerminal: settledTaskIDsByTerminal
+        )
+    }
+
+    /// Pins every exact launch covered by the preflight while the user reads
+    /// Quit sheets. The registry retains the claim's remaining lease rather
+    /// than charging unbounded human decision time against a short TTL.
+    func pauseAuthorizedAgentLaunchesForTerminationDecision(
+        _ authorization: PineAgentLaunchAuthorization
+    ) -> Bool {
+        agentTaskRegistry?.pauseLaunchExpirationForTerminationDecision(
+            authorization.reservations
+        ) ?? authorization.reservations.isEmpty
+    }
+
+    /// Releases a cancelled Quit's lease and drops acknowledgement-only UI
+    /// state. Armed reservations remain represented by `launchReservations`;
+    /// an acknowledgement whose durable claim disappeared must not continue
+    /// authorizing later destructive actions.
+    func cancelAuthorizedAgentLaunchTerminationDecision(
+        _ authorization: PineAgentLaunchAuthorization
+    ) {
+        agentTaskRegistry?.resumeLaunchExpirationAfterTerminationDecision(
+            authorization.reservations
+        )
+        acknowledgedAgentLaunches.removeAll()
+    }
+
+    /// Waits for every exact PTY write covered by the user's decision to
+    /// settle. Pine performs another persistence barrier after this returns,
+    /// so a late successful acknowledgement cannot be killed without its
+    /// durable interruption marker.
+    func waitForAuthorizedAgentLaunchSettlement(
+        _ authorization: PineAgentLaunchAuthorization,
+        until deadline: DispatchTime
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        while authorization.identities.contains(where: { identity in
+            launchWritesInFlight[identity.terminalID] == identity.reservation
+        }) {
+            let now = DispatchTime.now().uptimeNanoseconds
+            guard now < deadline.uptimeNanoseconds else { return false }
+            let remaining = deadline.uptimeNanoseconds - now
+            do {
+                try await clock.sleep(for: .nanoseconds(Int64(clamping: min(
+                    remaining,
+                    5_000_000
+                ))))
+            } catch {
+                return false
+            }
+        }
+        return true
     }
 
     /// Captures the detector boundary and reserves durable identity for the
@@ -379,6 +473,9 @@ final class TerminalManager {
         if launchReservations[tab.id] == reservation {
             launchReservations[tab.id] = nil
         }
+        if acknowledgedAgentLaunches[tab.id] == reservation {
+            acknowledgedAgentLaunches[tab.id] = nil
+        }
         agentTaskRegistry?.cancelLaunch(reservation)
     }
 
@@ -469,6 +566,7 @@ final class TerminalManager {
     func cancelAgentTaskTermination() {
         guard agentTaskCallbacksFrozen else { return }
         agentTaskCallbacksFrozen = false
+        acknowledgedAgentLaunches.removeAll()
         if paneManager?.allTerminalTabs.isEmpty == false {
             if let agentCoordinator {
                 agentCoordinator.start()

@@ -7,11 +7,46 @@ import Darwin
 import Foundation
 
 /// Result of running an external process.
-struct ProcessRunResult: Sendable {
+nonisolated struct ProcessRunResult: Sendable {
     let stdout: String
     let stderr: String
     let exitCode: Int32
     let timedOut: Bool
+    let outputLimitExceeded: Bool
+
+    init(
+        stdout: String,
+        stderr: String,
+        exitCode: Int32,
+        timedOut: Bool,
+        outputLimitExceeded: Bool = false
+    ) {
+        self.stdout = stdout
+        self.stderr = stderr
+        self.exitCode = exitCode
+        self.timedOut = timedOut
+        self.outputLimitExceeded = outputLimitExceeded
+    }
+}
+
+/// Byte limits applied while capturing a subprocess's output. Formatters only
+/// operate on Pine's in-memory document contents, so these bounds comfortably
+/// cover normal and large-file edits while preventing a broken tool from
+/// consuming memory without limit.
+nonisolated struct ProcessOutputLimits: Sendable {
+    let stdoutBytes: Int
+    let stderrBytes: Int
+
+    static let formatter = ProcessOutputLimits(
+        stdoutBytes: 16 * 1_024 * 1_024,
+        stderrBytes: 1 * 1_024 * 1_024
+    )
+}
+
+nonisolated private final class ExternalProcessSpawnLock: @unchecked Sendable {
+    static let shared = ExternalProcessSpawnLock()
+
+    let value = NSLock()
 }
 
 /// Signature for running an external process. Closure-based so tests can inject
@@ -48,7 +83,36 @@ nonisolated func runRealProcess(
         executablePath: executablePath,
         arguments: arguments,
         stdin: Data(stdin.utf8),
-        timeout: timeout
+        timeout: timeout,
+        outputLimits: .formatter
+    )
+}
+
+/// Internal overload used by focused process-runner tests to exercise output
+/// and deadline boundaries without allocating the production-sized limits.
+@Sendable
+nonisolated func runRealProcess(
+    executablePath: String,
+    arguments: [String],
+    stdin: String,
+    timeout: TimeInterval,
+    outputLimits: ProcessOutputLimits
+) -> ProcessRunResult {
+    precondition(!Thread.isMainThread, "runRealProcess() must not be called on the main thread")
+    guard timeout.isFinite, timeout > 0 else {
+        return ProcessRunResult(
+            stdout: "",
+            stderr: "Process deadline expired",
+            exitCode: -1,
+            timedOut: true
+        )
+    }
+    return runSpawnedProcess(
+        executablePath: executablePath,
+        arguments: arguments,
+        stdin: Data(stdin.utf8),
+        timeout: timeout,
+        outputLimits: outputLimits
     )
 }
 
@@ -56,16 +120,53 @@ nonisolated private func runSpawnedProcess(
     executablePath: String,
     arguments: [String],
     stdin: Data,
-    timeout: TimeInterval
+    timeout: TimeInterval,
+    outputLimits: ProcessOutputLimits
 ) -> ProcessRunResult {
+    let start = DispatchTime.now().uptimeNanoseconds
+    let requestedNanoseconds = timeout * 1_000_000_000
+    let maximumBudget = UInt64.max - start
+    let budget = requestedNanoseconds >= Double(maximumBudget)
+        ? maximumBudget
+        : UInt64(requestedNanoseconds)
+    let hardDeadline = start + budget
+    let desiredGrace = min(100_000_000, max(10_000_000, budget / 5))
+    let grace = min(budget, desiredGrace)
+    let softDeadline = hardDeadline - grace
+
+    // `pipe2(O_CLOEXEC)` is atomic, but only available on macOS 27. The
+    // deployment-target fallback serializes Pine's process runners across the
+    // short pipe()+fcntl()+spawn window. CLOEXEC_DEFAULT below additionally
+    // prevents unrelated descriptors from entering this child on both OSes.
+    let requiresSpawnLock: Bool
+    if #available(macOS 27.0, *) {
+        requiresSpawnLock = false
+    } else {
+        requiresSpawnLock = true
+    }
+    if requiresSpawnLock {
+        ExternalProcessSpawnLock.shared.value.lock()
+    }
+    var holdsSpawnLock = requiresSpawnLock
+    defer {
+        if holdsSpawnLock {
+            ExternalProcessSpawnLock.shared.value.unlock()
+        }
+    }
+
     var inputPipe = [Int32](repeating: -1, count: 2)
     var outputPipe = [Int32](repeating: -1, count: 2)
     var errorPipe = [Int32](repeating: -1, count: 2)
-    guard Darwin.pipe(&inputPipe) == 0,
-          Darwin.pipe(&outputPipe) == 0,
-          Darwin.pipe(&errorPipe) == 0 else {
+    let inputPipeResult = makeCloseOnExecPipe(&inputPipe)
+    let outputPipeResult = inputPipeResult == 0
+        ? makeCloseOnExecPipe(&outputPipe)
+        : inputPipeResult
+    let errorPipeResult = outputPipeResult == 0
+        ? makeCloseOnExecPipe(&errorPipe)
+        : outputPipeResult
+    guard errorPipeResult == 0 else {
         closeDescriptors(inputPipe + outputPipe + errorPipe)
-        return processLaunchFailure(errno)
+        return processLaunchFailure(errorPipeResult)
     }
 
     var fileActions: posix_spawn_file_actions_t?
@@ -106,7 +207,7 @@ nonisolated private func runSpawnedProcess(
     }
     guard posix_spawnattr_setflags(
         &attributes,
-        Int16(POSIX_SPAWN_SETPGROUP)
+        Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)
     ) == 0,
           posix_spawnattr_setpgroup(&attributes, 0) == 0 else {
         closeDescriptors(inputPipe + outputPipe + errorPipe)
@@ -136,6 +237,11 @@ nonisolated private func runSpawnedProcess(
         return processLaunchFailure(spawnResult)
     }
 
+    if holdsSpawnLock {
+        ExternalProcessSpawnLock.shared.value.unlock()
+        holdsSpawnLock = false
+    }
+
     Darwin.close(inputPipe[0])
     Darwin.close(outputPipe[1])
     Darwin.close(errorPipe[1])
@@ -147,13 +253,10 @@ nonisolated private func runSpawnedProcess(
     setNonblocking(errorDescriptor)
     _ = Darwin.fcntl(inputDescriptor, F_SETNOSIGPIPE, 1)
 
-    let start = DispatchTime.now().uptimeNanoseconds
-    let budget = UInt64(timeout * 1_000_000_000)
-    let hardDeadline = start &+ budget
-    let grace = min(100_000_000, max(10_000_000, budget / 5))
-    let softDeadline = hardDeadline &- grace
     var sentTermination = false
+    var terminationDeadline = hardDeadline
     var didTimeOut = false
+    var outputLimitExceeded = false
     var processStatus: Int32?
     var inputOffset = 0
     var output = Data()
@@ -161,13 +264,39 @@ nonisolated private func runSpawnedProcess(
 
     while true {
         reapIfExited(childPID, status: &processStatus)
-        drainPipe(&outputDescriptor, into: &output)
-        drainPipe(&errorDescriptor, into: &errors)
+        let drainDeadline = sentTermination ? terminationDeadline : softDeadline
+        let outputDrain = drainPipe(
+            &outputDescriptor,
+            into: &output,
+            byteLimit: max(0, outputLimits.stdoutBytes),
+            deadline: drainDeadline
+        )
+        let errorDrain = drainPipe(
+            &errorDescriptor,
+            into: &errors,
+            byteLimit: max(0, outputLimits.stderrBytes),
+            deadline: drainDeadline
+        )
         writePipe(
             &inputDescriptor,
             data: stdin,
             offset: &inputOffset
         )
+        if outputDrain == .limitExceeded || errorDrain == .limitExceeded {
+            outputLimitExceeded = true
+            closeDescriptor(&inputDescriptor)
+            closeDescriptor(&outputDescriptor)
+            closeDescriptor(&errorDescriptor)
+            if !sentTermination {
+                sentTermination = true
+                let now = DispatchTime.now().uptimeNanoseconds
+                terminationDeadline = min(
+                    hardDeadline,
+                    addingWithoutOverflow(now, grace)
+                )
+                _ = Darwin.kill(-childPID, SIGTERM)
+            }
+        }
         if processStatus != nil,
            outputDescriptor < 0,
            errorDescriptor < 0 {
@@ -178,11 +307,14 @@ nonisolated private func runSpawnedProcess(
         if !sentTermination, now >= softDeadline {
             didTimeOut = true
             sentTermination = true
+            terminationDeadline = hardDeadline
             closeDescriptor(&inputDescriptor)
             _ = Darwin.kill(-childPID, SIGTERM)
         }
-        if now >= hardDeadline {
-            didTimeOut = true
+        if sentTermination, now >= terminationDeadline {
+            if !outputLimitExceeded {
+                didTimeOut = true
+            }
             _ = Darwin.kill(-childPID, SIGKILL)
             closeDescriptor(&inputDescriptor)
             closeDescriptor(&outputDescriptor)
@@ -205,7 +337,7 @@ nonisolated private func runSpawnedProcess(
             output: outputDescriptor,
             error: errorDescriptor
         )
-        let nextBoundary = sentTermination ? hardDeadline : softDeadline
+        let nextBoundary = sentTermination ? terminationDeadline : softDeadline
         let remaining = nextBoundary > now ? nextBoundary - now : 0
         let waitMilliseconds = Int32(
             min(10, max(1, remaining / 1_000_000))
@@ -224,8 +356,38 @@ nonisolated private func runSpawnedProcess(
         stdout: String(bytes: output, encoding: .utf8) ?? "",
         stderr: String(bytes: errors, encoding: .utf8) ?? "",
         exitCode: processStatus.map(processExitCode) ?? -1,
-        timedOut: didTimeOut
+        timedOut: didTimeOut,
+        outputLimitExceeded: outputLimitExceeded
     )
+}
+
+nonisolated private func makeCloseOnExecPipe(
+    _ descriptors: inout [Int32]
+) -> Int32 {
+    if #available(macOS 27.0, *) {
+        return Darwin.pipe2(&descriptors, O_CLOEXEC) == 0 ? 0 : errno
+    }
+
+    guard Darwin.pipe(&descriptors) == 0 else { return errno }
+    for descriptor in descriptors {
+        let flags = Darwin.fcntl(descriptor, F_GETFD)
+        guard flags >= 0,
+              Darwin.fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC) == 0 else {
+            let failure = errno
+            closeDescriptors(descriptors)
+            descriptors = [-1, -1]
+            return failure
+        }
+    }
+    return 0
+}
+
+nonisolated private func addingWithoutOverflow(
+    _ lhs: UInt64,
+    _ rhs: UInt64
+) -> UInt64 {
+    let (value, overflow) = lhs.addingReportingOverflow(rhs)
+    return overflow ? UInt64.max : value
 }
 
 nonisolated private func withMutableCStringArray<Result>(
@@ -295,28 +457,59 @@ nonisolated private func writePipe(
     }
 }
 
+nonisolated private enum PipeDrainResult: Equatable {
+    case drained
+    case deadlineReached
+    case limitExceeded
+}
+
 nonisolated private func drainPipe(
     _ descriptor: inout Int32,
-    into data: inout Data
-) {
-    guard descriptor >= 0 else { return }
+    into data: inout Data,
+    byteLimit: Int,
+    deadline: UInt64
+) -> PipeDrainResult {
+    guard descriptor >= 0 else { return .drained }
     var buffer = [UInt8](repeating: 0, count: 16_384)
-    while true {
-        let count = Darwin.read(descriptor, &buffer, buffer.count)
+    // A fixed quantum prevents a continuously-writing child from monopolizing
+    // this loop. The monotonic check before every read enforces the same
+    // deadline even when the pipe never reaches EAGAIN.
+    var remainingQuantum = 64 * 1_024
+    while remainingQuantum > 0 {
+        guard DispatchTime.now().uptimeNanoseconds < deadline else {
+            return .deadlineReached
+        }
+        let remainingCapacity = max(0, byteLimit - data.count)
+        let overflowDetectingCapacity = remainingCapacity == Int.max
+            ? Int.max
+            : remainingCapacity + 1
+        let requestedCount = min(
+            min(buffer.count, remainingQuantum),
+            overflowDetectingCapacity
+        )
+        let count = Darwin.read(descriptor, &buffer, requestedCount)
         if count > 0 {
-            data.append(buffer, count: count)
+            let acceptedCount = min(count, remainingCapacity)
+            if acceptedCount > 0 {
+                data.append(buffer, count: acceptedCount)
+            }
+            if count > remainingCapacity {
+                return .limitExceeded
+            }
+            remainingQuantum -= count
         } else if count == 0 {
             closeDescriptor(&descriptor)
-            return
+            return .drained
         } else if errno == EINTR {
             continue
         } else if errno == EAGAIN {
-            return
+            return .drained
         } else {
             closeDescriptor(&descriptor)
-            return
+            return .drained
         }
     }
+    return .drained
 }
 
 nonisolated private func reapIfExited(
@@ -477,6 +670,7 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
 
         // Fall back to original on any failure
         guard !result.timedOut,
+              !result.outputLimitExceeded,
               result.exitCode == 0,
               !result.stdout.isEmpty else {
             return content

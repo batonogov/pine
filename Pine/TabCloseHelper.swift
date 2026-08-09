@@ -84,15 +84,38 @@ struct TerminalTabCloseAuthorization {
     /// captured at authorization time. A process that exited while the sheet
     /// was visible is always covered (nothing remains to protect).
     func stillCovers(_ tabs: [TerminalTab]) -> Bool {
+        stillCovers(
+            tabs,
+            pineAgentLaunches: nil,
+            currentPineAgentLaunches: nil
+        )
+    }
+
+    /// Composes foreground-process coverage with Pine's exact launch
+    /// reservation. An idle tab may legitimately become foreground while the
+    /// Quit sheet is visible when that same launch was already part of the
+    /// prompt; unrelated jobs still fail closed.
+    func stillCovers(
+        _ tabs: [TerminalTab],
+        pineAgentLaunches: PineAgentLaunchAuthorization?,
+        currentPineAgentLaunches: PineAgentLaunchAuthorization?
+    ) -> Bool {
         for tab in tabs {
             // Idle tabs are absent from `coverage`, but they remain safe only
             // while they are still idle. A foreground process or agent that
-            // appears after the prompt is a new destructive generation and
-            // must not inherit the earlier authorization.
+            // appears after the prompt must be the exact Pine launch separately
+            // captured by that same prompt; raw foreground identity is not
+            // sufficient to inherit authorization.
             guard let captured = coverage[tab.id] else {
-                guard tab.agentSession == nil,
-                      tab.foregroundProcessID <= 0 else {
-                    return false
+                if tab.agentSession != nil || tab.foregroundProcessID > 0 {
+                    guard let pineAgentLaunches,
+                          let currentPineAgentLaunches,
+                          pineAgentLaunches.coversLaunch(
+                              in: tab.id,
+                              current: currentPineAgentLaunches
+                          ) else {
+                        return false
+                    }
                 }
                 continue
             }

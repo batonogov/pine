@@ -1415,6 +1415,197 @@ struct AgentTaskRegistryTests {
         #expect(projects.projectManager(for: admittedProject) != nil)
     }
 
+    @Test("preflight launch lease survives unbounded Quit decision")
+    func preflightLaunchLeaseSurvivesHumanDecision() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let store = ScriptedAgentTaskStore()
+        let taskRegistry = AgentTaskRegistry(
+            persistence: store,
+            claimTTL: .milliseconds(10)
+        )
+        let projects = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projects.projectManager(for: fixture.project)
+        )
+        #expect(await taskRegistry.flushPersistence() == .saved)
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let tab = try #require(
+            manager.paneManager.terminalState(for: pane)?.terminalTabs.first
+        )
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        guard case .reserved(let reservation) = await manager.terminal
+                .launchAgentCommandForTesting(
+                    "codex",
+                    descriptor: descriptor,
+                    in: tab,
+                    acknowledgedWrite: { true }
+                ) else {
+            Issue.record("launch was not reserved")
+            return
+        }
+        let delegate = AppDelegate()
+        delegate.registry = projects
+
+        let didQuit = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .applicationQuitSummary)
+                try? await Task.sleep(for: .milliseconds(75))
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(didQuit)
+        #expect(taskRegistry.isLaunchPending(reservation))
+        #expect(
+            taskRegistry.task(for: reservation.taskID)?.launchInterruption
+                == .acknowledgedBeforeVerification
+        )
+        #expect(await store.savedTaskCounts().last == 1)
+        await manager.workspace.waitForLoadingComplete()
+    }
+
+    @Test("cancelled Quit restores launch lease and clears acknowledgement")
+    func cancelledQuitRestoresLeaseAndClearsAcknowledgement() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let taskRegistry = AgentTaskRegistry(
+            persistence: ScriptedAgentTaskStore(),
+            claimTTL: .milliseconds(20)
+        )
+        let projects = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projects.projectManager(for: fixture.project)
+        )
+        #expect(await taskRegistry.flushPersistence() == .saved)
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let tab = try #require(
+            manager.paneManager.terminalState(for: pane)?.terminalTabs.first
+        )
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        guard case .reserved(let reservation) = await manager.terminal
+                .launchAgentCommandForTesting(
+                    "codex",
+                    descriptor: descriptor,
+                    in: tab,
+                    acknowledgedWrite: { true }
+                ) else {
+            Issue.record("launch was not reserved")
+            return
+        }
+        let delegate = AppDelegate()
+        delegate.registry = projects
+
+        let didQuit = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .applicationQuitSummary)
+                try? await Task.sleep(for: .milliseconds(75))
+                return .alertThirdButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!didQuit)
+        #expect(!manager.terminal.hasAcknowledgedAgentLaunchForTesting)
+        #expect(taskRegistry.isLaunchPending(reservation))
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while taskRegistry.isLaunchPending(reservation), clock.now < deadline {
+            try await clock.sleep(for: .milliseconds(5))
+        }
+        #expect(!taskRegistry.isLaunchPending(reservation))
+        #expect(
+            !manager.terminal.capturePineAgentLaunchAuthorization()
+                .requiresConfirmation
+        )
+        await manager.workspace.waitForLoadingComplete()
+    }
+
+    @Test("late in-flight acknowledgement gets a post-settlement durable flush")
+    func lateAcknowledgementGetsPostSettlementFlush() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let store = ScriptedAgentTaskStore(suspendFirstSave: true)
+        let taskRegistry = AgentTaskRegistry(persistence: store)
+        let projects = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projects.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let tab = try #require(
+            manager.paneManager.terminalState(for: pane)?.terminalTabs.first
+        )
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        let writeGate = AgentLaunchWriteGate()
+        let launchTask = Task { @MainActor in
+            await manager.terminal.launchAgentCommandForTesting(
+                "codex",
+                descriptor: descriptor,
+                in: tab
+            ) {
+                await writeGate.waitForCompletion()
+            }
+        }
+        #expect(await writeGate.waitUntilStarted())
+        let delegate = AppDelegate()
+        delegate.registry = projects
+        var releaseTask: Task<Void, Never>?
+
+        let didQuit = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .applicationQuitSummary)
+                releaseTask = Task { @MainActor in
+                    #expect(await store.waitForFirstSave())
+                    writeGate.finish(true)
+                    let clock = ContinuousClock()
+                    let deadline = clock.now.advanced(by: .seconds(1))
+                    while !manager.terminal
+                            .hasAcknowledgedAgentLaunchForTesting,
+                          clock.now < deadline {
+                        await Task.yield()
+                    }
+                    #expect(
+                        manager.terminal
+                            .hasAcknowledgedAgentLaunchForTesting
+                    )
+                    await store.releaseFirstSave()
+                }
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        await releaseTask?.value
+        guard case .reserved(let reservation) = await launchTask.value else {
+            Issue.record("late acknowledgement lost its reservation")
+            return
+        }
+        #expect(didQuit)
+        #expect(
+            taskRegistry.task(for: reservation.taskID)?.launchInterruption
+                == .acknowledgedBeforeVerification
+        )
+        #expect(await store.savedTaskCounts().last == 1)
+        #expect(await store.saveCallCount() >= 2)
+        await manager.workspace.waitForLoadingComplete()
+    }
+
     @Test("in-flight Pine launch alone contributes Quit attention")
     func inFlightPineLaunchContributesQuitAttention() async throws {
         let fixture = try PersistenceFixture()

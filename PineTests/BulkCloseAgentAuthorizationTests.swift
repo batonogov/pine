@@ -292,6 +292,104 @@ struct BulkCloseAgentAuthorizationTests {
         await idleProject.workspace.waitForLoadingComplete()
     }
 
+    @Test("Idle terminal accepts the exact Pine launch authorized by Quit")
+    func idleTerminalAcceptsExactAuthorizedPineLaunch() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let pane = project.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: dir
+        )
+        let tab = try #require(
+            project.paneManager.terminalState(for: pane)?.terminalTabs.first
+        )
+        #expect(tab.foregroundProcessID <= 0)
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        let gate = BulkCloseAgentLaunchGate()
+        let launchTask = Task { @MainActor in
+            await project.terminal.launchAgentCommandForTesting(
+                "codex",
+                descriptor: descriptor,
+                in: tab
+            ) {
+                await gate.waitForCompletion()
+            }
+        }
+        #expect(await gate.waitUntilStarted())
+        let delegate = AppDelegate()
+        delegate.registry = registry
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .applicationQuitSummary)
+                gate.finish(true)
+                guard case .reserved = await launchTask.value else {
+                    Issue.record("authorized Pine launch was not armed")
+                    return .alertThirdButtonReturn
+                }
+                tab.foregroundProcessIDOverrideForTesting = 8_111
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(result)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test("Idle terminal rejects an unrelated new foreground process")
+    func idleTerminalRejectsUnrelatedForegroundProcess() async throws {
+        let activeDirectory = try makeTempDirectory()
+        let idleDirectory = try makeTempDirectory()
+        defer {
+            cleanup(activeDirectory)
+            cleanup(idleDirectory)
+        }
+        let registry = makeRegistry()
+        let activeProject = try #require(
+            registry.projectManager(for: activeDirectory)
+        )
+        let idleProject = try #require(
+            registry.projectManager(for: idleDirectory)
+        )
+        try addAgentTerminalTab(to: activeProject)
+        let pane = idleProject.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: idleDirectory
+        )
+        let idleTab = try #require(
+            idleProject.paneManager.terminalState(for: pane)?.terminalTabs.first
+        )
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presented: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presented.append(template)
+                if template == .applicationQuitSummary {
+                    idleTab.foregroundProcessIDOverrideForTesting = 8_222
+                    return .alertSecondButtonReturn
+                }
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(
+            presented == [
+                .applicationQuitSummary,
+                .applicationQuitFailure,
+            ]
+        )
+        await activeProject.workspace.waitForLoadingComplete()
+        await idleProject.workspace.waitForLoadingComplete()
+    }
+
     @Test("Confirmed quit survives agent child-process churn")
     func confirmedQuitSurvivesChurn() async throws {
         let dir = try makeTempDirectory()
@@ -438,6 +536,43 @@ private actor BulkCloseAgentTaskStore: AgentTaskPersisting {
         authorization: AgentTaskPublicationAuthorization?
     ) async -> AgentTaskMetadataSaveResult {
         .saved(taskCount: tasks.count)
+    }
+}
+
+@MainActor
+private final class BulkCloseAgentLaunchGate {
+    private var started = false
+    private var completion: Bool?
+
+    func waitForCompletion() async -> Bool {
+        started = true
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while completion == nil, clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
+        }
+        return completion ?? false
+    }
+
+    func waitUntilStarted() async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !started, clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
+        }
+        return started
+    }
+
+    func finish(_ result: Bool) {
+        completion = result
     }
 }
 

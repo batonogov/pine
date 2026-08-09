@@ -93,6 +93,8 @@ final class AgentTaskRegistry {
     @ObservationIgnored
     private var pendingClaimKeyByToken: [UUID: AgentTaskTerminalKey] = [:]
     @ObservationIgnored
+    private var terminationDecisionClaimRemaining: [UUID: Duration] = [:]
+    @ObservationIgnored
     private var terminationClaimRemaining: [UUID: Duration] = [:]
     @ObservationIgnored
     private var registeredProjects = Set<AgentTaskProjectIdentity>()
@@ -730,13 +732,79 @@ final class AgentTaskRegistry {
         if isTerminating {
             deadlineIsValid = terminationClaimRemaining[reservation.token]
                 .map { $0 > .zero } ?? false
+        } else if let remaining =
+                    terminationDecisionClaimRemaining[reservation.token] {
+            deadlineIsValid = remaining > .zero
         } else {
             deadlineIsValid = monotonicNow() < claim.deadline
         }
         guard deadlineIsValid else { return false }
         claim.state = .armed
         pendingClaims[key] = claim
+        // A PTY write may settle after Quit has already captured its rollback
+        // snapshot and started the first persistence pass. Record that exact
+        // acknowledgement immediately; the post-settlement persistence barrier
+        // must include this newer revision before AppKit may terminate Pine.
+        if isTerminating,
+           case .initialLaunch = claim.kind,
+           let index = taskIndex(for: claim.taskID),
+           tasks[index].runs.isEmpty,
+           tasks[index].launchInterruption == nil {
+            tasks[index].launchInterruption = .acknowledgedBeforeVerification
+            markDirty(tasks[index].project)
+        }
         return true
+    }
+
+    /// Pauses the bounded reservation lease while the user considers Quit.
+    /// Human deliberation is intentionally unbounded, but the exact launch
+    /// that caused the prompt must remain claimable until that decision is
+    /// either cancelled or transferred into the termination transaction.
+    func pauseLaunchExpirationForTerminationDecision(
+        _ reservations: Set<AgentTaskLaunchReservation>
+    ) -> Bool {
+        guard !isTerminating else { return false }
+        expireClaims()
+        let now = monotonicNow()
+        var remainingByToken: [UUID: Duration] = [:]
+        for reservation in reservations {
+            guard let key = pendingClaimKeyByToken[reservation.token],
+                  let claim = pendingClaims[key],
+                  claim.taskID == reservation.taskID else {
+                return false
+            }
+            let remaining = terminationDecisionClaimRemaining[
+                reservation.token
+            ] ?? max(.zero, now.duration(to: claim.deadline))
+            guard remaining > .zero else { return false }
+            remainingByToken[reservation.token] = remaining
+        }
+        for (token, remaining) in remainingByToken {
+            terminationDecisionClaimRemaining[token] = remaining
+            claimExpiryTasks.removeValue(forKey: token)?.cancel()
+        }
+        return true
+    }
+
+    /// Restores the lease after a cancelled Quit. The original remaining
+    /// duration is rebased from now, so time spent reading a native sheet does
+    /// not manufacture a claim expiry.
+    func resumeLaunchExpirationAfterTerminationDecision(
+        _ reservations: Set<AgentTaskLaunchReservation>
+    ) {
+        guard !isTerminating else { return }
+        let now = monotonicNow()
+        for reservation in reservations {
+            guard let remaining = terminationDecisionClaimRemaining
+                    .removeValue(forKey: reservation.token),
+                  let key = pendingClaimKeyByToken[reservation.token],
+                  var claim = pendingClaims[key],
+                  claim.taskID == reservation.taskID else {
+                continue
+            }
+            claim.deadline = now.advanced(by: remaining)
+            installClaim(claim, key: key)
+        }
     }
 
     func cancelLaunch(_ reservation: AgentTaskLaunchReservation) {
@@ -901,12 +969,12 @@ final class AgentTaskRegistry {
         let now = monotonicNow()
         terminationClaimRemaining.removeAll(keepingCapacity: true)
         for claim in pendingClaims.values {
-            terminationClaimRemaining[claim.token] = max(
-                .zero,
-                now.duration(to: claim.deadline)
-            )
+            terminationClaimRemaining[claim.token] =
+                terminationDecisionClaimRemaining[claim.token]
+                ?? max(.zero, now.duration(to: claim.deadline))
             claimExpiryTasks.removeValue(forKey: claim.token)?.cancel()
         }
+        terminationDecisionClaimRemaining.removeAll(keepingCapacity: true)
         var changedProjects = Set<AgentTaskProjectIdentity>()
         let acknowledgedInitialTaskIDs = Set(
             pendingClaims.values.compactMap { claim -> UUID? in
@@ -1550,6 +1618,7 @@ final class AgentTaskRegistry {
     private func removeClaim(for key: AgentTaskTerminalKey) {
         guard let claim = pendingClaims.removeValue(forKey: key) else { return }
         pendingClaimKeyByToken[claim.token] = nil
+        terminationDecisionClaimRemaining[claim.token] = nil
         terminationClaimRemaining[claim.token] = nil
         claimExpiryTasks.removeValue(forKey: claim.token)?.cancel()
     }
@@ -1577,8 +1646,11 @@ final class AgentTaskRegistry {
 
     private func expireClaims() {
         let now = monotonicNow()
-        let expired = pendingClaims.compactMap { key, claim in
-            claim.deadline <= now ? key : nil
+        let expired: [AgentTaskTerminalKey] = pendingClaims.compactMap { key, claim in
+            guard terminationDecisionClaimRemaining[claim.token] == nil else {
+                return nil
+            }
+            return claim.deadline <= now ? key : nil
         }
         expired.forEach(cancelClaim)
     }

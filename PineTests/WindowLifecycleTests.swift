@@ -549,7 +549,7 @@ struct WindowLifecycleTests {
         #expect(presentedOwners[1] === newWindow)
     }
 
-    @Test func quitFailureOwnerRetriesAreBounded() async {
+    @Test func quitFailureRetriesPastFourLostOwnersUntilAcknowledged() async {
         let delegate = AppDelegate()
         delegate.registry = makeRegistry()
         let owner = NSWindow()
@@ -561,14 +561,16 @@ struct WindowLifecycleTests {
             presentAlert: { template, _, _, _ in
                 #expect(template == .applicationQuitFailure)
                 presentationCount += 1
-                return .abort
+                return presentationCount <= 4
+                    ? .abort
+                    : .alertFirstButtonReturn
             },
             terminationFailureContext: { context },
             terminationDeadlineOverride: .now()
         )
 
         #expect(!result)
-        #expect(presentationCount == 3)
+        #expect(presentationCount == 5)
     }
 
     @Test func saveAsUsesReplacementProjectOwnerAfterReview() async throws {
@@ -983,6 +985,124 @@ struct WindowLifecycleTests {
         #expect(presented.last == .applicationQuitFailure)
         await first.workspace.waitForLoadingComplete()
         await second.workspace.waitForLoadingComplete()
+    }
+
+    @Test func applicationSaveRejectsCaseAliasedOpenFile() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let volumeValues = try dir.resourceValues(
+            forKeys: [.volumeSupportsCaseSensitiveNamesKey]
+        )
+        guard volumeValues.volumeSupportsCaseSensitiveNames == false else {
+            return
+        }
+        let openFile = try makeTempFile(in: dir, name: "shared.swift")
+        let aliasedDestination = dir.appendingPathComponent("SHARED.swift")
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: openFile)
+        _ = try #require(project.createUntitledFile())
+        updateContent("// must remain untitled", in: project)
+        project.saveDestinationChooser = { _, _, _ in aliasedDestination }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { _, _, _, _ in .alertFirstButtonReturn },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(
+            try String(contentsOf: openFile, encoding: .utf8)
+                == "// shared.swift"
+        )
+        let untitled = try #require(project.allTabs.first(where: {
+            $0.fileURL == nil
+        }))
+        #expect(untitled.content == "// must remain untitled")
+        #expect(untitled.isDirty)
+        #expect(project.allTabs.first(where: { $0.fileURL == openFile })?
+            .isDirty == false)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func laterOpenTabStopsFutureTerminationInstall() async throws {
+        let saveRoot = try makeTempDirectory()
+        let observerRoot = try makeTempDirectory()
+        defer { cleanup(saveRoot); cleanup(observerRoot) }
+        let firstDestination = try makeTempFile(
+            in: saveRoot,
+            name: "first.swift"
+        )
+        let laterDestination = try makeTempFile(
+            in: saveRoot,
+            name: "later.swift"
+        )
+        let registry = makeRegistry()
+        let savingProject = try #require(
+            registry.projectManager(for: saveRoot)
+        )
+        let observingProject = try #require(
+            registry.projectManager(for: observerRoot)
+        )
+        _ = try #require(savingProject.createUntitledFile())
+        updateContent("// first captured", in: savingProject)
+        _ = try #require(savingProject.createUntitledFile())
+        updateContent("// later captured", in: savingProject)
+        var destinationIndex = 0
+        let destinations = [firstDestination, laterDestination]
+        savingProject.saveDestinationChooser = { _, _, _ in
+            defer { destinationIndex += 1 }
+            return destinations[destinationIndex]
+        }
+        let installer = FirstTerminationInstallGate()
+        defer { installer.release() }
+        savingProject.terminationSaveInstaller = { staged, deadline, lateCompletion in
+            await installer.install(
+                staged,
+                until: deadline,
+                lateCompletion: lateCompletion
+            )
+        }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let quit = Task { @MainActor in
+            await delegate.confirmApplicationTermination(
+                presentAlert: { _, _, _, _ in .alertFirstButtonReturn },
+                terminationDeadlineOverride: .now() + 5
+            )
+        }
+
+        #expect(await installer.waitUntilStarted())
+        observingProject.primaryTabManager.openTab(url: laterDestination)
+        installer.release()
+        let result = await quit.value
+
+        #expect(!result)
+        #expect(installer.installCount == 1)
+        #expect(
+            try String(contentsOf: firstDestination, encoding: .utf8)
+                == "// first captured\n"
+        )
+        #expect(
+            try String(contentsOf: laterDestination, encoding: .utf8)
+                == "// later.swift"
+        )
+        #expect(savingProject.allTabs.first(where: {
+            $0.fileURL == firstDestination
+        })?.isDirty == false)
+        let unsavedLater = try #require(savingProject.allTabs.first(where: {
+            $0.fileURL == nil && $0.content == "// later captured"
+        }))
+        #expect(unsavedLater.isDirty)
+        let observed = try #require(observingProject.allTabs.first(where: {
+            $0.fileURL == laterDestination
+        }))
+        #expect(!observed.isDirty)
+        #expect(observed.content == "// later.swift")
+        await savingProject.workspace.waitForLoadingComplete()
+        await observingProject.workspace.waitForLoadingComplete()
     }
 
     @Test func destinationCreatedDuringStagingIsNotOverwritten() async throws {
@@ -1520,6 +1640,69 @@ struct WindowLifecycleTests {
         #expect(registry.destroyAllProjects())
     }
 
+    @Test func quitSummaryCountsEveryDetachedTaskOwner() async throws {
+        let firstDirectory = try makeTempDirectory()
+        let secondDirectory = try makeTempDirectory()
+        defer {
+            cleanup(firstDirectory)
+            cleanup(secondDirectory)
+        }
+        let registry = makeRegistry()
+        let firstProject = try #require(
+            registry.projectManager(for: firstDirectory)
+        )
+        let secondProject = try #require(
+            registry.projectManager(for: secondDirectory)
+        )
+        let firstRun = firstProject.taskRunStore.start(
+            makeTaskRun(id: "first-detached")
+        )
+        let secondRun = secondProject.taskRunStore.start(
+            makeTaskRun(id: "second-detached")
+        )
+        firstProject.taskRunStore.registerCancellation(
+            TerminationTaskProbe(waitResult: false).makeCancellation(),
+            forRunID: firstRun.id
+        )
+        secondProject.taskRunStore.registerCancellation(
+            TerminationTaskProbe(waitResult: false).makeCancellation(),
+            forRunID: secondRun.id
+        )
+        registry.closeProjectWindow(firstDirectory)
+        registry.closeProjectWindow(secondDirectory)
+        cleanup(firstDirectory)
+        cleanup(secondDirectory)
+        #expect(registry.projectManager(for: firstDirectory) == nil)
+        #expect(registry.projectManager(for: secondDirectory) == nil)
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var summaryMessage: String?
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, message in
+                #expect(template == .applicationQuitSummary)
+                summaryMessage = message
+                return .alertThirdButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(summaryMessage == Strings.applicationQuitSummaryMessage(2))
+        firstProject.taskRunStore.finishRun(
+            id: firstRun.id,
+            outcome: makeTaskOutcome(id: "first-detached"),
+            cancelled: true
+        )
+        secondProject.taskRunStore.finishRun(
+            id: secondRun.id,
+            outcome: makeTaskOutcome(id: "second-detached"),
+            cancelled: true
+        )
+        await settle()
+        #expect(registry.destroyAllProjects())
+    }
+
     @Test func quitAnywayStopsUserTaskAndQuits() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
@@ -2046,6 +2229,73 @@ nonisolated private final class DelayedTerminationInstallerProbe:
         lock.withLock { installs += 1 }
         try? await Task.sleep(for: .milliseconds(100))
         return .failed(message: "The outer deadline did not win")
+    }
+}
+
+nonisolated private final class FirstTerminationInstallGate:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var installs = 0
+    private var firstInstallStarted = false
+    private var released = false
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    var installCount: Int { lock.withLock { installs } }
+
+    func install(
+        _ staged: TerminationStagedSave,
+        until deadline: DispatchTime,
+        lateCompletion: @escaping @Sendable (
+            TerminationSaveInstallResult
+        ) -> Void
+    ) async -> TerminationSaveInstallResult {
+        let shouldWait = lock.withLock {
+            installs += 1
+            guard installs == 1 else { return false }
+            firstInstallStarted = true
+            return true
+        }
+        if shouldWait {
+            await withCheckedContinuation { continuation in
+                let resumeImmediately = lock.withLock {
+                    if released { return true }
+                    releaseContinuation = continuation
+                    return false
+                }
+                if resumeImmediately {
+                    continuation.resume()
+                }
+            }
+        }
+        return await TerminationSaveCoordinator.install(
+            staged,
+            until: deadline,
+            lateCompletion: lateCompletion
+        )
+    }
+
+    func release() {
+        let continuation = lock.withLock {
+            released = true
+            defer { releaseContinuation = nil }
+            return releaseContinuation
+        }
+        continuation?.resume()
+    }
+
+    func waitUntilStarted(
+        maximumDuration: Duration = .seconds(5)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: maximumDuration)
+        while !lock.withLock({ firstInstallStarted }), clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
+        }
+        return lock.withLock { firstInstallStarted }
     }
 }
 

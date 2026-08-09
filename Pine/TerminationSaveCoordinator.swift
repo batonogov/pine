@@ -5,6 +5,7 @@
 //  Bounded, off-main staging for application-termination saves.
 //
 
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -36,6 +37,8 @@ nonisolated struct TerminationDestinationState: Sendable, Equatable {
     let modificationNanoseconds: Int
     let changeSeconds: Int
     let changeNanoseconds: Int
+    let contentDigest: Data
+    let extendedMetadataDigest: Data
 
     static let missing = TerminationDestinationState(
         device: 0,
@@ -47,7 +50,9 @@ nonisolated struct TerminationDestinationState: Sendable, Equatable {
         modificationSeconds: 0,
         modificationNanoseconds: 0,
         changeSeconds: 0,
-        changeNanoseconds: 0
+        changeNanoseconds: 0,
+        contentDigest: Data(),
+        extendedMetadataDigest: Data()
     )
 
     var exists: Bool { size >= 0 }
@@ -61,6 +66,7 @@ nonisolated struct TerminationStagedSave: Sendable {
     let stagingInode: UInt64
     let parentDevice: UInt64
     let parentInode: UInt64
+    let stagingContentDigest: Data
     let installedMetadata: TerminationInstalledFileMetadata
 }
 
@@ -87,6 +93,11 @@ nonisolated enum TerminationSaveInstallResult: Sendable {
     case installed(metadata: TerminationInstalledFileMetadata)
     case failed(message: String)
     case timedOut
+}
+
+nonisolated enum TerminationSaveCleanupResult: Sendable, Equatable {
+    case cleaned
+    case failed(message: String, retainedArtifacts: [URL])
 }
 
 nonisolated enum TerminationDestinationCaptureResult: Sendable {
@@ -120,12 +131,23 @@ nonisolated private final class TerminationDeadlineResolver<Result: Sendable>:
 nonisolated enum TerminationSaveCoordinator {
     typealias InstallHook = @Sendable () -> Void
 
+    private enum ArtifactRemovalResult {
+        case removed
+        case failed(message: String, retainedURL: URL?)
+    }
+
+    private struct DestinationDescriptorSnapshot {
+        let state: TerminationDestinationState
+        let status: stat
+    }
+
     private struct StagingFile {
         let url: URL
         let device: UInt64
         let inode: UInt64
         let parentDevice: UInt64
         let parentInode: UInt64
+        let contentDigest: Data
         let metadata: TerminationInstalledFileMetadata
     }
 
@@ -133,6 +155,12 @@ nonisolated enum TerminationSaveCoordinator {
         label: "com.pine.termination-save-deadline",
         qos: .userInteractive
     )
+    /// macOS 27 recreates this provenance marker immediately after a
+    /// successful `fremovexattr`. It is kernel-managed launch provenance, not
+    /// destination metadata, and carries no staged document bytes.
+    private static let privateStagingSystemXattrs = Set([
+        "com.apple.provenance",
+    ])
 
     static func stage(
         _ requests: [TerminationSaveRequest],
@@ -161,10 +189,30 @@ nonisolated enum TerminationSaveCoordinator {
         }
     }
 
-    static func cleanup(_ staged: [TerminationStagedSave]) {
+    @discardableResult
+    static func cleanup(
+        _ staged: [TerminationStagedSave]
+    ) -> TerminationSaveCleanupResult {
+        var failures: [String] = []
+        var retainedArtifacts: [URL] = []
         for item in staged {
-            removeStagingFileIfMatches(item)
+            switch removeStagingFileIfMatches(item) {
+            case .removed:
+                break
+            case .failed(let message, let retainedURL):
+                failures.append(message)
+                if let retainedURL {
+                    retainedArtifacts.append(retainedURL)
+                }
+            }
         }
+        guard failures.isEmpty else {
+            return .failed(
+                message: failures.joined(separator: "\n"),
+                retainedArtifacts: retainedArtifacts
+            )
+        }
+        return .cleaned
     }
 
     static func captureDestinationStates(
@@ -180,9 +228,17 @@ nonisolated enum TerminationSaveCoordinator {
             let operationTask = Task.detached(priority: .userInitiated) {
                 let result: TerminationDestinationCaptureResult
                 do {
+                    let deadlineNanoseconds = deadline.uptimeNanoseconds
                     result = .captured(
-                        try urls.map(destinationState(at:))
+                        try urls.map {
+                            try destinationState(
+                                at: $0,
+                                deadlineNanoseconds: deadlineNanoseconds
+                            )
+                        }
                     )
+                } catch is CancellationError {
+                    result = .timedOut
                 } catch {
                     result = .failed(message: error.localizedDescription)
                 }
@@ -211,7 +267,8 @@ nonisolated enum TerminationSaveCoordinator {
                     guard !Task.isCancelled else { return false }
                     return destinationStateMatches(
                         item.request.expectedDestinationState,
-                        at: item.request.destination
+                        at: item.request.destination,
+                        deadlineNanoseconds: deadline.uptimeNanoseconds
                     )
                 }
                 _ = resolver.resolve(matches)
@@ -232,6 +289,7 @@ nonisolated enum TerminationSaveCoordinator {
         _ staged: TerminationStagedSave,
         until deadline: DispatchTime,
         beforeDestinationQuarantine: InstallHook? = nil,
+        beforeRecoveryCleanup: InstallHook? = nil,
         lateCompletion: @escaping @Sendable (
             TerminationSaveInstallResult
         ) -> Void = { _ in }
@@ -249,7 +307,8 @@ nonisolated enum TerminationSaveCoordinator {
                         staged,
                         deadlineNanoseconds: deadlineNanoseconds,
                         beforeDestinationQuarantine:
-                            beforeDestinationQuarantine
+                            beforeDestinationQuarantine,
+                        beforeRecoveryCleanup: beforeRecoveryCleanup
                     )
                     result = .installed(metadata: staged.installedMetadata)
                 } catch is CancellationError {
@@ -293,17 +352,16 @@ nonisolated enum TerminationSaveCoordinator {
         do {
             for request in requests {
                 guard !Task.isCancelled else {
-                    cleanup(staged)
-                    return .timedOut
+                    return stageCancellationResult(staged)
                 }
                 let now = DispatchTime.now().uptimeNanoseconds
                 guard now < deadlineNanoseconds else {
-                    cleanup(staged)
-                    return .timedOut
+                    return stageCancellationResult(staged)
                 }
                 guard destinationStateMatches(
                     request.expectedDestinationState,
-                    at: request.destination
+                    at: request.destination,
+                    deadlineNanoseconds: deadlineNanoseconds
                 ) else {
                     throw CocoaError(.fileWriteFileExists)
                 }
@@ -320,8 +378,7 @@ nonisolated enum TerminationSaveCoordinator {
                 guard !Task.isCancelled,
                       DispatchTime.now().uptimeNanoseconds
                         < deadlineNanoseconds else {
-                    cleanup(staged)
-                    return .timedOut
+                    return stageCancellationResult(staged)
                 }
                 let encoding = String.Encoding(
                     rawValue: request.encodingRawValue
@@ -334,8 +391,7 @@ nonisolated enum TerminationSaveCoordinator {
                 }
                 let staging = try writeStagingFile(
                     data,
-                    beside: request.destination,
-                    preservingPermissions: request.expectedDestinationState
+                    beside: request.destination
                 )
                 staged.append(TerminationStagedSave(
                     request: request,
@@ -345,26 +401,36 @@ nonisolated enum TerminationSaveCoordinator {
                     stagingInode: staging.inode,
                     parentDevice: staging.parentDevice,
                     parentInode: staging.parentInode,
+                    stagingContentDigest: staging.contentDigest,
                     installedMetadata: staging.metadata
                 ))
             }
             guard !Task.isCancelled,
                   DispatchTime.now().uptimeNanoseconds
                     < deadlineNanoseconds else {
-                cleanup(staged)
-                return .timedOut
+                return stageCancellationResult(staged)
             }
             return .ready(staged)
         } catch {
-            cleanup(staged)
+            if case .failed(let message, _) = cleanup(staged) {
+                return .failed(message: message)
+            }
             return .failed(message: error.localizedDescription)
         }
     }
 
+    private static func stageCancellationResult(
+        _ staged: [TerminationStagedSave]
+    ) -> TerminationSaveStageResult {
+        if case .failed(let message, _) = cleanup(staged) {
+            return .failed(message: message)
+        }
+        return .timedOut
+    }
+
     private static func writeStagingFile(
         _ data: Data,
-        beside destination: URL,
-        preservingPermissions destinationState: TerminationDestinationState
+        beside destination: URL
     ) throws -> StagingFile {
         let stagingURL = destination
             .deletingLastPathComponent()
@@ -401,99 +467,77 @@ nonisolated enum TerminationSaveCoordinator {
             Darwin.close(descriptor)
             throw posixError()
         }
-        var keepFile = false
-        defer {
-            Darwin.close(descriptor)
-            if !keepFile {
-                removeEntryIfMatches(
+        defer { Darwin.close(descriptor) }
+
+        do {
+            try makeDescriptorPrivate(descriptor)
+            try data.withUnsafeBytes { rawBuffer in
+                guard let baseAddress = rawBuffer.baseAddress else { return }
+                var written = 0
+                while written < rawBuffer.count {
+                    if Task.isCancelled {
+                        throw CancellationError()
+                    }
+                    let result = Darwin.write(
+                        descriptor,
+                        baseAddress.advanced(by: written),
+                        rawBuffer.count - written
+                    )
+                    if result < 0, errno == EINTR {
+                        continue
+                    }
+                    guard result > 0 else {
+                        throw posixError()
+                    }
+                    written += result
+                }
+            }
+            guard Darwin.fsync(descriptor) == 0 else {
+                throw posixError()
+            }
+            var status = stat()
+            guard Darwin.fstat(descriptor, &status) == 0,
+                  (status.st_mode & S_IFMT) == S_IFREG else {
+                throw posixError()
+            }
+            return StagingFile(
+                url: stagingURL,
+                device: UInt64(status.st_dev),
+                inode: UInt64(status.st_ino),
+                parentDevice: UInt64(parentStatus.st_dev),
+                parentInode: UInt64(parentStatus.st_ino),
+                contentDigest: Data(SHA256.hash(data: data)),
+                metadata: TerminationInstalledFileMetadata(
+                    size: Int(clamping: status.st_size),
+                    modificationSeconds: Int(status.st_mtimespec.tv_sec),
+                    modificationNanoseconds: Int(status.st_mtimespec.tv_nsec)
+                )
+            )
+        } catch {
+            let stagingError = error
+            switch removeEntryIfMatches(
                     parentDescriptor: parentDescriptor,
+                    parentURL: parentURL,
                     leaf: stagingLeaf,
                     device: UInt64(openedStatus.st_dev),
                     inode: UInt64(openedStatus.st_ino)
+            ) {
+            case .removed:
+                throw stagingError
+            case .failed(let message, let retainedURL):
+                if let retainedURL {
+                    throw retainedRecoveryError(
+                        at: retainedURL,
+                        reason: message
+                    )
+                }
+                throw NSError(
+                    domain: NSCocoaErrorDomain,
+                    code: CocoaError.fileWriteUnknown.rawValue,
+                    userInfo: [NSLocalizedDescriptionKey: message]
                 )
             }
         }
-
-        try data.withUnsafeBytes { rawBuffer in
-            guard let baseAddress = rawBuffer.baseAddress else { return }
-            var written = 0
-            while written < rawBuffer.count {
-                if Task.isCancelled {
-                    throw CancellationError()
-                }
-                let result = Darwin.write(
-                    descriptor,
-                    baseAddress.advanced(by: written),
-                    rawBuffer.count - written
-                )
-                if result < 0, errno == EINTR {
-                    continue
-                }
-                guard result > 0 else {
-                    throw posixError()
-                }
-                written += result
-            }
-        }
-        if destinationState.exists {
-            let sourceDescriptor = Darwin.openat(
-                parentDescriptor,
-                destination.lastPathComponent,
-                O_RDONLY | O_CLOEXEC | O_NOFOLLOW
-            )
-            guard sourceDescriptor >= 0 else { throw posixError() }
-            defer { Darwin.close(sourceDescriptor) }
-            var sourceStatus = stat()
-            guard Darwin.fstat(sourceDescriptor, &sourceStatus) == 0,
-                  state(sourceStatus, matches: destinationState) else {
-                throw CocoaError(.fileWriteFileExists)
-            }
-            let metadataFlags = copyfile_flags_t(
-                COPYFILE_ACL
-                    | COPYFILE_XATTR
-            )
-            guard Darwin.fcopyfile(
-                sourceDescriptor,
-                descriptor,
-                nil,
-                metadataFlags
-            ) == 0 else {
-                throw posixError()
-            }
-            guard Darwin.fchmod(
-                descriptor,
-                mode_t(destinationState.permissions)
-            ) == 0 else {
-                throw posixError()
-            }
-        } else {
-            // Staging remains owner-only until all bytes are durable. New
-            // files receive Pine's normal 0644 document mode only afterward.
-            guard Darwin.fchmod(descriptor, 0o644) == 0 else {
-                throw posixError()
-            }
-        }
-        guard Darwin.fsync(descriptor) == 0 else {
-            throw posixError()
-        }
-        var status = stat()
-        guard Darwin.fstat(descriptor, &status) == 0,
-              (status.st_mode & S_IFMT) == S_IFREG else {
-            throw posixError()
-        }
-        keepFile = true
-        return StagingFile(
-            url: stagingURL,
-            device: UInt64(status.st_dev),
-            inode: UInt64(status.st_ino),
-            parentDevice: UInt64(parentStatus.st_dev),
-            parentInode: UInt64(parentStatus.st_ino),
-            metadata: TerminationInstalledFileMetadata(
-                size: Int(clamping: status.st_size),
-                modificationSeconds: Int(status.st_mtimespec.tv_sec),
-                modificationNanoseconds: Int(status.st_mtimespec.tv_nsec)
-            )
-        )
     }
 
     private static func posixError() -> NSError {
@@ -501,36 +545,41 @@ nonisolated enum TerminationSaveCoordinator {
     }
 
     private static func destinationState(
-        at url: URL
+        at url: URL,
+        deadlineNanoseconds: UInt64
     ) throws -> TerminationDestinationState {
-        var status = stat()
-        if Darwin.lstat(url.path, &status) != 0 {
+        try checkDeadline(deadlineNanoseconds)
+        let descriptor = Darwin.open(
+            url.path,
+            O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW
+        )
+        if descriptor < 0 {
             if errno == ENOENT { return .missing }
             throw posixError()
         }
-        guard (status.st_mode & S_IFMT) == S_IFREG else {
-            throw CocoaError(.fileWriteInvalidFileName)
-        }
-        return TerminationDestinationState(
-            device: UInt64(status.st_dev),
-            inode: UInt64(status.st_ino),
-            size: status.st_size,
-            permissions: UInt32(status.st_mode & 0o7777),
-            ownerID: status.st_uid,
-            groupID: status.st_gid,
-            modificationSeconds: Int(status.st_mtimespec.tv_sec),
-            modificationNanoseconds: Int(status.st_mtimespec.tv_nsec),
-            changeSeconds: Int(status.st_ctimespec.tv_sec),
-            changeNanoseconds: Int(status.st_ctimespec.tv_nsec)
+        defer { Darwin.close(descriptor) }
+        let snapshot = try destinationSnapshot(
+            descriptor,
+            deadlineNanoseconds: deadlineNanoseconds
         )
+        var live = stat()
+        guard Darwin.lstat(url.path, &live) == 0,
+              sameObject(snapshot.status, live) else {
+            throw CocoaError(.fileWriteFileExists)
+        }
+        return snapshot.state
     }
 
     private static func destinationStateMatches(
         _ expected: TerminationDestinationState,
-        at url: URL
+        at url: URL,
+        deadlineNanoseconds: UInt64
     ) -> Bool {
         do {
-            return try destinationState(at: url) == expected
+            return try destinationState(
+                at: url,
+                deadlineNanoseconds: deadlineNanoseconds
+            ) == expected
         } catch let error as NSError
         where error.domain == NSPOSIXErrorDomain
                 && error.code == Int(ENOENT) {
@@ -543,17 +592,25 @@ nonisolated enum TerminationSaveCoordinator {
     private static func installSynchronously(
         _ staged: TerminationStagedSave,
         deadlineNanoseconds: UInt64,
-        beforeDestinationQuarantine: InstallHook?
+        beforeDestinationQuarantine: InstallHook?,
+        beforeRecoveryCleanup: InstallHook?
     ) throws {
         let parentDescriptor = try openVerifiedParentDirectory(for: staged)
         defer { Darwin.close(parentDescriptor) }
+        let parentURL = staged.request.destination.deletingLastPathComponent()
         let stagingLeaf = staged.stagingURL.lastPathComponent
         let destinationLeaf = staged.request.destination.lastPathComponent
-        guard regularFileMatches(
-            parentDescriptor: parentDescriptor,
-            leaf: stagingLeaf,
-            device: staged.stagingDevice,
-            inode: staged.stagingInode
+        let stagingDescriptor = Darwin.openat(
+            parentDescriptor,
+            stagingLeaf,
+            O_RDWR | O_CLOEXEC | O_NOFOLLOW
+        )
+        guard stagingDescriptor >= 0 else { throw posixError() }
+        defer { Darwin.close(stagingDescriptor) }
+        guard try stagingDescriptorIsAuthorized(
+            stagingDescriptor,
+            staged: staged,
+            deadlineNanoseconds: deadlineNanoseconds
         ) else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -561,11 +618,27 @@ nonisolated enum TerminationSaveCoordinator {
         let expected = staged.request.expectedDestinationState
         if expected.exists {
             let quarantineLeaf = ".pine-save-recovery-\(UUID().uuidString)"
+            let quarantineURL = parentURL.appendingPathComponent(quarantineLeaf)
             beforeDestinationQuarantine?()
-            guard !Task.isCancelled,
-                  DispatchTime.now().uptimeNanoseconds
-                    < deadlineNanoseconds else {
-                throw CancellationError()
+            try checkDeadline(deadlineNanoseconds)
+            let destinationDescriptor = Darwin.openat(
+                parentDescriptor,
+                destinationLeaf,
+                O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW
+            )
+            guard destinationDescriptor >= 0 else { throw posixError() }
+            defer { Darwin.close(destinationDescriptor) }
+            let immediateSnapshot = try destinationSnapshot(
+                destinationDescriptor,
+                deadlineNanoseconds: deadlineNanoseconds
+            )
+            guard immediateSnapshot.state == expected,
+                  pathMatches(
+                      parentDescriptor: parentDescriptor,
+                      leaf: destinationLeaf,
+                      status: immediateSnapshot.status
+                  ) else {
+                throw CocoaError(.fileWriteFileExists)
             }
             guard renameExclusive(
                 parentDescriptor: parentDescriptor,
@@ -574,30 +647,134 @@ nonisolated enum TerminationSaveCoordinator {
             ) == 0 else {
                 throw posixError()
             }
-
-            guard displacedStateMatchesAfterRename(
-                expected,
-                parentDescriptor: parentDescriptor,
-                leaf: quarantineLeaf
-            ) else {
+            do {
+                try synchronizeDirectory(parentDescriptor)
+                let displacedSnapshot = try destinationSnapshot(
+                    destinationDescriptor,
+                    deadlineNanoseconds: deadlineNanoseconds
+                )
+                guard authorizedContentAndMetadataMatch(
+                    displacedSnapshot.state,
+                    expected: expected
+                ),
+                      pathMatches(
+                          parentDescriptor: parentDescriptor,
+                          leaf: quarantineLeaf,
+                          status: displacedSnapshot.status
+                      ) else {
+                    throw CocoaError(.fileWriteFileExists)
+                }
+                try applyExistingDestinationMetadata(
+                    from: destinationDescriptor,
+                    status: displacedSnapshot.status,
+                    to: stagingDescriptor
+                )
+                guard try installedMetadataMatches(
+                    stagingDescriptor,
+                    expected: expected,
+                    deadlineNanoseconds: deadlineNanoseconds
+                ) else {
+                    throw CocoaError(.fileWriteFileExists)
+                }
+                try checkDeadline(deadlineNanoseconds)
+                guard renameExclusive(
+                    parentDescriptor: parentDescriptor,
+                    source: stagingLeaf,
+                    destination: destinationLeaf
+                ) == 0 else {
+                    throw posixError()
+                }
+            } catch {
+                let installError = error
+                var stagingSecurityError: Error?
+                do {
+                    try resecureStaging(
+                        stagingDescriptor,
+                        at: staged.stagingURL
+                    )
+                } catch {
+                    stagingSecurityError = error
+                }
                 try restoreOrRetainRecovery(
                     parentDescriptor: parentDescriptor,
                     quarantineLeaf: quarantineLeaf,
                     destinationLeaf: destinationLeaf,
                     destinationURL: staged.request.destination
                 )
-                throw CocoaError(.fileWriteFileExists)
+                if let stagingSecurityError {
+                    throw stagingSecurityError
+                }
+                throw installError
             }
-            guard !Task.isCancelled,
-                  DispatchTime.now().uptimeNanoseconds
-                    < deadlineNanoseconds else {
-                try restoreOrRetainRecovery(
-                    parentDescriptor: parentDescriptor,
-                    quarantineLeaf: quarantineLeaf,
-                    destinationLeaf: destinationLeaf,
-                    destinationURL: staged.request.destination
+            do {
+                try synchronizeDirectory(parentDescriptor)
+            } catch {
+                throw retainedRecoveryError(
+                    at: quarantineURL,
+                    reason: "The saved destination was installed, but its "
+                        + "directory entry could not be made durable"
                 )
-                throw CancellationError()
+            }
+            guard regularFileMatches(
+                parentDescriptor: parentDescriptor,
+                leaf: destinationLeaf,
+                device: staged.stagingDevice,
+                inode: staged.stagingInode
+            ) else {
+                throw retainedRecoveryError(at: quarantineURL)
+            }
+            beforeRecoveryCleanup?()
+            switch removeEntryIfMatches(
+                parentDescriptor: parentDescriptor,
+                parentURL: parentURL,
+                leaf: quarantineLeaf,
+                device: expected.device,
+                inode: expected.inode
+            ) {
+            case .removed:
+                break
+            case .failed(let message, let retainedURL):
+                if let retainedURL {
+                    throw retainedRecoveryError(
+                        at: retainedURL,
+                        reason: message
+                    )
+                }
+                throw CocoaError(
+                    .fileWriteUnknown,
+                    userInfo: [NSLocalizedDescriptionKey: message]
+                )
+            }
+        } else {
+            try checkDeadline(deadlineNanoseconds)
+            let permissions = try probeCreationPermissions(
+                parentDescriptor: parentDescriptor,
+                parentURL: parentURL
+            )
+            guard Darwin.fchmod(
+                stagingDescriptor,
+                mode_t(permissions)
+            ) == 0 else {
+                let installError = posixError()
+                try resecureStaging(stagingDescriptor, at: staged.stagingURL)
+                throw installError
+            }
+            guard Darwin.fsync(stagingDescriptor) == 0 else {
+                let installError = posixError()
+                try resecureStaging(stagingDescriptor, at: staged.stagingURL)
+                throw installError
+            }
+            try checkDeadline(deadlineNanoseconds)
+            var destinationStatus = stat()
+            guard Darwin.fstatat(
+                parentDescriptor,
+                destinationLeaf,
+                &destinationStatus,
+                AT_SYMLINK_NOFOLLOW
+            ) != 0,
+                  errno == ENOENT else {
+                try resecureStaging(stagingDescriptor, at: staged.stagingURL)
+                throw CocoaError(.fileWriteFileExists)
             }
             guard renameExclusive(
                 parentDescriptor: parentDescriptor,
@@ -605,48 +782,8 @@ nonisolated enum TerminationSaveCoordinator {
                 destination: destinationLeaf
             ) == 0 else {
                 let installError = posixError()
-                try restoreOrRetainRecovery(
-                    parentDescriptor: parentDescriptor,
-                    quarantineLeaf: quarantineLeaf,
-                    destinationLeaf: destinationLeaf,
-                    destinationURL: staged.request.destination
-                )
+                try resecureStaging(stagingDescriptor, at: staged.stagingURL)
                 throw installError
-            }
-
-            // If another actor immediately replaces the installed inode,
-            // fail closed and retain the authorized original for recovery.
-            // The editor remains dirty instead of claiming that the external
-            // bytes currently at the destination are our saved content.
-            guard regularFileMatches(
-                parentDescriptor: parentDescriptor,
-                leaf: destinationLeaf,
-                device: staged.stagingDevice,
-                inode: staged.stagingInode
-            ) else {
-                let recoveryURL = staged.request.destination
-                    .deletingLastPathComponent()
-                    .appendingPathComponent(quarantineLeaf)
-                throw retainedRecoveryError(at: recoveryURL)
-            }
-            removeEntryIfMatches(
-                parentDescriptor: parentDescriptor,
-                leaf: quarantineLeaf,
-                device: expected.device,
-                inode: expected.inode
-            )
-        } else {
-            guard !Task.isCancelled,
-                  DispatchTime.now().uptimeNanoseconds
-                    < deadlineNanoseconds else {
-                throw CancellationError()
-            }
-            guard renameExclusive(
-                parentDescriptor: parentDescriptor,
-                source: stagingLeaf,
-                destination: destinationLeaf
-            ) == 0 else {
-                throw posixError()
             }
             guard regularFileMatches(
                 parentDescriptor: parentDescriptor,
@@ -656,6 +793,7 @@ nonisolated enum TerminationSaveCoordinator {
             ) else {
                 throw CocoaError(.fileWriteFileExists)
             }
+            try synchronizeDirectory(parentDescriptor)
         }
     }
 
@@ -729,64 +867,448 @@ nonisolated enum TerminationSaveCoordinator {
                 .appendingPathComponent(quarantineLeaf)
             throw retainedRecoveryError(at: recoveryURL)
         }
+        try synchronizeDirectory(parentDescriptor)
     }
 
-    private static func retainedRecoveryError(at recoveryURL: URL) -> NSError {
+    private static func retainedRecoveryError(
+        at recoveryURL: URL,
+        reason: String = "A concurrent file replacement was retained"
+    ) -> NSError {
         NSError(
             domain: NSCocoaErrorDomain,
             code: CocoaError.fileWriteUnknown.rawValue,
             userInfo: [
                 NSLocalizedDescriptionKey:
-                    "A concurrent file replacement was retained at "
-                    + recoveryURL.path,
+                    "\(reason) at \(recoveryURL.path)",
             ]
         )
     }
 
-    private static func displacedStateMatchesAfterRename(
-        _ expected: TerminationDestinationState,
-        parentDescriptor: Int32,
-        leaf: String
-    ) -> Bool {
-        var status = stat()
-        guard Darwin.fstatat(
-            parentDescriptor,
-            leaf,
-            &status,
-            AT_SYMLINK_NOFOLLOW
-        ) == 0 else {
-            return false
+    private static func checkDeadline(_ deadlineNanoseconds: UInt64) throws {
+        guard !Task.isCancelled,
+              DispatchTime.now().uptimeNanoseconds < deadlineNanoseconds else {
+            throw CancellationError()
         }
-        return UInt64(status.st_dev) == expected.device
-            && UInt64(status.st_ino) == expected.inode
-            && status.st_size == expected.size
-            && UInt32(status.st_mode & 0o7777) == expected.permissions
-            && status.st_uid == expected.ownerID
-            && status.st_gid == expected.groupID
-            && Int(status.st_mtimespec.tv_sec)
-                == expected.modificationSeconds
-            && Int(status.st_mtimespec.tv_nsec)
-                == expected.modificationNanoseconds
     }
 
-    private static func state(
-        _ status: stat,
-        matches expected: TerminationDestinationState
+    private static func destinationSnapshot(
+        _ descriptor: Int32,
+        deadlineNanoseconds: UInt64
+    ) throws -> DestinationDescriptorSnapshot {
+        try checkDeadline(deadlineNanoseconds)
+        var before = stat()
+        guard Darwin.fstat(descriptor, &before) == 0,
+              (before.st_mode & S_IFMT) == S_IFREG else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+        let contentDigest = try contentDigest(
+            descriptor,
+            deadlineNanoseconds: deadlineNanoseconds
+        )
+        let metadataDigest = try extendedMetadataDigest(
+            descriptor,
+            deadlineNanoseconds: deadlineNanoseconds
+        )
+        var after = stat()
+        guard Darwin.fstat(descriptor, &after) == 0,
+              stableStatus(before, after) else {
+            throw CocoaError(.fileWriteFileExists)
+        }
+        return DestinationDescriptorSnapshot(
+            state: TerminationDestinationState(
+                device: UInt64(after.st_dev),
+                inode: UInt64(after.st_ino),
+                size: after.st_size,
+                permissions: UInt32(after.st_mode & 0o7777),
+                ownerID: after.st_uid,
+                groupID: after.st_gid,
+                modificationSeconds: Int(after.st_mtimespec.tv_sec),
+                modificationNanoseconds: Int(after.st_mtimespec.tv_nsec),
+                changeSeconds: Int(after.st_ctimespec.tv_sec),
+                changeNanoseconds: Int(after.st_ctimespec.tv_nsec),
+                contentDigest: contentDigest,
+                extendedMetadataDigest: metadataDigest
+            ),
+            status: after
+        )
+    }
+
+    private static func contentDigest(
+        _ descriptor: Int32,
+        deadlineNanoseconds: UInt64
+    ) throws -> Data {
+        var hasher = SHA256()
+        var offset: off_t = 0
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            try checkDeadline(deadlineNanoseconds)
+            let count = buffer.withUnsafeMutableBytes { rawBuffer in
+                Darwin.pread(
+                    descriptor,
+                    rawBuffer.baseAddress,
+                    rawBuffer.count,
+                    offset
+                )
+            }
+            if count < 0, errno == EINTR { continue }
+            guard count >= 0 else { throw posixError() }
+            guard count > 0 else { break }
+            hasher.update(data: Data(buffer.prefix(count)))
+            offset += off_t(count)
+        }
+        return Data(hasher.finalize())
+    }
+
+    private static func extendedMetadataDigest(
+        _ descriptor: Int32,
+        deadlineNanoseconds: UInt64
+    ) throws -> Data {
+        var hasher = SHA256()
+        let names = try extendedAttributeNames(descriptor).sorted()
+        for name in names {
+            try checkDeadline(deadlineNanoseconds)
+            updateDigest(&hasher, with: Data(name.utf8))
+            updateDigest(
+                &hasher,
+                with: try extendedAttributeValue(descriptor, name: name)
+            )
+        }
+        updateDigest(&hasher, with: try extendedACLData(descriptor))
+        return Data(hasher.finalize())
+    }
+
+    private static func updateDigest(
+        _ hasher: inout SHA256,
+        with data: Data
+    ) {
+        var length = UInt64(data.count).bigEndian
+        withUnsafeBytes(of: &length) { bytes in
+            hasher.update(data: Data(bytes))
+        }
+        hasher.update(data: data)
+    }
+
+    private static func extendedAttributeNames(
+        _ descriptor: Int32
+    ) throws -> [String] {
+        let required = Darwin.flistxattr(descriptor, nil, 0, 0)
+        guard required >= 0 else { throw posixError() }
+        guard required > 0 else { return [] }
+        var bytes = [CChar](repeating: 0, count: required)
+        let count = bytes.withUnsafeMutableBufferPointer { buffer in
+            Darwin.flistxattr(descriptor, buffer.baseAddress, buffer.count, 0)
+        }
+        guard count >= 0 else { throw posixError() }
+        let raw = bytes.prefix(count).map(UInt8.init(bitPattern:))
+        var names: [String] = []
+        var start = raw.startIndex
+        for index in raw.indices where raw[index] == 0 {
+            guard index > start,
+                  let name = String(
+                      bytes: raw[start..<index],
+                      encoding: .utf8
+                  ) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            names.append(name)
+            start = raw.index(after: index)
+        }
+        guard start == raw.endIndex else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return names
+    }
+
+    private static func extendedAttributeValue(
+        _ descriptor: Int32,
+        name: String
+    ) throws -> Data {
+        let required = name.withCString {
+            Darwin.fgetxattr(descriptor, $0, nil, 0, 0, 0)
+        }
+        guard required >= 0 else { throw posixError() }
+        var data = Data(count: required)
+        let count = data.withUnsafeMutableBytes { buffer in
+            name.withCString {
+                Darwin.fgetxattr(
+                    descriptor,
+                    $0,
+                    buffer.baseAddress,
+                    buffer.count,
+                    0,
+                    0
+                )
+            }
+        }
+        guard count == required else { throw posixError() }
+        return data
+    }
+
+    private static func extendedACLData(_ descriptor: Int32) throws -> Data {
+        errno = 0
+        guard let acl = Darwin.acl_get_fd_np(
+            descriptor,
+            ACL_TYPE_EXTENDED
+        ) else {
+            guard errno == 0 || errno == ENOENT else { throw posixError() }
+            return Data()
+        }
+        defer { Darwin.acl_free(UnsafeMutableRawPointer(acl)) }
+        var length: ssize_t = 0
+        guard let text = Darwin.acl_to_text(acl, &length) else {
+            throw posixError()
+        }
+        defer { Darwin.acl_free(UnsafeMutableRawPointer(text)) }
+        return Data(bytes: text, count: length)
+    }
+
+    private static func stableStatus(_ lhs: stat, _ rhs: stat) -> Bool {
+        lhs.st_dev == rhs.st_dev
+            && lhs.st_ino == rhs.st_ino
+            && lhs.st_mode == rhs.st_mode
+            && lhs.st_nlink == rhs.st_nlink
+            && lhs.st_uid == rhs.st_uid
+            && lhs.st_gid == rhs.st_gid
+            && lhs.st_size == rhs.st_size
+            && lhs.st_mtimespec.tv_sec == rhs.st_mtimespec.tv_sec
+            && lhs.st_mtimespec.tv_nsec == rhs.st_mtimespec.tv_nsec
+            && lhs.st_ctimespec.tv_sec == rhs.st_ctimespec.tv_sec
+            && lhs.st_ctimespec.tv_nsec == rhs.st_ctimespec.tv_nsec
+    }
+
+    private static func sameObject(_ lhs: stat, _ rhs: stat) -> Bool {
+        lhs.st_dev == rhs.st_dev
+            && lhs.st_ino == rhs.st_ino
+            && (lhs.st_mode & S_IFMT) == (rhs.st_mode & S_IFMT)
+    }
+
+    private static func pathMatches(
+        parentDescriptor: Int32,
+        leaf: String,
+        status: stat
     ) -> Bool {
-        (status.st_mode & S_IFMT) == S_IFREG
-            && UInt64(status.st_dev) == expected.device
-            && UInt64(status.st_ino) == expected.inode
-            && status.st_size == expected.size
-            && UInt32(status.st_mode & 0o7777) == expected.permissions
+        var live = stat()
+        return Darwin.fstatat(
+            parentDescriptor,
+            leaf,
+            &live,
+            AT_SYMLINK_NOFOLLOW
+        ) == 0 && sameObject(status, live)
+    }
+
+    private static func authorizedContentAndMetadataMatch(
+        _ actual: TerminationDestinationState,
+        expected: TerminationDestinationState
+    ) -> Bool {
+        actual.device == expected.device
+            && actual.inode == expected.inode
+            && actual.size == expected.size
+            && actual.permissions == expected.permissions
+            && actual.ownerID == expected.ownerID
+            && actual.groupID == expected.groupID
+            && actual.modificationSeconds == expected.modificationSeconds
+            && actual.modificationNanoseconds
+                == expected.modificationNanoseconds
+            && actual.contentDigest == expected.contentDigest
+            && actual.extendedMetadataDigest
+                == expected.extendedMetadataDigest
+    }
+
+    private static func stagingDescriptorIsAuthorized(
+        _ descriptor: Int32,
+        staged: TerminationStagedSave,
+        deadlineNanoseconds: UInt64
+    ) throws -> Bool {
+        var status = stat()
+        guard Darwin.fstat(descriptor, &status) == 0,
+              (status.st_mode & S_IFMT) == S_IFREG,
+              UInt64(status.st_dev) == staged.stagingDevice,
+              UInt64(status.st_ino) == staged.stagingInode,
+              status.st_uid == Darwin.getuid(),
+              status.st_nlink == 1,
+              (status.st_mode & 0o7777) == 0o600,
+              try privateStagingXattrsAreSafe(descriptor),
+              try descriptorHasNoExtendedACL(descriptor) else {
+            return false
+        }
+        return try contentDigest(
+            descriptor,
+            deadlineNanoseconds: deadlineNanoseconds
+        ) == staged.stagingContentDigest
+    }
+
+    private static func descriptorHasNoExtendedACL(
+        _ descriptor: Int32
+    ) throws -> Bool {
+        errno = 0
+        guard let acl = Darwin.acl_get_fd_np(
+            descriptor,
+            ACL_TYPE_EXTENDED
+        ) else {
+            guard errno == 0 || errno == ENOENT else { throw posixError() }
+            return true
+        }
+        defer { Darwin.acl_free(UnsafeMutableRawPointer(acl)) }
+        var entry: acl_entry_t?
+        let result = Darwin.acl_get_entry(
+            acl,
+            Int32(ACL_FIRST_ENTRY.rawValue),
+            &entry
+        )
+        guard result >= 0 else { throw posixError() }
+        return result == 0
+    }
+
+    private static func makeDescriptorPrivate(_ descriptor: Int32) throws {
+        guard Darwin.fchmod(descriptor, mode_t(0o600)) == 0 else {
+            throw posixError()
+        }
+        for name in try extendedAttributeNames(descriptor)
+        where !privateStagingSystemXattrs.contains(name) {
+            let result = name.withCString {
+                Darwin.fremovexattr(descriptor, $0, 0)
+            }
+            guard result == 0 || errno == ENOATTR else { throw posixError() }
+        }
+        if !(try descriptorHasNoExtendedACL(descriptor)) {
+            try deleteExtendedACL(from: descriptor)
+        }
+        guard try privateStagingXattrsAreSafe(descriptor),
+              try descriptorHasNoExtendedACL(descriptor) else {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+    }
+
+    private static func privateStagingXattrsAreSafe(
+        _ descriptor: Int32
+    ) throws -> Bool {
+        try extendedAttributeNames(descriptor).allSatisfy {
+            privateStagingSystemXattrs.contains($0)
+        }
+    }
+
+    /// `acl_delete_fd_np` is a public libSystem symbol on every supported
+    /// macOS release, but the Swift Darwin overlay does not import it. Resolve
+    /// that exact descriptor-based API dynamically so ACL removal stays free
+    /// of pathname races.
+    private static func deleteExtendedACL(from descriptor: Int32) throws {
+        guard let handle = Darwin.dlopen(nil, RTLD_LAZY | RTLD_LOCAL) else {
+            throw posixError()
+        }
+        defer { Darwin.dlclose(handle) }
+        guard let symbol = Darwin.dlsym(handle, "acl_delete_fd_np") else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        typealias DeleteACL = @convention(c) (
+            Int32,
+            acl_type_t
+        ) -> Int32
+        let deleteACL = unsafeBitCast(symbol, to: DeleteACL.self)
+        guard deleteACL(descriptor, ACL_TYPE_EXTENDED) == 0
+                || errno == ENOENT else {
+            throw posixError()
+        }
+    }
+
+    private static func resecureStaging(
+        _ descriptor: Int32,
+        at stagingURL: URL
+    ) throws {
+        do {
+            try makeDescriptorPrivate(descriptor)
+            guard Darwin.fsync(descriptor) == 0 else { throw posixError() }
+        } catch {
+            throw retainedRecoveryError(
+                at: stagingURL,
+                reason: "Staged save bytes could not be resecured"
+            )
+        }
+    }
+
+    private static func applyExistingDestinationMetadata(
+        from sourceDescriptor: Int32,
+        status: stat,
+        to destinationDescriptor: Int32
+    ) throws {
+        guard Darwin.fchown(
+            destinationDescriptor,
+            status.st_uid,
+            status.st_gid
+        ) == 0 else {
+            throw posixError()
+        }
+        let metadataFlags = copyfile_flags_t(COPYFILE_ACL | COPYFILE_XATTR)
+        guard Darwin.fcopyfile(
+            sourceDescriptor,
+            destinationDescriptor,
+            nil,
+            metadataFlags
+        ) == 0,
+              Darwin.fchmod(
+                  destinationDescriptor,
+                  mode_t(status.st_mode & 0o7777)
+              ) == 0,
+              Darwin.fsync(destinationDescriptor) == 0 else {
+            throw posixError()
+        }
+    }
+
+    private static func installedMetadataMatches(
+        _ descriptor: Int32,
+        expected: TerminationDestinationState,
+        deadlineNanoseconds: UInt64
+    ) throws -> Bool {
+        var status = stat()
+        guard Darwin.fstat(descriptor, &status) == 0 else {
+            throw posixError()
+        }
+        return try UInt32(status.st_mode & 0o7777) == expected.permissions
             && status.st_uid == expected.ownerID
             && status.st_gid == expected.groupID
-            && Int(status.st_mtimespec.tv_sec)
-                == expected.modificationSeconds
-            && Int(status.st_mtimespec.tv_nsec)
-                == expected.modificationNanoseconds
-            && Int(status.st_ctimespec.tv_sec) == expected.changeSeconds
-            && Int(status.st_ctimespec.tv_nsec)
-                == expected.changeNanoseconds
+            && extendedMetadataDigest(
+                descriptor,
+                deadlineNanoseconds: deadlineNanoseconds
+            ) == expected.extendedMetadataDigest
+    }
+
+    private static func probeCreationPermissions(
+        parentDescriptor: Int32,
+        parentURL: URL
+    ) throws -> UInt32 {
+        let leaf = ".pine-save-mode-\(UUID().uuidString).tmp"
+        let descriptor = Darwin.openat(
+            parentDescriptor,
+            leaf,
+            O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+            mode_t(0o666)
+        )
+        guard descriptor >= 0 else { throw posixError() }
+        var status = stat()
+        let captured = Darwin.fstat(descriptor, &status) == 0
+        Darwin.close(descriptor)
+        guard captured else { throw posixError() }
+        switch removeEntryIfMatches(
+            parentDescriptor: parentDescriptor,
+            parentURL: parentURL,
+            leaf: leaf,
+            device: UInt64(status.st_dev),
+            inode: UInt64(status.st_ino)
+        ) {
+        case .removed:
+            return UInt32(status.st_mode & 0o666)
+        case .failed(let message, let retainedURL):
+            if let retainedURL {
+                throw retainedRecoveryError(at: retainedURL, reason: message)
+            }
+            throw CocoaError(
+                .fileWriteUnknown,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+        }
+    }
+
+    private static func synchronizeDirectory(_ descriptor: Int32) throws {
+        guard Darwin.fsync(descriptor) == 0 else { throw posixError() }
     }
 
     private static func regularFileMatches(
@@ -811,18 +1333,23 @@ nonisolated enum TerminationSaveCoordinator {
 
     private static func removeStagingFileIfMatches(
         _ staged: TerminationStagedSave
-    ) {
-        _ = withVerifiedParentDirectory(
+    ) -> ArtifactRemovalResult {
+        let result = withVerifiedParentDirectory(
             of: staged.stagingURL,
             staged: staged
         ) { parentDescriptor, stagingLeaf in
             removeEntryIfMatches(
                 parentDescriptor: parentDescriptor,
+                parentURL: staged.stagingURL.deletingLastPathComponent(),
                 leaf: stagingLeaf,
                 device: staged.stagingDevice,
                 inode: staged.stagingInode
             )
         }
+        return result ?? .failed(
+            message: "Could not verify the staged-save directory",
+            retainedURL: staged.stagingURL
+        )
     }
 
     /// Move-first cleanup prevents a pathname substitution from being blindly
@@ -830,29 +1357,66 @@ nonisolated enum TerminationSaveCoordinator {
     /// concurrently reappeared, the entry remains under the recovery name.
     private static func removeEntryIfMatches(
         parentDescriptor: Int32,
+        parentURL: URL,
         leaf: String,
         device: UInt64,
         inode: UInt64
-    ) {
+    ) -> ArtifactRemovalResult {
         let cleanupLeaf = ".pine-save-cleanup-\(UUID().uuidString)"
+        let originalURL = parentURL.appendingPathComponent(leaf)
+        let cleanupURL = parentURL.appendingPathComponent(cleanupLeaf)
         guard renameExclusive(
             parentDescriptor: parentDescriptor,
             source: leaf,
             destination: cleanupLeaf
-        ) == 0 else { return }
+        ) == 0 else {
+            if errno == ENOENT { return .removed }
+            return .failed(
+                message: "Could not quarantine an artifact before cleanup",
+                retainedURL: originalURL
+            )
+        }
+        do {
+            try synchronizeDirectory(parentDescriptor)
+        } catch {
+            return .failed(
+                message: "Could not make artifact quarantine durable",
+                retainedURL: cleanupURL
+            )
+        }
         guard regularFileMatches(
             parentDescriptor: parentDescriptor,
             leaf: cleanupLeaf,
             device: device,
             inode: inode
         ) else {
-            _ = renameExclusive(
+            let restored = renameExclusive(
                 parentDescriptor: parentDescriptor,
                 source: cleanupLeaf,
                 destination: leaf
+            ) == 0
+            if restored {
+                try? synchronizeDirectory(parentDescriptor)
+            }
+            return .failed(
+                message: "An artifact changed identity during cleanup",
+                retainedURL: restored ? originalURL : cleanupURL
             )
-            return
         }
-        _ = Darwin.unlinkat(parentDescriptor, cleanupLeaf, 0)
+        guard Darwin.unlinkat(parentDescriptor, cleanupLeaf, 0) == 0 else {
+            return .failed(
+                message: "Could not unlink a quarantined artifact",
+                retainedURL: cleanupURL
+            )
+        }
+        do {
+            try synchronizeDirectory(parentDescriptor)
+            return .removed
+        } catch {
+            return .failed(
+                message: "Artifact removal could not be made durable",
+                retainedURL: nil
+            )
+        }
     }
 }

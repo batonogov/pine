@@ -6,8 +6,208 @@
 //
 
 import AppKit
+import Darwin
 import os
 import SwiftUI
+
+nonisolated struct TerminationFileAliasIdentity: Hashable, Sendable {
+    private enum Storage: Hashable, Sendable {
+        case existing(device: UInt64, inode: UInt64)
+        case missing(
+            ancestorDevice: UInt64,
+            ancestorInode: UInt64,
+            normalizedSuffix: [String]
+        )
+    }
+
+    private let storage: Storage
+
+    fileprivate static func existing(
+        device: UInt64,
+        inode: UInt64
+    ) -> Self {
+        Self(storage: .existing(device: device, inode: inode))
+    }
+
+    fileprivate static func missing(
+        ancestorDevice: UInt64,
+        ancestorInode: UInt64,
+        normalizedSuffix: [String]
+    ) -> Self {
+        Self(storage: .missing(
+            ancestorDevice: ancestorDevice,
+            ancestorInode: ancestorInode,
+            normalizedSuffix: normalizedSuffix
+        ))
+    }
+}
+
+nonisolated enum TerminationFileAliasCaptureResult: Sendable {
+    case captured([TerminationFileAliasIdentity])
+    case failed(message: String)
+    case timedOut
+}
+
+nonisolated private final class TerminationFileAliasCaptureResolver:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<
+        TerminationFileAliasCaptureResult,
+        Never
+    >?
+
+    init(
+        _ continuation: CheckedContinuation<
+            TerminationFileAliasCaptureResult,
+            Never
+        >
+    ) {
+        self.continuation = continuation
+    }
+
+    @discardableResult
+    func resolve(_ result: TerminationFileAliasCaptureResult) -> Bool {
+        let continuation = lock.withLock {
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        guard let continuation else { return false }
+        continuation.resume(returning: result)
+        return true
+    }
+}
+
+/// Resolves filesystem aliases away from the main actor. Existing paths use
+/// their device/inode identity, so hard links, symlinks, and case aliases
+/// compare equal. Missing paths are keyed below their nearest existing
+/// ancestor using the volume's case behavior and canonical Unicode spelling.
+nonisolated enum TerminationFileAliasResolver {
+    private static let workQueue = DispatchQueue(
+        label: "com.pine.termination-file-alias",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+    private static let deadlineQueue = DispatchQueue(
+        label: "com.pine.termination-file-alias-deadline",
+        qos: .userInteractive
+    )
+
+    static func capture(
+        _ urls: [URL],
+        until deadline: DispatchTime
+    ) async -> TerminationFileAliasCaptureResult {
+        guard DispatchTime.now().uptimeNanoseconds
+                < deadline.uptimeNanoseconds else {
+            return .timedOut
+        }
+        return await withCheckedContinuation { continuation in
+            let resolver = TerminationFileAliasCaptureResolver(continuation)
+            workQueue.async {
+                let result: TerminationFileAliasCaptureResult
+                do {
+                    let identities = try urls.map {
+                        try identity(
+                            at: $0,
+                            deadlineNanoseconds: deadline.uptimeNanoseconds
+                        )
+                    }
+                    result = .captured(identities)
+                } catch let error as TerminationFileAliasError
+                where error == .timedOut {
+                    result = .timedOut
+                } catch {
+                    result = .failed(message: error.localizedDescription)
+                }
+                resolver.resolve(result)
+            }
+            deadlineQueue.asyncAfter(deadline: deadline) {
+                resolver.resolve(.timedOut)
+            }
+        }
+    }
+
+    private enum TerminationFileAliasError: Error {
+        case timedOut
+    }
+
+    private static func identity(
+        at originalURL: URL,
+        deadlineNanoseconds: UInt64
+    ) throws -> TerminationFileAliasIdentity {
+        try checkDeadline(deadlineNanoseconds)
+        var currentURL = originalURL.standardizedFileURL
+        var missingComponents: [String] = []
+
+        while true {
+            try checkDeadline(deadlineNanoseconds)
+            var status = stat()
+            let descriptor = Darwin.open(
+                currentURL.path,
+                O_RDONLY | O_NONBLOCK | O_CLOEXEC
+            )
+            if descriptor >= 0 {
+                defer { Darwin.close(descriptor) }
+                guard Darwin.fstat(descriptor, &status) == 0 else {
+                    throw NSError(
+                        domain: NSPOSIXErrorDomain,
+                        code: Int(errno)
+                    )
+                }
+                if missingComponents.isEmpty {
+                    return .existing(
+                        device: UInt64(status.st_dev),
+                        inode: UInt64(status.st_ino)
+                    )
+                }
+                let resourceValues = try currentURL.resourceValues(
+                    forKeys: [.volumeSupportsCaseSensitiveNamesKey]
+                )
+                guard let isCaseSensitive = resourceValues
+                    .volumeSupportsCaseSensitiveNames else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+                let suffix = missingComponents.reversed().map {
+                    normalize($0, caseSensitive: isCaseSensitive)
+                }
+                return .missing(
+                    ancestorDevice: UInt64(status.st_dev),
+                    ancestorInode: UInt64(status.st_ino),
+                    normalizedSuffix: suffix
+                )
+            }
+            guard errno == ENOENT else {
+                throw NSError(
+                    domain: NSPOSIXErrorDomain,
+                    code: Int(errno)
+                )
+            }
+            let parentURL = currentURL.deletingLastPathComponent()
+            guard parentURL.path != currentURL.path else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            missingComponents.append(currentURL.lastPathComponent)
+            currentURL = parentURL
+        }
+    }
+
+    private static func normalize(
+        _ component: String,
+        caseSensitive: Bool
+    ) -> String {
+        let canonical = component.precomposedStringWithCanonicalMapping
+        guard !caseSensitive else { return canonical }
+        return canonical.lowercased(
+            with: Locale(identifier: "en_US_POSIX")
+        )
+    }
+
+    private static func checkDeadline(_ deadlineNanoseconds: UInt64) throws {
+        guard DispatchTime.now().uptimeNanoseconds < deadlineNanoseconds else {
+            throw TerminationFileAliasError.timedOut
+        }
+    }
+}
 
 nonisolated enum PreparedPaneSaveCommitResult: Sendable, Equatable {
     case saved
@@ -78,6 +278,24 @@ final class ProjectManager {
         var destination: URL?
     }
 
+    struct TerminationOpenTabInventory: Equatable {
+        fileprivate struct Entry: Hashable {
+            let tabManager: ObjectIdentifier
+            let tabID: UUID
+            let originalFileURL: URL?
+            let authorizedSaveAsURL: URL?
+
+            func authorizes(_ tab: EditorTab) -> Bool {
+                let liveURL = tab.fileURL?.standardizedFileURL
+                return liveURL == originalFileURL
+                    || liveURL == authorizedSaveAsURL
+            }
+        }
+
+        fileprivate let tabManagers: Set<ObjectIdentifier>
+        fileprivate let entries: Set<Entry>
+    }
+
     struct PreparedPaneSavePlan {
         fileprivate let entries: [PlannedTabSave]
         fileprivate let dirtyAuthorization: DirtyEditorContentAuthorization
@@ -91,6 +309,15 @@ final class ProjectManager {
 
         var plannedTabIDs: Set<UUID> {
             Set(entries.map(\.tab.id))
+        }
+
+        var plannedDestinationURLsByTabID: [UUID: URL] {
+            Dictionary(uniqueKeysWithValues: entries.compactMap { planned in
+                guard let destination = planned.destination else {
+                    return nil
+                }
+                return (planned.tab.id, destination.standardizedFileURL)
+            })
         }
     }
 
@@ -214,6 +441,47 @@ final class ProjectManager {
     /// All dirty tabs across all panes.
     var allDirtyTabs: [EditorTab] {
         paneManager.tabManagers.values.flatMap(\.dirtyTabs)
+    }
+
+    func captureTerminationOpenTabInventory(
+        allowingSaveAs destinationsByTabID: [UUID: URL]
+    ) -> TerminationOpenTabInventory {
+        let tabManagers = paneManager.allTabManagers
+        return TerminationOpenTabInventory(
+            tabManagers: Set(tabManagers.map(ObjectIdentifier.init)),
+            entries: Set(tabManagers.flatMap { tabManager in
+                tabManager.tabs.map { tab in
+                    TerminationOpenTabInventory.Entry(
+                        tabManager: ObjectIdentifier(tabManager),
+                        tabID: tab.id,
+                        originalFileURL: tab.fileURL?.standardizedFileURL,
+                        authorizedSaveAsURL:
+                            destinationsByTabID[tab.id]?.standardizedFileURL
+                    )
+                }
+            })
+        )
+    }
+
+    func terminationOpenTabInventoryStillMatches(
+        _ inventory: TerminationOpenTabInventory
+    ) -> Bool {
+        let tabManagers = paneManager.allTabManagers
+        guard Set(tabManagers.map(ObjectIdentifier.init))
+                == inventory.tabManagers else {
+            return false
+        }
+        let liveTabs = tabManagers.flatMap { tabManager in
+            tabManager.tabs.map { (ObjectIdentifier(tabManager), $0) }
+        }
+        guard liveTabs.count == inventory.entries.count else { return false }
+        return liveTabs.allSatisfy { tabManagerID, tab in
+            inventory.entries.contains { entry in
+                entry.tabManager == tabManagerID
+                    && entry.tabID == tab.id
+                    && entry.authorizes(tab)
+            }
+        }
     }
 
     func freezeAutoSaveForTermination() {
@@ -534,11 +802,13 @@ final class ProjectManager {
     /// completes before a timeout is reported.
     func commitStagedSaveAllPaneTabsForTermination(
         _ plan: PreparedTerminationPaneSavePlan,
-        until deadline: DispatchTime
+        until deadline: DispatchTime,
+        inventoryStillAuthorized: @MainActor () -> Bool = { true }
     ) async -> PreparedPaneSaveCommitResult {
         let source = plan.source
         guard DispatchTime.now().uptimeNanoseconds
                 < deadline.uptimeNanoseconds,
+              inventoryStillAuthorized(),
               preparedSavePlanStillValid(source),
               plan.staged.count == source.entries.count,
               zip(source.entries, plan.staged).allSatisfy({ entry, staged in
@@ -565,7 +835,8 @@ final class ProjectManager {
                 )
                 return .timedOut
             }
-            guard preparedEntryStillValid(entry) else {
+            guard inventoryStillAuthorized(),
+                  preparedEntryStillValid(entry) else {
                 cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index))
                 )
@@ -594,15 +865,21 @@ final class ProjectManager {
                     }
                 }
             }
-            switch await awaitTerminationSaveInstall(
+            let installResult = await awaitTerminationSaveInstall(
                 staged,
                 until: deadline,
                 lateCompletion: lateCompletion
-            ) {
+            )
+            let inventoryWasAuthorizedAfterInstall =
+                inventoryStillAuthorized()
+            switch installResult {
             case .failed(let message):
                 cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index))
                 )
+                guard inventoryWasAuthorizedAfterInstall else {
+                    return .invalidated
+                }
                 return .failed(message: message)
             case .installed(let metadata):
                 guard entry.tabManager.reconcileTerminationStagedSave(
@@ -618,10 +895,20 @@ final class ProjectManager {
                     )
                     return .invalidated
                 }
+                guard inventoryWasAuthorizedAfterInstall,
+                      inventoryStillAuthorized() else {
+                    cleanupTerminationStagedSaves(
+                        Array(plan.staged.dropFirst(index + 1))
+                    )
+                    return .invalidated
+                }
             case .timedOut:
                 cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index))
                 )
+                guard inventoryWasAuthorizedAfterInstall else {
+                    return .invalidated
+                }
                 return .timedOut
             }
             if DispatchTime.now().uptimeNanoseconds

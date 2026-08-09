@@ -35,6 +35,24 @@ struct UserTaskShutdownAuthorization {
     var requiresConfirmation: Bool {
         byOwner.values.contains { $0.requiresConfirmation }
     }
+
+    var confirmingOwnerIDs: Set<ObjectIdentifier> {
+        Set(byOwner.compactMap { owner, authorization in
+            authorization.requiresConfirmation ? owner : nil
+        })
+    }
+}
+
+/// Stable application-wide ownership fence for Quit's machine save phase.
+/// Planned Save As tabs may move from their original backing to the one
+/// destination chosen by the user; every other project, pane manager, tab,
+/// and backing URL must remain identical until the transaction completes.
+@MainActor
+struct TerminationSaveInventoryAuthorization {
+    fileprivate let projectsByRoot: [URL: ObjectIdentifier]
+    fileprivate let tabsByProject: [
+        ObjectIdentifier: ProjectManager.TerminationOpenTabInventory
+    ]
 }
 
 /// Manages open projects and recent project history.
@@ -803,6 +821,43 @@ final class ProjectRegistry: LSPSettingsObserver {
         openProjects.values.forEach { $0.freezeAutoSaveForTermination() }
         detachedTaskCleanupProjects.values.forEach {
             $0.freezeAutoSaveForTermination()
+        }
+    }
+
+    func captureApplicationTerminationSaveInventory(
+        allowingSaveAs destinationsByTabID: [UUID: URL]
+    ) -> TerminationSaveInventoryAuthorization {
+        let projectsByRoot = openProjects.mapValues(ObjectIdentifier.init)
+        return TerminationSaveInventoryAuthorization(
+            projectsByRoot: projectsByRoot,
+            tabsByProject: Dictionary(uniqueKeysWithValues: openProjects
+                .values.map { projectManager in
+                    (
+                        ObjectIdentifier(projectManager),
+                        projectManager.captureTerminationOpenTabInventory(
+                            allowingSaveAs: destinationsByTabID
+                        )
+                    )
+                })
+        )
+    }
+
+    func applicationTerminationSaveInventoryStillMatches(
+        _ authorization: TerminationSaveInventoryAuthorization
+    ) -> Bool {
+        guard openProjects.mapValues(ObjectIdentifier.init)
+                == authorization.projectsByRoot else {
+            return false
+        }
+        return openProjects.values.allSatisfy { projectManager in
+            guard let inventory = authorization.tabsByProject[
+                ObjectIdentifier(projectManager)
+            ] else {
+                return false
+            }
+            return projectManager.terminationOpenTabInventoryStillMatches(
+                inventory
+            )
         }
     }
 
