@@ -734,13 +734,16 @@ struct WindowLifecycleTests {
         project.primaryTabManager.openTab(url: file)
         updateContent("// unsaved cleanup bytes", in: project)
         project.terminationSaveInstaller = { _, _, _ in
-            .failed(
+            return .failed(
                 message: "internal unlocalized installer detail",
                 retainedArtifacts: []
             )
         }
+        nonisolated(unsafe) var cleanupAttempts = 0
         project.terminationSaveCleaner = { _ in
-            .failed(
+            cleanupAttempts += 1
+            guard cleanupAttempts == 1 else { return .cleaned }
+            return .failed(
                 message: "internal unlocalized cleanup detail",
                 retainedArtifacts: [retainedArtifact]
             )
@@ -771,6 +774,7 @@ struct WindowLifecycleTests {
             + "\n\n"
             + retainedArtifact.path)
         #expect(!(failureMessage?.contains("unlocalized") ?? true))
+        #expect(cleanupAttempts == 1)
         #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
     }
@@ -1287,7 +1291,15 @@ struct WindowLifecycleTests {
             until: .now() + .milliseconds(50)
         )
 
-        #expect(result == .timedOut)
+        guard case .failed(let message, let retainedArtifacts) = result else {
+            Issue.record("Expected deadline cleanup to retain both staged files")
+            return
+        }
+        #expect(message == "Termination save cleanup exceeded its deadline")
+        #expect(retainedArtifacts.count == 2)
+        #expect(retainedArtifacts.allSatisfy {
+            $0.lastPathComponent.hasPrefix(".pine-save-")
+        })
         #expect(installer.installCount == 1)
         #expect(
             try String(contentsOf: firstURL, encoding: .utf8)
@@ -1346,7 +1358,16 @@ struct WindowLifecycleTests {
         #expect(await installer.waitUntilInstalled())
 
         let result = await commit.value
-        #expect(result == .timedOut)
+        guard case .failed(let message, let retainedArtifacts) = result else {
+            Issue.record("Expected timed-out cleanup to report its retained inode")
+            return
+        }
+        #expect(message == "Termination save cleanup exceeded its deadline")
+        #expect(retainedArtifacts.count == 1)
+        #expect(
+            retainedArtifacts.first?.lastPathComponent
+                .hasPrefix(".pine-save-") == true
+        )
         #expect(
             try String(contentsOf: file, encoding: .utf8)
                 == "// captured by termination\n"
@@ -1384,6 +1405,56 @@ struct WindowLifecycleTests {
         #expect(
             try String(contentsOf: file, encoding: .utf8) == persistedContent
         )
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func lateTerminationFailureReportsActualRetainedPath() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let retainedArtifact = dir.appendingPathComponent(
+            ".pine-save-late-retained"
+        )
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// captured dirty", in: project)
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready termination save plan")
+            return
+        }
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+        let stagedPlan = try #require(staged.1)
+        nonisolated(unsafe) var reportedArtifacts: [URL] = []
+        project.terminationSaveLateFailureHandler = { _, retainedArtifacts in
+            reportedArtifacts = retainedArtifacts
+        }
+        project.terminationSaveInstaller = { _, _, _ in
+            try? await Task.sleep(for: .milliseconds(100))
+            return .failed(
+                message: "late retained recovery",
+                retainedArtifacts: [retainedArtifact]
+            )
+        }
+
+        let result = await project.commitStagedSaveAllPaneTabsForTermination(
+            stagedPlan,
+            until: .now() + .milliseconds(25)
+        )
+        try? await Task.sleep(for: .milliseconds(150))
+
+        guard case .failed = result else {
+            Issue.record("Deadline cleanup should fail with retained staging")
+            return
+        }
+        #expect(reportedArtifacts == [retainedArtifact])
+        #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
     }
 
@@ -2169,6 +2240,18 @@ struct WindowLifecycleTests {
         #expect(welcome.isVisible)
     }
 
+    @Test func existingQuitOwnerIsRaisedBeforeNativePresentation() {
+        let delegate = AppDelegate()
+        let owner = TrackingApplicationOwnerWindow()
+        owner.orderFront(nil)
+        owner.resetTracking()
+        defer { owner.orderOut(nil) }
+
+        delegate.prepareApplicationDialogOwner(windows: [owner])
+
+        #expect(owner.makeKeyAndOrderFrontCount == 1)
+    }
+
     private func makeTaskRun(id: String) -> UserTaskRun {
         UserTaskRun(
             taskID: id,
@@ -2437,6 +2520,20 @@ nonisolated private final class PausedInstalledTerminationInstallerProbe:
             }
         }
         return condition()
+    }
+}
+
+@MainActor
+private final class TrackingApplicationOwnerWindow: NSWindow {
+    private(set) var makeKeyAndOrderFrontCount = 0
+
+    override func makeKeyAndOrderFront(_ sender: Any?) {
+        makeKeyAndOrderFrontCount += 1
+        super.makeKeyAndOrderFront(sender)
+    }
+
+    func resetTracking() {
+        makeKeyAndOrderFrontCount = 0
     }
 }
 

@@ -419,6 +419,16 @@ final class ProjectManager {
     ) -> TerminationSaveCleanupResult = {
         TerminationSaveCoordinator.cleanup($0)
     }
+    @ObservationIgnored
+    var terminationSaveLateFailureHandler: @Sendable (
+        String,
+        [URL]
+    ) -> Void = { message, retainedArtifacts in
+        let paths = retainedArtifacts.map(\.path).joined(separator: ",")
+        Logger.app.error(
+            "Late termination save failure: \(message, privacy: .public); retained=\(paths, privacy: .public)"
+        )
+    }
 
     /// Returns the TabManager for the currently focused pane.
     /// Falls back to the primary ``primaryTabManager`` when no editor pane is active.
@@ -774,9 +784,15 @@ final class ProjectManager {
         guard requests.count == plan.entries.count else {
             return (.invalidated, nil)
         }
+        let lateFailureHandler = terminationSaveLateFailureHandler
         switch await TerminationSaveCoordinator.stage(
             requests,
-            until: deadline
+            until: deadline,
+            lateCompletion: { result in
+                guard case .failed(let message, let retainedArtifacts) = result,
+                      !retainedArtifacts.isEmpty else { return }
+                lateFailureHandler(message, retainedArtifacts)
+            }
         ) {
         case .ready(let staged):
             return (
@@ -835,7 +851,13 @@ final class ProjectManager {
                       && staged.request.originalURL == entry.tab.fileURL
                       && staged.request.destination == destination
               }) else {
-            _ = await cleanupTerminationSavePlan(plan, until: deadline)
+            let cleanup = await cleanupTerminationSavePlan(
+                plan,
+                until: deadline
+            )
+            if let failure = terminationCleanupFailure(cleanup) {
+                return failure
+            }
             return .invalidated
         }
 
@@ -843,25 +865,37 @@ final class ProjectManager {
             let (entry, staged) = pair
             guard DispatchTime.now().uptimeNanoseconds
                     < deadline.uptimeNanoseconds else {
-                _ = await cleanupTerminationStagedSaves(
+                let cleanup = await cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index)),
                     until: deadline
                 )
+                if let failure = terminationCleanupFailure(cleanup) {
+                    return failure
+                }
                 return .timedOut
             }
             guard inventoryStillAuthorized(),
                   preparedEntryStillValid(entry) else {
-                _ = await cleanupTerminationStagedSaves(
+                let cleanup = await cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index)),
                     until: deadline
                 )
+                if let failure = terminationCleanupFailure(cleanup) {
+                    return failure
+                }
                 return .invalidated
             }
+            let tabManager = entry.tabManager
+            let lateFailureHandler = terminationSaveLateFailureHandler
             let lateCompletion: @Sendable (
                 TerminationSaveInstallResult
-            ) -> Void = { [tabManager = entry.tabManager] result in
-                guard case .installed(let metadata) = result else { return }
-                Task { @MainActor in
+            ) -> Void = { result in
+                switch result {
+                case .failed(let message, let retainedArtifacts):
+                    guard !retainedArtifacts.isEmpty else { return }
+                    lateFailureHandler(message, retainedArtifacts)
+                case .installed(let metadata):
+                    Task { @MainActor in
                     guard tabManager.tabs.first(where: {
                         $0.id == staged.request.tabID
                     })?.persistenceGeneration
@@ -878,6 +912,9 @@ final class ProjectManager {
                         )
                         return
                     }
+                    }
+                case .timedOut:
+                    break
                 }
             }
             let installResult = await awaitTerminationSaveInstall(
@@ -891,16 +928,14 @@ final class ProjectManager {
             case .failed(let message, let retainedArtifacts):
                 let cleanupResult = await cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index)),
-                    until: deadline
+                    until: deadline,
+                    excluding: retainedArtifacts
                 )
                 let cleanupArtifacts: [URL]
                 if case .failed(_, let artifacts) = cleanupResult {
                     cleanupArtifacts = artifacts
                 } else {
                     cleanupArtifacts = []
-                }
-                guard inventoryWasAuthorizedAfterInstall else {
-                    return .invalidated
                 }
                 return .failed(
                     message: message,
@@ -916,25 +951,34 @@ final class ProjectManager {
                     Logger.app.critical(
                         "Termination save model changed during atomic commit"
                     )
-                    _ = await cleanupTerminationStagedSaves(
+                    let cleanup = await cleanupTerminationStagedSaves(
                         Array(plan.staged.dropFirst(index + 1)),
                         until: deadline
                     )
+                    if let failure = terminationCleanupFailure(cleanup) {
+                        return failure
+                    }
                     return .invalidated
                 }
                 guard inventoryWasAuthorizedAfterInstall,
                       inventoryStillAuthorized() else {
-                    _ = await cleanupTerminationStagedSaves(
+                    let cleanup = await cleanupTerminationStagedSaves(
                         Array(plan.staged.dropFirst(index + 1)),
                         until: deadline
                     )
+                    if let failure = terminationCleanupFailure(cleanup) {
+                        return failure
+                    }
                     return .invalidated
                 }
             case .timedOut:
-                _ = await cleanupTerminationStagedSaves(
+                let cleanup = await cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index)),
                     until: deadline
                 )
+                if let failure = terminationCleanupFailure(cleanup) {
+                    return failure
+                }
                 guard inventoryWasAuthorizedAfterInstall else {
                     return .invalidated
                 }
@@ -942,10 +986,13 @@ final class ProjectManager {
             }
             if DispatchTime.now().uptimeNanoseconds
                     >= deadline.uptimeNanoseconds {
-                _ = await cleanupTerminationStagedSaves(
+                let cleanup = await cleanupTerminationStagedSaves(
                     Array(plan.staged.dropFirst(index + 1)),
                     until: deadline
                 )
+                if let failure = terminationCleanupFailure(cleanup) {
+                    return failure
+                }
                 return .timedOut
             }
         }
@@ -988,20 +1035,35 @@ final class ProjectManager {
 
     func cleanupTerminationSavePlan(
         _ plan: PreparedTerminationPaneSavePlan,
+        excluding retainedArtifacts: [URL] = [],
         until deadline: DispatchTime
     ) async -> TerminationSaveCleanupResult {
-        await cleanupTerminationStagedSaves(plan.staged, until: deadline)
+        await cleanupTerminationStagedSaves(
+            plan.staged,
+            until: deadline,
+            excluding: retainedArtifacts
+        )
     }
 
     private func cleanupTerminationStagedSaves(
         _ staged: [TerminationStagedSave],
-        until deadline: DispatchTime
+        until deadline: DispatchTime,
+        excluding retainedArtifacts: [URL] = []
     ) async -> TerminationSaveCleanupResult {
-        guard !staged.isEmpty else { return .cleaned }
-        let retainedArtifacts = staged.map(\.stagingURL)
+        let protectedPaths = Set(retainedArtifacts.map {
+            $0.resolvingSymlinksInPath().standardizedFileURL.path
+        })
+        let cleanupCandidates = staged.filter {
+            !protectedPaths.contains(
+                $0.stagingURL.resolvingSymlinksInPath()
+                    .standardizedFileURL.path
+            )
+        }
+        guard !cleanupCandidates.isEmpty else { return .cleaned }
+        let timedOutArtifacts = cleanupCandidates.map(\.stagingURL)
         let timedOut = TerminationSaveCleanupResult.failed(
             message: "Termination save cleanup exceeded its deadline",
-            retainedArtifacts: retainedArtifacts
+            retainedArtifacts: timedOutArtifacts
         )
         guard DispatchTime.now().uptimeNanoseconds
                 < deadline.uptimeNanoseconds else {
@@ -1011,7 +1073,7 @@ final class ProjectManager {
         return await withCheckedContinuation { continuation in
             let resolver = TerminationAwaitResolver(continuation)
             let operationTask = Task.detached(priority: .utility) {
-                resolver.resolve(cleaner(staged))
+                resolver.resolve(cleaner(cleanupCandidates))
             }
             Self.terminationInstallDeadlineQueue.asyncAfter(
                 deadline: deadline
@@ -1021,6 +1083,18 @@ final class ProjectManager {
                 }
             }
         }
+    }
+
+    private func terminationCleanupFailure(
+        _ result: TerminationSaveCleanupResult
+    ) -> PreparedPaneSaveCommitResult? {
+        guard case .failed(let message, let retainedArtifacts) = result else {
+            return nil
+        }
+        return .failed(
+            message: message,
+            retainedArtifacts: retainedArtifacts
+        )
     }
 
     private func preparedEntryStillValid(_ planned: PlannedTabSave) -> Bool {

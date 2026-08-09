@@ -19,6 +19,12 @@ import AppKit
 nonisolated struct TerminalForegroundProcessIdentity: Hashable, Sendable {
     let tabID: UUID
     let processGroupID: Int32
+    let startIdentity: TerminalProcessStartIdentity?
+}
+
+nonisolated struct TerminalProcessStartIdentity: Hashable, Sendable {
+    let seconds: Int64
+    let microseconds: Int32
 }
 
 /// Per-tab coverage captured when a destructive terminal close/stop is
@@ -68,7 +74,8 @@ struct TerminalTabCloseAuthorization {
             } else if tab.foregroundProcessID > 0 {
                 let identity = TerminalForegroundProcessIdentity(
                     tabID: tab.id,
-                    processGroupID: tab.foregroundProcessID
+                    processGroupID: tab.foregroundProcessID,
+                    startIdentity: tab.foregroundProcessStartIdentity
                 )
                 coverage[tab.id] = .foregroundProcess(identity)
                 foregroundIdentities.insert(identity)
@@ -136,8 +143,11 @@ struct TerminalTabCloseAuthorization {
                 let current = tab.foregroundProcessID
                 // Process exited: covered. A new non-zero process group is a
                 // new, unauthorized generation.
-                if current > 0, current != identity.processGroupID {
-                    return false
+                if current > 0 {
+                    guard current == identity.processGroupID,
+                          let capturedStart = identity.startIdentity,
+                          tab.foregroundProcessStartIdentity == capturedStart
+                    else { return false }
                 }
             }
         }

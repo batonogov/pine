@@ -952,7 +952,7 @@ struct AgentTaskRegistryTests {
         manager.terminal.cancelAgentLaunch(in: tab)
     }
 
-    @Test("stale successful PTY acknowledgement cannot arm launch authority")
+    @Test("cancelled successful PTY acknowledgement cannot arm launch authority")
     func staleAcknowledgementCannotArmLaunchAuthority() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
@@ -996,7 +996,7 @@ struct AgentTaskRegistryTests {
             in: tab
         )
         #expect(taskRegistry.task(for: dormantTaskID)?.runs.isEmpty == true)
-        try await ContinuousClock().sleep(for: .milliseconds(100))
+        manager.terminal.cancelAgentLaunch(in: tab)
         #expect(taskRegistry.task(for: dormantTaskID) == nil)
 
         var duplicateWriteCalled = false
@@ -1455,10 +1455,16 @@ struct AgentTaskRegistryTests {
         let didQuit = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
                 #expect(template == .applicationQuitSummary)
+                guard template == .applicationQuitSummary else {
+                    return .alertFirstButtonReturn
+                }
                 try? await Task.sleep(for: .milliseconds(75))
                 return .alertSecondButtonReturn
             },
-            terminationDeadlineOverride: .now() + 5
+            // This test exercises an unbounded human decision, not the
+            // machine-work timeout. Leave enough headroom for unrelated
+            // AppKit panel tests that can temporarily occupy MainActor.
+            terminationDeadlineOverride: .now() + 120
         )
 
         #expect(didQuit)
@@ -1469,6 +1475,50 @@ struct AgentTaskRegistryTests {
         )
         #expect(await store.savedTaskCounts().last == 1)
         await manager.workspace.waitForLoadingComplete()
+    }
+
+    @Test("acknowledged PTY write pins the exact launch lease")
+    func acknowledgedWritePinsLaunchLease() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let taskRegistry = AgentTaskRegistry(
+            persistence: ScriptedAgentTaskStore(),
+            claimTTL: .milliseconds(10)
+        )
+        let projects = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projects.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let tab = try #require(
+            manager.paneManager.terminalState(for: pane)?.terminalTabs.first
+        )
+        let descriptor = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+
+        let result = await manager.terminal.launchAgentCommandForTesting(
+            "codex",
+            descriptor: descriptor,
+            in: tab,
+            acknowledgedWrite: {
+                try? await Task.sleep(for: .milliseconds(75))
+                return true
+            }
+        )
+
+        guard case .reserved(let reservation) = result else {
+            Issue.record("A successful delayed write must keep its reservation")
+            return
+        }
+        #expect(taskRegistry.isLaunchPending(reservation))
+        #expect(
+            manager.terminal.capturePineAgentLaunchAuthorization()
+                .requiresConfirmation
+        )
     }
 
     @Test("cancelled Quit restores launch lease and clears acknowledgement")

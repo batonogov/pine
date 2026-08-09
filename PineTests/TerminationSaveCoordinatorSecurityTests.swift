@@ -42,9 +42,10 @@ struct TerminationSaveCoordinatorSecurityTests {
                 publicationWasPrivate = live.map {
                     ($0.st_mode & 0o7777) == 0o600
                 } == true
-                    && !FileManager.default.fileExists(
-                        atPath: staged.stagingURL.path
-                    )
+                    && (try? String(
+                        contentsOf: staged.stagingURL,
+                        encoding: .utf8
+                    )) == "old public bytes"
                     && (try? extendedACLText(at: destination)) == ""
             }
         )
@@ -246,7 +247,7 @@ struct TerminationSaveCoordinatorSecurityTests {
             Issue.record("Expected recovery cleanup failure after install")
             return
         }
-        #expect(message.contains(".pine-save-recovery-"))
+        #expect(message.contains(".pine-save-"))
         #expect(
             try String(contentsOf: destination, encoding: .utf8)
                 == "installed new bytes"
@@ -254,7 +255,7 @@ struct TerminationSaveCoordinatorSecurityTests {
         let recovery = try FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil
-        ).first { $0.lastPathComponent.hasPrefix(".pine-save-recovery-") }
+        ).first { $0.lastPathComponent.hasPrefix(".pine-save-") }
         let recoveryURL = try #require(recovery)
         #expect(
             retainedArtifacts.map { $0.resolvingSymlinksInPath() }
@@ -263,6 +264,217 @@ struct TerminationSaveCoordinatorSecurityTests {
         #expect(
             try String(contentsOf: recoveryURL, encoding: .utf8)
                 == "authorized original"
+        )
+    }
+
+    @Test func movedParentDirectoryCannotProduceFalseInstalledResult() async throws {
+        let container = try makeDirectory()
+        defer { remove(container) }
+        let directory = container.appendingPathComponent("project")
+        let movedDirectory = container.appendingPathComponent("project-moved")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        let destination = directory.appendingPathComponent("moved.txt")
+        try Data("authorized original".utf8).write(to: destination)
+        let staged = try await stage(
+            content: "pine staged bytes",
+            destination: destination
+        )
+
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            beforeDestinationQuarantine: {
+                try? FileManager.default.moveItem(
+                    at: directory,
+                    to: movedDirectory
+                )
+                try? FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: false
+                )
+            }
+        )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("A moved parent must fail the installation")
+            return
+        }
+        #expect(!retainedArtifacts.isEmpty)
+        #expect(
+            try String(
+                contentsOf: movedDirectory.appendingPathComponent("moved.txt"),
+                encoding: .utf8
+            ) == "authorized original"
+        )
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+    }
+
+    @Test func parentMovedAfterPublicationCannotProduceFalseInstalledResult() async throws {
+        let container = try makeDirectory()
+        defer { remove(container) }
+        let directory = container.appendingPathComponent("project")
+        let movedDirectory = container.appendingPathComponent("project-moved")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        let destination = directory.appendingPathComponent("moved-late.txt")
+        try Data("authorized original".utf8).write(to: destination)
+        let staged = try await stage(
+            content: "pine staged bytes",
+            destination: destination
+        )
+
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            beforeRecoveryCleanup: {
+                try? FileManager.default.moveItem(
+                    at: directory,
+                    to: movedDirectory
+                )
+                try? FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: false
+                )
+            }
+        )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("A late parent move must fail the installation")
+            return
+        }
+        #expect(!retainedArtifacts.isEmpty)
+        #expect(
+            try String(
+                contentsOf: movedDirectory.appendingPathComponent(
+                    "moved-late.txt"
+                ),
+                encoding: .utf8
+            ) == "authorized original"
+        )
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+    }
+
+    @Test func publishedContentMutationIsNeverReportedInstalled() async throws {
+        let directory = try makeDirectory()
+        defer { remove(directory) }
+        let destination = directory.appendingPathComponent("published.txt")
+        try Data("authorized original".utf8).write(to: destination)
+        let staged = try await stage(
+            content: "pine staged bytes",
+            destination: destination
+        )
+
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            afterDestinationPublication: {
+                let descriptor = Darwin.open(
+                    destination.path,
+                    O_WRONLY | O_TRUNC | O_CLOEXEC
+                )
+                guard descriptor >= 0 else { return }
+                defer { Darwin.close(descriptor) }
+                let bytes = Data("external replacement".utf8)
+                _ = bytes.withUnsafeBytes {
+                    Darwin.write(descriptor, $0.baseAddress, $0.count)
+                }
+            }
+        )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("A published-content mutation must fail closed")
+            return
+        }
+        #expect(!retainedArtifacts.isEmpty)
+        #expect(
+            try String(contentsOf: destination, encoding: .utf8)
+                == "authorized original"
+        )
+        #expect(
+            try String(contentsOf: staged.stagingURL, encoding: .utf8)
+                == "external replacement"
+        )
+    }
+
+    @Test func displacedOriginalMutationIsRetainedInsteadOfDeleted() async throws {
+        let directory = try makeDirectory()
+        defer { remove(directory) }
+        let destination = directory.appendingPathComponent("borrowed-fd.txt")
+        try Data("authorized original".utf8).write(to: destination)
+        let descriptor = Darwin.open(destination.path, O_RDWR | O_CLOEXEC)
+        let liveDescriptor = try #require(descriptor >= 0 ? descriptor : nil)
+        defer { Darwin.close(liveDescriptor) }
+        let staged = try await stage(
+            content: "pine staged bytes",
+            destination: destination
+        )
+
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            afterDestinationPublication: {
+                _ = Darwin.ftruncate(liveDescriptor, 0)
+                _ = Data("external through old fd".utf8).withUnsafeBytes {
+                    Darwin.write(liveDescriptor, $0.baseAddress, $0.count)
+                }
+            }
+        )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("A displaced-original mutation must fail closed")
+            return
+        }
+        #expect(!retainedArtifacts.isEmpty)
+        #expect(
+            try String(contentsOf: destination, encoding: .utf8)
+                == "external through old fd"
+        )
+        #expect(
+            try String(contentsOf: staged.stagingURL, encoding: .utf8)
+                == "pine staged bytes"
+        )
+    }
+
+    @Test func newDestinationMutationFailsWithoutFalseCleanSuccess() async throws {
+        let directory = try makeDirectory()
+        defer { remove(directory) }
+        let destination = directory.appendingPathComponent("new-raced.txt")
+        let staged = try await stage(
+            content: "pine new bytes",
+            destination: destination
+        )
+
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            afterDestinationPublication: {
+                let descriptor = Darwin.open(
+                    destination.path,
+                    O_WRONLY | O_TRUNC | O_CLOEXEC
+                )
+                guard descriptor >= 0 else { return }
+                defer { Darwin.close(descriptor) }
+                let bytes = Data("external new bytes".utf8)
+                _ = bytes.withUnsafeBytes {
+                    Darwin.write(descriptor, $0.baseAddress, $0.count)
+                }
+            }
+        )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("A raced new destination must fail closed")
+            return
+        }
+        #expect(!retainedArtifacts.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+        #expect(
+            try String(contentsOf: staged.stagingURL, encoding: .utf8)
+                == "external new bytes"
         )
     }
 

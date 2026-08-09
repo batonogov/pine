@@ -12,10 +12,21 @@ import SwiftTerm
 import os
 
 nonisolated enum AcknowledgedPTYWriter {
+    struct DescriptorIdentity: Equatable, Sendable {
+        let device: UInt64
+        let inode: UInt64
+        let fileType: UInt16
+    }
+
     static func write(_ bytes: [UInt8], to borrowedDescriptor: Int32) async -> Bool {
-        await write(
+        guard let expectedIdentity = descriptorIdentity(borrowedDescriptor),
+              let descriptor = acquireDescriptor(
+                  borrowedDescriptor,
+                  expectedIdentity: expectedIdentity
+              ) else { return false }
+        return await write(
             bytes,
-            to: borrowedDescriptor,
+            toOwnedDescriptor: descriptor,
             didAcquireDescriptor: {}
         )
     }
@@ -26,9 +37,14 @@ nonisolated enum AcknowledgedPTYWriter {
         to borrowedDescriptor: Int32,
         didAcquireDescriptor: @escaping @Sendable () -> Void
     ) async -> Bool {
-        await write(
+        guard let expectedIdentity = descriptorIdentity(borrowedDescriptor),
+              let descriptor = acquireDescriptor(
+                  borrowedDescriptor,
+                  expectedIdentity: expectedIdentity
+              ) else { return false }
+        return await write(
             bytes,
-            to: borrowedDescriptor,
+            toOwnedDescriptor: descriptor,
             didAcquireDescriptor: didAcquireDescriptor
         )
     }
@@ -41,17 +57,44 @@ nonisolated enum AcknowledgedPTYWriter {
         error == 0 && remainingByteCount == 0
     }
 
-    private static func write(
-        _ bytes: [UInt8],
-        to borrowedDescriptor: Int32,
-        didAcquireDescriptor: @escaping @Sendable () -> Void
-    ) async -> Bool {
+    static func descriptorIdentity(
+        _ descriptor: Int32
+    ) -> DescriptorIdentity? {
+        var status = stat()
+        guard Darwin.fstat(descriptor, &status) == 0 else { return nil }
+        return DescriptorIdentity(
+            device: UInt64(status.st_dev),
+            inode: UInt64(status.st_ino),
+            fileType: UInt16(status.st_mode & S_IFMT)
+        )
+    }
+
+    static func acquireDescriptor(
+        _ borrowedDescriptor: Int32,
+        expectedIdentity: DescriptorIdentity
+    ) -> Int32? {
+        guard descriptorIdentity(borrowedDescriptor) == expectedIdentity else {
+            return nil
+        }
         let descriptor = Darwin.fcntl(
             borrowedDescriptor,
             F_DUPFD_CLOEXEC,
             0
         )
-        guard descriptor >= 0 else { return false }
+        guard descriptor >= 0 else { return nil }
+        guard descriptorIdentity(borrowedDescriptor) == expectedIdentity,
+              descriptorIdentity(descriptor) == expectedIdentity else {
+            Darwin.close(descriptor)
+            return nil
+        }
+        return descriptor
+    }
+
+    static func write(
+        _ bytes: [UInt8],
+        toOwnedDescriptor descriptor: Int32,
+        didAcquireDescriptor: @escaping @Sendable () -> Void
+    ) async -> Bool {
         defer { Darwin.close(descriptor) }
         didAcquireDescriptor()
         let data = bytes.withUnsafeBytes { DispatchData(bytes: $0) }
@@ -1708,6 +1751,8 @@ final class TerminalTab: Identifiable, Hashable {
     private let shellSettings: ShellSettings
     private let agentHandoffSettings: AgentHandoffSettings
     private var processStarted = false
+    private var acknowledgedPTYIdentity:
+        AcknowledgedPTYWriter.DescriptorIdentity?
     private var workingDirectory: URL?
     private var initialProcess: TerminalInitialProcess?
 
@@ -1960,6 +2005,9 @@ final class TerminalTab: Identifiable, Hashable {
             execName: nil,
             currentDirectory: dir
         )
+        acknowledgedPTYIdentity = AcknowledgedPTYWriter.descriptorIdentity(
+            terminalView.process.childfd
+        )
     }
 
     func stop() {
@@ -1969,6 +2017,7 @@ final class TerminalTab: Identifiable, Hashable {
         }
         guard !isTerminated else { return }
         isTerminated = true
+        acknowledgedPTYIdentity = nil
         terminalView.terminate()
     }
 
@@ -1978,6 +2027,7 @@ final class TerminalTab: Identifiable, Hashable {
             onLifecycleEnded?(id)
         }
         isTerminated = true
+        acknowledgedPTYIdentity = nil
     }
 
     /// Forces SwiftTerm to mark the entire visible buffer as dirty and asks
@@ -2068,6 +2118,8 @@ final class TerminalTab: Identifiable, Hashable {
     /// running. Used by `AgentDetectionCoordinator` (#951).
     #if DEBUG
     var foregroundProcessIDOverrideForTesting: Int32?
+    var foregroundStartOverrideForTesting:
+        TerminalProcessStartIdentity?
     #endif
 
     var foregroundProcessID: Int32 {
@@ -2083,6 +2135,33 @@ final class TerminalTab: Identifiable, Hashable {
         let shellPid = terminalView.process.shellPid
         guard foregroundPgid > 0, foregroundPgid != shellPid else { return -1 }
         return foregroundPgid
+    }
+
+    var foregroundProcessStartIdentity: TerminalProcessStartIdentity? {
+        let processGroupID = foregroundProcessID
+        guard processGroupID > 0 else { return nil }
+        #if DEBUG
+        if foregroundProcessIDOverrideForTesting != nil {
+            return foregroundStartOverrideForTesting
+                ?? TerminalProcessStartIdentity(seconds: 0, microseconds: 0)
+        }
+        #endif
+        var info = proc_bsdinfo()
+        let expectedSize = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(
+            processGroupID,
+            PROC_PIDTBSDINFO,
+            0,
+            &info,
+            expectedSize
+        ) == expectedSize,
+              info.pbi_pid == UInt32(processGroupID) else {
+            return nil
+        }
+        return TerminalProcessStartIdentity(
+            seconds: Int64(info.pbi_start_tvsec),
+            microseconds: Int32(info.pbi_start_tvusec)
+        )
     }
 
     // MARK: - Search
@@ -2194,10 +2273,19 @@ final class TerminalTab: Identifiable, Hashable {
     /// while the write is pending without redirecting bytes after descriptor reuse.
     func sendTextAcknowledged(_ text: String) async -> Bool {
         guard isProcessRunning else { return false }
-        let descriptor = terminalView.process.childfd
-        guard descriptor >= 0 else { return false }
+        let borrowedDescriptor = terminalView.process.childfd
+        guard borrowedDescriptor >= 0,
+              let acknowledgedPTYIdentity,
+              let descriptor = AcknowledgedPTYWriter.acquireDescriptor(
+                  borrowedDescriptor,
+                  expectedIdentity: acknowledgedPTYIdentity
+              ) else { return false }
         let bytes = Array(text.utf8)
-        return await AcknowledgedPTYWriter.write(bytes, to: descriptor)
+        return await AcknowledgedPTYWriter.write(
+            bytes,
+            toOwnedDescriptor: descriptor,
+            didAcquireDescriptor: {}
+        )
     }
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }

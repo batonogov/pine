@@ -445,9 +445,18 @@ final class TerminalManager {
         guard case .reserved(let reservation) = result else {
             return .rejected
         }
+        guard agentTaskRegistry?.pauseLaunchExpirationForAcknowledgedWrite(
+            reservation
+        ) == true else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .rejected
+        }
         launchWritesInFlight[tab.id] = reservation
         let acknowledged = await acknowledgedWrite()
         launchWritesInFlight[tab.id] = nil
+        agentTaskRegistry?.resumeLaunchExpirationAfterAcknowledgedWrite(
+            reservation
+        )
         guard acknowledged else {
             cancelAgentLaunch(reservation, in: tab)
             return .rejected
@@ -493,9 +502,18 @@ final class TerminalManager {
         }
         let result = prepareAgentResume(taskID: taskID, in: tab)
         guard case .reserved(let reservation) = result else { return result }
+        guard agentTaskRegistry.pauseLaunchExpirationForAcknowledgedWrite(
+            reservation
+        ) else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .rejected
+        }
         launchWritesInFlight[tab.id] = reservation
         let acknowledged = await tab.sendTextAcknowledged(command + "\n")
         launchWritesInFlight[tab.id] = nil
+        agentTaskRegistry.resumeLaunchExpirationAfterAcknowledgedWrite(
+            reservation
+        )
         guard acknowledged else {
             cancelAgentLaunch(reservation, in: tab)
             return .rejected

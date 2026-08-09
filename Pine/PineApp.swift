@@ -1157,7 +1157,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
         switch DialogPresenter.applicationOwnerPlan(for: ownerStates) {
         case .keepExisting:
-            return
+            guard let index = ownerStates.firstIndex(of: .eligible),
+                  windows.indices.contains(index) else {
+                ensureWelcomeVisible()
+                return
+            }
+            windows[index].makeKeyAndOrderFront(nil)
+            NSApp.activate()
         case let .restore(index):
             guard windows.indices.contains(index) else {
                 ensureWelcomeVisible()
@@ -1944,6 +1950,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
     }
 
+    private func presentLateTerminationSaveFailure(
+        preferredProject: ProjectManager?,
+        internalMessage: String,
+        retainedArtifacts: [URL]
+    ) async {
+        Logger.app.error(
+            "Late termination save failure: \(internalMessage, privacy: .public)"
+        )
+        let paths = Array(Set(retainedArtifacts)).sorted {
+            $0.path < $1.path
+        }.map(\.path).joined(separator: "\n")
+        let message = Strings.applicationQuitFailureMessage
+            + (paths.isEmpty ? "" : "\n\n" + paths)
+        while !Task.isCancelled {
+            prepareApplicationDialogOwner()
+            let projectContext = preferredProject.map {
+                DialogPresenter.forProject($0)
+            }
+            let context: DialogPresentationContext
+            if let projectContext,
+               let window = projectContext.nsWindow,
+               DialogPresenter.isEligibleApplicationOwner(window) {
+                context = projectContext.waitingUntilOwnerAvailable()
+            } else {
+                context = DialogPresenter.forApplicationWindow()
+                    .waitingUntilOwnerAvailable()
+            }
+            let response = await AlertTemplate.fileOperationErrorCritical
+                .runSheet(
+                    on: context,
+                    messageText: Strings.fileOperationErrorTitle,
+                    informativeText: message
+                )
+            if response == .alertFirstButtonReturn { return }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+    }
+
     /// Presents one application-wide Quit summary. The safe Review path walks
     /// project-owned sheets only after the user opts in; Quit Anyway captures
     /// stable discard/process authorizations in one step. The 30-second clock
@@ -1962,6 +2006,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         let projects = registry.openProjects
             .sorted { $0.key.path.localizedStandardCompare($1.key.path) == .orderedAscending }
             .map(\.value)
+        for project in projects {
+            project.terminationSaveLateFailureHandler = { [weak self, weak project] message, retainedArtifacts in
+                Task { @MainActor in
+                    await self?.presentLateTerminationSaveFailure(
+                        preferredProject: project,
+                        internalMessage: message,
+                        retainedArtifacts: retainedArtifacts
+                    )
+                }
+            }
+        }
         var terminationCommitted = false
         var heldAgentLaunchAuthorizations: [
             (TerminalManager, PineAgentLaunchAuthorization)
@@ -2515,7 +2570,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             )
         }
 
-        func cleanupPreparedTerminationSaves() async -> [URL] {
+        func cleanupPreparedTerminationSaves(
+            excluding protectedArtifacts: [URL] = []
+        ) async -> [URL] {
             var retainedArtifacts: [URL] = []
             for (identifier, plan) in preparedTerminationSavePlans {
                 guard let projectManager = projects.first(where: {
@@ -2523,6 +2580,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 }) else { continue }
                 let result = await projectManager.cleanupTerminationSavePlan(
                     plan,
+                    excluding: protectedArtifacts,
                     until: terminationDeadline
                 )
                 if case .failed(let message, let retained) = result {
@@ -2549,7 +2607,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 )
             }
             let cleanedRetainedArtifacts =
-                await cleanupPreparedTerminationSaves()
+                await cleanupPreparedTerminationSaves(
+                    excluding: additionalRetainedArtifacts
+                )
             let retainedArtifacts = Array(Set(
                 additionalRetainedArtifacts + cleanedRetainedArtifacts
             )).sorted { $0.path < $1.path }
@@ -2693,18 +2753,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                         inventoryStillAuthorized:
                             saveInventoryStillAuthorized
                     )
-                guard saveInventoryStillAuthorized()
-                        || commitResult == .invalidated else {
-                    await presentSaveFailure(
-                        preferredProject: projectManager
-                    )
-                    return false
-                }
+                // ProjectManager owns cleanup/reconciliation once commit
+                // starts. Do not retry one-shot cleanup through obsolete
+                // staging paths in the app-level failure presenter.
+                preparedTerminationSavePlans.removeValue(
+                    forKey: ObjectIdentifier(projectManager)
+                )
                 switch commitResult {
                 case .saved:
-                    preparedTerminationSavePlans.removeValue(
-                        forKey: ObjectIdentifier(projectManager)
-                    )
+                    guard saveInventoryStillAuthorized() else {
+                        await presentSaveFailure(
+                            preferredProject: projectManager
+                        )
+                        return false
+                    }
                 case .failed(let message, let retainedArtifacts):
                     await presentSaveFailure(
                         preferredProject: projectManager,

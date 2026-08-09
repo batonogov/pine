@@ -95,6 +95,8 @@ final class AgentTaskRegistry {
     @ObservationIgnored
     private var terminationDecisionClaimRemaining: [UUID: Duration] = [:]
     @ObservationIgnored
+    private var acknowledgedWriteClaimRemaining: [UUID: Duration] = [:]
+    @ObservationIgnored
     private var terminationClaimRemaining: [UUID: Duration] = [:]
     @ObservationIgnored
     private var registeredProjects = Set<AgentTaskProjectIdentity>()
@@ -735,6 +737,9 @@ final class AgentTaskRegistry {
         } else if let remaining =
                     terminationDecisionClaimRemaining[reservation.token] {
             deadlineIsValid = remaining > .zero
+        } else if let remaining =
+                    acknowledgedWriteClaimRemaining[reservation.token] {
+            deadlineIsValid = remaining > .zero
         } else {
             deadlineIsValid = monotonicNow() < claim.deadline
         }
@@ -756,6 +761,48 @@ final class AgentTaskRegistry {
         return true
     }
 
+    /// Holds an exact launch claim while Pine waits for its PTY write to be
+    /// acknowledged. The bounded lease resumes only after the write settles;
+    /// a concurrent Quit decision composes with this hold instead of replacing
+    /// it.
+    func pauseLaunchExpirationForAcknowledgedWrite(
+        _ reservation: AgentTaskLaunchReservation
+    ) -> Bool {
+        if !isTerminating { expireClaims() }
+        guard let key = pendingClaimKeyByToken[reservation.token],
+              let claim = pendingClaims[key],
+              claim.taskID == reservation.taskID else { return false }
+        let now = monotonicNow()
+        let remaining = terminationClaimRemaining[reservation.token]
+            ?? terminationDecisionClaimRemaining[reservation.token]
+            ?? acknowledgedWriteClaimRemaining[reservation.token]
+            ?? max(.zero, now.duration(to: claim.deadline))
+        guard remaining > .zero else { return false }
+        acknowledgedWriteClaimRemaining[reservation.token] = remaining
+        claimExpiryTasks.removeValue(forKey: reservation.token)?.cancel()
+        return true
+    }
+
+    func resumeLaunchExpirationAfterAcknowledgedWrite(
+        _ reservation: AgentTaskLaunchReservation
+    ) {
+        guard let remaining = acknowledgedWriteClaimRemaining
+                .removeValue(forKey: reservation.token),
+              let key = pendingClaimKeyByToken[reservation.token],
+              var claim = pendingClaims[key],
+              claim.taskID == reservation.taskID else { return }
+        if isTerminating {
+            terminationClaimRemaining[reservation.token] =
+                terminationClaimRemaining[reservation.token] ?? remaining
+            return
+        }
+        guard terminationDecisionClaimRemaining[reservation.token] == nil else {
+            return
+        }
+        claim.deadline = monotonicNow().advanced(by: remaining)
+        installClaim(claim, key: key)
+    }
+
     /// Pauses the bounded reservation lease while the user considers Quit.
     /// Human deliberation is intentionally unbounded, but the exact launch
     /// that caused the prompt must remain claimable until that decision is
@@ -775,7 +822,8 @@ final class AgentTaskRegistry {
             }
             let remaining = terminationDecisionClaimRemaining[
                 reservation.token
-            ] ?? max(.zero, now.duration(to: claim.deadline))
+            ] ?? acknowledgedWriteClaimRemaining[reservation.token]
+                ?? max(.zero, now.duration(to: claim.deadline))
             guard remaining > .zero else { return false }
             remainingByToken[reservation.token] = remaining
         }
@@ -800,6 +848,9 @@ final class AgentTaskRegistry {
                   let key = pendingClaimKeyByToken[reservation.token],
                   var claim = pendingClaims[key],
                   claim.taskID == reservation.taskID else {
+                continue
+            }
+            guard acknowledgedWriteClaimRemaining[reservation.token] == nil else {
                 continue
             }
             claim.deadline = now.advanced(by: remaining)
@@ -971,6 +1022,7 @@ final class AgentTaskRegistry {
         for claim in pendingClaims.values {
             terminationClaimRemaining[claim.token] =
                 terminationDecisionClaimRemaining[claim.token]
+                ?? acknowledgedWriteClaimRemaining[claim.token]
                 ?? max(.zero, now.duration(to: claim.deadline))
             claimExpiryTasks.removeValue(forKey: claim.token)?.cancel()
         }
@@ -1093,6 +1145,9 @@ final class AgentTaskRegistry {
         for key in Array(pendingClaims.keys) {
             guard var claim = pendingClaims[key],
                   let remaining = terminationClaimRemaining[claim.token] else {
+                continue
+            }
+            guard acknowledgedWriteClaimRemaining[claim.token] == nil else {
                 continue
             }
             claim.deadline = now.advanced(by: remaining)
@@ -1619,6 +1674,7 @@ final class AgentTaskRegistry {
         guard let claim = pendingClaims.removeValue(forKey: key) else { return }
         pendingClaimKeyByToken[claim.token] = nil
         terminationDecisionClaimRemaining[claim.token] = nil
+        acknowledgedWriteClaimRemaining[claim.token] = nil
         terminationClaimRemaining[claim.token] = nil
         claimExpiryTasks.removeValue(forKey: claim.token)?.cancel()
     }
@@ -1647,7 +1703,8 @@ final class AgentTaskRegistry {
     private func expireClaims() {
         let now = monotonicNow()
         let expired: [AgentTaskTerminalKey] = pendingClaims.compactMap { key, claim in
-            guard terminationDecisionClaimRemaining[claim.token] == nil else {
+            guard terminationDecisionClaimRemaining[claim.token] == nil,
+                  acknowledgedWriteClaimRemaining[claim.token] == nil else {
                 return nil
             }
             return claim.deadline <= now ? key : nil

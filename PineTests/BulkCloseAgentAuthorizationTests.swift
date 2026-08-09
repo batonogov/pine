@@ -71,6 +71,32 @@ struct BulkCloseAgentAuthorizationTests {
 
     // MARK: - Project window close
 
+    @Test("Reused foreground PGID is a new authorization generation")
+    func reusedForegroundPGIDIsRejected() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        tab.foregroundProcessIDOverrideForTesting = 4_242
+        tab.foregroundStartOverrideForTesting = TerminalProcessStartIdentity(
+            seconds: 10,
+            microseconds: 20
+        )
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+
+        tab.foregroundStartOverrideForTesting = TerminalProcessStartIdentity(
+            seconds: 11,
+            microseconds: 20
+        )
+
+        #expect(!authorization.stillCovers([tab]))
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test("Window close warns about a running agent that has no foreground pgid")
     func windowCloseWarnsAboutRunningAgent() async throws {
         let dir = try makeTempDirectory()

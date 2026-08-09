@@ -115,6 +115,42 @@ struct TerminalTabTests {
         )
     }
 
+    @Test("reused borrowed PTY descriptor is rejected before duplication")
+    func reusedBorrowedDescriptorIsRejected() throws {
+        var pipeDescriptors: [Int32] = [-1, -1]
+        try #require(Darwin.pipe(&pipeDescriptors) == 0)
+        let readDescriptor = pipeDescriptors[0]
+        let borrowedDescriptor = pipeDescriptors[1]
+        defer { Darwin.close(readDescriptor) }
+        let expectedIdentity = try #require(
+            AcknowledgedPTYWriter.descriptorIdentity(borrowedDescriptor)
+        )
+        Darwin.close(borrowedDescriptor)
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        let replacement = Darwin.open(
+            temporaryURL.path,
+            O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC,
+            mode_t(0o600)
+        )
+        try #require(replacement >= 0)
+        let reusedDescriptor: Int32
+        if replacement == borrowedDescriptor {
+            reusedDescriptor = replacement
+        } else {
+            try #require(Darwin.dup2(replacement, borrowedDescriptor) >= 0)
+            Darwin.close(replacement)
+            reusedDescriptor = borrowedDescriptor
+        }
+        defer { Darwin.close(reusedDescriptor) }
+
+        #expect(AcknowledgedPTYWriter.acquireDescriptor(
+            reusedDescriptor,
+            expectedIdentity: expectedIdentity
+        ) == nil)
+    }
+
     @Test @MainActor func terminalTabHashable() {
         let tab = TerminalTab(name: "test")
         var set: Set<TerminalTab> = [tab, tab]
