@@ -207,6 +207,84 @@ struct AgentNotificationTests {
         controller.stop()
     }
 
+    @Test("transient delivery failure retries before persisting deduplication")
+    func transientDeliveryFailureRetries() async throws {
+        let fixture = DefaultsFixture()
+        defer { fixture.cleanup() }
+        let settings = AgentNotificationSettings(defaults: fixture.defaults)
+        settings.setEnabled(true)
+        let registry = AgentTaskRegistry()
+        let delivery = RecordingAgentNotificationDelivery(status: .authorized)
+        delivery.failuresRemaining = 1
+        let controller = AgentNotificationController(
+            registry: registry,
+            settings: settings,
+            delivery: delivery,
+            deliveryRetryDelays: [.zero],
+            isPresented: { _ in false },
+            openTask: { _ in }
+        )
+        controller.start()
+        await controller.refreshAuthorizationStatus()
+
+        let session = makeSession(seed: 30)
+        registry.bridge(
+            session,
+            replacing: nil,
+            context: context(seed: 30, project: "/tmp/notify-retry")
+        )
+        session.applyLiveness(.terminated)
+        registry.refresh(sessions: [session])
+        await settle()
+
+        #expect(delivery.deliveryAttemptCount == 2)
+        let request = try #require(delivery.requests.first)
+        #expect(settings.hasDelivered(request.identifier))
+        controller.stop()
+    }
+
+    @Test("exhausted delivery remains eligible for the same event later")
+    func exhaustedDeliveryIsNotClaimed() async throws {
+        let fixture = DefaultsFixture()
+        defer { fixture.cleanup() }
+        let settings = AgentNotificationSettings(defaults: fixture.defaults)
+        settings.setEnabled(true)
+        let registry = AgentTaskRegistry()
+        let delivery = RecordingAgentNotificationDelivery(status: .authorized)
+        delivery.failuresRemaining = 2
+        let controller = AgentNotificationController(
+            registry: registry,
+            settings: settings,
+            delivery: delivery,
+            accuracy: { _ in .processTerminationOnly },
+            deliveryRetryDelays: [.zero],
+            isPresented: { _ in false },
+            openTask: { _ in }
+        )
+        controller.start()
+        await controller.refreshAuthorizationStatus()
+
+        let working = task(seed: 31, state: .executing)
+        var ended = working
+        update(&ended, state: .done, liveness: .terminated, offset: 1)
+        registry.setTasksForTesting([working])
+        registry.setTasksForTesting([ended])
+        await settle()
+
+        #expect(delivery.deliveryAttemptCount == 2)
+        #expect(delivery.requests.isEmpty)
+        #expect(settings.deliveredEventIDs.isEmpty)
+
+        registry.setTasksForTesting([working])
+        registry.setTasksForTesting([ended])
+        await settle()
+
+        #expect(delivery.deliveryAttemptCount == 3)
+        let request = try #require(delivery.requests.first)
+        #expect(settings.hasDelivered(request.identifier))
+        controller.stop()
+    }
+
     @Test("denied authorization disables delivery but remains reversible")
     func deniedAuthorization() async {
         let fixture = DefaultsFixture()
@@ -341,7 +419,9 @@ private final class RecordingAgentNotificationDelivery: AgentNotificationDeliver
     var responseHandler: ((AgentNotificationResponseAction) -> Void)?
     var status: AgentNotificationAuthorizationStatus
     var requestResult = false
+    var failuresRemaining = 0
     private(set) var requests: [AgentNotificationRequest] = []
+    private(set) var deliveryAttemptCount = 0
 
     init(status: AgentNotificationAuthorizationStatus) {
         self.status = status
@@ -351,11 +431,20 @@ private final class RecordingAgentNotificationDelivery: AgentNotificationDeliver
     func authorizationStatus() async -> AgentNotificationAuthorizationStatus { status }
     func requestAuthorization() async throws -> Bool { requestResult }
     func deliver(_ request: AgentNotificationRequest) async throws {
+        deliveryAttemptCount += 1
+        if failuresRemaining > 0 {
+            failuresRemaining -= 1
+            throw RecordingDeliveryError.transient
+        }
         requests.append(request)
     }
     func respond(_ action: AgentNotificationResponseAction) {
         responseHandler?(action)
     }
+}
+
+private enum RecordingDeliveryError: Error {
+    case transient
 }
 
 private final class DefaultsFixture {

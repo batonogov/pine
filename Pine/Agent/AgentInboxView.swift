@@ -169,8 +169,10 @@ struct AgentInboxView: View {
             if row.lifecycle != .active, row.liveness != .live {
                 if row.canRecover {
                     Divider()
-                    Button(Strings.agentInboxResumeSession) {
-                        recover(row.id, action: .resumeVendorSession)
+                    if registry.canOfferAgentTaskVendorResume(row.id) {
+                        Button(Strings.agentInboxResumeSession) {
+                            recover(row.id, action: .resumeVendorSession)
+                        }
                     }
                     Button(Strings.agentInboxNewSession) {
                         recover(row.id, action: .startNewSession)

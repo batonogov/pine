@@ -97,7 +97,7 @@ final class WelcomeWindowTests: PineUITestCase {
             "The first launch should create the durable recovery fixture"
         )
         firstLaunchRow.rightClick()
-        XCTAssertTrue(app.menuItems["Resume Session"].exists)
+        XCTAssertFalse(app.menuItems["Resume Session"].exists)
         XCTAssertTrue(app.menuItems["New Session"].exists)
         XCTAssertTrue(app.menuItems["Copy Objective"].exists)
         app.typeKey(.escape, modifierFlags: [])

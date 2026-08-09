@@ -175,9 +175,15 @@ final class AgentNotificationController {
     @ObservationIgnored
     private let openTask: (AgentNotificationRouteIdentity) -> Void
     @ObservationIgnored
+    private let deliveryRetryDelays: [Duration]
+    @ObservationIgnored
     private var observerToken: UUID?
     @ObservationIgnored
     private var isRunning = false
+    @ObservationIgnored
+    private var pendingDeliveryIDs: Set<String> = []
+    @ObservationIgnored
+    private var deliveryTasks: [String: Task<Void, Never>] = [:]
 
     init(
         registry: AgentTaskRegistry,
@@ -187,6 +193,10 @@ final class AgentNotificationController {
             FirstPartyAgentCompatibilityCatalog.record(stableIdentifier: $0)?
                 .notificationAccuracy ?? .processTerminationOnly
         },
+        deliveryRetryDelays: [Duration] = [
+            .milliseconds(250),
+            .seconds(1),
+        ],
         isPresented: @escaping (UUID) -> Bool,
         openTask: @escaping (AgentNotificationRouteIdentity) -> Void
     ) {
@@ -194,6 +204,7 @@ final class AgentNotificationController {
         self.settings = settings
         self.delivery = delivery
         self.accuracy = accuracy
+        self.deliveryRetryDelays = deliveryRetryDelays
         self.isPresented = isPresented
         self.openTask = openTask
     }
@@ -217,6 +228,9 @@ final class AgentNotificationController {
         if let observerToken { registry.removeTaskChangeObserver(observerToken) }
         observerToken = nil
         delivery.responseHandler = nil
+        deliveryTasks.values.forEach { $0.cancel() }
+        deliveryTasks.removeAll()
+        pendingDeliveryIDs.removeAll()
     }
 
     func refreshAuthorizationStatus() async {
@@ -255,9 +269,45 @@ final class AgentNotificationController {
             guard let task = tasks[event.taskID],
                   settings.allows(event, task: task),
                   !isPresented(event.taskID),
-                  settings.claimDelivery(of: event.id) else { continue }
+                  !settings.hasDelivered(event.id),
+                  pendingDeliveryIDs.insert(event.id).inserted else { continue }
             let request = Self.request(for: event)
-            Task { try? await delivery.deliver(request) }
+            deliveryTasks[event.id] = Task { @MainActor [weak self] in
+                await self?.deliver(request, eventID: event.id)
+            }
+        }
+    }
+
+    private func deliver(
+        _ request: AgentNotificationRequest,
+        eventID: String
+    ) async {
+        defer {
+            pendingDeliveryIDs.remove(eventID)
+            deliveryTasks[eventID] = nil
+        }
+
+        let delays = [Duration.zero] + deliveryRetryDelays
+        for delay in delays {
+            guard isRunning,
+                  settings.isEnabled,
+                  authorizationStatus == .authorized,
+                  !Task.isCancelled else { return }
+            if delay > .zero {
+                do {
+                    try await ContinuousClock().sleep(for: delay)
+                } catch {
+                    return
+                }
+                guard isRunning, !Task.isCancelled else { return }
+            }
+            do {
+                try await delivery.deliver(request)
+                _ = settings.claimDelivery(of: eventID)
+                return
+            } catch {
+                continue
+            }
         }
     }
 

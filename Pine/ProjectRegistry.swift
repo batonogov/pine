@@ -472,6 +472,12 @@ final class ProjectRegistry: LSPSettingsObserver {
         return true
     }
 
+    func canOfferAgentTaskVendorResume(_ taskID: UUID) -> Bool {
+        guard agentTasks.canResumeTask(taskID),
+              let task = agentTasks.task(for: taskID) else { return false }
+        return agentRecoveryInspector.canOfferVendorResume(for: task)
+    }
+
     /// Re-resolves a persisted route against current application ownership.
     /// No UI object is retained by the durable registry; every activation must
     /// cross this boundary immediately before use.

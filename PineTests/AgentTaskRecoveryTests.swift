@@ -59,6 +59,42 @@ struct AgentTaskRecoveryTests {
         ) == .unavailable(.adapterUnavailable))
     }
 
+    @Test("Resume action is offered only for a statically supported paused task")
+    func resumeActionAvailability() {
+        let task = makeTask()
+        let recipe = AgentTaskResumeRecipe(
+            provider: "example",
+            agentTypeIdentifier: task.descriptor.typeIdentifier,
+            executableAliases: ["codex"],
+            supportedVersions: ["1.2.3"],
+            identifierArgumentPrefix: ["resume"],
+            identifierArgumentSuffix: []
+        )
+
+        #expect(!AgentTaskRecoveryPlanner.canOfferVendorResume(
+            task: task,
+            recipes: []
+        ))
+        #expect(AgentTaskRecoveryPlanner.canOfferVendorResume(
+            task: task,
+            recipes: [recipe]
+        ))
+
+        var completed = task
+        completed.lifecycle = .completed
+        #expect(!AgentTaskRecoveryPlanner.canOfferVendorResume(
+            task: completed,
+            recipes: [recipe]
+        ))
+
+        var live = task
+        live.runs[0].liveness = .live
+        #expect(!AgentTaskRecoveryPlanner.canOfferVendorResume(
+            task: live,
+            recipes: [recipe]
+        ))
+    }
+
     @Test("Opaque session ID remains one argv element without shell parsing")
     func opaqueIdentifierIsOneArgument() {
         let opaqueID = "session; touch /tmp/never-run $(whoami)"

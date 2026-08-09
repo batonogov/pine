@@ -64,6 +64,70 @@ struct AgentCompletionBriefTests {
         #expect(!brief.gaps.contains(.noVerifiedTests))
     }
 
+    @Test("Quoted runner names cannot manufacture a verified test result")
+    func quotedRunnerNameIsNotATest() {
+        let sessionID = id(21)
+        let decoys = [
+            "echo \"go test ./...\"",
+            "printf 'pytest\\n'",
+            "echo xcodebuild test",
+        ]
+        let events = decoys.enumerated().map { index, command in
+            storedEvent(
+                sessionID: sessionID,
+                cursor: UInt64(index + 1),
+                payload: .commandResult(AgentCommandResult(
+                    command: command,
+                    exitStatus: 0
+                ))
+            )
+        }
+
+        let brief = AgentCompletionBriefBuilder.build(
+            entry: history(sessionID: sessionID),
+            evidence: AgentCompletionBriefEvidence(
+                provenanceIntegrity: .healthy,
+                events: events
+            )
+        )
+
+        #expect(brief.commands.map(\.kind) == [.command, .command, .command])
+        #expect(brief.verifiedTestCount == 0)
+        #expect(brief.gaps.contains(.noVerifiedTests))
+    }
+
+    @Test("Simple runner invocations retain build and test classification")
+    func simpleRunnerInvocationsClassify() {
+        let sessionID = id(22)
+        let commands = [
+            "DEVELOPER_DIR=/Applications/Xcode.app /usr/bin/xcodebuild -project Pine.xcodeproj test",
+            "/usr/local/go/bin/go test ./...",
+            "npm run build",
+            "xcodebuild -scheme Pine build-for-testing",
+        ]
+        let events = commands.enumerated().map { index, command in
+            storedEvent(
+                sessionID: sessionID,
+                cursor: UInt64(index + 1),
+                payload: .commandResult(AgentCommandResult(
+                    command: command,
+                    exitStatus: 0
+                ))
+            )
+        }
+
+        let brief = AgentCompletionBriefBuilder.build(
+            entry: history(sessionID: sessionID),
+            evidence: AgentCompletionBriefEvidence(
+                provenanceIntegrity: .healthy,
+                events: events
+            )
+        )
+
+        #expect(brief.commands.map(\.kind) == [.test, .test, .build, .build])
+        #expect(brief.verifiedTestCount == 2)
+    }
+
     @Test("Completion statistics invert the checked undo preview")
     func exactStatsAndNarrativeLabel() {
         let sessionID = id(3)

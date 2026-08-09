@@ -75,6 +75,30 @@ nonisolated struct AgentTaskRecoveryInspection: Equatable, Sendable {
 /// Pure recovery policy. Filesystem and process probing happen outside this
 /// type, which makes every failure and race outcome deterministic in tests.
 nonisolated enum AgentTaskRecoveryPlanner {
+    static func canOfferVendorResume(
+        task: AgentTask,
+        recipes: [AgentTaskResumeRecipe]
+    ) -> Bool {
+        guard task.lifecycle == .paused,
+              task.origin == .pineLaunched,
+              task.runs.last?.liveness != .live,
+              let identity = task.runs.last?.vendorIdentity,
+              isSafeOpaqueValue(identity.provider, maximumBytes: 128),
+              isSafeOpaqueValue(
+                  identity.opaqueIdentifier,
+                  maximumBytes: 1_024
+              ),
+              let recordedVersion = identity.executableVersion,
+              let executable = task.descriptor.launchExecutable?
+                .lowercased() else { return false }
+        return recipes.contains {
+            $0.provider == identity.provider
+                && $0.agentTypeIdentifier == task.descriptor.typeIdentifier
+                && $0.executableAliases.contains(executable)
+                && $0.supportedVersions.contains(recordedVersion)
+        }
+    }
+
     static func evaluate(
         task: AgentTask,
         action: AgentTaskRecoveryAction,
@@ -192,6 +216,13 @@ nonisolated struct AgentTaskRecoveryInspector: Sendable {
         self.resolver = resolver
         self.processRunner = processRunner
         self.recipes = recipes
+    }
+
+    func canOfferVendorResume(for task: AgentTask) -> Bool {
+        AgentTaskRecoveryPlanner.canOfferVendorResume(
+            task: task,
+            recipes: recipes
+        )
     }
 
     func inspect(
