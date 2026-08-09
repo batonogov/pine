@@ -836,6 +836,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         ProjectManager,
         DialogPresentationContext
     ) async -> Bool
+    typealias TerminationAliasCapture = @Sendable (
+        [URL],
+        DispatchTime
+    ) async -> TerminationFileAliasCaptureResult
 
     /// Pure feed configuration shared by the Sparkle delegate callback and
     /// tests. Keeping this seam independent from `updaterController` prevents
@@ -1998,7 +2002,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         applicationContext: DialogPresentationContext? = nil,
         terminationFailureContext: (@MainActor () -> DialogPresentationContext)? = nil,
         terminationDeadlineOverride: DispatchTime? = nil,
-        terminationDeadlineObserver: @escaping @Sendable () -> Void = {}
+        terminationDeadlineObserver: @escaping @Sendable () -> Void = {},
+        terminationAliasCapture: @escaping TerminationAliasCapture = { urls, deadline in
+            await TerminationFileAliasResolver.capture(
+                urls,
+                until: deadline
+            )
+        }
     ) async -> Bool {
         let workBudgetNanoseconds = terminationWorkBudgetNanoseconds(
             overriding: terminationDeadlineOverride
@@ -2526,10 +2536,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             Int(clamping: workBudgetNanoseconds)
         )
 
+        let saveAliasURLs = destinationURLs + unplannedOpenURLs
+        var saveAliasAuthorization: [TerminationFileAliasIdentity]?
         if saveAll == nil {
-            let aliasResult = await TerminationFileAliasResolver.capture(
-                destinationURLs + unplannedOpenURLs,
-                until: terminationDeadline
+            let aliasResult = await terminationAliasCapture(
+                saveAliasURLs,
+                terminationDeadline
             )
             guard registry.applicationTerminationSaveInventoryStillMatches(
                 saveInventoryAuthorization
@@ -2539,6 +2551,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             }
             switch aliasResult {
             case .captured(let identities):
+                saveAliasAuthorization = identities
                 let destinationIdentities = Array(
                     identities.prefix(destinationURLs.count)
                 )
@@ -2706,6 +2719,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     )
                     return false
                 }
+            }
+
+            // Staging can suspend long enough for a previously missing target
+            // parent to be replaced by a symlink. Re-capture the complete
+            // app-wide alias vector before the first install; from this point
+            // every staged plan pins its exact parent directory inode.
+            guard let saveAliasAuthorization else {
+                await presentSaveFailure()
+                return false
+            }
+            let currentAliases = await terminationAliasCapture(
+                saveAliasURLs,
+                terminationDeadline
+            )
+            guard saveInventoryStillAuthorized() else {
+                await presentSaveFailure()
+                return false
+            }
+            switch currentAliases {
+            case .captured(let identities):
+                guard identities == saveAliasAuthorization else {
+                    await presentSaveFailure()
+                    return false
+                }
+            case .failed:
+                await presentSaveFailure()
+                return false
+            case .timedOut:
+                terminationDeadlineObserver()
+                await presentSaveFailure()
+                return false
             }
 
             // Validate every target before the first destructive install. The

@@ -35,36 +35,29 @@ struct TerminalTabTests {
         #expect(tab1 != tab2)
     }
 
-    @Test("acknowledged PTY write retains its descriptor identity")
+    @Test("acknowledged PTY write retains its owned descriptor")
+    @MainActor
     func acknowledgedWriteOwnsDescriptor() async throws {
         var pipeDescriptors: [Int32] = [-1, -1]
         try #require(Darwin.pipe(&pipeDescriptors) == 0)
         let readDescriptor = pipeDescriptors[0]
         let borrowedDescriptor = pipeDescriptors[1]
         defer { Darwin.close(readDescriptor) }
+        let lease = PinePTYDescriptorLease()
+        try #require(lease.acquire(borrowing: borrowedDescriptor))
+        let writeDescriptor = try #require(
+            lease.acquireWriteDescriptor()
+        )
         let temporaryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: temporaryURL) }
-        let acquired = DispatchSemaphore(value: 0)
-        let release = DispatchSemaphore(value: 0)
         let expected = Array("resume\n".utf8)
-        let writeTask = Task.detached {
-            await AcknowledgedPTYWriter.writeForTesting(
+        let writeTask = Task {
+            await AcknowledgedPTYWriter.write(
                 expected,
-                to: borrowedDescriptor
-            ) {
-                acquired.signal()
-                _ = release.wait(timeout: .now() + 2)
-            }
+                to: writeDescriptor
+            )
         }
-        let didAcquire = await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                continuation.resume(
-                    returning: acquired.wait(timeout: .now() + 1) == .success
-                )
-            }
-        }
-        try #require(didAcquire)
         Darwin.close(borrowedDescriptor)
         let replacement = Darwin.open(
             temporaryURL.path,
@@ -81,7 +74,6 @@ struct TerminalTabTests {
             reusedDescriptor = borrowedDescriptor
         }
         defer { Darwin.close(reusedDescriptor) }
-        release.signal()
 
         #expect(await writeTask.value)
         var received = [UInt8](repeating: 0, count: expected.count)
@@ -91,6 +83,7 @@ struct TerminalTabTests {
         #expect(readCount == expected.count)
         #expect(received == expected)
         #expect((try? Data(contentsOf: temporaryURL)).map(\.isEmpty) == true)
+        lease.invalidate()
     }
 
     @Test("partial and failed PTY completions are never acknowledged")
@@ -115,75 +108,145 @@ struct TerminalTabTests {
         )
     }
 
-    @Test("reused borrowed PTY descriptor is rejected before duplication")
-    func reusedBorrowedDescriptorIsRejected() throws {
-        var pipeDescriptors: [Int32] = [-1, -1]
-        try #require(Darwin.pipe(&pipeDescriptors) == 0)
-        let readDescriptor = pipeDescriptors[0]
-        let borrowedDescriptor = pipeDescriptors[1]
-        defer { Darwin.close(readDescriptor) }
-        let expectedIdentity = try #require(
-            AcknowledgedPTYWriter.descriptorIdentity(borrowedDescriptor)
-        )
-        Darwin.close(borrowedDescriptor)
-        let temporaryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: temporaryURL) }
-        let replacement = Darwin.open(
-            temporaryURL.path,
-            O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC,
-            mode_t(0o600)
-        )
-        try #require(replacement >= 0)
-        let reusedDescriptor: Int32
-        if replacement == borrowedDescriptor {
-            reusedDescriptor = replacement
-        } else {
-            try #require(Darwin.dup2(replacement, borrowedDescriptor) >= 0)
-            Darwin.close(replacement)
-            reusedDescriptor = borrowedDescriptor
-        }
-        defer { Darwin.close(reusedDescriptor) }
-
-        #expect(AcknowledgedPTYWriter.acquireDescriptor(
-            reusedDescriptor,
-            expectedIdentity: expectedIdentity
-        ) == nil)
-    }
-
-    @Test("PTY descriptor identity preserves native signed device values")
-    func ptyDescriptorIdentityAcceptsSignedDevice() throws {
-        var controllerDescriptor: Int32 = -1
-        var peerDescriptor: Int32 = -1
+    @Test("owned PTY lease survives a real close-and-reopen ABA")
+    @MainActor
+    func ownedPTYLeaseRejectsBorrowedDescriptorABA() async throws {
+        var originalController: Int32 = -1
+        var originalPeer: Int32 = -1
         try #require(Darwin.openpty(
-            &controllerDescriptor,
-            &peerDescriptor,
+            &originalController,
+            &originalPeer,
             nil,
             nil,
             nil
         ) == 0)
-        defer {
-            Darwin.close(controllerDescriptor)
-            Darwin.close(peerDescriptor)
+        var originalSettings = termios()
+        try #require(Darwin.tcgetattr(originalPeer, &originalSettings) == 0)
+        Darwin.cfmakeraw(&originalSettings)
+        try #require(Darwin.tcsetattr(
+            originalPeer,
+            TCSANOW,
+            &originalSettings
+        ) == 0)
+        // Keep the test's observation end alive after the writer completion
+        // closes the final production-owned descriptor. Without this anchor,
+        // PTY HUP is allowed to discard unread input before the assertion can
+        // inspect which peer received it.
+        let originalLifetimeAnchor = Darwin.fcntl(
+            originalController,
+            F_DUPFD_CLOEXEC,
+            0
+        )
+        try #require(originalLifetimeAnchor >= 0)
+        let lease = PinePTYDescriptorLease()
+        try #require(lease.acquire(borrowing: originalController))
+        // This is the synchronous pre-suspension duplicate used by the real
+        // send path. It must outlive invalidation until DispatchIO completes.
+        let writeDescriptor = try #require(
+            lease.acquireWriteDescriptor()
+        )
+        lease.invalidate()
+
+        let reusedDescriptor = originalController
+        Darwin.close(originalController)
+        originalController = -1
+
+        var replacementController: Int32 = -1
+        var replacementPeer: Int32 = -1
+        try #require(Darwin.openpty(
+            &replacementController,
+            &replacementPeer,
+            nil,
+            nil,
+            nil
+        ) == 0)
+        if replacementController != reusedDescriptor {
+            try #require(Darwin.dup2(
+                replacementController,
+                reusedDescriptor
+            ) == reusedDescriptor)
+            Darwin.close(replacementController)
+            replacementController = reusedDescriptor
         }
+        defer {
+            lease.invalidate()
+            if originalController >= 0 {
+                Darwin.close(originalController)
+            }
+            Darwin.close(originalLifetimeAnchor)
+            Darwin.close(originalPeer)
+            Darwin.close(replacementController)
+            Darwin.close(replacementPeer)
+        }
+        var replacementSettings = termios()
+        try #require(Darwin.tcgetattr(
+            replacementPeer,
+            &replacementSettings
+        ) == 0)
+        Darwin.cfmakeraw(&replacementSettings)
+        try #require(Darwin.tcsetattr(
+            replacementPeer,
+            TCSANOW,
+            &replacementSettings
+        ) == 0)
+        _ = Darwin.fcntl(originalPeer, F_SETFL, O_NONBLOCK)
+        _ = Darwin.fcntl(replacementPeer, F_SETFL, O_NONBLOCK)
 
-        let controllerIdentity = try #require(
-            AcknowledgedPTYWriter.descriptorIdentity(controllerDescriptor)
-        )
-        let peerIdentity = try #require(
-            AcknowledgedPTYWriter.descriptorIdentity(peerDescriptor)
-        )
-        #expect(controllerIdentity.fileType == mode_t(S_IFCHR))
-        #expect(peerIdentity.fileType == mode_t(S_IFCHR))
+        // The borrowed integer now names a different real PTY, while the
+        // already-acquired write remains pinned to the original open-file
+        // description even though terminal teardown invalidated the lease.
+        let expected = Array("original".utf8)
+        #expect(await AcknowledgedPTYWriter.write(
+            expected,
+            to: writeDescriptor
+        ))
 
-        // This value exercised the checked-conversion trap independently of
-        // which PTY device number a particular macOS runtime assigns.
-        let signedIdentity = AcknowledgedPTYWriter.DescriptorIdentity(
-            device: dev_t(-1),
-            inode: ino_t(1),
-            fileType: mode_t(S_IFCHR)
+        var received = [UInt8](repeating: 0, count: expected.count)
+        let readDeadline = DispatchTime.now() + 1
+        var readCount = -1
+        repeat {
+            readCount = received.withUnsafeMutableBytes { bytes in
+                Darwin.read(originalPeer, bytes.baseAddress, bytes.count)
+            }
+            // Darwin PTY peers may transiently report a zero-length read
+            // while the master remains open; only actual bytes complete the
+            // observation.
+            if readCount > 0 { break }
+            Darwin.usleep(1_000)
+        } while DispatchTime.now() < readDeadline
+        #expect(readCount == expected.count)
+        #expect(received == expected)
+
+        var unexpected = [UInt8](repeating: 0, count: expected.count)
+        let unexpectedCount = unexpected.withUnsafeMutableBytes { bytes in
+            Darwin.read(replacementPeer, bytes.baseAddress, bytes.count)
+        }
+        #expect(unexpectedCount <= 0)
+        if unexpectedCount == -1 {
+            #expect(errno == EAGAIN || errno == EWOULDBLOCK)
+        }
+    }
+
+    @Test("invalidating a PTY lease lets an outstanding write close exactly once")
+    func invalidatingPTYLeasePreservesOutstandingWriteOwnership() throws {
+        var pipeDescriptors: [Int32] = [-1, -1]
+        try #require(Darwin.pipe(&pipeDescriptors) == 0)
+        defer { Darwin.close(pipeDescriptors[0]) }
+        defer { Darwin.close(pipeDescriptors[1]) }
+        let lease = PinePTYDescriptorLease()
+        try #require(lease.acquire(borrowing: pipeDescriptors[1]))
+        let writeDescriptor = try #require(
+            lease.acquireWriteDescriptor()
         )
-        #expect(signedIdentity.device == -1)
+        lease.invalidate()
+        #expect(!lease.isActiveForTesting)
+        #expect(Darwin.fcntl(writeDescriptor.rawValue, F_GETFD) >= 0)
+        writeDescriptor.finish()
+        #expect(Darwin.fcntl(writeDescriptor.rawValue, F_GETFD) == -1)
+        #expect(errno == EBADF)
+        // A second completion/deinit path cannot close a later occupant of
+        // the same descriptor integer.
+        writeDescriptor.finish()
     }
 
     @Test("foreground identity falls back to a live process-group member")
@@ -277,10 +340,15 @@ struct TerminalTabTests {
     @Test @MainActor func showTabAddsTerminalView() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
+        defer { tab.stop() }
         container.showTab(tab)
         #expect(container.subviews.contains(tab.terminalView))
         #expect(container.subviews.contains { $0 is TerminalScrollInterceptor })
         #expect(container.subviews.count == 2)
+        // Exact regression for the macOS-27 crash stack: showTab ->
+        // startIfNeeded must pin the real SwiftTerm PTY without converting
+        // signed `stat` fields or trapping on the main thread.
+        #expect(tab.hasAcknowledgedPTYLeaseForTesting)
     }
 
     @Test @MainActor func showSameTabTwiceIsNoOp() {

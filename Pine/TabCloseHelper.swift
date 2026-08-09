@@ -142,9 +142,21 @@ struct TerminalTabCloseAuthorization {
                     return false
                 }
             case .foregroundProcess(let identity):
-                // A newly detected agent is a different kind of destructive
-                // work even if its process-group observation is not ready yet.
-                guard tab.agentSession == nil else { return false }
+                // A foreground job may settle into the agent session launched
+                // by the exact Pine reservation already covered by this Quit
+                // decision. No detected-agent label, process-group reuse, or
+                // unrelated session may inherit that authorization.
+                if tab.agentSession != nil {
+                    guard let pineAgentLaunches,
+                          let currentPineAgentLaunches,
+                          pineAgentLaunches.coversLaunch(
+                              in: tab.id,
+                              current: currentPineAgentLaunches
+                          ) else {
+                        return false
+                    }
+                    continue
+                }
                 let current = tab.foregroundProcessID
                 // Process exited: covered. A new non-zero process group is a
                 // new, unauthorized generation.

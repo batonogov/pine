@@ -53,6 +53,26 @@ struct BulkCloseAgentAuthorizationTests {
         for _ in 0..<8 { await Task.yield() }
     }
 
+    private func detectedSession(
+        agentType: AgentType,
+        processID: Int32,
+        generation: UInt64
+    ) -> AgentSession {
+        let startedAt = Date().addingTimeInterval(1)
+        let session = AgentSession(
+            agentType: agentType,
+            startedAt: startedAt
+        )
+        _ = session.bindProcessEvidence(AgentProcessEvidence(
+            processIdentifier: processID,
+            processGeneration: generation,
+            startIdentifier: "generation-\(generation)",
+            observedStartedAt: startedAt,
+            startIsAuthoritative: true
+        ))
+        return session
+    }
+
     /// Adds a terminal pane carrying one tab that is running an AI agent.
     /// The tab has no live PTY, so `foregroundProcessID` stays `-1` — which is
     /// precisely the state the old pgid snapshot could not represent.
@@ -145,6 +165,141 @@ struct BulkCloseAgentAuthorizationTests {
 
         #expect(authorization.requiresConfirmation)
         #expect(!authorization.stillCovers([tab]))
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test("Foreground transition accepts the exact settled Pine agent task")
+    func foregroundTransitionAcceptsExactSettledAgent() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: dir)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        tab.foregroundProcessIDOverrideForTesting = 4_242
+        tab.foregroundStartOverrideForTesting = TerminalProcessStartIdentity(
+            processID: 4_242,
+            seconds: 10,
+            microseconds: 20
+        )
+        let gate = BulkCloseAgentLaunchGate()
+        let launchTask = Task { @MainActor in
+            await project.terminal.launchAgentCommandForTesting(
+                "codex",
+                descriptor: AgentDescriptor(
+                    agentType: .codex,
+                    launchExecutable: "codex"
+                ),
+                in: tab
+            ) {
+                await gate.waitForCompletion()
+            }
+        }
+        try #require(await gate.waitUntilStarted())
+        let terminalAuthorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+        let launchAuthorization = project.terminal
+            .capturePineAgentLaunchAuthorization()
+
+        gate.finish(true)
+        guard case .reserved(let reservation) = await launchTask.value else {
+            Issue.record("Pine launch was not reserved")
+            return
+        }
+        let session = detectedSession(
+            agentType: .codex,
+            processID: 8_111,
+            generation: 10
+        )
+        project.terminal.bridgeAgentSession(
+            session,
+            replacing: nil,
+            in: tab,
+            reservation: reservation
+        )
+        tab.agentSession = session
+        let currentLaunchAuthorization = project.terminal
+            .capturePineAgentLaunchAuthorization()
+
+        #expect(terminalAuthorization.stillCovers(
+            [tab],
+            pineAgentLaunches: launchAuthorization,
+            currentPineAgentLaunches: currentLaunchAuthorization
+        ))
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test("Foreground transition rejects an unrelated detected agent")
+    func foregroundTransitionRejectsUnrelatedAgent() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: dir)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        tab.foregroundProcessIDOverrideForTesting = 4_242
+        tab.foregroundStartOverrideForTesting = TerminalProcessStartIdentity(
+            processID: 4_242,
+            seconds: 10,
+            microseconds: 20
+        )
+        let gate = BulkCloseAgentLaunchGate()
+        let launchTask = Task { @MainActor in
+            await project.terminal.launchAgentCommandForTesting(
+                "codex",
+                descriptor: AgentDescriptor(
+                    agentType: .codex,
+                    launchExecutable: "codex"
+                ),
+                in: tab
+            ) {
+                await gate.waitForCompletion()
+            }
+        }
+        try #require(await gate.waitUntilStarted())
+        let terminalAuthorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+        let launchAuthorization = project.terminal
+            .capturePineAgentLaunchAuthorization()
+
+        gate.finish(true)
+        guard case .reserved(let reservation) = await launchTask.value else {
+            Issue.record("Pine launch was not reserved")
+            return
+        }
+        let launched = detectedSession(
+            agentType: .codex,
+            processID: 8_111,
+            generation: 10
+        )
+        project.terminal.bridgeAgentSession(
+            launched,
+            replacing: nil,
+            in: tab,
+            reservation: reservation
+        )
+        launched.applyLiveness(.terminated)
+        let unrelated = detectedSession(
+            agentType: .claudeCode,
+            processID: 8_222,
+            generation: 11
+        )
+        project.terminal.bridgeAgentSession(
+            unrelated,
+            replacing: launched,
+            in: tab
+        )
+        tab.agentSession = unrelated
+        let currentLaunchAuthorization = project.terminal
+            .capturePineAgentLaunchAuthorization()
+
+        #expect(!terminalAuthorization.stillCovers(
+            [tab],
+            pineAgentLaunches: launchAuthorization,
+            currentPineAgentLaunches: currentLaunchAuthorization
+        ))
         await project.workspace.waitForLoadingComplete()
     }
 

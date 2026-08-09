@@ -1092,6 +1092,83 @@ struct WindowLifecycleTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    @Test func applicationSaveRejectsAliasCreatedAfterInitialFence() async throws {
+        let saveRoot = try makeTempDirectory()
+        let observerRoot = try makeTempDirectory()
+        defer { cleanup(saveRoot); cleanup(observerRoot) }
+        let destinationParent = saveRoot.appendingPathComponent(
+            "redirected",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: destinationParent,
+            withIntermediateDirectories: false
+        )
+        let observedFile = try makeTempFile(
+            in: observerRoot,
+            name: "shared.swift"
+        )
+        let destination = destinationParent.appendingPathComponent(
+            observedFile.lastPathComponent
+        )
+        let registry = makeRegistry()
+        let savingProject = try #require(
+            registry.projectManager(for: saveRoot)
+        )
+        let observingProject = try #require(
+            registry.projectManager(for: observerRoot)
+        )
+        observingProject.primaryTabManager.openTab(url: observedFile)
+        _ = try #require(savingProject.createUntitledFile())
+        updateContent("// must remain untitled", in: savingProject)
+        savingProject.saveDestinationChooser = { _, _, _ in destination }
+        let aliasCapture = TerminationAliasMutationProbe {
+            do {
+                try FileManager.default.removeItem(at: destinationParent)
+                try FileManager.default.createSymbolicLink(
+                    at: destinationParent,
+                    withDestinationURL: observerRoot
+                )
+                return nil
+            } catch {
+                return error.localizedDescription
+            }
+        }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presented: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presented.append(template)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5,
+            terminationAliasCapture: { urls, deadline in
+                await aliasCapture.capture(urls, until: deadline)
+            }
+        )
+
+        #expect(aliasCapture.mutationError == nil)
+        #expect(aliasCapture.captureCount == 2)
+        #expect(!result)
+        #expect(
+            try String(contentsOf: observedFile, encoding: .utf8)
+                == "// shared.swift"
+        )
+        let untitled = try #require(savingProject.allTabs.first(where: {
+            $0.fileURL == nil
+        }))
+        #expect(untitled.content == "// must remain untitled")
+        #expect(untitled.isDirty)
+        #expect(observingProject.allTabs.first(where: {
+            $0.fileURL == observedFile
+        })?.isDirty == false)
+        #expect(presented.last == .fileOperationErrorCritical)
+        await savingProject.workspace.waitForLoadingComplete()
+        await observingProject.workspace.waitForLoadingComplete()
+    }
+
     @Test func laterOpenTabStopsFutureTerminationInstall() async throws {
         let saveRoot = try makeTempDirectory()
         let observerRoot = try makeTempDirectory()
@@ -2423,6 +2500,40 @@ nonisolated private final class TerminationDeadlineProbe: @unchecked Sendable {
             recordedElapsedNanoseconds =
                 DispatchTime.now().uptimeNanoseconds - started
         }
+    }
+}
+
+nonisolated private final class TerminationAliasMutationProbe:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private let mutation: @Sendable () -> String?
+    private var captures = 0
+    private var recordedMutationError: String?
+
+    init(mutation: @escaping @Sendable () -> String?) {
+        self.mutation = mutation
+    }
+
+    var captureCount: Int { lock.withLock { captures } }
+    var mutationError: String? { lock.withLock { recordedMutationError } }
+
+    func capture(
+        _ urls: [URL],
+        until deadline: DispatchTime
+    ) async -> TerminationFileAliasCaptureResult {
+        let result = await TerminationFileAliasResolver.capture(
+            urls,
+            until: deadline
+        )
+        let shouldMutate = lock.withLock {
+            captures += 1
+            return captures == 1
+        }
+        if shouldMutate {
+            let error = mutation()
+            lock.withLock { recordedMutationError = error }
+        }
+        return result
     }
 }
 

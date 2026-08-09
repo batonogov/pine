@@ -11,6 +11,15 @@ import Testing
 
 @Suite("Termination Save Coordinator Security Tests", .serialized)
 struct TerminationSaveCoordinatorSecurityTests {
+    @Test func signedDeviceIdentityPreservesHighBitPattern() {
+        let highBitDevice = dev_t(bitPattern: UInt32(0x8000_0000))
+
+        #expect(
+            TerminationSaveCoordinator.deviceIdentityBits(highBitDevice)
+                == 0x8000_0000
+        )
+    }
+
     @Test func publicDestinationDoesNotWidenStagingBeforeInstall() async throws {
         let directory = try makeDirectory()
         defer { remove(directory) }
@@ -222,6 +231,41 @@ struct TerminationSaveCoordinatorSecurityTests {
         #expect(retainedArtifacts.contains(staged.stagingURL))
         #expect(FileManager.default.fileExists(atPath: staged.stagingURL.path))
         #expect(TerminationSaveCoordinator.cleanup([staged]) == .cleaned)
+    }
+
+    @Test func cleanupTracksStagingDirectoryAcrossRename() async throws {
+        let container = try makeDirectory()
+        defer { remove(container) }
+        let directory = container.appendingPathComponent("project")
+        let movedDirectory = container.appendingPathComponent("project-moved")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        let staged = try await stage(
+            content: "private bytes in a moved directory",
+            destination: directory.appendingPathComponent("moved.txt")
+        )
+        try FileManager.default.moveItem(at: directory, to: movedDirectory)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+
+        #expect(TerminationSaveCoordinator.cleanup([staged]) == .cleaned)
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: movedDirectory.appendingPathComponent(
+                    staged.stagingURL.lastPathComponent
+                ).path
+            )
+        )
+        #expect(
+            try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil
+            ).isEmpty
+        )
     }
 
     @Test func installedDestinationReportsRetainedRecoveryFailure() async throws {
@@ -471,6 +515,36 @@ struct TerminationSaveCoordinatorSecurityTests {
         )
     }
 
+    @Test func postCleanupMutationFailsWithExactDestination() async throws {
+        let directory = try makeDirectory()
+        defer { remove(directory) }
+        let destination = directory.appendingPathComponent("final-raced.txt")
+        try Data("authorized original".utf8).write(to: destination)
+        let staged = try await stage(
+            content: "pine installed bytes",
+            destination: destination
+        )
+
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            beforeFinalInstalledFence: {
+                overwrite(destination, with: "post-cleanup external bytes")
+            }
+        )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("A post-cleanup mutation must not be reported installed")
+            return
+        }
+        #expect(retainedArtifacts == [destination])
+        #expect(
+            try String(contentsOf: destination, encoding: .utf8)
+                == "post-cleanup external bytes"
+        )
+        #expect(!FileManager.default.fileExists(atPath: staged.stagingURL.path))
+    }
+
     @Test func displacedOriginalMutationIsRetainedInsteadOfDeleted() async throws {
         let directory = try makeDirectory()
         defer { remove(directory) }
@@ -556,6 +630,34 @@ struct TerminationSaveCoordinatorSecurityTests {
         )
     }
 
+    @Test func finalNewDestinationMutationReportsExactDestination() async throws {
+        let directory = try makeDirectory()
+        defer { remove(directory) }
+        let destination = directory.appendingPathComponent("new-final-raced.txt")
+        let staged = try await stage(
+            content: "pine new bytes",
+            destination: destination
+        )
+
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            beforeFinalInstalledFence: {
+                overwrite(destination, with: "late external new bytes")
+            }
+        )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("A final new-file mutation must fail closed")
+            return
+        }
+        #expect(retainedArtifacts == [destination])
+        #expect(
+            try String(contentsOf: destination, encoding: .utf8)
+                == "late external new bytes"
+        )
+    }
+
     private func stage(
         content: String,
         destination: URL
@@ -627,6 +729,18 @@ struct TerminationSaveCoordinatorSecurityTests {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
         }
         return status
+    }
+
+    nonisolated private func overwrite(_ url: URL, with content: String) {
+        let descriptor = Darwin.open(
+            url.path,
+            O_WRONLY | O_TRUNC | O_CLOEXEC
+        )
+        guard descriptor >= 0 else { return }
+        defer { Darwin.close(descriptor) }
+        _ = Data(content.utf8).withUnsafeBytes {
+            Darwin.write(descriptor, $0.baseAddress, $0.count)
+        }
     }
 
     private func extendedAttributeNames(at url: URL) throws -> [String] {

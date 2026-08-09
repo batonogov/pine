@@ -12,10 +12,10 @@ import SwiftUI
 
 nonisolated struct TerminationFileAliasIdentity: Hashable, Sendable {
     private enum Storage: Hashable, Sendable {
-        case existing(device: UInt64, inode: UInt64)
+        case existing(device: dev_t, inode: ino_t)
         case missing(
-            ancestorDevice: UInt64,
-            ancestorInode: UInt64,
+            ancestorDevice: dev_t,
+            ancestorInode: ino_t,
             normalizedSuffix: [String]
         )
     }
@@ -23,15 +23,15 @@ nonisolated struct TerminationFileAliasIdentity: Hashable, Sendable {
     private let storage: Storage
 
     fileprivate static func existing(
-        device: UInt64,
-        inode: UInt64
+        device: dev_t,
+        inode: ino_t
     ) -> Self {
         Self(storage: .existing(device: device, inode: inode))
     }
 
     fileprivate static func missing(
-        ancestorDevice: UInt64,
-        ancestorInode: UInt64,
+        ancestorDevice: dev_t,
+        ancestorInode: ino_t,
         normalizedSuffix: [String]
     ) -> Self {
         Self(storage: .missing(
@@ -156,8 +156,8 @@ nonisolated enum TerminationFileAliasResolver {
                 }
                 if missingComponents.isEmpty {
                     return .existing(
-                        device: UInt64(status.st_dev),
-                        inode: UInt64(status.st_ino)
+                        device: status.st_dev,
+                        inode: status.st_ino
                     )
                 }
                 let resourceValues = try currentURL.resourceValues(
@@ -171,8 +171,8 @@ nonisolated enum TerminationFileAliasResolver {
                     normalize($0, caseSensitive: isCaseSensitive)
                 }
                 return .missing(
-                    ancestorDevice: UInt64(status.st_dev),
-                    ancestorInode: UInt64(status.st_ino),
+                    ancestorDevice: status.st_dev,
+                    ancestorInode: status.st_ino,
                     normalizedSuffix: suffix
                 )
             }

@@ -11,102 +11,144 @@ import SwiftUI
 import SwiftTerm
 import os
 
-nonisolated enum AcknowledgedPTYWriter {
-    struct DescriptorIdentity: Equatable, Sendable {
-        // Preserve Darwin's native signedness. PTY device identifiers may use
-        // the high bit of `dev_t`; a checked conversion to UInt64 traps on
-        // those perfectly valid descriptors (notably on macOS 27).
-        let device: dev_t
-        let inode: ino_t
-        let fileType: mode_t
-    }
+/// Owns the exact PTY open-file description Pine received from SwiftTerm.
+///
+/// A `(device, inode, file type)` snapshot is not a lifetime token: after
+/// SwiftTerm closes its public `childfd`, another PTY can reuse both the file
+/// descriptor and the same `stat` values. Duplicating once, immediately after
+/// `startProcess`, pins the original open-file description instead. Every
+/// acknowledged write is then duplicated from this Pine-owned descriptor,
+/// never from SwiftTerm's later, borrowed integer.
+nonisolated final class PinePTYDescriptorLease: @unchecked Sendable {
+    final class WriteDescriptor: @unchecked Sendable {
+        let rawValue: Int32
+        private let owner: PinePTYDescriptorLease
+        private let lock = NSLock()
+        private var isFinished = false
 
-    static func write(_ bytes: [UInt8], to borrowedDescriptor: Int32) async -> Bool {
-        guard let expectedIdentity = descriptorIdentity(borrowedDescriptor),
-              let descriptor = acquireDescriptor(
-                  borrowedDescriptor,
-                  expectedIdentity: expectedIdentity
-              ) else { return false }
-        return await write(
-            bytes,
-            toOwnedDescriptor: descriptor,
-            didAcquireDescriptor: {}
-        )
-    }
-
-    #if DEBUG
-    static func writeForTesting(
-        _ bytes: [UInt8],
-        to borrowedDescriptor: Int32,
-        didAcquireDescriptor: @escaping @Sendable () -> Void
-    ) async -> Bool {
-        guard let expectedIdentity = descriptorIdentity(borrowedDescriptor),
-              let descriptor = acquireDescriptor(
-                  borrowedDescriptor,
-                  expectedIdentity: expectedIdentity
-              ) else { return false }
-        return await write(
-            bytes,
-            toOwnedDescriptor: descriptor,
-            didAcquireDescriptor: didAcquireDescriptor
-        )
-    }
-    #endif
-
-    static func acknowledgesCompletion(
-        error: Int32,
-        remainingByteCount: Int
-    ) -> Bool {
-        error == 0 && remainingByteCount == 0
-    }
-
-    static func descriptorIdentity(
-        _ descriptor: Int32
-    ) -> DescriptorIdentity? {
-        var status = stat()
-        guard Darwin.fstat(descriptor, &status) == 0 else { return nil }
-        return DescriptorIdentity(
-            device: status.st_dev,
-            inode: status.st_ino,
-            fileType: status.st_mode & S_IFMT
-        )
-    }
-
-    static func acquireDescriptor(
-        _ borrowedDescriptor: Int32,
-        expectedIdentity: DescriptorIdentity
-    ) -> Int32? {
-        guard descriptorIdentity(borrowedDescriptor) == expectedIdentity else {
-            return nil
+        fileprivate init(
+            rawValue: Int32,
+            owner: PinePTYDescriptorLease
+        ) {
+            self.rawValue = rawValue
+            self.owner = owner
         }
+
+        func finish() {
+            lock.lock()
+            guard !isFinished else {
+                lock.unlock()
+                return
+            }
+            isFinished = true
+            lock.unlock()
+            owner.releaseWriteDescriptor(rawValue)
+        }
+
+        deinit {
+            finish()
+        }
+    }
+
+    private let lock = NSLock()
+    private var ownedDescriptor: Int32 = -1
+    private var writeDescriptors: Set<Int32> = []
+    private var isInvalidated = false
+
+    /// Pins the borrowed descriptor exactly once for this terminal lifecycle.
+    /// The duplicate happens synchronously before `startIfNeeded()` returns.
+    func acquire(borrowing borrowedDescriptor: Int32) -> Bool {
+        guard borrowedDescriptor >= 0 else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isInvalidated, ownedDescriptor < 0 else { return false }
         let descriptor = Darwin.fcntl(
             borrowedDescriptor,
             F_DUPFD_CLOEXEC,
             0
         )
-        guard descriptor >= 0 else { return nil }
-        guard descriptorIdentity(borrowedDescriptor) == expectedIdentity,
-              descriptorIdentity(descriptor) == expectedIdentity else {
-            Darwin.close(descriptor)
-            return nil
-        }
-        return descriptor
+        guard descriptor >= 0 else { return false }
+        ownedDescriptor = descriptor
+        return true
     }
 
+    /// Duplicates only the Pine-owned lease, synchronously, before an async
+    /// write can suspend. The returned token closes exactly once even when
+    /// terminal teardown invalidates all outstanding writes first.
+    func acquireWriteDescriptor() -> WriteDescriptor? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isInvalidated, ownedDescriptor >= 0 else { return nil }
+        let descriptor = Darwin.fcntl(
+            ownedDescriptor,
+            F_DUPFD_CLOEXEC,
+            0
+        )
+        guard descriptor >= 0 else { return nil }
+        writeDescriptors.insert(descriptor)
+        return WriteDescriptor(rawValue: descriptor, owner: self)
+    }
+
+    /// Closes the persistent lease and rejects new writes before SwiftTerm
+    /// terminates its process. An already-acquired write descriptor remains
+    /// owned until its DispatchIO completion: closing it early would let the
+    /// integer be reused and recreate the very ABA write-redirection hazard
+    /// this lease prevents. Those small launch writes are the only bounded
+    /// lifetime by which Pine can extend the PTY master after invalidation.
+    func invalidate() {
+        lock.lock()
+        guard !isInvalidated else {
+            lock.unlock()
+            return
+        }
+        isInvalidated = true
+        let descriptor = ownedDescriptor
+        ownedDescriptor = -1
+        lock.unlock()
+
+        if descriptor >= 0 {
+            Darwin.close(descriptor)
+        }
+    }
+
+    #if DEBUG
+    var isActiveForTesting: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !isInvalidated && ownedDescriptor >= 0
+    }
+    #endif
+
+    private func releaseWriteDescriptor(_ descriptor: Int32) {
+        lock.lock()
+        let wasOwned = writeDescriptors.remove(descriptor) != nil
+        lock.unlock()
+        if wasOwned {
+            Darwin.close(descriptor)
+        }
+    }
+
+    deinit {
+        invalidate()
+    }
+}
+
+nonisolated enum AcknowledgedPTYWriter {
+    /// The caller acquires the exact descriptor synchronously on MainActor;
+    /// the I/O itself is deliberately nonisolated because DispatchIO invokes
+    /// its completion on the supplied background queue.
     static func write(
         _ bytes: [UInt8],
-        toOwnedDescriptor descriptor: Int32,
-        didAcquireDescriptor: @escaping @Sendable () -> Void
+        to descriptor: PinePTYDescriptorLease.WriteDescriptor
     ) async -> Bool {
-        defer { Darwin.close(descriptor) }
-        didAcquireDescriptor()
         let data = bytes.withUnsafeBytes { DispatchData(bytes: $0) }
         return await withCheckedContinuation { continuation in
             DispatchIO.write(
-                toFileDescriptor: descriptor,
+                toFileDescriptor: descriptor.rawValue,
                 data: data,
                 runningHandlerOn: DispatchQueue.global(qos: .userInitiated)
             ) { remaining, error in
+                descriptor.finish()
                 continuation.resume(returning:
                     AcknowledgedPTYWriter.acknowledgesCompletion(
                         error: error,
@@ -116,6 +158,14 @@ nonisolated enum AcknowledgedPTYWriter {
             }
         }
     }
+
+    static func acknowledgesCompletion(
+        error: Int32,
+        remainingByteCount: Int
+    ) -> Bool {
+        error == 0 && remainingByteCount == 0
+    }
+
 }
 
 /// Pine-specific terminal view wrapper.
@@ -1754,8 +1804,10 @@ final class TerminalTab: Identifiable, Hashable {
     private let shellSettings: ShellSettings
     private let agentHandoffSettings: AgentHandoffSettings
     private var processStarted = false
-    private var acknowledgedPTYIdentity:
-        AcknowledgedPTYWriter.DescriptorIdentity?
+    /// Stable Pine-owned duplicate of SwiftTerm's master PTY. The holder has
+    /// its own lock so nonisolated `deinit` can close it safely as a final
+    /// lifecycle backstop.
+    private let acknowledgedPTYLease = PinePTYDescriptorLease()
     private var workingDirectory: URL?
     private var initialProcess: TerminalInitialProcess?
 
@@ -1844,6 +1896,7 @@ final class TerminalTab: Identifiable, Hashable {
     }
 
     deinit {
+        acknowledgedPTYLease.invalidate()
         if let themeChangeObserver {
             themeNotificationCenter.removeObserver(themeChangeObserver)
         }
@@ -2008,8 +2061,8 @@ final class TerminalTab: Identifiable, Hashable {
             execName: nil,
             currentDirectory: dir
         )
-        acknowledgedPTYIdentity = AcknowledgedPTYWriter.descriptorIdentity(
-            terminalView.process.childfd
+        _ = acknowledgedPTYLease.acquire(
+            borrowing: terminalView.process.childfd
         )
     }
 
@@ -2020,7 +2073,7 @@ final class TerminalTab: Identifiable, Hashable {
         }
         guard !isTerminated else { return }
         isTerminated = true
-        acknowledgedPTYIdentity = nil
+        acknowledgedPTYLease.invalidate()
         terminalView.terminate()
     }
 
@@ -2030,7 +2083,7 @@ final class TerminalTab: Identifiable, Hashable {
             onLifecycleEnded?(id)
         }
         isTerminated = true
-        acknowledgedPTYIdentity = nil
+        acknowledgedPTYLease.invalidate()
     }
 
     /// Forces SwiftTerm to mark the entire visible buffer as dirty and asks
@@ -2314,21 +2367,21 @@ final class TerminalTab: Identifiable, Hashable {
     /// reports that every byte was accepted. SwiftTerm may close its descriptor
     /// while the write is pending without redirecting bytes after descriptor reuse.
     func sendTextAcknowledged(_ text: String) async -> Bool {
-        guard isProcessRunning else { return false }
-        let borrowedDescriptor = terminalView.process.childfd
-        guard borrowedDescriptor >= 0,
-              let acknowledgedPTYIdentity,
-              let descriptor = AcknowledgedPTYWriter.acquireDescriptor(
-                  borrowedDescriptor,
-                  expectedIdentity: acknowledgedPTYIdentity
-              ) else { return false }
+        guard isProcessRunning,
+              let descriptor = acknowledgedPTYLease
+                .acquireWriteDescriptor() else { return false }
         let bytes = Array(text.utf8)
         return await AcknowledgedPTYWriter.write(
             bytes,
-            toOwnedDescriptor: descriptor,
-            didAcquireDescriptor: {}
+            to: descriptor
         )
     }
+
+    #if DEBUG
+    var hasAcknowledgedPTYLeaseForTesting: Bool {
+        acknowledgedPTYLease.isActiveForTesting
+    }
+    #endif
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
