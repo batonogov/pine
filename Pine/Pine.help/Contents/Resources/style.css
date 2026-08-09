@@ -11,9 +11,9 @@
 
 body {
     margin: 0;
-    padding: 48px 32px 64px;
+    padding: 40px 28px 64px;
     font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-    line-height: 1.45;
+    line-height: 1.5;
 }
 
 main {
@@ -21,43 +21,48 @@ main {
     margin: 0 auto;
 }
 
-header {
-    margin-bottom: 36px;
-    text-align: center;
+.help-home {
+    max-width: 680px;
+}
+
+.help-home header {
+    display: flex;
+    margin: 4px 4px 32px;
+    align-items: center;
+    gap: 18px;
 }
 
 .app-mark {
     display: grid;
-    width: 72px;
-    height: 72px;
-    margin: 0 auto 18px;
+    width: 60px;
+    height: 60px;
+    flex: 0 0 60px;
     place-items: center;
-    border: 1px solid color-mix(in srgb, #0a84ff 30%, transparent);
-    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+    border-radius: 14px;
     background: linear-gradient(145deg, #64d2ff, #30d158 52%, #0a84ff);
-    box-shadow: 0 10px 30px color-mix(in srgb, #0a84ff 24%, transparent);
+    box-shadow: 0 2px 8px color-mix(in srgb, CanvasText 14%, transparent);
     color: white;
-    font-size: 34px;
+    font-size: 28px;
     font-weight: 700;
     letter-spacing: -2px;
 }
 
 h1 {
     margin: 0;
-    font-size: 34px;
+    font-size: 32px;
     letter-spacing: -0.025em;
 }
 
 .lead {
-    max-width: 560px;
-    margin: 8px auto 0;
+    margin: 4px 0 0;
     color: color-mix(in srgb, CanvasText 62%, transparent);
     font-size: 17px;
 }
 
 h2 {
-    margin: 34px 0 14px;
-    font-size: 20px;
+    margin: 30px 0 14px;
+    font-size: 24px;
     letter-spacing: -0.01em;
 }
 
@@ -73,29 +78,78 @@ p {
 /* Table of contents */
 .toc {
     margin-bottom: 24px;
-    padding: 18px 20px;
+    overflow: hidden;
     border: 1px solid color-mix(in srgb, CanvasText 13%, transparent);
-    border-radius: 14px;
+    border-radius: 12px;
     background: color-mix(in srgb, CanvasText 4%, transparent);
+}
+
+.toc h2 {
+    margin: 0;
+    padding: 13px 16px 10px;
+    color: color-mix(in srgb, CanvasText 64%, transparent);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
 }
 
 .toc ul {
     list-style: none;
     padding: 0;
-    margin: 8px 0 0;
-    columns: 2;
-    column-gap: 20px;
+    margin: 0;
+    border-top: 1px solid color-mix(in srgb, CanvasText 10%, transparent);
 }
 
 .toc li {
-    margin: 4px 0;
-    break-inside: avoid;
+    margin: 0;
+    border-bottom: 1px solid color-mix(in srgb, CanvasText 9%, transparent);
 }
 
-@media (max-width: 620px) {
-    .toc ul {
-        columns: 1;
-    }
+.toc li:last-child {
+    border-bottom: 0;
+}
+
+.toc a {
+    display: flex;
+    min-height: 43px;
+    padding: 10px 14px 10px 16px;
+    align-items: center;
+    justify-content: space-between;
+    color: CanvasText;
+    text-decoration: none;
+}
+
+.toc a::after {
+    content: "›";
+    color: color-mix(in srgb, CanvasText 38%, transparent);
+    font-size: 20px;
+    line-height: 1;
+}
+
+.toc a:hover {
+    background: color-mix(in srgb, CanvasText 6%, transparent);
+}
+
+.breadcrumbs {
+    margin: 0 0 22px;
+    font-size: 13px;
+}
+
+.breadcrumbs a,
+.topic-footer a {
+    text-decoration: none;
+}
+
+.help-topic > section > h2 {
+    margin-top: 0;
+    font-size: 28px;
+}
+
+.topic-footer {
+    margin-top: 40px;
+    padding-top: 18px;
+    border-top: 1px solid color-mix(in srgb, CanvasText 13%, transparent);
 }
 
 /* Grid layouts */
@@ -118,7 +172,7 @@ p {
 .card,
 .shortcut {
     border: 1px solid color-mix(in srgb, CanvasText 13%, transparent);
-    border-radius: 14px;
+    border-radius: 12px;
     background: color-mix(in srgb, CanvasText 4%, transparent);
 }
 
@@ -202,14 +256,50 @@ a {
     color: #0a84ff;
 }
 
+a:focus-visible {
+    border-radius: 4px;
+    outline: 3px solid color-mix(in srgb, #0a84ff 56%, transparent);
+    outline-offset: 2px;
+}
+
+@media (prefers-contrast: more) {
+    .toc,
+    .card,
+    .shortcut,
+    .topic-list li {
+        border-color: color-mix(in srgb, CanvasText 32%, transparent);
+    }
+
+    .card p,
+    .topic-list li span,
+    .lead {
+        color: CanvasText;
+    }
+}
+
 @media (max-width: 620px) {
     body {
         padding: 32px 20px 48px;
+    }
+
+    .help-home header {
+        align-items: flex-start;
     }
 
     .steps,
     .shortcut-grid,
     .feature-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+@media print {
+    body {
+        padding: 0;
+    }
+
+    .breadcrumbs,
+    .topic-footer {
+        display: none;
     }
 }

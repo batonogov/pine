@@ -18,6 +18,7 @@ nonisolated enum AccessibilityID {
     static let generalFontSizeSlider = "generalFontSizeSlider"
     static let generalSettingsPane = "generalSettingsPane"
     static let keyBindingsSettingsPane = "keyBindingsSettingsPane"
+    static let settingsHelpButton = "settingsHelpButton"
 
     // MARK: - Terminal theme settings
     static let terminalSettingsScrollView = "terminalSettingsScrollView"
@@ -207,6 +208,7 @@ nonisolated enum AccessibilityID {
     static let agentInboxList = "agentInboxList"
     static let agentInboxEmpty = "agentInboxEmpty"
     static let agentInboxNavigationStatus = "agentInboxNavigationStatus"
+    static let agentInboxHelpButton = "agentInboxHelpButton"
     static func agentInboxRow(_ id: UUID) -> String {
         "agentInboxRow_\(id.uuidString)"
     }

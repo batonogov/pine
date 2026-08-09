@@ -5,263 +5,37 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
     <meta name="description" content="Aprende a abrir proyectos, editar código y usar paneles, terminales, Git, diagnósticos LSP, funciones de agente y atajos de teclado en Pine." />
-    <meta name="keywords" content="Pine, ayuda, editor, proyecto, pestaña, panel, terminal, Git, LSP, diagnósticos, agente, atajos, ajustes, combinaciones de teclas, plegado, minimapa, buscar, reemplazar" />
+    <meta name="KEYWORDS" content="Pine, ayuda, editor, proyecto, pestaña, panel, terminal, Git, LSP, diagnósticos, agente, atajos, ajustes, combinaciones de teclas, plegado, minimapa, buscar, reemplazar" />
+    <meta name="ROBOTS" content="ANCHORS" />
     <title>Ayuda de Pine</title>
     <link rel="stylesheet" type="text/css" href="../style.css" />
 </head>
 <body>
-<main>
+<main class="help-home">
+    <a name="pine-help-home" id="pine-help-home"></a>
     <header>
         <div class="app-mark" aria-hidden="true">P</div>
-        <h1>Ayuda de Pine</h1>
-        <p class="lead">Un editor nativo y enfocado para proyectos, código, terminales y Git en macOS.</p>
+        <div>
+            <h1>Ayuda de Pine</h1>
+            <p class="lead">Un editor nativo y enfocado para proyectos, código, terminales y Git en macOS.</p>
+        </div>
     </header>
 
     <nav class="toc">
-        <h3>En esta guía</h3>
+        <h2>En esta guía</h2>
         <ul>
-            <li><a href="#getting-started">Primeros pasos</a></li>
-            <li><a href="#workspace">Editor, paneles y terminal</a></li>
-            <li><a href="#terminal">Terminal y Terminal rápido</a></li>
-            <li><a href="#git">Integración con Git</a></li>
-            <li><a href="#lsp">Servidores de lenguaje y diagnósticos</a></li>
-            <li><a href="#agents">Detección de agentes</a></li>
-            <li><a href="#settings">Ajustes y combinaciones de teclas</a></li>
-            <li><a href="#shortcuts">Atajos de teclado</a></li>
-            <li><a href="#troubleshooting">Solución de problemas</a></li>
-            <li><a href="#support">¿Necesitas más ayuda?</a></li>
+            <li><a href="getting-started.html">Primeros pasos</a></li>
+            <li><a href="workspace.html">Editor, paneles y terminal</a></li>
+            <li><a href="terminal.html">Terminal y Terminal rápido</a></li>
+            <li><a href="git.html">Integración con Git</a></li>
+            <li><a href="lsp.html">Servidores de lenguaje y diagnósticos</a></li>
+            <li><a href="agents.html">Bandeja de agentes y flujos de trabajo</a></li>
+            <li><a href="settings.html">Ajustes y combinaciones de teclas</a></li>
+            <li><a href="shortcuts.html">Atajos de teclado</a></li>
+            <li><a href="troubleshooting.html">Solución de problemas</a></li>
+            <li><a href="support.html">¿Necesitas más ayuda?</a></li>
         </ul>
     </nav>
-
-    <section id="getting-started">
-        <h2>Primeros pasos</h2>
-        <div class="steps">
-            <div class="card">
-                <h3>1. Abrir una carpeta</h3>
-                <p>Elige Archivo &gt; Abrir carpeta y selecciona el directorio que contiene tu proyecto.</p>
-            </div>
-            <div class="card">
-                <h3>2. Abrir un archivo</h3>
-                <p>Selecciona un archivo en la barra lateral o usa Apertura rápida para encontrarlo por nombre.</p>
-            </div>
-            <div class="card">
-                <h3>3. Organizar el espacio de trabajo</h3>
-                <p>Arrastra una pestaña a un borde del editor para crear una división, o a otra barra de pestañas para moverla.</p>
-            </div>
-            <div class="card">
-                <h3>4. Continuar trabajando</h3>
-                <p>Pine restaura las ventanas del proyecto, las pestañas del editor y la distribución de paneles al volver.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="workspace">
-        <h2>Editor, paneles y terminal</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>Paneles divididos</h3>
-                <p>Las pestañas de editor y terminal pueden moverse entre paneles del mismo tipo. Suelta en un borde para crear una nueva división.</p>
-            </div>
-            <div class="card">
-                <h3>Vista previa y pestañas fijadas</h3>
-                <p>Al hacer clic en un archivo de la barra lateral se abre como pestaña de vista previa temporal. Doble clic o editar para fijarla.</p>
-            </div>
-            <div class="card">
-                <h3>Buscar y reemplazar</h3>
-                <p>Pulsa Cmd+F para buscar en el archivo. Usa Cmd+Option+F para buscar y reemplazar. La búsqueda en todo el proyecto es Cmd+Shift+F.</p>
-            </div>
-            <div class="card">
-                <h3>Plegado de código y minimapa</h3>
-                <p>Haz clic en un triángulo del canal para plegar bloques de código. Activa o desactiva el minimapa desde el menú Visualización.</p>
-            </div>
-            <div class="card">
-                <h3>Vista previa de Markdown</h3>
-                <p>Pulsa Cmd+Shift+P para alternar entre solo fuente, renderizado y vista previa de Markdown en paralelo.</p>
-            </div>
-            <div class="card">
-                <h3>Navegación por símbolos</h3>
-                <p>Pulsa Cmd+R para saltar a funciones, clases y structs del archivo actual.</p>
-            </div>
-            <div class="card">
-                <h3>Guardado seguro</h3>
-                <p>Las pestañas con cambios sin guardar se protegen antes de cerrarse. El autoguardado y Formatear al guardar están disponibles en el menú Archivo.</p>
-            </div>
-            <div class="card">
-                <h3>Restauración de sesión</h3>
-                <p>Pine restaura tus pestañas, la distribución de paneles y las posiciones del cursor al reabrir un proyecto.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="terminal">
-        <h2>Terminal y Terminal rápido</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>Terminal integrado</h3>
-                <p>Usa un terminal completo junto a tu código. Las pestañas de terminal conservan su historial mientras permanecen abiertas.</p>
-            </div>
-            <div class="card">
-                <h3>Terminal rápido</h3>
-                <p>Pulsa Ctrl+Opción+Espacio para mostrar u ocultar un terminal desplegable flotante sobre cualquier aplicación.</p>
-            </div>
-            <div class="card">
-                <h3>Enlaces clicables</h3>
-                <p>Cmd+clic en referencias archivo:línea de la salida del terminal las abre en el editor. Las URLs se abren en el navegador del sistema.</p>
-            </div>
-            <div class="card">
-                <h3>Aplicaciones TUI</h3>
-                <p>Vim, htop y otras aplicaciones TUI funcionan de forma nativa. oh-my-zsh y los temas de color son totalmente compatibles.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="git">
-        <h2>Integración con Git</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>Estado de archivos</h3>
-                <p>La barra lateral muestra archivos modificados, añadidos y eliminados con indicadores de estado de color.</p>
-            </div>
-            <div class="card">
-                <h3>Marcadores de diff</h3>
-                <p>Las líneas añadidas, modificadas y eliminadas aparecen como marcadores de color en el canal del editor.</p>
-            </div>
-            <div class="card">
-                <h3>Cambio de rama</h3>
-                <p>Haz clic en el nombre de la rama en la barra de título o pulsa Cmd+Shift+B para cambiar entre ramas locales.</p>
-            </div>
-            <div class="card">
-                <h3>Vista de blame</h3>
-                <p>Activa la vista de blame para ver la información de commit de cada línea: hash, autor, marca de tiempo y mensaje.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="lsp">
-        <h2>Servidores de lenguaje y diagnósticos</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>Inteligencia de código</h3>
-                <p>Pine usa el Language Server Protocol para diagnósticos, completado, hover, ir a definición y renombrado.</p>
-            </div>
-            <div class="card">
-                <h3>Configurar servidores</h3>
-                <p>Abre Ajustes &gt; Lenguajes para activar, desactivar o configurar los ejecutables del servidor de lenguaje para cada idioma.</p>
-            </div>
-            <div class="card">
-                <h3>Panel de problemas</h3>
-                <p>Consulta todos los diagnósticos del proyecto en un panel plegable. Navega por errores y advertencias con atajos de teclado.</p>
-            </div>
-            <div class="card">
-                <h3>Acciones de código</h3>
-                <p>Haz clic en el indicador de diagnóstico del canal o usa el menú para aplicar correcciones rápidas y refactorizaciones.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="agents">
-        <h2>Detección de agentes</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>Detección de agentes</h3>
-                <p>Pine detecta los agentes CLI compatibles que se ejecutan en el terminal y muestra su estado con distintivos e indicadores.</p>
-            </div>
-            <div class="card">
-                <h3>Panel de actividad</h3>
-                <p>Consulta una vista en vivo de la actividad del agente: archivos modificados, comandos ejecutados y estado actual.</p>
-            </div>
-            <div class="card">
-                <h3>Historial de agentes</h3>
-                <p>Revisa y deshaz los cambios de los agentes. Las vistas previas verificadas muestran exactamente qué cambiará antes de aplicarlo.</p>
-            </div>
-            <div class="card">
-                <h3>Privacidad</h3>
-                <p>La entrega de contexto del agente es opcional y de solo lectura. Pine nunca envía tu código ni la salida del terminal a ningún sitio sin tu acción.</p>
-            </div>
-        </div>
-        <p>Pine reconoce Pi, Codex, Claude Code, OpenCode, Copilot, Aider, Gemini, Amp, Cursor Agent, Goose, Qwen Code y Crush por el nombre exacto del ejecutable. Salvo que la matriz indique lo contrario, solo se reconoce el proceso.</p>
-        <p><a href="https://github.com/batonogov/pine/blob/main/docs/agent-compatibility.md">Consulta la matriz de compatibilidad de agentes CLI y sus limitaciones actuales.</a></p>
-    </section>
-
-    <section id="settings">
-        <h2>Ajustes y combinaciones de teclas</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>Ventana de ajustes</h3>
-                <p>Pulsa Cmd+coma para abrir Ajustes. Configura los valores predeterminados del editor, el terminal, los servidores de lenguaje y la privacidad del agente.</p>
-            </div>
-            <div class="card">
-                <h3>Combinaciones de teclas personalizadas</h3>
-                <p>Sobrescribe los atajos de teclado mediante archivos de combinaciones gestionados. La paleta de comandos muestra las combinaciones activas.</p>
-            </div>
-            <div class="card">
-                <h3>Paleta de comandos</h3>
-                <p>Descubre y ejecuta comandos a través de una paleta con búsqueda difusa, similar a VS Code.</p>
-            </div>
-            <div class="card">
-                <h3>Tareas</h3>
-                <p>Define tareas personalizadas para ejecutar comandos de shell, formateadores o scripts de compilación desde la paleta de comandos o el menú Tareas.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="shortcuts">
-        <h2>Atajos esenciales</h2>
-        <div class="shortcut-grid">
-            <div class="shortcut"><span>Abrir carpeta</span><kbd>⇧⌘O</kbd></div>
-            <div class="shortcut"><span>Apertura rápida</span><kbd>⌘P</kbd></div>
-            <div class="shortcut"><span>Buscar en archivo</span><kbd>⌘F</kbd></div>
-            <div class="shortcut"><span>Buscar en proyecto</span><kbd>⇧⌘F</kbd></div>
-            <div class="shortcut"><span>Buscar y reemplazar</span><kbd>⌥⌘F</kbd></div>
-            <div class="shortcut"><span>Ir a línea</span><kbd>⌘L</kbd></div>
-            <div class="shortcut"><span>Ir a símbolo</span><kbd>⌘R</kbd></div>
-            <div class="shortcut"><span>Guardar</span><kbd>⌘S</kbd></div>
-            <div class="shortcut"><span>Mostrar/ocultar terminal</span><kbd>⌘`</kbd></div>
-            <div class="shortcut"><span>Nueva pestaña de terminal</span><kbd>⌘T</kbd></div>
-            <div class="shortcut"><span>Vista previa de Markdown</span><kbd>⇧⌘P</kbd></div>
-            <div class="shortcut"><span>Cambiar rama de Git</span><kbd>⇧⌘B</kbd></div>
-            <div class="shortcut"><span>Terminal rápido</span><kbd>⌃⌥Space</kbd></div>
-            <div class="shortcut"><span>Alternar comentario</span><kbd>⌘/</kbd></div>
-            <div class="shortcut"><span>Alternar minimapa</span><kbd>⇧⌘M</kbd></div>
-            <div class="shortcut"><span>Cambio siguiente / anterior</span><kbd>⌃⌥↓/↑</kbd></div>
-        </div>
-        <p class="tip"><strong>Consejo:</strong> Los menús muestran todos los comandos disponibles y su atajo de teclado actual.</p>
-    </section>
-
-    <section id="troubleshooting">
-        <h2>Solución de problemas</h2>
-        <ul class="topic-list">
-            <li>
-                <strong>El terminal muestra una pantalla negra</strong>
-                <span>Pine usa un renderizador Metal por defecto. Si ves una pantalla negra, reinicia manteniendo pulsada la tecla opción, o ejecuta <code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code> para cambiar a CoreGraphics.</span>
-            </li>
-            <li>
-                <strong>El completado o los diagnósticos LSP no funcionan</strong>
-                <span>Abre Ajustes &gt; Lenguajes y verifica la ruta del ejecutable del servidor. Pine informa de los errores del servidor en la barra de estado.</span>
-            </li>
-            <li>
-                <strong>Los archivos grandes son lentos</strong>
-                <span>Los archivos de más de 1 MB ofrecen desactivar el resaltado de sintaxis. Los de más de 10 MB se cargan progresivamente. Usa el minimapa para navegar por archivos grandes.</span>
-            </li>
-            <li>
-                <strong>Formatear al guardar no se aplica</strong>
-                <span>Formatear al guardar requiere que la herramienta de formateo (p. ej. <code>terraform</code>, <code>shfmt</code>, <code>prettier</code>) esté en tu PATH. Instálala con Homebrew.</span>
-            </li>
-            <li>
-                <strong>Compatibilidad con macOS 26 o 27</strong>
-                <span>Pine tiene como objetivo macOS 26 (Tahoe). Si encuentras un problema específico de la plataforma, incluye la salida de <code>sw_vers</code> y <code>xcodebuild -version</code> en tu informe de error.</span>
-            </li>
-            <li>
-                <strong>El agente no se detecta</strong>
-                <span>Pine detecta los agentes CLI compatibles por el nombre del proceso. Asegúrate de que el agente se ejecuta en un panel de terminal de Pine. El Terminal rápido aún no admite la detección de agentes.</span>
-            </li>
-        </ul>
-    </section>
-
-    <section class="support" id="support">
-        <h2>¿Necesitas más ayuda?</h2>
-        <p>Informa de un problema o sugiere una mejora en el <a href="https://github.com/batonogov/pine/issues">repositorio de incidencias de Pine</a>.</p>
-    </section>
 </main>
 </body>
 </html>

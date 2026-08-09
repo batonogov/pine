@@ -50,4 +50,21 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
             "Clicking the toolbar button should open the Agent Inbox window"
         )
     }
+
+    func testAgentInboxExposesContextualHelp() throws {
+        let url = try createTempProject(files: ["hello.swift": "// hi\n"])
+        projectURLs.append(url)
+        launchWithProject(url)
+
+        XCTAssertTrue(waitForExistence(toolbarButton, timeout: 10))
+        toolbarButton.click()
+
+        let helpButton = app.buttons[
+            "agentInboxHelpButton"
+        ].firstMatch
+        XCTAssertTrue(
+            waitForExistence(helpButton, timeout: 5),
+            "Agent Inbox should expose its task-specific Apple Help topic"
+        )
+    }
 }

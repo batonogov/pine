@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
+    <meta name="description" content="Learn how to open projects, edit code, use panes, terminals, Git, LSP diagnostics, agent features, and keyboard shortcuts in Pine." />
+    <meta name="KEYWORDS" content="Troubleshooting, Pine, help, editor, project, tab, pane, terminal, Git, LSP, diagnostics, agent, shortcuts, settings, keybindings, folding, minimap, find, replace" />
+    <title>Troubleshooting — Pine Help</title>
+    <link rel="stylesheet" type="text/css" href="../style.css" />
+</head>
+<body>
+<main class="help-topic">
+    <nav class="breadcrumbs"><a href="index.html">Pine Help</a></nav>
+
+    <section id="troubleshooting">
+        <a name="pine-troubleshooting" id="pine-troubleshooting"></a>
+        <h2>Troubleshooting</h2>
+        <ul class="topic-list">
+            <li>
+                <strong>Terminal shows a black screen</strong>
+                <span>Pine uses a Metal renderer by default. If you see a black screen, relaunch with the option key held, or run <code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code> to switch to CoreGraphics.</span>
+            </li>
+            <li>
+                <strong>LSP completion or diagnostics not working</strong>
+                <span>Open Settings &gt; Languages and verify the server executable path. Pine reports server errors in the status bar.</span>
+            </li>
+            <li>
+                <strong>Large files are slow</strong>
+                <span>Files over 1 MB prompt to disable syntax highlighting. Files over 10 MB load progressively. Use the minimap to navigate large files.</span>
+            </li>
+            <li>
+                <strong>Format on Save is not applying</strong>
+                <span>Format on Save requires the formatter tool (e.g. <code>terraform</code>, <code>shfmt</code>, <code>prettier</code>) to be in your PATH. Install via Homebrew.</span>
+            </li>
+            <li>
+                <strong>macOS 26 or 27 compatibility</strong>
+                <span>Pine targets macOS 26 (Tahoe). If you encounter a platform-specific issue, include <code>sw_vers</code> and <code>xcodebuild -version</code> output in your bug report.</span>
+            </li>
+            <li>
+                <strong>Agent is not detected</strong>
+                <span>Pine detects supported CLI agents by process name. Make sure the agent is running in a Pine terminal pane. Quick Terminal does not yet support agent detection.</span>
+            </li>
+        </ul>
+    </section>
+
+    <nav class="topic-footer"><a href="index.html">← Pine Help</a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="ko" xml:lang="ko">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
+    <meta name="description" content="Pine의 에이전트 받은편지함, 비공개 알림, 복구, 완료 요약 및 격리된 워크트리를 사용하는 방법을 알아봅니다." />
+    <meta name="KEYWORDS" content="에이전트 받은편지함, 알림, 복구, 완료 요약, 워크트리, 에이전트 감지, 기록, 개인정보 보호, Pine" />
+    <title>에이전트 받은편지함과 워크플로 — Pine 도움말</title>
+    <link rel="stylesheet" type="text/css" href="../style.css" />
+</head>
+<body>
+<main class="help-topic">
+    <nav class="breadcrumbs"><a href="index.html">Pine 도움말</a></nav>
+
+    <section id="agents">
+        <a name="pine-agents" id="pine-agents"></a>
+        <h2>에이전트 받은편지함과 워크플로</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <a name="pine-agent-inbox" id="pine-agent-inbox"></a>
+                <h3>에이전트 받은편지함</h3>
+                <p>보기 &gt; 에이전트 받은편지함을 선택하거나 ⇧⌘I를 눌러 열려 있는 모든 프로젝트의 작업을 확인합니다. 화살표 키로 작업을 선택하고 Return을 눌러 해당 작업의 정확한 실행 중 세션으로 돌아갑니다.</p>
+            </div>
+            <div class="card">
+                <a name="pine-agent-settings" id="pine-agent-settings"></a>
+                <h3>비공개 알림</h3>
+                <p>설정 &gt; 에이전트에서 입력 대기, 실패, 완료 및 프로세스 종료 이벤트 중 알림을 받을 항목을 선택합니다. 알림에는 프롬프트, 터미널 출력, 토큰, 절대 경로 또는 공급업체 식별자가 포함되지 않습니다.</p>
+            </div>
+            <div class="card">
+                <h3>복구와 워크트리</h3>
+                <p>작업의 컨텍스트 메뉴에서 지원되는 공급업체 세션을 재개하거나 새 세션을 시작하거나 목표를 복사할 수 있습니다. 격리된 워크트리는 저장소 안에 유지되며 명시적인 작업으로만 정리됩니다.</p>
+            </div>
+            <div class="card">
+                <h3>완료 요약</h3>
+                <p>완료된 작업은 확인된 변경 사항과 테스트 증거를 추론, 모호성 및 에이전트 보고 내용과 구분하므로 다음 작업 전에 결과를 판단할 수 있습니다.</p>
+            </div>
+            <div class="card">
+                <h3>에이전트 감지</h3>
+                <p>Pine은 터미널에서 실행 중인 지원되는 CLI 에이전트를 감지하고 배지와 표시기로 상태를 보여 줍니다.</p>
+            </div>
+            <div class="card">
+                <h3>활동 패널</h3>
+                <p>에이전트 활동의 실시간 보기를 확인합니다: 변경된 파일, 실행된 명령, 현재 작업 상태.</p>
+            </div>
+            <div class="card">
+                <h3>에이전트 기록</h3>
+                <p>에이전트의 변경 사항을 검토하고 실행 취소합니다. 확인된 미리 보기는 적용 전에 정확히 무엇이 바뀌는지 보여 줍니다.</p>
+            </div>
+            <div class="card">
+                <h3>개인정보 보호</h3>
+                <p>에이전트 컨텍스트 전달은 선택 사항이며 읽기 전용입니다. Pine은 사용자의 조작 없이는 코드나 터미널 출력을 어디로도 보내지 않습니다.</p>
+            </div>
+        </div>
+        <p class="tip"><strong>중요:</strong> Pine은 실행 중인 작업의 정확한 세대로만 이동하며 그렇지 않으면 안전하게 거부합니다. 작업 메타데이터 복원은 공급업체 세션이 재개되었다는 뜻이 아닙니다. 빠른 터미널은 아직 에이전트 감지에 포함되지 않습니다.</p>
+        <p>Pine은 정확한 실행 파일 이름으로 Pi, Codex, Claude Code, OpenCode, Copilot, Aider, Gemini, Amp, Cursor Agent, Goose, Qwen Code 및 Crush를 인식합니다. 호환성 표에 달리 명시되지 않은 경우 프로세스만 인식합니다.</p>
+        <p><a href="https://github.com/batonogov/pine/blob/main/docs/agent-compatibility.md">CLI 에이전트 호환성 표와 현재 제한 사항을 확인합니다.</a></p>
+    </section>
+
+    <nav class="topic-footer"><a href="index.html">← Pine 도움말</a></nav>
+</main>
+</body>
+</html>

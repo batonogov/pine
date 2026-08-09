@@ -5,263 +5,37 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
     <meta name="description" content="Pine에서 프로젝트를 열고 코드 편집, 패널, 터미널, Git, LSP 진단, 에이전트 기능 및 키보드 단축키를 사용하는 방법을 알아봅니다." />
-    <meta name="keywords" content="Pine, 도움말, 편집기, 프로젝트, 탭, 패널, 터미널, Git, LSP, 진단, 에이전트, 단축키, 설정, 키바인딩, 접기, 미니맵, 찾기, 바꾸기" />
+    <meta name="KEYWORDS" content="Pine, 도움말, 편집기, 프로젝트, 탭, 패널, 터미널, Git, LSP, 진단, 에이전트, 단축키, 설정, 키바인딩, 접기, 미니맵, 찾기, 바꾸기" />
+    <meta name="ROBOTS" content="ANCHORS" />
     <title>Pine 도움말</title>
     <link rel="stylesheet" type="text/css" href="../style.css" />
 </head>
 <body>
-<main>
+<main class="help-home">
+    <a name="pine-help-home" id="pine-help-home"></a>
     <header>
         <div class="app-mark" aria-hidden="true">P</div>
-        <h1>Pine 도움말</h1>
-        <p class="lead">macOS에서 프로젝트, 코드, 터미널 및 Git에 집중할 수 있는 네이티브 편집기입니다.</p>
+        <div>
+            <h1>Pine 도움말</h1>
+            <p class="lead">macOS에서 프로젝트, 코드, 터미널 및 Git에 집중할 수 있는 네이티브 편집기입니다.</p>
+        </div>
     </header>
 
     <nav class="toc">
-        <h3>이 가이드의 내용</h3>
+        <h2>이 가이드의 내용</h2>
         <ul>
-            <li><a href="#getting-started">시작하기</a></li>
-            <li><a href="#workspace">편집기, 패널, 터미널</a></li>
-            <li><a href="#terminal">터미널과 퀵 터미널</a></li>
-            <li><a href="#git">Git 연동</a></li>
-            <li><a href="#lsp">언어 서버와 진단</a></li>
-            <li><a href="#agents">에이전트 인식</a></li>
-            <li><a href="#settings">설정과 키바인딩</a></li>
-            <li><a href="#shortcuts">키보드 단축키</a></li>
-            <li><a href="#troubleshooting">문제 해결</a></li>
-            <li><a href="#support">추가 도움이 필요하신가요?</a></li>
+            <li><a href="getting-started.html">시작하기</a></li>
+            <li><a href="workspace.html">편집기, 패널, 터미널</a></li>
+            <li><a href="terminal.html">터미널과 퀵 터미널</a></li>
+            <li><a href="git.html">Git 연동</a></li>
+            <li><a href="lsp.html">언어 서버와 진단</a></li>
+            <li><a href="agents.html">에이전트 받은편지함과 워크플로</a></li>
+            <li><a href="settings.html">설정과 키바인딩</a></li>
+            <li><a href="shortcuts.html">키보드 단축키</a></li>
+            <li><a href="troubleshooting.html">문제 해결</a></li>
+            <li><a href="support.html">추가 도움이 필요하신가요?</a></li>
         </ul>
     </nav>
-
-    <section id="getting-started">
-        <h2>시작하기</h2>
-        <div class="steps">
-            <div class="card">
-                <h3>1. 폴더 열기</h3>
-                <p>파일 &gt; 폴더 열기를 선택한 뒤 프로젝트가 있는 디렉터리를 고릅니다.</p>
-            </div>
-            <div class="card">
-                <h3>2. 파일 열기</h3>
-                <p>사이드바에서 파일을 선택하거나 빠른 열기로 이름으로 찾습니다.</p>
-            </div>
-            <div class="card">
-                <h3>3. 작업 공간 정리</h3>
-                <p>탭을 편집기 가장자리로 끌어 분할을 만들거나, 다른 탭 표시줄로 끌어 이동합니다.</p>
-            </div>
-            <div class="card">
-                <h3>4. 계속 작업</h3>
-                <p>Pine은 프로젝트 창, 편집기 탭, 패널 레이아웃을 다시 열 때 복원합니다.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="workspace">
-        <h2>편집기, 패널, 터미널</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>분할 패널</h3>
-                <p>편집기와 터미널 탭은 같은 종류의 패널 사이에서 이동할 수 있습니다. 가장자리에 놓으면 새 분할이 만들어집니다.</p>
-            </div>
-            <div class="card">
-                <h3>미리 보기와 고정 탭</h3>
-                <p>사이드바의 파일을 클릭하면 임시 미리 보기 탭으로 열립니다. 더블클릭하거나 편집하면 고정됩니다.</p>
-            </div>
-            <div class="card">
-                <h3>찾기 및 바꾸기</h3>
-                <p>Cmd+F로 파일에서 찾습니다. Cmd+Option+F로 찾기 및 바꾸기를 사용합니다. 프로젝트 전체 검색은 Cmd+Shift+F입니다.</p>
-            </div>
-            <div class="card">
-                <h3>코드 접기와 미니맵</h3>
-                <p>여백의 삼각형을 클릭해 코드 블록을 접습니다. 미니맵은 보기 메뉴에서 켜고 끌 수 있습니다.</p>
-            </div>
-            <div class="card">
-                <h3>Markdown 미리 보기</h3>
-                <p>Cmd+Shift+P로 소스만 보기, 렌더링, 나란히 보기 Markdown 미리 보기를 순환합니다.</p>
-            </div>
-            <div class="card">
-                <h3>심볼 탐색</h3>
-                <p>Cmd+R을 눌러 현재 파일의 함수, 클래스, 구조체로 이동합니다.</p>
-            </div>
-            <div class="card">
-                <h3>안전한 저장</h3>
-                <p>변경 사항이 있는 탭은 닫기 전에 보호됩니다. 자동 저장과 저장 시 포맷은 파일 메뉴에 있습니다.</p>
-            </div>
-            <div class="card">
-                <h3>세션 복원</h3>
-                <p>Pine은 프로젝트를 다시 열 때 탭, 패널 레이아웃, 커서 위치를 복원합니다.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="terminal">
-        <h2>터미널과 퀵 터미널</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>통합 터미널</h3>
-                <p>코드 옆에서 완전한 터미널을 사용합니다. 열려 있는 동안에는 스크롤백이 유지됩니다.</p>
-            </div>
-            <div class="card">
-                <h3>퀵 터미널</h3>
-                <p>Ctrl+Option+Space를 눌러 어떤 응용 프로그램 위에나 뜨는 떠 있는 드롭다운 터미널을 켜고 끕니다.</p>
-            </div>
-            <div class="card">
-                <h3>클릭 가능한 링크</h3>
-                <p>터미널 출력의 파일:줄 참조를 Cmd+클릭하면 편집기에서 열립니다. URL은 시스템 브라우저에서 열립니다.</p>
-            </div>
-            <div class="card">
-                <h3>TUI 앱</h3>
-                <p>Vim, htop 등 TUI 앱이 네이티브로 동작합니다. oh-my-zsh와 색상 테마도 완전히 지원됩니다.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="git">
-        <h2>Git 연동</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>파일 상태</h3>
-                <p>사이드바에 수정·추가·삭제된 파일이 색상 상태 표시로 나타납니다.</p>
-            </div>
-            <div class="card">
-                <h3>Diff 표시</h3>
-                <p>추가·수정·삭제된 줄이 편집기 여백에 색상 표시로 나타납니다.</p>
-            </div>
-            <div class="card">
-                <h3>브랜치 전환</h3>
-                <p>제목 표시줄의 브랜치 이름을 클릭하거나 Cmd+Shift+B를 눌러 로컬 브랜치 사이를 전환합니다.</p>
-            </div>
-            <div class="card">
-                <h3>Blame 보기</h3>
-                <p>Blame 보기를 켜서 줄마다 커밋 정보(해시, 작성자, 시간, 메시지)를 확인합니다.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="lsp">
-        <h2>언어 서버와 진단</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>코드 인텔리전스</h3>
-                <p>Pine은 Language Server Protocol을 사용해 진단, 자동 완성, 호버, 정의로 이동, 이름 바꾸기를 제공합니다.</p>
-            </div>
-            <div class="card">
-                <h3>서버 구성</h3>
-                <p>설정 &gt; 언어를 열어 언어별로 언어 서버 실행 파일을 켜거나 끄거나 구성합니다.</p>
-            </div>
-            <div class="card">
-                <h3>문제 패널</h3>
-                <p>접을 수 있는 패널에서 프로젝트의 모든 진단을 봅니다. 키보드 단축키로 오류와 경고를 탐색합니다.</p>
-            </div>
-            <div class="card">
-                <h3>코드 액션</h3>
-                <p>여백의 진단 표시기를 클릭하거나 메뉴를 사용해 빠른 수정과 리팩터링을 적용합니다.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="agents">
-        <h2>에이전트 인식</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>에이전트 감지</h3>
-                <p>Pine은 터미널에서 실행 중인 지원되는 CLI 에이전트를 감지하고 배지와 표시기로 상태를 보여 줍니다.</p>
-            </div>
-            <div class="card">
-                <h3>활동 패널</h3>
-                <p>에이전트 활동의 실시간 보기를 확인합니다: 변경된 파일, 실행된 명령, 현재 작업 상태.</p>
-            </div>
-            <div class="card">
-                <h3>에이전트 기록</h3>
-                <p>에이전트의 변경 사항을 검토하고 실행 취소합니다. 확인된 미리 보기는 적용 전에 정확히 무엇이 바뀌는지 보여 줍니다.</p>
-            </div>
-            <div class="card">
-                <h3>개인정보 보호</h3>
-                <p>에이전트 컨텍스트 전달은 선택 사항이며 읽기 전용입니다. Pine은 사용자의 조작 없이는 코드나 터미널 출력을 어디로도 보내지 않습니다.</p>
-            </div>
-        </div>
-        <p>Pine은 정확한 실행 파일 이름으로 Pi, Codex, Claude Code, OpenCode, Copilot, Aider, Gemini, Amp, Cursor Agent, Goose, Qwen Code 및 Crush를 인식합니다. 호환성 표에 달리 명시되지 않은 경우 프로세스만 인식합니다.</p>
-        <p><a href="https://github.com/batonogov/pine/blob/main/docs/agent-compatibility.md">CLI 에이전트 호환성 표와 현재 제한 사항을 확인합니다.</a></p>
-    </section>
-
-    <section id="settings">
-        <h2>설정과 키바인딩</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>설정 창</h3>
-                <p>Cmd+쉼표를 눌러 설정을 엽니다. 편집기 기본값, 터미널, 언어 서버, 에이전트 개인정보 보호를 구성합니다.</p>
-            </div>
-            <div class="card">
-                <h3>사용자 지정 키바인딩</h3>
-                <p>관리되는 키바인딩 파일로 키보드 단축키를 재정의합니다. 명령 팔레트에 실제 바인딩이 표시됩니다.</p>
-            </div>
-            <div class="card">
-                <h3>명령 팔레트</h3>
-                <p>VS Code와 비슷한 퍼지 검색 팔레트로 명령을 찾고 실행합니다.</p>
-            </div>
-            <div class="card">
-                <h3>작업</h3>
-                <p>사용자 지정 작업을 정의해 명령 팔레트나 작업 메뉴에서 셸 명령, 포매터, 빌드 스크립트를 실행합니다.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="shortcuts">
-        <h2>필수 단축키</h2>
-        <div class="shortcut-grid">
-            <div class="shortcut"><span>폴더 열기</span><kbd>⇧⌘O</kbd></div>
-            <div class="shortcut"><span>빠른 열기</span><kbd>⌘P</kbd></div>
-            <div class="shortcut"><span>파일에서 찾기</span><kbd>⌘F</kbd></div>
-            <div class="shortcut"><span>프로젝트에서 찾기</span><kbd>⇧⌘F</kbd></div>
-            <div class="shortcut"><span>찾기 및 바꾸기</span><kbd>⌥⌘F</kbd></div>
-            <div class="shortcut"><span>줄로 이동</span><kbd>⌘L</kbd></div>
-            <div class="shortcut"><span>심볼로 이동</span><kbd>⌘R</kbd></div>
-            <div class="shortcut"><span>저장</span><kbd>⌘S</kbd></div>
-            <div class="shortcut"><span>터미널 켜기/끄기</span><kbd>⌘`</kbd></div>
-            <div class="shortcut"><span>새 터미널 탭</span><kbd>⌘T</kbd></div>
-            <div class="shortcut"><span>Markdown 미리 보기</span><kbd>⇧⌘P</kbd></div>
-            <div class="shortcut"><span>Git 브랜치 전환</span><kbd>⇧⌘B</kbd></div>
-            <div class="shortcut"><span>퀵 터미널</span><kbd>⌃⌥Space</kbd></div>
-            <div class="shortcut"><span>주석 토글</span><kbd>⌘/</kbd></div>
-            <div class="shortcut"><span>미니맵 토글</span><kbd>⇧⌘M</kbd></div>
-            <div class="shortcut"><span>다음 / 이전 변경</span><kbd>⌃⌥↓/↑</kbd></div>
-        </div>
-        <p class="tip"><strong>팁:</strong> 메뉴에 모든 사용 가능한 명령과 현재 키보드 단축키가 표시됩니다.</p>
-    </section>
-
-    <section id="troubleshooting">
-        <h2>문제 해결</h2>
-        <ul class="topic-list">
-            <li>
-                <strong>터미널이 검은 화면을 표시함</strong>
-                <span>Pine은 기본적으로 Metal 렌더러를 사용합니다. 검은 화면이 보이면 option 키를 누른 채로 다시 실행하거나, <code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code>를 실행해 CoreGraphics로 전환하세요.</span>
-            </li>
-            <li>
-                <strong>LSP 자동 완성이나 진단이 동작하지 않음</strong>
-                <span>설정 &gt; 언어를 열고 서버 실행 파일 경로를 확인하세요. Pine은 서버 오류를 상태 표시줄에 알려 줍니다.</span>
-            </li>
-            <li>
-                <strong>큰 파일이 느림</strong>
-                <span>1 MB 초과 파일은 구문 강조를 끌지 묻습니다. 10 MB 초과 파일은 점진적으로 로드됩니다. 큰 파일 탐색에는 미니맵을 사용하세요.</span>
-            </li>
-            <li>
-                <strong>저장 시 포맷이 적용되지 않음</strong>
-                <span>저장 시 포맷을 사용하려면 포매터 도구(예: <code>terraform</code>, <code>shfmt</code>, <code>prettier</code>)가 PATH에 있어야 합니다. Homebrew로 설치하세요.</span>
-            </li>
-            <li>
-                <strong>macOS 26 또는 27 호환성</strong>
-                <span>Pine은 macOS 26(Tahoe)을 대상으로 합니다. 플랫폼 관련 문제가 발생하면 버그 보고서에 <code>sw_vers</code>와 <code>xcodebuild -version</code>의 출력을 포함하세요.</span>
-            </li>
-            <li>
-                <strong>에이전트가 감지되지 않음</strong>
-                <span>Pine은 프로세스 이름으로 지원되는 CLI 에이전트를 감지합니다. 에이전트가 Pine 터미널 패널에서 실행 중인지 확인하세요. 퀵 터미널은 아직 에이전트 감지를 지원하지 않습니다.</span>
-            </li>
-        </ul>
-    </section>
-
-    <section class="support" id="support">
-        <h2>추가 도움이 필요하신가요?</h2>
-        <p><a href="https://github.com/batonogov/pine/issues">Pine 이슈 트래커</a>에서 문제를 보고하거나 개선을 제안할 수 있습니다.</p>
-    </section>
 </main>
 </body>
 </html>

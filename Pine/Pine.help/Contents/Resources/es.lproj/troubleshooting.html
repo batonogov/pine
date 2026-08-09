@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="es" xml:lang="es">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
+    <meta name="description" content="Aprende a abrir proyectos, editar código y usar paneles, terminales, Git, diagnósticos LSP, funciones de agente y atajos de teclado en Pine." />
+    <meta name="KEYWORDS" content="Solución de problemas, Pine, ayuda, editor, proyecto, pestaña, panel, terminal, Git, LSP, diagnósticos, agente, atajos, ajustes, combinaciones de teclas, plegado, minimapa, buscar, reemplazar" />
+    <title>Solución de problemas — Ayuda de Pine</title>
+    <link rel="stylesheet" type="text/css" href="../style.css" />
+</head>
+<body>
+<main class="help-topic">
+    <nav class="breadcrumbs"><a href="index.html">Ayuda de Pine</a></nav>
+
+    <section id="troubleshooting">
+        <a name="pine-troubleshooting" id="pine-troubleshooting"></a>
+        <h2>Solución de problemas</h2>
+        <ul class="topic-list">
+            <li>
+                <strong>El terminal muestra una pantalla negra</strong>
+                <span>Pine usa un renderizador Metal por defecto. Si ves una pantalla negra, reinicia manteniendo pulsada la tecla opción, o ejecuta <code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code> para cambiar a CoreGraphics.</span>
+            </li>
+            <li>
+                <strong>El completado o los diagnósticos LSP no funcionan</strong>
+                <span>Abre Ajustes &gt; Lenguajes y verifica la ruta del ejecutable del servidor. Pine informa de los errores del servidor en la barra de estado.</span>
+            </li>
+            <li>
+                <strong>Los archivos grandes son lentos</strong>
+                <span>Los archivos de más de 1 MB ofrecen desactivar el resaltado de sintaxis. Los de más de 10 MB se cargan progresivamente. Usa el minimapa para navegar por archivos grandes.</span>
+            </li>
+            <li>
+                <strong>Formatear al guardar no se aplica</strong>
+                <span>Formatear al guardar requiere que la herramienta de formateo (p. ej. <code>terraform</code>, <code>shfmt</code>, <code>prettier</code>) esté en tu PATH. Instálala con Homebrew.</span>
+            </li>
+            <li>
+                <strong>Compatibilidad con macOS 26 o 27</strong>
+                <span>Pine tiene como objetivo macOS 26 (Tahoe). Si encuentras un problema específico de la plataforma, incluye la salida de <code>sw_vers</code> y <code>xcodebuild -version</code> en tu informe de error.</span>
+            </li>
+            <li>
+                <strong>El agente no se detecta</strong>
+                <span>Pine detecta los agentes CLI compatibles por el nombre del proceso. Asegúrate de que el agente se ejecuta en un panel de terminal de Pine. El Terminal rápido aún no admite la detección de agentes.</span>
+            </li>
+        </ul>
+    </section>
+
+    <nav class="topic-footer"><a href="index.html">← Ayuda de Pine</a></nav>
+</main>
+</body>
+</html>

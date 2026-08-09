@@ -96,6 +96,17 @@ struct AgentInboxView: View {
             activateSelection()
             return .handled
         }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                HelpLink(
+                    anchor: PineHelp.Anchor.agentInbox,
+                    book: PineHelp.bookName
+                )
+                .accessibilityIdentifier(
+                    AccessibilityID.agentInboxHelpButton
+                )
+            }
+        }
         .accessibilityIdentifier(AccessibilityID.agentInbox)
     }
 

@@ -95,6 +95,14 @@ struct PineSettingsView: View {
                 .tag(SettingsPane.SettingsPaneID.keyBindings)
         }
         .frame(width: 720, height: 540)
+        .overlay(alignment: .bottomTrailing) {
+            HelpLink(
+                anchor: selectedPane.helpAnchor,
+                book: PineHelp.bookName
+            )
+            .accessibilityIdentifier(AccessibilityID.settingsHelpButton)
+            .padding(14)
+        }
     }
 
     nonisolated static let selectedPaneKey = "settings.selectedPane"
@@ -306,6 +314,21 @@ enum SettingsPane {
         case languages
         case agents
         case keyBindings
+    }
+}
+
+private extension SettingsPane.SettingsPaneID {
+    var helpAnchor: NSHelpManager.AnchorName {
+        switch self {
+        case .general, .keyBindings:
+            PineHelp.Anchor.settings
+        case .terminal:
+            PineHelp.Anchor.terminal
+        case .languages:
+            PineHelp.Anchor.languageServers
+        case .agents:
+            PineHelp.Anchor.agentSettings
+        }
     }
 }
 
