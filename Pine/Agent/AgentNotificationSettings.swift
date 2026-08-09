@@ -99,6 +99,10 @@ final class AgentNotificationSettings {
         return true
     }
 
+    func hasDelivered(_ eventID: String) -> Bool {
+        deliveredEventIDs.contains(eventID)
+    }
+
     private func persist(_ values: Set<String>, key: String) {
         defaults.set(values.sorted(), forKey: key)
     }

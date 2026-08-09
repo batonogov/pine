@@ -391,22 +391,7 @@ enum AgentCompletionBriefBuilder {
     private static func commandKind(
         _ command: String
     ) -> AgentCompletionCommandKind {
-        let normalized = command.lowercased()
-        let testMarkers = [
-            "xcodebuild test", "swift test", "npm test", "npm run test",
-            "pnpm test", "yarn test", "cargo test", "go test", "pytest"
-        ]
-        if testMarkers.contains(where: normalized.contains) {
-            return .test
-        }
-        let buildMarkers = [
-            "xcodebuild build", "swift build", "npm run build",
-            "pnpm build", "yarn build", "cargo build", "go build"
-        ]
-        if buildMarkers.contains(where: normalized.contains) {
-            return .build
-        }
-        return .command
+        AgentCompletionCommandClassifier.kind(for: command)
     }
 
     private static func integrityGaps(
@@ -468,5 +453,173 @@ enum AgentCompletionBriefBuilder {
             return nil
         }
         return trimmed
+    }
+}
+
+/// Conservative command-shape classification for evidence summaries.
+///
+/// The structured event authenticates who reported a command and its exit
+/// status; it does not turn arbitrary text inside that command into evidence
+/// that a test runner executed. Compound shell commands are deliberately left
+/// generic because their final status can be masked by a later segment.
+nonisolated private enum AgentCompletionCommandClassifier {
+    static func kind(for command: String) -> AgentCompletionCommandKind {
+        guard let words = shellWords(command),
+              let invocation = invocation(from: words) else {
+            return .command
+        }
+        if isTest(executable: invocation.executable, arguments: invocation.arguments) {
+            return .test
+        }
+        if isBuild(executable: invocation.executable, arguments: invocation.arguments) {
+            return .build
+        }
+        return .command
+    }
+
+    private static func invocation(
+        from words: [String]
+    ) -> (executable: String, arguments: [String])? {
+        var index = 0
+        while index < words.count, isEnvironmentAssignment(words[index]) {
+            index += 1
+        }
+        guard index < words.count else { return nil }
+
+        var executable = executableName(words[index])
+        if executable == "env" {
+            index += 1
+            while index < words.count,
+                  words[index] == "-i"
+                    || words[index] == "--ignore-environment"
+                    || words[index] == "--"
+                    || isEnvironmentAssignment(words[index]) {
+                index += 1
+            }
+            guard index < words.count else { return nil }
+            executable = executableName(words[index])
+        }
+        index += 1
+        return (executable, Array(words.dropFirst(index)))
+    }
+
+    private static func isTest(
+        executable: String,
+        arguments: [String]
+    ) -> Bool {
+        switch executable {
+        case "xcodebuild":
+            return arguments.contains("test")
+                || arguments.contains("test-without-building")
+        case "swift", "cargo", "go":
+            return arguments.first == "test"
+        case "npm", "pnpm", "yarn":
+            return packageScript(arguments, prefix: "test")
+        case "pytest", "pytest3":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isBuild(
+        executable: String,
+        arguments: [String]
+    ) -> Bool {
+        switch executable {
+        case "xcodebuild":
+            return arguments.contains("build")
+                || arguments.contains("build-for-testing")
+        case "swift", "cargo", "go":
+            return arguments.first == "build"
+        case "npm", "pnpm", "yarn":
+            return packageScript(arguments, prefix: "build")
+        default:
+            return false
+        }
+    }
+
+    private static func packageScript(
+        _ arguments: [String],
+        prefix: String
+    ) -> Bool {
+        guard let first = arguments.first else { return false }
+        if first == prefix || first.hasPrefix(prefix + ":") { return true }
+        guard first == "run", arguments.count > 1 else { return false }
+        let script = arguments[1]
+        return script == prefix || script.hasPrefix(prefix + ":")
+    }
+
+    private static func executableName(_ value: String) -> String {
+        value.split(separator: "/").last.map(String.init)?
+            .lowercased() ?? ""
+    }
+
+    private static func isEnvironmentAssignment(_ value: String) -> Bool {
+        guard let separator = value.firstIndex(of: "=") else { return false }
+        let name = value[..<separator]
+        guard let first = name.first,
+              first == "_" || first.isLetter else { return false }
+        return name.dropFirst().allSatisfy { $0 == "_" || $0.isLetter || $0.isNumber }
+    }
+
+    /// Returns one simple shell argv, or nil when quoting is malformed or the
+    /// command contains control operators whose aggregate exit status could
+    /// misrepresent the runner result.
+    private static func shellWords(_ command: String) -> [String]? {
+        var words: [String] = []
+        var word = ""
+        var wordStarted = false
+        var quote: Character?
+        var escaped = false
+
+        func finishWord() {
+            guard wordStarted else { return }
+            words.append(word.lowercased())
+            word = ""
+            wordStarted = false
+        }
+
+        for character in command {
+            if escaped {
+                word.append(character)
+                wordStarted = true
+                escaped = false
+                continue
+            }
+            if let activeQuote = quote {
+                if character == activeQuote {
+                    quote = nil
+                } else if activeQuote == "\"", character == "\\" {
+                    escaped = true
+                } else {
+                    word.append(character)
+                    wordStarted = true
+                }
+                continue
+            }
+            if character == "\\" {
+                escaped = true
+                wordStarted = true
+            } else if character == "'" || character == "\"" {
+                quote = character
+                wordStarted = true
+            } else if character == "#", !wordStarted {
+                break
+            } else if character == ";" || character == "|"
+                        || character == "&" || character == "\n"
+                        || character == "(" || character == ")" {
+                return nil
+            } else if character.isWhitespace {
+                finishWord()
+            } else {
+                word.append(character)
+                wordStarted = true
+            }
+        }
+
+        guard quote == nil, !escaped else { return nil }
+        finishWord()
+        return words
     }
 }
