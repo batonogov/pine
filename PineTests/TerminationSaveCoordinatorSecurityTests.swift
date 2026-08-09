@@ -22,8 +22,6 @@ struct TerminationSaveCoordinatorSecurityTests {
             content: "private unsaved bytes",
             destination: destination
         )
-        defer { _ = TerminationSaveCoordinator.cleanup([staged]) }
-
         let status = try fileStatus(at: staged.stagingURL)
         #expect((status.st_mode & 0o7777) == 0o600)
         #expect(
@@ -34,13 +32,36 @@ struct TerminationSaveCoordinatorSecurityTests {
             try String(contentsOf: destination, encoding: .utf8)
                 == "old public bytes"
         )
+
+        nonisolated(unsafe) var publicationWasPrivate = false
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            afterDestinationPublication: {
+                let live = try? fileStatus(at: destination)
+                publicationWasPrivate = live.map {
+                    ($0.st_mode & 0o7777) == 0o600
+                } == true
+                    && !FileManager.default.fileExists(
+                        atPath: staged.stagingURL.path
+                    )
+                    && (try? extendedACLText(at: destination)) == ""
+            }
+        )
+
+        guard case .installed = result else {
+            Issue.record("Expected existing destination install: \(result)")
+            return
+        }
+        #expect(publicationWasPrivate)
     }
 
-    @Test func missingDestinationHonorsRestrictiveUmask() async throws {
-        let previousMask = Darwin.umask(mode_t(0o077))
-        defer { _ = Darwin.umask(previousMask) }
+    @Test func missingDestinationMatchesNormalCreationMode() async throws {
         let directory = try makeDirectory()
         defer { remove(directory) }
+        let baseline = directory.appendingPathComponent("baseline.txt")
+        try Data().write(to: baseline)
+        let baselineMode = try fileStatus(at: baseline).st_mode & 0o7777
         let destination = directory.appendingPathComponent("new.txt")
 
         let staged = try await stage(
@@ -58,11 +79,40 @@ struct TerminationSaveCoordinatorSecurityTests {
             Issue.record("Expected the missing destination to install: \(result)")
             return
         }
-        #expect((try fileStatus(at: destination).st_mode & 0o7777) == 0o600)
+        #expect(
+            (try fileStatus(at: destination).st_mode & 0o7777)
+                == baselineMode
+        )
         #expect(
             try String(contentsOf: destination, encoding: .utf8)
                 == "new private file"
         )
+    }
+
+    @Test func missingDestinationPreservesInheritedDirectoryACL() async throws {
+        let directory = try makeDirectory()
+        defer { remove(directory) }
+        try addInheritedReadACL(to: directory)
+        let baseline = directory.appendingPathComponent("baseline.txt")
+        try Data().write(to: baseline)
+        let expectedACL = try extendedACLText(at: baseline)
+        #expect(!expectedACL.isEmpty)
+
+        let destination = directory.appendingPathComponent("new.txt")
+        let staged = try await stage(
+            content: "inherited policy",
+            destination: destination
+        )
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5
+        )
+
+        guard case .installed = result else {
+            Issue.record("Expected inherited-ACL install: \(result)")
+            return
+        }
+        #expect(try extendedACLText(at: destination) == expectedACL)
     }
 
     @Test func existingDestinationPreservesOwnerModeAndXattrs() async throws {
@@ -192,7 +242,7 @@ struct TerminationSaveCoordinatorSecurityTests {
         )
         #expect(Darwin.chmod(directory.path, mode_t(0o700)) == 0)
 
-        guard case .failed(let message) = result else {
+        guard case .failed(let message, let retainedArtifacts) = result else {
             Issue.record("Expected recovery cleanup failure after install")
             return
         }
@@ -206,6 +256,10 @@ struct TerminationSaveCoordinatorSecurityTests {
             includingPropertiesForKeys: nil
         ).first { $0.lastPathComponent.hasPrefix(".pine-save-recovery-") }
         let recoveryURL = try #require(recovery)
+        #expect(
+            retainedArtifacts.map { $0.resolvingSymlinksInPath() }
+                == [recoveryURL.resolvingSymlinksInPath()]
+        )
         #expect(
             try String(contentsOf: recoveryURL, encoding: .utf8)
                 == "authorized original"
@@ -252,7 +306,7 @@ struct TerminationSaveCoordinatorSecurityTests {
         ) {
         case .ready(let staged):
             return try #require(staged.first)
-        case .failed(let message):
+        case .failed(let message, _):
             Issue.record("Could not stage save: \(message)")
             throw CocoaError(.fileWriteUnknown)
         case .timedOut:
@@ -277,7 +331,7 @@ struct TerminationSaveCoordinatorSecurityTests {
         try? FileManager.default.removeItem(at: url)
     }
 
-    private func fileStatus(at url: URL) throws -> stat {
+    nonisolated private func fileStatus(at url: URL) throws -> stat {
         var status = stat()
         guard Darwin.lstat(url.path, &status) == 0 else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
@@ -372,5 +426,44 @@ struct TerminationSaveCoordinatorSecurityTests {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
         }
         return value
+    }
+
+    nonisolated private func addInheritedReadACL(to directory: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        process.arguments = [
+            "+a",
+            "everyone allow read,file_inherit",
+            directory.path,
+        ]
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+    }
+
+    nonisolated private func extendedACLText(at url: URL) throws -> String {
+        errno = 0
+        guard let acl = Darwin.acl_get_file(url.path, ACL_TYPE_EXTENDED) else {
+            guard errno == 0 || errno == ENOENT else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+            return ""
+        }
+        defer { Darwin.acl_free(UnsafeMutableRawPointer(acl)) }
+        var length: ssize_t = 0
+        guard let text = Darwin.acl_to_text(acl, &length) else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        defer { Darwin.acl_free(UnsafeMutableRawPointer(text)) }
+        let bytes = UnsafeBufferPointer(
+            start: text,
+            count: Int(length)
+        ).map { UInt8(bitPattern: $0) }
+        guard let result = String(bytes: bytes, encoding: .utf8) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return result
     }
 }

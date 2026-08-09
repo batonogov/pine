@@ -213,35 +213,27 @@ nonisolated enum PreparedPaneSaveCommitResult: Sendable, Equatable {
     case saved
     case invalidated
     case timedOut
-    case failed(message: String)
+    case failed(message: String, retainedArtifacts: [URL])
 }
 
 nonisolated enum TerminationPaneSaveStageResult: Sendable {
     case ready
     case invalidated
-    case failed(message: String)
+    case failed(message: String, retainedArtifacts: [URL])
     case timedOut
 }
 
-nonisolated private final class TerminationInstallAwaitResolver:
+nonisolated private final class TerminationAwaitResolver<Result: Sendable>:
     @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<
-        TerminationSaveInstallResult,
-        Never
-    >?
+    private var continuation: CheckedContinuation<Result, Never>?
 
-    init(
-        _ continuation: CheckedContinuation<
-            TerminationSaveInstallResult,
-            Never
-        >
-    ) {
+    init(_ continuation: CheckedContinuation<Result, Never>) {
         self.continuation = continuation
     }
 
     @discardableResult
-    func resolve(_ result: TerminationSaveInstallResult) -> Bool {
+    func resolve(_ result: Result) -> Bool {
         let continuation = lock.withLock {
             let continuation = self.continuation
             self.continuation = nil
@@ -420,6 +412,12 @@ final class ProjectManager {
             until: deadline,
             lateCompletion: lateCompletion
         )
+    }
+    @ObservationIgnored
+    var terminationSaveCleaner: @Sendable (
+        [TerminationStagedSave]
+    ) -> TerminationSaveCleanupResult = {
+        TerminationSaveCoordinator.cleanup($0)
     }
 
     /// Returns the TabManager for the currently focused pane.
@@ -683,7 +681,10 @@ final class ProjectManager {
                         return .invalidated
                     }
                 } catch {
-                    return .failed(message: error.localizedDescription)
+                    return .failed(
+                        message: error.localizedDescription,
+                        retainedArtifacts: []
+                    )
                 }
             } else {
                 guard let index = planned.tabManager.tabs.firstIndex(where: {
@@ -696,7 +697,10 @@ final class ProjectManager {
                         return .invalidated
                     }
                 } catch {
-                    return .failed(message: error.localizedDescription)
+                    return .failed(
+                        message: error.localizedDescription,
+                        retainedArtifacts: []
+                    )
                 }
             }
         }
@@ -730,7 +734,10 @@ final class ProjectManager {
         case .captured(let captured):
             destinationStates = captured
         case .failed(let message):
-            return (.failed(message: message), nil)
+            return (
+                .failed(message: message, retainedArtifacts: []),
+                nil
+            )
         case .timedOut:
             return (.timedOut, nil)
         }
@@ -779,8 +786,14 @@ final class ProjectManager {
                     staged: staged
                 )
             )
-        case .failed(let message):
-            return (.failed(message: message), nil)
+        case .failed(let message, let retainedArtifacts):
+            return (
+                .failed(
+                    message: message,
+                    retainedArtifacts: retainedArtifacts
+                ),
+                nil
+            )
         case .timedOut:
             return (.timedOut, nil)
         }
@@ -822,7 +835,7 @@ final class ProjectManager {
                       && staged.request.originalURL == entry.tab.fileURL
                       && staged.request.destination == destination
               }) else {
-            cleanupTerminationSavePlan(plan)
+            _ = await cleanupTerminationSavePlan(plan, until: deadline)
             return .invalidated
         }
 
@@ -830,15 +843,17 @@ final class ProjectManager {
             let (entry, staged) = pair
             guard DispatchTime.now().uptimeNanoseconds
                     < deadline.uptimeNanoseconds else {
-                cleanupTerminationStagedSaves(
-                    Array(plan.staged.dropFirst(index))
+                _ = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index)),
+                    until: deadline
                 )
                 return .timedOut
             }
             guard inventoryStillAuthorized(),
                   preparedEntryStillValid(entry) else {
-                cleanupTerminationStagedSaves(
-                    Array(plan.staged.dropFirst(index))
+                _ = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index)),
+                    until: deadline
                 )
                 return .invalidated
             }
@@ -873,14 +888,25 @@ final class ProjectManager {
             let inventoryWasAuthorizedAfterInstall =
                 inventoryStillAuthorized()
             switch installResult {
-            case .failed(let message):
-                cleanupTerminationStagedSaves(
-                    Array(plan.staged.dropFirst(index))
+            case .failed(let message, let retainedArtifacts):
+                let cleanupResult = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index)),
+                    until: deadline
                 )
+                let cleanupArtifacts: [URL]
+                if case .failed(_, let artifacts) = cleanupResult {
+                    cleanupArtifacts = artifacts
+                } else {
+                    cleanupArtifacts = []
+                }
                 guard inventoryWasAuthorizedAfterInstall else {
                     return .invalidated
                 }
-                return .failed(message: message)
+                return .failed(
+                    message: message,
+                    retainedArtifacts:
+                        Array(Set(retainedArtifacts + cleanupArtifacts))
+                )
             case .installed(let metadata):
                 guard entry.tabManager.reconcileTerminationStagedSave(
                     request: staged.request,
@@ -890,21 +916,24 @@ final class ProjectManager {
                     Logger.app.critical(
                         "Termination save model changed during atomic commit"
                     )
-                    cleanupTerminationStagedSaves(
-                        Array(plan.staged.dropFirst(index + 1))
+                    _ = await cleanupTerminationStagedSaves(
+                        Array(plan.staged.dropFirst(index + 1)),
+                        until: deadline
                     )
                     return .invalidated
                 }
                 guard inventoryWasAuthorizedAfterInstall,
                       inventoryStillAuthorized() else {
-                    cleanupTerminationStagedSaves(
-                        Array(plan.staged.dropFirst(index + 1))
+                    _ = await cleanupTerminationStagedSaves(
+                        Array(plan.staged.dropFirst(index + 1)),
+                        until: deadline
                     )
                     return .invalidated
                 }
             case .timedOut:
-                cleanupTerminationStagedSaves(
-                    Array(plan.staged.dropFirst(index))
+                _ = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index)),
+                    until: deadline
                 )
                 guard inventoryWasAuthorizedAfterInstall else {
                     return .invalidated
@@ -913,8 +942,9 @@ final class ProjectManager {
             }
             if DispatchTime.now().uptimeNanoseconds
                     >= deadline.uptimeNanoseconds {
-                cleanupTerminationStagedSaves(
-                    Array(plan.staged.dropFirst(index + 1))
+                _ = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index + 1)),
+                    until: deadline
                 )
                 return .timedOut
             }
@@ -935,7 +965,7 @@ final class ProjectManager {
         }
         let installer = terminationSaveInstaller
         return await withCheckedContinuation { continuation in
-            let resolver = TerminationInstallAwaitResolver(continuation)
+            let resolver = TerminationAwaitResolver(continuation)
             let operationTask = Task {
                 let result = await installer(
                     staged,
@@ -957,16 +987,39 @@ final class ProjectManager {
     }
 
     func cleanupTerminationSavePlan(
-        _ plan: PreparedTerminationPaneSavePlan
-    ) {
-        cleanupTerminationStagedSaves(plan.staged)
+        _ plan: PreparedTerminationPaneSavePlan,
+        until deadline: DispatchTime
+    ) async -> TerminationSaveCleanupResult {
+        await cleanupTerminationStagedSaves(plan.staged, until: deadline)
     }
 
     private func cleanupTerminationStagedSaves(
-        _ staged: [TerminationStagedSave]
-    ) {
-        Task.detached(priority: .utility) {
-            TerminationSaveCoordinator.cleanup(staged)
+        _ staged: [TerminationStagedSave],
+        until deadline: DispatchTime
+    ) async -> TerminationSaveCleanupResult {
+        guard !staged.isEmpty else { return .cleaned }
+        let retainedArtifacts = staged.map(\.stagingURL)
+        let timedOut = TerminationSaveCleanupResult.failed(
+            message: "Termination save cleanup exceeded its deadline",
+            retainedArtifacts: retainedArtifacts
+        )
+        guard DispatchTime.now().uptimeNanoseconds
+                < deadline.uptimeNanoseconds else {
+            return timedOut
+        }
+        let cleaner = terminationSaveCleaner
+        return await withCheckedContinuation { continuation in
+            let resolver = TerminationAwaitResolver(continuation)
+            let operationTask = Task.detached(priority: .utility) {
+                resolver.resolve(cleaner(staged))
+            }
+            Self.terminationInstallDeadlineQueue.asyncAfter(
+                deadline: deadline
+            ) {
+                if resolver.resolve(timedOut) {
+                    operationTask.cancel()
+                }
+            }
         }
     }
 
@@ -1048,7 +1101,7 @@ final class ProjectManager {
             return true
         case .invalidated, .timedOut:
             return false
-        case .failed(let message):
+        case .failed(let message, _):
             _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
                 on: context,
                 messageText: Strings.fileOperationErrorTitle,

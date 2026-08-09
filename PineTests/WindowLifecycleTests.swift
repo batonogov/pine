@@ -666,9 +666,10 @@ struct WindowLifecycleTests {
         delegate.registry = registry
         var presented: [AlertTemplate] = []
         var errorOwners: [NSWindow?] = []
+        var errorMessages: [String] = []
 
         let result = await delegate.confirmApplicationTermination(
-            presentAlert: { template, context, _, _ in
+            presentAlert: { template, context, _, message in
                 presented.append(template)
                 if template == .unsavedChangesBulk {
                     DialogPresenter.ownerDidClose(oldWindow)
@@ -681,6 +682,7 @@ struct WindowLifecycleTests {
                 }
                 if template == .fileOperationErrorCritical {
                     errorOwners.append(context.nsWindow)
+                    errorMessages.append(message)
                     if errorOwners.count == 1 {
                         DialogPresenter.ownerDidClose(newWindow)
                         newWindow.orderOut(nil)
@@ -710,6 +712,65 @@ struct WindowLifecycleTests {
         #expect(errorOwners.count == 2)
         #expect(errorOwners[0] === newWindow)
         #expect(errorOwners[1] === replacementFailureWindow)
+        #expect(errorMessages == [
+            Strings.applicationQuitFailureMessage,
+            Strings.applicationQuitFailureMessage,
+        ])
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func quitSaveCleanupFailureShowsRetainedArtifact() async throws {
+        let directory = try makeTempDirectory()
+        defer { cleanup(directory) }
+        let file = try makeTempFile(in: directory, name: "cleanup.swift")
+        let retainedArtifact = directory.appendingPathComponent(
+            ".pine-save-retained.tmp"
+        )
+        let registry = makeRegistry()
+        let project = try #require(
+            registry.projectManager(for: directory)
+        )
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// unsaved cleanup bytes", in: project)
+        project.terminationSaveInstaller = { _, _, _ in
+            .failed(
+                message: "internal unlocalized installer detail",
+                retainedArtifacts: []
+            )
+        }
+        project.terminationSaveCleaner = { _ in
+            .failed(
+                message: "internal unlocalized cleanup detail",
+                retainedArtifacts: [retainedArtifact]
+            )
+        }
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var presented: [AlertTemplate] = []
+        var failureMessage: String?
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, message in
+                presented.append(template)
+                if template == .fileOperationErrorCritical {
+                    failureMessage = message
+                }
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(presented == [
+            .applicationQuitSummary,
+            .unsavedChangesBulk,
+            .fileOperationErrorCritical,
+        ])
+        #expect(failureMessage == Strings.applicationQuitFailureMessage
+            + "\n\n"
+            + retainedArtifact.path)
+        #expect(!(failureMessage?.contains("unlocalized") ?? true))
         #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
     }
@@ -849,7 +910,7 @@ struct WindowLifecycleTests {
             presented == [
                 .applicationQuitSummary,
                 .unsavedChangesBulk,
-                .applicationQuitFailure,
+                .fileOperationErrorCritical,
             ]
         )
         #expect(try String(contentsOf: file, encoding: .utf8) == "// test.swift")
@@ -902,7 +963,7 @@ struct WindowLifecycleTests {
             presented == [
                 .applicationQuitSummary,
                 .unsavedChangesBulk,
-                .applicationQuitFailure,
+                .fileOperationErrorCritical,
             ]
         )
         #expect(try String(contentsOf: file, encoding: .utf8) == "// test.swift")
@@ -2228,7 +2289,10 @@ nonisolated private final class DelayedTerminationInstallerProbe:
     ) async -> TerminationSaveInstallResult {
         lock.withLock { installs += 1 }
         try? await Task.sleep(for: .milliseconds(100))
-        return .failed(message: "The outer deadline did not win")
+        return .failed(
+            message: "The outer deadline did not win",
+            retainedArtifacts: []
+        )
     }
 }
 

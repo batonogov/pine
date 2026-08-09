@@ -2515,14 +2515,58 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             )
         }
 
-        func cleanupPreparedTerminationSaves() {
+        func cleanupPreparedTerminationSaves() async -> [URL] {
+            var retainedArtifacts: [URL] = []
             for (identifier, plan) in preparedTerminationSavePlans {
                 guard let projectManager = projects.first(where: {
                     ObjectIdentifier($0) == identifier
                 }) else { continue }
-                projectManager.cleanupTerminationSavePlan(plan)
+                let result = await projectManager.cleanupTerminationSavePlan(
+                    plan,
+                    until: terminationDeadline
+                )
+                if case .failed(let message, let retained) = result {
+                    Logger.app.error(
+                        "Termination save cleanup failed: \(message, privacy: .public)"
+                    )
+                    retainedArtifacts.append(contentsOf: retained)
+                }
             }
             preparedTerminationSavePlans.removeAll()
+            return Array(Set(retainedArtifacts)).sorted {
+                $0.path < $1.path
+            }
+        }
+
+        func presentSaveFailure(
+            preferredProject: ProjectManager? = nil,
+            internalMessage: String? = nil,
+            retainedArtifacts additionalRetainedArtifacts: [URL] = []
+        ) async {
+            if let internalMessage {
+                Logger.app.error(
+                    "Termination save failed: \(internalMessage, privacy: .public)"
+                )
+            }
+            let cleanedRetainedArtifacts =
+                await cleanupPreparedTerminationSaves()
+            let retainedArtifacts = Array(Set(
+                additionalRetainedArtifacts + cleanedRetainedArtifacts
+            )).sorted { $0.path < $1.path }
+            let retainedPaths = retainedArtifacts.map(\.path).joined(
+                separator: "\n"
+            )
+            let message = retainedPaths.isEmpty
+                ? Strings.applicationQuitFailureMessage
+                : Strings.applicationQuitFailureMessage
+                    + "\n\n"
+                    + retainedPaths
+            await presentTerminationFailure(
+                .fileOperationErrorCritical,
+                preferredProject: preferredProject,
+                title: Strings.fileOperationErrorTitle,
+                message: message
+            )
         }
 
         if let saveAll {
@@ -2556,8 +2600,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                       let plan = preparedSavePlans[
                     ObjectIdentifier(projectManager)
                 ] else {
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 }
                 let (stageResult, stagedPlan) = await projectManager
@@ -2566,37 +2611,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                         until: terminationDeadline
                     )
                 guard saveInventoryStillAuthorized() else {
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 }
                 switch stageResult {
                 case .ready:
                     guard let stagedPlan else {
-                        cleanupPreparedTerminationSaves()
-                        await presentTerminationFailure()
+                        await presentSaveFailure(
+                            preferredProject: projectManager
+                        )
                         return false
                     }
                     preparedTerminationSavePlans[
                         ObjectIdentifier(projectManager)
                     ] = stagedPlan
-                case .failed(let message):
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure(
-                        .fileOperationErrorCritical,
+                case .failed(let message, let retainedArtifacts):
+                    await presentSaveFailure(
                         preferredProject: projectManager,
-                        title: Strings.fileOperationErrorTitle,
-                        message: message
+                        internalMessage: message,
+                        retainedArtifacts: retainedArtifacts
                     )
                     return false
                 case .invalidated:
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 case .timedOut:
                     terminationDeadlineObserver()
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 }
             }
@@ -2610,8 +2657,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                       let plan = preparedTerminationSavePlans[
                     ObjectIdentifier(projectManager)
                 ] else {
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 }
                 let destinationsStillMatch = await projectManager
@@ -2621,8 +2669,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     )
                 guard saveInventoryStillAuthorized(),
                       destinationsStillMatch else {
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 }
             }
@@ -2632,8 +2681,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                       let plan = preparedTerminationSavePlans[
                     ObjectIdentifier(projectManager)
                 ] else {
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 }
                 let commitResult = await projectManager
@@ -2645,8 +2695,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     )
                 guard saveInventoryStillAuthorized()
                         || commitResult == .invalidated else {
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 }
                 switch commitResult {
@@ -2654,23 +2705,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     preparedTerminationSavePlans.removeValue(
                         forKey: ObjectIdentifier(projectManager)
                     )
-                case .failed(let message):
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure(
-                        .fileOperationErrorCritical,
+                case .failed(let message, let retainedArtifacts):
+                    await presentSaveFailure(
                         preferredProject: projectManager,
-                        title: Strings.fileOperationErrorTitle,
-                        message: message
+                        internalMessage: message,
+                        retainedArtifacts: retainedArtifacts
                     )
                     return false
                 case .invalidated:
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 case .timedOut:
                     terminationDeadlineObserver()
-                    cleanupPreparedTerminationSaves()
-                    await presentTerminationFailure()
+                    await presentSaveFailure(
+                        preferredProject: projectManager
+                    )
                     return false
                 }
             }

@@ -85,13 +85,13 @@ nonisolated struct TerminationInstalledFileMetadata: Sendable {
 
 nonisolated enum TerminationSaveStageResult: Sendable {
     case ready([TerminationStagedSave])
-    case failed(message: String)
+    case failed(message: String, retainedArtifacts: [URL])
     case timedOut
 }
 
 nonisolated enum TerminationSaveInstallResult: Sendable {
     case installed(metadata: TerminationInstalledFileMetadata)
-    case failed(message: String)
+    case failed(message: String, retainedArtifacts: [URL])
     case timedOut
 }
 
@@ -289,6 +289,7 @@ nonisolated enum TerminationSaveCoordinator {
         _ staged: TerminationStagedSave,
         until deadline: DispatchTime,
         beforeDestinationQuarantine: InstallHook? = nil,
+        afterDestinationPublication: InstallHook? = nil,
         beforeRecoveryCleanup: InstallHook? = nil,
         lateCompletion: @escaping @Sendable (
             TerminationSaveInstallResult
@@ -308,13 +309,18 @@ nonisolated enum TerminationSaveCoordinator {
                         deadlineNanoseconds: deadlineNanoseconds,
                         beforeDestinationQuarantine:
                             beforeDestinationQuarantine,
+                        afterDestinationPublication:
+                            afterDestinationPublication,
                         beforeRecoveryCleanup: beforeRecoveryCleanup
                     )
                     result = .installed(metadata: staged.installedMetadata)
                 } catch is CancellationError {
                     result = .timedOut
                 } catch {
-                    result = .failed(message: error.localizedDescription)
+                    result = .failed(
+                        message: error.localizedDescription,
+                        retainedArtifacts: retainedArtifacts(from: error)
+                    )
                 }
                 if !resolver.resolve(result) {
                     lateCompletion(result)
@@ -412,18 +418,27 @@ nonisolated enum TerminationSaveCoordinator {
             }
             return .ready(staged)
         } catch {
-            if case .failed(let message, _) = cleanup(staged) {
-                return .failed(message: message)
+            if case .failed(let message, let retainedArtifacts) = cleanup(staged) {
+                return .failed(
+                    message: message,
+                    retainedArtifacts: retainedArtifacts
+                )
             }
-            return .failed(message: error.localizedDescription)
+            return .failed(
+                message: error.localizedDescription,
+                retainedArtifacts: []
+            )
         }
     }
 
     private static func stageCancellationResult(
         _ staged: [TerminationStagedSave]
     ) -> TerminationSaveStageResult {
-        if case .failed(let message, _) = cleanup(staged) {
-            return .failed(message: message)
+        if case .failed(let message, let retainedArtifacts) = cleanup(staged) {
+            return .failed(
+                message: message,
+                retainedArtifacts: retainedArtifacts
+            )
         }
         return .timedOut
     }
@@ -593,6 +608,7 @@ nonisolated enum TerminationSaveCoordinator {
         _ staged: TerminationStagedSave,
         deadlineNanoseconds: UInt64,
         beforeDestinationQuarantine: InstallHook?,
+        afterDestinationPublication: InstallHook?,
         beforeRecoveryCleanup: InstallHook?
     ) throws {
         let parentDescriptor = try openVerifiedParentDirectory(for: staged)
@@ -647,6 +663,7 @@ nonisolated enum TerminationSaveCoordinator {
             ) == 0 else {
                 throw posixError()
             }
+            var stagingWasPublished = false
             do {
                 try synchronizeDirectory(parentDescriptor)
                 let displacedSnapshot = try destinationSnapshot(
@@ -664,6 +681,16 @@ nonisolated enum TerminationSaveCoordinator {
                       ) else {
                     throw CocoaError(.fileWriteFileExists)
                 }
+                try checkDeadline(deadlineNanoseconds)
+                guard renameExclusive(
+                    parentDescriptor: parentDescriptor,
+                    source: stagingLeaf,
+                    destination: destinationLeaf
+                ) == 0 else {
+                    throw posixError()
+                }
+                stagingWasPublished = true
+                afterDestinationPublication?()
                 try applyExistingDestinationMetadata(
                     from: destinationDescriptor,
                     status: displacedSnapshot.status,
@@ -676,33 +703,34 @@ nonisolated enum TerminationSaveCoordinator {
                 ) else {
                     throw CocoaError(.fileWriteFileExists)
                 }
-                try checkDeadline(deadlineNanoseconds)
-                guard renameExclusive(
-                    parentDescriptor: parentDescriptor,
-                    source: stagingLeaf,
-                    destination: destinationLeaf
-                ) == 0 else {
-                    throw posixError()
-                }
             } catch {
                 let installError = error
-                var stagingSecurityError: Error?
-                do {
-                    try resecureStaging(
-                        stagingDescriptor,
-                        at: staged.stagingURL
+                if stagingWasPublished {
+                    try rollbackPublishedStaging(
+                        staged,
+                        stagingDescriptor: stagingDescriptor,
+                        parentDescriptor: parentDescriptor,
+                        quarantineLeaf: quarantineLeaf
                     )
-                } catch {
-                    stagingSecurityError = error
-                }
-                try restoreOrRetainRecovery(
-                    parentDescriptor: parentDescriptor,
-                    quarantineLeaf: quarantineLeaf,
-                    destinationLeaf: destinationLeaf,
-                    destinationURL: staged.request.destination
-                )
-                if let stagingSecurityError {
-                    throw stagingSecurityError
+                } else {
+                    var stagingSecurityError: Error?
+                    do {
+                        try resecureStaging(
+                            stagingDescriptor,
+                            at: staged.stagingURL
+                        )
+                    } catch {
+                        stagingSecurityError = error
+                    }
+                    try restoreOrRetainRecovery(
+                        parentDescriptor: parentDescriptor,
+                        quarantineLeaf: quarantineLeaf,
+                        destinationLeaf: destinationLeaf,
+                        destinationURL: staged.request.destination
+                    )
+                    if let stagingSecurityError {
+                        throw stagingSecurityError
+                    }
                 }
                 throw installError
             }
@@ -747,24 +775,6 @@ nonisolated enum TerminationSaveCoordinator {
             }
         } else {
             try checkDeadline(deadlineNanoseconds)
-            let permissions = try probeCreationPermissions(
-                parentDescriptor: parentDescriptor,
-                parentURL: parentURL
-            )
-            guard Darwin.fchmod(
-                stagingDescriptor,
-                mode_t(permissions)
-            ) == 0 else {
-                let installError = posixError()
-                try resecureStaging(stagingDescriptor, at: staged.stagingURL)
-                throw installError
-            }
-            guard Darwin.fsync(stagingDescriptor) == 0 else {
-                let installError = posixError()
-                try resecureStaging(stagingDescriptor, at: staged.stagingURL)
-                throw installError
-            }
-            try checkDeadline(deadlineNanoseconds)
             var destinationStatus = stat()
             guard Darwin.fstatat(
                 parentDescriptor,
@@ -785,15 +795,33 @@ nonisolated enum TerminationSaveCoordinator {
                 try resecureStaging(stagingDescriptor, at: staged.stagingURL)
                 throw installError
             }
-            guard regularFileMatches(
-                parentDescriptor: parentDescriptor,
-                leaf: destinationLeaf,
-                device: staged.stagingDevice,
-                inode: staged.stagingInode
-            ) else {
-                throw CocoaError(.fileWriteFileExists)
+            do {
+                afterDestinationPublication?()
+                try applyMissingDestinationMetadata(
+                    parentDescriptor: parentDescriptor,
+                    parentURL: parentURL,
+                    destinationDescriptor: stagingDescriptor
+                )
+                guard regularFileMatches(
+                    parentDescriptor: parentDescriptor,
+                    leaf: destinationLeaf,
+                    device: staged.stagingDevice,
+                    inode: staged.stagingInode
+                ) else {
+                    throw CocoaError(.fileWriteFileExists)
+                }
+                try synchronizeDirectory(parentDescriptor)
+            } catch {
+                let installError = error
+                try rollbackPublishedNewDestination(
+                    staged,
+                    stagingDescriptor: stagingDescriptor,
+                    parentDescriptor: parentDescriptor,
+                    stagingLeaf: stagingLeaf,
+                    destinationLeaf: destinationLeaf
+                )
+                throw installError
             }
-            try synchronizeDirectory(parentDescriptor)
         }
     }
 
@@ -870,6 +898,72 @@ nonisolated enum TerminationSaveCoordinator {
         try synchronizeDirectory(parentDescriptor)
     }
 
+    private static func rollbackPublishedStaging(
+        _ staged: TerminationStagedSave,
+        stagingDescriptor: Int32,
+        parentDescriptor: Int32,
+        quarantineLeaf: String
+    ) throws {
+        let stagingLeaf = staged.stagingURL.lastPathComponent
+        let destinationLeaf = staged.request.destination.lastPathComponent
+        let recoveryURL = staged.request.destination
+            .deletingLastPathComponent()
+            .appendingPathComponent(quarantineLeaf)
+        guard regularFileMatches(
+            parentDescriptor: parentDescriptor,
+            leaf: destinationLeaf,
+            device: staged.stagingDevice,
+            inode: staged.stagingInode
+        ),
+              renameExclusive(
+                  parentDescriptor: parentDescriptor,
+                  source: destinationLeaf,
+                  destination: stagingLeaf
+              ) == 0 else {
+            throw retainedRecoveryError(at: recoveryURL)
+        }
+
+        var stagingSecurityError: Error?
+        do {
+            try resecureStaging(stagingDescriptor, at: staged.stagingURL)
+        } catch {
+            stagingSecurityError = error
+        }
+        try restoreOrRetainRecovery(
+            parentDescriptor: parentDescriptor,
+            quarantineLeaf: quarantineLeaf,
+            destinationLeaf: destinationLeaf,
+            destinationURL: staged.request.destination
+        )
+        if let stagingSecurityError {
+            throw stagingSecurityError
+        }
+    }
+
+    private static func rollbackPublishedNewDestination(
+        _ staged: TerminationStagedSave,
+        stagingDescriptor: Int32,
+        parentDescriptor: Int32,
+        stagingLeaf: String,
+        destinationLeaf: String
+    ) throws {
+        guard regularFileMatches(
+            parentDescriptor: parentDescriptor,
+            leaf: destinationLeaf,
+            device: staged.stagingDevice,
+            inode: staged.stagingInode
+        ),
+              renameExclusive(
+                  parentDescriptor: parentDescriptor,
+                  source: destinationLeaf,
+                  destination: stagingLeaf
+              ) == 0 else {
+            throw retainedRecoveryError(at: staged.request.destination)
+        }
+        try resecureStaging(stagingDescriptor, at: staged.stagingURL)
+        try synchronizeDirectory(parentDescriptor)
+    }
+
     private static func retainedRecoveryError(
         at recoveryURL: URL,
         reason: String = "A concurrent file replacement was retained"
@@ -880,8 +974,16 @@ nonisolated enum TerminationSaveCoordinator {
             userInfo: [
                 NSLocalizedDescriptionKey:
                     "\(reason) at \(recoveryURL.path)",
+                "PineTerminationRetainedArtifactURLs": [recoveryURL],
             ]
         )
+    }
+
+    private static func retainedArtifacts(from error: Error) -> [URL] {
+        let nsError = error as NSError
+        return nsError.userInfo[
+            "PineTerminationRetainedArtifactURLs"
+        ] as? [URL] ?? []
     }
 
     private static func checkDeadline(_ deadlineNanoseconds: UInt64) throws {
@@ -1271,31 +1373,64 @@ nonisolated enum TerminationSaveCoordinator {
             ) == expected.extendedMetadataDigest
     }
 
-    private static func probeCreationPermissions(
+    private static func applyMissingDestinationMetadata(
         parentDescriptor: Int32,
-        parentURL: URL
-    ) throws -> UInt32 {
+        parentURL: URL,
+        destinationDescriptor: Int32
+    ) throws {
         let leaf = ".pine-save-mode-\(UUID().uuidString).tmp"
-        let descriptor = Darwin.openat(
+        let probeDescriptor = Darwin.openat(
             parentDescriptor,
             leaf,
             O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
             mode_t(0o666)
         )
-        guard descriptor >= 0 else { throw posixError() }
+        guard probeDescriptor >= 0 else { throw posixError() }
+        defer { Darwin.close(probeDescriptor) }
         var status = stat()
-        let captured = Darwin.fstat(descriptor, &status) == 0
-        Darwin.close(descriptor)
-        guard captured else { throw posixError() }
-        switch removeEntryIfMatches(
+        guard Darwin.fstat(probeDescriptor, &status) == 0 else {
+            throw posixError()
+        }
+        let expectedACL = try extendedACLData(probeDescriptor)
+        var metadataError: Error?
+        do {
+            guard Darwin.fcopyfile(
+                probeDescriptor,
+                destinationDescriptor,
+                nil,
+                copyfile_flags_t(COPYFILE_ACL)
+            ) == 0,
+                  Darwin.fchmod(
+                      destinationDescriptor,
+                      mode_t(status.st_mode & 0o7777)
+                  ) == 0,
+                  Darwin.fsync(destinationDescriptor) == 0 else {
+                throw posixError()
+            }
+            var installedStatus = stat()
+            guard Darwin.fstat(destinationDescriptor, &installedStatus) == 0,
+                  installedStatus.st_uid == status.st_uid,
+                  installedStatus.st_gid == status.st_gid,
+                  (installedStatus.st_mode & 0o7777)
+                    == (status.st_mode & 0o7777),
+                  try extendedACLData(destinationDescriptor) == expectedACL
+            else {
+                throw CocoaError(.fileWriteNoPermission)
+            }
+        } catch {
+            metadataError = error
+        }
+
+        let removal = removeEntryIfMatches(
             parentDescriptor: parentDescriptor,
             parentURL: parentURL,
             leaf: leaf,
             device: UInt64(status.st_dev),
             inode: UInt64(status.st_ino)
-        ) {
+        )
+        switch removal {
         case .removed:
-            return UInt32(status.st_mode & 0o666)
+            break
         case .failed(let message, let retainedURL):
             if let retainedURL {
                 throw retainedRecoveryError(at: retainedURL, reason: message)
@@ -1304,6 +1439,9 @@ nonisolated enum TerminationSaveCoordinator {
                 .fileWriteUnknown,
                 userInfo: [NSLocalizedDescriptionKey: message]
             )
+        }
+        if let metadataError {
+            throw metadataError
         }
     }
 

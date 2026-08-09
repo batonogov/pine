@@ -172,6 +172,26 @@ struct ExternalFileFormatterTests {
         #expect(elapsed < 0.5)
     }
 
+    @Test("Formatter preserves the process-group leader until its final signal")
+    func formatterReapsOnlyAfterSafeBoundary() {
+        #expect(formatterShouldAttemptReap(
+            terminationStarted: false,
+            streamsAreClosed: true
+        ))
+        #expect(!formatterShouldAttemptReap(
+            terminationStarted: false,
+            streamsAreClosed: false
+        ))
+        #expect(!formatterShouldAttemptReap(
+            terminationStarted: true,
+            streamsAreClosed: true
+        ))
+        #expect(!formatterShouldAttemptReap(
+            terminationStarted: true,
+            streamsAreClosed: false
+        ))
+    }
+
     @Test("Continuous stdout cannot evade the monotonic timeout")
     func continuousOutputHonorsTimeout() {
         let semaphore = DispatchSemaphore(value: 0)

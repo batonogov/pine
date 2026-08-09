@@ -49,6 +49,11 @@ nonisolated private final class ExternalProcessSpawnLock: @unchecked Sendable {
     let value = NSLock()
 }
 
+private typealias Pipe2Function = @convention(c) (
+    UnsafeMutablePointer<Int32>?,
+    Int32
+) -> Int32
+
 /// Signature for running an external process. Closure-based so tests can inject
 /// behaviour without implementing a protocol — there is only ever one real impl.
 typealias ProcessRunner = @Sendable (
@@ -134,16 +139,12 @@ nonisolated private func runSpawnedProcess(
     let grace = min(budget, desiredGrace)
     let softDeadline = hardDeadline - grace
 
-    // `pipe2(O_CLOEXEC)` is atomic, but only available on macOS 27. The
-    // deployment-target fallback serializes Pine's process runners across the
-    // short pipe()+fcntl()+spawn window. CLOEXEC_DEFAULT below additionally
-    // prevents unrelated descriptors from entering this child on both OSes.
-    let requiresSpawnLock: Bool
-    if #available(macOS 27.0, *) {
-        requiresSpawnLock = false
-    } else {
-        requiresSpawnLock = true
-    }
+    // `pipe2(O_CLOEXEC)` is atomic, but its declaration is absent from the
+    // macOS 26 SDK. Resolve the macOS 27 symbol dynamically so this source
+    // continues to compile with Xcode 26. The fallback serializes Pine's
+    // process runners across the short pipe()+fcntl()+spawn window.
+    let pipe2 = resolvedPipe2()
+    let requiresSpawnLock = pipe2 == nil
     if requiresSpawnLock {
         ExternalProcessSpawnLock.shared.value.lock()
     }
@@ -157,12 +158,12 @@ nonisolated private func runSpawnedProcess(
     var inputPipe = [Int32](repeating: -1, count: 2)
     var outputPipe = [Int32](repeating: -1, count: 2)
     var errorPipe = [Int32](repeating: -1, count: 2)
-    let inputPipeResult = makeCloseOnExecPipe(&inputPipe)
+    let inputPipeResult = makeCloseOnExecPipe(&inputPipe, pipe2: pipe2)
     let outputPipeResult = inputPipeResult == 0
-        ? makeCloseOnExecPipe(&outputPipe)
+        ? makeCloseOnExecPipe(&outputPipe, pipe2: pipe2)
         : inputPipeResult
     let errorPipeResult = outputPipeResult == 0
-        ? makeCloseOnExecPipe(&errorPipe)
+        ? makeCloseOnExecPipe(&errorPipe, pipe2: pipe2)
         : outputPipeResult
     guard errorPipeResult == 0 else {
         closeDescriptors(inputPipe + outputPipe + errorPipe)
@@ -263,7 +264,13 @@ nonisolated private func runSpawnedProcess(
     var errors = Data()
 
     while true {
-        reapIfExited(childPID, status: &processStatus)
+        let streamsAreClosed = outputDescriptor < 0 && errorDescriptor < 0
+        if formatterShouldAttemptReap(
+            terminationStarted: sentTermination,
+            streamsAreClosed: streamsAreClosed
+        ) {
+            reapIfExited(childPID, status: &processStatus)
+        }
         let drainDeadline = sentTermination ? terminationDeadline : softDeadline
         let outputDrain = drainPipe(
             &outputDescriptor,
@@ -362,10 +369,14 @@ nonisolated private func runSpawnedProcess(
 }
 
 nonisolated private func makeCloseOnExecPipe(
-    _ descriptors: inout [Int32]
+    _ descriptors: inout [Int32],
+    pipe2: Pipe2Function?
 ) -> Int32 {
-    if #available(macOS 27.0, *) {
-        return Darwin.pipe2(&descriptors, O_CLOEXEC) == 0 ? 0 : errno
+    if let pipe2 {
+        let result = descriptors.withUnsafeMutableBufferPointer { buffer in
+            pipe2(buffer.baseAddress, O_CLOEXEC)
+        }
+        return result == 0 ? 0 : errno
     }
 
     guard Darwin.pipe(&descriptors) == 0 else { return errno }
@@ -380,6 +391,28 @@ nonisolated private func makeCloseOnExecPipe(
         }
     }
     return 0
+}
+
+/// Returns the atomic macOS 27 pipe creator without making Xcode 26 resolve a
+/// declaration that does not exist in its SDK.
+nonisolated private func resolvedPipe2() -> Pipe2Function? {
+    guard #available(macOS 27.0, *),
+          let handle = Darwin.dlopen(nil, RTLD_LAZY | RTLD_LOCAL) else {
+        return nil
+    }
+    defer { Darwin.dlclose(handle) }
+    guard let symbol = Darwin.dlsym(handle, "pipe2") else { return nil }
+    return unsafeBitCast(symbol, to: Pipe2Function.self)
+}
+
+/// Consuming a zombie releases its PID/PGID for reuse. During termination the
+/// group leader must therefore remain unreaped until after Pine has sent its
+/// final group signal, even when a descendant keeps a captured pipe open.
+nonisolated func formatterShouldAttemptReap(
+    terminationStarted: Bool,
+    streamsAreClosed: Bool
+) -> Bool {
+    !terminationStarted && streamsAreClosed
 }
 
 nonisolated private func addingWithoutOverflow(
