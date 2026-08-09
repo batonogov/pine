@@ -138,6 +138,59 @@ struct AgentInboxTests {
         #expect(working.rows.map(\.id) == [unread.id, read.id])
     }
 
+    @Test("VoiceOver row labels expose unread state without duplicate agent")
+    func accessibilityLabelExposesUnreadState() {
+        let row = accessibilityRow(seed: 15, title: nil, unread: true)
+        let label = AgentInboxView.accessibilityLabel(
+            for: row,
+            locale: Locale(identifier: "en")
+        )
+
+        #expect(label.contains("Unread"))
+        #expect(label.components(separatedBy: "Codex").count - 1 == 1)
+
+        let readLabel = AgentInboxView.accessibilityLabel(
+            for: accessibilityRow(seed: 16, title: nil, unread: false),
+            locale: Locale(identifier: "en")
+        )
+        #expect(!readLabel.contains("Unread"))
+    }
+
+    @Test("VoiceOver announces only a changed keyboard selection")
+    func accessibilityAnnouncementTracksSelection() {
+        let first = accessibilityRow(
+            seed: 17,
+            title: "Review release",
+            unread: true
+        )
+        let second = accessibilityRow(
+            seed: 18,
+            title: "Run checks",
+            unread: false
+        )
+        let rows = [first, second]
+        let locale = Locale(identifier: "en")
+
+        #expect(AgentInboxView.accessibilityAnnouncement(
+            from: first.id,
+            to: second.id,
+            rows: rows,
+            locale: locale
+        ) == AgentInboxView.accessibilityLabel(for: second, locale: locale))
+        #expect(AgentInboxView.accessibilityAnnouncement(
+            from: second.id,
+            to: second.id,
+            rows: rows,
+            locale: locale
+        ) == nil)
+        #expect(AgentInboxView.accessibilityAnnouncement(
+            from: second.id,
+            to: nil,
+            rows: rows,
+            locale: locale
+        ) == nil)
+    }
+
     @Test("identical startedAt ignores polling timestamp and uses id tiebreak")
     func identicalStartedAtUsesIdTiebreak() throws {
         let started = Date(timeIntervalSince1970: 10_000)
@@ -510,6 +563,32 @@ struct AgentInboxTests {
         task.route.availability = .available
         task.lifecycle = .active
         return task
+    }
+
+    private func accessibilityRow(
+        seed: UInt8,
+        title: String?,
+        unread: Bool
+    ) -> AgentInboxRow {
+        let id = UUID(uuid: (
+            seed, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, seed
+        ))
+        return AgentInboxRow(
+            id: id,
+            section: .working,
+            projectPath: "/tmp/Pine Demo",
+            worktreePath: "/tmp/Pine Demo",
+            title: title,
+            agentName: "Codex",
+            lifecycle: .active,
+            state: .executing,
+            liveness: .live,
+            routeAvailability: .available,
+            startedAt: Date(timeIntervalSince1970: 100),
+            lastVerifiedActivityAt: Date(timeIntervalSince1970: 101),
+            isUnread: unread
+        )
     }
 
     private func project(_ path: String) -> AgentTaskProjectIdentity {

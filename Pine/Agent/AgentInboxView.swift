@@ -5,20 +5,42 @@
 //  Application-level cross-project task inbox (#1305).
 //
 
+import AppKit
 import SwiftUI
 
 @MainActor
 struct AgentInboxView: View {
     let registry: ProjectRegistry
+    let onAccessibilityAnnouncement: (String) -> Void
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @State private var selectedTaskID: UUID?
     @State private var navigationMessage: LocalizedStringKey?
     @FocusState private var hasKeyboardFocus: Bool
 
     private var snapshot: AgentInboxSnapshot {
         AgentInboxSnapshot(tasks: registry.agentTasks.tasks)
+    }
+
+    init(
+        registry: ProjectRegistry,
+        onAccessibilityAnnouncement: @escaping (String) -> Void = { message in
+            NSAccessibility.post(
+                element: NSApp.keyWindow
+                    ?? NSApp.mainWindow
+                    ?? NSApplication.shared,
+                notification: .announcementRequested,
+                userInfo: [
+                    .announcement: message,
+                    .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                ]
+            )
+        }
+    ) {
+        self.registry = registry
+        self.onAccessibilityAnnouncement = onAccessibilityAnnouncement
     }
 
     var body: some View {
@@ -197,7 +219,7 @@ struct AgentInboxView: View {
         }
         .accessibilityIdentifier(AccessibilityID.agentInboxRow(row.id))
         .accessibilityLabel(
-            Text(verbatim: accessibilityLabel(for: row))
+            Text(verbatim: Self.accessibilityLabel(for: row, locale: locale))
         )
         .accessibilityAddTraits(selectedTaskID == row.id ? .isSelected : [])
         .accessibilityHint(
@@ -252,11 +274,28 @@ struct AgentInboxView: View {
     }
 
     private func moveSelection(by delta: Int) {
-        selectedTaskID = AgentKeyboardSelection.moveID(
+        let previousID = selectedTaskID
+        let nextID = AgentKeyboardSelection.moveID(
             from: selectedTaskID,
             by: delta,
             ids: snapshot.rows.map(\.id)
         )
+        guard nextID != previousID else { return }
+        selectedTaskID = nextID
+        announceSelectionChange(from: previousID, to: nextID)
+    }
+
+    private func announceSelectionChange(
+        from previousID: UUID?,
+        to nextID: UUID?
+    ) {
+        guard let announcement = Self.accessibilityAnnouncement(
+            from: previousID,
+            to: nextID,
+            rows: snapshot.rows,
+            locale: locale
+        ) else { return }
+        onAccessibilityAnnouncement(announcement)
     }
 
     private func activateSelection() {
@@ -319,22 +358,7 @@ struct AgentInboxView: View {
     }
 
     private func statusText(for row: AgentInboxRow) -> String {
-        if let liveness = row.liveness, liveness != .live {
-            switch liveness {
-            case .live: break
-            case .stale: return Strings.agentLivenessStale(locale: .current)
-            case .terminated:
-                return Strings.agentLivenessTerminated(locale: .current)
-            }
-        }
-        return switch row.state {
-        case .idle: Strings.agentStateIdle(locale: .current)
-        case .thinking: Strings.agentStateThinking(locale: .current)
-        case .executing: Strings.agentStateExecuting(locale: .current)
-        case .waitingInput: Strings.agentStateWaitingInput(locale: .current)
-        case .done: Strings.agentStateDone(locale: .current)
-        case nil: row.agentName
-        }
+        Self.statusText(for: row, locale: locale)
     }
 
     private func glyph(for row: AgentInboxRow) -> String {
@@ -357,13 +381,62 @@ struct AgentInboxView: View {
         }
     }
 
-    private func accessibilityLabel(for row: AgentInboxRow) -> String {
-        [
-            row.title ?? row.agentName,
-            row.agentName,
-            statusText(for: row),
-            row.projectName,
-            row.worktreeName,
-        ].compactMap { $0 }.joined(separator: ", ")
+    static func accessibilityLabel(
+        for row: AgentInboxRow,
+        locale: Locale = .current
+    ) -> String {
+        var fields: [String] = []
+        if let title = row.title {
+            fields.append(title)
+        }
+        if row.isUnread {
+            fields.append(Strings.agentInboxUnread(locale: locale))
+        }
+        fields.append(row.agentName)
+        fields.append(statusText(for: row, locale: locale))
+        fields.append(row.projectName)
+        if let worktreeName = row.worktreeName {
+            fields.append(worktreeName)
+        }
+        return fields.joined(separator: ", ")
+    }
+
+    /// Returns the spoken row for one explicit selection transition. The
+    /// custom list keeps keyboard focus on its container, so changing the
+    /// visual highlight does not move VoiceOver focus by itself (#1371).
+    static func accessibilityAnnouncement(
+        from previousID: UUID?,
+        to nextID: UUID?,
+        rows: [AgentInboxRow],
+        locale: Locale = .current
+    ) -> String? {
+        guard previousID != nextID,
+              let nextID,
+              let row = rows.first(where: { $0.id == nextID }) else {
+            return nil
+        }
+        return accessibilityLabel(for: row, locale: locale)
+    }
+
+    private static func statusText(
+        for row: AgentInboxRow,
+        locale: Locale
+    ) -> String {
+        if let liveness = row.liveness, liveness != .live {
+            switch liveness {
+            case .live: break
+            case .stale: return Strings.agentLivenessStale(locale: locale)
+            case .terminated:
+                return Strings.agentLivenessTerminated(locale: locale)
+            }
+        }
+        return switch row.state {
+        case .idle: Strings.agentStateIdle(locale: locale)
+        case .thinking: Strings.agentStateThinking(locale: locale)
+        case .executing: Strings.agentStateExecuting(locale: locale)
+        case .waitingInput: Strings.agentStateWaitingInput(locale: locale)
+        case .done: Strings.agentStateDone(locale: locale)
+        case nil: row.agentName
+        }
     }
 }

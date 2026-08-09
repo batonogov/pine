@@ -64,6 +64,7 @@ jobs:
           shopt -s nullglob
           NAMED=(
             assets/screenshot-welcome.png
+            assets/screenshot-agent-inbox.png
             assets/screenshot-editor.png
             assets/screenshot-terminal.png
             assets/screenshot-markdown.png

@@ -11,6 +11,17 @@ import Testing
 @Suite("Agent Completion Brief")
 @MainActor
 struct AgentCompletionBriefTests {
+    @Test("read-only agent sheets expose Close instead of Cancel")
+    func readOnlySheetCloseSemantics() {
+        let locale = Locale(identifier: "en")
+
+        #expect(AgentReadOnlySheetChrome.closeLabel(locale: locale) == "Close")
+        #expect(
+            AgentReadOnlySheetChrome.closeLabel(locale: locale)
+                != Strings.dialogCancel(locale: locale)
+        )
+    }
+
     @Test("Terminal text never manufactures a verified test result")
     func terminalTextIsNotVerified() {
         let sessionID = id(1)

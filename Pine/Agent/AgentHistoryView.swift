@@ -333,7 +333,12 @@ struct AgentHistoryView: View {
                     .font(.system(size: 16))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Strings.dialogCancel)
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel(
+                Text(verbatim: AgentReadOnlySheetChrome.closeLabel(
+                    locale: locale
+                ))
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
