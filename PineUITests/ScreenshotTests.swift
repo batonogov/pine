@@ -147,6 +147,30 @@ final class ScreenshotTests: PineUITestCase {
 
     // MARK: - Terminal
 
+    func testMarketingShellFixtureIsProjectScopedAndCrossShell() throws {
+        projectURL = try createTempProject(projectName: "Pine Demo")
+        let projectURL = try XCTUnwrap(projectURL)
+
+        let configURL = try configureMarketingShell(for: projectURL)
+
+        XCTAssertEqual(
+            configURL.deletingLastPathComponent().standardizedFileURL,
+            projectURL.standardizedFileURL
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: configURL.appendingPathComponent(".zshrc").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: configURL.appendingPathComponent(".bash_profile").path
+            )
+        )
+        XCTAssertEqual(app.launchEnvironment["PS1"], "pine@mac \\W $ ")
+        XCTAssertEqual(app.launchEnvironment["PROMPT"], "pine@mac %1~ %# ")
+    }
+
     func testCaptureTerminal() throws {
         projectURL = try createTempProject(files: [
             "main.swift": "print(\"Hello, Pine!\")\n"
@@ -180,21 +204,46 @@ final class ScreenshotTests: PineUITestCase {
         attachScreenshot(screenshot, name: "screenshot-terminal")
     }
 
-    /// Keeps personal dotfiles and temporary paths out of the marketing capture.
-    private func configureMarketingShell(for projectURL: URL) throws {
-        let configURL = projectURL.deletingLastPathComponent()
-            .appendingPathComponent("zsh", isDirectory: true)
+    /// Keeps personal dotfiles, runner identity, and temporary paths out of
+    /// the marketing capture. GitHub's macOS account may still use bash while
+    /// developer machines normally use zsh, so configure both login shells.
+    @discardableResult
+    private func configureMarketingShell(for projectURL: URL) throws -> URL {
+        let configURL = projectURL.appendingPathComponent(
+            ".pine-marketing-shell",
+            isDirectory: true
+        )
         try FileManager.default.createDirectory(at: configURL, withIntermediateDirectories: true)
-        let configuration = """
-        precmd() { print -Pn '\\e]0;Terminal 1\\a' }
-        PROMPT='%F{green}➜%f  %F{cyan}%1~%f '
-        """
-        try configuration.write(
+
+        let zshConfiguration = #"""
+        precmd() { print -Pn '\e]0;Terminal 1\a' }
+        PROMPT='%F{green}pine@mac%f %F{cyan}%1~%f %# '
+        """#
+        try zshConfiguration.write(
             to: configURL.appendingPathComponent(".zshrc"),
             atomically: true,
             encoding: .utf8
         )
+
+        let bashConfiguration = #"""
+        export BASH_SILENCE_DEPRECATION_WARNING=1
+        PROMPT_COMMAND='printf "\033]0;Terminal 1\007"'
+        PS1='\[\e[32m\]pine@mac\[\e[0m\] \[\e[36m\]\W\[\e[0m\] \$ '
+        """#
+        try bashConfiguration.write(
+            to: configURL.appendingPathComponent(".bash_profile"),
+            atomically: true,
+            encoding: .utf8
+        )
+
         app.launchEnvironment["ZDOTDIR"] = configURL.path
+        app.launchEnvironment["HOME"] = configURL.path
+        app.launchEnvironment["BASH_SILENCE_DEPRECATION_WARNING"] = "1"
+        // Environment fallbacks keep the prompt deterministic even if a
+        // runner-specific login shell skips its user startup file.
+        app.launchEnvironment["PS1"] = "pine@mac \\W $ "
+        app.launchEnvironment["PROMPT"] = "pine@mac %1~ %# "
+        return configURL
     }
 
     // MARK: - Sidebar (file tree)
