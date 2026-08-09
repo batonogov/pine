@@ -763,19 +763,30 @@ nonisolated enum TerminationSaveCoordinator {
                     retainedLeaf: stagingLeaf
                 )
                 beforeRecoveryCleanup?()
+                guard try installedMetadataMatches(
+                    stagingDescriptor,
+                    expected: expected,
+                    deadlineNanoseconds: deadlineNanoseconds
+                ),
+                      try installedContentMatches(
+                          stagingDescriptor,
+                          staged: staged,
+                          deadlineNanoseconds: deadlineNanoseconds
+                      ),
+                      regularFileMatches(
+                          parentDescriptor: parentDescriptor,
+                          leaf: destinationLeaf,
+                          device: staged.stagingDevice,
+                          inode: staged.stagingInode
+                      )
+                else {
+                    throw CocoaError(.fileWriteFileExists)
+                }
                 try verifyPinnedParentPath(
                     staged,
                     descriptor: parentDescriptor,
                     retainedLeaf: stagingLeaf
                 )
-                guard regularFileMatches(
-                    parentDescriptor: parentDescriptor,
-                    leaf: destinationLeaf,
-                    device: staged.stagingDevice,
-                    inode: staged.stagingInode
-                ) else {
-                    throw CocoaError(.fileWriteFileExists)
-                }
                 let cleanupSnapshot = try destinationSnapshot(
                     destinationDescriptor,
                     deadlineNanoseconds: deadlineNanoseconds
@@ -892,6 +903,7 @@ nonisolated enum TerminationSaveCoordinator {
                 throw installError
             }
             do {
+                try synchronizeDirectory(parentDescriptor)
                 afterDestinationPublication?()
                 try applyMissingDestinationMetadata(
                     parentDescriptor: parentDescriptor,
@@ -1108,6 +1120,33 @@ nonisolated enum TerminationSaveCoordinator {
                   parentDescriptor: parentDescriptor,
                   leaf: stagingLeaf,
                   status: rollback.displacedStatus
+              ) else {
+            throw retainedRecoveryError(
+                at: [actualDestinationURL, actualStagingURL],
+                reason: "The atomic save swap could not be rolled back"
+            )
+        }
+        do {
+            try resecureStaging(
+                stagingDescriptor,
+                at: actualDestinationURL
+            )
+        } catch {
+            throw retainedRecoveryError(
+                at: [actualDestinationURL, actualStagingURL],
+                reason: error.localizedDescription
+            )
+        }
+        guard regularFileMatches(
+            parentDescriptor: parentDescriptor,
+            leaf: destinationLeaf,
+            device: staged.stagingDevice,
+            inode: staged.stagingInode
+        ),
+              pathMatches(
+                  parentDescriptor: parentDescriptor,
+                  leaf: stagingLeaf,
+                  status: rollback.displacedStatus
               ),
               renameSwap(
                   parentDescriptor: parentDescriptor,
@@ -1119,8 +1158,14 @@ nonisolated enum TerminationSaveCoordinator {
                 reason: "The atomic save swap could not be rolled back"
             )
         }
-        try resecureStaging(stagingDescriptor, at: actualStagingURL)
-        try synchronizeDirectory(parentDescriptor)
+        do {
+            try synchronizeDirectory(parentDescriptor)
+        } catch {
+            throw retainedRecoveryError(
+                at: [actualDestinationURL, actualStagingURL],
+                reason: error.localizedDescription
+            )
+        }
     }
 
     private static func rollbackPublishedNewDestination(
@@ -1130,6 +1175,25 @@ nonisolated enum TerminationSaveCoordinator {
         stagingLeaf: String,
         destinationLeaf: String
     ) throws {
+        let actualStagingURL = retainedArtifactURL(
+            parentDescriptor: parentDescriptor,
+            leaf: stagingLeaf,
+            fallback: staged.stagingURL
+        )
+        let actualDestinationURL = retainedArtifactURL(
+            parentDescriptor: parentDescriptor,
+            leaf: destinationLeaf,
+            fallback: staged.request.destination
+        )
+        guard regularFileMatches(
+            parentDescriptor: parentDescriptor,
+            leaf: destinationLeaf,
+            device: staged.stagingDevice,
+            inode: staged.stagingInode
+        ) else {
+            throw retainedRecoveryError(at: actualDestinationURL)
+        }
+        try resecureStaging(stagingDescriptor, at: actualDestinationURL)
         guard regularFileMatches(
             parentDescriptor: parentDescriptor,
             leaf: destinationLeaf,
@@ -1141,10 +1205,16 @@ nonisolated enum TerminationSaveCoordinator {
                   source: destinationLeaf,
                   destination: stagingLeaf
               ) == 0 else {
-            throw retainedRecoveryError(at: staged.request.destination)
+            throw retainedRecoveryError(at: actualDestinationURL)
         }
-        try resecureStaging(stagingDescriptor, at: staged.stagingURL)
-        try synchronizeDirectory(parentDescriptor)
+        do {
+            try synchronizeDirectory(parentDescriptor)
+        } catch {
+            throw retainedRecoveryError(
+                at: actualStagingURL,
+                reason: error.localizedDescription
+            )
+        }
     }
 
     private static func retainedRecoveryError(

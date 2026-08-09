@@ -23,8 +23,9 @@ nonisolated struct TerminalForegroundProcessIdentity: Hashable, Sendable {
 }
 
 nonisolated struct TerminalProcessStartIdentity: Hashable, Sendable {
-    let seconds: Int64
-    let microseconds: Int32
+    let processID: pid_t
+    let seconds: UInt64
+    let microseconds: UInt64
 }
 
 /// Per-tab coverage captured when a destructive terminal close/stop is
@@ -71,11 +72,15 @@ struct TerminalTabCloseAuthorization {
         for tab in tabs {
             if let sessionID = tab.agentSession?.id {
                 coverage[tab.id] = .agentSession(sessionID: sessionID)
-            } else if tab.foregroundProcessID > 0 {
+            } else {
+                let processGroupID = tab.foregroundProcessID
+                guard processGroupID > 0 else { continue }
                 let identity = TerminalForegroundProcessIdentity(
                     tabID: tab.id,
-                    processGroupID: tab.foregroundProcessID,
-                    startIdentity: tab.foregroundProcessStartIdentity
+                    processGroupID: processGroupID,
+                    startIdentity: tab.foregroundProcessIdentity(
+                        in: processGroupID
+                    )
                 )
                 coverage[tab.id] = .foregroundProcess(identity)
                 foregroundIdentities.insert(identity)
@@ -146,7 +151,10 @@ struct TerminalTabCloseAuthorization {
                 if current > 0 {
                     guard current == identity.processGroupID,
                           let capturedStart = identity.startIdentity,
-                          tab.foregroundProcessStartIdentity == capturedStart
+                          tab.foregroundProcessIdentityStillMatches(
+                              capturedStart,
+                              in: current
+                          )
                     else { return false }
                 }
             }

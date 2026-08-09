@@ -1060,20 +1060,29 @@ final class ProjectManager {
             )
         }
         guard !cleanupCandidates.isEmpty else { return .cleaned }
-        let timedOutArtifacts = cleanupCandidates.map(\.stagingURL)
         let timedOut = TerminationSaveCleanupResult.failed(
             message: "Termination save cleanup exceeded its deadline",
-            retainedArtifacts: timedOutArtifacts
+            retainedArtifacts: []
         )
         guard DispatchTime.now().uptimeNanoseconds
                 < deadline.uptimeNanoseconds else {
             return timedOut
         }
         let cleaner = terminationSaveCleaner
+        let lateFailureHandler = terminationSaveLateFailureHandler
         return await withCheckedContinuation { continuation in
             let resolver = TerminationAwaitResolver(continuation)
             let operationTask = Task.detached(priority: .utility) {
-                resolver.resolve(cleaner(cleanupCandidates))
+                let result = cleaner(cleanupCandidates)
+                guard !resolver.resolve(result),
+                      case .failed(
+                          let message,
+                          let retainedArtifacts
+                      ) = result,
+                      !retainedArtifacts.isEmpty else {
+                    return
+                }
+                lateFailureHandler(message, retainedArtifacts)
             }
             Self.terminationInstallDeadlineQueue.asyncAfter(
                 deadline: deadline

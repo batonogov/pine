@@ -1292,14 +1292,11 @@ struct WindowLifecycleTests {
         )
 
         guard case .failed(let message, let retainedArtifacts) = result else {
-            Issue.record("Expected deadline cleanup to retain both staged files")
+            Issue.record("Expected deadline cleanup failure")
             return
         }
         #expect(message == "Termination save cleanup exceeded its deadline")
-        #expect(retainedArtifacts.count == 2)
-        #expect(retainedArtifacts.allSatisfy {
-            $0.lastPathComponent.hasPrefix(".pine-save-")
-        })
+        #expect(retainedArtifacts.isEmpty)
         #expect(installer.installCount == 1)
         #expect(
             try String(contentsOf: firstURL, encoding: .utf8)
@@ -1315,6 +1312,132 @@ struct WindowLifecycleTests {
         #expect(firstAttributes[.posixPermissions] as? Int == 0o750)
         #expect(tabs.tabs.first(where: { $0.fileURL == firstURL })?.isDirty == true)
         #expect(tabs.tabs.first(where: { $0.fileURL == secondURL })?.isDirty == true)
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func cleanupTimeoutDoesNotClaimArtifactThatWorkerLaterDeletes() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// captured dirty", in: project)
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready save plan")
+            return
+        }
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+        let stagedPlan = try #require(staged.1)
+        let cleaner = BlockingTerminationCleanerProbe { staged in
+            TerminationSaveCoordinator.cleanup(staged)
+        }
+        project.terminationSaveCleaner = { staged in
+            cleaner.clean(staged)
+        }
+
+        let cleanupTask = Task {
+            await project.cleanupTerminationSavePlan(
+                stagedPlan,
+                until: .now() + .milliseconds(50)
+            )
+        }
+        #expect(await cleaner.waitUntilStarted())
+        let result = await cleanupTask.value
+
+        guard case .failed(let message, let retainedArtifacts) = result else {
+            Issue.record("Expected cleanup deadline failure")
+            cleaner.release()
+            return
+        }
+        #expect(message == "Termination save cleanup exceeded its deadline")
+        #expect(retainedArtifacts.isEmpty)
+        cleaner.release()
+        #expect(await cleaner.waitUntilReturned())
+        #expect(cleaner.stagingURLs.allSatisfy {
+            !FileManager.default.fileExists(atPath: $0.path)
+        })
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test func cleanupTimeoutReportsActualLateRetainedArtifact() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let retainedArtifact = dir.appendingPathComponent(
+            ".pine-save-cleanup-retained"
+        )
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// captured dirty", in: project)
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready save plan")
+            return
+        }
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+        let stagedPlan = try #require(staged.1)
+        let cleaner = BlockingTerminationCleanerProbe { staged in
+            guard let stagingURL = staged.first?.stagingURL else {
+                return .cleaned
+            }
+            do {
+                try FileManager.default.moveItem(
+                    at: stagingURL,
+                    to: retainedArtifact
+                )
+                return .failed(
+                    message: "late cleanup retained recovery",
+                    retainedArtifacts: [retainedArtifact]
+                )
+            } catch {
+                return .failed(
+                    message: error.localizedDescription,
+                    retainedArtifacts: []
+                )
+            }
+        }
+        let report = TerminationLateFailureReportProbe()
+        project.terminationSaveCleaner = { staged in
+            cleaner.clean(staged)
+        }
+        project.terminationSaveLateFailureHandler = { message, artifacts in
+            report.record(message: message, artifacts: artifacts)
+        }
+
+        let cleanupTask = Task {
+            await project.cleanupTerminationSavePlan(
+                stagedPlan,
+                until: .now() + .milliseconds(50)
+            )
+        }
+        #expect(await cleaner.waitUntilStarted())
+        let result = await cleanupTask.value
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("Expected cleanup deadline failure")
+            cleaner.release()
+            return
+        }
+        #expect(retainedArtifacts.isEmpty)
+
+        cleaner.release()
+        #expect(await cleaner.waitUntilReturned())
+        #expect(await report.waitUntilRecorded())
+        #expect(report.message == "late cleanup retained recovery")
+        #expect(report.artifacts == [retainedArtifact])
+        #expect(FileManager.default.fileExists(atPath: retainedArtifact.path))
         await project.workspace.waitForLoadingComplete()
     }
 
@@ -1359,15 +1482,11 @@ struct WindowLifecycleTests {
 
         let result = await commit.value
         guard case .failed(let message, let retainedArtifacts) = result else {
-            Issue.record("Expected timed-out cleanup to report its retained inode")
+            Issue.record("Expected timed-out cleanup failure")
             return
         }
         #expect(message == "Termination save cleanup exceeded its deadline")
-        #expect(retainedArtifacts.count == 1)
-        #expect(
-            retainedArtifacts.first?.lastPathComponent
-                .hasPrefix(".pine-save-") == true
-        )
+        #expect(retainedArtifacts.isEmpty)
         #expect(
             try String(contentsOf: file, encoding: .utf8)
                 == "// captured by termination\n"
@@ -2376,6 +2495,111 @@ nonisolated private final class DelayedTerminationInstallerProbe:
             message: "The outer deadline did not win",
             retainedArtifacts: []
         )
+    }
+}
+
+nonisolated private final class BlockingTerminationCleanerProbe:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+    private let cleanup: @Sendable (
+        [TerminationStagedSave]
+    ) -> TerminationSaveCleanupResult
+    private var started = false
+    private var returned = false
+    private var recordedStagingURLs: [URL] = []
+
+    var stagingURLs: [URL] { lock.withLock { recordedStagingURLs } }
+
+    init(
+        cleanup: @escaping @Sendable (
+            [TerminationStagedSave]
+        ) -> TerminationSaveCleanupResult
+    ) {
+        self.cleanup = cleanup
+    }
+
+    func clean(
+        _ staged: [TerminationStagedSave]
+    ) -> TerminationSaveCleanupResult {
+        lock.withLock {
+            recordedStagingURLs = staged.map(\.stagingURL)
+            started = true
+        }
+        releaseSemaphore.wait()
+        let result = cleanup(staged)
+        lock.withLock { returned = true }
+        return result
+    }
+
+    func release() {
+        releaseSemaphore.signal()
+    }
+
+    func waitUntilStarted(
+        maximumDuration: Duration = .seconds(5)
+    ) async -> Bool {
+        await wait(
+            until: { self.lock.withLock { self.started } },
+            maximumDuration: maximumDuration
+        )
+    }
+
+    func waitUntilReturned(
+        maximumDuration: Duration = .seconds(5)
+    ) async -> Bool {
+        await wait(
+            until: { self.lock.withLock { self.returned } },
+            maximumDuration: maximumDuration
+        )
+    }
+
+    private func wait(
+        until condition: () -> Bool,
+        maximumDuration: Duration
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: maximumDuration)
+        while !condition(), clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
+        }
+        return condition()
+    }
+}
+
+nonisolated private final class TerminationLateFailureReportProbe:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedMessage: String?
+    private var recordedArtifacts: [URL] = []
+
+    var message: String? { lock.withLock { recordedMessage } }
+    var artifacts: [URL] { lock.withLock { recordedArtifacts } }
+
+    func record(message: String, artifacts: [URL]) {
+        lock.withLock {
+            recordedMessage = message
+            recordedArtifacts = artifacts
+        }
+    }
+
+    func waitUntilRecorded(
+        maximumDuration: Duration = .seconds(5)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: maximumDuration)
+        while message == nil, clock.now < deadline {
+            do {
+                try await clock.sleep(for: .milliseconds(1))
+            } catch {
+                return false
+            }
+        }
+        return message != nil
     }
 }
 

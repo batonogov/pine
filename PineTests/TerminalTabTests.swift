@@ -151,6 +151,86 @@ struct TerminalTabTests {
         ) == nil)
     }
 
+    @Test("PTY descriptor identity preserves native signed device values")
+    func ptyDescriptorIdentityAcceptsSignedDevice() throws {
+        var controllerDescriptor: Int32 = -1
+        var peerDescriptor: Int32 = -1
+        try #require(Darwin.openpty(
+            &controllerDescriptor,
+            &peerDescriptor,
+            nil,
+            nil,
+            nil
+        ) == 0)
+        defer {
+            Darwin.close(controllerDescriptor)
+            Darwin.close(peerDescriptor)
+        }
+
+        let controllerIdentity = try #require(
+            AcknowledgedPTYWriter.descriptorIdentity(controllerDescriptor)
+        )
+        let peerIdentity = try #require(
+            AcknowledgedPTYWriter.descriptorIdentity(peerDescriptor)
+        )
+        #expect(controllerIdentity.fileType == mode_t(S_IFCHR))
+        #expect(peerIdentity.fileType == mode_t(S_IFCHR))
+
+        // This value exercised the checked-conversion trap independently of
+        // which PTY device number a particular macOS runtime assigns.
+        let signedIdentity = AcknowledgedPTYWriter.DescriptorIdentity(
+            device: dev_t(-1),
+            inode: ino_t(1),
+            fileType: mode_t(S_IFCHR)
+        )
+        #expect(signedIdentity.device == -1)
+    }
+
+    @Test("foreground identity falls back to a live process-group member")
+    @MainActor
+    func leaderlessForegroundGroupUsesLiveMember() throws {
+        let subprocess = try UserTaskSubprocess(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            command: "trap '' HUP; sleep 30 & wait",
+            workingDirectory: nil
+        )
+        let processGroupID = subprocess.processGroup.identifier
+        var didReapLeader = false
+        defer {
+            _ = Darwin.kill(-processGroupID, SIGKILL)
+            if !didReapLeader {
+                _ = subprocess.waitForExit()
+            }
+        }
+
+        let memberDeadline = DispatchTime.now() + 2
+        var memberIDs: [pid_t] = []
+        repeat {
+            if case .known(let processIDs) =
+                UserTaskProcessInspector.processIDs(inGroup: processGroupID) {
+                memberIDs = processIDs.filter { $0 != processGroupID }
+            }
+            if !memberIDs.isEmpty { break }
+            Darwin.usleep(10_000)
+        } while DispatchTime.now() < memberDeadline
+        try #require(!memberIDs.isEmpty)
+
+        try #require(Darwin.kill(processGroupID, SIGKILL) == 0)
+        _ = subprocess.waitForExit()
+        didReapLeader = true
+
+        let tab = TerminalTab(name: "leaderless group")
+        let identity = try #require(
+            tab.foregroundProcessIdentity(in: processGroupID)
+        )
+        #expect(identity.processID != processGroupID)
+        #expect(memberIDs.contains(identity.processID))
+        #expect(tab.foregroundProcessIdentityStillMatches(
+            identity,
+            in: processGroupID
+        ))
+    }
+
     @Test @MainActor func terminalTabHashable() {
         let tab = TerminalTab(name: "test")
         var set: Set<TerminalTab> = [tab, tab]

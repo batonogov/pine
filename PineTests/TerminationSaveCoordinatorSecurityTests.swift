@@ -399,6 +399,76 @@ struct TerminationSaveCoordinatorSecurityTests {
             try String(contentsOf: staged.stagingURL, encoding: .utf8)
                 == "external replacement"
         )
+        #expect(
+            (try fileStatus(at: staged.stagingURL).st_mode & 0o7777) == 0o600
+        )
+        #expect(try extendedACLText(at: staged.stagingURL) == "")
+        #expect(
+            Set(try extendedAttributeNames(at: staged.stagingURL))
+                .isSubset(of: ["com.apple.provenance"])
+        )
+    }
+
+    @Test func preCleanupContentMutationRollsBackPrivately() async throws {
+        let directory = try makeDirectory()
+        defer { remove(directory) }
+        let destination = directory.appendingPathComponent("cleanup-raced.txt")
+        try Data("authorized original".utf8).write(to: destination)
+        #expect(Darwin.chmod(destination.path, mode_t(0o644)) == 0)
+        try setExtendedAttribute(
+            at: destination,
+            name: "com.pine.tests.public",
+            value: Data("public metadata".utf8)
+        )
+        let staged = try await stage(
+            content: "pine staged bytes",
+            destination: destination
+        )
+
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            beforeRecoveryCleanup: {
+                let descriptor = Darwin.open(
+                    destination.path,
+                    O_WRONLY | O_TRUNC | O_CLOEXEC
+                )
+                guard descriptor >= 0 else { return }
+                defer { Darwin.close(descriptor) }
+                let bytes = Data("late external bytes".utf8)
+                _ = bytes.withUnsafeBytes {
+                    Darwin.write(descriptor, $0.baseAddress, $0.count)
+                }
+            }
+        )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("A pre-cleanup mutation must fail closed")
+            return
+        }
+        #expect(retainedArtifacts.contains(staged.stagingURL))
+        #expect(
+            try String(contentsOf: destination, encoding: .utf8)
+                == "authorized original"
+        )
+        #expect(
+            try extendedAttribute(
+                at: destination,
+                name: "com.pine.tests.public"
+            ) == Data("public metadata".utf8)
+        )
+        #expect(
+            try String(contentsOf: staged.stagingURL, encoding: .utf8)
+                == "late external bytes"
+        )
+        #expect(
+            (try fileStatus(at: staged.stagingURL).st_mode & 0o7777) == 0o600
+        )
+        #expect(try extendedACLText(at: staged.stagingURL) == "")
+        #expect(
+            Set(try extendedAttributeNames(at: staged.stagingURL))
+                .isSubset(of: ["com.apple.provenance"])
+        )
     }
 
     @Test func displacedOriginalMutationIsRetainedInsteadOfDeleted() async throws {
@@ -475,6 +545,14 @@ struct TerminationSaveCoordinatorSecurityTests {
         #expect(
             try String(contentsOf: staged.stagingURL, encoding: .utf8)
                 == "external new bytes"
+        )
+        #expect(
+            (try fileStatus(at: staged.stagingURL).st_mode & 0o7777) == 0o600
+        )
+        #expect(try extendedACLText(at: staged.stagingURL) == "")
+        #expect(
+            Set(try extendedAttributeNames(at: staged.stagingURL))
+                .isSubset(of: ["com.apple.provenance"])
         )
     }
 

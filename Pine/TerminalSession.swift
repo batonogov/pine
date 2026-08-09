@@ -13,9 +13,12 @@ import os
 
 nonisolated enum AcknowledgedPTYWriter {
     struct DescriptorIdentity: Equatable, Sendable {
-        let device: UInt64
-        let inode: UInt64
-        let fileType: UInt16
+        // Preserve Darwin's native signedness. PTY device identifiers may use
+        // the high bit of `dev_t`; a checked conversion to UInt64 traps on
+        // those perfectly valid descriptors (notably on macOS 27).
+        let device: dev_t
+        let inode: ino_t
+        let fileType: mode_t
     }
 
     static func write(_ bytes: [UInt8], to borrowedDescriptor: Int32) async -> Bool {
@@ -63,9 +66,9 @@ nonisolated enum AcknowledgedPTYWriter {
         var status = stat()
         guard Darwin.fstat(descriptor, &status) == 0 else { return nil }
         return DescriptorIdentity(
-            device: UInt64(status.st_dev),
-            inode: UInt64(status.st_ino),
-            fileType: UInt16(status.st_mode & S_IFMT)
+            device: status.st_dev,
+            inode: status.st_ino,
+            fileType: status.st_mode & S_IFMT
         )
     }
 
@@ -2137,30 +2140,69 @@ final class TerminalTab: Identifiable, Hashable {
         return foregroundPgid
     }
 
-    var foregroundProcessStartIdentity: TerminalProcessStartIdentity? {
-        let processGroupID = foregroundProcessID
-        guard processGroupID > 0 else { return nil }
+    func foregroundProcessIdentity(
+        in processGroupID: pid_t
+    ) -> TerminalProcessStartIdentity? {
+        guard processGroupID > 1 else { return nil }
         #if DEBUG
         if foregroundProcessIDOverrideForTesting != nil {
             return foregroundStartOverrideForTesting
-                ?? TerminalProcessStartIdentity(seconds: 0, microseconds: 0)
         }
         #endif
-        var info = proc_bsdinfo()
-        let expectedSize = Int32(MemoryLayout<proc_bsdinfo>.size)
-        guard proc_pidinfo(
-            processGroupID,
-            PROC_PIDTBSDINFO,
-            0,
-            &info,
-            expectedSize
-        ) == expectedSize,
-              info.pbi_pid == UInt32(processGroupID) else {
+
+        let processIDs: [pid_t]
+        switch UserTaskProcessInspector.processIDs(inGroup: processGroupID) {
+        case .known(let members):
+            // Prefer the leader while it exists, but retain a concrete live
+            // member as the generation witness after a pipeline's leader has
+            // exited and been reaped.
+            processIDs = Array(Set(members + [processGroupID])).sorted {
+                if $0 == processGroupID { return true }
+                if $1 == processGroupID { return false }
+                return $0 < $1
+            }
+        case .unknown:
+            processIDs = [processGroupID]
+        }
+
+        return processIDs.lazy.compactMap { processID in
+            Self.processIdentity(
+                processID: processID,
+                processGroupID: processGroupID
+            )
+        }.first
+    }
+
+    func foregroundProcessIdentityStillMatches(
+        _ identity: TerminalProcessStartIdentity,
+        in processGroupID: pid_t
+    ) -> Bool {
+        #if DEBUG
+        if foregroundProcessIDOverrideForTesting != nil {
+            return foregroundStartOverrideForTesting == identity
+        }
+        #endif
+        return Self.processIdentity(
+            processID: identity.processID,
+            processGroupID: processGroupID
+        ) == identity
+    }
+
+    nonisolated private static func processIdentity(
+        processID: pid_t,
+        processGroupID: pid_t
+    ) -> TerminalProcessStartIdentity? {
+        guard processID > 1,
+              Darwin.getpgid(processID) == processGroupID,
+              let identity = UserTaskProcessInspector.identity(for: processID),
+              Darwin.getpgid(processID) == processGroupID,
+              UserTaskProcessInspector.identity(for: processID) == identity else {
             return nil
         }
         return TerminalProcessStartIdentity(
-            seconds: Int64(info.pbi_start_tvsec),
-            microseconds: Int32(info.pbi_start_tvusec)
+            processID: identity.processID,
+            seconds: identity.startSeconds,
+            microseconds: identity.startMicroseconds
         )
     }
 
