@@ -67,12 +67,22 @@ struct EditorTab: Identifiable, Hashable {
     var content: String {
         didSet { contentVersion &+= 1 }
     }
-    var savedContent: String
+    /// Last content known to be durable on disk. Every baseline replacement
+    /// advances `persistenceGeneration`, fencing delayed filesystem callbacks
+    /// from regressing a newer successful save or reload.
+    var savedContent: String {
+        didSet { persistenceGeneration &+= 1 }
+    }
     var kind: TabKind
 
     /// Monotonic counter incremented on every content mutation.
     /// Used for O(1) change detection instead of O(n) string comparison.
     private(set) var contentVersion: UInt64 = 0
+
+    /// Monotonic counter incremented whenever the durable-content baseline is
+    /// replaced. Unlike `contentVersion`, this advances even when a successful
+    /// save writes text identical to the current buffer.
+    private(set) var persistenceGeneration: UInt64 = 0
 
     // Per-tab editor state — preserved across tab switches.
     var cursorPosition: Int = 0
@@ -212,6 +222,7 @@ struct EditorTab: Identifiable, Hashable {
         copy.isPinned = source.isPinned
         copy.cachedHighlightResult = source.cachedHighlightResult
         copy.encoding = source.encoding
+        copy.persistenceGeneration = source.persistenceGeneration
         copy.recomputeContentCaches()
         return copy
     }

@@ -11,56 +11,144 @@ import SwiftUI
 import SwiftTerm
 import os
 
-nonisolated enum AcknowledgedPTYWriter {
-    static func write(_ bytes: [UInt8], to borrowedDescriptor: Int32) async -> Bool {
-        await write(
-            bytes,
-            to: borrowedDescriptor,
-            didAcquireDescriptor: {}
-        )
+/// Owns the exact PTY open-file description Pine received from SwiftTerm.
+///
+/// A `(device, inode, file type)` snapshot is not a lifetime token: after
+/// SwiftTerm closes its public `childfd`, another PTY can reuse both the file
+/// descriptor and the same `stat` values. Duplicating once, immediately after
+/// `startProcess`, pins the original open-file description instead. Every
+/// acknowledged write is then duplicated from this Pine-owned descriptor,
+/// never from SwiftTerm's later, borrowed integer.
+nonisolated final class PinePTYDescriptorLease: @unchecked Sendable {
+    final class WriteDescriptor: @unchecked Sendable {
+        let rawValue: Int32
+        private let owner: PinePTYDescriptorLease
+        private let lock = NSLock()
+        private var isFinished = false
+
+        fileprivate init(
+            rawValue: Int32,
+            owner: PinePTYDescriptorLease
+        ) {
+            self.rawValue = rawValue
+            self.owner = owner
+        }
+
+        func finish() {
+            lock.lock()
+            guard !isFinished else {
+                lock.unlock()
+                return
+            }
+            isFinished = true
+            lock.unlock()
+            owner.releaseWriteDescriptor(rawValue)
+        }
+
+        deinit {
+            finish()
+        }
     }
 
-    #if DEBUG
-    static func writeForTesting(
-        _ bytes: [UInt8],
-        to borrowedDescriptor: Int32,
-        didAcquireDescriptor: @escaping @Sendable () -> Void
-    ) async -> Bool {
-        await write(
-            bytes,
-            to: borrowedDescriptor,
-            didAcquireDescriptor: didAcquireDescriptor
-        )
-    }
-    #endif
+    private let lock = NSLock()
+    private var ownedDescriptor: Int32 = -1
+    private var writeDescriptors: Set<Int32> = []
+    private var isInvalidated = false
 
-    static func acknowledgesCompletion(
-        error: Int32,
-        remainingByteCount: Int
-    ) -> Bool {
-        error == 0 && remainingByteCount == 0
-    }
-
-    private static func write(
-        _ bytes: [UInt8],
-        to borrowedDescriptor: Int32,
-        didAcquireDescriptor: @escaping @Sendable () -> Void
-    ) async -> Bool {
+    /// Pins the borrowed descriptor exactly once for this terminal lifecycle.
+    /// The duplicate happens synchronously before `startIfNeeded()` returns.
+    func acquire(borrowing borrowedDescriptor: Int32) -> Bool {
+        guard borrowedDescriptor >= 0 else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isInvalidated, ownedDescriptor < 0 else { return false }
         let descriptor = Darwin.fcntl(
             borrowedDescriptor,
             F_DUPFD_CLOEXEC,
             0
         )
         guard descriptor >= 0 else { return false }
-        defer { Darwin.close(descriptor) }
-        didAcquireDescriptor()
+        ownedDescriptor = descriptor
+        return true
+    }
+
+    /// Duplicates only the Pine-owned lease, synchronously, before an async
+    /// write can suspend. The returned token closes exactly once even when
+    /// terminal teardown invalidates all outstanding writes first.
+    func acquireWriteDescriptor() -> WriteDescriptor? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isInvalidated, ownedDescriptor >= 0 else { return nil }
+        let descriptor = Darwin.fcntl(
+            ownedDescriptor,
+            F_DUPFD_CLOEXEC,
+            0
+        )
+        guard descriptor >= 0 else { return nil }
+        writeDescriptors.insert(descriptor)
+        return WriteDescriptor(rawValue: descriptor, owner: self)
+    }
+
+    /// Closes the persistent lease and rejects new writes before SwiftTerm
+    /// terminates its process. An already-acquired write descriptor remains
+    /// owned until its DispatchIO completion: closing it early would let the
+    /// integer be reused and recreate the very ABA write-redirection hazard
+    /// this lease prevents. Those small launch writes are the only bounded
+    /// lifetime by which Pine can extend the PTY master after invalidation.
+    func invalidate() {
+        lock.lock()
+        guard !isInvalidated else {
+            lock.unlock()
+            return
+        }
+        isInvalidated = true
+        let descriptor = ownedDescriptor
+        ownedDescriptor = -1
+        lock.unlock()
+
+        if descriptor >= 0 {
+            Darwin.close(descriptor)
+        }
+    }
+
+    #if DEBUG
+    var isActiveForTesting: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !isInvalidated && ownedDescriptor >= 0
+    }
+    #endif
+
+    private func releaseWriteDescriptor(_ descriptor: Int32) {
+        lock.lock()
+        let wasOwned = writeDescriptors.remove(descriptor) != nil
+        lock.unlock()
+        if wasOwned {
+            Darwin.close(descriptor)
+        }
+    }
+
+    deinit {
+        invalidate()
+    }
+}
+
+nonisolated enum AcknowledgedPTYWriter {
+    /// The caller acquires the exact descriptor synchronously on MainActor;
+    /// the I/O itself is deliberately nonisolated because DispatchIO invokes
+    /// its completion on the supplied background queue.
+    static func write(
+        _ bytes: [UInt8],
+        to descriptor: PinePTYDescriptorLease.WriteDescriptor
+    ) async -> Bool {
         let data = bytes.withUnsafeBytes { DispatchData(bytes: $0) }
         return await withCheckedContinuation { continuation in
             DispatchIO.write(
-                toFileDescriptor: descriptor,
+                toFileDescriptor: descriptor.rawValue,
                 data: data,
                 runningHandlerOn: DispatchQueue.global(qos: .userInitiated)
             ) { remaining, error in
+                descriptor.finish()
                 continuation.resume(returning:
                     AcknowledgedPTYWriter.acknowledgesCompletion(
                         error: error,
@@ -70,6 +158,14 @@ nonisolated enum AcknowledgedPTYWriter {
             }
         }
     }
+
+    static func acknowledgesCompletion(
+        error: Int32,
+        remainingByteCount: Int
+    ) -> Bool {
+        error == 0 && remainingByteCount == 0
+    }
+
 }
 
 /// Pine-specific terminal view wrapper.
@@ -1708,6 +1804,10 @@ final class TerminalTab: Identifiable, Hashable {
     private let shellSettings: ShellSettings
     private let agentHandoffSettings: AgentHandoffSettings
     private var processStarted = false
+    /// Stable Pine-owned duplicate of SwiftTerm's master PTY. The holder has
+    /// its own lock so nonisolated `deinit` can close it safely as a final
+    /// lifecycle backstop.
+    private let acknowledgedPTYLease = PinePTYDescriptorLease()
     private var workingDirectory: URL?
     private var initialProcess: TerminalInitialProcess?
 
@@ -1796,6 +1896,7 @@ final class TerminalTab: Identifiable, Hashable {
     }
 
     deinit {
+        acknowledgedPTYLease.invalidate()
         if let themeChangeObserver {
             themeNotificationCenter.removeObserver(themeChangeObserver)
         }
@@ -1960,6 +2061,9 @@ final class TerminalTab: Identifiable, Hashable {
             execName: nil,
             currentDirectory: dir
         )
+        _ = acknowledgedPTYLease.acquire(
+            borrowing: terminalView.process.childfd
+        )
     }
 
     func stop() {
@@ -1969,6 +2073,7 @@ final class TerminalTab: Identifiable, Hashable {
         }
         guard !isTerminated else { return }
         isTerminated = true
+        acknowledgedPTYLease.invalidate()
         terminalView.terminate()
     }
 
@@ -1978,6 +2083,7 @@ final class TerminalTab: Identifiable, Hashable {
             onLifecycleEnded?(id)
         }
         isTerminated = true
+        acknowledgedPTYLease.invalidate()
     }
 
     /// Forces SwiftTerm to mark the entire visible buffer as dirty and asks
@@ -2066,7 +2172,20 @@ final class TerminalTab: Identifiable, Hashable {
     /// The process group ID of the foreground process in this terminal, or
     /// `-1` if the shell itself is in the foreground or the process is not
     /// running. Used by `AgentDetectionCoordinator` (#951).
+    #if DEBUG
+    var foregroundProcessIDOverrideForTesting: Int32?
+    var foregroundStartOverrideForTesting:
+        TerminalProcessStartIdentity?
+    var agentProcessIdentityResolverForTesting:
+        ((pid_t) -> TerminalProcessStartIdentity?)?
+    #endif
+
     var foregroundProcessID: Int32 {
+        #if DEBUG
+        if let foregroundProcessIDOverrideForTesting {
+            return foregroundProcessIDOverrideForTesting
+        }
+        #endif
         guard isProcessRunning else { return -1 }
         let fd = terminalView.process.childfd
         guard fd >= 0 else { return -1 }
@@ -2074,6 +2193,90 @@ final class TerminalTab: Identifiable, Hashable {
         let shellPid = terminalView.process.shellPid
         guard foregroundPgid > 0, foregroundPgid != shellPid else { return -1 }
         return foregroundPgid
+    }
+
+    func foregroundProcessIdentity(
+        in processGroupID: pid_t
+    ) -> TerminalProcessStartIdentity? {
+        guard processGroupID > 1 else { return nil }
+        #if DEBUG
+        if foregroundProcessIDOverrideForTesting != nil {
+            return foregroundStartOverrideForTesting
+        }
+        #endif
+
+        let processIDs: [pid_t]
+        switch UserTaskProcessInspector.processIDs(inGroup: processGroupID) {
+        case .known(let members):
+            // Prefer the leader while it exists, but retain a concrete live
+            // member as the generation witness after a pipeline's leader has
+            // exited and been reaped.
+            processIDs = Array(Set(members + [processGroupID])).sorted {
+                if $0 == processGroupID { return true }
+                if $1 == processGroupID { return false }
+                return $0 < $1
+            }
+        case .unknown:
+            processIDs = [processGroupID]
+        }
+
+        return processIDs.lazy.compactMap { processID in
+            Self.processIdentity(
+                processID: processID,
+                processGroupID: processGroupID
+            )
+        }.first
+    }
+
+    func foregroundProcessIdentityStillMatches(
+        _ identity: TerminalProcessStartIdentity,
+        in processGroupID: pid_t
+    ) -> Bool {
+        #if DEBUG
+        if foregroundProcessIDOverrideForTesting != nil {
+            return foregroundStartOverrideForTesting == identity
+        }
+        #endif
+        return Self.processIdentity(
+            processID: identity.processID,
+            processGroupID: processGroupID
+        ) == identity
+    }
+
+    func agentProcessIdentityStillMatches(
+        _ identity: TerminalProcessStartIdentity
+    ) -> Bool {
+        #if DEBUG
+        if let agentProcessIdentityResolverForTesting {
+            return agentProcessIdentityResolverForTesting(
+                identity.processID
+            ) == identity
+        }
+        #endif
+        guard let current = UserTaskProcessInspector.identity(
+            for: identity.processID
+        ) else { return false }
+        return current.processID == identity.processID
+            && current.startSeconds == identity.seconds
+            && current.startMicroseconds == identity.microseconds
+    }
+
+    nonisolated private static func processIdentity(
+        processID: pid_t,
+        processGroupID: pid_t
+    ) -> TerminalProcessStartIdentity? {
+        guard processID > 1,
+              Darwin.getpgid(processID) == processGroupID,
+              let identity = UserTaskProcessInspector.identity(for: processID),
+              Darwin.getpgid(processID) == processGroupID,
+              UserTaskProcessInspector.identity(for: processID) == identity else {
+            return nil
+        }
+        return TerminalProcessStartIdentity(
+            processID: identity.processID,
+            seconds: identity.startSeconds,
+            microseconds: identity.startMicroseconds
+        )
     }
 
     // MARK: - Search
@@ -2184,12 +2387,21 @@ final class TerminalTab: Identifiable, Hashable {
     /// reports that every byte was accepted. SwiftTerm may close its descriptor
     /// while the write is pending without redirecting bytes after descriptor reuse.
     func sendTextAcknowledged(_ text: String) async -> Bool {
-        guard isProcessRunning else { return false }
-        let descriptor = terminalView.process.childfd
-        guard descriptor >= 0 else { return false }
+        guard isProcessRunning,
+              let descriptor = acknowledgedPTYLease
+                .acquireWriteDescriptor() else { return false }
         let bytes = Array(text.utf8)
-        return await AcknowledgedPTYWriter.write(bytes, to: descriptor)
+        return await AcknowledgedPTYWriter.write(
+            bytes,
+            to: descriptor
+        )
     }
+
+    #if DEBUG
+    var hasAcknowledgedPTYLeaseForTesting: Bool {
+        acknowledgedPTYLease.isActiveForTesting
+    }
+    #endif
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }

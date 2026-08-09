@@ -6,13 +6,254 @@
 //
 
 import AppKit
+import Darwin
+import os
 import SwiftUI
+
+nonisolated struct TerminationFileAliasIdentity: Hashable, Sendable {
+    private enum Storage: Hashable, Sendable {
+        case existing(device: dev_t, inode: ino_t)
+        case missing(
+            ancestorDevice: dev_t,
+            ancestorInode: ino_t,
+            normalizedSuffix: [String]
+        )
+    }
+
+    private let storage: Storage
+
+    fileprivate static func existing(
+        device: dev_t,
+        inode: ino_t
+    ) -> Self {
+        Self(storage: .existing(device: device, inode: inode))
+    }
+
+    fileprivate static func missing(
+        ancestorDevice: dev_t,
+        ancestorInode: ino_t,
+        normalizedSuffix: [String]
+    ) -> Self {
+        Self(storage: .missing(
+            ancestorDevice: ancestorDevice,
+            ancestorInode: ancestorInode,
+            normalizedSuffix: normalizedSuffix
+        ))
+    }
+}
+
+nonisolated enum TerminationFileAliasCaptureResult: Sendable {
+    case captured([TerminationFileAliasIdentity])
+    case failed(message: String)
+    case timedOut
+}
+
+nonisolated private final class TerminationFileAliasCaptureResolver:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<
+        TerminationFileAliasCaptureResult,
+        Never
+    >?
+
+    init(
+        _ continuation: CheckedContinuation<
+            TerminationFileAliasCaptureResult,
+            Never
+        >
+    ) {
+        self.continuation = continuation
+    }
+
+    @discardableResult
+    func resolve(_ result: TerminationFileAliasCaptureResult) -> Bool {
+        let continuation = lock.withLock {
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        guard let continuation else { return false }
+        continuation.resume(returning: result)
+        return true
+    }
+}
+
+/// Resolves filesystem aliases away from the main actor. Existing paths use
+/// their device/inode identity, so hard links, symlinks, and case aliases
+/// compare equal. Missing paths are keyed below their nearest existing
+/// ancestor using the volume's case behavior and canonical Unicode spelling.
+nonisolated enum TerminationFileAliasResolver {
+    private static let workQueue = DispatchQueue(
+        label: "com.pine.termination-file-alias",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+    private static let deadlineQueue = DispatchQueue(
+        label: "com.pine.termination-file-alias-deadline",
+        qos: .userInteractive
+    )
+
+    static func capture(
+        _ urls: [URL],
+        until deadline: DispatchTime
+    ) async -> TerminationFileAliasCaptureResult {
+        guard DispatchTime.now().uptimeNanoseconds
+                < deadline.uptimeNanoseconds else {
+            return .timedOut
+        }
+        return await withCheckedContinuation { continuation in
+            let resolver = TerminationFileAliasCaptureResolver(continuation)
+            workQueue.async {
+                let result: TerminationFileAliasCaptureResult
+                do {
+                    let identities = try urls.map {
+                        try identity(
+                            at: $0,
+                            deadlineNanoseconds: deadline.uptimeNanoseconds
+                        )
+                    }
+                    result = .captured(identities)
+                } catch let error as TerminationFileAliasError
+                where error == .timedOut {
+                    result = .timedOut
+                } catch {
+                    result = .failed(message: error.localizedDescription)
+                }
+                resolver.resolve(result)
+            }
+            deadlineQueue.asyncAfter(deadline: deadline) {
+                resolver.resolve(.timedOut)
+            }
+        }
+    }
+
+    private enum TerminationFileAliasError: Error {
+        case timedOut
+    }
+
+    private static func identity(
+        at originalURL: URL,
+        deadlineNanoseconds: UInt64
+    ) throws -> TerminationFileAliasIdentity {
+        try checkDeadline(deadlineNanoseconds)
+        var currentURL = originalURL.standardizedFileURL
+        var missingComponents: [String] = []
+
+        while true {
+            try checkDeadline(deadlineNanoseconds)
+            var status = stat()
+            let descriptor = Darwin.open(
+                currentURL.path,
+                O_RDONLY | O_NONBLOCK | O_CLOEXEC
+            )
+            if descriptor >= 0 {
+                defer { Darwin.close(descriptor) }
+                guard Darwin.fstat(descriptor, &status) == 0 else {
+                    throw NSError(
+                        domain: NSPOSIXErrorDomain,
+                        code: Int(errno)
+                    )
+                }
+                if missingComponents.isEmpty {
+                    return .existing(
+                        device: status.st_dev,
+                        inode: status.st_ino
+                    )
+                }
+                let resourceValues = try currentURL.resourceValues(
+                    forKeys: [.volumeSupportsCaseSensitiveNamesKey]
+                )
+                guard let isCaseSensitive = resourceValues
+                    .volumeSupportsCaseSensitiveNames else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+                let suffix = missingComponents.reversed().map {
+                    normalize($0, caseSensitive: isCaseSensitive)
+                }
+                return .missing(
+                    ancestorDevice: status.st_dev,
+                    ancestorInode: status.st_ino,
+                    normalizedSuffix: suffix
+                )
+            }
+            guard errno == ENOENT else {
+                throw NSError(
+                    domain: NSPOSIXErrorDomain,
+                    code: Int(errno)
+                )
+            }
+            let parentURL = currentURL.deletingLastPathComponent()
+            guard parentURL.path != currentURL.path else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            missingComponents.append(currentURL.lastPathComponent)
+            currentURL = parentURL
+        }
+    }
+
+    private static func normalize(
+        _ component: String,
+        caseSensitive: Bool
+    ) -> String {
+        let canonical = component.precomposedStringWithCanonicalMapping
+        guard !caseSensitive else { return canonical }
+        return canonical.lowercased(
+            with: Locale(identifier: "en_US_POSIX")
+        )
+    }
+
+    private static func checkDeadline(_ deadlineNanoseconds: UInt64) throws {
+        guard DispatchTime.now().uptimeNanoseconds < deadlineNanoseconds else {
+            throw TerminationFileAliasError.timedOut
+        }
+    }
+}
+
+nonisolated enum PreparedPaneSaveCommitResult: Sendable, Equatable {
+    case saved
+    case invalidated
+    case timedOut
+    case failed(message: String, retainedArtifacts: [URL])
+}
+
+nonisolated enum TerminationPaneSaveStageResult: Sendable {
+    case ready
+    case invalidated
+    case failed(message: String, retainedArtifacts: [URL])
+    case timedOut
+}
+
+nonisolated private final class TerminationAwaitResolver<Result: Sendable>:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Result, Never>?
+
+    init(_ continuation: CheckedContinuation<Result, Never>) {
+        self.continuation = continuation
+    }
+
+    @discardableResult
+    func resolve(_ result: Result) -> Bool {
+        let continuation = lock.withLock {
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        guard let continuation else { return false }
+        continuation.resume(returning: result)
+        return true
+    }
+}
 
 /// Thin coordinator that owns the workspace, terminal, and tab managers.
 /// Passed via environment so views can access all sub-managers.
 @MainActor
 @Observable
 final class ProjectManager {
+    private static let terminationInstallDeadlineQueue = DispatchQueue(
+        label: "com.pine.project.termination-install-deadline",
+        qos: .userInteractive
+    )
     typealias SaveDestinationChooser = @MainActor (
         _ tab: EditorTab,
         _ projectRoot: URL?,
@@ -23,10 +264,64 @@ final class ProjectManager {
         _ context: DialogPresentationContext
     ) async -> URL?
 
-    private struct PlannedTabSave {
+    fileprivate struct PlannedTabSave {
         let tabManager: TabManager
         let tab: EditorTab
         var destination: URL?
+    }
+
+    struct TerminationOpenTabInventory: Equatable {
+        fileprivate struct Entry: Hashable {
+            let tabManager: ObjectIdentifier
+            let tabID: UUID
+            let originalFileURL: URL?
+            let authorizedSaveAsURL: URL?
+
+            func authorizes(_ tab: EditorTab) -> Bool {
+                let liveURL = tab.fileURL?.standardizedFileURL
+                return liveURL == originalFileURL
+                    || liveURL == authorizedSaveAsURL
+            }
+        }
+
+        fileprivate let tabManagers: Set<ObjectIdentifier>
+        fileprivate let entries: Set<Entry>
+    }
+
+    struct PreparedPaneSavePlan {
+        fileprivate let entries: [PlannedTabSave]
+        fileprivate let dirtyAuthorization: DirtyEditorContentAuthorization
+
+        var standardizedDestinationURLs: [URL] {
+            entries.compactMap { planned in
+                (planned.destination ?? planned.tab.fileURL)?
+                    .standardizedFileURL
+            }
+        }
+
+        var plannedTabIDs: Set<UUID> {
+            Set(entries.map(\.tab.id))
+        }
+
+        var plannedDestinationURLsByTabID: [UUID: URL] {
+            Dictionary(uniqueKeysWithValues: entries.compactMap { planned in
+                guard let destination = planned.destination else {
+                    return nil
+                }
+                return (planned.tab.id, destination.standardizedFileURL)
+            })
+        }
+    }
+
+    struct PreparedTerminationPaneSavePlan {
+        fileprivate let source: PreparedPaneSavePlan
+        fileprivate let staged: [TerminationStagedSave]
+    }
+
+    enum PaneSavePreparationResult {
+        case ready(PreparedPaneSavePlan)
+        case cancelledByUser
+        case invalidated
     }
 
     let workspace = WorkspaceManager()
@@ -75,6 +370,8 @@ final class ProjectManager {
     @ObservationIgnored
     private var dialogOperationGeneration = 0
     @ObservationIgnored
+    private var isAutoSaveFrozenForTermination = false
+    @ObservationIgnored
     private(set) lazy var paneManager = PaneManager(existingTabManager: primaryTabManager)
     /// Test seam and single native Save-panel implementation for Save,
     /// Save As, Save All, close-window, and Quit paths.
@@ -104,6 +401,34 @@ final class ProjectManager {
         }
         return panel.url
     }
+    @ObservationIgnored
+    var terminationSaveInstaller: @Sendable (
+        TerminationStagedSave,
+        DispatchTime,
+        @escaping @Sendable (TerminationSaveInstallResult) -> Void
+    ) async -> TerminationSaveInstallResult = { staged, deadline, lateCompletion in
+        await TerminationSaveCoordinator.install(
+            staged,
+            until: deadline,
+            lateCompletion: lateCompletion
+        )
+    }
+    @ObservationIgnored
+    var terminationSaveCleaner: @Sendable (
+        [TerminationStagedSave]
+    ) -> TerminationSaveCleanupResult = {
+        TerminationSaveCoordinator.cleanup($0)
+    }
+    @ObservationIgnored
+    var terminationSaveLateFailureHandler: @Sendable (
+        String,
+        [URL]
+    ) -> Void = { message, retainedArtifacts in
+        let paths = retainedArtifacts.map(\.path).joined(separator: ",")
+        Logger.app.error(
+            "Late termination save failure: \(message, privacy: .public); retained=\(paths, privacy: .public)"
+        )
+    }
 
     /// Returns the TabManager for the currently focused pane.
     /// Falls back to the primary ``primaryTabManager`` when no editor pane is active.
@@ -124,6 +449,71 @@ final class ProjectManager {
     /// All dirty tabs across all panes.
     var allDirtyTabs: [EditorTab] {
         paneManager.tabManagers.values.flatMap(\.dirtyTabs)
+    }
+
+    func captureTerminationOpenTabInventory(
+        allowingSaveAs destinationsByTabID: [UUID: URL]
+    ) -> TerminationOpenTabInventory {
+        let tabManagers = paneManager.allTabManagers
+        return TerminationOpenTabInventory(
+            tabManagers: Set(tabManagers.map(ObjectIdentifier.init)),
+            entries: Set(tabManagers.flatMap { tabManager in
+                tabManager.tabs.map { tab in
+                    TerminationOpenTabInventory.Entry(
+                        tabManager: ObjectIdentifier(tabManager),
+                        tabID: tab.id,
+                        originalFileURL: tab.fileURL?.standardizedFileURL,
+                        authorizedSaveAsURL:
+                            destinationsByTabID[tab.id]?.standardizedFileURL
+                    )
+                }
+            })
+        )
+    }
+
+    func terminationOpenTabInventoryStillMatches(
+        _ inventory: TerminationOpenTabInventory
+    ) -> Bool {
+        let tabManagers = paneManager.allTabManagers
+        guard Set(tabManagers.map(ObjectIdentifier.init))
+                == inventory.tabManagers else {
+            return false
+        }
+        let liveTabs = tabManagers.flatMap { tabManager in
+            tabManager.tabs.map { (ObjectIdentifier(tabManager), $0) }
+        }
+        guard liveTabs.count == inventory.entries.count else { return false }
+        return liveTabs.allSatisfy { tabManagerID, tab in
+            inventory.entries.contains { entry in
+                entry.tabManager == tabManagerID
+                    && entry.tabID == tab.id
+                    && entry.authorizes(tab)
+            }
+        }
+    }
+
+    func freezeAutoSaveForTermination() {
+        guard !isAutoSaveFrozenForTermination else { return }
+        isAutoSaveFrozenForTermination = true
+        paneManager.allTabManagers.forEach {
+            $0.freezeAutoSaveForTermination()
+        }
+    }
+
+    func cancelAutoSaveTerminationFreeze() {
+        guard isAutoSaveFrozenForTermination else { return }
+        isAutoSaveFrozenForTermination = false
+        paneManager.allTabManagers.forEach {
+            $0.cancelAutoSaveTerminationFreeze()
+        }
+    }
+
+    func finishAutoSaveTerminationFreeze() {
+        guard isAutoSaveFrozenForTermination else { return }
+        isAutoSaveFrozenForTermination = false
+        paneManager.allTabManagers.forEach {
+            $0.finishAutoSaveTerminationFreeze()
+        }
     }
 
     /// Validates an exact dirty-buffer authorization across every editor
@@ -185,9 +575,14 @@ final class ProjectManager {
         return true
     }
 
-    /// Window-scoped save-all used by close and termination decisions.
-    @discardableResult
-    func saveAllPaneTabs(context: DialogPresentationContext) async -> Bool {
+    /// Collects all human Save-As decisions without writing any file. Quit
+    /// performs this phase before starting its bounded machine-work clock.
+    func prepareSaveAllPaneTabs(
+        context: DialogPresentationContext
+    ) async -> PaneSavePreparationResult {
+        let dirtyAuthorization = DirtyEditorContentAuthorization(
+            tabs: allDirtyTabs
+        )
         var savePlan = paneManager.allTabManagers.flatMap { tabManager in
             tabManager.tabs.compactMap { tab -> PlannedTabSave? in
                 guard tab.isDirty else { return nil }
@@ -204,7 +599,7 @@ final class ProjectManager {
         guard savePlan.allSatisfy({
             $0.tab.kind == .text && !$0.tab.isTruncated
         }) else {
-            return false
+            return .invalidated
         }
 
         // Collect every untitled destination before the first disk write.
@@ -217,7 +612,7 @@ final class ProjectManager {
                 workspace.rootURL,
                 context
             ) else {
-                return false
+                return .cancelledByUser
             }
             savePlan[index].destination = destination
         }
@@ -225,7 +620,8 @@ final class ProjectManager {
         // A panel may suspend long enough for a tab to close, become saved,
         // change backing, or become truncated. Revalidate every captured
         // identity before committing any member of the plan.
-        guard savePlan.allSatisfy({ planned in
+        guard dirtyAuthorization.covers(allDirtyTabs),
+              savePlan.allSatisfy({ planned in
             guard let current = planned.tabManager.tabs.first(where: {
                 $0.id == planned.tab.id
             }) else {
@@ -235,8 +631,9 @@ final class ProjectManager {
                 && current.kind == .text
                 && !current.isTruncated
                 && current.fileURL == planned.tab.fileURL
+                && current.content == planned.tab.content
         }) else {
-            return false
+            return .invalidated
         }
 
         let effectiveDestinations = savePlan.compactMap { planned in
@@ -246,7 +643,7 @@ final class ProjectManager {
         guard effectiveDestinations.count == savePlan.count,
               Set(effectiveDestinations).count
                 == effectiveDestinations.count else {
-            return false
+            return .invalidated
         }
 
         // An untitled Save-As target must not alias a file already open in
@@ -266,39 +663,542 @@ final class ProjectManager {
         guard newDestinations.allSatisfy({
             !unplannedOpenDestinations.contains($0)
         }) else {
-            return false
+            return .invalidated
         }
 
-        for planned in savePlan {
+        return .ready(PreparedPaneSavePlan(
+            entries: savePlan,
+            dirtyAuthorization: dirtyAuthorization
+        ))
+    }
+
+    /// Commits an already prepared Save All plan without presenting UI or
+    /// suspending. The whole plan is revalidated before the first write.
+    func commitPreparedSaveAllPaneTabs(
+        _ plan: PreparedPaneSavePlan
+    ) -> PreparedPaneSaveCommitResult {
+        guard preparedSavePlanStillValid(plan) else {
+            return .invalidated
+        }
+
+        for planned in plan.entries {
             if let destination = planned.destination {
                 do {
                     guard try planned.tabManager.saveTabAs(
                         tabID: planned.tab.id,
                         to: destination
                     ) else {
-                        return false
+                        return .invalidated
                     }
                 } catch {
-                    _ = await AlertTemplate.fileOperationErrorCritical
-                        .runSheet(
-                            on: context,
-                            messageText: Strings.fileOperationErrorTitle,
-                            informativeText: error.localizedDescription
-                        )
-                    return false
+                    return .failed(
+                        message: error.localizedDescription,
+                        retainedArtifacts: []
+                    )
                 }
             } else {
-                guard await saveTab(
-                    tabID: planned.tab.id,
-                    in: planned.tabManager,
-                    forceSaveAs: false,
-                    context: context
-                ) else {
-                    return false
+                guard let index = planned.tabManager.tabs.firstIndex(where: {
+                    $0.id == planned.tab.id
+                }) else {
+                    return .invalidated
+                }
+                do {
+                    guard try planned.tabManager.trySaveTab(at: index) else {
+                        return .invalidated
+                    }
+                } catch {
+                    return .failed(
+                        message: error.localizedDescription,
+                        retainedArtifacts: []
+                    )
                 }
             }
         }
-        return true
+        return .saved
+    }
+
+    /// Stages every potentially slow formatter and data write away from the
+    /// main actor. Staging files live beside their destinations so the later
+    /// commit is a same-volume atomic replacement.
+    func stagePreparedSaveAllPaneTabsForTermination(
+        _ plan: PreparedPaneSavePlan,
+        until deadline: DispatchTime
+    ) async -> (
+        TerminationPaneSaveStageResult,
+        PreparedTerminationPaneSavePlan?
+    ) {
+        guard preparedSavePlanStillValid(plan) else {
+            return (.invalidated, nil)
+        }
+        let destinations = plan.entries.compactMap { planned in
+            planned.destination ?? planned.tab.fileURL
+        }
+        guard destinations.count == plan.entries.count else {
+            return (.invalidated, nil)
+        }
+        let destinationStates: [TerminationDestinationState]
+        switch await TerminationSaveCoordinator.captureDestinationStates(
+            at: destinations,
+            until: deadline
+        ) {
+        case .captured(let captured):
+            destinationStates = captured
+        case .failed(let message):
+            return (
+                .failed(message: message, retainedArtifacts: []),
+                nil
+            )
+        case .timedOut:
+            return (.timedOut, nil)
+        }
+        guard destinationStates.count == plan.entries.count,
+              preparedSavePlanStillValid(plan) else {
+            return (.invalidated, nil)
+        }
+        let requests = zip(plan.entries, destinationStates).compactMap { pair
+            -> TerminationSaveRequest? in
+            let (planned, expectedDestinationState) = pair
+            guard let destination = planned.destination
+                    ?? planned.tab.fileURL else {
+                return nil
+            }
+            let settings = planned.tabManager.editorSettings
+            return TerminationSaveRequest(
+                tabID: planned.tab.id,
+                contentVersion: planned.tab.contentVersion,
+                persistenceGeneration: planned.tab.persistenceGeneration,
+                content: planned.tab.content,
+                originalURL: planned.tab.fileURL,
+                destination: destination,
+                expectedDestinationState: expectedDestinationState,
+                encodingRawValue: planned.tab.encoding.rawValue,
+                settings: EditorSaveSettingsSnapshot(
+                    insertFinalNewline: settings.insertFinalNewline,
+                    stripTrailingWhitespace:
+                        settings.stripTrailingWhitespace,
+                    formatOnSave: settings.formatOnSave
+                ),
+                formatters: planned.tabManager.fileFormatters
+            )
+        }
+        guard requests.count == plan.entries.count else {
+            return (.invalidated, nil)
+        }
+        let lateFailureHandler = terminationSaveLateFailureHandler
+        switch await TerminationSaveCoordinator.stage(
+            requests,
+            until: deadline,
+            lateCompletion: { result in
+                guard case .failed(let message, let retainedArtifacts) = result,
+                      !retainedArtifacts.isEmpty else { return }
+                lateFailureHandler(message, retainedArtifacts)
+            }
+        ) {
+        case .ready(let staged):
+            return (
+                .ready,
+                PreparedTerminationPaneSavePlan(
+                    source: plan,
+                    staged: staged
+                )
+            )
+        case .failed(let message, let retainedArtifacts):
+            return (
+                .failed(
+                    message: message,
+                    retainedArtifacts: retainedArtifacts
+                ),
+                nil
+            )
+        case .timedOut:
+            return (.timedOut, nil)
+        }
+    }
+
+    func terminationSaveDestinationsStillMatch(
+        _ plan: PreparedTerminationPaneSavePlan,
+        until deadline: DispatchTime
+    ) async -> Bool {
+        await TerminationSaveCoordinator.destinationStatesAreCurrent(
+            plan.staged,
+            until: deadline
+        )
+    }
+
+    /// Installs staged files serially off-main. The deadline is checked before
+    /// every install and after every in-flight atomic syscall. An individual
+    /// rename cannot be interrupted safely, so its model reconciliation always
+    /// completes before a timeout is reported.
+    func commitStagedSaveAllPaneTabsForTermination(
+        _ plan: PreparedTerminationPaneSavePlan,
+        until deadline: DispatchTime,
+        inventoryStillAuthorized: @MainActor () -> Bool = { true }
+    ) async -> PreparedPaneSaveCommitResult {
+        let source = plan.source
+        guard DispatchTime.now().uptimeNanoseconds
+                < deadline.uptimeNanoseconds,
+              inventoryStillAuthorized(),
+              preparedSavePlanStillValid(source),
+              plan.staged.count == source.entries.count,
+              zip(source.entries, plan.staged).allSatisfy({ entry, staged in
+                  let destination = entry.destination ?? entry.tab.fileURL
+                  return staged.request.tabID == entry.tab.id
+                      && staged.request.contentVersion
+                          == entry.tab.contentVersion
+                      && staged.request.persistenceGeneration
+                          == entry.tab.persistenceGeneration
+                      && staged.request.content == entry.tab.content
+                      && staged.request.originalURL == entry.tab.fileURL
+                      && staged.request.destination == destination
+              }) else {
+            let cleanup = await cleanupTerminationSavePlan(
+                plan,
+                until: deadline
+            )
+            if let failure = terminationCleanupFailure(cleanup) {
+                return failure
+            }
+            return .invalidated
+        }
+
+        for (index, pair) in zip(source.entries, plan.staged).enumerated() {
+            let (entry, staged) = pair
+            guard DispatchTime.now().uptimeNanoseconds
+                    < deadline.uptimeNanoseconds else {
+                let cleanup = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index)),
+                    until: deadline
+                )
+                if let failure = terminationCleanupFailure(cleanup) {
+                    return failure
+                }
+                return .timedOut
+            }
+            guard inventoryStillAuthorized(),
+                  preparedEntryStillValid(entry) else {
+                let cleanup = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index)),
+                    until: deadline
+                )
+                if let failure = terminationCleanupFailure(cleanup) {
+                    return failure
+                }
+                return .invalidated
+            }
+            let tabManager = entry.tabManager
+            let lateFailureHandler = terminationSaveLateFailureHandler
+            let lateCompletion: @Sendable (
+                TerminationSaveInstallResult
+            ) -> Void = { result in
+                switch result {
+                case .failed(let message, let retainedArtifacts):
+                    guard !retainedArtifacts.isEmpty else { return }
+                    lateFailureHandler(message, retainedArtifacts)
+                case .installed(let metadata):
+                    Task { @MainActor in
+                    guard tabManager.tabs.first(where: {
+                        $0.id == staged.request.tabID
+                    })?.persistenceGeneration
+                        == staged.request.persistenceGeneration else {
+                        return
+                    }
+                    guard tabManager.reconcileTerminationStagedSave(
+                        request: staged.request,
+                        savedContent: staged.preparedContent,
+                        metadata: metadata
+                    ) else {
+                        Logger.app.critical(
+                            "Late termination save model reconciliation failed"
+                        )
+                        return
+                    }
+                    }
+                case .timedOut:
+                    break
+                }
+            }
+            let installResult = await awaitTerminationSaveInstall(
+                staged,
+                until: deadline,
+                lateCompletion: lateCompletion
+            )
+            let inventoryWasAuthorizedAfterInstall =
+                inventoryStillAuthorized()
+            switch installResult {
+            case .failed(let message, let retainedArtifacts):
+                // A typed retained artifact belongs to the current install
+                // transaction even when its parent directory moved and its
+                // display URL no longer matches the original staging URL.
+                // Preserve that staged identity and clean only later entries.
+                let cleanupStartIndex = retainedArtifacts.isEmpty
+                    ? index
+                    : index + 1
+                let cleanupResult = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(cleanupStartIndex)),
+                    until: deadline,
+                    excluding: retainedArtifacts
+                )
+                let cleanupArtifacts: [URL]
+                if case .failed(_, let artifacts) = cleanupResult {
+                    cleanupArtifacts = artifacts
+                } else {
+                    cleanupArtifacts = []
+                }
+                return .failed(
+                    message: message,
+                    retainedArtifacts:
+                        Array(Set(retainedArtifacts + cleanupArtifacts))
+                )
+            case .installed(let metadata):
+                guard entry.tabManager.reconcileTerminationStagedSave(
+                    request: staged.request,
+                    savedContent: staged.preparedContent,
+                    metadata: metadata
+                ) else {
+                    Logger.app.critical(
+                        "Termination save model changed during atomic commit"
+                    )
+                    let cleanup = await cleanupTerminationStagedSaves(
+                        Array(plan.staged.dropFirst(index + 1)),
+                        until: deadline
+                    )
+                    if let failure = terminationCleanupFailure(cleanup) {
+                        return failure
+                    }
+                    return .invalidated
+                }
+                guard inventoryWasAuthorizedAfterInstall,
+                      inventoryStillAuthorized() else {
+                    let cleanup = await cleanupTerminationStagedSaves(
+                        Array(plan.staged.dropFirst(index + 1)),
+                        until: deadline
+                    )
+                    if let failure = terminationCleanupFailure(cleanup) {
+                        return failure
+                    }
+                    return .invalidated
+                }
+            case .timedOut:
+                let cleanup = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index)),
+                    until: deadline
+                )
+                if let failure = terminationCleanupFailure(cleanup) {
+                    return failure
+                }
+                guard inventoryWasAuthorizedAfterInstall else {
+                    return .invalidated
+                }
+                return .timedOut
+            }
+            if DispatchTime.now().uptimeNanoseconds
+                    >= deadline.uptimeNanoseconds {
+                let cleanup = await cleanupTerminationStagedSaves(
+                    Array(plan.staged.dropFirst(index + 1)),
+                    until: deadline
+                )
+                if let failure = terminationCleanupFailure(cleanup) {
+                    return failure
+                }
+                return .timedOut
+            }
+        }
+        return .saved
+    }
+
+    private func awaitTerminationSaveInstall(
+        _ staged: TerminationStagedSave,
+        until deadline: DispatchTime,
+        lateCompletion: @escaping @Sendable (
+            TerminationSaveInstallResult
+        ) -> Void
+    ) async -> TerminationSaveInstallResult {
+        guard DispatchTime.now().uptimeNanoseconds
+                < deadline.uptimeNanoseconds else {
+            return .timedOut
+        }
+        let installer = terminationSaveInstaller
+        return await withCheckedContinuation { continuation in
+            let resolver = TerminationAwaitResolver(continuation)
+            let operationTask = Task {
+                let result = await installer(
+                    staged,
+                    deadline,
+                    lateCompletion
+                )
+                if !resolver.resolve(result) {
+                    lateCompletion(result)
+                }
+            }
+            Self.terminationInstallDeadlineQueue.asyncAfter(
+                deadline: deadline
+            ) {
+                if resolver.resolve(.timedOut) {
+                    operationTask.cancel()
+                }
+            }
+        }
+    }
+
+    func cleanupTerminationSavePlan(
+        _ plan: PreparedTerminationPaneSavePlan,
+        excluding retainedArtifacts: [URL] = [],
+        until deadline: DispatchTime
+    ) async -> TerminationSaveCleanupResult {
+        await cleanupTerminationStagedSaves(
+            plan.staged,
+            until: deadline,
+            excluding: retainedArtifacts
+        )
+    }
+
+    private func cleanupTerminationStagedSaves(
+        _ staged: [TerminationStagedSave],
+        until deadline: DispatchTime,
+        excluding retainedArtifacts: [URL] = []
+    ) async -> TerminationSaveCleanupResult {
+        let protectedPaths = Set(retainedArtifacts.map {
+            $0.resolvingSymlinksInPath().standardizedFileURL.path
+        })
+        let cleanupCandidates = staged.filter {
+            !protectedPaths.contains(
+                $0.stagingURL.resolvingSymlinksInPath()
+                    .standardizedFileURL.path
+            )
+        }
+        guard !cleanupCandidates.isEmpty else { return .cleaned }
+        let timedOut = TerminationSaveCleanupResult.failed(
+            message: "Termination save cleanup exceeded its deadline",
+            retainedArtifacts: []
+        )
+        guard DispatchTime.now().uptimeNanoseconds
+                < deadline.uptimeNanoseconds else {
+            return timedOut
+        }
+        let cleaner = terminationSaveCleaner
+        let lateFailureHandler = terminationSaveLateFailureHandler
+        return await withCheckedContinuation { continuation in
+            let resolver = TerminationAwaitResolver(continuation)
+            let operationTask = Task.detached(priority: .utility) {
+                let result = cleaner(cleanupCandidates)
+                guard !resolver.resolve(result),
+                      case .failed(
+                          let message,
+                          let retainedArtifacts
+                      ) = result,
+                      !retainedArtifacts.isEmpty else {
+                    return
+                }
+                lateFailureHandler(message, retainedArtifacts)
+            }
+            Self.terminationInstallDeadlineQueue.asyncAfter(
+                deadline: deadline
+            ) {
+                if resolver.resolve(timedOut) {
+                    operationTask.cancel()
+                }
+            }
+        }
+    }
+
+    private func terminationCleanupFailure(
+        _ result: TerminationSaveCleanupResult
+    ) -> PreparedPaneSaveCommitResult? {
+        guard case .failed(let message, let retainedArtifacts) = result else {
+            return nil
+        }
+        return .failed(
+            message: message,
+            retainedArtifacts: retainedArtifacts
+        )
+    }
+
+    private func preparedEntryStillValid(_ planned: PlannedTabSave) -> Bool {
+        guard paneManager.allTabManagers.contains(where: {
+            $0 === planned.tabManager
+        }),
+              let current = planned.tabManager.tabs.first(where: {
+                  $0.id == planned.tab.id
+              }) else {
+            return false
+        }
+        return current.isDirty
+            && current.kind == .text
+            && !current.isTruncated
+            && current.contentVersion == planned.tab.contentVersion
+            && current.persistenceGeneration
+                == planned.tab.persistenceGeneration
+            && current.content == planned.tab.content
+            && current.fileURL == planned.tab.fileURL
+    }
+
+    private func preparedSavePlanStillValid(
+        _ plan: PreparedPaneSavePlan
+    ) -> Bool {
+        let liveTabManagers = paneManager.allTabManagers
+        guard plan.dirtyAuthorization.covers(allDirtyTabs),
+              plan.entries.allSatisfy({ planned in
+                  guard liveTabManagers.contains(where: {
+                      $0 === planned.tabManager
+                  }) else {
+                      return false
+                  }
+                  guard let current = planned.tabManager.tabs.first(where: {
+                      $0.id == planned.tab.id
+                  }) else {
+                      return false
+                  }
+                  return current.isDirty
+                      && current.kind == .text
+                      && !current.isTruncated
+                      && current.fileURL == planned.tab.fileURL
+                      && current.contentVersion == planned.tab.contentVersion
+                      && current.persistenceGeneration
+                          == planned.tab.persistenceGeneration
+                      && current.content == planned.tab.content
+              }) else {
+            return false
+        }
+
+        let effectiveDestinations = plan.entries.compactMap { planned in
+            (planned.destination ?? planned.tab.fileURL)?
+                .standardizedFileURL
+        }
+        guard effectiveDestinations.count == plan.entries.count,
+              Set(effectiveDestinations).count
+                == effectiveDestinations.count else {
+            return false
+        }
+        let plannedTabIDs = Set(plan.entries.map(\.tab.id))
+        let unplannedOpenDestinations = Set(
+            allTabs.compactMap { tab -> URL? in
+                guard !plannedTabIDs.contains(tab.id) else { return nil }
+                return tab.fileURL?.standardizedFileURL
+            }
+        )
+        return plan.entries.compactMap(\.destination).allSatisfy {
+            !unplannedOpenDestinations.contains($0.standardizedFileURL)
+        }
+    }
+
+    /// Window-scoped save-all used by close and menu decisions.
+    @discardableResult
+    func saveAllPaneTabs(context: DialogPresentationContext) async -> Bool {
+        let prepared = await prepareSaveAllPaneTabs(context: context)
+        guard case .ready(let plan) = prepared else { return false }
+        switch commitPreparedSaveAllPaneTabs(plan) {
+        case .saved:
+            return true
+        case .invalidated, .timedOut:
+            return false
+        case .failed(let message, _):
+            _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                on: context,
+                messageText: Strings.fileOperationErrorTitle,
+                informativeText: message
+            )
+            return false
+        }
     }
 
     /// Resolves the editor pane a native File command should keep targeting
@@ -727,6 +1627,9 @@ final class ProjectManager {
     /// created later by pane splits or session restoration.
     private func configureEditorTabManager(_ tabManager: TabManager) {
         tabManager.recoveryManager = recoveryManager
+        if isAutoSaveFrozenForTermination {
+            tabManager.freezeAutoSaveForTermination()
+        }
         tabManager.dialogContextProvider = { [weak self] in
             guard let self else { return .unscoped }
             return DialogPresenter.forProject(self)
@@ -1335,6 +2238,51 @@ final class ProjectManager {
     /// and tasks alive.
     func requestUserTaskShutdown() {
         taskRunStore.requestShutdown()
+    }
+
+    func captureUserTaskShutdownAuthorization()
+        -> UserTaskExecutionAuthorization {
+        taskRunStore.captureShutdownAuthorization()
+    }
+
+    func userTaskShutdownAuthorizationStillCovers(
+        _ authorization: UserTaskExecutionAuthorization
+    ) -> Bool {
+        taskRunStore.shutdownAuthorizationStillCovers(authorization)
+    }
+
+    @discardableResult
+    func requestUserTaskShutdown(
+        authorizedBy authorization: UserTaskExecutionAuthorization
+    ) -> Bool {
+        taskRunStore.requestShutdown(authorizedBy: authorization)
+    }
+
+    @discardableResult
+    func waitForUserTaskShutdown(
+        authorizedBy authorization: UserTaskExecutionAuthorization,
+        until deadline: DispatchTime
+    ) async -> Bool {
+        await taskRunStore.waitForShutdown(
+            authorizedBy: authorization,
+            until: deadline
+        )
+    }
+
+    func userTaskShutdownIsPreparedForCommit(
+        authorizedBy authorization: UserTaskExecutionAuthorization
+    ) -> Bool {
+        taskRunStore.shutdownIsPreparedForCommit(
+            authorizedBy: authorization
+        )
+    }
+
+    func commitPreparedUserTaskShutdown(
+        authorizedBy authorization: UserTaskExecutionAuthorization
+    ) {
+        taskRunStore.commitPreparedShutdown(
+            authorizedBy: authorization
+        )
     }
 
     /// Waits for project-owned user tasks only until the shared absolute

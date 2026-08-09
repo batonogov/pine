@@ -13,6 +13,25 @@
 
 import Foundation
 
+/// Stable execution identities covered by one explicit shutdown decision.
+/// A later run of the same configured task receives a new run ID and is not
+/// covered by this authorization.
+@MainActor
+struct UserTaskExecutionAuthorization: Equatable {
+    fileprivate let executionIDs: Set<UUID>
+    fileprivate let launchGeneration: UUID?
+
+    init(
+        executionIDs: Set<UUID> = [],
+        launchGeneration: UUID? = nil
+    ) {
+        self.executionIDs = executionIDs
+        self.launchGeneration = launchGeneration
+    }
+
+    var requiresConfirmation: Bool { !executionIDs.isEmpty }
+}
+
 nonisolated private enum UserTaskCompletionWaiter {
     static func wait(
         for handles: [UserTaskCancellation],
@@ -62,6 +81,18 @@ final class UserTaskRunStore {
     /// been released. This also covers the short race before a late handle is
     /// published on the main queue.
     private var unresolvedCleanupRunIDs: Set<UUID> = []
+    /// Changes for every accepted invocation and deliberately survives run
+    /// cleanup, so a transient late execution cannot disappear between Quit
+    /// authorization checks.
+    private var launchGeneration: UUID?
+    /// Changes whenever runner ownership publishes or replaces a handle.
+    /// A wait cannot prepare a handle that changed while it was suspended.
+    private var cancellationRegistrationGeneration: UUID?
+    /// A successful wait is only the prepare phase of application-wide
+    /// shutdown. History and execution ownership remain intact until every
+    /// project store has prepared and the registry commits them together.
+    private var preparedShutdownAuthorization:
+        UserTaskExecutionAuthorization?
     private let maximumRuns: Int
     private let maximumRetainedOutputBytes: Int
 
@@ -81,6 +112,8 @@ final class UserTaskRunStore {
     /// progress. Returns the run so the caller can drive its state.
     @discardableResult
     func start(_ run: UserTaskRun) -> UserTaskRun {
+        preparedShutdownAuthorization = nil
+        launchGeneration = UUID()
         runs.insert(run, at: 0)
         isOutputVisible = true
         trimToCapacity()
@@ -94,6 +127,8 @@ final class UserTaskRunStore {
         _ handle: UserTaskCancellation,
         forRunID id: UUID
     ) {
+        preparedShutdownAuthorization = nil
+        cancellationRegistrationGeneration = UUID()
         let cancellationWasPending =
             pendingCancellationRunIDs.remove(id) != nil
         if unresolvedCleanupRunIDs.contains(id) {
@@ -272,22 +307,74 @@ final class UserTaskRunStore {
         }
     }
 
-    /// Cancels and waits for every active run using one shared absolute
-    /// deadline.
-    ///
-    /// Cancellation ownership is snapshotted on the main actor, but the
-    /// blocking process waits run on a background queue. This keeps project
-    /// reopening and AppKit's asynchronous termination handshake responsive
-    /// while the runner reaps direct children and finishes bounded cleanup.
-    @discardableResult
-    func shutdownAll(until deadline: DispatchTime) async -> Bool {
-        requestShutdown()
+    /// Captures every execution for which this store still owns process or
+    /// cleanup responsibility. This intentionally includes more than the
+    /// visible active-run array.
+    func captureShutdownAuthorization() -> UserTaskExecutionAuthorization {
         pruneResolvedCleanupOwnership()
-        let ownershipIDs = executionOwnershipRunIDs
+        return UserTaskExecutionAuthorization(
+            executionIDs: executionOwnershipRunIDs,
+            launchGeneration: launchGeneration
+        )
+    }
+
+    /// New execution ownership is never covered by an older user decision.
+    func shutdownAuthorizationStillCovers(
+        _ authorization: UserTaskExecutionAuthorization
+    ) -> Bool {
+        pruneResolvedCleanupOwnership()
+        return launchGeneration == authorization.launchGeneration
+            && executionOwnershipRunIDs.isSubset(
+            of: authorization.executionIDs
+        )
+    }
+
+    /// Requests cancellation only for executions named by the authorization.
+    /// The all-or-nothing preflight prevents partial cancellation if any new
+    /// execution appeared before this method reached the MainActor.
+    @discardableResult
+    func requestShutdown(
+        authorizedBy authorization: UserTaskExecutionAuthorization
+    ) -> Bool {
+        preparedShutdownAuthorization = nil
+        guard shutdownAuthorizationStillCovers(authorization) else {
+            return false
+        }
+        for run in runs
+        where authorization.executionIDs.contains(run.id)
+            && run.state.isActive
+            && run.state != .cancelling {
+            if let handle = cancellationHandles[run.id] {
+                if handle.cancel() {
+                    run.markCancelling()
+                }
+            } else {
+                pendingCancellationRunIDs.insert(run.id)
+            }
+        }
+        return true
+    }
+
+    /// Waits only for the execution generations the user authorized. This is
+    /// the prepare phase: a successful wait retains runs, output, and cleanup
+    /// ownership until the caller commits after every owner has prepared. A
+    /// new run appearing while the wait is suspended is left untouched and
+    /// makes the shutdown fail closed.
+    @discardableResult
+    func waitForShutdown(
+        authorizedBy authorization: UserTaskExecutionAuthorization,
+        until deadline: DispatchTime
+    ) async -> Bool {
+        preparedShutdownAuthorization = nil
+        pruneResolvedCleanupOwnership()
+        let registrationGeneration = cancellationRegistrationGeneration
+        let ownedAuthorizedIDs = executionOwnershipRunIDs.intersection(
+            authorization.executionIDs
+        )
         var handles: [UserTaskCancellation] = []
         var ownsEveryExecution = true
 
-        for id in ownershipIDs {
+        for id in ownedAuthorizedIDs {
             if let handle = cancellationHandles[id] {
                 handles.append(handle)
             } else {
@@ -299,20 +386,66 @@ final class UserTaskRunStore {
             for: handles,
             until: deadline
         )
-        let hasNewExecutionOwnership =
-            !executionOwnershipRunIDs.subtracting(ownershipIDs).isEmpty
-        let capturedExecutionsCompleted =
-            ownsEveryExecution && handlesCompleted
-        let allCompleted =
-            capturedExecutionsCompleted && !hasNewExecutionOwnership
+        let hasUnauthorizedExecution =
+            launchGeneration != authorization.launchGeneration
+            || cancellationRegistrationGeneration != registrationGeneration
+            || !executionOwnershipRunIDs.isSubset(
+                of: authorization.executionIDs
+            )
+        let allCompleted = ownsEveryExecution
+            && handlesCompleted
+            && !hasUnauthorizedExecution
 
         if allCompleted {
-            runs.removeAll()
-            cancellationHandles.removeAll()
-            pendingCancellationRunIDs.removeAll()
-            unresolvedCleanupRunIDs.removeAll()
+            preparedShutdownAuthorization = authorization
         }
         return allCompleted
+    }
+
+    /// Revalidates a successful prepare phase immediately before commit.
+    /// Callers must perform this check for every store without suspension,
+    /// then commit every prepared store without suspension.
+    func shutdownIsPreparedForCommit(
+        authorizedBy authorization: UserTaskExecutionAuthorization
+    ) -> Bool {
+        preparedShutdownAuthorization == authorization
+            && shutdownAuthorizationStillCovers(authorization)
+    }
+
+    /// Commits a previously revalidated prepare phase. There must be no
+    /// suspension between the all-owner preflight and this mutation.
+    func commitPreparedShutdown(
+        authorizedBy authorization: UserTaskExecutionAuthorization
+    ) {
+        precondition(preparedShutdownAuthorization == authorization)
+        runs.removeAll()
+        cancellationHandles.removeAll()
+        pendingCancellationRunIDs.removeAll()
+        unresolvedCleanupRunIDs.removeAll()
+        preparedShutdownAuthorization = nil
+    }
+
+    /// Cancels and waits for every active run using one shared absolute
+    /// deadline.
+    ///
+    /// Cancellation ownership is snapshotted on the main actor, but the
+    /// blocking process waits run on a background queue. This keeps project
+    /// reopening and AppKit's asynchronous termination handshake responsive
+    /// while the runner reaps direct children and finishes bounded cleanup.
+    @discardableResult
+    func shutdownAll(until deadline: DispatchTime) async -> Bool {
+        let authorization = captureShutdownAuthorization()
+        guard requestShutdown(authorizedBy: authorization) else {
+            return false
+        }
+        guard await waitForShutdown(
+            authorizedBy: authorization,
+            until: deadline
+        ), shutdownIsPreparedForCommit(authorizedBy: authorization) else {
+            return false
+        }
+        commitPreparedShutdown(authorizedBy: authorization)
+        return true
     }
 
     /// Whether teardown can release this store without dropping ownership of

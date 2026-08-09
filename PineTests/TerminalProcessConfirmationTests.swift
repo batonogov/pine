@@ -243,4 +243,52 @@ struct TerminalProcessConfirmationTests {
         // Tab order in the re-check must not matter.
         #expect(authorization.stillCovers([agentTab, idleTab]))
     }
+
+    @Test func idleTabBecomingAgentInvalidatesAuthorization() {
+        let tab = TerminalTab(name: "Shell")
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+
+        tab.agentSession = AgentSession(agentType: .claudeCode)
+
+        #expect(!authorization.stillCovers([tab]))
+    }
+
+    @Test func newlyAddedAgentTabInvalidatesAuthorization() {
+        let original = TerminalTab(name: "Shell")
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [original]
+        )
+        let added = TerminalTab(name: "Claude")
+        added.agentSession = AgentSession(agentType: .claudeCode)
+
+        #expect(!authorization.stillCovers([original, added]))
+    }
+
+    @Test func agentReplacedByForegroundProcessInvalidatesAuthorization() {
+        let tab = TerminalTab(name: "Claude")
+        tab.agentSession = AgentSession(agentType: .claudeCode)
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+
+        tab.agentSession = nil
+        tab.foregroundProcessIDOverrideForTesting = 42
+
+        #expect(!authorization.stillCovers([tab]))
+    }
+
+    @Test func foregroundProcessReplacedByAgentInvalidatesAuthorization() {
+        let tab = TerminalTab(name: "Shell")
+        tab.foregroundProcessIDOverrideForTesting = 41
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+
+        tab.foregroundProcessIDOverrideForTesting = 0
+        tab.agentSession = AgentSession(agentType: .claudeCode)
+
+        #expect(!authorization.stillCovers([tab]))
+    }
 }

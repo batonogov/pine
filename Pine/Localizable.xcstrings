@@ -11370,61 +11370,61 @@
       }
     },
     "quit.summary.message %lld": {
-      "comment": "App-wide Quit summary. The value is the number of projects requiring review.",
+      "comment": "App-wide Quit summary. The value is the number of projects or global terminal areas requiring review.",
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zu prüfende Projekte: %lld.\n\nPrüfen Sie jedes Projekt vor dem Beenden, oder beenden Sie trotzdem, um ungesicherte Änderungen zu verwerfen und laufende Arbeiten zu stoppen."
+            "value": "Zu prüfende Elemente: %lld.\n\nPrüfen Sie jedes Element vor dem Beenden, oder beenden Sie trotzdem, um ungesicherte Änderungen zu verwerfen und laufende Arbeiten zu stoppen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Projects requiring attention: %lld.\n\nReview each project before quitting, or quit anyway to discard unsaved changes and stop running work."
+            "value": "Items requiring attention: %lld.\n\nReview each item before quitting, or quit anyway to discard unsaved changes and stop running work."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Proyectos que requieren atención: %lld.\n\nRevisa cada proyecto antes de salir o sal de todas formas para descartar los cambios sin guardar y detener el trabajo en curso."
+            "value": "Elementos que requieren atención: %lld.\n\nRevisa cada elemento antes de salir o sal de todas formas para descartar los cambios sin guardar y detener el trabajo en curso."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Projets nécessitant votre attention : %lld.\n\nVérifiez chaque projet avant de quitter, ou quittez quand même pour ignorer les modifications non enregistrées et arrêter le travail en cours."
+            "value": "Éléments nécessitant votre attention : %lld.\n\nVérifiez chaque élément avant de quitter, ou quittez quand même pour ignorer les modifications non enregistrées et arrêter le travail en cours."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "確認が必要なプロジェクト：%lld。\n\n終了前に各プロジェクトを確認するか、保存されていない変更を破棄して実行中の作業を停止し、そのまま終了してください。"
+            "value": "確認が必要な項目：%lld。\n\n終了前に各項目を確認するか、保存されていない変更を破棄して実行中の作業を停止し、そのまま終了してください。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "검토가 필요한 프로젝트: %lld.\n\n종료하기 전에 각 프로젝트를 검토하거나, 저장되지 않은 변경 사항을 버리고 실행 중인 작업을 중지한 후 종료하세요."
+            "value": "검토가 필요한 항목: %lld.\n\n종료하기 전에 각 항목을 검토하거나, 저장되지 않은 변경 사항을 버리고 실행 중인 작업을 중지한 후 종료하세요."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Projetos que precisam de atenção: %lld.\n\nRevise cada projeto antes de sair ou saia mesmo assim para descartar alterações não salvas e interromper o trabalho em execução."
+            "value": "Itens que precisam de atenção: %lld.\n\nRevise cada item antes de sair ou saia mesmo assim para descartar alterações não salvas e interromper o trabalho em execução."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Проектов, требующих внимания: %lld.\n\nПроверьте каждый проект перед выходом или выйдите всё равно, чтобы отбросить несохранённые изменения и остановить выполняющуюся работу."
+            "value": "Объектов, требующих внимания: %lld.\n\nПроверьте каждый объект перед выходом или выйдите всё равно, чтобы отбросить несохранённые изменения и остановить выполняющуюся работу."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "需要检查的项目：%lld。\n\n退出前请检查每个项目，或仍然退出以丢弃未保存的更改并停止正在运行的工作。"
+            "value": "需要检查的事项：%lld。\n\n退出前请检查每个事项，或仍然退出以丢弃未保存的更改并停止正在运行的工作。"
           }
         }
       }

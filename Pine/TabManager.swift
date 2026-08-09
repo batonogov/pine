@@ -892,6 +892,113 @@ final class TabManager {
         return outcome.saved
     }
 
+    /// Applies the model half of a termination save after its destination was
+    /// atomically replaced from an off-main staged file. No formatter or file
+    /// write is performed here, so Quit never waits for those operations on
+    /// the main actor.
+    @discardableResult
+    func applyTerminationStagedSave(
+        request: TerminationSaveRequest,
+        savedContent: String,
+        metadata: TerminationInstalledFileMetadata
+    ) -> Bool {
+        guard let index = tabs.firstIndex(where: {
+            $0.id == request.tabID
+        }),
+              tabs[index].isDirty,
+              tabs[index].kind == .text,
+              !tabs[index].isTruncated,
+              tabs[index].contentVersion == request.contentVersion,
+              tabs[index].persistenceGeneration
+                == request.persistenceGeneration,
+              tabs[index].content == request.content,
+              tabs[index].fileURL == request.originalURL else {
+            return false
+        }
+        let contentChanged = savedContent != tabs[index].content
+        let backingChanged = tabs[index].fileURL != request.destination
+        tabs[index].content = savedContent
+        tabs[index].url = request.destination
+        tabs[index].savedContent = savedContent
+        tabs[index].lastModDate = metadata.modificationDate
+        tabs[index].fileSizeBytes = metadata.size
+        if contentChanged {
+            tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
+        }
+        recoveryManager?.deleteRecoveryFile(for: request.tabID)
+        if backingChanged {
+            onTabInventoryChanged?()
+        }
+        if contentChanged {
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: [
+                    "url": request.destination,
+                    "text": savedContent,
+                ]
+            )
+        }
+        return true
+    }
+
+    /// Reconciles a staged save whose atomic install ran off-main. If the
+    /// buffer was edited while the syscall was in flight, the new edit stays
+    /// visible and dirty while `savedContent` becomes the truthful disk base.
+    @discardableResult
+    func reconcileTerminationStagedSave(
+        request: TerminationSaveRequest,
+        savedContent: String,
+        metadata: TerminationInstalledFileMetadata
+    ) -> Bool {
+        guard let index = tabs.firstIndex(where: {
+            $0.id == request.tabID
+        }),
+              tabs[index].kind == .text,
+              !tabs[index].isTruncated,
+              tabs[index].persistenceGeneration
+                == request.persistenceGeneration,
+              tabs[index].fileURL == request.originalURL else {
+            return false
+        }
+        let requestIsStillCurrent =
+            tabs[index].contentVersion == request.contentVersion
+            && tabs[index].content == request.content
+        let backingChanged = tabs[index].fileURL != request.destination
+        if requestIsStillCurrent {
+            tabs[index].content = savedContent
+            tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
+        }
+        tabs[index].url = request.destination
+        tabs[index].savedContent = savedContent
+        tabs[index].lastModDate = metadata.modificationDate
+        tabs[index].fileSizeBytes = metadata.size
+        if !requestIsStillCurrent {
+            tabs[index].recomputeContentCaches()
+        }
+        if tabs[index].isDirty {
+            recoveryManager?.scheduleSnapshot()
+        } else {
+            recoveryManager?.deleteRecoveryFile(for: request.tabID)
+        }
+        if backingChanged {
+            onTabInventoryChanged?()
+        }
+        if requestIsStillCurrent && savedContent != request.content {
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: [
+                    "url": request.destination,
+                    "text": savedContent,
+                ]
+            )
+        }
+        return true
+    }
+
     // MARK: - Reorder & Pin
 
     /// Removes a tab for an in-window pane transfer.
@@ -1153,6 +1260,7 @@ final class TabManager {
     // MARK: - Auto-save
 
     private let autoSaveCoordinator = TabAutoSave()
+    private var autoSaveFrozenForTermination = false
     nonisolated static let autoSaveKey = TabAutoSave.autoSaveKey
     var isAutoSaving: Bool { autoSaveCoordinator.isSaving }
     var autoSaveDelay: TimeInterval { autoSaveCoordinator.delay }
@@ -1165,7 +1273,8 @@ final class TabManager {
     }
 
     private func scheduleAutoSave(for tabID: UUID) {
-        guard let index = tabs.firstIndex(where: { $0.id == tabID }),
+        guard !autoSaveFrozenForTermination,
+              let index = tabs.firstIndex(where: { $0.id == tabID }),
               let fileURL = tabs[index].fileURL,
               FileManager.default.isWritableFile(atPath: fileURL.path) else {
             return
@@ -1188,6 +1297,28 @@ final class TabManager {
     var hasScheduledAutoSave: Bool { autoSaveCoordinator.hasScheduledSave }
     func hasScheduledAutoSave(for tabID: UUID) -> Bool {
         autoSaveCoordinator.hasScheduledSave(for: tabID)
+    }
+
+    /// Prevents a pending or newly scheduled debounce from turning a user's
+    /// explicit Quit/Don't Save decision into an implicit save while the
+    /// asynchronous termination handshake is in progress.
+    func freezeAutoSaveForTermination() {
+        autoSaveFrozenForTermination = true
+        autoSaveCoordinator.cancel()
+    }
+
+    func cancelAutoSaveTerminationFreeze() {
+        guard autoSaveFrozenForTermination else { return }
+        autoSaveFrozenForTermination = false
+        guard isAutoSaveEnabled else { return }
+        for tab in tabs where tab.isDirty {
+            scheduleAutoSave(for: tab.id)
+        }
+    }
+
+    func finishAutoSaveTerminationFreeze() {
+        autoSaveFrozenForTermination = false
+        autoSaveCoordinator.cancel()
     }
 
     // MARK: - Markdown preview

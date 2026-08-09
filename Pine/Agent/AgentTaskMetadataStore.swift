@@ -1935,6 +1935,12 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               task.lifecycle != .completed,
               task.attention != .completed,
               task.attention != .failed,
+              task.launchInterruption == nil
+                || (task.origin == .pineLaunched
+                    && task.runs.isEmpty
+                    && task.lifecycle == .paused
+                    && task.route.availability == .missing
+                    && task.attention == .none),
               validOptionalDate(task.completedAt),
               task.runs.allSatisfy(validateRun),
               validateChronology(task) else {

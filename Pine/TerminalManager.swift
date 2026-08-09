@@ -14,6 +14,62 @@ nonisolated enum AgentTaskRecoveryLaunchResult: Equatable, Sendable {
     case rejected
 }
 
+nonisolated struct PineAgentLaunchIdentity: Hashable, Sendable {
+    let terminalID: UUID
+    let reservation: AgentTaskLaunchReservation
+}
+
+nonisolated struct PineAgentSettledLaunchIdentity: Hashable, Sendable {
+    let launch: PineAgentLaunchIdentity
+    let sessionID: UUID
+}
+
+@MainActor
+struct PineAgentLaunchAuthorization {
+    fileprivate let identities: Set<PineAgentLaunchIdentity>
+    fileprivate let settledIdentities: Set<PineAgentSettledLaunchIdentity>
+
+    var requiresConfirmation: Bool { !identities.isEmpty }
+
+    func stillCovers(_ current: PineAgentLaunchAuthorization) -> Bool {
+        let authorizedLaunches = identities.union(
+            settledIdentities.map(\.launch)
+        )
+        return current.identities.isSubset(of: authorizedLaunches)
+            && current.settledIdentities.allSatisfy {
+                authorizedLaunches.contains($0.launch)
+            }
+    }
+
+    /// Covers an idle-to-foreground transition only when the current terminal
+    /// still carries the exact Pine reservation captured by the user's Quit
+    /// decision. A raw tab id or a newly observed process group is insufficient.
+    func coversLaunch(
+        in terminalID: UUID,
+        settledSessionID: UUID?,
+        current: PineAgentLaunchAuthorization
+    ) -> Bool {
+        let authorizedLaunches = identities.union(
+            settledIdentities.map(\.launch)
+        )
+        if let settledSessionID {
+            return current.settledIdentities.contains { settled in
+                settled.launch.terminalID == terminalID
+                    && settled.sessionID == settledSessionID
+                    && authorizedLaunches.contains(settled.launch)
+            }
+        }
+        return current.identities.contains { identity in
+            identity.terminalID == terminalID
+                && authorizedLaunches.contains(identity)
+        }
+    }
+
+    fileprivate var reservations: Set<AgentTaskLaunchReservation> {
+        Set(identities.map(\.reservation))
+    }
+}
+
 @MainActor
 @Observable
 final class TerminalManager {
@@ -49,7 +105,22 @@ final class TerminalManager {
     @ObservationIgnored
     private var launchReservations: [UUID: AgentTaskLaunchReservation] = [:]
     @ObservationIgnored
-    private var launchWritesInFlight: Set<UUID> = []
+    private var launchWritesInFlight: [
+        UUID: AgentTaskLaunchReservation
+    ] = [:]
+    /// A successful PTY write remains destructive work even when its durable
+    /// claim expires or cannot be armed before detector evidence arrives.
+    @ObservationIgnored
+    private var acknowledgedAgentLaunches: [
+        UUID: AgentTaskLaunchReservation
+    ] = [:]
+    /// Exact reservation-to-session lineage retained after the registry
+    /// consumes a launch claim. A durable task id can span many resumes and
+    /// is therefore never sufficient destructive authorization by itself.
+    @ObservationIgnored
+    private var settledAgentLaunches: [
+        UUID: PineAgentSettledLaunchIdentity
+    ] = [:]
 
     /// `true` once agent-detection polling has started. Read-only diagnostic /
     /// test hook. Delegates to the coordinator's `isRunning` so it correctly
@@ -102,6 +173,8 @@ final class TerminalManager {
             ) {
                 agentTaskRegistry?.cancelLaunch(reservation)
             }
+            self?.acknowledgedAgentLaunches.removeValue(forKey: terminalID)
+            self?.settledAgentLaunches.removeValue(forKey: terminalID)
             agentTaskRegistry?.markTerminalClosed(
                 terminalID: terminalID,
                 project: project
@@ -153,6 +226,9 @@ final class TerminalManager {
               let base = agentTaskContext(for: tab),
               let agentTaskRegistry else { return }
         let ownedReservation = reservation ?? launchReservations[tab.id]
+        if settledAgentLaunches[tab.id]?.sessionID != session.id {
+            settledAgentLaunches[tab.id] = nil
+        }
         let context = AgentTaskBridgeContext(
             project: base.project,
             route: base.route,
@@ -168,9 +244,125 @@ final class TerminalManager {
             reservation: ownedReservation
         )
         if let ownedReservation,
+           !agentTaskRegistry.isLaunchPending(ownedReservation),
+           agentTaskRegistry.taskID(forSessionID: session.id)
+                == ownedReservation.taskID {
+            settledAgentLaunches[tab.id] = PineAgentSettledLaunchIdentity(
+                launch: PineAgentLaunchIdentity(
+                    terminalID: tab.id,
+                    reservation: ownedReservation
+                ),
+                sessionID: session.id
+            )
+        }
+        if let ownedReservation,
            !agentTaskRegistry.isLaunchPending(ownedReservation) {
             launchReservations[tab.id] = nil
+            acknowledgedAgentLaunches[tab.id] = nil
         }
+    }
+
+    func capturePineAgentLaunchAuthorization()
+        -> PineAgentLaunchAuthorization {
+        var identities = Set<PineAgentLaunchIdentity>()
+        let staleReservationTerminalIDs = launchReservations.compactMap { terminalID, reservation in
+            agentTaskRegistry?.isLaunchPending(reservation) == true
+                ? nil
+                : terminalID
+        }
+        for terminalID in staleReservationTerminalIDs {
+            launchReservations[terminalID] = nil
+            acknowledgedAgentLaunches[terminalID] = nil
+        }
+        for (terminalID, reservation) in launchReservations {
+            identities.insert(PineAgentLaunchIdentity(
+                terminalID: terminalID,
+                reservation: reservation
+            ))
+        }
+        for (terminalID, reservation) in launchWritesInFlight {
+            identities.insert(PineAgentLaunchIdentity(
+                terminalID: terminalID,
+                reservation: reservation
+            ))
+        }
+        for (terminalID, reservation) in acknowledgedAgentLaunches {
+            identities.insert(PineAgentLaunchIdentity(
+                terminalID: terminalID,
+                reservation: reservation
+            ))
+        }
+        let tabsByID = Dictionary(
+            uniqueKeysWithValues: allTerminalTabs.map { ($0.id, $0) }
+        )
+        let staleSettledTerminalIDs = settledAgentLaunches.compactMap { terminalID, settled in
+            guard let tab = tabsByID[terminalID],
+                  tab.agentSession?.id == settled.sessionID,
+                  agentTaskRegistry?.taskID(
+                      forSessionID: settled.sessionID
+                  ) == settled.launch.reservation.taskID else {
+                return terminalID
+            }
+            return nil
+        }
+        for terminalID in staleSettledTerminalIDs {
+            settledAgentLaunches[terminalID] = nil
+        }
+        return PineAgentLaunchAuthorization(
+            identities: identities,
+            settledIdentities: Set(settledAgentLaunches.values)
+        )
+    }
+
+    /// Pins every exact launch covered by the preflight while the user reads
+    /// Quit sheets. The registry retains the claim's remaining lease rather
+    /// than charging unbounded human decision time against a short TTL.
+    func pauseAuthorizedAgentLaunchesForTerminationDecision(
+        _ authorization: PineAgentLaunchAuthorization
+    ) -> Bool {
+        agentTaskRegistry?.pauseLaunchExpirationForTerminationDecision(
+            authorization.reservations
+        ) ?? authorization.reservations.isEmpty
+    }
+
+    /// Releases a cancelled Quit's lease and drops acknowledgement-only UI
+    /// state. Armed reservations remain represented by `launchReservations`;
+    /// an acknowledgement whose durable claim disappeared must not continue
+    /// authorizing later destructive actions.
+    func cancelAuthorizedAgentLaunchTerminationDecision(
+        _ authorization: PineAgentLaunchAuthorization
+    ) {
+        agentTaskRegistry?.resumeLaunchExpirationAfterTerminationDecision(
+            authorization.reservations
+        )
+        acknowledgedAgentLaunches.removeAll()
+    }
+
+    /// Waits for every exact PTY write covered by the user's decision to
+    /// settle. Pine performs another persistence barrier after this returns,
+    /// so a late successful acknowledgement cannot be killed without its
+    /// durable interruption marker.
+    func waitForAuthorizedAgentLaunchSettlement(
+        _ authorization: PineAgentLaunchAuthorization,
+        until deadline: DispatchTime
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        while authorization.identities.contains(where: { identity in
+            launchWritesInFlight[identity.terminalID] == identity.reservation
+        }) {
+            let now = DispatchTime.now().uptimeNanoseconds
+            guard now < deadline.uptimeNanoseconds else { return false }
+            let remaining = deadline.uptimeNanoseconds - now
+            do {
+                try await clock.sleep(for: .nanoseconds(Int64(clamping: min(
+                    remaining,
+                    5_000_000
+                ))))
+            } catch {
+                return false
+            }
+        }
+        return true
     }
 
     /// Captures the detector boundary and reserves durable identity for the
@@ -251,6 +443,10 @@ final class TerminalManager {
         agentTaskCallbacksFrozen
     }
 
+    var hasAcknowledgedAgentLaunchForTesting: Bool {
+        !acknowledgedAgentLaunches.isEmpty
+    }
+
     func launchAgentCommandForTesting(
         _ command: String,
         descriptor: AgentDescriptor,
@@ -281,7 +477,7 @@ final class TerminalManager {
                 ? .sentWithoutReservation
                 : .rejected
         }
-        guard !launchWritesInFlight.contains(tab.id) else {
+        guard launchWritesInFlight[tab.id] == nil else {
             return .rejected
         }
         if let existing = launchReservations[tab.id],
@@ -297,13 +493,23 @@ final class TerminalManager {
         guard case .reserved(let reservation) = result else {
             return .rejected
         }
-        launchWritesInFlight.insert(tab.id)
+        guard agentTaskRegistry?.pauseLaunchExpirationForAcknowledgedWrite(
+            reservation
+        ) == true else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .rejected
+        }
+        launchWritesInFlight[tab.id] = reservation
         let acknowledged = await acknowledgedWrite()
-        launchWritesInFlight.remove(tab.id)
+        launchWritesInFlight[tab.id] = nil
+        agentTaskRegistry?.resumeLaunchExpirationAfterAcknowledgedWrite(
+            reservation
+        )
         guard acknowledged else {
             cancelAgentLaunch(reservation, in: tab)
             return .rejected
         }
+        acknowledgedAgentLaunches[tab.id] = reservation
         guard launchReservations[tab.id] == reservation,
               agentTaskRegistry?.armLaunch(reservation) == true else {
             cancelAgentLaunch(reservation, in: tab)
@@ -324,6 +530,9 @@ final class TerminalManager {
         if launchReservations[tab.id] == reservation {
             launchReservations[tab.id] = nil
         }
+        if acknowledgedAgentLaunches[tab.id] == reservation {
+            acknowledgedAgentLaunches[tab.id] = nil
+        }
         agentTaskRegistry?.cancelLaunch(reservation)
     }
 
@@ -336,18 +545,28 @@ final class TerminalManager {
               let task = agentTaskRegistry.task(for: taskID),
               task.descriptor.launchExecutable == command,
               Self.exactAgentLaunchDescriptor(for: command) == task.descriptor,
-              !launchWritesInFlight.contains(tab.id) else {
+              launchWritesInFlight[tab.id] == nil else {
             return .rejected
         }
         let result = prepareAgentResume(taskID: taskID, in: tab)
         guard case .reserved(let reservation) = result else { return result }
-        launchWritesInFlight.insert(tab.id)
+        guard agentTaskRegistry.pauseLaunchExpirationForAcknowledgedWrite(
+            reservation
+        ) else {
+            cancelAgentLaunch(reservation, in: tab)
+            return .rejected
+        }
+        launchWritesInFlight[tab.id] = reservation
         let acknowledged = await tab.sendTextAcknowledged(command + "\n")
-        launchWritesInFlight.remove(tab.id)
+        launchWritesInFlight[tab.id] = nil
+        agentTaskRegistry.resumeLaunchExpirationAfterAcknowledgedWrite(
+            reservation
+        )
         guard acknowledged else {
             cancelAgentLaunch(reservation, in: tab)
             return .rejected
         }
+        acknowledgedAgentLaunches[tab.id] = reservation
         guard launchReservations[tab.id] == reservation,
               agentTaskRegistry.armLaunch(reservation) else {
             cancelAgentLaunch(reservation, in: tab)
@@ -407,12 +626,13 @@ final class TerminalManager {
     func freezeAgentTasksForTermination() {
         guard !agentTaskCallbacksFrozen else { return }
         agentTaskCallbacksFrozen = true
-        agentCoordinator?.stop()
+        agentCoordinator?.suspendForTermination()
     }
 
     func cancelAgentTaskTermination() {
         guard agentTaskCallbacksFrozen else { return }
         agentTaskCallbacksFrozen = false
+        acknowledgedAgentLaunches.removeAll()
         if paneManager?.allTerminalTabs.isEmpty == false {
             if let agentCoordinator {
                 agentCoordinator.start()

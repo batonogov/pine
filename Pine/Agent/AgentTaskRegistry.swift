@@ -13,10 +13,9 @@ nonisolated private struct AgentTaskTerminalKey: Hashable, Sendable {
     let terminalID: UUID
 }
 
-nonisolated struct AgentTaskLaunchReservation: Equatable, Sendable {
+nonisolated struct AgentTaskLaunchReservation: Hashable, Sendable {
     let taskID: UUID
     fileprivate let token: UUID
-
 }
 
 nonisolated enum AgentTaskLaunchResult: Equatable, Sendable {
@@ -27,6 +26,7 @@ nonisolated enum AgentTaskLaunchResult: Equatable, Sendable {
 
 nonisolated private enum AgentTaskClaimKind: Sendable {
     case initialLaunch
+    case interruptedInitialLaunch
     case resume(previousRunID: UUID)
 }
 
@@ -55,6 +55,7 @@ nonisolated private struct AgentTaskTerminationRollback: Sendable {
     let liveness: AgentRunLiveness?
     let attention: AgentTaskAttention
     let updatedAt: Date
+    let launchInterruption: AgentTaskLaunchInterruption?
 }
 
 /// Application-lifetime durable task ownership. The registry is MainActor so
@@ -91,6 +92,10 @@ final class AgentTaskRegistry {
     private var pendingClaims: [AgentTaskTerminalKey: AgentTaskPendingClaim] = [:]
     @ObservationIgnored
     private var pendingClaimKeyByToken: [UUID: AgentTaskTerminalKey] = [:]
+    @ObservationIgnored
+    private var terminationDecisionClaimRemaining: [UUID: Duration] = [:]
+    @ObservationIgnored
+    private var acknowledgedWriteClaimRemaining: [UUID: Duration] = [:]
     @ObservationIgnored
     private var terminationClaimRemaining: [UUID: Duration] = [:]
     @ObservationIgnored
@@ -131,11 +136,20 @@ final class AgentTaskRegistry {
     private let publicationFence: AgentTaskPublicationFence
     @ObservationIgnored
     private var isTerminating = false
+    /// Window availability changes remain admissible while the rollback
+    /// snapshot is being reconciled and durably flushed. Every other agent
+    /// admission path stays frozen by `isTerminating`.
+    private var isRollingBackApplicationTermination = false
     @ObservationIgnored
     private var terminationRollback:
         [UUID: AgentTaskTerminationRollback] = [:]
     @ObservationIgnored
     private var claimExpiryTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored
+    private var rollbackPersistenceRetryTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var rollbackPersistenceRetryProjects =
+        Set<AgentTaskProjectIdentity>()
     @ObservationIgnored
     private let monotonicNow: @Sendable () -> ContinuousClock.Instant
     @ObservationIgnored
@@ -401,6 +415,7 @@ final class AgentTaskRegistry {
         tasks[index].lifecycle = .dismissed
         tasks[index].attention = .none
         tasks[index].isUnread = false
+        tasks[index].launchInterruption = nil
         tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
         markDirty(tasks[index].project)
         return true
@@ -664,12 +679,20 @@ final class AgentTaskRegistry {
               validLaunchRoute(context.route),
               tasks[index].project == context.project,
               isResumableTask(at: index),
-              let prior = tasks[index].runs.last,
               pendingClaims[terminalKey(context)] == nil,
               taskIDByTerminal[terminalKey(context)] == nil else {
             return .rejected
         }
-        let previousRunID = prior.id
+        let kind: AgentTaskClaimKind
+        if let previousRunID = tasks[index].runs.last?.id {
+            kind = .resume(previousRunID: previousRunID)
+        } else {
+            guard tasks[index].launchInterruption
+                    == .acknowledgedBeforeVerification else {
+                return .rejected
+            }
+            kind = .interruptedInitialLaunch
+        }
         let reservation = AgentTaskLaunchReservation(
             taskID: taskID,
             token: UUID()
@@ -680,7 +703,7 @@ final class AgentTaskRegistry {
             project: context.project,
             route: context.route,
             descriptor: tasks[index].descriptor,
-            kind: .resume(previousRunID: previousRunID),
+            kind: kind,
             expectedRunCount: tasks[index].runs.count,
             generationFloor: boundary.generationFloor,
             launchBoundary: normalizedLaunchBoundary(boundary.capturedAt),
@@ -711,13 +734,128 @@ final class AgentTaskRegistry {
         if isTerminating {
             deadlineIsValid = terminationClaimRemaining[reservation.token]
                 .map { $0 > .zero } ?? false
+        } else if let remaining =
+                    terminationDecisionClaimRemaining[reservation.token] {
+            deadlineIsValid = remaining > .zero
+        } else if let remaining =
+                    acknowledgedWriteClaimRemaining[reservation.token] {
+            deadlineIsValid = remaining > .zero
         } else {
             deadlineIsValid = monotonicNow() < claim.deadline
         }
         guard deadlineIsValid else { return false }
         claim.state = .armed
         pendingClaims[key] = claim
+        // A PTY write may settle after Quit has already captured its rollback
+        // snapshot and started the first persistence pass. Record that exact
+        // acknowledgement immediately; the post-settlement persistence barrier
+        // must include this newer revision before AppKit may terminate Pine.
+        if isTerminating,
+           case .initialLaunch = claim.kind,
+           let index = taskIndex(for: claim.taskID),
+           tasks[index].runs.isEmpty,
+           tasks[index].launchInterruption == nil {
+            tasks[index].launchInterruption = .acknowledgedBeforeVerification
+            markDirty(tasks[index].project)
+        }
         return true
+    }
+
+    /// Holds an exact launch claim while Pine waits for its PTY write to be
+    /// acknowledged. The bounded lease resumes only after the write settles;
+    /// a concurrent Quit decision composes with this hold instead of replacing
+    /// it.
+    func pauseLaunchExpirationForAcknowledgedWrite(
+        _ reservation: AgentTaskLaunchReservation
+    ) -> Bool {
+        if !isTerminating { expireClaims() }
+        guard let key = pendingClaimKeyByToken[reservation.token],
+              let claim = pendingClaims[key],
+              claim.taskID == reservation.taskID else { return false }
+        let now = monotonicNow()
+        let remaining = terminationClaimRemaining[reservation.token]
+            ?? terminationDecisionClaimRemaining[reservation.token]
+            ?? acknowledgedWriteClaimRemaining[reservation.token]
+            ?? max(.zero, now.duration(to: claim.deadline))
+        guard remaining > .zero else { return false }
+        acknowledgedWriteClaimRemaining[reservation.token] = remaining
+        claimExpiryTasks.removeValue(forKey: reservation.token)?.cancel()
+        return true
+    }
+
+    func resumeLaunchExpirationAfterAcknowledgedWrite(
+        _ reservation: AgentTaskLaunchReservation
+    ) {
+        guard let remaining = acknowledgedWriteClaimRemaining
+                .removeValue(forKey: reservation.token),
+              let key = pendingClaimKeyByToken[reservation.token],
+              var claim = pendingClaims[key],
+              claim.taskID == reservation.taskID else { return }
+        if isTerminating {
+            terminationClaimRemaining[reservation.token] =
+                terminationClaimRemaining[reservation.token] ?? remaining
+            return
+        }
+        guard terminationDecisionClaimRemaining[reservation.token] == nil else {
+            return
+        }
+        claim.deadline = monotonicNow().advanced(by: remaining)
+        installClaim(claim, key: key)
+    }
+
+    /// Pauses the bounded reservation lease while the user considers Quit.
+    /// Human deliberation is intentionally unbounded, but the exact launch
+    /// that caused the prompt must remain claimable until that decision is
+    /// either cancelled or transferred into the termination transaction.
+    func pauseLaunchExpirationForTerminationDecision(
+        _ reservations: Set<AgentTaskLaunchReservation>
+    ) -> Bool {
+        guard !isTerminating else { return false }
+        expireClaims()
+        let now = monotonicNow()
+        var remainingByToken: [UUID: Duration] = [:]
+        for reservation in reservations {
+            guard let key = pendingClaimKeyByToken[reservation.token],
+                  let claim = pendingClaims[key],
+                  claim.taskID == reservation.taskID else {
+                return false
+            }
+            let remaining = terminationDecisionClaimRemaining[
+                reservation.token
+            ] ?? acknowledgedWriteClaimRemaining[reservation.token]
+                ?? max(.zero, now.duration(to: claim.deadline))
+            guard remaining > .zero else { return false }
+            remainingByToken[reservation.token] = remaining
+        }
+        for (token, remaining) in remainingByToken {
+            terminationDecisionClaimRemaining[token] = remaining
+            claimExpiryTasks.removeValue(forKey: token)?.cancel()
+        }
+        return true
+    }
+
+    /// Restores the lease after a cancelled Quit. The original remaining
+    /// duration is rebased from now, so time spent reading a native sheet does
+    /// not manufacture a claim expiry.
+    func resumeLaunchExpirationAfterTerminationDecision(
+        _ reservations: Set<AgentTaskLaunchReservation>
+    ) {
+        guard !isTerminating else { return }
+        let now = monotonicNow()
+        for reservation in reservations {
+            guard let remaining = terminationDecisionClaimRemaining
+                    .removeValue(forKey: reservation.token),
+                  let key = pendingClaimKeyByToken[reservation.token],
+                  var claim = pendingClaims[key],
+                  claim.taskID == reservation.taskID else {
+                continue
+            }
+            guard acknowledgedWriteClaimRemaining[reservation.token] == nil else {
+                continue
+            }
+            claim.deadline = now.advanced(by: remaining)
+            installClaim(claim, key: key)
+        }
     }
 
     func cancelLaunch(_ reservation: AgentTaskLaunchReservation) {
@@ -754,8 +892,18 @@ final class AgentTaskRegistry {
         _ isOpen: Bool,
         matchesProject: (AgentTaskProjectIdentity) -> Bool
     ) {
-        expireClaims()
-        guard !isTerminating else { return }
+        if isTerminating {
+            guard isRollingBackApplicationTermination else { return }
+        } else {
+            expireClaims()
+        }
+        applyWindowOpen(isOpen, matchesProject: matchesProject)
+    }
+
+    private func applyWindowOpen(
+        _ isOpen: Bool,
+        matchesProject: (AgentTaskProjectIdentity) -> Bool
+    ) {
         var projects = Set<AgentTaskProjectIdentity>()
         for key in Array(pendingClaims.keys)
         where matchesProject(key.project) {
@@ -865,18 +1013,28 @@ final class AgentTaskRegistry {
     /// This is not task completion and does not manufacture user attention.
     func prepareForApplicationTermination(at timestamp: Date = Date()) {
         guard !isTerminating else { return }
+        rollbackPersistenceRetryTask?.cancel()
+        rollbackPersistenceRetryTask = nil
         expireClaims()
         isTerminating = true
         let now = monotonicNow()
         terminationClaimRemaining.removeAll(keepingCapacity: true)
         for claim in pendingClaims.values {
-            terminationClaimRemaining[claim.token] = max(
-                .zero,
-                now.duration(to: claim.deadline)
-            )
+            terminationClaimRemaining[claim.token] =
+                terminationDecisionClaimRemaining[claim.token]
+                ?? acknowledgedWriteClaimRemaining[claim.token]
+                ?? max(.zero, now.duration(to: claim.deadline))
             claimExpiryTasks.removeValue(forKey: claim.token)?.cancel()
         }
+        terminationDecisionClaimRemaining.removeAll(keepingCapacity: true)
         var changedProjects = Set<AgentTaskProjectIdentity>()
+        let acknowledgedInitialTaskIDs = Set(
+            pendingClaims.values.compactMap { claim -> UUID? in
+                guard case .initialLaunch = claim.kind,
+                      claim.state == .armed else { return nil }
+                return claim.taskID
+            }
+        )
         for taskIndex in tasks.indices {
             let runIndex = tasks[taskIndex].runs.indices.last
             terminationRollback[tasks[taskIndex].id] = AgentTaskTerminationRollback(
@@ -884,8 +1042,14 @@ final class AgentTaskRegistry {
                 availability: tasks[taskIndex].route.availability,
                 liveness: runIndex.map { tasks[taskIndex].runs[$0].liveness },
                 attention: tasks[taskIndex].attention,
-                updatedAt: tasks[taskIndex].updatedAt
+                updatedAt: tasks[taskIndex].updatedAt,
+                launchInterruption: tasks[taskIndex].launchInterruption
             )
+            if acknowledgedInitialTaskIDs.contains(tasks[taskIndex].id),
+               tasks[taskIndex].runs.isEmpty {
+                tasks[taskIndex].launchInterruption =
+                    .acknowledgedBeforeVerification
+            }
             tasks[taskIndex].route.availability = .missing
             if let runIndex,
                tasks[taskIndex].runs[runIndex].liveness == .live {
@@ -907,27 +1071,50 @@ final class AgentTaskRegistry {
     func cancelApplicationTerminationAndFlush(
         maximumDuration: Duration? = nil
     ) async -> Bool {
+        await cancelApplicationTerminationAndFlush(
+            reconcilingWindowOpen: [:],
+            maximumDuration: maximumDuration
+        )
+    }
+
+    func cancelApplicationTerminationAndFlush(
+        reconcilingWindowOpen windowOpenByProject: [
+            AgentTaskProjectIdentity: Bool
+        ],
+        maximumDuration: Duration? = nil
+    ) async -> Bool {
         guard isTerminating else { return true }
-        restoreTerminationSnapshot()
+        isRollingBackApplicationTermination = true
+        _ = restoreTerminationSnapshot(trackingPersistence: true)
+        for (project, isOpen) in windowOpenByProject {
+            applyWindowOpen(isOpen) { $0 == project }
+        }
         let rollbackWasSaved = await flushPersistence(
             maximumDuration: maximumDuration
         ) == .saved
         // A failed durability barrier is surfaced to the caller, but it must
         // never leave the still-running application in termination mode.
         // Runtime admission and bounded claim expiry are restored regardless.
+        isRollingBackApplicationTermination = false
         finishTerminationCancellation()
+        if !rollbackWasSaved {
+            ensureRollbackPersistenceRetryScheduled()
+        }
         return rollbackWasSaved
     }
 
     #if DEBUG
     func cancelApplicationTermination() {
         guard isTerminating else { return }
-        restoreTerminationSnapshot()
+        _ = restoreTerminationSnapshot(trackingPersistence: false)
+        isRollingBackApplicationTermination = false
         finishTerminationCancellation()
     }
     #endif
 
-    private func restoreTerminationSnapshot() {
+    private func restoreTerminationSnapshot(
+        trackingPersistence: Bool
+    ) -> Set<AgentTaskProjectIdentity> {
         var restoredProjects = Set<AgentTaskProjectIdentity>()
         for index in tasks.indices {
             if let rollback = terminationRollback[tasks[index].id] {
@@ -935,6 +1122,8 @@ final class AgentTaskRegistry {
                 tasks[index].route.availability = rollback.availability
                 tasks[index].attention = rollback.attention
                 tasks[index].updatedAt = rollback.updatedAt
+                tasks[index].launchInterruption =
+                    rollback.launchInterruption
                 if let runIndex = tasks[index].runs.indices.last,
                    let liveness = rollback.liveness {
                     tasks[index].runs[runIndex].liveness = liveness
@@ -942,7 +1131,11 @@ final class AgentTaskRegistry {
                 restoredProjects.insert(tasks[index].project)
             }
         }
+        if trackingPersistence {
+            rollbackPersistenceRetryProjects.formUnion(restoredProjects)
+        }
         restoredProjects.forEach(markDirty)
+        return restoredProjects
     }
 
     private func finishTerminationCancellation() {
@@ -954,10 +1147,52 @@ final class AgentTaskRegistry {
                   let remaining = terminationClaimRemaining[claim.token] else {
                 continue
             }
+            guard acknowledgedWriteClaimRemaining[claim.token] == nil else {
+                continue
+            }
             claim.deadline = now.advanced(by: remaining)
             installClaim(claim, key: key)
         }
         terminationClaimRemaining.removeAll(keepingCapacity: true)
+    }
+
+    /// A failed bounded rollback must thaw the live application, but the
+    /// restored snapshot remains dirty until it is actually durable. Retry in
+    /// the background with bounded backoff so a later crash cannot indefinitely
+    /// reload the paused/missing termination snapshot.
+    private func ensureRollbackPersistenceRetryScheduled() {
+        guard rollbackPersistenceRetryTask == nil,
+              !rollbackPersistenceRetryProjects.isEmpty else { return }
+        rollbackPersistenceRetryTask = Task { @MainActor [weak self] in
+            var delay = Duration.milliseconds(100)
+            while !Task.isCancelled {
+                guard let self else { return }
+                let retryable = rollbackPersistenceRetryProjects.filter {
+                    registeredProjects.contains($0)
+                        && !quarantinedProjects.contains($0)
+                        && !unpersistableDirtyProjects.contains($0)
+                }
+                guard !retryable.isEmpty else {
+                    rollbackPersistenceRetryTask = nil
+                    return
+                }
+                persistenceRetryBlocked.subtract(retryable)
+                retryable.forEach(scheduleSaveIfReady)
+                if await flushPersistence(
+                    maximumDuration: min(flushTotal, .seconds(2))
+                ) == .saved,
+                   rollbackPersistenceRetryProjects.isEmpty {
+                    rollbackPersistenceRetryTask = nil
+                    return
+                }
+                do {
+                    try await ContinuousClock().sleep(for: delay)
+                } catch {
+                    return
+                }
+                delay = min(delay * 2, .seconds(5))
+            }
+        }
     }
 
     /// Waits for loads and every queued save, with a five-second total and
@@ -1032,7 +1267,8 @@ final class AgentTaskRegistry {
         var stagedInterruptedTaskIDs = Set<UUID>()
         for loadedTask in result.tasks {
             if loadedTask.origin == .pineLaunched,
-               loadedTask.runs.isEmpty {
+               loadedTask.runs.isEmpty,
+               loadedTask.launchInterruption == nil {
                 needsNormalizedSave = true
                 continue
             }
@@ -1199,6 +1435,7 @@ final class AgentTaskRegistry {
         ))
         task.route = context.route
         task.runs.append(run)
+        task.launchInterruption = nil
         task.lifecycle = liveness == .terminated ? .paused : .active
         if liveness == .terminated {
             task.route.availability = .missing
@@ -1347,6 +1584,10 @@ final class AgentTaskRegistry {
         case .initialLaunch:
             return task.runs.isEmpty
                 && task.route.terminalID == claim.route.terminalID
+        case .interruptedInitialLaunch:
+            return task.runs.isEmpty
+                && task.launchInterruption
+                    == .acknowledgedBeforeVerification
         case .resume(let previousRunID):
             guard let previous = task.runs.last else { return false }
             let generationIsValid = previous.terminalID != context.route.terminalID
@@ -1432,6 +1673,8 @@ final class AgentTaskRegistry {
     private func removeClaim(for key: AgentTaskTerminalKey) {
         guard let claim = pendingClaims.removeValue(forKey: key) else { return }
         pendingClaimKeyByToken[claim.token] = nil
+        terminationDecisionClaimRemaining[claim.token] = nil
+        acknowledgedWriteClaimRemaining[claim.token] = nil
         terminationClaimRemaining[claim.token] = nil
         claimExpiryTasks.removeValue(forKey: claim.token)?.cancel()
     }
@@ -1459,8 +1702,12 @@ final class AgentTaskRegistry {
 
     private func expireClaims() {
         let now = monotonicNow()
-        let expired = pendingClaims.compactMap { key, claim in
-            claim.deadline <= now ? key : nil
+        let expired: [AgentTaskTerminalKey] = pendingClaims.compactMap { key, claim in
+            guard terminationDecisionClaimRemaining[claim.token] == nil,
+                  acknowledgedWriteClaimRemaining[claim.token] == nil else {
+                return nil
+            }
+            return claim.deadline <= now ? key : nil
         }
         expired.forEach(cancelClaim)
     }
@@ -1517,18 +1764,21 @@ final class AgentTaskRegistry {
             return
         }
         persistenceSequence += 1
-        let pendingInitialTaskIDs = Set<UUID>(
+        let pendingUnverifiedTaskIDs = Set<UUID>(
             pendingClaims.values.compactMap { claim in
-                guard case .initialLaunch = claim.kind else { return nil }
+                guard case .initialLaunch = claim.kind,
+                      task(for: claim.taskID)?.launchInterruption == nil else {
+                    return nil
+                }
                 return claim.taskID
             }
         )
-        // A Pine-owned task is not durable until authoritative process
-        // evidence appends its first run. This covers both pre-ACK dormant and
-        // post-ACK armed claims, including snapshots taken during Quit.
+        // Dormant launch intent is runtime-only. During Quit, an armed launch
+        // instead carries an honest interruption marker with no fabricated
+        // process evidence and must survive the application relaunch.
         let snapshot = tasks.filter {
             $0.project == project
-                && !pendingInitialTaskIDs.contains($0.id)
+                && !pendingUnverifiedTaskIDs.contains($0.id)
         }
         let store = persistence
         let revision = persistenceRevision[project]
@@ -1586,11 +1836,16 @@ final class AgentTaskRegistry {
                     persistenceRetryBlocked.insert(project)
                 } else {
                     persistenceRetryBlocked.remove(project)
+                    rollbackPersistenceRetryProjects.remove(project)
                 }
             }
             if ownsTail {
                 let pendingProjects = Array(dirtyProjects)
                 pendingProjects.forEach(scheduleSaveIfReady)
+            }
+            if rollbackPersistenceRetryProjects.contains(project),
+               rollbackPersistenceRetryTask == nil {
+                ensureRollbackPersistenceRetryScheduled()
             }
         }
     }
@@ -1771,8 +2026,11 @@ final class AgentTaskRegistry {
               let executable = task.descriptor.launchExecutable,
               task.descriptor.agentType.cliNames.contains(executable),
               !executable.contains(where: { $0.isWhitespace }),
-              let tail = task.runs.last,
-              resumableTail(tail, taskID: task.id) else {
+              (task.launchInterruption == .acknowledgedBeforeVerification
+                && task.runs.isEmpty
+                || task.runs.last.map {
+                    resumableTail($0, taskID: task.id)
+                } == true) else {
             return false
         }
         return !pendingClaims.values.contains { $0.taskID == task.id }

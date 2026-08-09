@@ -23,6 +23,17 @@ enum DialogRequestKey: Hashable {
     )
 }
 
+/// Controls what a queued request does while a framework-owned sheet occupies
+/// its captured window. Most commands use the bounded policy so a forgotten
+/// SwiftUI sheet cannot wedge a window's queue forever. Application
+/// termination is different: these sheets collect a human decision, so a
+/// generic presentation timeout must not silently turn that decision into a
+/// cancellation.
+enum DialogPresentationWaitPolicy {
+    case bounded
+    case waitUntilOwnerAvailable
+}
+
 extension DialogRequestKey {
     /// Concise, privacy-safe representation for `os_log` diagnostics (#1335).
     var logDescription: String {
@@ -53,6 +64,7 @@ final class WindowDialogCoordinator {
     private final class Request {
         let id: UUID
         let deduplicationKey: DialogRequestKey?
+        let waitPolicy: DialogPresentationWaitPolicy
         let start: Start
         let cancel: Cancel
         var continuation: CheckedContinuation<NSApplication.ModalResponse, Never>?
@@ -61,11 +73,13 @@ final class WindowDialogCoordinator {
         init(
             id: UUID,
             deduplicationKey: DialogRequestKey?,
+            waitPolicy: DialogPresentationWaitPolicy,
             start: @escaping Start,
             cancel: @escaping Cancel
         ) {
             self.id = id
             self.deduplicationKey = deduplicationKey
+            self.waitPolicy = waitPolicy
             self.start = start
             self.cancel = cancel
         }
@@ -90,8 +104,9 @@ final class WindowDialogCoordinator {
     private(set) var isOwnerClosed = false
 
     /// Polls the owner while a queued request is blocked by a foreign
-    /// (framework/SwiftUI) sheet, and bounds how long a queued request may
-    /// wait so the queue can never wedge permanently (#1335 H2).
+    /// (framework/SwiftUI) sheet. Ordinary requests have a bounded wait;
+    /// termination decisions keep polling until their human-owned surface is
+    /// available or the owner itself closes (#1335 H2, #1354).
     private let watchdogInterval: TimeInterval
     private let watchdogMaxAttempts: Int
     private var queuedWatchdog: Task<Void, Never>?
@@ -179,6 +194,7 @@ final class WindowDialogCoordinator {
     /// `.abort`; a dialog is never promoted to an application-modal window.
     func present(
         deduplicationKey: DialogRequestKey? = nil,
+        waitPolicy: DialogPresentationWaitPolicy = .bounded,
         start: @escaping Start,
         cancel: @escaping Cancel
     ) async -> NSApplication.ModalResponse {
@@ -206,6 +222,7 @@ final class WindowDialogCoordinator {
                 let request = Request(
                     id: requestID,
                     deduplicationKey: deduplicationKey,
+                    waitPolicy: waitPolicy,
                     start: start,
                     cancel: cancel
                 )
@@ -291,8 +308,8 @@ final class WindowDialogCoordinator {
 
     /// Arms the foreign-sheet watchdog for the front queued request. Polls the
     /// owner on `watchdogInterval`; once the foreign sheet clears the queued
-    /// request is presented, and after `watchdogMaxAttempts` the front request
-    /// is resolved as `.abort` so the queue can never wedge permanently.
+    /// request is presented. After `watchdogMaxAttempts`, ordinary requests
+    /// resolve as `.abort`; termination requests begin another polling period.
     private func armQueuedPresentationWatchdog() {
         guard queuedWatchdog == nil else { return }
         let interval = watchdogInterval
@@ -311,9 +328,19 @@ final class WindowDialogCoordinator {
                 self.presentNextIfPossible()
                 if Task.isCancelled { return }
             }
-            // Bound elapsed with the foreign sheet still attached: resolve the
-            // front request so the queue is not wedged forever.
+            // Bound elapsed with the foreign sheet still attached. Ordinary
+            // requests abort so the queue cannot wedge forever. A Quit
+            // decision deliberately keeps polling: human deliberation and an
+            // already-visible framework sheet are outside the machine-work
+            // termination budget.
             guard let self else { return }
+            if self.queuedRequests.first?.waitPolicy
+                == .waitUntilOwnerAvailable {
+                Logger.app.debug("termination dialog still waiting for an attached foreign sheet; continuing to poll")
+                self.queuedWatchdog = nil
+                self.armQueuedPresentationWatchdog()
+                return
+            }
             Logger.app.debug("queued request aborted after watchdog bound — owner still has an attached foreign sheet (#1335 H2)")
             self.abortFrontQueuedRequest()
         }
@@ -360,13 +387,19 @@ final class WindowDialogCoordinator {
 @MainActor
 struct DialogPresentationContext {
     fileprivate let coordinator: WindowDialogCoordinator?
+    private let waitPolicy: DialogPresentationWaitPolicy
 
     init(window: NSWindow?) {
         coordinator = window.map { DialogPresenter.coordinator(for: $0) }
+        waitPolicy = .bounded
     }
 
-    fileprivate init(coordinator: WindowDialogCoordinator?) {
+    fileprivate init(
+        coordinator: WindowDialogCoordinator?,
+        waitPolicy: DialogPresentationWaitPolicy = .bounded
+    ) {
         self.coordinator = coordinator
+        self.waitPolicy = waitPolicy
     }
 
     /// A deliberately unavailable owner. Presentation against this context
@@ -379,6 +412,16 @@ struct DialogPresentationContext {
         coordinator?.ownerWindowForPresentation
     }
 
+    /// Returns the same captured authority with a Quit-specific queue policy.
+    /// Owner closure still resolves `.abort`; only the generic foreign-sheet
+    /// watchdog is disabled so the caller can rebind a genuinely lost owner.
+    func waitingUntilOwnerAvailable() -> DialogPresentationContext {
+        DialogPresentationContext(
+            coordinator: coordinator,
+            waitPolicy: .waitUntilOwnerAvailable
+        )
+    }
+
     func present(
         deduplicationKey: DialogRequestKey? = nil,
         start: @escaping WindowDialogCoordinator.Start,
@@ -387,6 +430,7 @@ struct DialogPresentationContext {
         guard let coordinator else { return .abort }
         return await coordinator.present(
             deduplicationKey: deduplicationKey,
+            waitPolicy: waitPolicy,
             start: start,
             cancel: cancel
         )

@@ -2035,8 +2035,8 @@ enum Strings {
         String(localized: "quit.summary.title")
     }
 
-    static func applicationQuitSummaryMessage(_ projectCount: Int) -> String {
-        String(localized: "quit.summary.message \(projectCount)")
+    static func applicationQuitSummaryMessage(_ itemCount: Int) -> String {
+        String(localized: "quit.summary.message \(itemCount)")
     }
 
     static var applicationQuitReview: String {

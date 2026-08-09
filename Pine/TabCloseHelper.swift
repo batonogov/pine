@@ -19,6 +19,45 @@ import AppKit
 nonisolated struct TerminalForegroundProcessIdentity: Hashable, Sendable {
     let tabID: UUID
     let processGroupID: Int32
+    let startIdentity: TerminalProcessStartIdentity?
+}
+
+nonisolated struct TerminalProcessStartIdentity: Hashable, Sendable {
+    let processID: pid_t
+    let seconds: UInt64
+    let microseconds: UInt64
+
+    init(
+        processID: pid_t,
+        seconds: UInt64,
+        microseconds: UInt64
+    ) {
+        self.processID = processID
+        self.seconds = seconds
+        self.microseconds = microseconds
+    }
+
+    init?(processEvidence: AgentProcessEvidence) {
+        guard processEvidence.startIsAuthoritative,
+              let processID = processEvidence.processIdentifier,
+              processID > 1 else { return nil }
+        let interval = processEvidence.observedStartedAt.timeIntervalSince1970
+        guard interval.isFinite, interval >= 0 else { return nil }
+        var seconds = UInt64(interval.rounded(.down))
+        var microseconds = UInt64(
+            ((interval - Double(seconds)) * 1_000_000).rounded()
+        )
+        if microseconds == 1_000_000 {
+            guard seconds < UInt64.max else { return nil }
+            seconds += 1
+            microseconds = 0
+        }
+        self.init(
+            processID: processID,
+            seconds: seconds,
+            microseconds: microseconds
+        )
+    }
 }
 
 /// Per-tab coverage captured when a destructive terminal close/stop is
@@ -32,8 +71,13 @@ nonisolated enum TerminalTabCloseCoverage: Hashable, Sendable {
     /// generation. A new process group in the same tab is a new
     /// authorization generation (existing safety semantics).
     case foregroundProcess(TerminalForegroundProcessIdentity)
-    /// An agent tab is covered by its stable agent-session identity.
-    case agentSession(sessionID: UUID)
+    /// An agent tab is covered by its stable session id plus the immutable OS
+    /// process-start witness that backs that run. Foreground child churn is
+    /// covered only while this exact agent generation remains alive.
+    case agentSession(
+        sessionID: UUID,
+        processIdentity: TerminalProcessStartIdentity?
+    )
 }
 
 /// Snapshot of the destructive-process coverage authorized for a set of
@@ -63,12 +107,22 @@ struct TerminalTabCloseAuthorization {
         var coverage: [UUID: TerminalTabCloseCoverage] = [:]
         var foregroundIdentities: Set<TerminalForegroundProcessIdentity> = []
         for tab in tabs {
-            if let sessionID = tab.agentSession?.id {
-                coverage[tab.id] = .agentSession(sessionID: sessionID)
-            } else if tab.foregroundProcessID > 0 {
+            if let session = tab.agentSession {
+                coverage[tab.id] = .agentSession(
+                    sessionID: session.id,
+                    processIdentity: session.processEvidence.flatMap(
+                        TerminalProcessStartIdentity.init(processEvidence:)
+                    )
+                )
+            } else {
+                let processGroupID = tab.foregroundProcessID
+                guard processGroupID > 0 else { continue }
                 let identity = TerminalForegroundProcessIdentity(
                     tabID: tab.id,
-                    processGroupID: tab.foregroundProcessID
+                    processGroupID: processGroupID,
+                    startIdentity: tab.foregroundProcessIdentity(
+                        in: processGroupID
+                    )
                 )
                 coverage[tab.id] = .foregroundProcess(identity)
                 foregroundIdentities.insert(identity)
@@ -84,25 +138,97 @@ struct TerminalTabCloseAuthorization {
     /// captured at authorization time. A process that exited while the sheet
     /// was visible is always covered (nothing remains to protect).
     func stillCovers(_ tabs: [TerminalTab]) -> Bool {
+        stillCovers(
+            tabs,
+            pineAgentLaunches: nil,
+            currentPineAgentLaunches: nil
+        )
+    }
+
+    /// Composes foreground-process coverage with Pine's exact launch
+    /// reservation. An idle tab may legitimately become foreground while the
+    /// Quit sheet is visible when that same launch was already part of the
+    /// prompt; unrelated jobs still fail closed.
+    func stillCovers(
+        _ tabs: [TerminalTab],
+        pineAgentLaunches: PineAgentLaunchAuthorization?,
+        currentPineAgentLaunches: PineAgentLaunchAuthorization?
+    ) -> Bool {
         for tab in tabs {
-            // A tab with nothing to protect at authorization time (idle
-            // shell, no agent session, no foreground process) is absent from
-            // `coverage`. It has nothing to re-check, so skip it — otherwise a
-            // mixed idle+active bulk close set would be silently aborted
-            // right after the user confirmed (#1335 review finding).
-            guard let captured = coverage[tab.id] else { continue }
+            // Idle tabs are absent from `coverage`, but they remain safe only
+            // while they are still idle. A foreground process or agent that
+            // appears after the prompt must be the exact Pine launch separately
+            // captured by that same prompt; raw foreground identity is not
+            // sufficient to inherit authorization.
+            guard let captured = coverage[tab.id] else {
+                if tab.agentSession != nil || tab.foregroundProcessID > 0 {
+                    guard let pineAgentLaunches,
+                          let currentPineAgentLaunches,
+                          pineAgentLaunches.coversLaunch(
+                              in: tab.id,
+                              settledSessionID: tab.agentSession?.id,
+                              current: currentPineAgentLaunches
+                          ) else {
+                        return false
+                    }
+                }
+                continue
+            }
             switch captured {
-            case .agentSession(let sessionID):
+            case .agentSession(let sessionID, let processIdentity):
                 // Same agent session: covered (pgid churn is normal agent
-                // behaviour). The agent having exited (session cleared) is
-                // also covered — there is nothing left to protect.
-                guard tab.agentSession?.id == sessionID
-                    || tab.agentSession == nil else { return false }
+                // behaviour) only while the agent's exact OS generation is
+                // still alive. Once it exits, only a genuinely idle tab is
+                // covered; a replacement foreground job is new work.
+                if let currentSession = tab.agentSession {
+                    guard currentSession.id == sessionID else { return false }
+                    if tab.foregroundProcessID > 0 {
+                        guard processIdentity.map({
+                            tab.agentProcessIdentityStillMatches($0)
+                        }) == true else {
+                            return false
+                        }
+                    }
+                } else if tab.foregroundProcessID > 0 {
+                    return false
+                }
             case .foregroundProcess(let identity):
+                // A foreground job may settle into the agent session launched
+                // by the exact Pine reservation already covered by this Quit
+                // decision. A manually launched job may also be labelled as
+                // an agent while the dialog is open; its exact process witness
+                // remains the authority in that case.
                 let current = tab.foregroundProcessID
+                let sameForegroundGeneration = current > 0
+                    && current == identity.processGroupID
+                    && identity.startIdentity.map {
+                        tab.foregroundProcessIdentityStillMatches(
+                            $0,
+                            in: current
+                        )
+                    } == true
+                if tab.agentSession != nil {
+                    let sessionMatchesForegroundWitness =
+                        tab.agentSession?.processEvidence?.processIdentifier
+                            == identity.startIdentity?.processID
+                    if sameForegroundGeneration,
+                       sessionMatchesForegroundWitness {
+                        continue
+                    }
+                    guard let pineAgentLaunches,
+                          let currentPineAgentLaunches,
+                          pineAgentLaunches.coversLaunch(
+                              in: tab.id,
+                              settledSessionID: tab.agentSession?.id,
+                              current: currentPineAgentLaunches
+                          ) else {
+                        return false
+                    }
+                    continue
+                }
                 // Process exited: covered. A new non-zero process group is a
                 // new, unauthorized generation.
-                if current > 0, current != identity.processGroupID {
+                if current > 0, !sameForegroundGeneration {
                     return false
                 }
             }

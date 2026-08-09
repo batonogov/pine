@@ -245,17 +245,54 @@ How the maintainer works day-to-day. Documents intent and handoff conventions fo
 - **Explicit confirmation required** for: merging a PR, and anything in the destructive-command list in `AGENTS.md` (deletions, force-pushes, infrastructure changes).
 - Agents should run unit tests themselves — no need to ask first.
 
+### Independent review gate
+
+Every implementation must pass an independent, fresh-context review before
+its first push and before a PR is opened. This keeps expensive macOS and UI
+runners from testing a candidate that has not cleared adversarial review.
+Green CI remains necessary, but it does not replace that review.
+
+1. **Review the local candidate diff before push.** Once implementation and
+   regression tests are stable, review the complete local diff against its
+   intended base (`main...HEAD`, plus any staged or unstaged changes). Run at
+   least three read-only reviewer subagents with distinct lenses: (a)
+   correctness and architecture, (b) concurrency, security, and lifecycle
+   races, and (c) tests, UX, localization, and OS compatibility. Reviewers
+   must read the issue acceptance criteria and must not edit files.
+2. **Demand actionable findings.** Each finding includes severity, exact
+   file/line references, a concrete failure sequence or reproduction, and the
+   smallest safe fix. A clean review explicitly lists the invariants checked;
+   a summary that merely restates the diff does not count.
+3. **Synthesize and verify.** The parent agent deduplicates findings, validates
+   them against the code, and adds a regression test before or with each fix.
+   All confirmed P0, P1, and P2 findings must be resolved before merge. Record
+   low-risk coverage gaps or P3 findings in the PR or a follow-up issue when
+   they are intentionally deferred.
+4. **Fix on the same local branch.** Add follow-up commits; never amend or
+   force-push. Repeat the independent review/fix loop until reviewers return
+   no unresolved P0-P2 findings, then rerun the relevant local checks.
+5. **Push and open the PR only after review clears.** Summarize reviewer
+   angles, findings, dispositions, and local verification in the PR body.
+   Run the full required CI once the PR exists. An agent with explicit merge
+   authorization must not invoke merge until the pre-push review gate remains
+   clean and every required CI check is green.
+6. **Recover visibly from a premature merge.** If review was skipped before
+   merge, or a post-merge review finds a P0-P2 defect, reopen the source issue,
+   create a short-lived follow-up branch from current `main`, add regression
+   tests and fixes, repeat review plus CI, and close the issue only after the
+   follow-up PR is green and merged.
+
 ### Milestone orchestration with subagents
 
 For a milestone with multiple issues, the maintainer (or a parent agent) orchestrates implementation across subagents instead of doing all the work in one session. Used for parallelizable issues, large features, or when strict adversarial review is wanted. The full loop runs inside the agent; the human only merges at the end.
 
 Flow:
 1. **Scope first.** Read every issue in the milestone end-to-end, identify shared files, and note dependencies (`blocked-by`, or an explicit "depends on #X" in the body). Order implementation and merge accordingly.
-2. **One issue = one worker = one PR.** Delegate each issue to a worker subagent in an isolated worktree (`worktree: true`). Each worker creates its own branch and opens its own PR against `main`. Pass each worker explicit permissions in the task (which `git` / `gh` / `xcodebuild` commands are allowed) and an `acceptance` contract with `verify` commands and `stopRules` (notably: never merge, never force-push, never amend).
+2. **One issue = one worker = one candidate branch.** Delegate each issue to a worker subagent in an isolated worktree (`worktree: true`). Each worker creates its own local branch, commits the candidate, runs local verification, and reports it for review without pushing or opening a PR. Pass each worker explicit permissions in the task and an `acceptance` contract with `verify` commands and `stopRules` (notably: never push, never open a PR, never merge, never force-push, never amend before review clears).
 3. **Respect cross-issue boundaries.** Tell each worker exactly which files/branches it may touch so sibling PRs stay mergeable (e.g. add a dedicated accumulator field per branch instead of repurposing a shared one). When an issue depends on siblings not yet merged, the dependent worker merges those sibling branches into its own branch and documents it in the PR body — GitHub auto-shrinks the diff once the siblings land.
-4. **Strict review from fresh context.** Once PRs are open, run fresh-context `reviewer` subagents with distinct angles (e.g. correctness/regressions, tests/validation) against the actual diff. Reviewers are read-only — they must not edit.
-5. **Fix on the existing branch.** Synthesize reviewer findings and hand them to a fix-worker that checks out the **existing** PR branch and adds a follow-up commit. Never amend, force-push, or open a new branch for fixes. Repeat the review/fix loop until reviewers return a clean verdict (typically ~2 rounds).
-6. **Verify before handoff.** Confirm every PR is `MERGEABLE` and **fully green** — every required CI check passing, no exceptions. Pending checks must be explicitly noted. There is no "red but mergeable" state: branch protection blocks the merge button on any failing check, so a red PR is not ready regardless of why it failed. State the merge order.
+4. **Strict review from fresh context before push.** Run fresh-context `reviewer` subagents with distinct angles against each complete local candidate diff. Reviewers are read-only — they must not edit.
+5. **Fix before opening the PR.** Synthesize reviewer findings and hand them to a fix-worker that checks out the **existing local candidate branch** and adds a follow-up commit. Never amend, force-push, or open a new branch for fixes. Repeat the review/fix loop until reviewers return a clean verdict (typically ~2 rounds).
+6. **Publish and verify after review.** Only now push each reviewed branch and open its PR. Confirm every PR is `MERGEABLE` and **fully green** — every required CI check passing, no exceptions. Pending checks must be explicitly noted. There is no "red but mergeable" state: branch protection blocks the merge button on any failing check, so a red PR is not ready regardless of why it failed. State the merge order.
 7. **Never merge.** The agent opens and reviews PRs; only the human merges them.
 
 Operational notes:
