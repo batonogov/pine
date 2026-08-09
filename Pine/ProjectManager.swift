@@ -926,8 +926,15 @@ final class ProjectManager {
                 inventoryStillAuthorized()
             switch installResult {
             case .failed(let message, let retainedArtifacts):
+                // A typed retained artifact belongs to the current install
+                // transaction even when its parent directory moved and its
+                // display URL no longer matches the original staging URL.
+                // Preserve that staged identity and clean only later entries.
+                let cleanupStartIndex = retainedArtifacts.isEmpty
+                    ? index
+                    : index + 1
                 let cleanupResult = await cleanupTerminationStagedSaves(
-                    Array(plan.staged.dropFirst(index)),
+                    Array(plan.staged.dropFirst(cleanupStartIndex)),
                     until: deadline,
                     excluding: retainedArtifacts
                 )

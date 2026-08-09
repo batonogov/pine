@@ -230,6 +230,42 @@ struct BulkCloseAgentAuthorizationTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    @Test("Foreground transition accepts the same manually launched agent")
+    func foregroundTransitionAcceptsSameManualAgent() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: dir)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let capturedStart = TerminalProcessStartIdentity(
+            processID: 4_242,
+            seconds: 10,
+            microseconds: 20
+        )
+        tab.foregroundProcessIDOverrideForTesting = 4_242
+        tab.foregroundStartOverrideForTesting = capturedStart
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+
+        tab.agentSession = detectedSession(
+            agentType: .codex,
+            processID: 4_242,
+            generation: 10
+        )
+
+        #expect(authorization.stillCovers([tab]))
+
+        tab.foregroundStartOverrideForTesting = TerminalProcessStartIdentity(
+            processID: capturedStart.processID,
+            seconds: capturedStart.seconds + 1,
+            microseconds: capturedStart.microseconds
+        )
+        #expect(!authorization.stillCovers([tab]))
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test("Foreground transition rejects an unrelated detected agent")
     func foregroundTransitionRejectsUnrelatedAgent() async throws {
         let dir = try makeTempDirectory()

@@ -144,9 +144,26 @@ struct TerminalTabCloseAuthorization {
             case .foregroundProcess(let identity):
                 // A foreground job may settle into the agent session launched
                 // by the exact Pine reservation already covered by this Quit
-                // decision. No detected-agent label, process-group reuse, or
-                // unrelated session may inherit that authorization.
+                // decision. A manually launched job may also be labelled as
+                // an agent while the dialog is open; its exact process witness
+                // remains the authority in that case.
+                let current = tab.foregroundProcessID
+                let sameForegroundGeneration = current > 0
+                    && current == identity.processGroupID
+                    && identity.startIdentity.map {
+                        tab.foregroundProcessIdentityStillMatches(
+                            $0,
+                            in: current
+                        )
+                    } == true
                 if tab.agentSession != nil {
+                    let sessionMatchesForegroundWitness =
+                        tab.agentSession?.processEvidence?.processIdentifier
+                            == identity.startIdentity?.processID
+                    if sameForegroundGeneration,
+                       sessionMatchesForegroundWitness {
+                        continue
+                    }
                     guard let pineAgentLaunches,
                           let currentPineAgentLaunches,
                           pineAgentLaunches.coversLaunch(
@@ -157,17 +174,10 @@ struct TerminalTabCloseAuthorization {
                     }
                     continue
                 }
-                let current = tab.foregroundProcessID
                 // Process exited: covered. A new non-zero process group is a
                 // new, unauthorized generation.
-                if current > 0 {
-                    guard current == identity.processGroupID,
-                          let capturedStart = identity.startIdentity,
-                          tab.foregroundProcessIdentityStillMatches(
-                              capturedStart,
-                              in: current
-                          )
-                    else { return false }
+                if current > 0, !sameForegroundGeneration {
+                    return false
                 }
             }
         }

@@ -1325,6 +1325,77 @@ struct WindowLifecycleTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    @Test func movedParentRetainedSaveSurvivesProjectCleanup() async throws {
+        let directory = try makeTempDirectory()
+        defer { cleanup(directory) }
+        let saveDirectory = directory.appendingPathComponent("sources")
+        let movedDirectory = directory.appendingPathComponent("sources-moved")
+        try FileManager.default.createDirectory(
+            at: saveDirectory,
+            withIntermediateDirectories: false
+        )
+        let file = try makeTempFile(in: saveDirectory, name: "moved.swift")
+        let registry = makeRegistry()
+        let project = try #require(
+            registry.projectManager(for: directory)
+        )
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// retained dirty bytes", in: project)
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready save plan")
+            return
+        }
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+        let stagedPlan = try #require(staged.1)
+        let stagingProbe = TerminationStagingLeafProbe()
+        project.terminationSaveInstaller = { staged, deadline, lateCompletion in
+            stagingProbe.record(staged)
+            return await TerminationSaveCoordinator.install(
+                staged,
+                until: deadline,
+                beforeDestinationQuarantine: {
+                    try? FileManager.default.moveItem(
+                        at: saveDirectory,
+                        to: movedDirectory
+                    )
+                    try? FileManager.default.createDirectory(
+                        at: saveDirectory,
+                        withIntermediateDirectories: false
+                    )
+                },
+                lateCompletion: lateCompletion
+            )
+        }
+
+        let result = await project
+            .commitStagedSaveAllPaneTabsForTermination(
+                stagedPlan,
+                until: .now() + 5
+            )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("Expected the moved parent install to fail closed")
+            return
+        }
+        #expect(!retainedArtifacts.isEmpty)
+        let movedArtifact = movedDirectory.appendingPathComponent(
+            try #require(stagingProbe.leaf)
+        )
+        #expect(FileManager.default.fileExists(atPath: movedArtifact.path))
+        #expect(
+            try String(contentsOf: movedArtifact, encoding: .utf8)
+                .contains("// retained dirty bytes")
+        )
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func stagedCommitStopsBeforeNextFileAfterDeadline() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
@@ -2465,6 +2536,20 @@ struct WindowLifecycleTests {
             exitCode: 0,
             timedOut: false
         )
+    }
+}
+
+nonisolated private final class TerminationStagingLeafProbe:
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedLeaf: String?
+
+    var leaf: String? { lock.withLock { recordedLeaf } }
+
+    func record(_ staged: TerminationStagedSave) {
+        lock.withLock {
+            recordedLeaf = staged.stagingURL.lastPathComponent
+        }
     }
 }
 
