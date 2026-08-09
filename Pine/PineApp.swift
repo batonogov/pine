@@ -2055,6 +2055,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 )
             }
         )
+        let preflightQuickTerminalAuthorization =
+            TerminalTabCloseAuthorization.authorizing(
+                tabs: quickTerminalCoordinator.paneState.terminalTabs
+            )
         let preflightAgentLaunchAuthorizations = Dictionary(
             uniqueKeysWithValues: projects.map {
                 (
@@ -2090,8 +2094,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 ? identifier
                 : nil
         }).union(preflightUserTaskAuthorization.confirmingOwnerIDs)
-        let attentionProjectCount = attentionProjectIDs.count
-        let requiresAttention = attentionProjectCount > 0
+        let attentionItemCount = attentionProjectIDs.count
+            + (preflightQuickTerminalAuthorization.requiresConfirmation ? 1 : 0)
+        let requiresAttention = attentionItemCount > 0
             || preflightUserTaskAuthorization.requiresConfirmation
         let needsNativeDecision = presentAlert == nil
             && requiresAttention
@@ -2310,6 +2315,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         var terminalAuthorizations: [
             ObjectIdentifier: TerminalTabCloseAuthorization
         ] = [:]
+        var quickTerminalAuthorization: TerminalTabCloseAuthorization?
         var agentLaunchAuthorizations: [
             ObjectIdentifier: PineAgentLaunchAuthorization
         ] = [:]
@@ -2350,7 +2356,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 .applicationQuitSummary,
                 title: Strings.applicationQuitSummaryTitle,
                 message: Strings.applicationQuitSummaryMessage(
-                    max(attentionProjectCount, 1)
+                    max(attentionItemCount, 1)
                 )
             ) else { return false }
             switch response {
@@ -2369,6 +2375,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             // while the sheet is open still fail closed during revalidation.
             discardAuthorizations = preflightDiscardAuthorizations
             terminalAuthorizations = preflightTerminalAuthorizations
+            quickTerminalAuthorization = preflightQuickTerminalAuthorization
             agentLaunchAuthorizations = preflightAgentLaunchAuthorizations
         } else if reviewIndividually {
             for projectManager in projects {
@@ -2439,6 +2446,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 }
             }
 
+            let currentQuickTerminalAuthorization =
+                TerminalTabCloseAuthorization.authorizing(
+                    tabs: quickTerminalCoordinator.paneState.terminalTabs
+                )
+            quickTerminalAuthorization = currentQuickTerminalAuthorization
+            if currentQuickTerminalAuthorization.requiresConfirmation {
+                guard let response = await presentTerminationDecision(
+                    .terminalActiveProcessWarning,
+                    title: Strings.terminalActiveProcessWarningTitle,
+                    message: Strings.terminalActiveProcessWarningMessage
+                ) else { return false }
+                guard response == .alertFirstButtonReturn else {
+                    return false
+                }
+            }
+
             let displayedUserTaskAuthorization =
                 registry.captureUserTaskShutdownAuthorization()
             if displayedUserTaskAuthorization.requiresConfirmation {
@@ -2464,6 +2487,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     projectManager.terminal
                         .capturePineAgentLaunchAuthorization()
             }
+            quickTerminalAuthorization =
+                TerminalTabCloseAuthorization.authorizing(
+                    tabs: quickTerminalCoordinator.paneState.terminalTabs
+                )
         }
 
         // Collect every Save-As destination before rebasing the duration.
@@ -2972,6 +2999,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     )
                     return false
                 }
+            }
+            guard let quickTerminalAuthorization,
+                  quickTerminalAuthorization.stillCovers(
+                      quickTerminalCoordinator.paneState.terminalTabs
+                  ) else {
+                Logger.app.error(
+                    "Quit aborted: Quick Terminal authorization no longer covers its running processes"
+                )
+                return false
             }
             return registry.userTaskShutdownAuthorizationStillCovers(
                 userTaskAuthorization

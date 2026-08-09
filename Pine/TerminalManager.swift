@@ -46,17 +46,22 @@ struct PineAgentLaunchAuthorization {
     /// decision. A raw tab id or a newly observed process group is insufficient.
     func coversLaunch(
         in terminalID: UUID,
+        settledSessionID: UUID?,
         current: PineAgentLaunchAuthorization
     ) -> Bool {
         let authorizedLaunches = identities.union(
             settledIdentities.map(\.launch)
         )
+        if let settledSessionID {
+            return current.settledIdentities.contains { settled in
+                settled.launch.terminalID == terminalID
+                    && settled.sessionID == settledSessionID
+                    && authorizedLaunches.contains(settled.launch)
+            }
+        }
         return current.identities.contains { identity in
             identity.terminalID == terminalID
                 && authorizedLaunches.contains(identity)
-        } || current.settledIdentities.contains { settled in
-            settled.launch.terminalID == terminalID
-                && authorizedLaunches.contains(settled.launch)
         }
     }
 

@@ -206,9 +206,27 @@ struct TerminalManagerCoordinatorTests {
         #expect(terminal.isAgentDetectionPolling)
 
         let tab = try #require(terminal.allTerminalTabs.first)
-        let session = AgentSession(agentType: .claudeCode)
+        let startedAt = Date(timeIntervalSince1970: 10.000_020)
+        let session = AgentSession(
+            agentType: .claudeCode,
+            startedAt: startedAt
+        )
+        _ = session.bindProcessEvidence(AgentProcessEvidence(
+            processIdentifier: 42,
+            processGeneration: 10,
+            startIdentifier: "generation-10",
+            observedStartedAt: startedAt,
+            startIsAuthoritative: true
+        ))
         tab.agentSession = session
         tab.foregroundProcessIDOverrideForTesting = 42
+        tab.agentProcessIdentityResolverForTesting = { processID in
+            TerminalProcessStartIdentity(
+                processID: processID,
+                seconds: 10,
+                microseconds: 20
+            )
+        }
         let authorization = TerminalTabCloseAuthorization.authorizing(tabs: [tab])
 
         terminal.freezeAgentTasksForTermination()

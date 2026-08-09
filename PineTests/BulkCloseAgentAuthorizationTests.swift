@@ -381,6 +381,7 @@ struct BulkCloseAgentAuthorizationTests {
         tab.agentSession = firstSession
         #expect(firstAuthorization.coversLaunch(
             in: tab.id,
+            settledSessionID: firstSession.id,
             current: project.terminal.capturePineAgentLaunchAuthorization()
         ))
 
@@ -418,8 +419,118 @@ struct BulkCloseAgentAuthorizationTests {
         #expect(!firstAuthorization.stillCovers(current))
         #expect(!firstAuthorization.coversLaunch(
             in: tab.id,
+            settledSessionID: secondSession.id,
             current: current
         ))
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test("Pending Pine launch does not authorize an unrelated detected agent")
+    func pendingLaunchRejectsUnrelatedDetectedAgent() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let pane = project.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: dir
+        )
+        let tab = try #require(
+            project.paneManager.terminalState(for: pane)?.terminalTabs.first
+        )
+        let terminalAuthorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+        guard case .reserved = await project.terminal
+                .launchAgentCommandForTesting(
+                    "codex",
+                    descriptor: AgentDescriptor(
+                        agentType: .codex,
+                        launchExecutable: "codex"
+                    ),
+                    in: tab,
+                    acknowledgedWrite: { true }
+                ) else {
+            Issue.record("Pine launch was not reserved")
+            return
+        }
+        let launchAuthorization = project.terminal
+            .capturePineAgentLaunchAuthorization()
+        let unrelated = detectedSession(
+            agentType: .claudeCode,
+            processID: 8_222,
+            generation: 11
+        )
+
+        // The implicit bridge attempts to consume the pending Codex
+        // reservation for this terminal, but the incompatible Claude session
+        // must not inherit that authorization while the claim remains live.
+        project.terminal.bridgeAgentSession(
+            unrelated,
+            replacing: nil,
+            in: tab
+        )
+        tab.agentSession = unrelated
+        let current = project.terminal.capturePineAgentLaunchAuthorization()
+
+        #expect(current.requiresConfirmation)
+        #expect(!terminalAuthorization.stillCovers(
+            [tab],
+            pineAgentLaunches: launchAuthorization,
+            currentPineAgentLaunches: current
+        ))
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test("Stale agent session does not authorize a replacement foreground job")
+    func staleAgentSessionRejectsReplacementForegroundJob() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let pane = project.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: dir
+        )
+        let tab = try #require(
+            project.paneManager.terminalState(for: pane)?.terminalTabs.first
+        )
+        let startedAt = Date(timeIntervalSince1970: 10.000_020)
+        let session = AgentSession(
+            agentType: .codex,
+            startedAt: startedAt
+        )
+        _ = session.bindProcessEvidence(AgentProcessEvidence(
+            processIdentifier: 8_111,
+            processGeneration: 10,
+            startIdentifier: "generation-10",
+            observedStartedAt: startedAt,
+            startIsAuthoritative: true
+        ))
+        let processIdentity = TerminalProcessStartIdentity(
+            processID: 8_111,
+            seconds: 10,
+            microseconds: 20
+        )
+        tab.agentSession = session
+        tab.foregroundProcessIDOverrideForTesting = 8_111
+        tab.agentProcessIdentityResolverForTesting = { _ in processIdentity }
+        let authorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+
+        #expect(authorization.stillCovers([tab]))
+
+        // Detection is frozen during the machine phase, so the old session
+        // object can remain after its process exits. A new foreground job in
+        // the same PTY is independent work and must fail closed.
+        tab.agentProcessIdentityResolverForTesting = { _ in nil }
+        tab.foregroundProcessIDOverrideForTesting = 9_999
+        tab.foregroundStartOverrideForTesting = TerminalProcessStartIdentity(
+            processID: 9_999,
+            seconds: processIdentity.seconds + 1,
+            microseconds: processIdentity.microseconds
+        )
+
+        #expect(!authorization.stillCovers([tab]))
         await project.workspace.waitForLoadingComplete()
     }
 
@@ -551,6 +662,112 @@ struct BulkCloseAgentAuthorizationTests {
     }
 
     // MARK: - Application quit
+
+    @Test("Hidden Quick Terminal foreground work gates application quit")
+    func hiddenQuickTerminalForegroundWorkGatesQuit() async {
+        let delegate = AppDelegate()
+        delegate.registry = makeRegistry()
+        let tab = delegate.quickTerminalCoordinator.paneState.addTab(
+            workingDirectory: nil
+        )
+        tab.foregroundProcessIDOverrideForTesting = 8_111
+        tab.foregroundStartOverrideForTesting = TerminalProcessStartIdentity(
+            processID: 8_111,
+            seconds: 10,
+            microseconds: 20
+        )
+        var presented: [AlertTemplate] = []
+        var summaryMessage: String?
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, message in
+                presented.append(template)
+                if template == .applicationQuitSummary {
+                    summaryMessage = message
+                }
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(result)
+        #expect(presented == [.applicationQuitSummary])
+        #expect(summaryMessage == Strings.applicationQuitSummaryMessage(1))
+    }
+
+    @Test("Review asks separately before stopping Quick Terminal work")
+    func reviewConfirmsQuickTerminalForegroundWork() async {
+        let delegate = AppDelegate()
+        delegate.registry = makeRegistry()
+        let tab = delegate.quickTerminalCoordinator.paneState.addTab(
+            workingDirectory: nil
+        )
+        tab.foregroundProcessIDOverrideForTesting = 8_111
+        tab.foregroundStartOverrideForTesting = TerminalProcessStartIdentity(
+            processID: 8_111,
+            seconds: 10,
+            microseconds: 20
+        )
+        var presented: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presented.append(template)
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(result)
+        #expect(
+            presented == [
+                .applicationQuitSummary,
+                .terminalActiveProcessWarning,
+            ]
+        )
+    }
+
+    @Test("Quick Terminal job started during summary cancels quit")
+    func quickTerminalJobStartedDuringSummaryCancelsQuit() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        try addAgentTerminalTab(to: project)
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        let tab = delegate.quickTerminalCoordinator.paneState.addTab(
+            workingDirectory: nil
+        )
+        var presented: [AlertTemplate] = []
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                presented.append(template)
+                if template == .applicationQuitSummary {
+                    tab.foregroundProcessIDOverrideForTesting = 8_222
+                    tab.foregroundStartOverrideForTesting =
+                        TerminalProcessStartIdentity(
+                            processID: 8_222,
+                            seconds: 11,
+                            microseconds: 20
+                        )
+                    return .alertSecondButtonReturn
+                }
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+
+        #expect(!result)
+        #expect(
+            presented == [
+                .applicationQuitSummary,
+                .applicationQuitFailure,
+            ]
+        )
+        await project.workspace.waitForLoadingComplete()
+    }
 
     @Test("Quit summarizes agents from multiple projects in one alert")
     func quitSummarizesAgentsAcrossProjects() async throws {

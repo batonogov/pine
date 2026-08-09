@@ -2176,6 +2176,8 @@ final class TerminalTab: Identifiable, Hashable {
     var foregroundProcessIDOverrideForTesting: Int32?
     var foregroundStartOverrideForTesting:
         TerminalProcessStartIdentity?
+    var agentProcessIdentityResolverForTesting:
+        ((pid_t) -> TerminalProcessStartIdentity?)?
     #endif
 
     var foregroundProcessID: Int32 {
@@ -2239,6 +2241,24 @@ final class TerminalTab: Identifiable, Hashable {
             processID: identity.processID,
             processGroupID: processGroupID
         ) == identity
+    }
+
+    func agentProcessIdentityStillMatches(
+        _ identity: TerminalProcessStartIdentity
+    ) -> Bool {
+        #if DEBUG
+        if let agentProcessIdentityResolverForTesting {
+            return agentProcessIdentityResolverForTesting(
+                identity.processID
+            ) == identity
+        }
+        #endif
+        guard let current = UserTaskProcessInspector.identity(
+            for: identity.processID
+        ) else { return false }
+        return current.processID == identity.processID
+            && current.startSeconds == identity.seconds
+            && current.startMicroseconds == identity.microseconds
     }
 
     nonisolated private static func processIdentity(
