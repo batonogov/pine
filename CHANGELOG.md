@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.1.1](https://github.com/batonogov/pine/compare/v2.1.0...v2.1.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **agent:** surface background agent work via Dock badge, guard, and foreground banners ([#1360](https://github.com/batonogov/pine/issues/1360)) ([463355d](https://github.com/batonogov/pine/commit/463355df5e154b0b3ad8cc1bf2fa49c5e0c7b002))
+* aggregate quit confirmation across projects ([#1363](https://github.com/batonogov/pine/issues/1363)) ([1729579](https://github.com/batonogov/pine/commit/172957955a9aa6db8bfbd033852f0b3e1db57550))
+* make application quit bounded, atomic, and user-visible ([#1364](https://github.com/batonogov/pine/issues/1364)) ([15c1296](https://github.com/batonogov/pine/commit/15c12969fdc71c2865b1ac6dc03c68428bfa5cc4))
+
 ## [2.1.0](https://github.com/batonogov/pine/compare/v2.0.1...v2.1.0) (2026-08-07)
 
 
