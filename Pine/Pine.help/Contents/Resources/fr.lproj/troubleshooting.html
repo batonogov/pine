@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="fr" xml:lang="fr">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
+    <meta name="description" content="Découvrez comment ouvrir des projets, modifier du code et utiliser les volets, le terminal, Git, les diagnostics LSP, les fonctionnalités d&#x27;agent et les raccourcis dans Pine." />
+    <meta name="KEYWORDS" content="Dépannage, Pine, aide, éditeur, projet, onglet, volet, terminal, Git, LSP, diagnostics, agent, raccourcis, réglages, raccourcis clavier, repliage, minimap, rechercher, remplacer" />
+    <title>Dépannage — Aide de Pine</title>
+    <link rel="stylesheet" type="text/css" href="../style.css" />
+</head>
+<body>
+<main class="help-topic">
+    <nav class="breadcrumbs"><a href="index.html">Aide de Pine</a></nav>
+
+    <section id="troubleshooting">
+        <a name="pine-troubleshooting" id="pine-troubleshooting"></a>
+        <h2>Dépannage</h2>
+        <ul class="topic-list">
+            <li>
+                <strong>Le terminal affiche un écran noir</strong>
+                <span>Pine utilise un moteur de rendu Metal par défaut. Si vous voyez un écran noir, relancez en maintenant la touche option enfoncée, ou exécutez <code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code> pour passer à CoreGraphics.</span>
+            </li>
+            <li>
+                <strong>La complétion ou les diagnostics LSP ne fonctionnent pas</strong>
+                <span>Ouvrez Réglages &gt; Langages et vérifiez le chemin de l'exécutable du serveur. Pine signale les erreurs du serveur dans la barre d'état.</span>
+            </li>
+            <li>
+                <strong>Les gros fichiers sont lents</strong>
+                <span>Les fichiers de plus de 1 Mo proposent de désactiver la coloration syntaxique. Les fichiers de plus de 10 Mo se chargent progressivement. Utilisez la minimap pour naviguer dans les gros fichiers.</span>
+            </li>
+            <li>
+                <strong>Formater à l'enregistrement ne s'applique pas</strong>
+                <span>Formater à l'enregistrement nécessite que l'outil de formatage (par ex. <code>terraform</code>, <code>shfmt</code>, <code>prettier</code>) soit dans votre PATH. Installez-le via Homebrew.</span>
+            </li>
+            <li>
+                <strong>Compatibilité macOS 26 ou 27</strong>
+                <span>Pine cible macOS 26 (Tahoe). Si vous rencontrez un problème spécifique à la plateforme, incluez la sortie de <code>sw_vers</code> et <code>xcodebuild -version</code> dans votre rapport de bogue.</span>
+            </li>
+            <li>
+                <strong>L'agent n'est pas détecté</strong>
+                <span>Pine détecte les agents CLI pris en charge par leur nom de processus. Assurez-vous que l'agent s'exécute dans un volet de terminal Pine. Le Terminal rapide ne prend pas encore en charge la détection d'agents.</span>
+            </li>
+        </ul>
+    </section>
+
+    <nav class="topic-footer"><a href="index.html">← Aide de Pine</a></nav>
+</main>
+</body>
+</html>

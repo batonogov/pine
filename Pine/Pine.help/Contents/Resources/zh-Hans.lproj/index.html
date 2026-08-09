@@ -5,263 +5,37 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
     <meta name="description" content="了解如何在Pine中打开项目、编辑代码以及使用窗格、终端、Git、LSP诊断、代理功能和键盘快捷键。" />
-    <meta name="keywords" content="Pine, 帮助, 编辑器, 项目, 标签页, 窗格, 终端, Git, LSP, 诊断, 代理, 快捷键, 设置, 键绑定, 折叠, 小地图, 查找, 替换" />
+    <meta name="KEYWORDS" content="Pine, 帮助, 编辑器, 项目, 标签页, 窗格, 终端, Git, LSP, 诊断, 代理, 快捷键, 设置, 键绑定, 折叠, 小地图, 查找, 替换" />
+    <meta name="ROBOTS" content="ANCHORS" />
     <title>Pine帮助</title>
     <link rel="stylesheet" type="text/css" href="../style.css" />
 </head>
 <body>
-<main>
+<main class="help-home">
+    <a name="pine-help-home" id="pine-help-home"></a>
     <header>
         <div class="app-mark" aria-hidden="true">P</div>
-        <h1>Pine帮助</h1>
-        <p class="lead">一款专注于macOS项目、代码、终端和Git的原生编辑器。</p>
+        <div>
+            <h1>Pine帮助</h1>
+            <p class="lead">一款专注于macOS项目、代码、终端和Git的原生编辑器。</p>
+        </div>
     </header>
 
     <nav class="toc">
-        <h3>本指南内容</h3>
+        <h2>本指南内容</h2>
         <ul>
-            <li><a href="#getting-started">开始使用</a></li>
-            <li><a href="#workspace">编辑器、窗格与终端</a></li>
-            <li><a href="#terminal">终端与快速终端</a></li>
-            <li><a href="#git">Git集成</a></li>
-            <li><a href="#lsp">语言服务器与诊断</a></li>
-            <li><a href="#agents">代理感知</a></li>
-            <li><a href="#settings">设置与键绑定</a></li>
-            <li><a href="#shortcuts">键盘快捷键</a></li>
-            <li><a href="#troubleshooting">疑难排查</a></li>
-            <li><a href="#support">需要更多帮助？</a></li>
+            <li><a href="getting-started.html">开始使用</a></li>
+            <li><a href="workspace.html">编辑器、窗格与终端</a></li>
+            <li><a href="terminal.html">终端与快速终端</a></li>
+            <li><a href="git.html">Git集成</a></li>
+            <li><a href="lsp.html">语言服务器与诊断</a></li>
+            <li><a href="agents.html">智能体收件箱与工作流</a></li>
+            <li><a href="settings.html">设置与键绑定</a></li>
+            <li><a href="shortcuts.html">键盘快捷键</a></li>
+            <li><a href="troubleshooting.html">疑难排查</a></li>
+            <li><a href="support.html">需要更多帮助？</a></li>
         </ul>
     </nav>
-
-    <section id="getting-started">
-        <h2>开始使用</h2>
-        <div class="steps">
-            <div class="card">
-                <h3>1. 打开文件夹</h3>
-                <p>选择“文件”&gt;“打开文件夹”，然后选择包含项目的目录。</p>
-            </div>
-            <div class="card">
-                <h3>2. 打开文件</h3>
-                <p>在侧边栏选择文件，或用快速打开按名称查找。</p>
-            </div>
-            <div class="card">
-                <h3>3. 整理工作区</h3>
-                <p>将标签页拖到编辑器边缘以创建分屏，或拖到其他标签栏以移动。</p>
-            </div>
-            <div class="card">
-                <h3>4. 继续工作</h3>
-                <p>Pine会在您返回时恢复项目窗口、编辑器标签页和窗格布局。</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="workspace">
-        <h2>编辑器、窗格与终端</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>分屏窗格</h3>
-                <p>编辑器和终端标签页可在同类窗格之间移动。拖到边缘即可创建新的分屏。</p>
-            </div>
-            <div class="card">
-                <h3>预览与固定标签页</h3>
-                <p>点击侧边栏中的文件会以临时预览标签页打开。双击或编辑即可固定它。</p>
-            </div>
-            <div class="card">
-                <h3>查找与替换</h3>
-                <p>按Cmd+F在文件中查找。用Cmd+Option+F查找并替换。全项目搜索为Cmd+Shift+F。</p>
-            </div>
-            <div class="card">
-                <h3>代码折叠与小地图</h3>
-                <p>点击装订线中的三角形可折叠代码块。小地图可在“显示”菜单中切换。</p>
-            </div>
-            <div class="card">
-                <h3>Markdown预览</h3>
-                <p>按Cmd+Shift+P在仅源代码、渲染和并排Markdown预览之间循环切换。</p>
-            </div>
-            <div class="card">
-                <h3>符号导航</h3>
-                <p>按Cmd+R跳转到当前文件中的函数、类和结构体。</p>
-            </div>
-            <div class="card">
-                <h3>安全保存</h3>
-                <p>有修改的标签页在关闭前会受到保护。“自动保存”和“保存时格式化”位于“文件”菜单。</p>
-            </div>
-            <div class="card">
-                <h3>会话恢复</h3>
-                <p>重新打开项目时，Pine会恢复您的标签页、窗格布局和光标位置。</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="terminal">
-        <h2>终端与快速终端</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>集成终端</h3>
-                <p>在代码旁使用完整的终端。只要标签页保持打开，滚动历史就会保留。</p>
-            </div>
-            <div class="card">
-                <h3>快速终端</h3>
-                <p>按Ctrl+Option+空格切换一个悬浮在任何应用上方的下拉式终端。</p>
-            </div>
-            <div class="card">
-                <h3>可点击链接</h3>
-                <p>在终端输出中按住Cmd点击“文件:行”引用即可在编辑器中打开。URL会在系统浏览器中打开。</p>
-            </div>
-            <div class="card">
-                <h3>TUI应用</h3>
-                <p>Vim、htop等TUI应用可原生运行。完全支持oh-my-zsh和颜色主题。</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="git">
-        <h2>Git集成</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>文件状态</h3>
-                <p>侧边栏以彩色状态指示显示已修改、已添加和已删除的文件。</p>
-            </div>
-            <div class="card">
-                <h3>差异标记</h3>
-                <p>新增、修改和删除的行以彩色标记显示在编辑器装订线中。</p>
-            </div>
-            <div class="card">
-                <h3>切换分支</h3>
-                <p>点击标题栏中的分支名或按Cmd+Shift+B可在本地分支之间切换。</p>
-            </div>
-            <div class="card">
-                <h3>Blame视图</h3>
-                <p>切换Blame视图以查看每行的提交信息：哈希、作者、时间戳和消息。</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="lsp">
-        <h2>语言服务器与诊断</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>代码智能</h3>
-                <p>Pine使用Language Server Protocol提供诊断、补全、悬停、转到定义和重命名。</p>
-            </div>
-            <div class="card">
-                <h3>配置服务器</h3>
-                <p>打开“设置”&gt;“语言”，按语言启用、禁用或配置语言服务器可执行文件。</p>
-            </div>
-            <div class="card">
-                <h3>问题面板</h3>
-                <p>在可折叠面板中查看所有项目诊断。使用键盘快捷键在错误和警告之间导航。</p>
-            </div>
-            <div class="card">
-                <h3>代码操作</h3>
-                <p>点击装订线中的诊断指示器或使用菜单来应用快速修复和重构。</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="agents">
-        <h2>代理感知</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>代理检测</h3>
-                <p>Pine检测在终端中运行的受支持CLI代理，并通过徽章和指示器显示其状态。</p>
-            </div>
-            <div class="card">
-                <h3>活动面板</h3>
-                <p>查看代理活动的实时视图：已更改文件、已运行命令和当前工作状态。</p>
-            </div>
-            <div class="card">
-                <h3>代理历史</h3>
-                <p>查看并撤销代理更改。经过验证的预览会在应用前准确显示将要更改的内容。</p>
-            </div>
-            <div class="card">
-                <h3>隐私</h3>
-                <p>代理上下文传递是可选且只读的。未经您的操作，Pine绝不会将您的代码或终端输出发送到任何地方。</p>
-            </div>
-        </div>
-        <p>Pine按可执行文件的精确名称识别Pi、Codex、Claude Code、OpenCode、Copilot、Aider、Gemini、Amp、Cursor Agent、Goose、Qwen Code和Crush。除非兼容性矩阵另有说明，否则只识别进程。</p>
-        <p><a href="https://github.com/batonogov/pine/blob/main/docs/agent-compatibility.md">查看CLI代理兼容性矩阵和当前限制。</a></p>
-    </section>
-
-    <section id="settings">
-        <h2>设置与键绑定</h2>
-        <div class="feature-grid">
-            <div class="card">
-                <h3>设置窗口</h3>
-                <p>按Cmd+逗号打开设置。配置编辑器默认值、终端、语言服务器和代理隐私。</p>
-            </div>
-            <div class="card">
-                <h3>自定义键绑定</h3>
-                <p>通过受管理的键绑定文件覆盖键盘快捷键。命令面板会显示当前有效的绑定。</p>
-            </div>
-            <div class="card">
-                <h3>命令面板</h3>
-                <p>通过支持模糊搜索的面板发现并运行命令，类似于VS Code。</p>
-            </div>
-            <div class="card">
-                <h3>任务</h3>
-                <p>定义自定义任务，从命令面板或“任务”菜单运行 shell 命令、格式化工具或构建脚本。</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="shortcuts">
-        <h2>常用快捷键</h2>
-        <div class="shortcut-grid">
-            <div class="shortcut"><span>打开文件夹</span><kbd>⇧⌘O</kbd></div>
-            <div class="shortcut"><span>快速打开</span><kbd>⌘P</kbd></div>
-            <div class="shortcut"><span>在文件中查找</span><kbd>⌘F</kbd></div>
-            <div class="shortcut"><span>在项目中查找</span><kbd>⇧⌘F</kbd></div>
-            <div class="shortcut"><span>查找与替换</span><kbd>⌥⌘F</kbd></div>
-            <div class="shortcut"><span>转到行</span><kbd>⌘L</kbd></div>
-            <div class="shortcut"><span>转到符号</span><kbd>⌘R</kbd></div>
-            <div class="shortcut"><span>保存</span><kbd>⌘S</kbd></div>
-            <div class="shortcut"><span>显示/隐藏终端</span><kbd>⌘`</kbd></div>
-            <div class="shortcut"><span>新建终端标签页</span><kbd>⌘T</kbd></div>
-            <div class="shortcut"><span>Markdown预览</span><kbd>⇧⌘P</kbd></div>
-            <div class="shortcut"><span>切换Git分支</span><kbd>⇧⌘B</kbd></div>
-            <div class="shortcut"><span>快速终端</span><kbd>⌃⌥Space</kbd></div>
-            <div class="shortcut"><span>切换注释</span><kbd>⌘/</kbd></div>
-            <div class="shortcut"><span>切换小地图</span><kbd>⇧⌘M</kbd></div>
-            <div class="shortcut"><span>下一个 / 上一个更改</span><kbd>⌃⌥↓/↑</kbd></div>
-        </div>
-        <p class="tip"><strong>提示：</strong>菜单中会显示所有可用命令及其当前快捷键。</p>
-    </section>
-
-    <section id="troubleshooting">
-        <h2>疑难排查</h2>
-        <ul class="topic-list">
-            <li>
-                <strong>终端显示黑屏</strong>
-                <span>Pine默认使用Metal渲染器。如果看到黑屏，请按住Option键重新启动，或运行<code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code>切换到CoreGraphics。</span>
-            </li>
-            <li>
-                <strong>LSP补全或诊断不起作用</strong>
-                <span>打开“设置”&gt;“语言”并检查服务器可执行文件路径。Pine会在状态栏中报告服务器错误。</span>
-            </li>
-            <li>
-                <strong>大文件加载缓慢</strong>
-                <span>超过1 MB的文件会提示关闭语法高亮。超过10 MB的文件会逐步加载。使用小地图浏览大文件。</span>
-            </li>
-            <li>
-                <strong>保存时格式化未生效</strong>
-                <span>保存时格式化要求格式化工具（如<code>terraform</code>、<code>shfmt</code>、<code>prettier</code>）位于您的PATH中。请通过Homebrew安装。</span>
-            </li>
-            <li>
-                <strong>macOS 26或27兼容性</strong>
-                <span>Pine的目标是macOS 26（Tahoe）。如果遇到平台特定的问题，请在错误报告中附上<code>sw_vers</code>和<code>xcodebuild -version</code>的输出。</span>
-            </li>
-            <li>
-                <strong>未检测到代理</strong>
-                <span>Pine通过进程名检测受支持的CLI代理。请确保代理在Pine终端窗格中运行。快速终端暂不支持代理检测。</span>
-            </li>
-        </ul>
-    </section>
-
-    <section class="support" id="support">
-        <h2>需要更多帮助？</h2>
-        <p>请在<a href="https://github.com/batonogov/pine/issues">Pine问题跟踪器</a>上报告问题或提出改进建议。</p>
-    </section>
 </main>
 </body>
 </html>

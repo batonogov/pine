@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
+    <meta name="description" content="Use Agent Inbox, private notifications, recovery, completion briefs, and isolated worktrees in Pine." />
+    <meta name="KEYWORDS" content="Agent Inbox, notifications, recovery, completion brief, worktree, agent detection, Agent History, privacy, Pine" />
+    <title>Agent Inbox and workflows — Pine Help</title>
+    <link rel="stylesheet" type="text/css" href="../style.css" />
+</head>
+<body>
+<main class="help-topic">
+    <nav class="breadcrumbs"><a href="index.html">Pine Help</a></nav>
+
+    <section id="agents">
+        <a name="pine-agents" id="pine-agents"></a>
+        <h2>Agent Inbox and workflows</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <a name="pine-agent-inbox" id="pine-agent-inbox"></a>
+                <h3>Agent Inbox</h3>
+                <p>Choose View &gt; Agent Inbox or press ⇧⌘I to see tasks from every open project. Use the arrow keys to select a task and Return to route back to its exact live session.</p>
+            </div>
+            <div class="card">
+                <a name="pine-agent-settings" id="pine-agent-settings"></a>
+                <h3>Private notifications</h3>
+                <p>In Settings &gt; Agents, choose which waiting, failure, completion, and process-exit events can notify you. Notifications omit prompts, terminal output, tokens, absolute paths, and vendor identifiers.</p>
+            </div>
+            <div class="card">
+                <h3>Recovery and worktrees</h3>
+                <p>Use a task's context menu to resume a supported vendor session, start a new session, or copy its objective. Isolated worktrees stay inside the repository and require deliberate cleanup.</p>
+            </div>
+            <div class="card">
+                <h3>Completion briefs</h3>
+                <p>Completed tasks separate verified changes and test evidence from inference, ambiguity, and agent-reported narrative so you can judge the result before acting.</p>
+            </div>
+            <div class="card">
+                <h3>Agent detection</h3>
+                <p>Pine detects supported CLI agents running in the terminal and shows their status with badges and indicators.</p>
+            </div>
+            <div class="card">
+                <h3>Activity panel</h3>
+                <p>See a live view of agent activity: files changed, commands run, and current working state.</p>
+            </div>
+            <div class="card">
+                <h3>Agent History</h3>
+                <p>Review and undo agent changes. Verified previews show exactly what will change before you apply it.</p>
+            </div>
+            <div class="card">
+                <h3>Privacy</h3>
+                <p>Agent context handoff is opt-in and read-only. Pine never sends your code or terminal output anywhere without your action.</p>
+            </div>
+        </div>
+        <p class="tip"><strong>Important:</strong> Pine routes only to the exact live task generation and otherwise fails closed. Restored task metadata does not mean a vendor session resumed. Quick Terminal sessions do not yet participate in agent detection.</p>
+        <p>Pine recognizes Pi, Codex, Claude Code, OpenCode, Copilot, Aider, Gemini, Amp, Cursor Agent, Goose, Qwen Code, and Crush by exact executable name. Recognition is process-only unless the matrix explicitly says otherwise.</p>
+        <p><a href="https://github.com/batonogov/pine/blob/main/docs/agent-compatibility.md">View the CLI agent compatibility matrix and current limitations.</a></p>
+    </section>
+
+    <nav class="topic-footer"><a href="index.html">← Pine Help</a></nav>
+</main>
+</body>
+</html>

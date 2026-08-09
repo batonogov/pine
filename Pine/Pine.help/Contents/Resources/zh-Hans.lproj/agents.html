@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
+    <meta name="description" content="了解如何在Pine中使用智能体收件箱、私密通知、恢复、完成摘要和隔离worktree。" />
+    <meta name="KEYWORDS" content="智能体收件箱, 通知, 恢复, 完成摘要, worktree, 智能体检测, 历史, 隐私, Pine" />
+    <title>智能体收件箱与工作流 — Pine帮助</title>
+    <link rel="stylesheet" type="text/css" href="../style.css" />
+</head>
+<body>
+<main class="help-topic">
+    <nav class="breadcrumbs"><a href="index.html">Pine帮助</a></nav>
+
+    <section id="agents">
+        <a name="pine-agents" id="pine-agents"></a>
+        <h2>智能体收件箱与工作流</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <a name="pine-agent-inbox" id="pine-agent-inbox"></a>
+                <h3>智能体收件箱</h3>
+                <p>选取“显示”&gt;“智能体收件箱”或按下⇧⌘I，以查看所有已打开项目中的任务。使用箭头键选择任务，然后按下Return，准确返回该任务当前的实时会话。</p>
+            </div>
+            <div class="card">
+                <a name="pine-agent-settings" id="pine-agent-settings"></a>
+                <h3>私密通知</h3>
+                <p>在“设置”&gt;“智能体”中，选择要接收的等待、失败、完成和进程退出事件。通知不会包含提示词、终端输出、令牌、绝对路径或供应商标识符。</p>
+            </div>
+            <div class="card">
+                <h3>恢复与worktree</h3>
+                <p>使用任务的上下文菜单可恢复受支持的供应商会话、开始新会话或复制目标。隔离worktree保留在仓库内，只有明确操作才会清理。</p>
+            </div>
+            <div class="card">
+                <h3>完成摘要</h3>
+                <p>已完成任务会将经过验证的更改和测试证据与推断、歧义及智能体自述分开，便于您在采取下一步操作前判断结果。</p>
+            </div>
+            <div class="card">
+                <h3>代理检测</h3>
+                <p>Pine检测在终端中运行的受支持CLI代理，并通过徽章和指示器显示其状态。</p>
+            </div>
+            <div class="card">
+                <h3>活动面板</h3>
+                <p>查看代理活动的实时视图：已更改文件、已运行命令和当前工作状态。</p>
+            </div>
+            <div class="card">
+                <h3>代理历史</h3>
+                <p>查看并撤销代理更改。经过验证的预览会在应用前准确显示将要更改的内容。</p>
+            </div>
+            <div class="card">
+                <h3>隐私</h3>
+                <p>代理上下文传递是可选且只读的。未经您的操作，Pine绝不会将您的代码或终端输出发送到任何地方。</p>
+            </div>
+        </div>
+        <p class="tip"><strong>重要：</strong>Pine只会返回正在运行任务的精确代次，否则会安全拒绝。恢复任务元数据并不代表供应商会话已经恢复。快速终端暂不参与智能体检测。</p>
+        <p>Pine按可执行文件的精确名称识别Pi、Codex、Claude Code、OpenCode、Copilot、Aider、Gemini、Amp、Cursor Agent、Goose、Qwen Code和Crush。除非兼容性矩阵另有说明，否则只识别进程。</p>
+        <p><a href="https://github.com/batonogov/pine/blob/main/docs/agent-compatibility.md">查看CLI代理兼容性矩阵和当前限制。</a></p>
+    </section>
+
+    <nav class="topic-footer"><a href="index.html">← Pine帮助</a></nav>
+</main>
+</body>
+</html>

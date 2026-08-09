@@ -519,7 +519,7 @@ jobs:
             --workflow .github/workflows/ci.yml \
             --max-delta 3
 
-  # UI test shards — 7 parallel jobs, 31-33 tests each (delta 2).
+  # UI test shards — 7 parallel jobs, 31-34 tests each (delta 3).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -537,7 +537,7 @@ jobs:
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
               -only-testing:PineUITests/SessionRestoreTests
-          # Shard 2 — Welcome & Session (33 tests)
+          # Shard 2 — Welcome & Session (34 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
@@ -578,7 +578,7 @@ jobs:
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
               -only-testing:PineUITests/MinimapTests
-          # Shard 7 — Security & Layout (31 tests)
+          # Shard 7 — Security & Layout (32 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
               -only-testing:PineUITests/GitignoreFilterTests

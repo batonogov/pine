@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="ja" xml:lang="ja">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
+    <meta name="description" content="Pineでプロジェクトを開き、コード編集、ペイン、ターミナル、Git、LSP診断、エージェント機能、キーボードショートカットを使う方法を説明します。" />
+    <meta name="KEYWORDS" content="トラブルシューティング, Pine, ヘルプ, エディタ, プロジェクト, タブ, ペイン, ターミナル, Git, LSP, 診断, エージェント, ショートカット, 設定, キーバインド, 折りたたみ, ミニマップ, 検索, 置換" />
+    <title>トラブルシューティング — Pineヘルプ</title>
+    <link rel="stylesheet" type="text/css" href="../style.css" />
+</head>
+<body>
+<main class="help-topic">
+    <nav class="breadcrumbs"><a href="index.html">Pineヘルプ</a></nav>
+
+    <section id="troubleshooting">
+        <a name="pine-troubleshooting" id="pine-troubleshooting"></a>
+        <h2>トラブルシューティング</h2>
+        <ul class="topic-list">
+            <li>
+                <strong>ターミナルが黒い画面を表示する</strong>
+                <span>Pineは既定でMetalレンダラーを使用します。黒い画面になる場合は、optionキーを押しながら再起動するか、<code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code>を実行してCoreGraphicsに切り替えてください。</span>
+            </li>
+            <li>
+                <strong>LSPの補完や診断が機能しない</strong>
+                <span>「設定」&gt;「言語」を開き、サーバー実行ファイルのパスを確認してください。Pineはサーバーのエラーをステータスバーに表示します。</span>
+            </li>
+            <li>
+                <strong>大きなファイルが遅い</strong>
+                <span>1 MB超のファイルはシンタックスハイライトを無効にするか確認します。10 MB超のファイルは段階的に読み込まれます。大きなファイルの移動にはミニマップを使ってください。</span>
+            </li>
+            <li>
+                <strong>保存時フォーマットが適用されない</strong>
+                <span>保存時フォーマットには、フォーマッタ（<code>terraform</code>・<code>shfmt</code>・<code>prettier</code> など）がPATHに存在する必要があります。Homebrewでインストールしてください。</span>
+            </li>
+            <li>
+                <strong>macOS 26または27の互換性</strong>
+                <span>PineはmacOS 26（Tahoe）を対象としています。プラットフォーム固有の問題が起きた場合は、バグ報告に<code>sw_vers</code>と<code>xcodebuild -version</code>の出力を含めてください。</span>
+            </li>
+            <li>
+                <strong>エージェントが検出されない</strong>
+                <span>Pineは対応CLIエージェントをプロセス名で検出します。エージェントがPineのターミナルペインで実行されていることを確認してください。クイックターミナルはまだエージェント検出に対応していません。</span>
+            </li>
+        </ul>
+    </section>
+
+    <nav class="topic-footer"><a href="index.html">← Pineヘルプ</a></nav>
+</main>
+</body>
+</html>

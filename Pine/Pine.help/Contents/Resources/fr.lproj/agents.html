@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="fr" xml:lang="fr">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
+    <meta name="description" content="Utilisez la boîte de réception des agents, les notifications privées, la récupération, les bilans et les worktrees isolés dans Pine." />
+    <meta name="KEYWORDS" content="boîte de réception des agents, notifications, récupération, bilan, worktree, détection, historique, confidentialité, Pine" />
+    <title>Boîte de réception et workflows d&#x27;agents — Aide de Pine</title>
+    <link rel="stylesheet" type="text/css" href="../style.css" />
+</head>
+<body>
+<main class="help-topic">
+    <nav class="breadcrumbs"><a href="index.html">Aide de Pine</a></nav>
+
+    <section id="agents">
+        <a name="pine-agents" id="pine-agents"></a>
+        <h2>Boîte de réception et workflows d'agents</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <a name="pine-agent-inbox" id="pine-agent-inbox"></a>
+                <h3>Boîte de réception des agents</h3>
+                <p>Choisissez Présentation &gt; Boîte de réception des agents ou appuyez sur ⇧⌘I pour voir les tâches de tous les projets ouverts. Sélectionnez une tâche avec les flèches puis appuyez sur Retour pour rejoindre précisément sa session active.</p>
+            </div>
+            <div class="card">
+                <a name="pine-agent-settings" id="pine-agent-settings"></a>
+                <h3>Notifications privées</h3>
+                <p>Dans Réglages &gt; Agents, choisissez les événements d'attente, d'échec, de fin et d'arrêt de processus qui peuvent vous prévenir. Les notifications excluent les requêtes, la sortie du terminal, les jetons, les chemins absolus et les identifiants de fournisseur.</p>
+            </div>
+            <div class="card">
+                <h3>Récupération et worktrees</h3>
+                <p>Le menu contextuel d'une tâche permet de reprendre une session compatible, d'en démarrer une nouvelle ou de copier son objectif. Les worktrees isolés restent dans le dépôt et leur nettoyage exige une action explicite.</p>
+            </div>
+            <div class="card">
+                <h3>Bilans de fin</h3>
+                <p>Les tâches terminées séparent les modifications et tests vérifiés des déductions, ambiguïtés et déclarations de l'agent afin que vous puissiez évaluer le résultat avant d'agir.</p>
+            </div>
+            <div class="card">
+                <h3>Détection d'agents</h3>
+                <p>Pine détecte les agents CLI pris en charge exécutés dans le terminal et affiche leur statut avec des badges et des indicateurs.</p>
+            </div>
+            <div class="card">
+                <h3>Panneau d'activité</h3>
+                <p>Consultez une vue en direct de l'activité de l'agent : fichiers modifiés, commandes exécutées et état actuel.</p>
+            </div>
+            <div class="card">
+                <h3>Historique des agents</h3>
+                <p>Examinez et annulez les modifications des agents. Les aperçus vérifiés montrent exactement ce qui changera avant l'application.</p>
+            </div>
+            <div class="card">
+                <h3>Confidentialité</h3>
+                <p>Le transfert de contexte à l'agent est optionnel et en lecture seule. Pine n'envoie jamais votre code ni la sortie du terminal nulle part sans votre action.</p>
+            </div>
+        </div>
+        <p class="tip"><strong>Important :</strong> Pine rejoint uniquement la génération exacte d'une tâche active et refuse sinon de façon sûre. La restauration des métadonnées ne signifie pas que la session du fournisseur a repris. Le Terminal rapide ne participe pas encore à la détection des agents.</p>
+        <p>Pine reconnaît Pi, Codex, Claude Code, OpenCode, Copilot, Aider, Gemini, Amp, Cursor Agent, Goose, Qwen Code et Crush par le nom exact de l’exécutable. Sauf indication contraire dans la matrice, seule la présence du processus est reconnue.</p>
+        <p><a href="https://github.com/batonogov/pine/blob/main/docs/agent-compatibility.md">Consultez la matrice de compatibilité des agents CLI et leurs limitations actuelles.</a></p>
+    </section>
+
+    <nav class="topic-footer"><a href="index.html">← Aide de Pine</a></nav>
+</main>
+</body>
+</html>

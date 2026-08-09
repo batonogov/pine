@@ -22,6 +22,17 @@ final class SettingsUITests: PineUITestCase {
         try super.tearDownWithError()
     }
 
+    func testSettingsExposeContextualHelp() throws {
+        launchClean()
+        openSettings()
+
+        let helpButton = app.buttons["settingsHelpButton"].firstMatch
+        XCTAssertTrue(
+            helpButton.waitForExistence(timeout: 10),
+            "Settings should expose native help for the selected pane"
+        )
+    }
+
     func testTerminalPaneExposesThemeAndQuickTerminalControls() throws {
         launchClean()
         openSettings()
