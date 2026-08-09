@@ -513,6 +513,19 @@ struct ProblemsPanelControllerTests {
             [state(swiftOwner, revision: 0)]
         }
         #expect(disabledController.presentationState == .disabled)
+        #expect(
+            disabledController.presentationState
+                .offersLanguageSettingsRecovery
+        )
+        #expect(!ProblemsPresentationState.empty.offersLanguageSettingsRecovery)
+        #expect(
+            !ProblemsPresentationState.unsupported
+                .offersLanguageSettingsRecovery
+        )
+        #expect(
+            ProblemsPresentationState.unavailable
+                .offersLanguageSettingsRecovery
+        )
     }
 
     @Test("Project navigation focuses the owning pane and keeps the column")

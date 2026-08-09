@@ -229,6 +229,9 @@ nonisolated enum AccessibilityID {
     static let problemsIndicator = "problemsIndicator"
     static let problemsPanel = "problemsPanel"
     static let problemsEmptyState = "problemsEmptyState"
+    static let problemsHelpButton = "problemsHelpButton"
+    static let problemsLanguageSettingsButton =
+        "problemsLanguageSettingsButton"
     static let agentStatusBarMenu = "agentStatusBarMenu"
 
     // MARK: - LSP completion popup (#1012)
@@ -248,7 +251,10 @@ nonisolated enum AccessibilityID {
     static let agentActivityKindMenu = "agentActivityKindMenu"
     static let agentActivityStatusMenu = "agentActivityStatusMenu"
     static let agentActivityAttributionMenu = "agentActivityAttributionMenu"
+    static let agentActivityHelpButton = "agentActivityHelpButton"
     static let agentActivityDetail = "agentActivityDetail"
+    static let agentActivityDetailHelpButton =
+        "agentActivityDetailHelpButton"
     static let agentActivityDetailCopy = "agentActivityDetailCopy"
     static let agentActivityDetailGoToTerminal = "agentActivityDetailGoToTerminal"
     static let agentActivityDetailOpenFile = "agentActivityDetailOpenFile"

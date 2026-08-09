@@ -229,6 +229,10 @@ final class EditorWindowTests: PineUITestCase {
             waitForExistence(panel, timeout: 5),
             "Problems should open in the editor chrome"
         )
+        XCTAssertTrue(
+            app.buttons["problemsHelpButton"].firstMatch.exists,
+            "Problems should expose its language-server Help topic"
+        )
 
         clickMenuBarItem("View")
         app.menuItems["Problems"].click()
