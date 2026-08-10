@@ -271,14 +271,14 @@ struct ProblemsPanelChrome: View {
             .fixedSize()
             .accessibilityLabel(Strings.problemsSourceFilter)
             Spacer()
-            HelpLink(
+            PineHelpButton(
                 anchor: PineHelp.Anchor.languageServers,
-                book: PineHelp.bookName
+                book: PineHelp.bookName,
+                accessibilityIdentifier: AccessibilityID.problemsHelpButton,
+                controlSize: .small
             )
-            .controlSize(.small)
             .fixedSize()
             .layoutPriority(1)
-            .accessibilityIdentifier(AccessibilityID.problemsHelpButton)
             Button {
                 onClose?()
             } label: {
