@@ -298,6 +298,13 @@ struct AgentActivityView: View {
                 .font(.headline)
                 .accessibilityIdentifier(AccessibilityID.agentActivityPanel)
             Spacer()
+            HelpLink(
+                anchor: PineHelp.Anchor.agents,
+                book: PineHelp.bookName
+            )
+            .accessibilityIdentifier(
+                AccessibilityID.agentActivityHelpButton
+            )
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
@@ -749,6 +756,13 @@ struct AgentActivityDetailView: View {
                 .lineLimit(2)
                 .accessibilityIdentifier(AccessibilityID.agentActivityDetail)
             Spacer()
+            HelpLink(
+                anchor: PineHelp.Anchor.agents,
+                book: PineHelp.bookName
+            )
+            .accessibilityIdentifier(
+                AccessibilityID.agentActivityDetailHelpButton
+            )
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)

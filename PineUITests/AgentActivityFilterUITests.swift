@@ -98,8 +98,19 @@ final class AgentActivityFilterUITests: PineUITestCase {
         ]
         launchActivityPanel()
 
+        XCTAssertTrue(
+            app.descendants(matching: .any)["agentActivityHelpButton"]
+                .firstMatch.exists,
+            "Agent Activity should expose task-specific Help"
+        )
+
         commandRow.click()
         XCTAssertTrue(activityDetail.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["agentActivityDetailHelpButton"]
+                .firstMatch.exists,
+            "Agent Activity details should preserve access to Help"
+        )
         XCTAssertTrue(detailCopy.waitForExistence(timeout: 3))
         XCTAssertTrue(detailGoToTerminal.waitForExistence(timeout: 3))
         XCTAssertFalse(detailOpenFile.exists)

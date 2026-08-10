@@ -3,6 +3,7 @@
 //  PineTests
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Pine
@@ -190,6 +191,30 @@ struct HelpBookTests {
                 #expect(corpus.contains("name=\"\(anchor)\""))
             }
         }
+    }
+
+    @Test func compactHelpButtonUsesNativeAccessibilityContract() {
+        let button = PineNativeHelpButton(
+            anchor: PineHelp.Anchor.languageServers,
+            book: PineHelp.bookName,
+            accessibilityIdentifier: AccessibilityID.problemsHelpButton,
+            controlSize: .small
+        )
+
+        #expect(button.bezelStyle == .helpButton)
+        #expect(button.controlSize == .small)
+        #expect(button.isAccessibilityElement())
+        #expect(button.accessibilityRole() == .button)
+        #expect(
+            button.accessibilityIdentifier()
+                == AccessibilityID.problemsHelpButton
+        )
+        #expect(
+            button.identifier?.rawValue
+                == AccessibilityID.problemsHelpButton
+        )
+        #expect(button.intrinsicContentSize.width > 0)
+        #expect(button.intrinsicContentSize.height > 0)
     }
 
     private func helpResourcesURL() throws -> URL {

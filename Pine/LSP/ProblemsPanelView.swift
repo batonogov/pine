@@ -57,12 +57,33 @@ struct ProblemsPanelView: View {
     /// Called with the exact project/pane/tab/revision-owned diagnostic.
     var onSelect: ((ProblemsFlatDiagnostic) -> Void)?
 
+    @Environment(\.openSettings) private var openSettings
+    @AppStorage(PineSettingsView.selectedPaneKey)
+    private var selectedSettingsPane = SettingsPane.SettingsPaneID.general
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if groups.isEmpty {
-                Text(state.message)
-                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 8) {
+                    Text(state.message)
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                        .foregroundStyle(.secondary)
+                    if state.offersLanguageSettingsRecovery {
+                        Button {
+                            selectedSettingsPane = .languages
+                            openSettings()
+                        } label: {
+                            Label(
+                                Strings.lspSettingsTitle,
+                                systemImage: "gear"
+                            )
+                        }
+                        .controlSize(.small)
+                        .accessibilityIdentifier(
+                            AccessibilityID.problemsLanguageSettingsButton
+                        )
+                    }
+                }
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 12)
                     .accessibilityIdentifier(AccessibilityID.problemsEmptyState)
@@ -250,6 +271,14 @@ struct ProblemsPanelChrome: View {
             .fixedSize()
             .accessibilityLabel(Strings.problemsSourceFilter)
             Spacer()
+            PineHelpButton(
+                anchor: PineHelp.Anchor.languageServers,
+                book: PineHelp.bookName,
+                accessibilityIdentifier: AccessibilityID.problemsHelpButton,
+                controlSize: .small
+            )
+            .fixedSize()
+            .layoutPriority(1)
             Button {
                 onClose?()
             } label: {
@@ -258,6 +287,8 @@ struct ProblemsPanelChrome: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .fixedSize()
+            .layoutPriority(1)
             .help(Strings.problemsClose)
             .accessibilityLabel(Strings.problemsClose)
         }

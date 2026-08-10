@@ -59,6 +59,10 @@ nonisolated enum ProblemsPresentationState: Equatable, Sendable {
     case unsupported
     case loading
     case unavailable
+
+    var offersLanguageSettingsRecovery: Bool {
+        self == .disabled || self == .unavailable
+    }
 }
 
 /// Stable semantic identity. Producer UUIDs are intentionally excluded:
