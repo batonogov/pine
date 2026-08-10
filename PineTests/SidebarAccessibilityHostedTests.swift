@@ -121,6 +121,37 @@ struct SidebarAccessibilityHostedTests {
         #expect(!controller.isFocused)
     }
 
+    @Test("Row focus claim retries once after responder joins a window")
+    func responderFocusRetryAfterAttachment() async {
+        let controller = SidebarKeyboardFocusController()
+        let responder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        controller.attach(responder)
+
+        #expect(!controller.requestFocus(retryOnNextRunLoop: true))
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = responder
+        defer { window.orderOut(nil) }
+
+        // Enqueued after the controller's retry, so reaching this continuation
+        // proves the bounded next-runloop attempt has already completed.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+
+        #expect(controller.isFocused)
+        #expect(window.firstResponder === responder)
+    }
+
     @Test("Physical and interpreted printable input share one callback")
     func responderInputClassification() throws {
         let responder = SidebarKeyboardResponderView(frame: .zero)
