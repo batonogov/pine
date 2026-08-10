@@ -26,13 +26,12 @@
 //  the menu-save path. The fix defers the save (disk write + @Observable
 //  mutation + notification) to the next runloop via
 //  `ProjectManager.saveActiveTabFromMenu()` / `saveAllTabsFromMenu()`, so the
-//  button-action callstack unwinds first. Autosave / close / quit keep calling
-//  the synchronous `saveActiveTab()` directly — they are not invoked from a
-//  `ButtonAction`, so there is no transactional access to collide with.
+//  button-action callstack unwinds first. Interactive saves then prepare their
+//  transformed content asynchronously before the revision-fenced commit.
 //
 //  These tests pin the contract via the observable side effect of the deferral:
 //  the file must NOT be rewritten synchronously when the menu-save method is
-//  invoked, but MUST be on the next runloop. Removing the
+//  invoked, but MUST complete after the deferred async preparation. Removing the
 //  `DispatchQueue.main.async` from `performMenuSave` turns the tests red —
 //  verified by regression injection.
 //
@@ -57,9 +56,15 @@ struct MenuSaveReentrancyTests {
         (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
 
-    private func drainRunloop() async throws {
-        await Task.yield()
-        try await Task.sleep(for: .milliseconds(50))
+    private func waitUntilDiskChanges(
+        _ url: URL,
+        from original: String
+    ) async throws {
+        for _ in 0..<500 {
+            if readDisk(url) != original { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(readDisk(url) != original)
     }
 
     // MARK: - saveActiveTabFromMenu defers the disk write (#1058)
@@ -95,11 +100,11 @@ struct MenuSaveReentrancyTests {
         #expect(readDisk(url) == originalOnDisk,
                 "saveActiveTabFromMenu must not perform the save synchronously (the reentrancy that triggers the exclusivity abort)")
 
-        // Contract #2: the deferred save must rewrite the file on the next
-        // runloop (format-on-save changed the content).
-        try await drainRunloop()
+        // Contract #2: the deferred async save must eventually rewrite the
+        // file (format-on-save changed the content).
+        try await waitUntilDiskChanges(url, from: originalOnDisk)
         #expect(readDisk(url) != originalOnDisk,
-                "saveActiveTabFromMenu must perform the save on the next runloop")
+                "saveActiveTabFromMenu must complete its deferred async save")
         #expect(readDisk(url).contains("\n"),
                 "deferred format-on-save must have pretty-printed the JSON")
     }
@@ -138,22 +143,20 @@ struct MenuSaveReentrancyTests {
         #expect(readDisk(url) == originalOnDisk,
                 "saveAllTabsFromMenu must not perform the save synchronously")
 
-        try await drainRunloop()
+        try await waitUntilDiskChanges(url, from: originalOnDisk)
         #expect(readDisk(url) != originalOnDisk,
-                "saveAllTabsFromMenu must perform the save on the next runloop")
+                "saveAllTabsFromMenu must complete its deferred async save")
         #expect(readDisk(url).contains("\n"),
                 "deferred format-on-save must have pretty-printed the JSON")
     }
 
-    // MARK: - Synchronous save path is unchanged for non-menu callers
+    // MARK: - Legacy synchronous primitive
 
-    @Test("direct saveActiveTab() (autosave/close/quit path) still saves synchronously")
+    @Test("direct saveActiveTab() remains synchronous for legacy callers")
     func directSaveIsSynchronous() throws {
-        // Autosave, close, and quit call saveActiveTab() directly (NOT via the
-        // menu entry point). Those callers are not inside a ButtonAction, so
-        // there is no exclusivity conflict and the save MUST remain
-        // synchronous — otherwise autosave/close/quit semantics change. This
-        // test pins that the deferral lives ONLY in the menu entry points.
+        // Keep the legacy pure-formatter helper synchronous for focused tests
+        // and noninteractive callers. Production Save, Save All, Save As, and
+        // auto-save use the revision-fenced async path.
         let pm = ProjectManager()
         let settings = EditorSettings(defaults: makeIsolatedDefaults())
         settings.formatOnSave = true

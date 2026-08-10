@@ -8,7 +8,8 @@ import Foundation
 /// A language-aware content formatter that rewrites file contents before they are written
 /// to disk. Formatters MUST be:
 ///
-/// - **Pure and synchronous** — invoked on the main thread inside `TabManager.trySaveTab`.
+/// - **Pure and synchronous** — interactive saves invoke it on a worker queue
+///   before returning to the main actor for revision validation and commit.
 /// - **Idempotent** — `format(format(x)) == format(x)`.
 /// - **Safe on parse failure** — return the original string unchanged if the input cannot
 ///   be parsed, so save never blocks on malformed files.
@@ -61,8 +62,8 @@ nonisolated struct JSONFileFormatter: FileFormatter {
     /// Extensions that are also skipped (VS Code workspaces, etc.).
     private static let blockExtensions: Set<String> = ["code-workspace"]
 
-    /// Maximum content size to format synchronously on the main thread.
-    /// Larger files are left as-is to avoid blocking the UI.
+    /// Maximum content size to format in one synchronous formatter call.
+    /// Larger files are left as-is to bound save latency and memory use.
     private static let maxFormatSize = 100_000
 
     func canFormat(url: URL) -> Bool {
@@ -114,8 +115,8 @@ nonisolated struct YAMLFileFormatter: FileFormatter, Sendable {
         "gemfile.lock", "cargo.lock"
     ]
 
-    /// Maximum content size to format synchronously on the main thread.
-    /// Larger files are left as-is to avoid blocking the UI.
+    /// Maximum content size to format in one synchronous formatter call.
+    /// Larger files are left as-is to bound save latency and memory use.
     private static let maxFormatSize = 100_000
 
     private let formatter: ExternalFileFormatter

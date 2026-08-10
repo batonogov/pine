@@ -972,8 +972,8 @@ struct TabManagerTests {
 
         manager.scheduleAutoSave()
 
-        // Wait for debounce + save
-        try await Task.sleep(for: .milliseconds(300))
+        // Wait for debounce + asynchronous save preparation.
+        try await waitUntil { manager.activeTab?.isDirty == false }
 
         #expect(manager.activeTab?.isDirty == false)
         let onDisk = try String(contentsOf: url, encoding: .utf8)
@@ -1057,7 +1057,7 @@ struct TabManagerTests {
         manager.updateContent("change3")
         manager.scheduleAutoSave()
 
-        try await Task.sleep(for: .milliseconds(400))
+        try await waitUntil { manager.activeTab?.isDirty == false }
 
         #expect(manager.activeTab?.isDirty == false)
         let onDisk = try String(contentsOf: url, encoding: .utf8)
@@ -1099,7 +1099,7 @@ struct TabManagerTests {
 
         manager.openTab(url: url2)
 
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil { manager.tabs[0].isDirty == false }
 
         // Tab 1 should have been saved
         let disk1 = try String(contentsOf: url1, encoding: .utf8)
@@ -1384,7 +1384,7 @@ struct TabManagerTests {
 
         manager.scheduleAutoSave()
 
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil { manager.activeTab?.isDirty == false }
 
         #expect(manager.activeTab?.isDirty == false)
         let onDisk = try String(contentsOf: url, encoding: .utf8)
@@ -1551,7 +1551,7 @@ struct TabManagerTests {
         #expect(manager.isAutoSaving == false)
 
         manager.scheduleAutoSave()
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { manager.activeTab?.isDirty == false }
 
         // After save completes, flag resets immediately
         #expect(manager.isAutoSaving == false)
@@ -1652,5 +1652,13 @@ struct TabManagerTests {
         // Verify we can still open the file — no leaked exclusive lock.
         let handle = try FileHandle(forReadingFrom: url)
         handle.closeFile()
+    }
+
+    private func waitUntil(_ predicate: @MainActor () -> Bool) async throws {
+        for _ in 0..<500 {
+            if predicate() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(predicate())
     }
 }

@@ -672,46 +672,32 @@ final class ProjectManager {
         ))
     }
 
-    /// Commits an already prepared Save All plan without presenting UI or
-    /// suspending. The whole plan is revalidated before the first write.
+    /// Commits an already prepared Save All plan without presenting UI. Slow
+    /// save preparation suspends off-main; every captured tab revision is
+    /// revalidated again before its write.
     func commitPreparedSaveAllPaneTabs(
         _ plan: PreparedPaneSavePlan
-    ) -> PreparedPaneSaveCommitResult {
+    ) async -> PreparedPaneSaveCommitResult {
         guard preparedSavePlanStillValid(plan) else {
             return .invalidated
         }
+        for planned in plan.entries {
+            planned.tabManager.cancelAutoSave()
+        }
 
         for planned in plan.entries {
-            if let destination = planned.destination {
-                do {
-                    guard try planned.tabManager.saveTabAs(
-                        tabID: planned.tab.id,
-                        to: destination
-                    ) else {
-                        return .invalidated
-                    }
-                } catch {
-                    return .failed(
-                        message: error.localizedDescription,
-                        retainedArtifacts: []
-                    )
-                }
-            } else {
-                guard let index = planned.tabManager.tabs.firstIndex(where: {
-                    $0.id == planned.tab.id
-                }) else {
+            do {
+                guard try await planned.tabManager.trySaveTabAsync(
+                    snapshot: planned.tab,
+                    saveAsDestination: planned.destination
+                ) else {
                     return .invalidated
                 }
-                do {
-                    guard try planned.tabManager.trySaveTab(at: index) else {
-                        return .invalidated
-                    }
-                } catch {
-                    return .failed(
-                        message: error.localizedDescription,
-                        retainedArtifacts: []
-                    )
-                }
+            } catch {
+                return .failed(
+                    message: error.localizedDescription,
+                    retainedArtifacts: []
+                )
             }
         }
         return .saved
@@ -1196,7 +1182,7 @@ final class ProjectManager {
     func saveAllPaneTabs(context: DialogPresentationContext) async -> Bool {
         let prepared = await prepareSaveAllPaneTabs(context: context)
         guard case .ready(let plan) = prepared else { return false }
-        switch commitPreparedSaveAllPaneTabs(plan) {
+        switch await commitPreparedSaveAllPaneTabs(plan) {
         case .saved:
             return true
         case .invalidated, .timedOut:
@@ -1433,7 +1419,7 @@ final class ProjectManager {
             return false
         }
         do {
-            return try tabManager.saveTabAs(
+            return try await tabManager.saveTabAsAsync(
                 tabID: tabID,
                 to: destination
             )

@@ -805,7 +805,91 @@ final class TabManager {
         return outcome.saved
     }
 
-    /// Synchronous, UI-free save primitive used by autosave and tests.
+    /// Async save primitive used by every interactive save path. The mutable
+    /// tab is captured on the main actor, transformed on a worker queue, then
+    /// revision-checked again immediately before the disk write.
+    @discardableResult
+    func trySaveTabAsync(at index: Int) async throws -> Bool {
+        assert(tabs.indices.contains(index), "trySaveTab: index \(index) out of bounds, count \(tabs.count)")
+        guard tabs.indices.contains(index) else { return false }
+        return try await trySaveTabAsync(snapshot: tabs[index])
+    }
+
+    /// Saves one exact captured revision. Save All passes its pre-authorized
+    /// snapshot here so an edit made while an earlier tab is formatting cannot
+    /// silently expand what the operation writes.
+    @discardableResult
+    func trySaveTabAsync(
+        snapshot: EditorTab,
+        saveAsDestination: URL? = nil
+    ) async throws -> Bool {
+        guard let index = tabs.firstIndex(where: { $0.id == snapshot.id }) else {
+            return false
+        }
+        let current = tabs[index]
+        guard current.kind == .text,
+              current.contentVersion == snapshot.contentVersion,
+              current.persistenceGeneration == snapshot.persistenceGeneration,
+              current.content == snapshot.content,
+              current.fileURL == snapshot.fileURL else {
+            return false
+        }
+        if current.isTruncated {
+            throw CocoaError(.fileWriteUnknown, userInfo: [
+                NSLocalizedDescriptionKey: "Cannot save: file was partially loaded (truncated). Saving would corrupt the original file."
+            ])
+        }
+        guard let destinationURL = saveAsDestination ?? current.fileURL else {
+            return false
+        }
+
+        let request = TabSaveRequest(
+            tabID: current.id,
+            contentVersion: current.contentVersion,
+            persistenceGeneration: current.persistenceGeneration,
+            content: current.content,
+            originalURL: current.fileURL,
+            destinationURL: destinationURL,
+            updatesBackingURL: saveAsDestination != nil,
+            encodingRawValue: current.encoding.rawValue,
+            settings: EditorSaveSettingsSnapshot(
+                insertFinalNewline: editorSettings.insertFinalNewline,
+                stripTrailingWhitespace: editorSettings.stripTrailingWhitespace,
+                formatOnSave: editorSettings.formatOnSave
+            ),
+            formatters: fileFormatters
+        )
+        let prepared = await runOnBackground {
+            TabPersistence.prepareSave(request)
+        }
+        guard !Task.isCancelled else { return false }
+        let outcome = try TabPersistence.commitPreparedSave(
+            prepared,
+            tabs: &tabs,
+            providers: .init(
+                modDate: { [weak self] url in self?.modDate(for: url) },
+                fileSize: { [weak self] url in self?.fileSize(url: url) }
+            )
+        )
+        if outcome.saved {
+            recoveryManager?.deleteRecoveryFile(for: current.id)
+            if saveAsDestination != nil {
+                onTabInventoryChanged?()
+            }
+        }
+        if let reload = outcome.reload {
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: ["url": reload.url, "text": reload.text]
+            )
+        }
+        return outcome.saved
+    }
+
+    /// Synchronous, UI-free save primitive retained for pure-formatter tests
+    /// and legacy noninteractive callers. Interactive paths use the async
+    /// revision-fenced primitive above.
     ///
     /// Errors are reported by the async window-scoped overload at user
     /// interaction boundaries. Keeping this primitive UI-free prevents a
@@ -827,8 +911,11 @@ final class TabManager {
         context: DialogPresentationContext
     ) async -> Bool {
         assert(tabs.indices.contains(index), "saveTab: index \(index) out of bounds, count \(tabs.count)")
+        if tabs.indices.contains(index) {
+            cancelAutoSave(for: tabs[index].id)
+        }
         do {
-            return try trySaveTab(at: index)
+            return try await trySaveTabAsync(at: index)
         } catch {
             if let saveError = error as? TabPersistence.SaveError,
                case .externalChange(let conflict) = saveError,
@@ -863,7 +950,13 @@ final class TabManager {
     @discardableResult
     func saveAllTabs(context: DialogPresentationContext) async -> Bool {
         do {
-            try trySaveAllTabs()
+            cancelAutoSave()
+            let snapshots = tabs.filter(\.isDirty)
+            for snapshot in snapshots {
+                guard try await trySaveTabAsync(snapshot: snapshot) else {
+                    return false
+                }
+            }
             return true
         } catch {
             if let saveError = error as? TabPersistence.SaveError,
@@ -919,6 +1012,21 @@ final class TabManager {
             )
         }
         return outcome.saved
+    }
+
+    /// Async Save As counterpart used by windows and Save All. Its destination
+    /// is captured before background formatting starts, while the original tab
+    /// revision remains the commit authorization.
+    @discardableResult
+    func saveTabAsAsync(tabID: UUID, to newURL: URL) async throws -> Bool {
+        guard let snapshot = tabs.first(where: { $0.id == tabID }) else {
+            return false
+        }
+        cancelAutoSave(for: tabID)
+        return try await trySaveTabAsync(
+            snapshot: snapshot,
+            saveAsDestination: newURL
+        )
     }
 
     /// Applies the model half of a termination save after its destination was
@@ -1325,7 +1433,7 @@ final class TabManager {
             saveAction: { [weak self] in
                 guard let self, let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
                 do {
-                    try self.trySaveTab(at: idx)
+                    try await self.trySaveTabAsync(at: idx)
                 } catch let error as TabPersistence.SaveError {
                     if case .externalChange(let conflict) = error {
                         let context = self.dialogContextProvider()
