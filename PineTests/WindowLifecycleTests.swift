@@ -1692,6 +1692,15 @@ struct WindowLifecycleTests {
         let index = try #require(tabs.tabs.firstIndex(where: {
             $0.fileURL == file
         }))
+        let conflict: TabManager.ExternalConflict
+        do {
+            _ = try tabs.trySaveTab(at: index)
+            Issue.record("Expected the late install to require overwrite authorization")
+            return
+        } catch let TabPersistence.SaveError.externalChange(observed) {
+            conflict = observed
+        }
+        #expect(tabs.authorizeExternalChange(conflict))
         #expect(try tabs.trySaveTab(at: index))
         let savedTab = try #require(tabs.tabs.first(where: {
             $0.fileURL == file
