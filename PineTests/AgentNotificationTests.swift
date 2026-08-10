@@ -207,6 +207,42 @@ struct AgentNotificationTests {
         controller.stop()
     }
 
+    @Test("startup authorization refresh preserves transitions observed in flight")
+    func startupAuthorizationRefreshPreservesTransitions() async throws {
+        let fixture = DefaultsFixture()
+        defer { fixture.cleanup() }
+        let settings = AgentNotificationSettings(defaults: fixture.defaults)
+        settings.setEnabled(true)
+        let registry = AgentTaskRegistry()
+        let delivery = RecordingAgentNotificationDelivery(status: .authorized)
+        delivery.suspendAuthorizationStatus = true
+        let controller = AgentNotificationController(
+            registry: registry,
+            settings: settings,
+            delivery: delivery,
+            isPresented: { _ in false },
+            openTask: { _ in }
+        )
+        controller.start()
+
+        let working = task(seed: 29, state: .executing)
+        var ended = working
+        update(&ended, state: .done, liveness: .terminated, offset: 1)
+        registry.setTasksForTesting([working])
+        registry.setTasksForTesting([ended])
+        await settle()
+
+        #expect(delivery.requests.isEmpty)
+        #expect(delivery.hasPendingAuthorizationStatusRequest)
+
+        delivery.resumeAuthorizationStatus()
+        await settle()
+
+        #expect(controller.authorizationStatus == .authorized)
+        #expect(delivery.requests.count == 1)
+        controller.stop()
+    }
+
     @Test("transient delivery failure retries before persisting deduplication")
     func transientDeliveryFailureRetries() async throws {
         let fixture = DefaultsFixture()
@@ -420,15 +456,33 @@ private final class RecordingAgentNotificationDelivery: AgentNotificationDeliver
     var status: AgentNotificationAuthorizationStatus
     var requestResult = false
     var failuresRemaining = 0
+    var suspendAuthorizationStatus = false
     private(set) var requests: [AgentNotificationRequest] = []
     private(set) var deliveryAttemptCount = 0
+    private var authorizationStatusContinuation:
+        CheckedContinuation<AgentNotificationAuthorizationStatus, Never>?
+
+    var hasPendingAuthorizationStatusRequest: Bool {
+        authorizationStatusContinuation != nil
+    }
 
     init(status: AgentNotificationAuthorizationStatus) {
         self.status = status
     }
 
     func registerActions() {}
-    func authorizationStatus() async -> AgentNotificationAuthorizationStatus { status }
+    func authorizationStatus() async -> AgentNotificationAuthorizationStatus {
+        guard suspendAuthorizationStatus else { return status }
+        return await withCheckedContinuation { continuation in
+            authorizationStatusContinuation = continuation
+        }
+    }
+
+    func resumeAuthorizationStatus() {
+        suspendAuthorizationStatus = false
+        authorizationStatusContinuation?.resume(returning: status)
+        authorizationStatusContinuation = nil
+    }
     func requestAuthorization() async throws -> Bool { requestResult }
     func deliver(_ request: AgentNotificationRequest) async throws {
         deliveryAttemptCount += 1
