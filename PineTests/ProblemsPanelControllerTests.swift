@@ -468,14 +468,23 @@ struct ProblemsPanelControllerTests {
             controller.groupedDiagnostics.flatMap(\.diagnostics)
                 .map(\.diagnostic.message) == ["warning"]
         )
+        #expect(controller.diagnosticCount == 1)
+        #expect(controller.presentationState == .diagnostics)
         #expect(controller.nextDiagnostic()?.diagnostic.message == "warning")
 
-        controller.severityFilter = .all
         controller.sourceFilter = "yamllint"
+        #expect(controller.groupedDiagnostics.isEmpty)
+        #expect(controller.diagnosticCount == 0)
+        #expect(controller.presentationState == .filtered)
+        #expect(controller.nextDiagnostic() == nil)
+
+        controller.severityFilter = .all
         #expect(
             controller.groupedDiagnostics.flatMap(\.diagnostics)
                 .map(\.diagnostic.message) == ["error"]
         )
+        #expect(controller.diagnosticCount == 1)
+        #expect(controller.presentationState == .diagnostics)
         #expect(controller.previousDiagnostic()?.diagnostic.message == "error")
     }
 
