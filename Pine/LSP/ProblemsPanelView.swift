@@ -275,6 +275,9 @@ struct ProblemsPanelChrome: View {
                 anchor: PineHelp.Anchor.languageServers,
                 book: PineHelp.bookName
             )
+            .controlSize(.small)
+            .fixedSize()
+            .layoutPriority(1)
             .accessibilityIdentifier(AccessibilityID.problemsHelpButton)
             Button {
                 onClose?()
@@ -284,6 +287,8 @@ struct ProblemsPanelChrome: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .fixedSize()
+            .layoutPriority(1)
             .help(Strings.problemsClose)
             .accessibilityLabel(Strings.problemsClose)
         }
