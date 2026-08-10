@@ -12,12 +12,19 @@ import UniformTypeIdentifiers
 // MARK: - Models
 
 struct SearchMatch: Identifiable, Hashable, Sendable {
+    struct Identity: Hashable, Sendable {
+        let lineNumber: Int
+        let matchRangeStart: Int
+    }
+
     let lineNumber: Int
     let lineContent: String
     let matchRangeStart: Int
     let matchRangeLength: Int
 
-    var id: Int { lineNumber &* 100_003 &+ matchRangeStart }
+    var id: Identity {
+        Identity(lineNumber: lineNumber, matchRangeStart: matchRangeStart)
+    }
 }
 
 struct SearchFileGroup: Identifiable, Sendable {
@@ -193,9 +200,24 @@ final class ProjectSearchProvider {
                 guard !Task.isCancelled else { break }
 
                 if let fileGroup = result {
-                    groups.append(fileGroup)
-                    totalMatches += fileGroup.matches.count
-                    if totalMatches >= maxResults { break }
+                    let remainingCapacity = maxResults - totalMatches
+                    guard remainingCapacity > 0 else {
+                        group.cancelAll()
+                        break
+                    }
+                    let retainedMatches = Array(
+                        fileGroup.matches.prefix(remainingCapacity)
+                    )
+                    groups.append(SearchFileGroup(
+                        url: fileGroup.url,
+                        relativePath: fileGroup.relativePath,
+                        matches: retainedMatches
+                    ))
+                    totalMatches += retainedMatches.count
+                    if totalMatches >= maxResults {
+                        group.cancelAll()
+                        break
+                    }
                 }
 
                 // Submit next file
