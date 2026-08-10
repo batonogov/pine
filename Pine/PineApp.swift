@@ -261,6 +261,10 @@ struct WindowCloseInterceptor: NSViewRepresentable {
         var originalDelegate: (any NSWindowDelegate)?
         weak var installedWindow: NSWindow?
         private var lifecycleObservers: [Any] = []
+        /// Once a replacement coordinator adopts this installation, SwiftUI
+        /// may still deliver a stale update or move callback to the old
+        /// representable. Superseded generations can never reclaim ownership.
+        private var isSuperseded = false
 
         func installDelegate(
             on window: NSWindow,
@@ -271,6 +275,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
             presentAlert: CloseDelegate.CloseAlertPresenter? = nil,
             saveAll: CloseDelegate.CloseSaveAll? = nil
         ) {
+            guard !isSuperseded else { return }
             if installedWindow !== window {
                 retireCurrentInstallation(restoringOriginal: true)
                 installedWindow = window
@@ -309,8 +314,20 @@ struct WindowCloseInterceptor: NSViewRepresentable {
             var original = window.delegate
             if let existing = original as? CloseDelegate {
                 if existing.projectManager === projectManager {
+                    // A replacement NSViewRepresentable coordinator may be
+                    // installed before SwiftUI dismantles the previous one.
+                    // Transfer the live delegate explicitly so the old
+                    // coordinator's late teardown cannot restore the original
+                    // delegate and retire this window's dialog authority
+                    // (#1407).
+                    // `existing.original` is weak; capture it strongly before
+                    // relinquishing the old coordinator, which may hold its
+                    // only strong reference.
+                    let retainedOriginal = existing.original
+                    existing.interceptorOwner?.relinquish(existing)
                     closeDelegate = existing
-                    originalDelegate = existing.original
+                    originalDelegate = retainedOriginal
+                    existing.interceptorOwner = self
                     if existing.didCompleteWindowLifecycle,
                        registry.isWindowOpen(projectURL),
                        registry.openProjects[
@@ -323,6 +340,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                     return
                 }
                 let existingOriginal = existing.original
+                existing.interceptorOwner?.relinquish(existing)
                 existing.detachFromWindow()
                 original = existingOriginal
             }
@@ -337,6 +355,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
             )
             closeDelegate = delegate
             originalDelegate = original
+            delegate.interceptorOwner = self
             window.delegate = delegate
             // Fallback: observe willCloseNotification in case SwiftUI
             // replaces the window delegate after our installation (#138).
@@ -385,6 +404,12 @@ struct WindowCloseInterceptor: NSViewRepresentable {
 
         private func retireCurrentInstallation(restoringOriginal: Bool) {
             removeLifecycleObservers()
+            guard closeDelegate?.interceptorOwner === self else {
+                closeDelegate = nil
+                originalDelegate = nil
+                installedWindow = nil
+                return
+            }
             if restoringOriginal,
                let installedWindow,
                let closeDelegate,
@@ -392,6 +417,20 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                 installedWindow.delegate = originalDelegate
             }
             closeDelegate?.detachFromWindow()
+            closeDelegate?.interceptorOwner = nil
+            closeDelegate = nil
+            originalDelegate = nil
+            installedWindow = nil
+        }
+
+        /// Transfers ownership to a replacement representable coordinator
+        /// without touching the delegate or its project-window binding.
+        /// SwiftUI may call the old coordinator's dismantle hook afterwards;
+        /// clearing its local installation makes that teardown harmless.
+        fileprivate func relinquish(_ delegate: CloseDelegate) {
+            guard closeDelegate === delegate else { return }
+            isSuperseded = true
+            removeLifecycleObservers()
             closeDelegate = nil
             originalDelegate = nil
             installedWindow = nil
@@ -442,6 +481,9 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     /// Weak ref to original — Coordinator holds the strong ref separately
     /// to avoid a potential retain cycle through the delegate chain.
     weak var original: (any NSWindowDelegate)?
+    /// The current representable coordinator generation that owns this proxy.
+    /// Weak to avoid a cycle: the coordinator already retains the delegate.
+    weak var interceptorOwner: WindowCloseInterceptor.Coordinator?
 
     /// Tracks whether windowWillClose has already been handled, to prevent
     /// the NotificationCenter fallback from double-firing.

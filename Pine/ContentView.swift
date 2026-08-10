@@ -87,6 +87,9 @@ struct ContentView: View {
                         Image(systemName: "folder.badge.plus")
                     }
                     .help(Strings.openFolderTooltip)
+                    .accessibilityIdentifier(
+                        AccessibilityID.openFolderToolbarButton
+                    )
                 }
             }
         } detail: {
@@ -142,6 +145,14 @@ struct ContentView: View {
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
             refreshBlame()
+            #if DEBUG
+            // Seed only after the project window has installed its native
+            // delegate. The #1407 fixture must reproduce the live-agent UI
+            // transition that invalidates an already-mounted scene.
+            await registry.seedLiveAgentUITestFixture(
+                afterWindowBindingFor: projectManager
+            )
+            #endif
         }
         .sheet(isPresented: $showRecoveryDialog) {
             RecoveryDialogView(
