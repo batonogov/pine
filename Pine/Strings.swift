@@ -2172,6 +2172,13 @@ enum Strings {
         String(localized: "problems.noIssues", defaultValue: "No problems detected")
     }
 
+    static var problemsNoFilterMatches: String {
+        String(
+            localized: "problems.noFilterMatches",
+            defaultValue: "No problems match the current filters"
+        )
+    }
+
     // Problems panel chrome wiring (#1236)
 
     static var problemsPanelTitle: String {

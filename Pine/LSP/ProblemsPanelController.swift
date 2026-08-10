@@ -54,6 +54,7 @@ nonisolated enum ProblemsSeverityFilter: String, CaseIterable, Identifiable,
 
 nonisolated enum ProblemsPresentationState: Equatable, Sendable {
     case diagnostics
+    case filtered
     case empty
     case disabled
     case unsupported
@@ -332,14 +333,16 @@ final class ProblemsPanelController {
         )
     }
 
-    var diagnosticCount: Int { flatDiagnostics.count }
+    var diagnosticCount: Int { filteredDiagnostics.count }
 
     var availableSources: [String] {
         Array(Set(flatDiagnostics.map(\.diagnostic.source))).sorted()
     }
 
     var presentationState: ProblemsPresentationState {
-        if !flatDiagnostics.isEmpty { return .diagnostics }
+        if !flatDiagnostics.isEmpty {
+            return filteredDiagnostics.isEmpty ? .filtered : .diagnostics
+        }
         let states = normalizedDocumentStates()
         guard !states.isEmpty else { return .empty }
         let urls = states.compactMap { URL(string: $0.owner.uri) }
@@ -397,7 +400,7 @@ final class ProblemsPanelController {
 
     @discardableResult
     func previousDiagnostic() -> ProblemsFlatDiagnostic? {
-        let flat = flatDiagnostics
+        let flat = filteredDiagnostics
         return selectDiagnostic(
             offset: -1,
             initialIndex: max(0, flat.count - 1),

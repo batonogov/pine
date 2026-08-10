@@ -313,6 +313,7 @@ private extension ProblemsPresentationState {
     var message: String {
         switch self {
         case .diagnostics, .empty: Strings.problemsNoIssues
+        case .filtered: Strings.problemsNoFilterMatches
         case .disabled: Strings.problemsDisabled
         case .unsupported: Strings.problemsUnsupported
         case .loading: Strings.problemsLoading

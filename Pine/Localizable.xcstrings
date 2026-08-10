@@ -32216,6 +32216,21 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开" } }
       }
     },
+    "problems.noFilterMatches" : {
+      "comment" : "Message shown when Problems panel filters hide every diagnostic.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Probleme entsprechen den aktuellen Filtern" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No problems match the current filters" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Ningún problema coincide con los filtros actuales" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucun problème ne correspond aux filtres actuels" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "現在のフィルタに一致する問題はありません" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "현재 필터와 일치하는 문제가 없습니다" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum problema corresponde aos filtros atuais" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет проблем, соответствующих текущим фильтрам" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有与当前筛选条件匹配的问题" } }
+      }
+    },
     "problems.noIssues": {
       "comment": "Label for the \"No problems detected\" message in the problems panel.",
       "extractionState": "extracted_with_value",
