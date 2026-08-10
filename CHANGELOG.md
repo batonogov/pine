@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.2.0](https://github.com/batonogov/pine/compare/v2.1.1...v2.2.0) (2026-08-10)
+
+
+### Features
+
+* **help:** add contextual recovery routes ([#1383](https://github.com/batonogov/pine/issues/1383)) ([554c27b](https://github.com/batonogov/pine/commit/554c27bb4aa3de9e3087d0f9ade5c46b0e8dd83e))
+
+
+### Bug Fixes
+
+* **agent:** close Pine 2.0 workflow regressions ([#1368](https://github.com/batonogov/pine/issues/1368)) ([9a5e035](https://github.com/batonogov/pine/commit/9a5e03501fa52ef91b530971fd61b411140cd67e))
+* **agent:** polish native Pine 2.0 UX ([#1373](https://github.com/batonogov/pine/issues/1373)) ([8c37907](https://github.com/batonogov/pine/commit/8c37907b8958dc7ead25fb26cea59ecc3d2c65fe))
+* **help:** add native task-based search and contextual help ([#1381](https://github.com/batonogov/pine/issues/1381)) ([da92717](https://github.com/batonogov/pine/commit/da927177a55930e9175edbd59f0cbc5b65c72f49))
+* **marketing:** hide terminal screenshot fixture ([#1378](https://github.com/batonogov/pine/issues/1378)) ([8e63a90](https://github.com/batonogov/pine/commit/8e63a90eee8896ca5ff67ebb06eaa57b1f8c4c61))
+* **marketing:** stabilize terminal screenshot prompt ([#1376](https://github.com/batonogov/pine/issues/1376)) ([77a5c9a](https://github.com/batonogov/pine/commit/77a5c9aa1212e7e062032cc17272ce2c1874cc84))
+
 ## [2.1.1](https://github.com/batonogov/pine/compare/v2.1.0...v2.1.1) (2026-08-09)
 
 
