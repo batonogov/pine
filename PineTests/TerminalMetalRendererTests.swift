@@ -149,7 +149,7 @@ struct TerminalMetalRendererTests {
         #expect(metalBridgeRequests == 1)
     }
 
-    @Test("Metal redraw uses the nested MTKView compatibility bridge")
+    @Test("Metal redraw attempts an immediate frame before trailing invalidation")
     func metalRedrawTargetsNestedView() async {
         guard MTLCreateSystemDefaultDevice() != nil else { return }
         let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
@@ -164,7 +164,9 @@ struct TerminalMetalRendererTests {
         // Let the initial bounded retry batch drain, then isolate one request.
         try? await Task.sleep(for: .milliseconds(450))
         var bridgeRequests = 0
+        var immediateDrawRequests = 0
         view.metalRedrawBridgeObserver = { bridgeRequests += 1 }
+        view.metalImmediateDrawObserver = { immediateDrawRequests += 1 }
         view.requestRendererDisplay()
 
         // `needsDisplay` is deliberately not asserted here: AppKit may
@@ -173,6 +175,7 @@ struct TerminalMetalRendererTests {
         // production boundary immediately before SwiftTerm receives it.
         #expect(metalView.superview === view)
         #expect(bridgeRequests == 1)
+        #expect(immediateDrawRequests == 1)
         window.contentView = nil
     }
 
