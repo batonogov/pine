@@ -422,7 +422,17 @@ extension ContentView {
                     }
                     if displayedAuthorization.covers(currentDirtyTabs) {
                         for conflict in currentModified {
-                            projectManager.reloadTabs(url: conflict.url)
+                            projectManager.reloadTab(conflict: conflict)
+                        }
+                    }
+                } else if response == .alertSecondButtonReturn {
+                    let currentDirtyTabs = projectManager.allTabs.filter {
+                        modifiedURLs.contains($0.url.standardizedFileURL)
+                            && $0.isDirty
+                    }
+                    if displayedAuthorization.covers(currentDirtyTabs) {
+                        for conflict in currentModified {
+                            projectManager.authorizeExternalChange(conflict)
                         }
                     }
                 }

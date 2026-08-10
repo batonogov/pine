@@ -102,6 +102,7 @@ nonisolated struct TerminationInstalledFileMetadata: Sendable {
     let size: Int
     let modificationSeconds: Int
     let modificationNanoseconds: Int
+    let contentDigest: Data
 
     var modificationDate: Date {
         Date(
@@ -626,7 +627,8 @@ nonisolated enum TerminationSaveCoordinator {
                 metadata: TerminationInstalledFileMetadata(
                     size: Int(clamping: status.st_size),
                     modificationSeconds: Int(status.st_mtimespec.tv_sec),
-                    modificationNanoseconds: Int(status.st_mtimespec.tv_nsec)
+                    modificationNanoseconds: Int(status.st_mtimespec.tv_nsec),
+                    contentDigest: Data(SHA256.hash(data: data))
                 )
             )
         } catch {

@@ -46,6 +46,7 @@ enum TabDuplicator {
             savedContent: trimmed
         )
         newTab.lastModDate = providers.modDate(duplicateURL)
+        newTab.backingFileRevision = try? providers.fileRevision(duplicateURL)
         newTab.encoding = tab.encoding
         tabs.insert(newTab, at: index + 1)
         return newTab.id

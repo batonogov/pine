@@ -14,6 +14,24 @@ import UniformTypeIdentifiers
 struct FileProviders {
     let modDate: (URL) -> Date?
     let fileSize: (URL) -> Int?
+    let fileRevision: (URL) throws -> BackingFileRevision
+    let fileIdentity: (URL) throws -> BackingFileIdentity
+
+    init(
+        modDate: @escaping (URL) -> Date?,
+        fileSize: @escaping (URL) -> Int?,
+        fileRevision: @escaping (URL) throws -> BackingFileRevision = {
+            try BackingFileRevision.capture(at: $0)
+        },
+        fileIdentity: @escaping (URL) throws -> BackingFileIdentity = {
+            try BackingFileIdentity.capture(at: $0)
+        }
+    ) {
+        self.modDate = modDate
+        self.fileSize = fileSize
+        self.fileRevision = fileRevision
+        self.fileIdentity = fileIdentity
+    }
 
     /// Default providers using FileManager.
     static let `default` = FileProviders(
@@ -24,7 +42,9 @@ struct FileProviders {
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                   let size = attrs[.size] as? Int else { return nil }
             return size
-        }
+        },
+        fileRevision: { try BackingFileRevision.capture(at: $0) },
+        fileIdentity: { try BackingFileIdentity.capture(at: $0) }
     )
 }
 
@@ -67,6 +87,22 @@ struct SaveOutcome {
 /// large file handling, and preview file detection.
 @MainActor
 enum TabPersistence {
+    enum SaveError: LocalizedError {
+        case externalChange(TabExternalChangeDetector.ExternalConflict)
+
+        var errorDescription: String? {
+            switch self {
+            case .externalChange(let conflict):
+                switch conflict.kind {
+                case .modified:
+                    String(localized: "conflict.externalModify.title")
+                case .deleted:
+                    String(localized: "fileOperation.deleted.message")
+                }
+            }
+        }
+    }
+
     private static let logger = Logger.editor
 
     /// File size threshold (in bytes) above which a warning is shown before opening.
@@ -119,16 +155,23 @@ enum TabPersistence {
     ) -> EditorTab {
         let content: String
         let encoding: String.Encoding
+        let revision: BackingFileRevision?
         do {
             let data = try Data(contentsOf: url)
             (content, encoding) = String.Encoding.detect(from: data)
+            revision = BackingFileRevision(
+                data: data,
+                fileIdentity: try? providers.fileIdentity(url)
+            )
         } catch {
             content = "// Error: \(error.localizedDescription)"
             encoding = .utf8
+            revision = nil
         }
 
         var tab = EditorTab(url: url, content: content, savedContent: content)
         tab.lastModDate = providers.modDate(url)
+        tab.backingFileRevision = revision
         tab.syntaxHighlightingDisabled = syntaxHighlightingDisabled
         tab.encoding = encoding
         tab.fileSizeBytes = providers.fileSize(url)
@@ -296,12 +339,15 @@ enum TabPersistence {
             settings: config.editorSettings,
             formatters: config.formatters
         )
+        try validateBackingFile(for: tab, at: fileURL, providers: providers)
         try trimmed.write(to: fileURL, atomically: true, encoding: tab.encoding)
         let contentChanged = trimmed != tab.content
         tabs[index].content = trimmed
         tabs[index].savedContent = trimmed
         tabs[index].lastModDate = providers.modDate(fileURL)
         tabs[index].fileSizeBytes = providers.fileSize(fileURL)
+        tabs[index].backingFileRevision = try? providers.fileRevision(fileURL)
+        tabs[index].pendingExternalFileState = nil
 
         var reload: ReloadedTab?
         if contentChanged {
@@ -337,6 +383,8 @@ enum TabPersistence {
         tabs[index].url = newURL
         tabs[index].savedContent = trimmed
         tabs[index].lastModDate = providers.modDate(newURL)
+        tabs[index].backingFileRevision = try? providers.fileRevision(newURL)
+        tabs[index].pendingExternalFileState = nil
         var reload: ReloadedTab?
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
@@ -344,5 +392,31 @@ enum TabPersistence {
             reload = ReloadedTab(url: newURL, text: trimmed)
         }
         return SaveOutcome(saved: true, reload: reload)
+    }
+
+    private static func validateBackingFile(
+        for tab: EditorTab,
+        at url: URL,
+        providers: FileProviders
+    ) throws {
+        guard let expectedRevision = tab.backingFileRevision else { return }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw SaveError.externalChange(.init(
+                tabID: tab.id,
+                url: url,
+                kind: .deleted,
+                observedState: .missing
+            ))
+        }
+        let actualRevision = try providers.fileRevision(url)
+        guard actualRevision.contentDigest == expectedRevision.contentDigest
+        else {
+            throw SaveError.externalChange(.init(
+                tabID: tab.id,
+                url: url,
+                kind: .modified,
+                observedState: .present(actualRevision)
+            ))
+        }
     }
 }

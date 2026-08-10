@@ -5,6 +5,7 @@
 //  Created by Claude on 12.03.2026.
 //
 
+import AppKit
 import Foundation
 import Testing
 
@@ -159,6 +160,66 @@ struct TabManagerTests {
         // Tab must remain dirty after failed save
         #expect(manager.activeTab?.isDirty == true)
         #expect(manager.activeTab?.content == "data")
+    }
+
+    @Test("save fence rejects an unseen timestamp-preserving replacement")
+    func saveRejectsUnseenExternalReplacement() throws {
+        let manager = makeTabManager()
+        let url = tempFileURL(content: "original")
+        manager.openTab(url: url)
+        manager.updateContent("local edits")
+        let originalDate = try #require(
+            try FileManager.default.attributesOfItem(atPath: url.path)[
+                .modificationDate
+            ] as? Date
+        )
+
+        try "external edits".write(
+            to: url,
+            atomically: true,
+            encoding: .utf8
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: originalDate],
+            ofItemAtPath: url.path
+        )
+
+        #expect(throws: TabPersistence.SaveError.self) {
+            try manager.trySaveTab(at: 0)
+        }
+        #expect(try String(contentsOf: url, encoding: .utf8) == "external edits")
+        #expect(manager.activeTab?.content == "local edits")
+        #expect(manager.activeTab?.isDirty == true)
+    }
+
+    @Test("Keep Local Changes authorizes only the observed disk revision")
+    func keepExternalConflictAuthorizesLaterSave() throws {
+        let manager = makeTabManager()
+        let url = tempFileURL(content: "original")
+        manager.openTab(url: url)
+        manager.updateContent("local edits")
+        let originalDate = try #require(
+            try FileManager.default.attributesOfItem(atPath: url.path)[
+                .modificationDate
+            ] as? Date
+        )
+
+        try "external edits".write(
+            to: url,
+            atomically: true,
+            encoding: .utf8
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: originalDate],
+            ofItemAtPath: url.path
+        )
+
+        let conflict = try #require(
+            manager.checkExternalChanges().conflicts.first
+        )
+        #expect(manager.authorizeExternalChange(conflict))
+        #expect(try manager.trySaveTab(at: 0))
+        #expect(try String(contentsOf: url, encoding: .utf8) == "local edits")
     }
 
     @Test("Handle file renamed updates tab URL preserving identity")
@@ -944,6 +1005,35 @@ struct TabManagerTests {
         try await Task.sleep(for: .milliseconds(300))
 
         // Should still be dirty — auto-save skipped
+        #expect(manager.activeTab?.isDirty == true)
+    }
+
+    @Test("auto-save prompts instead of overwriting an external replacement")
+    func autoSaveRejectsExternalReplacement() async throws {
+        let manager = makeTabManager()
+        manager.setAutoSaveDelay(0.05)
+        let url = tempFileURL(content: "original")
+        manager.openTab(url: url)
+        manager.updateContent("local edits")
+        var promptCount = 0
+        manager.externalConflictAlertPresenter = { _, _, _ in
+            promptCount += 1
+            return .abort
+        }
+
+        try "external edits".write(
+            to: url,
+            atomically: true,
+            encoding: .utf8
+        )
+        manager.scheduleAutoSave()
+        for _ in 0..<100 where promptCount == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(promptCount == 1)
+        #expect(try String(contentsOf: url, encoding: .utf8) == "external edits")
+        #expect(manager.activeTab?.content == "local edits")
         #expect(manager.activeTab?.isDirty == true)
     }
 
