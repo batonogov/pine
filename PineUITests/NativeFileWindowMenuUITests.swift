@@ -390,19 +390,11 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
 
         clickMenuBarItem("Window")
         app.menuItems["Close Window"].firstMatch.click()
-        let terminalWarning = app.sheets.firstMatch
-        XCTAssertTrue(
-            terminalWarning.waitForExistence(timeout: 5),
-            "The live terminal should retain its current close safeguard"
-        )
-        XCTAssertTrue(
-            terminalWarning.staticTexts["Active Process"].firstMatch.exists
-        )
-        terminalWarning.buttons["Close Terminal"].firstMatch.click()
         XCTAssertTrue(
             app.scrollViews["sidebar"].waitForNonExistence(timeout: 5),
-            "The project should enter its background window state"
+            "Window close should background active work without a terminal warning"
         )
+        XCTAssertFalse(app.sheets.firstMatch.exists)
         XCTAssertTrue(app.windows["welcome"].waitForExistence(timeout: 10))
 
         clickMenuBarItem("File")

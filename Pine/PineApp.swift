@@ -636,8 +636,8 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        // Application-level termination already completed the same dirty-tab
-        // and terminal decisions before setting `isTerminating`.
+        // Application-level termination already completed its aggregate
+        // dirty-tab and terminal decisions before setting `isTerminating`.
         if appDelegate?.isTerminating == true {
             return true
         }
@@ -668,8 +668,8 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             case .approve(let discard):
                 discardAuthorization = discard
             }
-            // Commit destructive editor mutation only after every prompt and
-            // terminal revalidation has succeeded.
+            // Commit destructive editor mutation only after the unsaved-file
+            // decision has been revalidated against the current dirty tabs.
             if let discardAuthorization,
                !projectManager.commitDiscard(
                    discardAuthorization,
@@ -731,39 +731,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             }
         }
 
-        // Authorize by stable identity, never by the volatile foreground pgid:
-        // an agent tab churns process groups on nearly every poll, so a pgid
-        // snapshot taken before the sheet is already stale when the user
-        // answers it, and the close would silently abort (#1335, #1348).
-        let terminalAuthorization = TerminalTabCloseAuthorization.authorizing(
-            tabs: projectManager.terminal.allTerminalTabs
-        )
-        if terminalAuthorization.requiresConfirmation {
-            let terminalResponse = if let closeAlertPresenter {
-                await closeAlertPresenter(
-                    .terminalTabCloseWarning,
-                    context,
-                    Strings.terminalTabCloseWarningTitle,
-                    Strings.terminalTabCloseWarningMessage
-                )
-            } else {
-                await AlertTemplate.terminalTabCloseWarning.runSheet(
-                    on: context,
-                    messageText: Strings.terminalTabCloseWarningTitle,
-                    informativeText: Strings.terminalTabCloseWarningMessage
-                )
-            }
-            guard terminalResponse == .alertFirstButtonReturn else {
-                return .cancel
-            }
-        }
-
         let currentDirtyTabs = projectManager.allDirtyTabs
-        guard terminalAuthorization.stillCovers(
-            projectManager.terminal.allTerminalTabs
-        ) else {
-            return .cancel
-        }
         if let discardAuthorization {
             guard discardAuthorization.covers(currentDirtyTabs) else {
                 return .cancel

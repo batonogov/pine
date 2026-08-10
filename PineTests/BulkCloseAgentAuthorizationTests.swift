@@ -2,10 +2,11 @@
 //  BulkCloseAgentAuthorizationTests.swift
 //  PineTests
 //
-//  Regression coverage for #1348: the two bulk destructive paths — project
-//  window close and application quit — must authorize terminal tabs through
-//  `TerminalTabCloseAuthorization` (stable agent-session identity), exactly
-//  like the single-tab path fixed in #1343.
+//  Regression coverage for the terminal lifecycle boundary established by
+//  #1348 and #1406. Destructive terminal-tab/pane closes and application quit
+//  authorize terminal work through `TerminalTabCloseAuthorization` (stable
+//  agent-session identity). Closing a project window is not destructive: it
+//  backgrounds the same ProjectManager, terminal tabs, and agent sessions.
 //
 //  The pre-#1348 mechanism snapshotted the volatile foreground pgid before
 //  presenting the sheet and required the post-sheet snapshot to be a subset.
@@ -14,8 +15,8 @@
 //  agent at all, and once a child did appear mid-sheet the subset check
 //  failed and the confirmed close/quit aborted in silence.
 //
-//  Each test below fails against that old mechanism and passes against the
-//  authorization primitive.
+//  The authorization tests below pin the destructive paths, while the window
+//  tests pin the intentionally non-destructive background/reopen path.
 //
 
 import AppKit
@@ -23,7 +24,7 @@ import Foundation
 import Testing
 @testable import Pine
 
-@Suite("Bulk Close Agent Authorization (#1348)", .serialized)
+@Suite("Terminal Lifecycle Authorization (#1348, #1406)", .serialized)
 @MainActor
 struct BulkCloseAgentAuthorizationTests {
 
@@ -89,7 +90,31 @@ struct BulkCloseAgentAuthorizationTests {
         return tab
     }
 
-    // MARK: - Project window close
+    private func addDirtyTab(
+        to projectManager: ProjectManager,
+        in directory: URL
+    ) throws -> URL {
+        projectManager.primaryTabManager.autoSavePreferenceProvider = { false }
+        let suite = "BulkCloseAgentAuthorizationTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let settings = EditorSettings(defaults: defaults)
+        settings.insertFinalNewline = false
+        settings.stripTrailingWhitespace = false
+        settings.formatOnSave = false
+        projectManager.primaryTabManager.editorSettings = settings
+        let fileURL = directory.appendingPathComponent("dirty.swift")
+        try "original".write(
+            to: fileURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        projectManager.primaryTabManager.openTab(url: fileURL)
+        projectManager.primaryTabManager.updateContent("modified")
+        return fileURL
+    }
+
+    // MARK: - Terminal authorization primitive
 
     @Test("Reused foreground PGID is a new authorization generation")
     func reusedForegroundPGIDIsRejected() async throws {
@@ -534,24 +559,29 @@ struct BulkCloseAgentAuthorizationTests {
         await project.workspace.waitForLoadingComplete()
     }
 
-    @Test("Window close warns about a running agent that has no foreground pgid")
-    func windowCloseWarnsAboutRunningAgent() async throws {
+    // MARK: - Project window backgrounding
+
+    @Test("Window close backgrounds a live agent without a terminal alert")
+    func windowCloseBackgroundsLiveAgentWithoutAlert() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
-        try addAgentTerminalTab(to: project)
+        let tab = try addAgentTerminalTab(to: project)
+        let session = try #require(tab.agentSession)
+        #expect(!tab.isTerminated)
 
         var presentedTemplates: [AlertTemplate] = []
+        let appDelegate = AppDelegate()
         let delegate = CloseDelegate(
             projectManager: project,
             registry: registry,
             projectURL: dir,
-            appDelegate: AppDelegate(),
+            appDelegate: appDelegate,
             original: nil,
             presentAlert: { template, _, _, _ in
                 presentedTemplates.append(template)
-                return .alertFirstButtonReturn
+                return .alertThirdButtonReturn
             }
         )
         let window = BulkCloseTrackingWindow()
@@ -561,61 +591,55 @@ struct BulkCloseAgentAuthorizationTests {
         #expect(!delegate.windowShouldClose(window))
         await settle()
 
-        #expect(presentedTemplates == [.terminalTabCloseWarning])
-        #expect(window.performCloseCount == 1)
-        await project.workspace.waitForLoadingComplete()
-    }
-
-    @Test("Confirmed window close survives agent child-process churn")
-    func confirmedWindowCloseSurvivesChurn() async throws {
-        let dir = try makeTempDirectory()
-        defer { cleanup(dir) }
-        let registry = makeRegistry()
-        let project = try #require(registry.projectManager(for: dir))
-        let tab = try addAgentTerminalTab(to: project)
-        let sessionID = try #require(tab.agentSession?.id)
-
-        let delegate = CloseDelegate(
-            projectManager: project,
-            registry: registry,
-            projectURL: dir,
-            appDelegate: AppDelegate(),
-            original: nil,
-            presentAlert: { _, _, _, _ in .alertFirstButtonReturn }
-        )
-        let window = BulkCloseTrackingWindow()
-        window.delegate = delegate
-        defer { DialogPresenter.ownerDidClose(window) }
-
-        #expect(!delegate.windowShouldClose(window))
-        await settle()
-
-        // Same agent session throughout: the confirmation still covers the tab.
-        #expect(tab.agentSession?.id == sessionID)
+        #expect(presentedTemplates.isEmpty)
         #expect(window.performCloseCount == 1)
         #expect(window.approvedCloseCount == 1)
-        await project.workspace.waitForLoadingComplete()
+
+        delegate.windowWillClose(Notification(
+            name: NSWindow.willCloseNotification,
+            object: window
+        ))
+        #expect(!registry.isWindowOpen(dir))
+        #expect(!tab.isTerminated)
+        #expect(tab.agentSession === session)
+
+        let reopened = try #require(registry.projectManager(for: dir))
+        #expect(reopened === project)
+        #expect(reopened.terminal.allTerminalTabs.first === tab)
+        #expect(!tab.isTerminated)
+        #expect(tab.agentSession === session)
+        #expect(registry.isWindowOpen(dir))
+        await reopened.workspace.waitForLoadingComplete()
     }
 
-    @Test("A new agent run started during the sheet cancels the window close")
-    func newAgentRunDuringSheetCancelsWindowClose() async throws {
+    @Test("Window close backgrounds foreground work without a terminal alert")
+    func windowCloseBackgroundsForegroundWorkWithoutAlert() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
-        let tab = try addAgentTerminalTab(to: project)
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let startIdentity = TerminalProcessStartIdentity(
+            processID: 4_242,
+            seconds: 10,
+            microseconds: 20
+        )
+        tab.foregroundProcessIDOverrideForTesting = 4_242
+        tab.foregroundStartOverrideForTesting = startIdentity
+        #expect(!tab.isTerminated)
 
+        var presentedTemplates: [AlertTemplate] = []
+        let appDelegate = AppDelegate()
         let delegate = CloseDelegate(
             projectManager: project,
             registry: registry,
             projectURL: dir,
-            appDelegate: AppDelegate(),
+            appDelegate: appDelegate,
             original: nil,
-            presentAlert: { _, _, _, _ in
-                // A genuinely different agent run appears while the sheet is
-                // up. The user authorized the previous one, not this.
-                tab.agentSession = AgentSession(agentType: .claudeCode)
-                return .alertFirstButtonReturn
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                return .alertThirdButtonReturn
             }
         )
         let window = BulkCloseTrackingWindow()
@@ -625,40 +649,121 @@ struct BulkCloseAgentAuthorizationTests {
         #expect(!delegate.windowShouldClose(window))
         await settle()
 
-        #expect(window.performCloseCount == 0)
-        await project.workspace.waitForLoadingComplete()
-    }
-
-    @Test("An agent that exits during the sheet still lets the window close")
-    func agentExitDuringSheetStillClosesWindow() async throws {
-        let dir = try makeTempDirectory()
-        defer { cleanup(dir) }
-        let registry = makeRegistry()
-        let project = try #require(registry.projectManager(for: dir))
-        let tab = try addAgentTerminalTab(to: project)
-
-        let delegate = CloseDelegate(
-            projectManager: project,
-            registry: registry,
-            projectURL: dir,
-            appDelegate: AppDelegate(),
-            original: nil,
-            presentAlert: { _, _, _, _ in
-                // Nothing left to protect once the agent is gone.
-                tab.agentSession = nil
-                return .alertFirstButtonReturn
-            }
-        )
-        let window = BulkCloseTrackingWindow()
-        window.delegate = delegate
-        defer { DialogPresenter.ownerDidClose(window) }
-
-        #expect(!delegate.windowShouldClose(window))
-        await settle()
-
+        #expect(presentedTemplates.isEmpty)
         #expect(window.performCloseCount == 1)
         #expect(window.approvedCloseCount == 1)
+
+        delegate.windowWillClose(Notification(
+            name: NSWindow.willCloseNotification,
+            object: window
+        ))
+        #expect(!registry.isWindowOpen(dir))
+        #expect(!tab.isTerminated)
+        #expect(tab.foregroundProcessID == 4_242)
+        #expect(tab.foregroundStartOverrideForTesting == startIdentity)
+
+        let reopened = try #require(registry.projectManager(for: dir))
+        #expect(reopened === project)
+        #expect(reopened.terminal.allTerminalTabs.first === tab)
+        #expect(!tab.isTerminated)
+        #expect(tab.foregroundProcessID == 4_242)
+        #expect(tab.foregroundStartOverrideForTesting == startIdentity)
+        #expect(registry.isWindowOpen(dir))
+        await reopened.workspace.waitForLoadingComplete()
+    }
+
+    @Test("Dirty window with a live agent presents only the unsaved alert")
+    func dirtyWindowWithAgentPresentsOnlyUnsavedAlert() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let tab = try addAgentTerminalTab(to: project)
+        let session = try #require(tab.agentSession)
+        _ = try addDirtyTab(to: project, in: dir)
+
+        var presentedTemplates: [AlertTemplate] = []
+        let appDelegate = AppDelegate()
+        let delegate = CloseDelegate(
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate,
+            original: nil,
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                return template == .unsavedChangesBulk
+                    ? .alertSecondButtonReturn
+                    : .alertThirdButtonReturn
+            }
+        )
+        let window = BulkCloseTrackingWindow()
+        window.delegate = delegate
+        defer { DialogPresenter.ownerDidClose(window) }
+
+        #expect(!delegate.windowShouldClose(window))
+        await settle()
+
+        #expect(presentedTemplates == [.unsavedChangesBulk])
+        #expect(window.performCloseCount == 1)
+        #expect(window.approvedCloseCount == 1)
+        #expect(tab.agentSession === session)
+        #expect(!project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test("Saving a dirty window backgrounds its live agent without terminal alert")
+    func savedDirtyWindowBackgroundsAgentWithoutTerminalAlert() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let tab = try addAgentTerminalTab(to: project)
+        let session = try #require(tab.agentSession)
+        let fileURL = try addDirtyTab(to: project, in: dir)
+
+        var presentedTemplates: [AlertTemplate] = []
+        let appDelegate = AppDelegate()
+        let delegate = CloseDelegate(
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate,
+            original: nil,
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                return template == .unsavedChangesBulk
+                    ? .alertFirstButtonReturn
+                    : .alertThirdButtonReturn
+            }
+        )
+        let window = BulkCloseTrackingWindow()
+        window.delegate = delegate
+        defer { DialogPresenter.ownerDidClose(window) }
+
+        #expect(!delegate.windowShouldClose(window))
+        await settle()
+
+        #expect(presentedTemplates == [.unsavedChangesBulk])
+        #expect(window.performCloseCount == 1)
+        #expect(window.approvedCloseCount == 1)
+        #expect(!project.hasUnsavedChanges)
+        let savedContent = try String(contentsOf: fileURL, encoding: .utf8)
+        #expect(savedContent == "modified")
+        #expect(!tab.isTerminated)
+        #expect(tab.agentSession === session)
+
+        delegate.windowWillClose(Notification(
+            name: NSWindow.willCloseNotification,
+            object: window
+        ))
+        #expect(!registry.isWindowOpen(dir))
+        let reopened = try #require(registry.projectManager(for: dir))
+        #expect(reopened === project)
+        #expect(reopened.terminal.allTerminalTabs.first === tab)
+        #expect(!tab.isTerminated)
+        #expect(tab.agentSession === session)
+        await reopened.workspace.waitForLoadingComplete()
     }
 
     // MARK: - Application quit

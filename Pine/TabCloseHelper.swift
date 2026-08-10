@@ -4,7 +4,7 @@
 //
 //  Shared tab close confirmation dialogs used by both ContentView and PaneLeafView.
 //  Also provides the shared terminal foreground-process confirmation used by
-//  the status bar toggle, window close, tab close, and pane close paths.
+//  the status bar toggle, tab close, and pane close paths.
 //
 //  Dialogs attach to a captured owning window and are queued per window.
 //  Missing or closed owners cancel the operation instead of falling back to
