@@ -243,6 +243,8 @@ final class PineTerminalView: LocalProcessTerminalView {
     var backendRedrawRequestObserver: (() -> Void)?
     /// Test hook for the Metal-specific SwiftTerm compatibility bridge.
     var metalRedrawBridgeObserver: (() -> Void)?
+    /// Test hook immediately before SwiftTerm's synchronous Metal draw API.
+    var metalImmediateDrawObserver: (() -> Void)?
     #endif
 
     /// Enables SwiftTerm's Metal renderer once the view lands in a window.
@@ -421,14 +423,19 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// synchronous `setNeedsDisplay` + `displayIfNeeded` sequence remains the
     /// right recovery operation. Under Metal, however, outer `draw(_:)`
     /// returns immediately and a private nested `MTKView` owns presentation.
-    /// SwiftTerm 1.14.0 does not expose `requestMetalDisplay()` publicly, so
-    /// Pine uses two stable public entry points:
+    /// SwiftTerm does not expose `requestMetalDisplay()` publicly, so Pine
+    /// combines its public immediate-frame API with the existing invalidation
+    /// bridge:
     ///
     /// - `selectionChanged(source:)` marks the full visible Metal range dirty
     ///   and queues a display, ensuring cached rows are rebuilt when needed.
+    /// - `drawMetalFrameNow()` attempts a frame synchronously while this
+    ///   recovery boundary still has a drawable. This closes the gap where an
+    ///   on-demand `setNeedsDisplay` is coalesced or discarded by AppKit.
     /// - same-size `setFrameSize(_:)` is harmless (`processSizeChange` no-ops
-    ///   when cols/rows are unchanged) and immediately calls SwiftTerm's
-    ///   internal `requestMetalDisplay()`.
+    ///   when cols/rows are unchanged) and queues a trailing request through
+    ///   SwiftTerm's internal `requestMetalDisplay()` if the immediate draw
+    ///   could not acquire a drawable.
     ///
     /// Together they provide an immediate request plus a coalesced trailing
     /// request. Replace this compatibility bridge once SwiftTerm exposes a
@@ -443,6 +450,10 @@ final class PineTerminalView: LocalProcessTerminalView {
             metalRedrawBridgeObserver?()
             #endif
             selectionChanged(source: getTerminal())
+            #if DEBUG
+            metalImmediateDrawObserver?()
+            #endif
+            drawMetalFrameNow()
             setFrameSize(frame.size)
         } else {
             setNeedsDisplay(bounds)
