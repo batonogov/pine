@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.2.1](https://github.com/batonogov/pine/compare/v2.2.0...v2.2.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **agent:** preserve notification transitions ([#1394](https://github.com/batonogov/pine/issues/1394)) ([1e4fc1c](https://github.com/batonogov/pine/commit/1e4fc1c572483122cfd3ba1627a7200198ff19de))
+* bound quit failure alert recovery ([#1395](https://github.com/batonogov/pine/issues/1395)) ([33cbd72](https://github.com/batonogov/pine/commit/33cbd726ee0a3610b16114665d646443a9d0d6f9))
+* **editor:** fence saves against external changes ([#1397](https://github.com/batonogov/pine/issues/1397)) ([2b3b691](https://github.com/batonogov/pine/commit/2b3b6916b1663d7ef0aa2b7a4de96549cfee9de9))
+* **editor:** show gutter markers for unsaved changes ([#1403](https://github.com/batonogov/pine/issues/1403)) ([3003269](https://github.com/batonogov/pine/commit/3003269003e01dd86a5fe25449a2429c5399ffac))
+* **lsp:** clarify filtered Problems state ([#1393](https://github.com/batonogov/pine/issues/1393)) ([6533300](https://github.com/batonogov/pine/commit/653330055991595e7aa0047576e13f05a7fc00c6))
+* **search:** enforce result boundaries ([#1392](https://github.com/batonogov/pine/issues/1392)) ([b4ff874](https://github.com/batonogov/pine/commit/b4ff874e844091dda014faecde4afd549add2bad))
+* **sidebar:** retry row focus after layout ([#1405](https://github.com/batonogov/pine/issues/1405)) ([f246abd](https://github.com/batonogov/pine/commit/f246abdd1ec38e7253408c42d763c753d53a76b7))
+* **terminal:** draw Metal recovery frames immediately ([#1401](https://github.com/batonogov/pine/issues/1401)) ([606caf4](https://github.com/batonogov/pine/commit/606caf4ecee790e6f0d9466d1bfb3ca8fb19b904))
+
+
+### Performance Improvements
+
+* **editor:** move format-on-save off main actor ([#1398](https://github.com/batonogov/pine/issues/1398)) ([1f6ba70](https://github.com/batonogov/pine/commit/1f6ba70157bc990d5caf99539d357ded28f81e17))
+
 ## [2.2.0](https://github.com/batonogov/pine/compare/v2.1.1...v2.2.0) (2026-08-10)
 
 
