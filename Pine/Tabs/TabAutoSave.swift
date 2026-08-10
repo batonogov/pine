@@ -18,7 +18,7 @@ final class TabAutoSave {
     var delay: TimeInterval = 1.0
 
     /// Whether auto-save is currently in progress (for UI indicator).
-    private(set) var isSaving = false
+    var isSaving: Bool { !activeSaveGenerations.isEmpty }
 
     private struct PendingSave {
         let generation: UUID
@@ -31,6 +31,11 @@ final class TabAutoSave {
     /// Independent debounce work per tab. Editing or transferring one tab
     /// must not cancel a save already scheduled for another tab.
     private var pendingSaves: [UUID: PendingSave] = [:]
+    /// A replaced debounce may already be executing its async save. Track
+    /// executions by generation so overlapping tabs (or a newer generation of
+    /// one tab) keep the UI indicator truthful until every save has completed.
+    private var activeSaveGenerations: Set<UUID> = []
+    private var activeTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Whether a pending auto-save is scheduled (for testing).
     var hasScheduledSave: Bool {
@@ -50,7 +55,7 @@ final class TabAutoSave {
     ///   - saveAction: The save operation to perform.
     func schedule(
         isStillDirty: @MainActor @escaping () -> Bool,
-        saveAction: @MainActor @escaping () throws -> Void
+        saveAction: @MainActor @escaping () async throws -> Void
     ) {
         schedule(for: defaultKey, isStillDirty: isStillDirty, saveAction: saveAction)
     }
@@ -59,7 +64,7 @@ final class TabAutoSave {
     func schedule(
         for key: UUID,
         isStillDirty: @MainActor @escaping () -> Bool,
-        saveAction: @MainActor @escaping () throws -> Void
+        saveAction: @MainActor @escaping () async throws -> Void
     ) {
         cancel(for: key)
 
@@ -73,16 +78,23 @@ final class TabAutoSave {
                 return
             }
 
-            self.isSaving = true
-            do {
-                try saveAction()
-            } catch {
-                // Silent failure — auto-save should not show alerts
+            self.activeSaveGenerations.insert(generation)
+            let task = Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer {
+                    self.activeSaveGenerations.remove(generation)
+                    self.activeTasks[generation] = nil
+                }
+                do {
+                    try await saveAction()
+                } catch {
+                    // Silent failure — auto-save should not show alerts
+                }
+                if self.pendingSaves[key]?.generation == generation {
+                    self.pendingSaves[key] = nil
+                }
             }
-            self.isSaving = false
-            if self.pendingSaves[key]?.generation == generation {
-                self.pendingSaves[key] = nil
-            }
+            self.activeTasks[generation] = task
         }
 
         pendingSaves[key] = PendingSave(generation: generation, workItem: item)
@@ -91,12 +103,17 @@ final class TabAutoSave {
 
     /// Cancels the pending auto-save for one tab without disturbing others.
     func cancel(for key: UUID) {
-        pendingSaves.removeValue(forKey: key)?.workItem.cancel()
+        guard let pending = pendingSaves.removeValue(forKey: key) else { return }
+        pending.workItem.cancel()
+        activeTasks.removeValue(forKey: pending.generation)?.cancel()
     }
 
     /// Cancels every pending auto-save.
     func cancel() {
-        pendingSaves.values.forEach { $0.workItem.cancel() }
+        pendingSaves.values.forEach { pending in
+            pending.workItem.cancel()
+            activeTasks.removeValue(forKey: pending.generation)?.cancel()
+        }
         pendingSaves.removeAll()
     }
 }

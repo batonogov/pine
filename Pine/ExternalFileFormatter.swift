@@ -682,24 +682,15 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
         let effectiveTimeout = min(timeout, maximumDuration)
         guard effectiveTimeout > 0 else { return content }
 
-        // Dispatch to a background queue so runRealProcess's main-thread
-        // precondition is satisfied. The caller (trySaveTab) runs on main;
-        // DispatchGroup.wait() blocks it briefly while the process executes.
-        nonisolated(unsafe) var result = ProcessRunResult(
-            stdout: "", stderr: "", exitCode: -1, timedOut: true
+        // Interactive saves prepare content on a worker queue before their
+        // main-actor revision check. Keep the formatter synchronous on that
+        // worker so there is no nested dispatch or main-thread wait.
+        let result = processRunner(
+            executablePath,
+            arguments,
+            content,
+            effectiveTimeout
         )
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            result = self.processRunner(
-                executablePath,
-                self.arguments,
-                content,
-                effectiveTimeout
-            )
-            group.leave()
-        }
-        group.wait()
 
         // Fall back to original on any failure
         guard !result.timedOut,

@@ -24,7 +24,7 @@ struct TabAutoSaveTests {
         )
 
         #expect(coordinator.hasScheduledSave == true)
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil { saved }
         #expect(saved == true)
         #expect(coordinator.hasScheduledSave == false)
     }
@@ -75,7 +75,7 @@ struct TabAutoSaveTests {
             )
         }
 
-        try await Task.sleep(for: .milliseconds(400))
+        try await waitUntil { saveCount == 1 }
         #expect(saveCount == 1)
     }
 
@@ -106,7 +106,9 @@ struct TabAutoSaveTests {
 
         #expect(coordinator.hasScheduledSave(for: firstKey))
         #expect(coordinator.hasScheduledSave(for: secondKey))
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil {
+            firstSaveCount == 1 && secondSaveCount == 1
+        }
 
         #expect(firstSaveCount == 1)
         #expect(secondSaveCount == 1)
@@ -118,13 +120,17 @@ struct TabAutoSaveTests {
         let coordinator = TabAutoSave()
         coordinator.delay = 0.05
 
+        var actionRan = false
         var wasSavingDuringAction = false
         coordinator.schedule(
             isStillDirty: { true },
-            saveAction: { wasSavingDuringAction = coordinator.isSaving }
+            saveAction: {
+                actionRan = true
+                wasSavingDuringAction = coordinator.isSaving
+            }
         )
 
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { actionRan }
         #expect(wasSavingDuringAction == true)
         #expect(coordinator.isSaving == false)
     }
@@ -134,12 +140,16 @@ struct TabAutoSaveTests {
         let coordinator = TabAutoSave()
         coordinator.delay = 0.05
 
+        var attempts = 0
         coordinator.schedule(
             isStillDirty: { true },
-            saveAction: { throw CocoaError(.fileReadUnknown) }
+            saveAction: {
+                attempts += 1
+                throw CocoaError(.fileReadUnknown)
+            }
         )
 
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { attempts == 1 }
         // Should not crash; isSaving resets
         #expect(coordinator.isSaving == false)
     }
@@ -147,5 +157,13 @@ struct TabAutoSaveTests {
     @Test("autoSaveKey has expected value")
     func autoSaveKey() {
         #expect(TabAutoSave.autoSaveKey == "autoSaveEnabled")
+    }
+
+    private func waitUntil(_ predicate: @MainActor () -> Bool) async throws {
+        for _ in 0..<500 {
+            if predicate() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(predicate())
     }
 }

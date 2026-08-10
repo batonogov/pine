@@ -83,6 +83,29 @@ struct SaveOutcome {
     let reload: ReloadedTab?
 }
 
+/// Immutable witness for an interactive save. Save-time transforms may take
+/// seconds when they invoke an external tool, so they operate on this snapshot
+/// away from the main actor. The live tab must still match every revision field
+/// before the prepared text is allowed to reach disk.
+nonisolated struct TabSaveRequest: Sendable {
+    let tabID: UUID
+    let contentVersion: UInt64
+    let persistenceGeneration: UInt64
+    let content: String
+    let originalURL: URL?
+    let destinationURL: URL
+    let updatesBackingURL: Bool
+    let encodingRawValue: UInt
+    let settings: EditorSaveSettingsSnapshot
+    let formatters: FileFormatterRegistry
+}
+
+/// Result of the potentially slow, but pure, save-preparation phase.
+nonisolated struct PreparedTabSave: Sendable {
+    let request: TabSaveRequest
+    let content: String
+}
+
 /// Handles disk I/O for editor tabs: opening files, saving content,
 /// large file handling, and preview file detection.
 @MainActor
@@ -305,6 +328,85 @@ enum TabPersistence {
     }
 
     // MARK: - Save
+
+    /// Applies format-on-save and the remaining text transforms on a worker
+    /// thread. This function is deliberately nonisolated: an external
+    /// formatter blocks its calling thread until its child process exits.
+    nonisolated static func prepareSave(
+        _ request: TabSaveRequest
+    ) -> PreparedTabSave {
+        PreparedTabSave(
+            request: request,
+            content: TabFormatter.contentPreparedForSave(
+                request.content,
+                url: request.destinationURL,
+                settings: request.settings,
+                formatters: request.formatters,
+                formatterMaximumDuration: nil
+            )
+        )
+    }
+
+    /// Commits a prepared save only while its exact tab and persistence
+    /// revisions are still current. There is no suspension between this
+    /// validation and the write, so an edit made while formatting was in
+    /// flight can never be replaced by stale formatter output.
+    static func commitPreparedSave(
+        _ prepared: PreparedTabSave,
+        tabs: inout [EditorTab],
+        providers: FileProviders
+    ) throws -> SaveOutcome {
+        let request = prepared.request
+        guard let index = tabs.firstIndex(where: { $0.id == request.tabID }) else {
+            return SaveOutcome(saved: false, reload: nil)
+        }
+        let tab = tabs[index]
+        guard tab.kind == .text,
+              !tab.isTruncated,
+              tab.contentVersion == request.contentVersion,
+              tab.persistenceGeneration == request.persistenceGeneration,
+              tab.content == request.content,
+              tab.fileURL == request.originalURL else {
+            return SaveOutcome(saved: false, reload: nil)
+        }
+        let encoding = String.Encoding(rawValue: request.encodingRawValue)
+
+        if !request.updatesBackingURL {
+            try validateBackingFile(
+                for: tab,
+                at: request.destinationURL,
+                providers: providers
+            )
+        }
+        try prepared.content.write(
+            to: request.destinationURL,
+            atomically: true,
+            encoding: encoding
+        )
+        let contentChanged = prepared.content != tab.content
+        tabs[index].content = prepared.content
+        if request.updatesBackingURL {
+            tabs[index].url = request.destinationURL
+        }
+        tabs[index].savedContent = prepared.content
+        tabs[index].lastModDate = providers.modDate(request.destinationURL)
+        tabs[index].fileSizeBytes = providers.fileSize(request.destinationURL)
+        tabs[index].backingFileRevision = try? providers.fileRevision(
+            request.destinationURL
+        )
+        tabs[index].pendingExternalFileState = nil
+
+        var reload: ReloadedTab?
+        if contentChanged {
+            tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
+            reload = ReloadedTab(
+                url: request.destinationURL,
+                text: prepared.content
+            )
+        }
+        return SaveOutcome(saved: true, reload: reload)
+    }
 
     /// Saves tab content to disk.
     ///
