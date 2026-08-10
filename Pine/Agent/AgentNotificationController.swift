@@ -160,6 +160,11 @@ final class SystemAgentNotificationCenter: NSObject,
 @MainActor
 @Observable
 final class AgentNotificationController {
+    private struct DeferredEvent {
+        let event: AgentNotificationEvent
+        let task: AgentTask
+    }
+
     private(set) var authorizationStatus: AgentNotificationAuthorizationStatus =
         .notDetermined
 
@@ -184,6 +189,10 @@ final class AgentNotificationController {
     private var pendingDeliveryIDs: Set<String> = []
     @ObservationIgnored
     private var deliveryTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored
+    private var deferredEventOrder: [String] = []
+    @ObservationIgnored
+    private var deferredEvents: [String: DeferredEvent] = [:]
 
     init(
         registry: AgentTaskRegistry,
@@ -231,11 +240,20 @@ final class AgentNotificationController {
         deliveryTasks.values.forEach { $0.cancel() }
         deliveryTasks.removeAll()
         pendingDeliveryIDs.removeAll()
+        clearDeferredEvents()
     }
 
     func refreshAuthorizationStatus() async {
         authorizationStatus = await delivery.authorizationStatus()
-        if authorizationStatus == .denied { settings.setEnabled(false) }
+        switch authorizationStatus {
+        case .authorized:
+            flushDeferredEvents()
+        case .denied:
+            settings.setEnabled(false)
+            clearDeferredEvents()
+        case .notDetermined:
+            break
+        }
     }
 
     @discardableResult
@@ -244,21 +262,27 @@ final class AgentNotificationController {
             let granted = try await delivery.requestAuthorization()
             authorizationStatus = granted ? .authorized : .denied
             settings.setEnabled(granted)
+            if granted {
+                flushDeferredEvents()
+            } else {
+                clearDeferredEvents()
+            }
             return granted
         } catch {
             await refreshAuthorizationStatus()
             settings.setEnabled(false)
+            clearDeferredEvents()
             return false
         }
     }
 
     func disable() {
         settings.setEnabled(false)
+        clearDeferredEvents()
     }
 
     private func process(oldTasks: [AgentTask], newTasks: [AgentTask]) {
-        guard isRunning, settings.isEnabled,
-              authorizationStatus == .authorized else { return }
+        guard isRunning, settings.isEnabled else { return }
         let events = AgentNotificationTransitionResolver.events(
             from: oldTasks,
             to: newTasks,
@@ -266,16 +290,56 @@ final class AgentNotificationController {
         )
         let tasks = Dictionary(uniqueKeysWithValues: newTasks.map { ($0.id, $0) })
         for event in events {
-            guard let task = tasks[event.taskID],
-                  settings.allows(event, task: task),
-                  !isPresented(event.taskID),
-                  !settings.hasDelivered(event.id),
-                  pendingDeliveryIDs.insert(event.id).inserted else { continue }
-            let request = Self.request(for: event)
-            deliveryTasks[event.id] = Task { @MainActor [weak self] in
-                await self?.deliver(request, eventID: event.id)
+            guard let task = tasks[event.taskID] else { continue }
+            switch authorizationStatus {
+            case .authorized:
+                scheduleDelivery(event: event, task: task)
+            case .notDetermined:
+                deferEvent(event, task: task)
+            case .denied:
+                break
             }
         }
+    }
+
+    private func scheduleDelivery(
+        event: AgentNotificationEvent,
+        task: AgentTask
+    ) {
+        guard isRunning,
+              settings.allows(event, task: task),
+              !isPresented(event.taskID),
+              !settings.hasDelivered(event.id),
+              pendingDeliveryIDs.insert(event.id).inserted else { return }
+        let request = Self.request(for: event)
+        deliveryTasks[event.id] = Task { @MainActor [weak self] in
+            await self?.deliver(request, eventID: event.id)
+        }
+    }
+
+    private func deferEvent(_ event: AgentNotificationEvent, task: AgentTask) {
+        guard deferredEvents[event.id] == nil else { return }
+        deferredEvents[event.id] = DeferredEvent(event: event, task: task)
+        deferredEventOrder.append(event.id)
+        if deferredEventOrder.count > 512 {
+            let discardCount = deferredEventOrder.count - 384
+            let discarded = Array(deferredEventOrder.prefix(discardCount))
+            deferredEventOrder.removeFirst(discardCount)
+            discarded.forEach { deferredEvents[$0] = nil }
+        }
+    }
+
+    private func flushDeferredEvents() {
+        let pending = deferredEventOrder.compactMap { deferredEvents[$0] }
+        clearDeferredEvents()
+        pending.forEach {
+            scheduleDelivery(event: $0.event, task: $0.task)
+        }
+    }
+
+    private func clearDeferredEvents() {
+        deferredEventOrder.removeAll()
+        deferredEvents.removeAll()
     }
 
     private func deliver(
