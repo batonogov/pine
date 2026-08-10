@@ -2211,9 +2211,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         /// Machine failures are never user cancellation. Require the sole OK
         /// response as proof that AppKit displayed the explanation. `.abort`
         /// means presentation authority was lost, so retry on a freshly
-        /// resolved project/application owner. There is deliberately no retry
-        /// count: returning from a machine failure without ever showing its
-        /// explanation would misreport presentation loss as user cancellation.
+        /// resolved project/application owner. Bound those retries so a broken
+        /// presenter cannot trap termination in an endless alert loop.
         @discardableResult
         func presentTerminationFailure(
             _ template: AlertTemplate = .applicationQuitFailure,
@@ -2221,16 +2220,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             title: String = Strings.applicationQuitFailureTitle,
             message: String = Strings.applicationQuitFailureMessage
         ) async -> Bool {
-            while !Task.isCancelled {
+            let maximumAttempts = 3
+            for attempt in 0..<maximumAttempts {
+                guard !Task.isCancelled else { break }
                 let context = resolveTerminationFailureContext(
                     preferredProject: preferredProject
                 )
                 if presentAlert == nil, !hasEligibleOwner(context) {
                     prepareApplicationDialogOwner()
-                    do {
-                        try await Task.sleep(for: .milliseconds(25))
-                    } catch {
-                        return false
+                    if attempt + 1 < maximumAttempts {
+                        do {
+                            try await Task.sleep(for: .milliseconds(25))
+                        } catch {
+                            return false
+                        }
                     }
                     continue
                 }
@@ -2243,20 +2246,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 if response == .alertFirstButtonReturn {
                     return true
                 }
-                Logger.app.error(
-                    "Quit failure explanation lost its dialog owner; retrying on a fresh owner"
-                )
-                if presentAlert == nil {
-                    prepareApplicationDialogOwner()
-                }
-                do {
-                    try await Task.sleep(for: .milliseconds(25))
-                } catch {
-                    return false
+                if attempt + 1 < maximumAttempts {
+                    Logger.app.error(
+                        "Quit failure explanation lost its dialog owner; retrying on a fresh owner"
+                    )
+                    if presentAlert == nil {
+                        prepareApplicationDialogOwner()
+                    }
+                    do {
+                        try await Task.sleep(for: .milliseconds(25))
+                    } catch {
+                        return false
+                    }
                 }
             }
             Logger.app.critical(
-                "Quit failure explanation was cancelled before acknowledgement"
+                "Quit failure explanation could not be presented after bounded retries"
             )
             return false
         }
