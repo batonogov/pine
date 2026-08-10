@@ -755,6 +755,16 @@ final class ProjectManager {
               preparedSavePlanStillValid(plan) else {
             return (.invalidated, nil)
         }
+        guard zip(plan.entries, destinationStates).allSatisfy({ planned, state in
+            guard planned.destination == nil,
+                  let revision = planned.tab.backingFileRevision else {
+                return true
+            }
+            return state.exists
+                && state.contentDigest == revision.contentDigest
+        }) else {
+            return (.invalidated, nil)
+        }
         let requests = zip(plan.entries, destinationStates).compactMap { pair
             -> TerminationSaveRequest? in
             let (planned, expectedDestinationState) = pair
@@ -1466,6 +1476,24 @@ final class ProjectManager {
         for tabManager in paneManager.allTabManagers {
             tabManager.reloadTab(url: url)
         }
+    }
+
+    func reloadTab(conflict: TabManager.ExternalConflict) {
+        for tabManager in paneManager.allTabManagers
+        where tabManager.tabs.contains(where: { $0.id == conflict.tabID }) {
+            tabManager.reloadTab(conflict: conflict)
+        }
+    }
+
+    @discardableResult
+    func authorizeExternalChange(
+        _ conflict: TabManager.ExternalConflict
+    ) -> Bool {
+        for tabManager in paneManager.allTabManagers
+        where tabManager.tabs.contains(where: { $0.id == conflict.tabID }) {
+            return tabManager.authorizeExternalChange(conflict)
+        }
+        return false
     }
 
     /// Returns all open tabs affected by deletion across every editor pane.

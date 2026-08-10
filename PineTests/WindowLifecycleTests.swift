@@ -1047,6 +1047,53 @@ struct WindowLifecycleTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    @Test func externalReplacementInvalidatesTerminationStaging() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// local dirty", in: project)
+
+        let prepared = await project.prepareSaveAllPaneTabs(
+            context: .unscoped
+        )
+        guard case .ready(let plan) = prepared else {
+            Issue.record("Expected a ready termination save plan")
+            return
+        }
+        let originalDate = try #require(
+            try FileManager.default.attributesOfItem(atPath: file.path)[
+                .modificationDate
+            ] as? Date
+        )
+        try "// external".write(
+            to: file,
+            atomically: true,
+            encoding: .utf8
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: originalDate],
+            ofItemAtPath: file.path
+        )
+
+        let staged = await project.stagePreparedSaveAllPaneTabsForTermination(
+            plan,
+            until: .now() + 5
+        )
+
+        guard case .invalidated = staged.0 else {
+            Issue.record("Expected the external replacement to invalidate staging")
+            return
+        }
+        #expect(staged.1 == nil)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "// external")
+        #expect(project.primaryTabManager.activeTab?.content == "// local dirty")
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func applicationSaveRejectsCrossProjectDestinationAlias() async throws {
         let firstRoot = try makeTempDirectory()
         let secondRoot = try makeTempDirectory()
@@ -1675,6 +1722,15 @@ struct WindowLifecycleTests {
         let index = try #require(tabs.tabs.firstIndex(where: {
             $0.fileURL == file
         }))
+        let conflict: TabManager.ExternalConflict
+        do {
+            _ = try tabs.trySaveTab(at: index)
+            Issue.record("Expected the late install to require overwrite authorization")
+            return
+        } catch let TabPersistence.SaveError.externalChange(observed) {
+            conflict = observed
+        }
+        #expect(tabs.authorizeExternalChange(conflict))
         #expect(try tabs.trySaveTab(at: index))
         let savedTab = try #require(tabs.tabs.first(where: {
             $0.fileURL == file

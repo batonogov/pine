@@ -82,6 +82,39 @@ struct TabExternalChangeDetectorTests {
         #expect(tabs[0].content == "user edits") // Not overwritten
     }
 
+    @Test(
+        "Detects dirty conflict when replacement keeps or lowers mtime",
+        arguments: [TimeInterval.zero, TimeInterval(-60)]
+    )
+    func conflictForNonIncreasingModificationDate(
+        offset: TimeInterval
+    ) throws {
+        let url = tempFile(content: "v1")
+        var tab = TabPersistence.createTextTab(
+            url: url,
+            syntaxHighlightingDisabled: false,
+            providers: providers
+        )
+        tab.content = "user edits"
+        let originalDate = try #require(providers.modDate(url))
+        var tabs = [tab]
+
+        try "v2".write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: originalDate.addingTimeInterval(offset)],
+            ofItemAtPath: url.path
+        )
+
+        let result = TabExternalChangeDetector.checkExternalChanges(
+            tabs: &tabs,
+            providers: providers
+        )
+
+        #expect(result.conflicts.count == 1)
+        #expect(result.conflicts[0].kind == .modified)
+        #expect(tabs[0].content == "user edits")
+    }
+
     // MARK: - Deleted file
 
     @Test("Returns cleanDeletedIDs for clean tab when file deleted")

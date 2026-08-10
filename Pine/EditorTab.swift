@@ -5,7 +5,77 @@
 //  Created by Claude on 12.03.2026.
 //
 
+import CryptoKit
+import Darwin
 import Foundation
+
+/// Cheap stat identity used by routine external-change polling. `ctime`
+/// changes even when a tool restores an older `mtime`, while inode identity
+/// catches atomic replacements.
+nonisolated struct BackingFileIdentity: Equatable, Sendable {
+    let device: UInt64
+    let inode: UInt64
+    let size: Int64
+    let modificationSeconds: Int
+    let modificationNanoseconds: Int
+    let changeSeconds: Int
+    let changeNanoseconds: Int
+
+    static func capture(at url: URL) throws -> Self {
+        let descriptor = Darwin.open(
+            url.path,
+            O_RDONLY | O_NONBLOCK | O_CLOEXEC
+        )
+        guard descriptor >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        defer { Darwin.close(descriptor) }
+        var status = stat()
+        guard Darwin.fstat(descriptor, &status) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        return Self(
+            device: UInt64(bitPattern: Int64(status.st_dev)),
+            inode: UInt64(status.st_ino),
+            size: status.st_size,
+            modificationSeconds: Int(status.st_mtimespec.tv_sec),
+            modificationNanoseconds: Int(status.st_mtimespec.tv_nsec),
+            changeSeconds: Int(status.st_ctimespec.tv_sec),
+            changeNanoseconds: Int(status.st_ctimespec.tv_nsec)
+        )
+    }
+}
+
+/// Content identity of the file version on which an editor buffer is based.
+/// Modification dates are intentionally excluded: external tools can preserve
+/// or move timestamps backwards while replacing the bytes on disk.
+nonisolated struct BackingFileRevision: Equatable, Sendable {
+    let contentDigest: Data
+    let fileIdentity: BackingFileIdentity?
+
+    init(data: Data, fileIdentity: BackingFileIdentity? = nil) {
+        contentDigest = Data(SHA256.hash(data: data))
+        self.fileIdentity = fileIdentity
+    }
+
+    init(contentDigest: Data) {
+        self.contentDigest = contentDigest
+        fileIdentity = nil
+    }
+
+    static func capture(at url: URL) throws -> Self {
+        let data = try Data(contentsOf: url)
+        return try Self(
+            data: data,
+            fileIdentity: BackingFileIdentity.capture(at: url)
+        )
+    }
+}
+
+nonisolated enum BackingFileState: Equatable, Sendable {
+    case missing
+    case present(BackingFileRevision)
+}
 
 /// Payload pushed back into the editor view after a disk read/write that
 /// changed the on-disk text and must be resynced into the NSTextView.
@@ -111,6 +181,13 @@ struct EditorTab: Identifiable, Hashable {
     /// Used to detect external changes by comparing with the current stat.
     var lastModDate: Date?
 
+    /// Exact content revision that the local buffer is allowed to replace.
+    var backingFileRevision: BackingFileRevision?
+
+    /// Revision already reported as a dirty-buffer conflict. This suppresses
+    /// duplicate FSEvents prompts without authorizing a later save.
+    var pendingExternalFileState: BackingFileState?
+
     /// Состояние свёрнутых регионов кода.
     var foldState: FoldState = FoldState()
 
@@ -215,6 +292,8 @@ struct EditorTab: Identifiable, Hashable {
         copy.cursorColumn = source.cursorColumn
         copy.fileSizeBytes = source.fileSizeBytes
         copy.lastModDate = source.lastModDate
+        copy.backingFileRevision = source.backingFileRevision
+        copy.pendingExternalFileState = source.pendingExternalFileState
         copy.foldState = source.foldState
         copy.previewMode = source.previewMode
         copy.syntaxHighlightingDisabled = source.syntaxHighlightingDisabled

@@ -61,6 +61,11 @@ final class TabManager {
         _ messageText: String,
         _ informativeText: String
     ) async -> NSApplication.ModalResponse
+    typealias ExternalConflictAlertPresenter = @MainActor (
+        _ context: DialogPresentationContext,
+        _ messageText: String,
+        _ informativeText: String
+    ) async -> NSApplication.ModalResponse
     typealias OpenCompletion = @MainActor (OpenRequestResult) -> Void
 
     /// Immediate state returned by an open request. Large-file decisions are
@@ -161,6 +166,14 @@ final class TabManager {
     @ObservationIgnored
     var largeFileAlertPresenter: LargeFileAlertPresenter = { context, messageText, informativeText in
         await AlertTemplate.largeFileWarning.runSheet(
+            on: context,
+            messageText: messageText,
+            informativeText: informativeText
+        )
+    }
+    @ObservationIgnored
+    var externalConflictAlertPresenter: ExternalConflictAlertPresenter = { context, messageText, informativeText in
+        await AlertTemplate.externalModifyConflict.runSheet(
             on: context,
             messageText: messageText,
             informativeText: informativeText
@@ -817,6 +830,14 @@ final class TabManager {
         do {
             return try trySaveTab(at: index)
         } catch {
+            if let saveError = error as? TabPersistence.SaveError,
+               case .externalChange(let conflict) = saveError,
+               await resolveExternalSaveConflict(
+                   conflict,
+                   context: context
+               ) {
+                return false
+            }
             _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
                 on: context,
                 messageText: Strings.fileOperationErrorTitle,
@@ -845,6 +866,14 @@ final class TabManager {
             try trySaveAllTabs()
             return true
         } catch {
+            if let saveError = error as? TabPersistence.SaveError,
+               case .externalChange(let conflict) = saveError,
+               await resolveExternalSaveConflict(
+                   conflict,
+                   context: context
+               ) {
+                return false
+            }
             _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
                 on: context,
                 messageText: Strings.fileOperationErrorTitle,
@@ -922,6 +951,10 @@ final class TabManager {
         tabs[index].savedContent = savedContent
         tabs[index].lastModDate = metadata.modificationDate
         tabs[index].fileSizeBytes = metadata.size
+        tabs[index].backingFileRevision = BackingFileRevision(
+            contentDigest: metadata.contentDigest
+        )
+        tabs[index].pendingExternalFileState = nil
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
             tabs[index].recomputeContentCaches()
@@ -975,6 +1008,10 @@ final class TabManager {
         tabs[index].savedContent = savedContent
         tabs[index].lastModDate = metadata.modificationDate
         tabs[index].fileSizeBytes = metadata.size
+        tabs[index].backingFileRevision = BackingFileRevision(
+            contentDigest: metadata.contentDigest
+        )
+        tabs[index].pendingExternalFileState = nil
         if !requestIsStillCurrent {
             tabs[index].recomputeContentCaches()
         }
@@ -1287,7 +1324,20 @@ final class TabManager {
             },
             saveAction: { [weak self] in
                 guard let self, let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return }
-                try self.trySaveTab(at: idx)
+                do {
+                    try self.trySaveTab(at: idx)
+                } catch let error as TabPersistence.SaveError {
+                    if case .externalChange(let conflict) = error {
+                        let context = self.dialogContextProvider()
+                        Task { @MainActor [weak self] in
+                            _ = await self?.resolveExternalSaveConflict(
+                                conflict,
+                                context: context
+                            )
+                        }
+                    }
+                    throw error
+                }
             }
         )
     }
@@ -1357,6 +1407,27 @@ final class TabManager {
         }
     }
 
+    func reloadTab(conflict: ExternalConflict) {
+        let reloaded = TabExternalChangeDetector.reloadTab(
+            url: conflict.url,
+            tabs: &tabs,
+            providers: fileProviders,
+            expectedState: conflict.observedState
+        )
+        if let reloaded {
+            postReloadNotifications([reloaded])
+        }
+    }
+
+    @discardableResult
+    func authorizeExternalChange(_ conflict: ExternalConflict) -> Bool {
+        TabExternalChangeDetector.authorizeExternalChange(
+            conflict,
+            tabs: &tabs,
+            providers: fileProviders
+        )
+    }
+
     private func postReloadNotifications(_ reloadedTabs: [ReloadedTab]) {
         for reloaded in reloadedTabs {
             NotificationCenter.default.post(
@@ -1365,6 +1436,41 @@ final class TabManager {
                 userInfo: ["url": reloaded.url, "text": reloaded.text]
             )
         }
+    }
+
+    private func resolveExternalSaveConflict(
+        _ conflict: ExternalConflict,
+        context: DialogPresentationContext
+    ) async -> Bool {
+        guard conflict.kind == .modified,
+              let displayedTab = tabs.first(where: {
+                  $0.id == conflict.tabID && $0.isDirty
+              }) else {
+            return false
+        }
+        let authorization = DirtyEditorContentAuthorization(
+            tabs: [displayedTab]
+        )
+        let response = await externalConflictAlertPresenter(
+            context,
+            Strings.externalModifyTitle,
+            Strings.externalModifyMessage(conflict.url.lastPathComponent)
+        )
+        guard let currentTab = tabs.first(where: {
+            $0.id == conflict.tabID && $0.isDirty
+        }),
+        authorization.covers([currentTab]) else {
+            return true
+        }
+        switch response {
+        case .alertFirstButtonReturn:
+            reloadTab(conflict: conflict)
+        case .alertSecondButtonReturn:
+            authorizeExternalChange(conflict)
+        default:
+            break
+        }
+        return true
     }
 
     @discardableResult
@@ -1378,10 +1484,22 @@ final class TabManager {
         tabs[index].savedContent = content
         tabs[index].encoding = encoding
         tabs[index].lastModDate = modDate(for: fileURL)
+        tabs[index].backingFileRevision = BackingFileRevision(
+            data: data,
+            fileIdentity: try? BackingFileIdentity.capture(at: fileURL)
+        )
+        tabs[index].pendingExternalFileState = nil
         return true
     }
 
     // MARK: - File helpers
+
+    private var fileProviders: FileProviders {
+        .init(
+            modDate: { [weak self] url in self?.modDate(for: url) },
+            fileSize: { [weak self] url in self?.fileSize(url: url) }
+        )
+    }
 
     private func modDate(for url: URL) -> Date? { TabPersistence.modDate(for: url) }
     func fileSize(url: URL) -> Int? { TabPersistence.fileSize(url: url) }

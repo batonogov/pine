@@ -14,11 +14,13 @@ enum TabExternalChangeDetector {
     private static let logger = Logger.editor
 
     /// Describes an external change that requires user action (dirty tab conflict).
-    struct ExternalConflict {
+    struct ExternalConflict: Equatable, Sendable {
         let tabID: UUID
         let url: URL
         let kind: Kind
-        enum Kind: Equatable { case modified, deleted }
+        let observedState: BackingFileState
+
+        enum Kind: Equatable, Sendable { case modified, deleted }
     }
 
     /// Result of checking external changes — includes conflicts, silently reloaded files,
@@ -65,34 +67,83 @@ enum TabExternalChangeDetector {
 
             if !FileManager.default.fileExists(atPath: fileURL.path) {
                 if tab.isDirty {
-                    conflicts.append(.init(tabID: tab.id, url: fileURL, kind: .deleted))
+                    guard tab.pendingExternalFileState != .missing else {
+                        continue
+                    }
+                    conflicts.append(.init(
+                        tabID: tab.id,
+                        url: fileURL,
+                        kind: .deleted,
+                        observedState: .missing
+                    ))
+                    tabs[index].pendingExternalFileState = .missing
                 } else {
                     cleanDeletedIDs.append(tab.id)
                 }
                 continue
             }
 
-            guard let diskMod = providers.modDate(fileURL),
-                  let lastMod = tab.lastModDate,
-                  diskMod > lastMod
-            else { continue }
+            let diskMod = providers.modDate(fileURL)
+            let diskIdentity = try? providers.fileIdentity(fileURL)
+            let identityChanged = tab.backingFileRevision?.fileIdentity.map {
+                $0 != diskIdentity
+            }
+            let modificationDateChanged = diskMod != tab.lastModDate
+            guard identityChanged ?? modificationDateChanged else { continue }
+
+            if case .present(let pendingRevision) =
+                tab.pendingExternalFileState,
+               pendingRevision.fileIdentity == diskIdentity {
+                continue
+            }
 
             if tab.kind == .preview {
                 tabs[index].lastModDate = diskMod
-            } else if tab.isDirty {
-                conflicts.append(.init(tabID: tab.id, url: fileURL, kind: .modified))
+                continue
+            }
+
+            guard let diskRevision = try? providers.fileRevision(fileURL)
+            else { continue }
+            if diskRevision.contentDigest
+                == tab.backingFileRevision?.contentDigest {
+                tabs[index].backingFileRevision = diskRevision
                 tabs[index].lastModDate = diskMod
+                tabs[index].pendingExternalFileState = nil
+                continue
+            }
+
+            if tab.isDirty {
+                let diskState = BackingFileState.present(diskRevision)
+                guard tab.pendingExternalFileState != diskState else {
+                    continue
+                }
+                conflicts.append(.init(
+                    tabID: tab.id,
+                    url: fileURL,
+                    kind: .modified,
+                    observedState: diskState
+                ))
+                tabs[index].lastModDate = diskMod
+                tabs[index].pendingExternalFileState = diskState
             } else {
                 // Safe to reload silently
                 do {
-                    let content = try String(
-                        contentsOf: fileURL,
+                    let data = try Data(contentsOf: fileURL)
+                    guard let content = String(
+                        data: data,
                         encoding: tab.encoding
-                    )
+                    ) else {
+                        throw CocoaError(.fileReadInapplicableStringEncoding)
+                    }
                     tabs[index].content = content
                     tabs[index].savedContent = content
-                    tabs[index].lastModDate = diskMod
+                    tabs[index].lastModDate = providers.modDate(fileURL)
                     tabs[index].fileSizeBytes = providers.fileSize(fileURL)
+                    tabs[index].backingFileRevision = BackingFileRevision(
+                        data: data,
+                        fileIdentity: try? providers.fileIdentity(fileURL)
+                    )
+                    tabs[index].pendingExternalFileState = nil
                     tabs[index].cachedHighlightResult = nil
                     tabs[index].recomputeContentCaches()
                     reloadedNames.append(fileURL.lastPathComponent)
@@ -118,7 +169,8 @@ enum TabExternalChangeDetector {
     static func reloadTab(
         url: URL,
         tabs: inout [EditorTab],
-        providers: FileProviders
+        providers: FileProviders,
+        expectedState: BackingFileState? = nil
     ) -> ReloadedTab? {
         guard let index = tabs.firstIndex(where: {
             $0.fileURL == url
@@ -126,11 +178,27 @@ enum TabExternalChangeDetector {
             return nil
         }
         do {
-            let content = try String(contentsOf: url, encoding: tabs[index].encoding)
+            let data = try Data(contentsOf: url)
+            let revision = BackingFileRevision(
+                data: data,
+                fileIdentity: try? providers.fileIdentity(url)
+            )
+            if let expectedState,
+               expectedState != .present(revision) {
+                return nil
+            }
+            guard let content = String(
+                data: data,
+                encoding: tabs[index].encoding
+            ) else {
+                throw CocoaError(.fileReadInapplicableStringEncoding)
+            }
             tabs[index].content = content
             tabs[index].savedContent = content
             tabs[index].lastModDate = providers.modDate(url)
             tabs[index].fileSizeBytes = providers.fileSize(url)
+            tabs[index].backingFileRevision = revision
+            tabs[index].pendingExternalFileState = nil
             tabs[index].cachedHighlightResult = nil
             tabs[index].recomputeContentCaches()
             return .init(url: url, text: content)
@@ -138,5 +206,38 @@ enum TabExternalChangeDetector {
             logger.error("Failed to reload tab from disk \(url.lastPathComponent): \(error)")
             return nil
         }
+    }
+
+    static func authorizeExternalChange(
+        _ conflict: ExternalConflict,
+        tabs: inout [EditorTab],
+        providers: FileProviders
+    ) -> Bool {
+        guard conflict.kind == .modified,
+              let index = tabs.firstIndex(where: {
+                  $0.id == conflict.tabID && $0.fileURL == conflict.url
+              }),
+              currentFileState(at: conflict.url, providers: providers)
+                == conflict.observedState,
+              case .present(let revision) = conflict.observedState else {
+            return false
+        }
+        tabs[index].backingFileRevision = revision
+        tabs[index].pendingExternalFileState = nil
+        tabs[index].lastModDate = providers.modDate(conflict.url)
+        return true
+    }
+
+    private static func currentFileState(
+        at url: URL,
+        providers: FileProviders
+    ) -> BackingFileState? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .missing
+        }
+        guard let revision = try? providers.fileRevision(url) else {
+            return nil
+        }
+        return .present(revision)
     }
 }
