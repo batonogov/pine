@@ -122,6 +122,25 @@ struct ShellSettingsTests {
         #expect(settings.shellArgs == ["--login"])
     }
 
+    @Test func injectedDefaultMakesConfigurationStateDeterministic() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(
+            defaults: defaults,
+            defaultShellPath: "/bin/bash"
+        )
+        #expect(settings.isDefaultConfiguration)
+
+        settings.shellPath = "/bin/zsh"
+        #expect(!settings.isDefaultConfiguration)
+
+        settings.reset()
+        #expect(settings.shellPath == "/bin/bash")
+        #expect(settings.shellArgs == ["--login"])
+        #expect(settings.isDefaultConfiguration)
+    }
+
     // MARK: - Resolved shell path
 
     @Test func resolvedShellPathReturnsPathWhenExecutable() throws {

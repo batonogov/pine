@@ -122,10 +122,7 @@ struct TerminalSettingsView: View {
                     shell.reset()
                     customArgsText = shell.shellArgs.joined(separator: "\n")
                 }
-                .disabled(
-                    shell.shellArgs == ["--login"]
-                        && shell.shellPath == ShellSettings.systemShellPath()
-                )
+                .disabled(shell.isDefaultConfiguration)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)

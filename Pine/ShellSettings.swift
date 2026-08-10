@@ -40,7 +40,7 @@ final class ShellSettings {
     }
 
     /// Fallback chain: `getpwuid` → `$SHELL` → `/bin/zsh`.
-    private static var defaultShellPath: String {
+    private static var systemDefaultShellPath: String {
         if let posixShell = systemShellPath() {
             return posixShell
         }
@@ -51,6 +51,7 @@ final class ShellSettings {
 
     private let defaults: UserDefaults
     private let fileManager: FileManager
+    private let defaultShellPath: String
 
     var shellPath: String {
         didSet {
@@ -64,10 +65,15 @@ final class ShellSettings {
         }
     }
 
+    var isDefaultConfiguration: Bool {
+        shellPath == defaultShellPath
+            && shellArgs == defaultArguments(for: defaultShellPath)
+    }
+
     /// Validated shell path — falls back to system shell (via `getpwuid`), then `$SHELL`, then `/bin/zsh`.
     var resolvedShellPath: String {
         if isExecutableFile(shellPath) { return shellPath }
-        let fallback = Self.defaultShellPath
+        let fallback = defaultShellPath
         if isExecutableFile(fallback) { return fallback }
         return "/bin/zsh"
     }
@@ -81,15 +87,20 @@ final class ShellSettings {
         return fileManager.isExecutableFile(atPath: path)
     }
 
-    init(defaults: UserDefaults = .standard, fileManager: FileManager = .default) {
+    init(
+        defaults: UserDefaults = .standard,
+        fileManager: FileManager = .default,
+        defaultShellPath: String? = nil
+    ) {
         self.defaults = defaults
         self.fileManager = fileManager
+        self.defaultShellPath = defaultShellPath ?? Self.systemDefaultShellPath
 
         let storedPath = defaults.string(forKey: Self.shellPathKey)
         if let storedPath, !storedPath.isEmpty {
             self.shellPath = storedPath
         } else {
-            self.shellPath = Self.defaultShellPath
+            self.shellPath = self.defaultShellPath
         }
 
         if let storedArgs = defaults.stringArray(forKey: Self.shellArgsKey) {
@@ -100,7 +111,12 @@ final class ShellSettings {
     }
 
     func reset() {
-        shellPath = Self.defaultShellPath
-        shellArgs = Self.commonShells.first { $0.path == shellPath }?.defaultArgs ?? Self.defaultShellArgs
+        shellPath = defaultShellPath
+        shellArgs = defaultArguments(for: defaultShellPath)
+    }
+
+    private func defaultArguments(for path: String) -> [String] {
+        Self.commonShells.first { $0.path == path }?.defaultArgs
+            ?? Self.defaultShellArgs
     }
 }
