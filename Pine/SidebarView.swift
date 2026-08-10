@@ -164,12 +164,25 @@ final class SidebarKeyboardFocusController {
     }
 
     @discardableResult
-    func requestFocus() -> Bool {
-        guard let responderView, let window = responderView.window else {
-            return false
+    func requestFocus(retryOnNextRunLoop: Bool = false) -> Bool {
+        let focused: Bool
+        if let responderView, let window = responderView.window {
+            focused = window.makeFirstResponder(responderView)
+                && window.firstResponder === responderView
+        } else {
+            focused = false
         }
-        return window.makeFirstResponder(responderView)
-            && window.firstResponder === responderView
+        if retryOnNextRunLoop {
+            // A pointer action can arrive while SwiftUI is still attaching the
+            // representable, or an editor preview can displace a successful
+            // claim later in the same layout transaction. Retry once after
+            // that transaction settles; never form an unbounded focus loop.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isFocused else { return }
+                _ = self.requestFocus()
+            }
+        }
+        return focused
     }
 
     private func updateFocus(_ focused: Bool) {
@@ -630,7 +643,7 @@ struct SidebarView: View {
                                 isKeyboardFocused: keyboardFocusController.isFocused
                                     && controlActiveState == .key,
                                 onKeyboardFocusRequested: {
-                                    claimSidebarKeyboardFocus()
+                                    claimSidebarKeyboardFocus(retryOnNextRunLoop: true)
                                 }
                             )
                         }
@@ -841,9 +854,11 @@ struct SidebarView: View {
     /// A sidebar action supersedes any older destination-focus request. The
     /// model is invalidated before AppKit changes first responder so a queued
     /// editor or terminal retry cannot reclaim focus on the next run loop.
-    private func claimSidebarKeyboardFocus() {
+    private func claimSidebarKeyboardFocus(retryOnNextRunLoop: Bool = false) {
         paneManager.cancelPendingFocusForActivePane()
-        keyboardFocusController.requestFocus()
+        keyboardFocusController.requestFocus(
+            retryOnNextRunLoop: retryOnNextRunLoop
+        )
     }
 
     private func handleSidebarPrintableText(_ text: String) -> Bool {
