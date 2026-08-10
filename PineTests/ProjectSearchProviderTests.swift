@@ -374,6 +374,24 @@ struct ProjectSearchProviderTests {
         #expect(match1.id != match2.id)
     }
 
+    @Test("SearchMatch id cannot collide across long adjacent lines")
+    func searchMatchIDLongLineCollision() {
+        let first = SearchMatch(
+            lineNumber: 1,
+            lineContent: "first",
+            matchRangeStart: 100_003,
+            matchRangeLength: 1
+        )
+        let second = SearchMatch(
+            lineNumber: 2,
+            lineContent: "second",
+            matchRangeStart: 0,
+            matchRangeLength: 1
+        )
+
+        #expect(first.id != second.id)
+    }
+
     // MARK: - Provider state tests
 
     @Test("Empty query clears results")
@@ -457,6 +475,24 @@ struct ProjectSearchProviderTests {
         let totalMatches = groups.flatMap(\.matches).count
 
         #expect(totalMatches <= ProjectSearchProvider.maxResults)
+    }
+
+    @Test("performSearch truncates the final file group to the exact global limit")
+    func performSearchTruncatesFinalGroup() async throws {
+        let content = (1...99).map { "needle \($0)" }.joined(separator: "\n")
+        let files = Dictionary(uniqueKeysWithValues: (1...11).map {
+            ("file-\($0).txt", content)
+        })
+        let dir = try createTestProject(files: files)
+        defer { cleanup(dir) }
+
+        let groups = await ProjectSearchProvider.performSearch(
+            query: "needle",
+            isCaseSensitive: false,
+            rootURL: dir
+        )
+
+        #expect(groups.flatMap(\.matches).count == ProjectSearchProvider.maxResults)
     }
 
     // MARK: - searchFile: empty file
