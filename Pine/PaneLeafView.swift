@@ -649,24 +649,52 @@ struct PaneLeafView: View {
               let fileURL = tab.fileURL else {
             lineDiffs = []
             diffHunks = []
+            diffVersion &+= 1
             return
         }
         let provider = workspace.gitProvider
         guard provider.isGitRepository, let repoURL = workspace.rootURL else {
             lineDiffs = []
             diffHunks = []
+            diffVersion &+= 1
             return
         }
+        let tabID = tab.id
+        let contentVersion = tab.contentVersion
+        let content = tab.content
+        let isDirty = tab.isDirty
         diffTask = Task { @MainActor in
             if debounce {
                 try? await Task.sleep(for: Self.diffDebounce)
                 if Task.isCancelled { return }
             }
+
+            if isDirty {
+                let resolvedDiffs = await provider.diffForBufferAsync(
+                    at: fileURL,
+                    content: content
+                )
+                if Task.isCancelled { return }
+                guard let activeTab = tabManager.activeTab,
+                      activeTab.id == tabID,
+                      activeTab.fileURL == fileURL,
+                      activeTab.contentVersion == contentVersion else { return }
+                lineDiffs = resolvedDiffs
+                // Hunk actions mutate the worktree/index and therefore must
+                // never be offered from a diff calculated from unsaved text.
+                diffHunks = []
+                diffVersion &+= 1
+                return
+            }
+
             async let diffs = provider.diffForFileAsync(at: fileURL)
             async let hunks = InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
             let (resolvedDiffs, resolvedHunks) = await (diffs, hunks)
             if Task.isCancelled { return }
-            guard tabManager.activeTab?.fileURL == fileURL else { return }
+            guard let activeTab = tabManager.activeTab,
+                  activeTab.id == tabID,
+                  activeTab.fileURL == fileURL,
+                  activeTab.contentVersion == contentVersion else { return }
             lineDiffs = resolvedDiffs
             diffHunks = resolvedHunks
             diffVersion &+= 1

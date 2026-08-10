@@ -8,7 +8,7 @@
 //  These tests verify the underlying signals that `PaneLeafView` now
 //  subscribes to (content edits, git-status changes, branch switches,
 //  repository transitions, initial load) actually fire and that
-//  `GitStatusProvider.diffForFileAsync` returns the expected diffs
+//  `GitStatusProvider` returns the expected disk and live-buffer diffs
 //  across the full save/edit/checkout lifecycle.
 //
 
@@ -202,6 +202,82 @@ struct PaneLeafGitDiffRefreshTests {
 
         let after = await provider.diffForFileAsync(at: fileURL)
         #expect(after.isEmpty == false, "modified file should report diffs")
+    }
+
+    @Test("dirty editor buffer is diffed against HEAD before save")
+    func diffForBufferAsyncSeesUnsavedModification() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+        let fileURL = dir.appendingPathComponent("file.txt")
+
+        let diskDiffs = await provider.diffForFileAsync(at: fileURL)
+        let bufferDiffs = await provider.diffForBufferAsync(
+            at: fileURL,
+            content: "line1\nEDITED\nline3\n"
+        )
+
+        #expect(diskDiffs.isEmpty, "the unchanged worktree cannot expose the unsaved edit")
+        #expect(bufferDiffs == [GitLineDiff(line: 2, kind: .modified)])
+    }
+
+    @Test("live buffer diff includes saved and unsaved changes")
+    func diffForBufferAsyncIncludesWorktreeAndBufferChanges() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+        let fileURL = dir.appendingPathComponent("file.txt")
+        try "line1\nSAVED\nline3\n".write(
+            to: fileURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let diffs = await provider.diffForBufferAsync(
+            at: fileURL,
+            content: "line1\nSAVED\nline3\nUNSAVED\n"
+        )
+
+        #expect(diffs.contains(GitLineDiff(line: 2, kind: .modified)))
+        #expect(diffs.contains(GitLineDiff(line: 4, kind: .added)))
+    }
+
+    @Test("live buffer diff reports an unsaved deletion")
+    func diffForBufferAsyncSeesUnsavedDeletion() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+        let fileURL = dir.appendingPathComponent("file.txt")
+
+        let diffs = await provider.diffForBufferAsync(
+            at: fileURL,
+            content: "line1\nline3\n"
+        )
+
+        #expect(diffs.contains { $0.kind == .deleted })
+    }
+
+    @Test("live buffer diff clears after undoing to HEAD")
+    func diffForBufferAsyncClearsAfterUndo() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+        let fileURL = dir.appendingPathComponent("file.txt")
+
+        let diffs = await provider.diffForBufferAsync(
+            at: fileURL,
+            content: "line1\nline2\nline3\n"
+        )
+
+        #expect(diffs.isEmpty)
     }
 
     /// Edge case: diffForFileAsync on a non-git directory returns empty.

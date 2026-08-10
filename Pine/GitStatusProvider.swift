@@ -305,6 +305,72 @@ final class GitStatusProvider {
         return GitParser.parseDiff(result.output)
     }
 
+    /// Compares the current editor buffer with HEAD without requiring a save.
+    ///
+    /// `git diff HEAD -- <path>` can only inspect the worktree file on disk, so
+    /// using it after an in-memory edit leaves the gutter one save behind. This
+    /// path reads the committed blob, writes both snapshots to an isolated
+    /// temporary directory, and asks git's regular diff engine to classify the
+    /// buffer. All filesystem and process work runs off the main actor.
+    func diffForBufferAsync(at url: URL, content: String) async -> [GitLineDiff] {
+        guard isGitRepository,
+              let repoURL = repositoryURL,
+              let relativePath = relativePath(for: url) else { return [] }
+
+        let headResult = await GitCommand.runAsync(
+            ["show", "HEAD:\(relativePath)"],
+            at: repoURL
+        )
+        guard !Task.isCancelled, headResult.succeeded else { return [] }
+        return await Self.diffContentsAsync(
+            head: headResult.output,
+            buffer: content,
+            at: repoURL
+        )
+    }
+
+    /// Runs a bounded `git diff --no-index` on the generic executor. Exit code
+    /// 1 is git's documented "differences found" result, not a command error.
+    nonisolated private static func diffContentsAsync(
+        head: String,
+        buffer: String,
+        at workingDirectory: URL
+    ) async -> [GitLineDiff] {
+        guard head != buffer, !Task.isCancelled else { return [] }
+
+        let fileManager = FileManager.default
+        let temporaryDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("pine-buffer-diff-\(UUID().uuidString)", isDirectory: true)
+        let headURL = temporaryDirectory.appendingPathComponent("head")
+        let bufferURL = temporaryDirectory.appendingPathComponent("buffer")
+
+        do {
+            try fileManager.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+            defer { try? fileManager.removeItem(at: temporaryDirectory) }
+            try head.write(to: headURL, atomically: false, encoding: .utf8)
+            try buffer.write(to: bufferURL, atomically: false, encoding: .utf8)
+
+            let result = await GitCommand.runAsync(
+                [
+                    "diff", "--no-index", "--no-ext-diff", "--no-color",
+                    "--text", "--unified=0", "--", headURL.path, bufferURL.path
+                ],
+                at: workingDirectory
+            )
+            guard !Task.isCancelled,
+                  result.exitCode == 0 || result.exitCode == 1,
+                  !result.timedOut,
+                  !result.cancelled,
+                  !result.outputTruncated,
+                  !result.errorOutputTruncated,
+                  result.outputCaptureComplete,
+                  result.errorOutputCaptureComplete else { return [] }
+            return GitParser.parseDiff(result.output)
+        } catch {
+            return []
+        }
+    }
+
     // MARK: - Private Helpers
 
     private func isInsideUntrackedDirectory(_ path: String) -> Bool {
