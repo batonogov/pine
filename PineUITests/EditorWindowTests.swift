@@ -230,7 +230,8 @@ final class EditorWindowTests: PineUITestCase {
             "Problems should open in the editor chrome"
         )
         XCTAssertTrue(
-            app.buttons["problemsHelpButton"].firstMatch.exists,
+            app.descendants(matching: .any)["problemsHelpButton"]
+                .firstMatch.exists,
             "Problems should expose its language-server Help topic"
         )
 
