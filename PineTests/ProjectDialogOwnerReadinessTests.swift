@@ -69,4 +69,57 @@ struct ProjectDialogOwnerReadinessTests {
         #expect(resolved == nil)
         #expect(waitCount == 0)
     }
+
+    @Test func lostOwnerIsRecoveredBeforeWaiting() async {
+        let projectManager = ProjectManager()
+        let window = NSWindow()
+        var recoveryCount = 0
+        var waitCount = 0
+
+        let resolved = await projectManager.awaitDialogOwnerWindow(
+            maximumAttempts: 3,
+            waitForNextAttempt: {
+                waitCount += 1
+                await Task.yield()
+            },
+            isEligible: { _ in true },
+            recoverOwner: {
+                recoveryCount += 1
+                projectManager.bindDialogOwnerWindow(window)
+                return window
+            }
+        )
+
+        #expect(resolved === window)
+        #expect(recoveryCount == 1)
+        #expect(waitCount == 0)
+    }
+
+    @Test func ineligibleBoundOwnerIsReplacedByRecoveredOwner() async {
+        let projectManager = ProjectManager()
+        let staleWindow = NSWindow()
+        let recoveredWindow = NSWindow()
+        var recoveryCount = 0
+        var waitCount = 0
+        projectManager.bindDialogOwnerWindow(staleWindow)
+
+        let resolved = await projectManager.awaitDialogOwnerWindow(
+            maximumAttempts: 3,
+            waitForNextAttempt: {
+                waitCount += 1
+                await Task.yield()
+            },
+            isEligible: { $0 === recoveredWindow },
+            recoverOwner: {
+                recoveryCount += 1
+                projectManager.bindDialogOwnerWindow(recoveredWindow)
+                return recoveredWindow
+            }
+        )
+
+        #expect(resolved === recoveredWindow)
+        #expect(projectManager.dialogOwnerWindow === recoveredWindow)
+        #expect(recoveryCount == 1)
+        #expect(waitCount == 0)
+    }
 }

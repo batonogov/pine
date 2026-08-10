@@ -1566,7 +1566,8 @@ final class ProjectManager {
     func awaitDialogOwnerWindow(
         maximumAttempts: Int = 80,
         waitForNextAttempt: (@MainActor () async -> Void)? = nil,
-        isEligible: (@MainActor (NSWindow) -> Bool)? = nil
+        isEligible: (@MainActor (NSWindow) -> Bool)? = nil,
+        recoverOwner: (@MainActor () -> NSWindow?)? = nil
     ) async -> NSWindow? {
         let wait = waitForNextAttempt ?? {
             try? await Task.sleep(for: .milliseconds(25))
@@ -1574,20 +1575,30 @@ final class ProjectManager {
         let acceptsWindow = isEligible ?? {
             DialogPresenter.isEligibleApplicationOwner($0)
         }
+        let recover = recoverOwner ?? { [weak self] in
+            guard let self else { return nil }
+            return DialogPresenter.recoverProjectOwnerWindow(
+                for: self,
+                isEligible: acceptsWindow
+            )
+        }
 
         for _ in 0..<max(0, maximumAttempts) {
             guard !Task.isCancelled else { return nil }
             if let window = dialogOwnerWindow, acceptsWindow(window) {
                 return window
             }
+            if let window = recover(), acceptsWindow(window) {
+                return window
+            }
             await wait()
         }
 
-        guard !Task.isCancelled,
-              let window = dialogOwnerWindow,
-              acceptsWindow(window) else {
-            return nil
+        guard !Task.isCancelled else { return nil }
+        if let window = dialogOwnerWindow, acceptsWindow(window) {
+            return window
         }
+        guard let window = recover(), acceptsWindow(window) else { return nil }
         return window
     }
 

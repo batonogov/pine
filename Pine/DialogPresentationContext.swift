@@ -631,6 +631,52 @@ enum DialogPresenter {
         context(for: projectManager.dialogOwnerWindow)
     }
 
+    /// Repairs a project→window binding that was lost while the initiating
+    /// project window remained alive. This can happen when SwiftUI overlaps
+    /// representable coordinator generations and dismantles the older one
+    /// after the replacement has appeared (#1407).
+    ///
+    /// Only a live `CloseDelegate` for the exact `ProjectManager` can recover
+    /// an unbound window, so the fallback cannot attach a project-owned sheet
+    /// to Welcome, Settings, or a sibling project window.
+    static func recoverProjectOwnerWindow(
+        for projectManager: ProjectManager,
+        candidates suppliedCandidates: [NSWindow]? = nil,
+        isEligible: ((NSWindow) -> Bool)? = nil
+    ) -> NSWindow? {
+        let acceptsWindow = isEligible ?? isEligibleApplicationOwner
+        let candidates: [NSWindow]
+        if let suppliedCandidates {
+            candidates = suppliedCandidates
+        } else {
+            var applicationWindows: [NSWindow] = []
+            for candidate in [NSApp.keyWindow, NSApp.mainWindow] + NSApp.windows.map(Optional.some) {
+                guard let candidate else { continue }
+                let owner = candidate.sheetParent ?? candidate
+                guard !applicationWindows.contains(where: { $0 === owner }) else {
+                    continue
+                }
+                applicationWindows.append(owner)
+            }
+            candidates = applicationWindows
+        }
+
+        guard let match = candidates.first(where: { window in
+            guard acceptsWindow(window),
+                  let delegate = window.delegate as? CloseDelegate,
+                  !delegate.didCompleteWindowLifecycle else {
+                return false
+            }
+            return delegate.projectManager === projectManager
+        }), let delegate = match.delegate as? CloseDelegate else {
+            return nil
+        }
+
+        delegate.observeWindowClose(match)
+        Logger.app.info("recovered project dialog owner from its live window (#1407)")
+        return match
+    }
+
     static func projectManager(for window: NSWindow?) -> ProjectManager? {
         guard let window else { return nil }
         let identifier = ObjectIdentifier(window)

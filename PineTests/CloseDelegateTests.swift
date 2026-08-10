@@ -588,6 +588,145 @@ struct CloseDelegateTests {
         #expect(window.delegate === original)
     }
 
+    @Test func replacementCoordinatorOwnsDelegateAcrossOldDismantle() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let project = ProjectManager()
+        let registry = ProjectRegistry()
+        let appDelegate = AppDelegate()
+        let window = NSWindow()
+        let firstCoordinator = WindowCloseInterceptor.Coordinator()
+        let replacementCoordinator = WindowCloseInterceptor.Coordinator()
+        weak var expectedOriginal: CountingCloseDelegate?
+        do {
+            let original = CountingCloseDelegate(shouldApprove: true)
+            expectedOriginal = original
+            window.delegate = original
+            firstCoordinator.installDelegate(
+                on: window,
+                projectManager: project,
+                registry: registry,
+                projectURL: dir,
+                appDelegate: appDelegate
+            )
+        }
+        let interceptor = try #require(window.delegate as? CloseDelegate)
+        #expect(expectedOriginal != nil)
+        replacementCoordinator.installDelegate(
+            on: window,
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate
+        )
+
+        // A stale SwiftUI update delivered to the superseded generation must
+        // not let it reclaim the delegate from its replacement.
+        firstCoordinator.installDelegate(
+            on: window,
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate
+        )
+
+        // SwiftUI dismantles the obsolete representable after its replacement
+        // is already live. The old coordinator must not restore the original
+        // delegate or clear the replacement's dialog owner (#1407).
+        firstCoordinator.detach()
+
+        #expect(window.delegate === interceptor)
+        #expect(project.dialogOwnerWindow === window)
+        #expect(interceptor.dialogContext.nsWindow === window)
+        #expect(expectedOriginal != nil)
+        #expect(interceptor.original === expectedOriginal)
+
+        replacementCoordinator.detach()
+        #expect(project.dialogOwnerWindow == nil)
+    }
+
+    @Test func lostBindingRecoversFromLiveProjectDelegate() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let project = ProjectManager()
+        let registry = ProjectRegistry()
+        let appDelegate = AppDelegate()
+        let window = NSWindow()
+        let coordinator = WindowCloseInterceptor.Coordinator()
+
+        coordinator.installDelegate(
+            on: window,
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate
+        )
+        let delegate = try #require(window.delegate as? CloseDelegate)
+        DialogPresenter.ownerDidClose(window)
+        #expect(project.dialogOwnerWindow == nil)
+
+        let recovered = DialogPresenter.recoverProjectOwnerWindow(
+            for: project,
+            candidates: [window],
+            isEligible: { _ in true }
+        )
+
+        #expect(recovered === window)
+        #expect(project.dialogOwnerWindow === window)
+        #expect(delegate.dialogContext.nsWindow === window)
+        coordinator.detach()
+    }
+
+    @Test func recoveryRejectsSiblingProjectAndCompletedDelegate() throws {
+        let targetDir = try makeTempDir()
+        let siblingDir = try makeTempDir()
+        defer {
+            cleanup(targetDir)
+            cleanup(siblingDir)
+        }
+        let (targetDelegate, targetProject, _) = makeCloseDelegate(
+            projectURL: targetDir
+        )
+        let (siblingDelegate, siblingProject, _) = makeCloseDelegate(
+            projectURL: siblingDir
+        )
+        let targetWindow = NSWindow()
+        let siblingWindow = NSWindow()
+        targetWindow.delegate = targetDelegate
+        siblingWindow.delegate = siblingDelegate
+        targetDelegate.observeWindowClose(targetWindow)
+        siblingDelegate.observeWindowClose(siblingWindow)
+        defer {
+            DialogPresenter.ownerDidClose(targetWindow)
+            DialogPresenter.ownerDidClose(siblingWindow)
+            targetWindow.delegate = nil
+            siblingWindow.delegate = nil
+        }
+
+        DialogPresenter.ownerDidClose(targetWindow)
+        #expect(DialogPresenter.recoverProjectOwnerWindow(
+            for: targetProject,
+            candidates: [siblingWindow],
+            isEligible: { _ in true }
+        ) == nil)
+        #expect(targetProject.dialogOwnerWindow == nil)
+        #expect(siblingProject.dialogOwnerWindow === siblingWindow)
+
+        targetDelegate.windowWillClose(
+            Notification(
+                name: NSWindow.willCloseNotification,
+                object: targetWindow
+            )
+        )
+        #expect(targetDelegate.didCompleteWindowLifecycle)
+        #expect(DialogPresenter.recoverProjectOwnerWindow(
+            for: targetProject,
+            candidates: [targetWindow],
+            isEligible: { _ in true }
+        ) == nil)
+        #expect(targetProject.dialogOwnerWindow == nil)
+    }
+
     @Test func interceptorRearmsRetainedDelegateForReopenedWindowGeneration() async throws {
         let dir = try makeTempDir()
         let otherDir = try makeTempDir()

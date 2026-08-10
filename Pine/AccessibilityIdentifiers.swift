@@ -52,6 +52,7 @@ nonisolated enum AccessibilityID {
 
     // MARK: - Main editor window
     static let sidebar = "sidebar"
+    static let openFolderToolbarButton = "openFolderToolbarButton"
     static func fileNode(_ name: String) -> String { "fileNode_\(name)" }
     static let inlineRenameTextField = "inlineRenameTextField"
 

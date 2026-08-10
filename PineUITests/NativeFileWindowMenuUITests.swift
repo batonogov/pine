@@ -5,6 +5,7 @@
 //  Mouse-driven acceptance coverage for issue #1275.
 //
 
+import AppKit
 import XCTest
 
 final class NativeFileWindowMenuUITests: PineUITestCase {
@@ -256,7 +257,12 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
                 "The owned folder picker should expose its Open action"
             )
 
-            app.typeKey(".", modifierFlags: .command)
+            let cancelButton = openPanel.buttons["Cancel"].firstMatch
+            XCTAssertTrue(
+                cancelButton.waitForExistence(timeout: 5),
+                "The owned folder picker should expose a mouse-driven Cancel action"
+            )
+            cancelButton.click()
             XCTAssertTrue(
                 openPanel.waitForNonExistence(timeout: 5),
                 "Cancelling the folder picker should dismiss the owned sheet"
@@ -266,6 +272,168 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
                 "Cancelling Open Folder must leave the current project open"
             )
         }
+    }
+
+    func testOpenFolderToolbarPresentsReusableOwnedPanel() {
+        launchWithProject(projectURL)
+        let openFolder = app.buttons["openFolderToolbarButton"].firstMatch
+        XCTAssertTrue(
+            openFolder.waitForExistence(timeout: 10),
+            "The sidebar toolbar should expose Open Folder"
+        )
+
+        for attempt in 1...2 {
+            openFolder.click()
+            let openPanel = app.sheets.firstMatch
+            XCTAssertTrue(
+                openPanel.waitForExistence(timeout: 5),
+                "Toolbar Open Folder should present an owned sheet on attempt \(attempt)"
+            )
+            XCTAssertTrue(openPanel.buttons["Open"].firstMatch.exists)
+            let cancelButton = openPanel.buttons["Cancel"].firstMatch
+            XCTAssertTrue(cancelButton.waitForExistence(timeout: 5))
+            cancelButton.click()
+            XCTAssertTrue(openPanel.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(app.scrollViews["sidebar"].firstMatch.exists)
+        }
+    }
+
+    func testOpenFolderToolbarRecoversWithActiveAgentAndRemainsReusable() throws {
+        NSPasteboard.general.clearContents()
+        defer { NSPasteboard.general.clearContents() }
+        app.launchArguments.append("--ui-test-live-agent")
+        launchWithProject(projectURL)
+
+        let agentTerminal = app.descendants(matching: .any)[
+            "terminalTab_Terminal 1"
+        ].firstMatch
+        XCTAssertTrue(
+            agentTerminal.waitForExistence(timeout: 10),
+            "The project should contain the deterministic live-agent terminal"
+        )
+        let agentStatus = app.buttons["agentStatusBar"].firstMatch
+        XCTAssertTrue(
+            agentStatus.waitForExistence(timeout: 5),
+            "The fixture must activate an agent after the project window mounts"
+        )
+        XCTAssertTrue(agentStatus.label.contains("Executing"))
+
+        // Exercise the exact post-close-confirmation lifecycle from #1407:
+        // create dirty editor content, request a whole-window close by mouse,
+        // then cancel its project-owned sheet before opening another folder.
+        clickMenuBarItem("File")
+        app.menuItems["New File"].firstMatch.click()
+        let editor = app.textViews["codeEditor"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.click()
+        XCTAssertTrue(
+            NSPasteboard.general.setString(
+                "keep this project open\n",
+                forType: .string
+            )
+        )
+        clickMenuBarItem("Edit")
+        app.menuItems["Paste"].firstMatch.click()
+        clickMenuBarItem("Window")
+        app.menuItems["Close Window"].firstMatch.click()
+        let closeConfirmation = app.sheets.firstMatch
+        XCTAssertTrue(closeConfirmation.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            closeConfirmation.staticTexts["Unsaved Changes"].firstMatch.exists
+        )
+        closeConfirmation.buttons["Cancel"].firstMatch.click()
+        XCTAssertTrue(closeConfirmation.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(agentTerminal.exists)
+        XCTAssertTrue(
+            agentStatus.waitForExistence(timeout: 5),
+            "Cancelling window close must preserve the active agent"
+        )
+        XCTAssertTrue(agentStatus.label.contains("Executing"))
+
+        let openFolder = app.buttons["openFolderToolbarButton"].firstMatch
+        XCTAssertTrue(
+            openFolder.waitForExistence(timeout: 10),
+            "The sidebar toolbar should expose Open Folder"
+        )
+
+        for attempt in 1...2 {
+            openFolder.click()
+            let openPanel = app.sheets.firstMatch
+            XCTAssertTrue(
+                openPanel.waitForExistence(timeout: 5),
+                "Toolbar Open Folder should present a project-owned sheet on attempt \(attempt)"
+            )
+            let cancelButton = openPanel.buttons["Cancel"].firstMatch
+            XCTAssertTrue(cancelButton.waitForExistence(timeout: 5))
+            cancelButton.click()
+            XCTAssertTrue(openPanel.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(
+                agentTerminal.exists,
+                "Cancelling Open Folder must preserve the active agent terminal"
+            )
+            XCTAssertTrue(
+                agentStatus.waitForExistence(timeout: 5),
+                "Open Folder attempt \(attempt) must keep the agent active"
+            )
+            XCTAssertTrue(agentStatus.label.contains("Executing"))
+        }
+
+        // Remove only the dirty editor tab, then exercise a full native
+        // window close/reopen while the terminal-backed agent remains owned
+        // by the background ProjectManager.
+        clickMenuBarItem("File")
+        app.menuItems["Close Tab"].firstMatch.click()
+        let discardAlert = app.sheets.firstMatch
+        XCTAssertTrue(discardAlert.waitForExistence(timeout: 5))
+        discardAlert.buttons["Don't Save"].firstMatch.click()
+        XCTAssertTrue(discardAlert.waitForNonExistence(timeout: 5))
+
+        clickMenuBarItem("Window")
+        app.menuItems["Close Window"].firstMatch.click()
+        let terminalWarning = app.sheets.firstMatch
+        XCTAssertTrue(
+            terminalWarning.waitForExistence(timeout: 5),
+            "The live terminal should retain its current close safeguard"
+        )
+        XCTAssertTrue(
+            terminalWarning.staticTexts["Active Process"].firstMatch.exists
+        )
+        terminalWarning.buttons["Close Terminal"].firstMatch.click()
+        XCTAssertTrue(
+            app.scrollViews["sidebar"].waitForNonExistence(timeout: 5),
+            "The project should enter its background window state"
+        )
+        XCTAssertTrue(app.windows["welcome"].waitForExistence(timeout: 10))
+
+        clickMenuBarItem("File")
+        app.menuItems["Open Recent"].firstMatch.click()
+        let recentPrefix = "\(projectURL.lastPathComponent) — "
+        let recentProject = try XCTUnwrap(
+            visibleMenuItem(matching: NSPredicate(
+                format: "title BEGINSWITH %@",
+                recentPrefix
+            ))
+        )
+        recentProject.click()
+        XCTAssertTrue(app.scrollViews["sidebar"].waitForExistence(timeout: 10))
+        XCTAssertTrue(agentTerminal.waitForExistence(timeout: 10))
+        XCTAssertTrue(agentStatus.waitForExistence(timeout: 5))
+        XCTAssertTrue(agentStatus.label.contains("Executing"))
+
+        let reopenedOpenFolder = app.buttons[
+            "openFolderToolbarButton"
+        ].firstMatch
+        XCTAssertTrue(reopenedOpenFolder.waitForExistence(timeout: 5))
+        reopenedOpenFolder.click()
+        let reopenedPanel = app.sheets.firstMatch
+        XCTAssertTrue(
+            reopenedPanel.waitForExistence(timeout: 5),
+            "Open Folder should survive active-agent window close/reopen"
+        )
+        reopenedPanel.buttons["Cancel"].firstMatch.click()
+        XCTAssertTrue(reopenedPanel.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(agentStatus.waitForExistence(timeout: 5))
+        XCTAssertTrue(agentStatus.label.contains("Executing"))
     }
 
     func testOpenFolderSelectsDirectoryAndRoutesCommandToNewWindow() throws {

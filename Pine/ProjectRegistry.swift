@@ -5,6 +5,7 @@
 //  Created by Claude on 13.03.2026.
 //
 
+import os
 import SwiftUI
 
 nonisolated enum AgentInboxNavigationResult: Equatable, Sendable {
@@ -23,6 +24,36 @@ nonisolated enum AgentInboxRecoveryResult: Equatable, Sendable {
     case changedWhilePreparing
     case launchRejected
 }
+
+#if DEBUG
+/// Keeps the live-agent XCUITest on the production registry mutation path
+/// without reading or writing the developer's durable task metadata.
+private actor LiveAgentUITestTaskPersistence: AgentTaskPersisting {
+    func save(
+        tasks: [AgentTask],
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult {
+        if let authorization {
+            switch authorization.publishForTesting(operation: { true }) {
+            case .published:
+                break
+            case .failed:
+                return .rejected(.ioFailure)
+            case .superseded:
+                return .rejected(.superseded)
+            }
+        }
+        return .saved(taskCount: tasks.count)
+    }
+
+    func load(
+        project: AgentTaskProjectIdentity
+    ) async -> AgentTaskMetadataLoadResult {
+        AgentTaskMetadataLoadResult(status: .missing, tasks: [])
+    }
+}
+#endif
 
 /// App-wide snapshot of the exact user-task executions covered by one Quit
 /// decision, keyed by their owning ProjectManager identity.
@@ -123,14 +154,14 @@ final class ProjectRegistry: LSPSettingsObserver {
         lspSettings: LSPSettings = .shared,
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,
-        agentTasks: AgentTaskRegistry = AgentTaskRegistry(),
+        agentTasks: AgentTaskRegistry? = nil,
         agentRecoveryInspector: AgentTaskRecoveryInspector = AgentTaskRecoveryInspector(),
         clearRecentProjects: Bool = CommandLine.arguments.contains(
             "--clear-recent-projects"
         )
     ) {
         self.lspSettings = lspSettings
-        self.agentTasks = agentTasks
+        self.agentTasks = agentTasks ?? Self.makeDefaultAgentTaskRegistry()
         self.defaults = defaults
         self.fileManager = fileManager
         self.agentRecoveryInspector = agentRecoveryInspector
@@ -142,16 +173,29 @@ final class ProjectRegistry: LSPSettingsObserver {
         if ProcessInfo.processInfo.arguments.contains(
             "--ui-test-agent-inbox-marketing"
         ) {
-            agentTasks.seedMarketingInboxForUITesting()
+            self.agentTasks.seedMarketingInboxForUITesting()
         }
         #endif
         lspSettings.addObserver(self)
         // Keeps the toolbar attention badge current (#1337). The token is not
         // retained: this registry owns `agentTasks`, so the observer cannot
         // outlive its target, and the closure holds `self` weakly.
-        _ = agentTasks.addTaskChangeObserver { [weak self] _, tasks in
+        _ = self.agentTasks.addTaskChangeObserver { [weak self] _, tasks in
             self?.recomputeAgentInboxAttentionCounts(tasks: tasks)
         }
+    }
+
+    private static func makeDefaultAgentTaskRegistry() -> AgentTaskRegistry {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--reset-state"),
+           arguments.contains("--ui-test-live-agent") {
+            return AgentTaskRegistry(
+                persistence: LiveAgentUITestTaskPersistence()
+            )
+        }
+        #endif
+        return AgentTaskRegistry()
     }
 
     /// Returns the ProjectManager for a given project URL, creating one if needed.
@@ -368,6 +412,81 @@ final class ProjectRegistry: LSPSettingsObserver {
             )
         }
     }
+
+    /// Gives the Open Folder lifecycle XCUITest a deterministic live-agent
+    /// transition after the project window has installed its native delegate.
+    /// The pane runs a deterministic inert child rather than the user's shell;
+    /// agent evidence is synthetic and `ps` polling remains disabled.
+    /// The fixture exists only in Debug test hosts and only behind an explicit
+    /// launch argument (#1407).
+    func seedLiveAgentUITestFixture(
+        afterWindowBindingFor projectManager: ProjectManager
+    ) async {
+        guard ProcessInfo.processInfo.arguments.contains(
+            "--ui-test-live-agent"
+        ) else { return }
+        guard await projectManager.awaitDialogOwnerWindow() != nil else {
+            guard !Task.isCancelled else { return }
+            assertionFailure(
+                "Live-agent UI fixture requires a bound project window"
+            )
+            return
+        }
+        guard let rootURL = projectManager.rootURL,
+              let project = agentTaskProjectsByRoot[canonicalProjectURL(rootURL)] else {
+            assertionFailure(
+                "Live-agent UI fixture requires a registered project"
+            )
+            return
+        }
+        guard !projectManager.terminal.allTerminalTabs.contains(where: {
+            $0.agentSession?.currentTask == Self.liveAgentUITestTask
+        }) else { return }
+
+        let tab: TerminalTab
+        if let existing = projectManager.terminal.allTerminalTabs.first {
+            tab = existing
+        } else {
+            projectManager.paneManager.createTerminalPaneAtBottom(
+                workingDirectory: rootURL,
+                initialProcess: TerminalInitialProcess(
+                    executablePath: "/bin/cat",
+                    arguments: []
+                )
+            )
+            guard let created = projectManager.terminal.allTerminalTabs.first else {
+                assertionFailure("Live-agent UI fixture requires a terminal tab")
+                return
+            }
+            tab = created
+        }
+        let startedAt = Date()
+        let session = AgentSession(
+            agentType: .codex,
+            state: .executing,
+            startedAt: startedAt,
+            currentTask: Self.liveAgentUITestTask
+        )
+        _ = session.bindProcessEvidence(AgentProcessEvidence(
+            processIdentifier: 14_007,
+            processGeneration: 1,
+            startIdentifier: "ui-live-agent-1407",
+            observedStartedAt: startedAt,
+            startIsAuthoritative: true
+        ))
+        tab.agentSession = session
+        // Exercise the same durable registry mutation and project-window
+        // observation invalidation as a genuinely detected active agent.
+        projectManager.terminal.bridgeAgentSession(
+            session,
+            replacing: nil,
+            in: tab
+        )
+        assert(agentTasks.tasks.contains(where: { $0.project == project }))
+    }
+
+    private static let liveAgentUITestTask =
+        "Verify Open Folder while an agent is active"
     #endif
 
     /// Opens a project via folder picker. Returns the project URL if opened.
@@ -413,6 +532,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             waitForNextAttempt: waitForNextAttempt,
             isEligible: isEligible
         ) != nil else {
+            Logger.app.error("Open Folder aborted: no eligible project dialog owner after bounded recovery (#1407)")
             return nil
         }
         let context = DialogPresenter.forProject(projectManager)
