@@ -18,7 +18,10 @@ struct TerminalSettingsViewSnapshotTests {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
 
-        let shell = ShellSettings(defaults: defaults)
+        let shell = ShellSettings(
+            defaults: defaults,
+            defaultShellPath: "/bin/bash"
+        )
         shell.shellPath = "/bin/zsh"
         shell.shellArgs = ["--login"]
 
