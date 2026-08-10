@@ -190,6 +190,38 @@ struct WindowLifecycleTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    @Test func quitFailurePresentationRetriesAreBounded() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+
+        let registry = makeRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        project.primaryTabManager.openTab(url: file)
+        updateContent("// dirty", in: project)
+
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var failureAttempts = 0
+
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                if template == .applicationQuitFailure {
+                    failureAttempts += 1
+                    return .abort
+                }
+                return .alertFirstButtonReturn
+            },
+            saveAll: { _, _ in false },
+            terminationDeadlineOverride: .now() + 120
+        )
+
+        #expect(!result)
+        #expect(failureAttempts == 3)
+        #expect(project.hasUnsavedChanges)
+        await project.workspace.waitForLoadingComplete()
+    }
+
     @Test func saveAsDeliberationDoesNotConsumeMachineDeadline() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
@@ -549,7 +581,7 @@ struct WindowLifecycleTests {
         #expect(presentedOwners[1] === newWindow)
     }
 
-    @Test func quitFailureRetriesPastFourLostOwnersUntilAcknowledged() async {
+    @Test func quitFailureStopsAfterBoundedLostOwners() async {
         let delegate = AppDelegate()
         delegate.registry = makeRegistry()
         let owner = NSWindow()
@@ -561,16 +593,14 @@ struct WindowLifecycleTests {
             presentAlert: { template, _, _, _ in
                 #expect(template == .applicationQuitFailure)
                 presentationCount += 1
-                return presentationCount <= 4
-                    ? .abort
-                    : .alertFirstButtonReturn
+                return .abort
             },
             terminationFailureContext: { context },
             terminationDeadlineOverride: .now()
         )
 
         #expect(!result)
-        #expect(presentationCount == 5)
+        #expect(presentationCount == 3)
     }
 
     @Test func saveAsUsesReplacementProjectOwnerAfterReview() async throws {
