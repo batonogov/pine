@@ -581,7 +581,7 @@ struct WindowLifecycleTests {
         #expect(presentedOwners[1] === newWindow)
     }
 
-    @Test func quitFailureRetriesPastFourLostOwnersUntilAcknowledged() async {
+    @Test func quitFailureStopsAfterBoundedLostOwners() async {
         let delegate = AppDelegate()
         delegate.registry = makeRegistry()
         let owner = NSWindow()
@@ -593,16 +593,14 @@ struct WindowLifecycleTests {
             presentAlert: { template, _, _, _ in
                 #expect(template == .applicationQuitFailure)
                 presentationCount += 1
-                return presentationCount <= 4
-                    ? .abort
-                    : .alertFirstButtonReturn
+                return .abort
             },
             terminationFailureContext: { context },
             terminationDeadlineOverride: .now()
         )
 
         #expect(!result)
-        #expect(presentationCount == 5)
+        #expect(presentationCount == 3)
     }
 
     @Test func saveAsUsesReplacementProjectOwnerAfterReview() async throws {
