@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.2](https://github.com/batonogov/pine/compare/v2.2.1...v2.2.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* keep terminal work alive on window close ([#1412](https://github.com/batonogov/pine/issues/1412)) ([057b328](https://github.com/batonogov/pine/commit/057b328c2c9b07ed06385d53260efa56569f57ae))
+* recover Open Folder ownership with active agents ([#1410](https://github.com/batonogov/pine/issues/1410)) ([60b9b83](https://github.com/batonogov/pine/commit/60b9b8385b6806160b12552a2d661e824a14a49f))
+
 ## [2.2.1](https://github.com/batonogov/pine/compare/v2.2.0...v2.2.1) (2026-08-10)
 
 
