@@ -355,6 +355,15 @@ enum Strings {
     // MARK: - Terminal UI
 
     static let terminalLabel: LocalizedStringKey = "terminal.label"
+
+    static func terminalLabelText(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "terminal.label",
+            fallback: "Terminal",
+            locale: locale
+        )
+    }
+
     static let newTerminal: LocalizedStringKey = "terminal.new"
     static let hideTerminal: LocalizedStringKey = "terminal.hide"
     static let restoreTerminal: LocalizedStringKey = "terminal.restore"

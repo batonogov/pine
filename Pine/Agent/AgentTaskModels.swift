@@ -71,6 +71,29 @@ nonisolated struct AgentTaskRoute: Codable, Equatable, Sendable {
     }
 }
 
+/// Privacy-safe presentation metadata captured from Pine-owned UI state.
+///
+/// This value is deliberately separate from ``AgentTaskRoute``: it is never
+/// process, claim, navigation, or lifecycle authority. Production callers may
+/// supply only the terminal's immutable `stableLabel`, never its dynamic OSC
+/// title, working directory, command line, prompt, or output.
+nonisolated struct AgentTaskPresentationContext: Codable, Equatable, Sendable {
+    static let maximumTerminalLabelBytes = 256
+
+    let terminalLabel: String
+
+    init?(terminalStableLabel: String) {
+        guard !terminalStableLabel.isEmpty,
+              terminalStableLabel.utf8.count <= Self.maximumTerminalLabelBytes,
+              !terminalStableLabel.contains("\0"),
+              !terminalStableLabel.contains("\n"),
+              !terminalStableLabel.contains("\r") else {
+            return nil
+        }
+        terminalLabel = terminalStableLabel
+    }
+}
+
 /// The source that first established durable task intent.
 nonisolated enum AgentTaskOrigin: String, Codable, Sendable {
     /// A user launched an agent manually and Pine discovered its process.
@@ -331,6 +354,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     let id: UUID
     let project: AgentTaskProjectIdentity
     var route: AgentTaskRoute
+    var presentationContext: AgentTaskPresentationContext?
     let descriptor: AgentDescriptor
     let origin: AgentTaskOrigin
     var lifecycle: AgentTaskLifecycle
@@ -349,6 +373,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case id
         case project
         case route
+        case presentationContext
         case descriptor
         case origin
         case lifecycle
@@ -375,6 +400,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         id = UUID()
         project = context.project
         route = context.route
+        presentationContext = context.presentationContext
         self.descriptor = descriptor
         origin = context.origin
         lifecycle = .active
@@ -396,17 +422,20 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
 nonisolated struct AgentTaskBridgeContext: Sendable {
     let project: AgentTaskProjectIdentity
     let route: AgentTaskRoute
+    let presentationContext: AgentTaskPresentationContext?
     let origin: AgentTaskOrigin
     let observedAt: Date
 
     init(
         project: AgentTaskProjectIdentity,
         route: AgentTaskRoute,
+        presentationContext: AgentTaskPresentationContext? = nil,
         origin: AgentTaskOrigin,
         observedAt: Date = Date()
     ) {
         self.project = project
         self.route = route
+        self.presentationContext = presentationContext
         self.origin = origin
         self.observedAt = observedAt
     }

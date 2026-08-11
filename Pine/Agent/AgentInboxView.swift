@@ -251,6 +251,8 @@ struct AgentInboxView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             HStack(spacing: 5) {
+                Image(systemName: "terminal")
+                Text(verbatim: row.terminalLabel)
                 Image(systemName: "folder")
                 Text(verbatim: row.projectName)
                 if let worktreeName = row.worktreeName {
@@ -405,6 +407,7 @@ struct AgentInboxView: View {
         }
         fields.append(row.agentName)
         fields.append(statusText(for: row, locale: locale))
+        fields.append(row.terminalLabel)
         fields.append(row.projectName)
         if let worktreeName = row.worktreeName {
             fields.append(worktreeName)

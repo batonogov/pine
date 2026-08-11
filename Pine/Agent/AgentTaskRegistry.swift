@@ -299,6 +299,9 @@ final class AgentTaskRegistry {
                     ? .available
                     : .missing
             ),
+            presentationContext: AgentTaskPresentationContext(
+                terminalStableLabel: Strings.terminalNumberedName(fixture.seed)
+            ),
             origin: .pineLaunched,
             observedAt: startedAt
         )
@@ -497,7 +500,11 @@ final class AgentTaskRegistry {
                 context: context,
                 taskID: existingTaskID
             ) else { return }
-            updateMappedSession(session, route: context.route)
+            updateMappedSession(
+                session,
+                route: context.route,
+                presentationContext: context.presentationContext
+            )
             if session.liveness == .terminated,
                let task = task(for: existingTaskID) {
                 removeLiveOwnership(
@@ -520,7 +527,11 @@ final class AgentTaskRegistry {
         if let previous, previous.id != session.id,
            let previousTaskID = taskIDByRunID[previous.id],
            taskIDByTerminal[key] == previousTaskID {
-            updateMappedSession(previous, route: nil)
+            updateMappedSession(
+                previous,
+                route: nil,
+                presentationContext: nil
+            )
             detachRun(sessionID: previous.id, at: context.observedAt)
         }
 
@@ -555,6 +566,7 @@ final class AgentTaskRegistry {
         let discoveryContext = AgentTaskBridgeContext(
             project: context.project,
             route: context.route,
+            presentationContext: context.presentationContext,
             origin: .discoveredInTerminal,
             observedAt: context.observedAt
         )
@@ -578,7 +590,11 @@ final class AgentTaskRegistry {
         var changedProjects = Set<AgentTaskProjectIdentity>()
         for session in sessions {
             guard let taskID = taskIDByRunID[session.id],
-                  updateMappedSession(session, route: nil),
+                  updateMappedSession(
+                    session,
+                    route: nil,
+                    presentationContext: nil
+                  ),
                   let task = task(for: taskID) else {
                 continue
             }
@@ -1440,6 +1456,8 @@ final class AgentTaskRegistry {
             lifecycleAccuracy: session.lifecycleAccuracy
         ))
         task.route = context.route
+        task.presentationContext = context.presentationContext
+            ?? task.presentationContext
         task.runs.append(run)
         task.launchInterruption = nil
         task.lifecycle = liveness == .terminated ? .paused : .active
@@ -1462,7 +1480,8 @@ final class AgentTaskRegistry {
     @discardableResult
     private func updateMappedSession(
         _ session: AgentSession,
-        route: AgentTaskRoute?
+        route: AgentTaskRoute?,
+        presentationContext: AgentTaskPresentationContext?
     ) -> Bool {
         guard let taskIndex = taskIndex(forRunID: session.id),
               let runIndex = tasks[taskIndex].runs.firstIndex(
@@ -1475,12 +1494,23 @@ final class AgentTaskRegistry {
         let nextState = AgentRunState(session.state)
         let nextLiveness = AgentRunLiveness(session.liveness)
         let nextObservedAt = max(session.lastObservedAt, run.startedAt)
-        let changed = run.state != nextState
+        let lifecycleOrRouteChanged = run.state != nextState
             || run.lifecycleAccuracy != session.lifecycleAccuracy
             || run.liveness != nextLiveness
             || run.lastObservedAt != nextObservedAt
             || route.map({ $0 != tasks[taskIndex].route }) == true
-        guard changed else { return false }
+        let shouldBackfillPresentation =
+            tasks[taskIndex].presentationContext == nil
+            && presentationContext != nil
+        if shouldBackfillPresentation {
+            tasks[taskIndex].presentationContext = presentationContext
+        }
+        // A presentation-only backfill must not manufacture lifecycle or
+        // chronology changes. The caller still marks the exact project dirty
+        // so this additive metadata becomes durable.
+        guard lifecycleOrRouteChanged else {
+            return shouldBackfillPresentation
+        }
 
         run.state = nextState
         run.lifecycleAccuracy = session.lifecycleAccuracy

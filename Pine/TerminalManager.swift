@@ -381,6 +381,9 @@ final class TerminalManager {
                 terminalID: tab.id,
                 availability: agentTaskWindowOpen ? .available : .background
             ),
+            presentationContext: AgentTaskPresentationContext(
+                terminalStableLabel: tab.stableLabel
+            ),
             origin: .discoveredInTerminal
         )
     }
@@ -401,6 +404,7 @@ final class TerminalManager {
         let context = AgentTaskBridgeContext(
             project: base.project,
             route: base.route,
+            presentationContext: base.presentationContext,
             origin: ownedReservation == nil
                 ? .discoveredInTerminal
                 : .pineLaunched,
@@ -556,6 +560,7 @@ final class TerminalManager {
         let context = AgentTaskBridgeContext(
             project: base.project,
             route: base.route,
+            presentationContext: base.presentationContext,
             origin: .pineLaunched,
             observedAt: boundary
         )
@@ -761,6 +766,7 @@ final class TerminalManager {
         let context = AgentTaskBridgeContext(
             project: base.project,
             route: base.route,
+            presentationContext: base.presentationContext,
             origin: .pineLaunched,
             observedAt: capturedAt
         )
