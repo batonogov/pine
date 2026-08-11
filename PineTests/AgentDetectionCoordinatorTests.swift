@@ -437,6 +437,457 @@ struct AgentDetectionCoordinatorTests {
         #expect(tab.agentSession === session)
     }
 
+    @Test func unavailablePreciseStartPreservesDurableIdentityAndEvents()
+        throws {
+        let taskRegistry = AgentTaskRegistry()
+        let project = configuredProject(
+            path: "/tmp/pine-precise-loss-durable",
+            registry: taskRegistry
+        )
+        let pane = project.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let tab = try #require(
+            project.paneManager.terminalState(for: pane)?.activeTab
+        )
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let agent = process(
+            pid: 505,
+            parent: 400,
+            group: 505,
+            command: "claude",
+            startedAt: 505
+        )
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+        let session = try #require(tab.agentSession)
+        let evidence = try #require(session.processEvidence)
+        let taskID = try #require(
+            taskRegistry.taskID(forSessionID: session.id)
+        )
+        let initialTasks = taskRegistry.tasks
+        let initialTask = try #require(taskRegistry.task(for: taskID))
+        let runID = try #require(initialTask.runs.first?.id)
+
+        coordinator.applySnapshotForTesting(processes: [
+            replacing(agent, preciseStartedAt: nil, cpuTime: 1),
+        ])
+
+        let unavailableTask = try #require(taskRegistry.task(for: taskID))
+        #expect(project.terminal.agentDetector.session(forPID: 505) === session)
+        #expect(session.processEvidence == evidence)
+        #expect(project.terminal.agentDetector.detectedSessions == [session])
+        #expect(tab.agentSession == nil)
+        #expect(taskRegistry.tasks.count == 1)
+        #expect(unavailableTask.runs.map(\.id) == [runID])
+        #expect(unavailableTask.runs.first?.liveness == .live)
+        #expect(unavailableTask.runs.first?.endedAt == nil)
+        #expect(unavailableTask.lifecycle == .active)
+        #expect(unavailableTask.attention == initialTask.attention)
+        #expect(unavailableTask.isUnread == initialTask.isUnread)
+        #expect(AgentNotificationTransitionResolver.events(
+            from: initialTasks,
+            to: taskRegistry.tasks,
+            accuracy: { _ in .processTerminationOnly }
+        ).isEmpty)
+
+        let unavailableTasks = taskRegistry.tasks
+        coordinator.applySnapshotForTesting(processes: [
+            replacing(agent, preciseStartedAt: evidence.observedStartedAt, cpuTime: 2),
+        ])
+
+        let confirmedTask = try #require(taskRegistry.task(for: taskID))
+        #expect(tab.agentSession === session)
+        #expect(session.processEvidence == evidence)
+        #expect(taskRegistry.tasks.count == 1)
+        #expect(confirmedTask.runs.map(\.id) == [runID])
+        #expect(confirmedTask.runs.first?.liveness == .live)
+        #expect(confirmedTask.runs.first?.endedAt == nil)
+        #expect(confirmedTask.isUnread == initialTask.isUnread)
+        #expect(AgentNotificationTransitionResolver.events(
+            from: unavailableTasks,
+            to: taskRegistry.tasks,
+            accuracy: { _ in .processTerminationOnly }
+        ).isEmpty)
+    }
+
+    @Test func preciseLossIsIsolatedAcrossAgentsAndProjects() throws {
+        let taskRegistry = AgentTaskRegistry()
+        let firstProject = configuredProject(
+            path: "/tmp/pine-precise-loss-project-a",
+            registry: taskRegistry
+        )
+        let secondProject = configuredProject(
+            path: "/tmp/pine-precise-loss-project-b",
+            registry: taskRegistry
+        )
+        let firstPane = firstProject.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let firstState = try #require(
+            firstProject.paneManager.terminalState(for: firstPane)
+        )
+        let affectedTab = try #require(firstState.activeTab)
+        let siblingTab = firstState.addTab(workingDirectory: nil)
+        let secondPane = secondProject.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let otherProjectTab = try #require(
+            secondProject.paneManager.terminalState(for: secondPane)?.activeTab
+        )
+        let affected = process(
+            pid: 506,
+            parent: 400,
+            group: 506,
+            command: "claude",
+            startedAt: 506
+        )
+        let sibling = process(
+            pid: 507,
+            parent: 400,
+            group: 507,
+            command: "codex",
+            startedAt: 507
+        )
+        let otherProjectAgent = process(
+            pid: 508,
+            parent: 400,
+            group: 508,
+            command: "pi",
+            startedAt: 508
+        )
+        let firstCoordinator = AgentDetectionCoordinator(
+            detector: firstProject.terminal.agentDetector,
+            terminalManager: firstProject.terminal
+        )
+        let secondCoordinator = AgentDetectionCoordinator(
+            detector: secondProject.terminal.agentDetector,
+            terminalManager: secondProject.terminal
+        )
+
+        setLiveAgent(affected, on: affectedTab)
+        setForeground(affected, on: affectedTab)
+        setLiveAgent(sibling, on: siblingTab)
+        setForeground(sibling, on: siblingTab)
+        setLiveAgent(otherProjectAgent, on: otherProjectTab)
+        setForeground(otherProjectAgent, on: otherProjectTab)
+        firstCoordinator.applySnapshotForTesting(processes: [affected, sibling])
+        secondCoordinator.applySnapshotForTesting(processes: [otherProjectAgent])
+
+        let affectedSession = try #require(affectedTab.agentSession)
+        let siblingSession = try #require(siblingTab.agentSession)
+        let otherProjectSession = try #require(otherProjectTab.agentSession)
+        let affectedTaskID = try #require(
+            taskRegistry.taskID(forSessionID: affectedSession.id)
+        )
+        let siblingTaskID = try #require(
+            taskRegistry.taskID(forSessionID: siblingSession.id)
+        )
+        let otherProjectTaskID = try #require(
+            taskRegistry.taskID(forSessionID: otherProjectSession.id)
+        )
+        let otherProjectTask = try #require(
+            taskRegistry.task(for: otherProjectTaskID)
+        )
+
+        firstCoordinator.applySnapshotForTesting(processes: [
+            replacing(affected, preciseStartedAt: nil, cpuTime: 1),
+            replacing(
+                sibling,
+                preciseStartedAt: sibling.preciseStartedAt,
+                cpuTime: 1
+            ),
+        ])
+
+        #expect(affectedTab.agentSession == nil)
+        #expect(siblingTab.agentSession === siblingSession)
+        #expect(otherProjectTab.agentSession === otherProjectSession)
+        #expect(
+            firstProject.terminal.agentDetector.session(forPID: affected.pid)
+                === affectedSession
+        )
+        #expect(taskRegistry.tasks.count == 3)
+        #expect(taskRegistry.task(for: affectedTaskID)?.runs.count == 1)
+        #expect(taskRegistry.task(for: siblingTaskID)?.runs.count == 1)
+        #expect(taskRegistry.task(for: otherProjectTaskID) == otherProjectTask)
+    }
+
+    @Test func pendingLaunchClaimSurvivesUnavailableAndWrongReplacement()
+        throws {
+        let taskRegistry = AgentTaskRegistry(claimTTL: .seconds(30))
+        let project = configuredProject(
+            path: "/tmp/pine-precise-loss-claim",
+            registry: taskRegistry
+        )
+        let pane = project.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let tab = try #require(
+            project.paneManager.terminalState(for: pane)?.activeTab
+        )
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let original = process(
+            pid: 509,
+            parent: 400,
+            group: 509,
+            command: "codex",
+            startedAt: 509,
+            startIdentifier: "same-coarse-second"
+        )
+
+        coordinator.applySnapshotForTesting(processes: [original])
+        let originalSession = try #require(
+            project.terminal.agentDetector.session(forPID: original.pid)
+        )
+        let originalGeneration = try #require(
+            originalSession.processEvidence?.processGeneration
+        )
+        guard case .reserved(let reservation) =
+                project.terminal.prepareAgentLaunch(
+                    in: tab,
+                    descriptor: AgentDescriptor(
+                        agentType: .codex,
+                        launchExecutable: "codex"
+                    ),
+                    title: nil,
+                    objective: nil
+                ) else {
+            Issue.record("terminal launch reservation was rejected")
+            return
+        }
+        #expect(taskRegistry.armLaunch(reservation))
+        setLiveAgent(original, on: tab)
+        setForeground(original, on: tab)
+
+        coordinator.applySnapshotForTesting(processes: [
+            replacing(original, preciseStartedAt: nil, cpuTime: 1),
+        ])
+
+        #expect(taskRegistry.isLaunchPending(reservation))
+        #expect(taskRegistry.task(for: reservation.taskID)?.runs.isEmpty == true)
+        #expect(tab.agentSession == nil)
+        #expect(
+            project.terminal.agentDetector.session(forPID: original.pid)
+                === originalSession
+        )
+        #expect(
+            originalSession.processEvidence?.processGeneration
+                == originalGeneration
+        )
+
+        coordinator.applySnapshotForTesting(processes: [
+            replacing(
+                original,
+                preciseStartedAt: original.preciseStartedAt,
+                cpuTime: 2
+            ),
+        ])
+
+        #expect(tab.agentSession === originalSession)
+        #expect(taskRegistry.isLaunchPending(reservation))
+        #expect(taskRegistry.task(for: reservation.taskID)?.runs.isEmpty == true)
+        #expect(
+            originalSession.processEvidence?.processGeneration
+                == originalGeneration
+        )
+
+        let wrongReplacement = replacing(
+            original,
+            preciseStartedAt: Date(timeIntervalSince1970: 509.25),
+            cpuTime: 3
+        )
+        setLiveAgent(wrongReplacement, on: tab)
+        setForeground(wrongReplacement, on: tab)
+        coordinator.applySnapshotForTesting(processes: [wrongReplacement])
+
+        let replacementSession = try #require(
+            project.terminal.agentDetector.session(forPID: original.pid)
+        )
+        #expect(replacementSession !== originalSession)
+        #expect(originalSession.state == .done)
+        #expect(originalSession.liveness == .terminated)
+        #expect(
+            replacementSession.processEvidence?.processGeneration
+                == originalGeneration + 1
+        )
+        #expect(taskRegistry.isLaunchPending(reservation))
+        #expect(taskRegistry.task(for: reservation.taskID)?.runs.isEmpty == true)
+        #expect(taskRegistry.taskID(forSessionID: replacementSession.id) == nil)
+        #expect(taskRegistry.tasks.count == 1)
+    }
+
+    @Test func pineOwnedRunSurvivesPreciseLossAndEndsOnceOnReplacement()
+        throws {
+        let taskRegistry = AgentTaskRegistry(claimTTL: .seconds(30))
+        let project = configuredProject(
+            path: "/tmp/pine-precise-loss-owned",
+            registry: taskRegistry
+        )
+        let pane = project.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let tab = try #require(
+            project.paneManager.terminalState(for: pane)?.activeTab
+        )
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        guard case .reserved(let reservation) =
+                project.terminal.prepareAgentLaunch(
+                    in: tab,
+                    descriptor: AgentDescriptor(
+                        agentType: .claudeCode,
+                        launchExecutable: "claude"
+                    ),
+                    title: nil,
+                    objective: nil
+                ) else {
+            Issue.record("terminal launch reservation was rejected")
+            return
+        }
+        #expect(taskRegistry.armLaunch(reservation))
+        let startedAt = Date().addingTimeInterval(1)
+        let agent = process(
+            pid: 511,
+            parent: 400,
+            group: 511,
+            command: "claude",
+            startedAt: startedAt.timeIntervalSince1970,
+            startIdentifier: "same-coarse-second"
+        )
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+
+        let session = try #require(tab.agentSession)
+        let evidence = try #require(session.processEvidence)
+        let originalTask = try #require(
+            taskRegistry.task(for: reservation.taskID)
+        )
+        let runID = try #require(originalTask.runs.first?.id)
+        #expect(!taskRegistry.isLaunchPending(reservation))
+        #expect(taskRegistry.taskID(forSessionID: session.id) == reservation.taskID)
+        #expect(originalTask.origin == .pineLaunched)
+        #expect(originalTask.lifecycle == .active)
+        #expect(originalTask.runs.count == 1)
+        #expect(originalTask.runs.first?.liveness == .live)
+
+        let beforeUnavailable = taskRegistry.tasks
+        coordinator.applySnapshotForTesting(processes: [
+            replacing(agent, preciseStartedAt: nil, cpuTime: 1),
+        ])
+
+        let unavailableTask = try #require(
+            taskRegistry.task(for: reservation.taskID)
+        )
+        #expect(tab.agentSession == nil)
+        #expect(project.terminal.agentDetector.session(forPID: 511) === session)
+        #expect(session.processEvidence == evidence)
+        #expect(taskRegistry.tasks.count == 1)
+        #expect(unavailableTask.lifecycle == .active)
+        #expect(unavailableTask.route.availability == .available)
+        #expect(unavailableTask.runs.map(\.id) == [runID])
+        #expect(unavailableTask.runs.first?.liveness == .live)
+        #expect(unavailableTask.runs.first?.endedAt == nil)
+        #expect(unavailableTask.isUnread == originalTask.isUnread)
+        #expect(AgentNotificationTransitionResolver.events(
+            from: beforeUnavailable,
+            to: taskRegistry.tasks,
+            accuracy: { _ in .processTerminationOnly }
+        ).isEmpty)
+
+        coordinator.applySnapshotForTesting(processes: [
+            replacing(
+                agent,
+                preciseStartedAt: evidence.observedStartedAt,
+                cpuTime: 2
+            ),
+        ])
+
+        let confirmedTask = try #require(
+            taskRegistry.task(for: reservation.taskID)
+        )
+        #expect(tab.agentSession === session)
+        #expect(session.processEvidence == evidence)
+        #expect(taskRegistry.tasks.count == 1)
+        #expect(confirmedTask.lifecycle == .active)
+        #expect(confirmedTask.runs.map(\.id) == [runID])
+        #expect(confirmedTask.runs.first?.liveness == .live)
+        #expect(confirmedTask.runs.first?.endedAt == nil)
+
+        let beforeReplacement = taskRegistry.tasks
+        let replacement = replacing(
+            agent,
+            preciseStartedAt: startedAt.addingTimeInterval(0.25),
+            cpuTime: 3
+        )
+        setLiveAgent(replacement, on: tab)
+        setForeground(replacement, on: tab)
+        coordinator.applySnapshotForTesting(processes: [replacement])
+
+        let replacementSession = try #require(tab.agentSession)
+        let endedTask = try #require(
+            taskRegistry.task(for: reservation.taskID)
+        )
+        let replacementTaskID = try #require(
+            taskRegistry.taskID(forSessionID: replacementSession.id)
+        )
+        let replacementTask = try #require(
+            taskRegistry.task(for: replacementTaskID)
+        )
+        let endedAt = try #require(endedTask.runs.first?.endedAt)
+        let events = AgentNotificationTransitionResolver.events(
+            from: beforeReplacement,
+            to: taskRegistry.tasks,
+            accuracy: { _ in .processTerminationOnly }
+        )
+        #expect(replacementSession !== session)
+        #expect(session.state == .done)
+        #expect(session.liveness == .terminated)
+        #expect(endedTask.lifecycle == .paused)
+        #expect(endedTask.runs.map(\.id) == [runID])
+        #expect(endedTask.runs.first?.liveness == .terminated)
+        #expect(replacementTaskID != reservation.taskID)
+        #expect(replacementTask.origin == .discoveredInTerminal)
+        #expect(replacementTask.lifecycle == .active)
+        #expect(replacementTask.runs.map(\.id) == [replacementSession.id])
+        #expect(taskRegistry.tasks.count == 2)
+        #expect(taskRegistry.tasks.filter {
+            $0.lifecycle == .active && $0.runs.last?.liveness == .live
+        }.count == 1)
+        #expect(events.map(\.kind) == [.processEnded])
+
+        coordinator.applySnapshotForTesting(processes: [
+            replacing(
+                replacement,
+                preciseStartedAt: replacement.preciseStartedAt,
+                cpuTime: 4
+            ),
+        ])
+
+        #expect(taskRegistry.tasks.count == 2)
+        #expect(
+            taskRegistry.task(for: reservation.taskID)?
+                .runs.first?.endedAt == endedAt
+        )
+        #expect(
+            taskRegistry.task(for: reservation.taskID)?.runs.count == 1
+        )
+        #expect(
+            taskRegistry.task(for: replacementTaskID)?.runs.count == 1
+        )
+    }
+
     @Test func unrelatedForegroundGroupDoesNotInheritAgentSession() throws {
         let project = ProjectManager()
         project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
@@ -1306,6 +1757,34 @@ nonisolated private func process(
         startIdentifier: startIdentifier ?? "generation-\(startedAt)",
         preciseStartedAt: Date(timeIntervalSince1970: startedAt)
     )
+}
+
+nonisolated private func replacing(
+    _ process: DetectedProcess,
+    preciseStartedAt: Date?,
+    cpuTime: Int?
+) -> DetectedProcess {
+    DetectedProcess(
+        pid: process.pid,
+        parentProcessID: process.parentProcessID,
+        processGroupID: process.processGroupID,
+        command: process.command,
+        cwd: process.cwd,
+        cpuTime: cpuTime,
+        startIdentifier: process.startIdentifier,
+        preciseStartedAt: preciseStartedAt
+    )
+}
+
+@MainActor private func configuredProject(
+    path: String,
+    registry: AgentTaskRegistry
+) -> ProjectManager {
+    let project = ProjectManager(agentTaskRegistry: registry)
+    project.terminal.configureAgentTaskProject(
+        URL(fileURLWithPath: path)
+    )
+    return project
 }
 
 nonisolated private func completePsOutput(

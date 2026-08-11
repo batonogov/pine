@@ -508,7 +508,8 @@ struct AgentDetectorTests {
         #expect(fallback.processEvidence?.startIsAuthoritative == false)
     }
 
-    @Test func missingPreciseEvidenceCannotRefreshAuthoritativeGeneration() throws {
+    @Test func transientMissingPreciseEvidencePreservesAuthoritativeGeneration()
+        throws {
         let detector = AgentDetector()
         let coarse = "Mon Jul 20 10:00:00 2026"
         let precise = Date(timeIntervalSince1970: 7_100.125)
@@ -522,8 +523,9 @@ struct AgentDetectorTests {
             ),
         ])
         let original = try #require(detector.session(forPID: 517))
+        let originalEvidence = try #require(original.processEvidence)
 
-        detector.processSnapshotDidUpdate([
+        let unavailableTermination = detector.processSnapshotDidUpdate([
             DetectedProcess(
                 pid: 517,
                 command: "codex",
@@ -533,10 +535,79 @@ struct AgentDetectorTests {
             ),
         ])
 
-        let replacement = try #require(detector.session(forPID: 517))
-        #expect(replacement.id != original.id)
+        #expect(unavailableTermination.isEmpty)
+        #expect(detector.session(forPID: 517) === original)
+        #expect(original.state != .done)
+        #expect(original.processEvidence == originalEvidence)
+        #expect(detector.detectedSessions == [original])
+
+        let confirmedTermination = detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 517,
+                command: "codex",
+                cpuTime: 5,
+                startIdentifier: coarse,
+                preciseStartedAt: precise
+            ),
+        ])
+
+        #expect(confirmedTermination.isEmpty)
+        #expect(detector.session(forPID: 517) === original)
+        #expect(original.processEvidence == originalEvidence)
+        #expect(detector.detectedSessions == [original])
+    }
+
+    @Test func contradictoryPreciseEvidenceAfterUnavailableReplacesGeneration()
+        throws {
+        let detector = AgentDetector()
+        let coarse = "Mon Jul 20 10:00:00 2026"
+        let precise = Date(timeIntervalSince1970: 7_200.125)
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 518,
+                command: "pi",
+                cpuTime: 3,
+                startIdentifier: coarse,
+                preciseStartedAt: precise
+            ),
+        ])
+        let original = try #require(detector.session(forPID: 518))
+        let originalGeneration = try #require(
+            original.processEvidence?.processGeneration
+        )
+        let unavailableTermination = detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 518,
+                command: "pi",
+                cpuTime: 4,
+                startIdentifier: coarse,
+                preciseStartedAt: nil
+            ),
+        ])
+
+        let replacementStart = precise.addingTimeInterval(0.25)
+        let contradictoryTermination = detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 518,
+                command: "pi",
+                cpuTime: 5,
+                startIdentifier: coarse,
+                preciseStartedAt: replacementStart
+            ),
+        ])
+
+        let replacement = try #require(detector.session(forPID: 518))
+        #expect(unavailableTermination.isEmpty)
+        #expect(contradictoryTermination == [original.id])
         #expect(original.state == .done)
-        #expect(replacement.processEvidence?.startIsAuthoritative == false)
+        #expect(original.liveness == .terminated)
+        #expect(replacement !== original)
+        #expect(
+            replacement.processEvidence?.processGeneration
+                == originalGeneration + 1
+        )
+        #expect(replacement.processEvidence?.observedStartedAt == replacementStart)
+        #expect(replacement.processEvidence?.startIsAuthoritative == true)
     }
 
     @Test func kernelArgumentsBindInterpreterScriptIdentity() {
