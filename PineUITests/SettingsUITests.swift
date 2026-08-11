@@ -506,7 +506,7 @@ final class SettingsUITests: PineUITestCase {
         maxSteps: Int = 12
     ) {
         for _ in 0..<maxSteps where element.isHittable == false {
-            scrollView.swipeUp(velocity: .slow)
+            scrollView.scroll(byDeltaX: 0, deltaY: -120)
         }
     }
 
