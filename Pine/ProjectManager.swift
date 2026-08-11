@@ -2094,8 +2094,8 @@ final class ProjectManager {
     /// routinely create brand-new files (` .untracked`), `git add` files
     /// (`.staged`), and modify already-staged files (`.mixed`); dropping any
     /// of those would make the panel miss the most common agent action.
-    private func correlateAgentActivity(rootURL: URL) {
-        let active = terminal.agentDetector.activeSessions
+    func correlateAgentActivity(rootURL: URL) {
+        let active = terminal.projectOwnedActiveAgentSessions
         guard !active.isEmpty else {
             attributedModifiedPaths = []
             agentActivitySeeded = false
@@ -2124,8 +2124,8 @@ final class ProjectManager {
 
     /// `true` for working-tree states that represent a change an agent could
     /// have made. `.deleted` is excluded (the file no longer exists to open).
-    /// `internal` so the attribution filter is unit-testable (the integration
-    /// through `correlateAgentActivity` reads main-actor state with no DI seam).
+    /// `internal` so the attribution filter is unit-testable alongside the
+    /// exact project-terminal ownership projection.
     static func isAttributableStatus(_ status: GitFileStatus) -> Bool {
         switch status {
         case .untracked, .modified, .staged, .added, .conflict, .mixed:
@@ -2150,11 +2150,9 @@ final class ProjectManager {
     /// synchronously per file on the main thread at termination would stall
     /// the UI (S2/S3 from the #1075 review).
     func finalizeAgentSessionsForHistory() {
-        let doneSessions = terminal.agentDetector.detectedSessions.filter {
-            $0.state == .done
-        }
-        guard !doneSessions.isEmpty else { return }
         guard let root = workspace.rootURL else { return }
+        let doneSessions = terminal.takeProjectOwnedCompletedAgentSessions()
+        guard !doneSessions.isEmpty else { return }
         for session in doneSessions {
             let relativePaths = session.filesModified.compactMap { relativePath(from: $0, root: root) }
             agentHistory.finalize(

@@ -762,6 +762,12 @@ nonisolated final class AgentDetectionCoordinator {
                     )
                 }
                 tab.agentSession = current
+                if let current {
+                    terminalManager.captureProjectAgentOwnership(
+                        of: current,
+                        in: tab
+                    )
+                }
             }
             terminalManager.refreshAgentTasks()
         }
