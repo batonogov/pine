@@ -113,9 +113,7 @@ final class SettingsUITests: PineUITestCase {
         let selectedTheme = app.descendants(matching: .any)[
             "terminalThemeRow_solarized"
         ].firstMatch
-        for _ in 0..<5 where selectedTheme.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(selectedTheme, in: scrollView)
         XCTAssertTrue(
             selectedTheme.waitForExistence(timeout: 5),
             "Terminal theme rows should be reachable"
@@ -500,6 +498,22 @@ final class SettingsUITests: PineUITestCase {
         in picker: XCUIElement
     ) -> XCUIElement {
         picker.radioButtons[label].firstMatch
+    }
+
+    private func scrollDownUntilHittable(
+        _ element: XCUIElement,
+        in scrollView: XCUIElement,
+        maxSteps: Int = 12
+    ) {
+        let start = scrollView.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)
+        )
+        let end = scrollView.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55)
+        )
+        for _ in 0..<maxSteps where element.isHittable == false {
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
     }
 
     /// XCTest bridges macOS checkbox values as Bool, NSNumber, or String
