@@ -86,6 +86,9 @@ final class SettingsUITests: PineUITestCase {
             "Fresh settings should select the thin vertical-bar default"
         )
         let initialBlinkState = checkboxState(cursorBlink)
+        // Blink mutation, persistence, notifications, and renderer propagation
+        // are covered by TerminalThemeSettingsTests and renderer tests. This
+        // UI smoke verifies that the control is reachable and exposes state.
         XCTAssertEqual(
             initialBlinkState,
             true,
@@ -105,27 +108,6 @@ final class SettingsUITests: PineUITestCase {
             checkboxState(cursorBlink),
             initialBlinkState,
             "Changing shape must preserve blinking"
-        )
-
-        cursorBlink.click()
-        let blinkDisabled = XCTNSPredicateExpectation(
-            predicate: NSPredicate { [weak self] object, _ in
-                guard let self,
-                      let checkbox = object as? XCUIElement else { return false }
-                return self.checkboxState(checkbox) == false
-            },
-            object: cursorBlink
-        )
-        wait(for: [blinkDisabled], timeout: 5)
-        XCTAssertEqual(
-            checkboxState(cursorBlink),
-            false,
-            "Blinking should be independently mutable"
-        )
-        XCTAssertEqual(
-            cursorPicker.value as? String,
-            "Block",
-            "Changing blinking must preserve the selected shape"
         )
 
         let selectedTheme = app.descendants(matching: .any)[
