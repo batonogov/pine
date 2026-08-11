@@ -505,14 +505,8 @@ final class SettingsUITests: PineUITestCase {
         in scrollView: XCUIElement,
         maxSteps: Int = 12
     ) {
-        let start = scrollView.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)
-        )
-        let end = scrollView.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55)
-        )
         for _ in 0..<maxSteps where element.isHittable == false {
-            start.press(forDuration: 0.05, thenDragTo: end)
+            scrollView.swipeUp(velocity: .slow)
         }
     }
 
