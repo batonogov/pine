@@ -24,6 +24,47 @@ nonisolated struct PineAgentSettledLaunchIdentity: Hashable, Sendable {
     let sessionID: UUID
 }
 
+/// Immutable process-generation witness carried by one exact terminal binding.
+///
+/// This mirrors every field compared by
+/// ``AgentProcessEvidence/identifiesSameProcess(as:)``. Activity and History
+/// ownership must not weaken that comparison to a PID, executable name, or
+/// detector-local generation alone.
+nonisolated private struct ProjectTerminalAgentProcessGeneration:
+    Hashable, Sendable {
+    let processIdentifier: Int32
+    let processGeneration: UInt64
+    let startIdentifier: String
+    let observedStartedAt: Date
+    let startIsAuthoritative: Bool
+
+    init?(_ evidence: AgentProcessEvidence?) {
+        guard let evidence,
+              evidence.startIsAuthoritative,
+              let processIdentifier = evidence.processIdentifier,
+              processIdentifier > 1,
+              evidence.processGeneration > 0,
+              let startIdentifier = evidence.startIdentifier,
+              !startIdentifier.isEmpty,
+              evidence.observedStartedAt.timeIntervalSinceReferenceDate
+                .isFinite else {
+            return nil
+        }
+        self.processIdentifier = processIdentifier
+        self.processGeneration = evidence.processGeneration
+        self.startIdentifier = startIdentifier
+        self.observedStartedAt = evidence.observedStartedAt
+        self.startIsAuthoritative = evidence.startIsAuthoritative
+    }
+}
+
+/// One Pine session bound to one authoritative process generation.
+nonisolated private struct ProjectTerminalAgentSessionGeneration:
+    Hashable, Sendable {
+    let sessionID: UUID
+    let process: ProjectTerminalAgentProcessGeneration
+}
+
 @MainActor
 struct PineAgentLaunchAuthorization {
     fileprivate let identities: Set<PineAgentLaunchIdentity>
@@ -73,6 +114,18 @@ struct PineAgentLaunchAuthorization {
 @MainActor
 @Observable
 final class TerminalManager {
+    private enum OwnedAgentHistoryRecord {
+        case owned(AgentSession)
+        case quarantined
+        case finalized
+    }
+
+    /// Mirrors `AgentHistoryStore`'s bounded public history. Entries are
+    /// retained only after an exact tab binding and become value-only
+    /// tombstones after conflict/finalization, so detached sessions are not
+    /// held forever.
+    private static let maxOwnedAgentHistoryGenerations = 500
+
     /// Reference to the pane manager for creating/finding terminal panes.
     weak var paneManager: PaneManager? {
         didSet { installPaneCallbacks() }
@@ -123,6 +176,14 @@ final class TerminalManager {
     private var settledAgentLaunches: [
         UUID: PineAgentSettledLaunchIdentity
     ] = [:]
+    @ObservationIgnored
+    private var ownedAgentHistoryLedger: [
+        ProjectTerminalAgentSessionGeneration: OwnedAgentHistoryRecord
+    ] = [:]
+    @ObservationIgnored
+    private var ownedAgentHistoryOrder: [
+        ProjectTerminalAgentSessionGeneration
+    ] = []
 
     #if DEBUG
     /// Exact route-update count used to prove a tab move publishes one durable
@@ -176,6 +237,10 @@ final class TerminalManager {
     /// Receives an already validated identity from `ProjectRegistry`; this
     /// method performs no filesystem work on MainActor.
     func configureAgentTaskProject(_ project: AgentTaskProjectIdentity) {
+        if let agentTaskProject, agentTaskProject != project {
+            ownedAgentHistoryLedger.removeAll()
+            ownedAgentHistoryOrder.removeAll()
+        }
         agentTaskProject = project
     }
 
@@ -959,6 +1024,162 @@ final class TerminalManager {
 
     var allTerminalTabs: [TerminalTab] {
         paneManager?.allTerminalTabs ?? []
+    }
+
+    /// Live Activity candidates for this exact project/worktree. The detector
+    /// intentionally remains machine-wide until #1421; ownership comes only
+    /// from authoritative sessions currently attached to this manager's pane
+    /// inventory and attested by an earlier coordinator capture. The ledger
+    /// cannot contribute a detached candidate; it only validates the current
+    /// object/identity binding.
+    var projectOwnedActiveAgentSessions: [AgentSession] {
+        guard agentTaskProject != nil else { return [] }
+        return exactCurrentAgentBindings()
+            .map(\.session)
+            .filter { $0.state != .done && $0.liveness == .live }
+    }
+
+    /// Captures one exact coordinator-established terminal binding for later
+    /// History finalization. Detached sessions cannot enter through this API:
+    /// the same tab object must still belong to this pane tree and point to the
+    /// same session object at capture time.
+    func captureProjectAgentOwnership(
+        of session: AgentSession,
+        in tab: TerminalTab
+    ) {
+        guard agentTaskProject != nil,
+              allTerminalTabs.contains(where: { $0 === tab }),
+              tab.agentSession === session,
+              session.liveness == .live,
+              session.state != .done,
+              let identity = projectTerminalIdentity(for: session) else {
+            return
+        }
+
+        let conflicts = ownedAgentHistoryLedger.keys.filter { existing in
+            (existing.sessionID == identity.sessionID
+                && existing.process != identity.process)
+                || (existing.process == identity.process
+                    && existing.sessionID != identity.sessionID)
+        }
+        if !conflicts.isEmpty {
+            for conflict in conflicts {
+                ownedAgentHistoryLedger[conflict] = .quarantined
+            }
+            ownedAgentHistoryLedger[identity] = .quarantined
+            touchOwnedAgentHistoryIdentity(identity)
+            trimOwnedAgentHistoryLedger()
+            return
+        }
+
+        switch ownedAgentHistoryLedger[identity] {
+        case .quarantined?, .finalized?:
+            break
+        case .owned(let existing)? where existing !== session:
+            ownedAgentHistoryLedger[identity] = .quarantined
+        case .owned?, nil:
+            ownedAgentHistoryLedger[identity] = .owned(session)
+        }
+        touchOwnedAgentHistoryIdentity(identity)
+        trimOwnedAgentHistoryLedger()
+    }
+
+    /// Atomically consumes exact, terminated owner generations. Retaining a
+    /// finalized tombstone prevents a repeated coordinator/application
+    /// callback from recreating the same History entry without keeping the
+    /// observable session alive.
+    func takeProjectOwnedCompletedAgentSessions() -> [AgentSession] {
+        var completed: [(ProjectTerminalAgentSessionGeneration, AgentSession)] = []
+        for identity in ownedAgentHistoryOrder {
+            guard case .owned(let session) = ownedAgentHistoryLedger[identity],
+                  session.state == .done,
+                  session.liveness == .terminated else {
+                continue
+            }
+            completed.append((identity, session))
+        }
+        for (identity, _) in completed {
+            ownedAgentHistoryLedger[identity] = .finalized
+        }
+        return completed.map(\.1)
+    }
+
+    /// Exact current bindings with conflicts removed fail-closed. Repeating
+    /// one session/generation in two tabs deduplicates; reusing a session ID
+    /// for another generation or a generation for another session excludes
+    /// every conflicting representation.
+    private func exactCurrentAgentBindings() -> [(
+        identity: ProjectTerminalAgentSessionGeneration,
+        session: AgentSession
+    )] {
+        var bindings: [
+            ProjectTerminalAgentSessionGeneration: AgentSession
+        ] = [:]
+        var conflicting = Set<ProjectTerminalAgentSessionGeneration>()
+        for tab in allTerminalTabs {
+            guard let session = tab.agentSession,
+                  let identity = projectTerminalIdentity(for: session) else {
+                continue
+            }
+            if let existing = bindings[identity], existing !== session {
+                conflicting.insert(identity)
+            }
+            bindings[identity] = session
+        }
+
+        let identities = Array(bindings.keys)
+        conflicting.formUnion(identities.filter { identity in
+            identities.contains { other in
+                other != identity
+                    && (other.sessionID == identity.sessionID
+                        || other.process == identity.process)
+            }
+        })
+        return identities
+            .filter { !conflicting.contains($0) }
+            .sorted { $0.sessionID.uuidString < $1.sessionID.uuidString }
+            .compactMap { identity in
+                guard let session = bindings[identity],
+                      case .owned(let captured) = ownedAgentHistoryLedger[
+                        identity
+                      ],
+                      captured === session else {
+                    return nil
+                }
+                return (identity, session)
+            }
+    }
+
+    private func projectTerminalIdentity(
+        for session: AgentSession
+    ) -> ProjectTerminalAgentSessionGeneration? {
+        guard let process = ProjectTerminalAgentProcessGeneration(
+            session.processEvidence
+        ) else {
+            return nil
+        }
+        return ProjectTerminalAgentSessionGeneration(
+            sessionID: session.id,
+            process: process
+        )
+    }
+
+    private func touchOwnedAgentHistoryIdentity(
+        _ identity: ProjectTerminalAgentSessionGeneration
+    ) {
+        ownedAgentHistoryOrder.removeAll { $0 == identity }
+        ownedAgentHistoryOrder.append(identity)
+    }
+
+    private func trimOwnedAgentHistoryLedger() {
+        let overflow = ownedAgentHistoryOrder.count
+            - Self.maxOwnedAgentHistoryGenerations
+        guard overflow > 0 else { return }
+        let evicted = ownedAgentHistoryOrder.prefix(overflow)
+        for identity in evicted {
+            ownedAgentHistoryLedger[identity] = nil
+        }
+        ownedAgentHistoryOrder.removeFirst(overflow)
     }
 
     var hasActiveProcesses: Bool {
