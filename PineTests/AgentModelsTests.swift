@@ -223,16 +223,19 @@ struct AgentModelsTests {
         let session = AgentSession(agentType: .claudeCode)
         #expect(session.state == .idle)
 
-        session.state = .thinking
+        session.recordLifecycleState(.thinking, accuracy: .processTerminationOnly)
         #expect(session.state == .thinking)
 
-        session.state = .executing
+        session.recordLifecycleState(.executing, accuracy: .processTerminationOnly)
         #expect(session.state == .executing)
 
-        session.state = .waitingInput
+        session.recordLifecycleState(
+            .waitingInput,
+            accuracy: .verifiedLifecycleTransitions
+        )
         #expect(session.state == .waitingInput)
 
-        session.state = .done
+        session.recordLifecycleState(.done, accuracy: .processTerminationOnly)
         #expect(session.state == .done)
     }
 
@@ -264,7 +267,7 @@ struct AgentModelsTests {
         let session = AgentSession(agentType: .claudeCode)
         let originalID = session.id
 
-        session.state = .executing
+        session.recordLifecycleState(.executing, accuracy: .processTerminationOnly)
         session.currentTask = "new task"
         session.filesModified.append(URL(fileURLWithPath: "/tmp/x.swift"))
 
@@ -283,6 +286,26 @@ struct AgentModelsTests {
         let a = AgentSession(agentType: .claudeCode)
         let b = AgentSession(agentType: .claudeCode)
         #expect(a != b)
+    }
+
+    @Test func terminalBadgeBoundsWaitingStateByCatalogAndEvidence() {
+        let session = AgentSession(
+            agentType: .codex,
+            state: .waitingInput,
+            lifecycleAccuracy: .verifiedLifecycleTransitions
+        )
+
+        #expect(AgentTabBadge.userFacingState(for: session) == .idle)
+
+        let verifiedPolicy = AgentLifecycleAccuracyPolicy { _ in
+            .verifiedLifecycleTransitions
+        }
+        #expect(
+            AgentTabBadge.userFacingState(
+                for: session,
+                accuracyPolicy: verifiedPolicy
+            ) == .waitingInput
+        )
     }
 }
 

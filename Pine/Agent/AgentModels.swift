@@ -203,6 +203,35 @@ enum AgentState: Equatable, Sendable {
         self == .waitingInput
     }
 
+    /// Returns the state Pine may honestly present at the supplied evidence
+    /// accuracy. An unverified prompt guess degrades to `.idle` (alive, exact
+    /// activity unknown) instead of claiming that the user is blocking work.
+    func userFacing(
+        stableIdentifier: String,
+        evidenceAccuracy: FirstPartyAgentNotificationAccuracy,
+        policy: AgentLifecycleAccuracyPolicy = .production
+    ) -> AgentState {
+        userFacing(
+            declaredAccuracy: policy.accuracy(for: stableIdentifier),
+            evidenceAccuracy: evidenceAccuracy
+        )
+    }
+
+    func userFacing(
+        declaredAccuracy: FirstPartyAgentNotificationAccuracy,
+        evidenceAccuracy: FirstPartyAgentNotificationAccuracy
+    ) -> AgentState {
+        let accuracy = AgentLifecycleAccuracyPolicy.boundedAccuracy(
+            declared: declaredAccuracy,
+            evidence: evidenceAccuracy
+        )
+        guard self == .waitingInput,
+              !accuracy.permitsUserFacingLifecycleTransitions else {
+            return self
+        }
+        return .idle
+    }
+
     /// SF Symbol name for per-tab / attention-list status glyphs, or `nil`
     /// when no glyph should be shown (idle). Active states share one ellipsis
     /// glyph (the per-agent color still distinguishes them via the dot);
@@ -232,7 +261,12 @@ final class AgentSession: Identifiable {
     let agentType: AgentType
 
     /// Current lifecycle state of the session.
-    var state: AgentState
+    private(set) var state: AgentState
+
+    /// Accuracy of the evidence that established `state`. Process snapshots
+    /// can prove presence/termination, but never a prompt; authenticated
+    /// structured integrations may opt into verified lifecycle transitions.
+    private(set) var lifecycleAccuracy: FirstPartyAgentNotificationAccuracy
 
     /// Freshness of Pine's evidence for the backing process. This property is
     /// the single source of truth consumed by terminal and status-bar UI.
@@ -271,6 +305,7 @@ final class AgentSession: Identifiable {
         id: UUID = UUID(),
         agentType: AgentType,
         state: AgentState = .idle,
+        lifecycleAccuracy: FirstPartyAgentNotificationAccuracy = .processTerminationOnly,
         startedAt: Date = Date(),
         liveness: AgentLiveness = .live,
         lastObservedAt: Date? = nil,
@@ -285,6 +320,7 @@ final class AgentSession: Identifiable {
         self.id = id
         self.agentType = agentType
         self.state = state
+        self.lifecycleAccuracy = lifecycleAccuracy
         self.startedAt = startedAt
         self.processEvidence = nil
         self.liveness = liveness
@@ -298,6 +334,17 @@ final class AgentSession: Identifiable {
         self.currentTask = currentTask
         self.filesModified = filesModified
         self.filesRead = filesRead
+    }
+
+    /// Atomically records a lifecycle transition and the accuracy of the
+    /// concrete evidence that produced it. Authenticated adapters can promote
+    /// an already process-discovered run without allowing state/trust drift.
+    func recordLifecycleState(
+        _ state: AgentState,
+        accuracy: FirstPartyAgentNotificationAccuracy
+    ) {
+        self.state = state
+        lifecycleAccuracy = accuracy
     }
 
     /// Binds process identity exactly once. Reusing an `AgentSession` object for

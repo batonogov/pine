@@ -29,8 +29,23 @@ struct AgentTabBadge: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
+    private var userFacingState: AgentState {
+        Self.userFacingState(for: session)
+    }
+
     private var isActive: Bool {
-        session.liveness == .live && session.state.isActive
+        session.liveness == .live && userFacingState.isActive
+    }
+
+    static func userFacingState(
+        for session: AgentSession,
+        accuracyPolicy: AgentLifecycleAccuracyPolicy = .production
+    ) -> AgentState {
+        session.state.userFacing(
+            stableIdentifier: session.agentType.stableIdentifier,
+            evidenceAccuracy: session.lifecycleAccuracy,
+            policy: accuracyPolicy
+        )
     }
 
     nonisolated static func shouldPulse(
@@ -47,14 +62,14 @@ struct AgentTabBadge: View {
                     .foregroundStyle(
                         session.liveness == .stale ? .orange : .secondary
                     )
-            } else if session.state == .waitingInput {
+            } else if userFacingState == .waitingInput {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(.orange)
             } else {
                 Circle()
                     .fill(Color(nsColor: session.agentType.color))
                     .frame(width: 7, height: 7)
-                    .opacity(session.state == .idle ? 0.6 : 1.0)
+                    .opacity(userFacingState == .idle ? 0.6 : 1.0)
                     .scaleEffect(
                         Self.shouldPulse(
                             isActive: isActive && pulse,
@@ -97,7 +112,7 @@ struct AgentTabBadge: View {
     }
 
     private var helpText: String {
-        let state = "\(session.agentType.displayName) — \(session.state.displayName)"
+        let state = "\(session.agentType.displayName) — \(userFacingState.displayName)"
         guard session.liveness != .live else { return state }
         return "\(state) — \(session.liveness.displayName)"
     }

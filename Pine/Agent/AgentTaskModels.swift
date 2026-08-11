@@ -241,6 +241,21 @@ nonisolated struct AgentTaskRunInput: Sendable {
     let terminalID: UUID
     let process: AgentProcessEvidence
     let status: AgentTaskRunStatus
+    let lifecycleAccuracy: FirstPartyAgentNotificationAccuracy
+
+    init(
+        id: UUID,
+        terminalID: UUID,
+        process: AgentProcessEvidence,
+        status: AgentTaskRunStatus,
+        lifecycleAccuracy: FirstPartyAgentNotificationAccuracy = .processTerminationOnly
+    ) {
+        self.id = id
+        self.terminalID = terminalID
+        self.process = process
+        self.status = status
+        self.lifecycleAccuracy = lifecycleAccuracy
+    }
 }
 
 nonisolated struct AgentTaskRunStatus: Sendable {
@@ -259,6 +274,7 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
     var lastObservedAt: Date
     var endedAt: Date?
     var vendorIdentity: AgentVendorSessionIdentity?
+    var lifecycleAccuracy: FirstPartyAgentNotificationAccuracy
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -270,6 +286,7 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
         case lastObservedAt
         case endedAt
         case vendorIdentity
+        case lifecycleAccuracy
     }
 
     init(_ input: AgentTaskRunInput) {
@@ -284,6 +301,7 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
             ? input.status.observedAt
             : nil
         vendorIdentity = nil
+        lifecycleAccuracy = input.lifecycleAccuracy
     }
 
     init(from decoder: Decoder) throws {
@@ -300,6 +318,10 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
             AgentVendorSessionIdentity.self,
             forKey: .vendorIdentity
         )
+        lifecycleAccuracy = try values.decodeIfPresent(
+            FirstPartyAgentNotificationAccuracy.self,
+            forKey: .lifecycleAccuracy
+        ) ?? .processTerminationOnly
     }
 }
 

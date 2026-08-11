@@ -2048,7 +2048,7 @@ final class ProjectManager {
               let firstTab = state.activeTab else {
             return
         }
-        firstTab.name = "Waiting agent"
+        firstTab.name = "Thinking agent"
         firstTab.agentSession = AgentSession(
             id: UUID(
                 uuid: (
@@ -2057,7 +2057,7 @@ final class ProjectManager {
                 )
             ),
             agentType: .claudeCode,
-            state: .waitingInput
+            state: .thinking
         )
 
         guard let secondTab = paneManager.addTerminalTab(

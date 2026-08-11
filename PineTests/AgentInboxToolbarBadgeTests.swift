@@ -82,7 +82,8 @@ struct AgentInboxToolbarBadgeTests {
                 state: state,
                 liveness: liveness,
                 observedAt: observedAt
-            )
+            ),
+            lifecycleAccuracy: .verifiedLifecycleTransitions
         ))]
         task.attention = attention
         task.isUnread = unread
@@ -98,6 +99,15 @@ struct AgentInboxToolbarBadgeTests {
         return UUID(uuidString: "00000000-0000-0000-0000-\(suffix)") ?? UUID()
     }
 
+    private func makeVerifiedRegistry() -> ProjectRegistry {
+        let policy = AgentLifecycleAccuracyPolicy { _ in
+            .verifiedLifecycleTransitions
+        }
+        return ProjectRegistry(
+            agentTasks: AgentTaskRegistry(accuracyPolicy: policy)
+        )
+    }
+
     // MARK: - Tests
 
     @Test("returns zero for a project the registry has never opened")
@@ -105,7 +115,7 @@ struct AgentInboxToolbarBadgeTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let registry = ProjectRegistry()
+        let registry = makeVerifiedRegistry()
         // No projectManager(for:) call — project is unknown to the registry.
         #expect(registry.agentInboxAttentionCount(for: tempDir) == 0)
     }
@@ -115,7 +125,7 @@ struct AgentInboxToolbarBadgeTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let registry = ProjectRegistry()
+        let registry = makeVerifiedRegistry()
         _ = registry.projectManager(for: tempDir)
 
         #expect(registry.agentInboxAttentionCount(for: tempDir) == 0)
@@ -126,7 +136,7 @@ struct AgentInboxToolbarBadgeTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let registry = ProjectRegistry()
+        let registry = makeVerifiedRegistry()
         _ = registry.projectManager(for: tempDir)
         let identity = self.identity(for: tempDir, in: registry)
 
@@ -151,13 +161,35 @@ struct AgentInboxToolbarBadgeTests {
         #expect(registry.agentInboxAttentionCount(for: tempDir) == 2)
     }
 
+    @Test("catalog ceiling suppresses a forged toolbar attention badge")
+    func catalogSuppressesForgedAttentionBadge() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let registry = ProjectRegistry()
+        _ = registry.projectManager(for: tempDir)
+        let identity = self.identity(for: tempDir, in: registry)
+        registry.agentTasks.setTasksForTesting([
+            makeTask(
+                seed: 99,
+                identity: identity,
+                state: .waitingInput,
+                liveness: .live,
+                attention: .waitingInput,
+                unread: true
+            ),
+        ])
+
+        #expect(registry.agentInboxAttentionCount(for: tempDir) == 0)
+    }
+
     @Test("scopes the count per project window")
     func scopesByProject() throws {
         let projectA = try makeTempDirectory()
         let projectB = try makeTempDirectory()
         defer { cleanup(projectA); cleanup(projectB) }
 
-        let registry = ProjectRegistry()
+        let registry = makeVerifiedRegistry()
         _ = registry.projectManager(for: projectA)
         _ = registry.projectManager(for: projectB)
         let identityA = self.identity(for: projectA, in: registry)
@@ -191,7 +223,7 @@ struct AgentInboxToolbarBadgeTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let registry = ProjectRegistry()
+        let registry = makeVerifiedRegistry()
         _ = registry.projectManager(for: tempDir)
         let identity = self.identity(for: tempDir, in: registry)
 
@@ -231,7 +263,7 @@ struct AgentInboxToolbarBadgeTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let registry = ProjectRegistry()
+        let registry = makeVerifiedRegistry()
         _ = registry.projectManager(for: tempDir)
         let identity = self.identity(for: tempDir, in: registry)
 
@@ -258,7 +290,7 @@ struct AgentInboxToolbarBadgeTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let registry = ProjectRegistry()
+        let registry = makeVerifiedRegistry()
         _ = registry.projectManager(for: tempDir)
         let identity = self.identity(for: tempDir, in: registry)
 

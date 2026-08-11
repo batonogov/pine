@@ -54,7 +54,7 @@ struct AgentAttentionOverlay: View {
         case .terminated: return 3
         case .live: break
         }
-        switch summary.state {
+        switch summary.userFacingState {
         case .waitingInput: return 0
         case .thinking, .executing: return 1
         case .done: return 3
@@ -70,7 +70,7 @@ struct AgentAttentionOverlay: View {
         case .terminated: return "xmark.circle.fill"
         case .live: break
         }
-        switch summary.state {
+        switch summary.userFacingState {
         case .waitingInput: return "exclamationmark.circle.fill"
         case .thinking, .executing: return "ellipsis.circle.fill"
         case .done: return "checkmark.circle.fill"
@@ -87,7 +87,7 @@ struct AgentAttentionOverlay: View {
         case .terminated: return .secondary
         case .live: break
         }
-        switch summary.state {
+        switch summary.userFacingState {
         case .waitingInput: return .orange
         case .done: return .green
         case .idle: return .secondary
@@ -210,7 +210,7 @@ struct AgentAttentionOverlay: View {
 
     private func detailText(for summary: AgentStatusSummary) -> String {
         summary.liveness == .live
-            ? summary.state.displayName
+            ? summary.userFacingState.displayName
             : summary.liveness.displayName
     }
 

@@ -110,7 +110,7 @@ struct AgentTaskRegistryTests {
 
         registry.bridge(session, replacing: nil, context: route)
         let original = try #require(registry.task(forSessionID: session.id))
-        session.state = .executing
+        session.recordLifecycleState(.executing, accuracy: .processTerminationOnly)
         registry.bridge(session, replacing: session, context: route)
         let updated = try #require(registry.task(forSessionID: session.id))
 
@@ -150,7 +150,7 @@ struct AgentTaskRegistryTests {
         registry.bridge(first, replacing: nil, context: route)
 
         first.applyLiveness(.terminated)
-        first.state = .done
+        first.recordLifecycleState(.done, accuracy: .processTerminationOnly)
         let replacement = makeSession(
             pid: 501,
             generation: 4,
@@ -199,7 +199,7 @@ struct AgentTaskRegistryTests {
             reservation: launch
         )
         original.applyLiveness(.terminated)
-        original.state = .done
+        original.recordLifecycleState(.done, accuracy: .processTerminationOnly)
         registry.refresh(sessions: [original])
 
         let taskID = try #require(
@@ -556,7 +556,7 @@ struct AgentTaskRegistryTests {
             session, replacing: nil, context: launchContext,
             reservation: claim
         )
-        session.state = .done
+        session.recordLifecycleState(.done, accuracy: .processTerminationOnly)
         registry.refresh(sessions: [session])
         #expect(
             registry.prepareResume(taskID: claim.taskID, context: launchContext)
@@ -671,18 +671,33 @@ struct AgentTaskRegistryTests {
 
     @Test("stale evidence clears attention without changing state")
     func staleClearsAttention() throws {
-        let registry = AgentTaskRegistry()
+        let verifiedPolicy = AgentLifecycleAccuracyPolicy { _ in
+            .verifiedLifecycleTransitions
+        }
+        let registry = AgentTaskRegistry(accuracyPolicy: verifiedPolicy)
         let identity = project("/tmp/pine-agent-stale")
         let session = makeSession(
             pid: 801,
             generation: 1,
-            state: .waitingInput
+            state: .executing
         )
         registry.bridge(
             session,
             replacing: nil,
             context: context(project: identity, routeSeed: 70)
         )
+        #expect(
+            registry.task(forSessionID: session.id)?.attention
+                == AgentTaskAttention.none
+        )
+
+        // A validated adapter may promote the already process-discovered run;
+        // state and evidence accuracy move atomically on the same identity.
+        session.recordLifecycleState(
+            .waitingInput,
+            accuracy: .verifiedLifecycleTransitions
+        )
+        registry.refresh(sessions: [session])
         var task = try #require(registry.task(forSessionID: session.id))
         #expect(task.attention == .waitingInput)
         #expect(task.isUnread)
@@ -693,6 +708,119 @@ struct AgentTaskRegistryTests {
         #expect(task.runs.last?.state == .waitingInput)
         #expect(task.runs.last?.liveness == .stale)
         #expect(task.attention == .none)
+    }
+
+    @Test("forged verified evidence cannot exceed the compatibility catalog")
+    func catalogBoundsForgedVerifiedEvidence() throws {
+        let registry = AgentTaskRegistry()
+        let session = makeSession(
+            pid: 802,
+            generation: 1,
+            agentType: .codex,
+            state: .waitingInput,
+            lifecycleAccuracy: .verifiedLifecycleTransitions
+        )
+        registry.bridge(
+            session,
+            replacing: nil,
+            context: context(
+                project: project("/tmp/pine-agent-forged-attention"),
+                routeSeed: 71
+            )
+        )
+
+        let task = try #require(registry.task(forSessionID: session.id))
+        #expect(task.runs.last?.state == .waitingInput)
+        #expect(task.attention == .none)
+        #expect(!task.isUnread)
+    }
+
+    @Test("generic agent stays uncertain despite forged verified evidence")
+    func genericAgentCannotClaimWaitingAttention() throws {
+        let registry = AgentTaskRegistry()
+        let session = makeSession(
+            pid: 804,
+            generation: 1,
+            agentType: .generic(name: "custom-agent"),
+            state: .waitingInput,
+            lifecycleAccuracy: .verifiedLifecycleTransitions
+        )
+        registry.bridge(
+            session,
+            replacing: nil,
+            context: context(
+                project: project("/tmp/pine-agent-generic-attention"),
+                routeSeed: 73
+            )
+        )
+
+        let task = try #require(registry.task(forSessionID: session.id))
+        #expect(task.attention == .none)
+        #expect(!task.isUnread)
+        #expect(
+            session.state.userFacing(
+                stableIdentifier: session.agentType.stableIdentifier,
+                evidenceAccuracy: session.lifecycleAccuracy
+            ) == .idle
+        )
+    }
+
+    @Test("pre-accuracy schema-v2 waiting history loads fail-closed")
+    func legacyWaitingHistoryRetainsTaskWithoutAttention() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let policy = AgentLifecycleAccuracyPolicy { _ in
+            .verifiedLifecycleTransitions
+        }
+        let source = AgentTaskRegistry(accuracyPolicy: policy)
+        let session = makeSession(
+            pid: 803,
+            generation: 1,
+            agentType: .codex,
+            state: .waitingInput,
+            lifecycleAccuracy: .verifiedLifecycleTransitions
+        )
+        source.bridge(
+            session,
+            replacing: nil,
+            context: context(project: identity, routeSeed: 72)
+        )
+        let task = try #require(source.task(forSessionID: session.id))
+        #expect(task.attention == .waitingInput)
+
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        #expect(
+            await store.save(tasks: [task], project: identity)
+                == .saved(taskCount: 1)
+        )
+        let fileURL = AgentTaskMetadataStore.metadataURL(
+            for: identity,
+            storageRoot: fixture.storage
+        )
+        var root = try #require(
+            JSONSerialization.jsonObject(
+                with: Data(contentsOf: fileURL)
+            ) as? [String: Any]
+        )
+        var tasks = try #require(root["tasks"] as? [[String: Any]])
+        var runs = try #require(tasks[0]["runs"] as? [[String: Any]])
+        runs[0].removeValue(forKey: "lifecycleAccuracy")
+        tasks[0]["runs"] = runs
+        root["tasks"] = tasks
+        try JSONSerialization.data(withJSONObject: root).write(to: fileURL)
+
+        let restored = AgentTaskRegistry(persistence: store)
+        restored.registerProject(identity)
+        #expect(await restored.flushPersistence() == .saved)
+        let loaded = try #require(restored.tasks.first)
+        #expect(loaded.id == task.id)
+        #expect(loaded.runs.first?.lifecycleAccuracy == .processTerminationOnly)
+        #expect(loaded.runs.first?.state == .waitingInput)
+        #expect(loaded.runs.first?.liveness == .stale)
+        #expect(loaded.attention == .none)
+        #expect(loaded.isUnread)
+        #expect(loaded.lifecycle == .paused)
     }
 
     @Test("route changes retain task identity")
@@ -747,7 +875,7 @@ struct AgentTaskRegistryTests {
             )
         )
         session.applyLiveness(.terminated)
-        session.state = .done
+        session.recordLifecycleState(.done, accuracy: .processTerminationOnly)
         history.finalize(
             session: session,
             summary: "legacy",
@@ -1779,7 +1907,7 @@ struct AgentTaskRegistryTests {
                 == firstPane.id
         )
         session.applyLiveness(.terminated)
-        session.state = .done
+        session.recordLifecycleState(.done, accuracy: .processTerminationOnly)
         let replacement = makeSession(pid: 1_112, generation: 2)
         manager.terminal.bridgeAgentSession(
             replacement,
@@ -1908,7 +2036,10 @@ struct AgentTaskRegistryTests {
         )
         for sequence in 2...4 {
             previous.applyLiveness(.terminated)
-            previous.state = .done
+            previous.recordLifecycleState(
+                .done,
+                accuracy: .processTerminationOnly
+            )
             registry.refresh(sessions: [previous])
             let nextStartedAt = Date(
                 timeIntervalSince1970: TimeInterval(sequence)
@@ -2734,8 +2865,8 @@ struct AgentTaskRegistryTests {
         #expect(descriptor["launchExecutable"] as? String == "claude")
         let run = try #require((task["runs"] as? [[String: Any]])?.first)
         #expect(Set(run.keys) == [
-            "id", "lastObservedAt", "liveness", "process", "startedAt",
-            "state", "terminalID", "vendorIdentity",
+            "id", "lastObservedAt", "lifecycleAccuracy", "liveness",
+            "process", "startedAt", "state", "terminalID", "vendorIdentity",
         ])
         let vendorIdentity = try #require(
             run["vendorIdentity"] as? [String: Any]
@@ -2891,7 +3022,7 @@ struct AgentTaskRegistryTests {
         await store.releaseFirstSave()
         await store.waitUntilFirstSaveReturned()
 
-        session.state = .thinking
+        session.recordLifecycleState(.thinking, accuracy: .processTerminationOnly)
         registry.refresh(sessions: [session])
         #expect(await registry.flushPersistence() == .saved)
         #expect(await store.retryUsedPublishedRevision())
@@ -3748,11 +3879,13 @@ struct AgentTaskRegistryTests {
         preciseStartedAt: Date = Date(timeIntervalSince1970: 0),
         startIsAuthoritative: Bool = true,
         agentType: AgentType = .claudeCode,
-        state: AgentState = .idle
+        state: AgentState = .idle,
+        lifecycleAccuracy: FirstPartyAgentNotificationAccuracy = .processTerminationOnly
     ) -> AgentSession {
         let session = AgentSession(
             agentType: agentType,
             state: state,
+            lifecycleAccuracy: lifecycleAccuracy,
             startedAt: Date(timeIntervalSince1970: TimeInterval(generation))
         )
         _ = session.bindProcessEvidence(

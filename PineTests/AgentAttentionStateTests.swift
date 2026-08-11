@@ -38,25 +38,28 @@ struct AgentAttentionStateTests {
         #expect(detector.detectedSessions[0].state == .executing)
     }
 
-    @Test("CPU time stalled → .waitingInput")
-    func cpuStalledIsWaitingInput() {
+    @Test("32 seconds of flat CPU stays honestly unknown")
+    func cpuStalledStaysUnknown() {
         let detector = AgentDetector()
         detector.processSnapshotDidUpdate([
             DetectedProcess(pid: 100, command: "codex", cpuTime: 12),
         ])
-        // CPU time unchanged across polls — agent is idle at a prompt. The
-        // detector now requires `waitingInputFlatPollThreshold` consecutive
-        // flat polls before downgrading (#1338 hysteresis), so drive that many.
-        for _ in 0..<AgentDetector.waitingInputFlatPollThreshold {
+        // Sixteen polls represent 32 seconds at the production two-second
+        // interval, without making the test wait in real time.
+        for _ in 0..<16 {
             detector.processSnapshotDidUpdate([
                 DetectedProcess(pid: 100, command: "codex", cpuTime: 12),
             ])
         }
-        #expect(detector.detectedSessions[0].state == .waitingInput)
+        #expect(detector.detectedSessions[0].state == .idle)
+        #expect(
+            detector.detectedSessions[0].lifecycleAccuracy
+                == .processTerminationOnly
+        )
     }
 
-    @Test("State flips back and forth with CPU time")
-    func stateFlipsWithCpu() {
+    @Test("Executing state survives flat CPU and later work")
+    func executingSurvivesFlatCPU() {
         let detector = AgentDetector()
         detector.processSnapshotDidUpdate([
             DetectedProcess(pid: 100, command: "claude", cpuTime: 0),
@@ -66,14 +69,14 @@ struct AgentAttentionStateTests {
         ])
         #expect(detector.detectedSessions[0].state == .executing)
 
-        // A single flat poll no longer flips to .waitingInput (#1338
-        // hysteresis); drive the threshold count of flat polls to reach it.
-        for _ in 0..<AgentDetector.waitingInputFlatPollThreshold {
+        // Flat CPU can be a network wait, so even a sustained run of flat
+        // process snapshots preserves the last honest working state.
+        for _ in 0..<16 {
             detector.processSnapshotDidUpdate([
                 DetectedProcess(pid: 100, command: "claude", cpuTime: 3),
             ])
         }
-        #expect(detector.detectedSessions[0].state == .waitingInput)
+        #expect(detector.detectedSessions[0].state == .executing)
 
         detector.processSnapshotDidUpdate([
             DetectedProcess(pid: 100, command: "claude", cpuTime: 7),
@@ -134,6 +137,26 @@ struct AgentAttentionStateTests {
         #expect(AgentState.executing.needsAttention == false)
         #expect(AgentState.idle.needsAttention == false)
         #expect(AgentState.done.needsAttention == false)
+    }
+
+    @Test("only verified lifecycle evidence presents a genuine prompt")
+    func accuracyGatesUserFacingPrompt() {
+        let verifiedPolicy = AgentLifecycleAccuracyPolicy { _ in
+            .verifiedLifecycleTransitions
+        }
+        #expect(
+            AgentState.waitingInput.userFacing(
+                stableIdentifier: "codex",
+                evidenceAccuracy: .verifiedLifecycleTransitions
+            ) == .idle
+        )
+        #expect(
+            AgentState.waitingInput.userFacing(
+                stableIdentifier: "codex",
+                evidenceAccuracy: .verifiedLifecycleTransitions,
+                policy: verifiedPolicy
+            ) == .waitingInput
+        )
     }
 
     @Test("glyphName maps each state")

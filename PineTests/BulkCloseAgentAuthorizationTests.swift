@@ -411,7 +411,10 @@ struct BulkCloseAgentAuthorizationTests {
         ))
 
         firstSession.applyLiveness(.terminated)
-        firstSession.state = .done
+        firstSession.recordLifecycleState(
+            .done,
+            accuracy: .processTerminationOnly
+        )
         project.terminal.bridgeAgentSession(
             firstSession,
             replacing: firstSession,

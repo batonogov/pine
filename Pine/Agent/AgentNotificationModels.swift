@@ -82,7 +82,11 @@ enum AgentNotificationTransitionResolver {
         run: AgentTaskRun,
         accuracy: FirstPartyAgentNotificationAccuracy
     ) -> AgentNotificationEventKind? {
-        switch accuracy {
+        let boundedAccuracy = AgentLifecycleAccuracyPolicy.boundedAccuracy(
+            declared: accuracy,
+            evidence: run.lifecycleAccuracy
+        )
+        switch boundedAccuracy {
         case .processTerminationOnly:
             guard previousRun.liveness == .live,
                   run.liveness == .terminated else { return nil }

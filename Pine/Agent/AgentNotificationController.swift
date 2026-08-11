@@ -199,8 +199,7 @@ final class AgentNotificationController {
         settings: AgentNotificationSettings,
         delivery: any AgentNotificationDelivering = SystemAgentNotificationCenter(),
         accuracy: @escaping (String) -> FirstPartyAgentNotificationAccuracy = {
-            FirstPartyAgentCompatibilityCatalog.record(stableIdentifier: $0)?
-                .notificationAccuracy ?? .processTerminationOnly
+            AgentLifecycleAccuracyPolicy.production.accuracy(for: $0)
         },
         deliveryRetryDelays: [Duration] = [
             .milliseconds(250),

@@ -107,12 +107,25 @@ struct AgentStatusSummaryTests {
         #expect(!summary.isActivelyWorking)
     }
 
-    @Test func liveStateStillDrivesAttentionAndActivity() {
+    @Test func onlyCatalogBoundVerifiedStateDrivesAttention() {
         let paneID = PaneID()
+        let verifiedPolicy = AgentLifecycleAccuracyPolicy { _ in
+            .verifiedLifecycleTransitions
+        }
         let waiting = AgentStatusSummary(
             id: UUID(),
             agentType: .claudeCode,
             state: .waitingInput,
+            lifecycleAccuracy: .verifiedLifecycleTransitions,
+            accuracyPolicy: verifiedPolicy,
+            paneID: paneID,
+            tabID: UUID()
+        )
+        let forged = AgentStatusSummary(
+            id: UUID(),
+            agentType: .claudeCode,
+            state: .waitingInput,
+            lifecycleAccuracy: .verifiedLifecycleTransitions,
             paneID: paneID,
             tabID: UUID()
         )
@@ -125,6 +138,8 @@ struct AgentStatusSummaryTests {
         )
 
         #expect(waiting.needsAttention)
+        #expect(!forged.needsAttention)
+        #expect(forged.userFacingState == .idle)
         #expect(!waiting.isActivelyWorking)
         #expect(!executing.needsAttention)
         #expect(executing.isActivelyWorking)
@@ -309,11 +324,11 @@ struct AgentStatusSummaryTests {
         )
 
         #expect(english.countText == "1 agent session")
-        #expect(english.detailTexts == ["Claude Code: Waiting for input — Stale"])
+        #expect(english.detailTexts == ["Claude Code: Idle — Stale"])
         #expect(russian.countText == "1 сессия агента")
         #expect(
             russian.detailTexts
-                == ["Claude Code: Ожидает ввода — Устарела"]
+                == ["Claude Code: Бездействует — Устарела"]
         )
     }
 
