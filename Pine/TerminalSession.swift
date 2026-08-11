@@ -1841,12 +1841,22 @@ final class TerminalTab: Identifiable, Hashable {
     @ObservationIgnored
     nonisolated(unsafe) private var themeChangeObserver: NSObjectProtocol?
 
+    /// Observer for explicit cursor preference changes. Kept separate from
+    /// theme repainting so appearance changes never override DECSCUSR styles
+    /// selected by shells and full-screen terminal applications (#1409).
+    @ObservationIgnored
+    nonisolated(unsafe) private var cursorStyleChangeObserver: NSObjectProtocol?
+
     /// The theme/appearance settings source. Defaults to the shared singleton
     /// but is injectable so unit tests can drive resolution deterministically.
     private let themeSettings: TerminalThemeSettings
     /// Stored separately so the nonisolated `deinit` can remove the observer
     /// from the exact center that registered it.
     private let themeNotificationCenter: NotificationCenter
+    /// Independent cursor settings source and observer center. Keeping this
+    /// separate from theme repainting preserves TUI-issued cursor styles.
+    private let cursorSettings: TerminalCursorSettings
+    private let cursorNotificationCenter: NotificationCenter
     /// Value-only lifecycle callback installed by the terminal coordinator.
     /// The tab never exposes its process or view to the durable task registry.
     @ObservationIgnored
@@ -1856,7 +1866,8 @@ final class TerminalTab: Identifiable, Hashable {
         name: String,
         shellSettings: ShellSettings = .shared,
         agentHandoffSettings: AgentHandoffSettings = .shared,
-        themeSettings: TerminalThemeSettings = .shared
+        themeSettings: TerminalThemeSettings = .shared,
+        cursorSettings: TerminalCursorSettings = .shared
     ) {
         self.name = name
         self.stableLabel = name
@@ -1864,7 +1875,12 @@ final class TerminalTab: Identifiable, Hashable {
         self.agentHandoffSettings = agentHandoffSettings
         self.themeSettings = themeSettings
         self.themeNotificationCenter = themeSettings.notificationCenter
-        self.terminalView = PineTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
+        self.cursorSettings = cursorSettings
+        self.cursorNotificationCenter = cursorSettings.notificationCenter
+        self.terminalView = PineTerminalView(
+            frame: TerminalContainerView.defaultTerminalFrame,
+            options: TerminalOptions(cursorStyle: cursorSettings.cursorStyle)
+        )
         self.terminalView.setAccessibilityElement(true)
         self.terminalView.setAccessibilityRole(.textArea)
         self.terminalView.setAccessibilityIdentifier(AccessibilityID.terminalSurface)
@@ -1904,6 +1920,16 @@ final class TerminalTab: Identifiable, Hashable {
                 self?.applyCurrentTerminalAppearance(forceRedraw: true)
             }
         }
+
+        cursorStyleChangeObserver = cursorNotificationCenter.addObserver(
+            forName: .terminalCursorStyleChanged,
+            object: cursorSettings,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.applyPreferredCursorStyle()
+            }
+        }
     }
 
     deinit {
@@ -1911,6 +1937,17 @@ final class TerminalTab: Identifiable, Hashable {
         if let themeChangeObserver {
             themeNotificationCenter.removeObserver(themeChangeObserver)
         }
+        if let cursorStyleChangeObserver {
+            cursorNotificationCenter.removeObserver(cursorStyleChangeObserver)
+        }
+    }
+
+    /// Applies the user's preference at tab creation and when that preference
+    /// explicitly changes. This method is deliberately not called from theme
+    /// or system-appearance updates: terminal applications may use DECSCUSR to
+    /// own the cursor until the next user-initiated settings change.
+    internal func applyPreferredCursorStyle() {
+        terminalView.getTerminal().setCursorStyle(cursorSettings.cursorStyle)
     }
 
     /// Applies the terminal's appearance-aware colors and keeps SwiftTerm's

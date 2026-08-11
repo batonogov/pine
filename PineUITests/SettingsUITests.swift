@@ -54,6 +54,61 @@ final class SettingsUITests: PineUITestCase {
 
         let scrollView = app.scrollViews["terminalSettingsScrollView"].firstMatch
         XCTAssertTrue(scrollView.exists, "Terminal settings should be scrollable")
+        let cursorPicker = app.descendants(matching: .any)[
+            "terminalCursorShapePicker"
+        ].firstMatch
+        let cursorBlink = app.descendants(matching: .any)[
+            "terminalCursorBlinkToggle"
+        ].firstMatch
+        for _ in 0..<2 where cursorBlink.isHittable == false {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(
+            cursorPicker.waitForExistence(timeout: 5),
+            "Terminal cursor shape should be reachable"
+        )
+        XCTAssertTrue(
+            cursorBlink.waitForExistence(timeout: 5),
+            "Terminal cursor blinking should be reachable"
+        )
+        XCTAssertTrue(cursorPicker.isHittable)
+        XCTAssertTrue(cursorBlink.isHittable)
+        let verticalBarSegment = cursorPicker.buttons["Vertical Bar"].firstMatch
+        let blockSegment = cursorPicker.buttons["Block"].firstMatch
+        XCTAssertTrue(verticalBarSegment.waitForExistence(timeout: 5))
+        XCTAssertTrue(blockSegment.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            verticalBarSegment.isSelected,
+            "Fresh settings should select the thin vertical-bar default"
+        )
+        XCTAssertFalse(blockSegment.isSelected)
+        let initialBlinkValue = cursorBlink.value as? String
+        XCTAssertEqual(
+            initialBlinkValue,
+            "1",
+            "Fresh settings should enable cursor blinking"
+        )
+
+        blockSegment.click()
+        XCTAssertTrue(blockSegment.isSelected)
+        XCTAssertFalse(verticalBarSegment.isSelected)
+        XCTAssertEqual(
+            cursorBlink.value as? String,
+            initialBlinkValue,
+            "Changing shape must preserve blinking"
+        )
+
+        cursorBlink.click()
+        XCTAssertEqual(
+            cursorBlink.value as? String,
+            "0",
+            "Blinking should be independently mutable"
+        )
+        XCTAssertTrue(
+            blockSegment.isSelected,
+            "Changing blinking must preserve the selected shape"
+        )
+
         let selectedTheme = app.descendants(matching: .any)[
             "terminalThemeRow_solarized"
         ].firstMatch
@@ -279,8 +334,18 @@ final class SettingsUITests: PineUITestCase {
             (
                 tab: "Terminal",
                 contentIdentifier: "terminalAppearancePicker",
-                expectedLabels: [],
-                expectedIdentifiers: []
+                expectedLabels: [
+                    "Cursor",
+                    "Shape",
+                    "Vertical Bar",
+                    "Block",
+                    "Underline",
+                    "Blink cursor",
+                ],
+                expectedIdentifiers: [
+                    "terminalCursorShapePicker",
+                    "terminalCursorBlinkToggle",
+                ]
             ),
             (
                 tab: "Language Servers",
@@ -332,8 +397,18 @@ final class SettingsUITests: PineUITestCase {
             (
                 tab: "Терминал",
                 contentIdentifier: "terminalAppearancePicker",
-                expectedLabels: [],
-                expectedIdentifiers: []
+                expectedLabels: [
+                    "Курсор",
+                    "Форма",
+                    "Вертикальная черта",
+                    "Блок",
+                    "Подчёркивание",
+                    "Мигание курсора",
+                ],
+                expectedIdentifiers: [
+                    "terminalCursorShapePicker",
+                    "terminalCursorBlinkToggle",
+                ]
             ),
             (
                 tab: "Языковые серверы",

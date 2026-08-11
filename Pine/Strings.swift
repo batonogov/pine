@@ -57,6 +57,14 @@ enum Strings {
         "settings.terminal.resetArgs"
     static let settingsTerminalQuickTerminal: LocalizedStringKey =
         "settings.terminal.quickTerminal"
+    static let terminalCursorTitle: LocalizedStringKey =
+        "settings.terminal.cursor.title"
+    static let terminalCursorShape: LocalizedStringKey =
+        "settings.terminal.cursor.shape"
+    static let terminalCursorBlink: LocalizedStringKey =
+        "settings.terminal.cursor.blink"
+    static let terminalCursorHelp: LocalizedStringKey =
+        "settings.terminal.cursor.help"
 
     static let settingsKeyBindingsTitle: LocalizedStringKey =
         "settings.keyBindings.title"

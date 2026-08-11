@@ -11,7 +11,7 @@ import Testing
 
 @testable import Pine
 
-@Suite("Terminal theme settings")
+@Suite("Terminal theme and cursor settings")
 @MainActor
 struct TerminalThemeSettingsTests {
     @Test("Built-in themes have stable unique IDs and complete palettes")
@@ -65,6 +65,95 @@ struct TerminalThemeSettingsTests {
         let restored = fixture.makeSettings()
         #expect(restored.selectedThemeID == TerminalTheme.dracula.id)
         #expect(restored.appearancePolicy == .alwaysDark)
+    }
+
+    @Test("Fresh installs use a blinking vertical bar cursor")
+    func defaultCursor() throws {
+        let settings = try TerminalCursorSettingsFixture().makeSettings()
+
+        #expect(settings.cursorStyle.tagName == "blinkBar")
+        #expect(settings.cursorShape == .verticalBar)
+        #expect(settings.cursorBlinks)
+    }
+
+    @Test("Existing theme preferences gain the cursor default independently")
+    func existingThemePreferencesUseDefaultCursor() throws {
+        let fixture = try TerminalCursorSettingsFixture()
+        fixture.defaults.set(
+            TerminalTheme.dracula.id,
+            forKey: TerminalThemeSettings.Keys.themeID
+        )
+        fixture.defaults.set(
+            TerminalAppearancePolicy.alwaysDark.rawValue,
+            forKey: TerminalThemeSettings.Keys.appearancePolicy
+        )
+
+        let cursorSettings = fixture.makeSettings()
+        let themeSettings = TerminalThemeSettings(
+            defaults: fixture.defaults,
+            notificationCenter: fixture.notificationCenter
+        )
+
+        #expect(cursorSettings.cursorStyle.tagName == "blinkBar")
+        #expect(
+            fixture.defaults.string(
+                forKey: TerminalCursorSettings.Keys.cursorStyle
+            ) == nil
+        )
+        #expect(themeSettings.selectedThemeID == TerminalTheme.dracula.id)
+        #expect(themeSettings.appearancePolicy == .alwaysDark)
+    }
+
+    @Test("All cursor shape and blink combinations persist as stable tags")
+    func cursorPersistenceAndMapping() throws {
+        let fixture = try TerminalCursorSettingsFixture()
+        let settings = fixture.makeSettings()
+        let combinations: [(TerminalCursorShape, Bool, String)] = [
+            (.verticalBar, true, "blinkBar"),
+            (.verticalBar, false, "steadyBar"),
+            (.block, true, "blinkBlock"),
+            (.block, false, "steadyBlock"),
+            (.underline, true, "blinkUnderline"),
+            (.underline, false, "steadyUnderline"),
+        ]
+
+        for (shape, blinks, expectedTag) in combinations {
+            settings.setCursorStyle(
+                expectedTag == "blinkBar" ? .steadyBar : .blinkBar
+            )
+            settings.cursorShape = shape
+            settings.cursorBlinks = blinks
+
+            #expect(settings.cursorStyle.tagName == expectedTag)
+            #expect(
+                fixture.defaults.string(
+                    forKey: TerminalCursorSettings.Keys.cursorStyle
+                ) == expectedTag
+            )
+
+            let restored = fixture.makeSettings()
+            #expect(restored.cursorShape == shape)
+            #expect(restored.cursorBlinks == blinks)
+            #expect(restored.cursorStyle.tagName == expectedTag)
+        }
+    }
+
+    @Test("Invalid persisted cursor style normalizes to Pine's default")
+    func invalidCursorFallback() throws {
+        let fixture = try TerminalCursorSettingsFixture()
+        fixture.defaults.set(
+            "wobblyBlock",
+            forKey: TerminalCursorSettings.Keys.cursorStyle
+        )
+
+        let settings = fixture.makeSettings()
+
+        #expect(settings.cursorStyle.tagName == "blinkBar")
+        #expect(
+            fixture.defaults.string(
+                forKey: TerminalCursorSettings.Keys.cursorStyle
+            ) == "blinkBar"
+        )
     }
 
     @Test("Invalid persisted policy safely falls back to Follow System")
@@ -126,6 +215,40 @@ struct TerminalThemeSettingsTests {
         #expect(counter.value == 1)
 
         settings.appearancePolicy = .alwaysLight
+        #expect(counter.value == 2)
+    }
+
+    @Test("Cursor changes use a separate deduplicated notification")
+    func cursorNotificationsAreDeduplicated() throws {
+        let fixture = try TerminalCursorSettingsFixture()
+        let settings = fixture.makeSettings()
+        let themeSettings = TerminalThemeSettings(
+            defaults: fixture.defaults,
+            notificationCenter: fixture.notificationCenter
+        )
+        let counter = NotificationCounter()
+        let token = fixture.notificationCenter.addObserver(
+            forName: .terminalCursorStyleChanged,
+            object: settings,
+            queue: nil
+        ) { _ in
+            counter.increment()
+        }
+        defer { fixture.notificationCenter.removeObserver(token) }
+
+        settings.setCursorStyle(settings.cursorStyle)
+        settings.cursorShape = .verticalBar
+        settings.cursorBlinks = true
+        themeSettings.setTheme(id: TerminalTheme.nord.id)
+        #expect(counter.value == 0)
+
+        settings.cursorShape = .block
+        #expect(counter.value == 1)
+
+        settings.cursorBlinks = false
+        #expect(counter.value == 2)
+
+        settings.cursorBlinks = false
         #expect(counter.value == 2)
     }
 
@@ -198,6 +321,188 @@ struct TerminalThemeSettingsTests {
         #expect(projectRedraws == 1)
         #expect(quickRedraws == 1)
     }
+
+    @Test("Cursor changes update project and Quick Terminal tabs in place")
+    func cursorPropagationKeepsLiveSessions() async throws {
+        let fixture = try TerminalCursorSettingsFixture()
+        let cursorSettings = fixture.makeSettings()
+        let themeSettings = TerminalThemeSettings(
+            defaults: fixture.defaults,
+            notificationCenter: fixture.notificationCenter
+        )
+        let quickSettings = QuickTerminalSettings(
+            defaults: fixture.defaults,
+            notificationCenter: fixture.notificationCenter
+        )
+        let projectPane = TerminalPaneState(
+            themeSettings: themeSettings,
+            cursorSettings: cursorSettings
+        )
+        let quickController = QuickTerminalController(
+            settings: quickSettings,
+            themeSettings: themeSettings,
+            cursorSettings: cursorSettings
+        )
+        defer { quickController.shutdown() }
+        let inertProcess = TerminalInitialProcess(
+            executablePath: "/bin/cat",
+            arguments: []
+        )
+        let projectTab = projectPane.addTab(
+            workingDirectory: nil,
+            initialProcess: inertProcess
+        )
+        let quickTab = quickController.paneState.addTab(
+            workingDirectory: nil,
+            initialProcess: inertProcess
+        )
+        defer {
+            projectTab.stop()
+            quickTab.stop()
+        }
+        let projectView = try #require(
+            projectTab.terminalView as? PineTerminalView
+        )
+        let quickView = try #require(
+            quickTab.terminalView as? PineTerminalView
+        )
+        let projectTerminal = projectView.getTerminal()
+        let quickTerminal = quickView.getTerminal()
+
+        #expect(projectTerminal.options.cursorStyle.tagName == "blinkBar")
+        #expect(quickTerminal.options.cursorStyle.tagName == "blinkBar")
+
+        projectTab.startIfNeeded()
+        quickTab.startIfNeeded()
+        let projectProcess = try #require(projectView.process)
+        let quickProcess = try #require(quickView.process)
+        let projectPID = projectProcess.shellPid
+        let quickPID = quickProcess.shellPid
+        let projectPTY = projectProcess.childfd
+        let quickPTY = quickProcess.childfd
+        feed("project-cursor-sentinel", to: projectView)
+        feed("quick-cursor-sentinel", to: quickView)
+
+        #expect(projectPID > 0)
+        #expect(quickPID > 0)
+        #expect(projectPTY >= 0)
+        #expect(quickPTY >= 0)
+        #expect(
+            projectTerminal.getLine(row: 0)?
+                .translateToString(trimRight: true)
+                .contains("project-cursor-sentinel") == true
+        )
+        #expect(
+            quickTerminal.getLine(row: 0)?
+                .translateToString(trimRight: true)
+                .contains("quick-cursor-sentinel") == true
+        )
+
+        cursorSettings.cursorShape = .underline
+        cursorSettings.cursorBlinks = false
+        let propagated = await waitForTerminalSettingsCondition {
+            projectTerminal.options.cursorStyle.tagName == "steadyUnderline"
+                && quickTerminal.options.cursorStyle.tagName == "steadyUnderline"
+        }
+
+        #expect(propagated)
+        #expect(projectTab.terminalView === projectView)
+        #expect(quickTab.terminalView === quickView)
+        #expect(projectView.getTerminal() === projectTerminal)
+        #expect(quickView.getTerminal() === quickTerminal)
+        #expect(projectView.process === projectProcess)
+        #expect(quickView.process === quickProcess)
+        #expect(projectView.process?.shellPid == projectPID)
+        #expect(quickView.process?.shellPid == quickPID)
+        #expect(projectView.process?.childfd == projectPTY)
+        #expect(quickView.process?.childfd == quickPTY)
+        #expect(!projectTab.isTerminated)
+        #expect(!quickTab.isTerminated)
+        #expect(
+            projectTerminal.getLine(row: 0)?
+                .translateToString(trimRight: true)
+                .contains("project-cursor-sentinel") == true
+        )
+        #expect(
+            quickTerminal.getLine(row: 0)?
+                .translateToString(trimRight: true)
+                .contains("quick-cursor-sentinel") == true
+        )
+    }
+
+    @Test("Theme repaints preserve application-issued DECSCUSR styles")
+    func decscusrRemainsAuthoritativeAcrossThemeChanges() async throws {
+        let fixture = try TerminalThemeSettingsFixture()
+        let themeSettings = fixture.makeSettings()
+        let cursorSettings = TerminalCursorSettings(
+            defaults: fixture.defaults,
+            notificationCenter: fixture.notificationCenter
+        )
+        themeSettings.appearancePolicy = .alwaysDark
+        let tab = TerminalTab(
+            name: "cursor",
+            themeSettings: themeSettings,
+            cursorSettings: cursorSettings
+        )
+        let view = try #require(tab.terminalView as? PineTerminalView)
+        let terminal = view.getTerminal()
+
+        #expect(terminal.options.cursorStyle.tagName == "blinkBar")
+
+        feed("\u{1B}[2 q", to: view)
+        #expect(terminal.options.cursorStyle.tagName == "steadyBlock")
+
+        themeSettings.setTheme(id: TerminalTheme.dracula.id)
+        let repainted = await waitForTerminalSettingsCondition {
+            view.nativeBackgroundColor
+                == TerminalTheme.dracula.dark.backgroundColor()
+        }
+        #expect(repainted)
+        #expect(terminal.options.cursorStyle.tagName == "steadyBlock")
+
+        cursorSettings.cursorShape = .underline
+        #expect(terminal.options.cursorStyle.tagName == "blinkUnderline")
+
+        feed("\u{1B}[6 q", to: view)
+        await Task.yield()
+        #expect(terminal.options.cursorStyle.tagName == "steadyBar")
+    }
+
+    @Test("DECSCUSR maps all six styles without changing preferences")
+    func decscusrMapsEveryStyleWithoutPersisting() throws {
+        let fixture = try TerminalCursorSettingsFixture()
+        let settings = fixture.makeSettings()
+        let tab = TerminalTab(name: "cursor", cursorSettings: settings)
+        let view = try #require(tab.terminalView as? PineTerminalView)
+        let expectedStyles = [
+            (1, "blinkBlock"),
+            (2, "steadyBlock"),
+            (3, "blinkUnderline"),
+            (4, "steadyUnderline"),
+            (5, "blinkBar"),
+            (6, "steadyBar"),
+        ]
+
+        for (parameter, expectedTag) in expectedStyles {
+            feed("\u{1B}[\(parameter) q", to: view)
+            #expect(
+                view.getTerminal().options.cursorStyle.tagName == expectedTag
+            )
+        }
+
+        #expect(settings.cursorStyle.tagName == "blinkBar")
+        #expect(
+            fixture.defaults.string(
+                forKey: TerminalCursorSettings.Keys.cursorStyle
+            ) == nil
+        )
+    }
+}
+
+@MainActor
+private func feed(_ text: String, to view: PineTerminalView) {
+    let bytes = Array(text.utf8)
+    view.dataReceived(slice: bytes[...])
 }
 
 @MainActor
@@ -214,6 +519,26 @@ private struct TerminalThemeSettingsFixture {
 
     func makeSettings() -> TerminalThemeSettings {
         TerminalThemeSettings(
+            defaults: defaults,
+            notificationCenter: notificationCenter
+        )
+    }
+}
+
+@MainActor
+private struct TerminalCursorSettingsFixture {
+    let suiteName: String
+    let defaults: UserDefaults
+    let notificationCenter = NotificationCenter()
+
+    init() throws {
+        suiteName = "TerminalCursorSettingsTests-\(UUID().uuidString)"
+        defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    func makeSettings() -> TerminalCursorSettings {
+        TerminalCursorSettings(
             defaults: defaults,
             notificationCenter: notificationCenter
         )
@@ -263,6 +588,10 @@ struct TerminalThemeLocalizationTests {
         "settings.terminal.appearance.label",
         "settings.terminal.arguments",
         "settings.terminal.argumentsHelp",
+        "settings.terminal.cursor.blink",
+        "settings.terminal.cursor.help",
+        "settings.terminal.cursor.shape",
+        "settings.terminal.cursor.title",
         "settings.terminal.quickTerminal",
         "settings.terminal.resetArgs",
         "settings.terminal.resolvedPrefix",
@@ -278,6 +607,9 @@ struct TerminalThemeLocalizationTests {
         "terminal.appearance.alwaysDark",
         "terminal.appearance.alwaysLight",
         "terminal.appearance.followSystem",
+        "terminal.cursor.shape.block",
+        "terminal.cursor.shape.underline",
+        "terminal.cursor.shape.verticalBar",
         "terminal.theme.digital-rain.name",
         "terminal.theme.dracula.name",
         "terminal.theme.github.name",

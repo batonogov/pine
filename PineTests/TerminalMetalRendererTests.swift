@@ -149,6 +149,110 @@ struct TerminalMetalRendererTests {
         #expect(metalBridgeRequests == 1)
     }
 
+    @Test("CoreGraphics renders each configured cursor shape")
+    func cursorStyleRendersCoreGraphicsGeometry() async throws {
+        let settings = try makeCursorSettings()
+        settings.cursorBlinks = false
+        let tab = TerminalTab(
+            name: "cursor-core-graphics",
+            cursorSettings: settings
+        )
+        let view = try #require(tab.terminalView as? PineTerminalView)
+        view.metalRendererDisabledForTesting = true
+        view.caretViewTracksFocus = false
+        view.caretColor = .red
+        if view.isUsingMetalRenderer {
+            try view.setUseMetal(false)
+        }
+        let window = makeWindow(containing: view)
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+        }
+        window.orderFront(nil)
+        feed(" \r", to: view)
+
+        #expect(!view.isUsingMetalRenderer)
+        let caret = try swiftTermCaret(in: view)
+        settings.cursorShape = .verticalBar
+        let bar = try coreGraphicsCursorFootprint(in: caret)
+        settings.cursorShape = .underline
+        let underline = try coreGraphicsCursorFootprint(in: caret)
+        settings.cursorShape = .block
+        let block = try coreGraphicsCursorFootprint(in: caret)
+
+        #expect(bar.height > bar.width * 2)
+        #expect(underline.width > underline.height * 2)
+        #expect(block.width == underline.width)
+        #expect(block.height == bar.height)
+        #expect(block.pixelCount > bar.pixelCount)
+        #expect(block.pixelCount > underline.pixelCount)
+
+        settings.cursorBlinks = true
+        let cursorAnimationLayer = try #require(caret.layer)
+        #expect(cursorAnimationLayer.animation(forKey: "opacity") != nil)
+        settings.cursorBlinks = false
+        #expect(cursorAnimationLayer.animation(forKey: "opacity") == nil)
+    }
+
+    @Test(
+        "Metal renders each configured cursor shape",
+        .enabled(
+            if: MTLCreateSystemDefaultDevice() != nil,
+            "Requires an available Metal device"
+        )
+    )
+    func cursorStyleRendersMetalGeometry() async throws {
+        let settings = try makeCursorSettings()
+        settings.cursorBlinks = false
+        let tab = TerminalTab(name: "cursor-metal", cursorSettings: settings)
+        let view = try #require(tab.terminalView as? PineTerminalView)
+        view.metalScaleFactorOverride = 1
+        let window = makeWindow(containing: view)
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+        }
+        let metalView = try #require(firstMetalView(in: view))
+        #expect(view.isUsingMetalRenderer)
+        view.caretViewTracksFocus = false
+        view.caretColor = .red
+        window.orderFront(nil)
+        metalView.framebufferOnly = false
+        window.displayIfNeeded()
+        // Let the production first-frame retry batch warm SwiftTerm's renderer
+        // and drain before taking exclusive control of on-demand draws.
+        try? await Task.sleep(for: .milliseconds(450))
+        metalView.enableSetNeedsDisplay = false
+        metalView.needsDisplay = false
+
+        let bar = try await metalCursorFootprint(
+            shape: .verticalBar,
+            settings: settings,
+            terminalView: view,
+            metalView: metalView
+        )
+        let underline = try await metalCursorFootprint(
+            shape: .underline,
+            settings: settings,
+            terminalView: view,
+            metalView: metalView
+        )
+        let block = try await metalCursorFootprint(
+            shape: .block,
+            settings: settings,
+            terminalView: view,
+            metalView: metalView
+        )
+
+        #expect(bar.height > bar.width * 2)
+        #expect(underline.width > underline.height * 2)
+        #expect(block.width == underline.width)
+        #expect(block.height == bar.height)
+        #expect(block.pixelCount > bar.pixelCount)
+        #expect(block.pixelCount > underline.pixelCount)
+    }
+
     @Test("Metal redraw attempts an immediate frame before trailing invalidation")
     func metalRedrawTargetsNestedView() async {
         guard MTLCreateSystemDefaultDevice() != nil else { return }
@@ -648,6 +752,164 @@ struct TerminalMetalRendererTests {
         window.contentView = nil
     }
 
+    private struct CursorFootprint {
+        let width: Int
+        let height: Int
+        let pixelCount: Int
+    }
+
+    private func swiftTermCaret(in view: PineTerminalView) throws -> NSView {
+        let caretFrame = view.caretFrame
+        return try #require(view.subviews.first { subview in
+            guard let layer = subview.layer else { return false }
+            return subview.frame == caretFrame && layer.delegate === subview
+        })
+    }
+
+    private func coreGraphicsCursorFootprint(
+        in caret: NSView
+    ) throws -> CursorFootprint {
+        let width = max(1, Int(ceil(caret.bounds.width)))
+        let height = max(1, Int(ceil(caret.bounds.height)))
+        let bitmap = try #require(NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ))
+        let graphicsContext = try #require(
+            NSGraphicsContext(bitmapImageRep: bitmap)
+        )
+        let layer = try #require(caret.layer)
+        let delegate = try #require(layer.delegate)
+        delegate.draw?(layer, in: graphicsContext.cgContext)
+        graphicsContext.flushGraphics()
+
+        return try #require(cursorFootprint(
+            width: width,
+            height: height
+        ) { x, y in
+            guard let color = bitmap.colorAt(x: x, y: y)?
+                .usingColorSpace(.deviceRGB) else {
+                return false
+            }
+            return color.redComponent > 0.8
+                && color.greenComponent < 0.3
+                && color.blueComponent < 0.3
+                && color.alphaComponent > 0.8
+        })
+    }
+
+    private func metalCursorFootprint(
+        shape: TerminalCursorShape,
+        settings: TerminalCursorSettings,
+        terminalView: PineTerminalView,
+        metalView: MTKView
+    ) async throws -> CursorFootprint {
+        settings.cursorShape = shape
+        metalView.needsDisplay = false
+        metalView.drawableSize = metalView.bounds.size
+        terminalView.window?.displayIfNeeded()
+        try #require(await waitForThemeRepaint {
+            metalView.currentRenderPassDescriptor != nil
+        }, "Metal render pass did not become ready")
+
+        let renderer = try #require(metalView.delegate)
+        let captureDelegate = MetalDrawableCaptureDelegate(renderer: renderer)
+        metalView.delegate = captureDelegate
+        defer { metalView.delegate = renderer }
+        terminalView.drawMetalFrameNow()
+        let drawable = try #require(captureDelegate.drawable)
+        let texture = drawable.texture
+        try #require(await waitForThemeRepaint {
+            drawable.presentedTime > 0
+        }, "Metal cursor frame was not presented")
+
+        let bytesPerPixel = 4
+        let bytesPerRow = ((texture.width * bytesPerPixel + 255) / 256) * 256
+        let byteCount = bytesPerRow * texture.height
+        let device = try #require(metalView.device)
+        let buffer = try #require(device.makeBuffer(
+            length: byteCount,
+            options: .storageModeShared
+        ))
+        let commandQueue = try #require(device.makeCommandQueue())
+        let commandBuffer = try #require(commandQueue.makeCommandBuffer())
+        let blitEncoder = try #require(commandBuffer.makeBlitCommandEncoder())
+        blitEncoder.copy(
+            from: texture,
+            sourceSlice: 0,
+            sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(
+                width: texture.width,
+                height: texture.height,
+                depth: 1
+            ),
+            to: buffer,
+            destinationOffset: 0,
+            destinationBytesPerRow: bytesPerRow,
+            destinationBytesPerImage: byteCount
+        )
+        blitEncoder.endEncoding()
+        #expect(commitAndWait(commandBuffer) == .completed)
+
+        let bytes = buffer.contents().assumingMemoryBound(to: UInt8.self)
+        let footprint = try #require(cursorFootprint(
+            width: texture.width,
+            height: texture.height
+        ) { x, y in
+            let offset = y * bytesPerRow + x * bytesPerPixel
+            let blue = bytes[offset]
+            let green = bytes[offset + 1]
+            let red = bytes[offset + 2]
+            let alpha = bytes[offset + 3]
+            return red > 200 && green < 80 && blue < 80 && alpha > 200
+        })
+        return footprint
+    }
+
+    private func commitAndWait(
+        _ commandBuffer: MTLCommandBuffer
+    ) -> MTLCommandBufferStatus {
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        return commandBuffer.status
+    }
+
+    private func cursorFootprint(
+        width: Int,
+        height: Int,
+        isCursorPixel: (_ x: Int, _ y: Int) -> Bool
+    ) -> CursorFootprint? {
+        var minX = width
+        var minY = height
+        var maxX = -1
+        var maxY = -1
+        var pixelCount = 0
+        for y in 0..<height {
+            for x in 0..<width where isCursorPixel(x, y) {
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+                pixelCount += 1
+            }
+        }
+        guard pixelCount > 0 else { return nil }
+        return CursorFootprint(
+            width: maxX - minX + 1,
+            height: maxY - minY + 1,
+            pixelCount: pixelCount
+        )
+    }
+
     private func makeWindow(containing view: NSView) -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
@@ -682,6 +944,16 @@ struct TerminalMetalRendererTests {
         )
     }
 
+    private func makeCursorSettings() throws -> TerminalCursorSettings {
+        let suiteName = "TerminalMetalCursorTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        return TerminalCursorSettings(
+            defaults: defaults,
+            notificationCenter: NotificationCenter()
+        )
+    }
+
     private func waitForThemeRepaint(
         timeout: Duration = .seconds(2),
         _ condition: @MainActor () -> Bool
@@ -693,5 +965,23 @@ struct TerminalMetalRendererTests {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return true
+    }
+}
+
+private final class MetalDrawableCaptureDelegate: NSObject, MTKViewDelegate {
+    let renderer: any MTKViewDelegate
+    private(set) var drawable: (any CAMetalDrawable)?
+
+    init(renderer: any MTKViewDelegate) {
+        self.renderer = renderer
+    }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        renderer.mtkView(view, drawableSizeWillChange: size)
+    }
+
+    func draw(in view: MTKView) {
+        drawable = view.currentDrawable
+        renderer.draw(in: view)
     }
 }
