@@ -177,6 +177,12 @@ struct TerminalMetalRendererTests {
         settings.cursorShape = .verticalBar
         let bar = try coreGraphicsCursorFootprint(in: caret)
         settings.cursorShape = .underline
+        feed("\u{1B}[2 q", to: view)
+        feed("\u{1B}[0 q", to: view)
+        #expect(
+            view.getTerminal().options.cursorStyle.tagName
+                == "steadyUnderline"
+        )
         let underline = try coreGraphicsCursorFootprint(in: caret)
         settings.cursorShape = .block
         let block = try coreGraphicsCursorFootprint(in: caret)
@@ -236,7 +242,8 @@ struct TerminalMetalRendererTests {
             shape: .underline,
             settings: settings,
             terminalView: view,
-            metalView: metalView
+            metalView: metalView,
+            exerciseDefaultReset: true
         )
         let block = try await metalCursorFootprint(
             shape: .block,
@@ -810,9 +817,18 @@ struct TerminalMetalRendererTests {
         shape: TerminalCursorShape,
         settings: TerminalCursorSettings,
         terminalView: PineTerminalView,
-        metalView: MTKView
+        metalView: MTKView,
+        exerciseDefaultReset: Bool = false
     ) async throws -> CursorFootprint {
         settings.cursorShape = shape
+        if exerciseDefaultReset {
+            feed("\u{1B}[2 q", to: terminalView)
+            feed("\u{1B}[0 q", to: terminalView)
+            #expect(
+                terminalView.getTerminal().options.cursorStyle.tagName
+                    == "steadyUnderline"
+            )
+        }
         metalView.needsDisplay = false
         metalView.drawableSize = metalView.bounds.size
         terminalView.window?.displayIfNeeded()
