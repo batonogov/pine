@@ -108,6 +108,15 @@ final class SettingsUITests: PineUITestCase {
         )
 
         cursorBlink.click()
+        let blinkDisabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate { [weak self] object, _ in
+                guard let self,
+                      let checkbox = object as? XCUIElement else { return false }
+                return self.checkboxState(checkbox) == false
+            },
+            object: cursorBlink
+        )
+        wait(for: [blinkDisabled], timeout: 5)
         XCTAssertEqual(
             checkboxState(cursorBlink),
             false,
