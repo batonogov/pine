@@ -20,6 +20,9 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     let section: AgentInboxSectionID
     let projectPath: String
     let worktreePath: String
+    let projectName: String
+    let worktreeName: String?
+    let terminalLabel: String
     let title: String?
     let agentName: String
     let lifecycle: AgentTaskLifecycle
@@ -29,15 +32,6 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     let startedAt: Date
     let lastVerifiedActivityAt: Date
     let isUnread: Bool
-
-    var projectName: String {
-        URL(fileURLWithPath: projectPath).lastPathComponent
-    }
-
-    var worktreeName: String? {
-        guard worktreePath != projectPath else { return nil }
-        return URL(fileURLWithPath: worktreePath).lastPathComponent
-    }
 
     var canNavigateToLiveRun: Bool {
         lifecycle == .active
@@ -74,8 +68,33 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
         tasks: [AgentTask],
         accuracyPolicy: AgentLifecycleAccuracyPolicy = .production
     ) {
+        let visibleTasks = tasks.filter { $0.lifecycle != .dismissed }
+        let projectNames = Self.shortestUniquePathLabels(
+            visibleTasks.map(\.project.canonicalProjectPath)
+        )
+        // Worktrees form their own label namespace. A worktree basename must
+        // neither widen a project label nor be widened by one.
+        let worktreeNames = Self.shortestUniquePathLabels(
+            visibleTasks.compactMap { task in
+                task.project.canonicalWorktreePath
+                    == task.project.canonicalProjectPath
+                    ? nil
+                    : task.project.canonicalWorktreePath
+            }
+        )
+        let terminalScopes = Dictionary(
+            grouping: visibleTasks,
+            by: Self.terminalLabelScope
+        )
+        let terminalIDsByScope = terminalScopes.mapValues { tasks in
+            Set(tasks.map(\.route.terminalID))
+        }
+        let terminalTokensByScope = terminalIDsByScope.mapValues { identifiers in
+            Self.uniqueOpaqueTokens(Array(identifiers))
+        }
+
         var grouped: [AgentInboxSectionID: [AgentInboxRow]] = [:]
-        for task in tasks where task.lifecycle != .dismissed {
+        for task in visibleTasks {
             let latestRun = task.runs.last
             let section = Self.section(
                 for: task,
@@ -87,6 +106,17 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
                 section: section,
                 projectPath: task.project.canonicalProjectPath,
                 worktreePath: task.project.canonicalWorktreePath,
+                projectName: projectNames[
+                    task.project.canonicalProjectPath
+                ] ?? task.project.canonicalProjectPath,
+                worktreeName: worktreeNames[
+                    task.project.canonicalWorktreePath
+                ],
+                terminalLabel: Self.terminalLabel(
+                    for: task,
+                    terminalIDsByScope: terminalIDsByScope,
+                    tokensByScope: terminalTokensByScope
+                ),
                 title: task.title,
                 agentName: task.descriptor.agentType.displayName,
                 lifecycle: task.lifecycle,
@@ -109,6 +139,141 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
             rows.sort(by: Self.rowPrecedes)
             return AgentInboxSection(id: id, rows: rows)
         }
+    }
+
+    private struct TerminalLabelScope: Hashable {
+        let project: AgentTaskProjectIdentity
+        let source: TerminalLabelSource
+    }
+
+    private enum TerminalLabelSource: Hashable {
+        case stable(String)
+        case legacyFallback
+    }
+
+    private static func terminalLabelScope(
+        for task: AgentTask
+    ) -> TerminalLabelScope {
+        TerminalLabelScope(
+            project: task.project,
+            source: task.presentationContext.map {
+                .stable($0.terminalLabel)
+            } ?? .legacyFallback
+        )
+    }
+
+    @MainActor
+    private static func terminalLabel(
+        for task: AgentTask,
+        terminalIDsByScope: [TerminalLabelScope: Set<UUID>],
+        tokensByScope: [TerminalLabelScope: [UUID: String]]
+    ) -> String {
+        let scope = terminalLabelScope(for: task)
+        let token = tokensByScope[scope]?[task.route.terminalID]
+            ?? task.route.terminalID.uuidString
+        guard let stableLabel = task.presentationContext?.terminalLabel else {
+            return "\(Strings.terminalLabelText()) #\(token)"
+        }
+        guard terminalIDsByScope[scope, default: []].count > 1 else {
+            return stableLabel
+        }
+        return "\(stableLabel) · #\(token)"
+    }
+
+    /// Returns deterministic shortest trailing path suffixes. Equal canonical
+    /// paths are one identity, so repeated rows never widen each other's label.
+    private static func shortestUniquePathLabels(
+        _ paths: [String]
+    ) -> [String: String] {
+        let identities = Array(Set(paths)).sorted()
+        let components = Dictionary(uniqueKeysWithValues: identities.map {
+            ($0, pathComponents($0))
+        })
+        var depths = Dictionary(uniqueKeysWithValues: identities.map {
+            ($0, min(1, components[$0, default: []].count))
+        })
+
+        while true {
+            let collisions = Dictionary(grouping: identities) { path in
+                pathSuffix(
+                    components[path, default: []],
+                    depth: depths[path, default: 0]
+                )
+            }.values.filter { $0.count > 1 }
+            var expanded = false
+            for collision in collisions {
+                for path in collision {
+                    let maximum = components[path, default: []].count
+                    guard depths[path, default: 0] < maximum else { continue }
+                    depths[path, default: 0] += 1
+                    expanded = true
+                }
+            }
+            if !expanded { break }
+        }
+
+        return Dictionary(uniqueKeysWithValues: identities.map { path in
+            (
+                path,
+                pathSuffix(
+                    components[path, default: []],
+                    depth: depths[path, default: 0]
+                )
+            )
+        })
+    }
+
+    private static func pathComponents(_ path: String) -> [String] {
+        (path as NSString).pathComponents.filter { $0 != "/" }
+    }
+
+    private static func pathSuffix(
+        _ components: [String],
+        depth: Int
+    ) -> String {
+        guard !components.isEmpty else { return "/" }
+        return components.suffix(max(1, depth)).joined(separator: "/")
+    }
+
+    /// UUIDs are opaque presentation tokens. Start compact, then expand every
+    /// colliding prefix until it is unique within the caller's exact scope.
+    private static func uniqueOpaqueTokens(
+        _ identifiers: [UUID]
+    ) -> [UUID: String] {
+        let unique = Array(Set(identifiers)).sorted {
+            $0.uuidString < $1.uuidString
+        }
+        let compact = Dictionary(uniqueKeysWithValues: unique.map {
+            ($0, $0.uuidString.replacingOccurrences(of: "-", with: ""))
+        })
+        var lengths = Dictionary(uniqueKeysWithValues: unique.map { ($0, 6) })
+        while true {
+            let collisions = Dictionary(grouping: unique) { identifier in
+                String(compact[identifier, default: ""].prefix(
+                    lengths[identifier, default: 6]
+                ))
+            }.values.filter { $0.count > 1 }
+            var expanded = false
+            for collision in collisions {
+                for identifier in collision {
+                    let maximum = compact[identifier, default: ""].count
+                    guard lengths[identifier, default: 6] < maximum else {
+                        continue
+                    }
+                    lengths[identifier, default: 6] += 1
+                    expanded = true
+                }
+            }
+            if !expanded { break }
+        }
+        return Dictionary(uniqueKeysWithValues: unique.map { identifier in
+            (
+                identifier,
+                String(compact[identifier, default: ""].prefix(
+                    lengths[identifier, default: 6]
+                ))
+            )
+        })
     }
 
     private static func section(

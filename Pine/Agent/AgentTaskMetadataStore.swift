@@ -1926,6 +1926,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                   task.objective,
                   maximum: limits.maxObjectiveBytes
               ),
+              validPresentationContext(task.presentationContext),
               validDate(task.createdAt),
               validDate(task.updatedAt),
               validDate(task.lastActivityAt),
@@ -1947,6 +1948,19 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             return false
         }
         return true
+    }
+
+    private func validPresentationContext(
+        _ context: AgentTaskPresentationContext?
+    ) -> Bool {
+        guard let label = context?.terminalLabel else { return true }
+        return validText(
+            label,
+            maximum: AgentTaskPresentationContext.maximumTerminalLabelBytes,
+            allowsEmpty: false
+        )
+            && !label.contains("\n")
+            && !label.contains("\r")
     }
 
     private func validateRun(_ run: AgentTaskRun) -> Bool {
