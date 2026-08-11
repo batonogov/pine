@@ -60,9 +60,7 @@ final class SettingsUITests: PineUITestCase {
         let cursorBlink = app.descendants(matching: .any)[
             "terminalCursorBlinkToggle"
         ].firstMatch
-        for _ in 0..<2 where cursorBlink.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(cursorBlink, in: scrollView)
         XCTAssertTrue(
             cursorPicker.waitForExistence(timeout: 5),
             "Terminal cursor shape should be reachable"
@@ -131,9 +129,7 @@ final class SettingsUITests: PineUITestCase {
         let enabledToggle = app.descendants(matching: .any)[
             "quickTerminalEnabledToggle"
         ].firstMatch
-        for _ in 0..<5 where enabledToggle.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(enabledToggle, in: scrollView)
         XCTAssertTrue(
             enabledToggle.waitForExistence(timeout: 5),
             "Quick Terminal controls should be embedded in Terminal Settings"
@@ -178,9 +174,7 @@ final class SettingsUITests: PineUITestCase {
         }
         XCTAssertTrue(recorder.isEnabled)
 
-        for _ in 0..<4 where recorder.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(recorder, in: scrollView)
         XCTAssertTrue(
             recorder.isHittable,
             "The hotkey recorder should be keyboard-focusable and clickable"
@@ -194,9 +188,7 @@ final class SettingsUITests: PineUITestCase {
         )
         recorder.click()
 
-        for _ in 0..<4 where edgePicker.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(edgePicker, in: scrollView)
         XCTAssertTrue(edgePicker.isHittable)
         XCTAssertTrue(
             String(describing: edgePicker.value).contains("Top"),
@@ -207,9 +199,7 @@ final class SettingsUITests: PineUITestCase {
         // tree. Unit tests cover the binding's mutation/persistence matrix;
         // this test verifies the real control's value and enabled state.
 
-        for _ in 0..<4 where sizeSlider.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(sizeSlider, in: scrollView)
         XCTAssertTrue(sizeSlider.isHittable)
         let originalSize = String(describing: sizeSlider.value)
         sizeSlider.adjust(toNormalizedSliderPosition: 0.75)
@@ -219,18 +209,14 @@ final class SettingsUITests: PineUITestCase {
             "Adjusting the size slider should update its accessible value"
         )
 
-        for _ in 0..<4 where displayPicker.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(displayPicker, in: scrollView)
         XCTAssertTrue(displayPicker.isHittable)
         XCTAssertTrue(
             String(describing: displayPicker.value).contains("Active Display"),
             "The display picker should expose its persisted selection"
         )
 
-        for _ in 0..<4 where focusToggle.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(focusToggle, in: scrollView)
         XCTAssertTrue(focusToggle.isHittable)
         let originalFocusPolicy = String(describing: focusToggle.value)
         focusToggle.click()
@@ -240,9 +226,7 @@ final class SettingsUITests: PineUITestCase {
             "The focus-loss policy should be mutable"
         )
 
-        for _ in 0..<4 where enabledToggle.isHittable == false {
-            scrollView.swipeDown()
-        }
+        scrollUpUntilHittable(enabledToggle, in: scrollView)
         XCTAssertTrue(
             enabledToggle.isHittable,
             "The master toggle should be hittable before disabling controls"
@@ -264,9 +248,7 @@ final class SettingsUITests: PineUITestCase {
         XCTAssertFalse(focusToggle.isEnabled)
 
         enabledToggle.click()
-        for _ in 0..<3 where resetButton.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(resetButton, in: scrollView)
         XCTAssertTrue(
             resetButton.isHittable,
             "Reset should be hittable after scrolling to Quick Terminal"
@@ -290,12 +272,10 @@ final class SettingsUITests: PineUITestCase {
             originalFocusPolicy,
             "Reset should restore the default focus-loss policy"
         )
-        for _ in 0..<5 where selectedTheme.isHittable == false {
-            scrollView.swipeDown()
-        }
         let pineTheme = app.descendants(matching: .any)[
             "terminalThemeRow_pine"
         ].firstMatch
+        scrollUpUntilHittable(pineTheme, in: scrollView)
         XCTAssertTrue(pineTheme.waitForExistence(timeout: 5))
         XCTAssertTrue(
             pineTheme.isHittable,
@@ -507,6 +487,16 @@ final class SettingsUITests: PineUITestCase {
     ) {
         for _ in 0..<maxSteps where element.isHittable == false {
             scrollView.scroll(byDeltaX: 0, deltaY: -120)
+        }
+    }
+
+    private func scrollUpUntilHittable(
+        _ element: XCUIElement,
+        in scrollView: XCUIElement,
+        maxSteps: Int = 12
+    ) {
+        for _ in 0..<maxSteps where element.isHittable == false {
+            scrollView.scroll(byDeltaX: 0, deltaY: 120)
         }
     }
 
