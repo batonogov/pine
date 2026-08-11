@@ -2222,6 +2222,7 @@ final class TerminalTab: Identifiable, Hashable {
     /// running. Used by `AgentDetectionCoordinator` (#951).
     #if DEBUG
     var foregroundProcessIDOverrideForTesting: Int32?
+    var foregroundProcessIDResolverForTesting: (() -> Int32)?
     var foregroundStartOverrideForTesting:
         TerminalProcessStartIdentity?
     var agentProcessIdentityResolverForTesting:
@@ -2229,7 +2230,28 @@ final class TerminalTab: Identifiable, Hashable {
     #endif
 
     var foregroundProcessID: Int32 {
+        readForegroundProcessID()
+    }
+
+    /// Samples the foreground group before and after resolving an exact live
+    /// member. A group switch in between is uncertainty, not proof that either
+    /// the old or new job belongs to the prior agent session.
+    func foregroundProcessSnapshot() -> TerminalForegroundProcessSnapshot {
+        let before = readForegroundProcessID()
+        guard before > 0 else { return .idle }
+        guard let identity = foregroundProcessIdentity(in: before) else {
+            return .unavailable
+        }
+        let after = readForegroundProcessID()
+        guard after == before else { return .unavailable }
+        return .running(processGroupID: before, identity: identity)
+    }
+
+    private func readForegroundProcessID() -> Int32 {
         #if DEBUG
+        if let foregroundProcessIDResolverForTesting {
+            return foregroundProcessIDResolverForTesting()
+        }
         if let foregroundProcessIDOverrideForTesting {
             return foregroundProcessIDOverrideForTesting
         }

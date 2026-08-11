@@ -41,7 +41,15 @@ nonisolated struct TerminalProcessStartIdentity: Hashable, Sendable {
         guard processEvidence.startIsAuthoritative,
               let processID = processEvidence.processIdentifier,
               processID > 1 else { return nil }
-        let interval = processEvidence.observedStartedAt.timeIntervalSince1970
+        self.init(
+            processID: processID,
+            startedAt: processEvidence.observedStartedAt
+        )
+    }
+
+    init?(processID: pid_t, startedAt: Date) {
+        guard processID > 1 else { return nil }
+        let interval = startedAt.timeIntervalSince1970
         guard interval.isFinite, interval >= 0 else { return nil }
         var seconds = UInt64(interval.rounded(.down))
         var microseconds = UInt64(
@@ -58,6 +66,18 @@ nonisolated struct TerminalProcessStartIdentity: Hashable, Sendable {
             microseconds: microseconds
         )
     }
+}
+
+/// One coherent foreground-job observation. `.unavailable` is distinct from
+/// `.idle`: it means a process group existed but changed or could not be
+/// identified exactly while Pine sampled it, so ownership must fail closed.
+nonisolated enum TerminalForegroundProcessSnapshot: Equatable, Sendable {
+    case idle
+    case running(
+        processGroupID: Int32,
+        identity: TerminalProcessStartIdentity
+    )
+    case unavailable
 }
 
 /// Per-tab coverage captured when a destructive terminal close/stop is

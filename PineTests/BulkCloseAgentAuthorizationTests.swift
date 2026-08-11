@@ -1064,25 +1064,99 @@ struct BulkCloseAgentAuthorizationTests {
         await idleProject.workspace.waitForLoadingComplete()
     }
 
-    @Test("Confirmed quit survives agent child-process churn")
+    @Test("Confirmed quit survives production agent-child reconciliation")
     func confirmedQuitSurvivesChurn() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
-        let tab = try addAgentTerminalTab(to: project)
-        let sessionID = try #require(tab.agentSession?.id)
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let agent = bulkProcess(
+            pid: 8_111,
+            parent: 8_000,
+            group: 8_111,
+            command: "claude",
+            startedAt: 8_111
+        )
+        let child = bulkProcess(
+            pid: 8_222,
+            parent: 8_111,
+            group: 8_222,
+            command: "swift test",
+            startedAt: 8_222
+        )
+        let agentStartedAt = try #require(agent.preciseStartedAt)
+        let agentIdentity = try #require(
+            TerminalProcessStartIdentity(
+                processID: agent.pid,
+                startedAt: agentStartedAt
+            )
+        )
+        tab.agentProcessIdentityResolverForTesting = { processID in
+            processID == agent.pid ? agentIdentity : nil
+        }
+        setBulkForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+
+        // No test-only `tab.agentSession` seed: detector + production
+        // reconciliation must create both the badge and durable Inbox route.
+        let session = try #require(tab.agentSession)
+        let sessionID = session.id
+        let taskID = try #require(
+            registry.agentTasks.taskID(forSessionID: sessionID)
+        )
+        let route = try #require(
+            registry.agentTasks.task(for: taskID)?.route
+        )
+        let closeAuthorization = TerminalTabCloseAuthorization.authorizing(
+            tabs: [tab]
+        )
+        #expect(closeAuthorization.requiresConfirmation)
 
         let delegate = AppDelegate()
         delegate.registry = registry
+        var presentedTemplates: [AlertTemplate] = []
 
         let result = await delegate.confirmApplicationTermination(
-            presentAlert: { _, _, _, _ in .alertSecondButtonReturn },
+            presentAlert: { template, _, _, _ in
+                presentedTemplates.append(template)
+                if template == .applicationQuitSummary {
+                    setBulkForeground(child, on: tab)
+                    coordinator.applySnapshotForTesting(
+                        processes: [agent, child]
+                    )
+                    #expect(tab.agentSession === session)
+                    #expect(closeAuthorization.stillCovers([tab]))
+                    #expect(
+                        registry.agentTasks.task(for: taskID)?.route == route
+                    )
+
+                    setBulkForeground(agent, on: tab)
+                    coordinator.applySnapshotForTesting(processes: [agent])
+                    #expect(tab.agentSession === session)
+                    #expect(closeAuthorization.stillCovers([tab]))
+                    #expect(
+                        registry.agentTasks.task(for: taskID)?.route == route
+                    )
+                }
+                return .alertSecondButtonReturn
+            },
             terminationDeadlineOverride: .now() + 120
         )
 
         #expect(result)
+        #expect(presentedTemplates == [.applicationQuitSummary])
         #expect(tab.agentSession?.id == sessionID)
+
+        // Mirrors applicationWillTerminate's project teardown: confirmed Quit
+        // owns terminal cleanup and does not require manual agent termination.
+        #expect(registry.destroyAllProjects())
+        #expect(tab.isTerminated)
         await project.workspace.waitForLoadingComplete()
     }
 
@@ -1195,6 +1269,35 @@ struct BulkCloseAgentAuthorizationTests {
         #expect(!result)
         await project.workspace.waitForLoadingComplete()
     }
+}
+
+@MainActor
+private func setBulkForeground(
+    _ process: DetectedProcess,
+    on tab: TerminalTab
+) {
+    tab.foregroundProcessIDOverrideForTesting = process.processGroupID
+    tab.foregroundStartOverrideForTesting = process.preciseStartedAt.flatMap {
+        TerminalProcessStartIdentity(processID: process.pid, startedAt: $0)
+    }
+}
+
+nonisolated private func bulkProcess(
+    pid: Int32,
+    parent: Int32,
+    group: Int32,
+    command: String,
+    startedAt: TimeInterval
+) -> DetectedProcess {
+    DetectedProcess(
+        pid: pid,
+        parentProcessID: parent,
+        processGroupID: group,
+        command: command,
+        cpuTime: 0,
+        startIdentifier: "generation-\(startedAt)",
+        preciseStartedAt: Date(timeIntervalSince1970: startedAt)
+    )
 }
 
 private actor BulkCloseAgentTaskStore: AgentTaskPersisting {

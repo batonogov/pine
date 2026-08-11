@@ -186,7 +186,7 @@ struct AgentDetectionCoordinatorTests {
         let session = try #require(detector.session(forPID: 100))
 
         output.value = completePsOutput()
-            + "\n100 Jul 22 15:08:40 2026 0:12.45 claude"
+            + "\n100 1 100 Jul 22 15:08:40 2026 0:12.45 claude"
         coordinator.runSnapshotForTesting()
 
         #expect(detector.session(forPID: 100) === session)
@@ -222,7 +222,7 @@ struct AgentDetectionCoordinatorTests {
             psRow(pid: 200, command: "codex"),
             psRow(
                 pid: 99_999,
-                command: "/bin/ps -eo pid=,lstart=,cputime=,command="
+                command: "/bin/ps -eo pid=,ppid=,pgid=,lstart=,cputime=,command="
             ),
         ].joined(separator: "\n")
         coordinator.runSnapshotForTesting()
@@ -319,8 +319,12 @@ struct AgentDetectionCoordinatorTests {
         detector.processSnapshotDidUpdate([])
         let retained = AgentDetectionCoordinator.reconciledSession(
             previous: previous,
-            foregroundPID: 0,
+            ownership: TerminalAgentOwnershipEvidence(
+                foreground: .idle,
+                processes: []
+            ),
             detector: detector,
+            agentIdentityStillMatches: { _ in false },
             newlyTerminated: [previous.id]
         )
 
@@ -339,8 +343,12 @@ struct AgentDetectionCoordinatorTests {
 
         let reconciled = AgentDetectionCoordinator.reconciledSession(
             previous: previous,
-            foregroundPID: 0,
+            ownership: TerminalAgentOwnershipEvidence(
+                foreground: .idle,
+                processes: []
+            ),
             detector: detector,
+            agentIdentityStillMatches: { _ in false },
             newlyTerminated: []
         )
 
@@ -358,20 +366,432 @@ struct AgentDetectionCoordinatorTests {
 
         let retained = AgentDetectionCoordinator.reconciledSession(
             previous: previous,
-            foregroundPID: 0,
+            ownership: TerminalAgentOwnershipEvidence(
+                foreground: .idle,
+                processes: []
+            ),
             detector: detector,
+            agentIdentityStillMatches: { _ in false },
             newlyTerminated: newlyTerminated
         )
         let dismissed = AgentDetectionCoordinator.reconciledSession(
             previous: retained,
-            foregroundPID: 0,
+            ownership: TerminalAgentOwnershipEvidence(
+                foreground: .idle,
+                processes: []
+            ),
             detector: detector,
+            agentIdentityStillMatches: { _ in false },
             newlyTerminated: []
         )
 
         #expect(retained === previous)
         #expect(dismissed == nil)
         #expect(detector.detectedSessions.isEmpty)
+    }
+
+    @Test func productionReconciliationRetainsAgentThroughForegroundChild()
+        throws {
+        let project = ProjectManager()
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal,
+            processRunner: { _, _, _, _ in
+                ProcessRunResult(
+                    stdout: "",
+                    stderr: "",
+                    exitCode: 1,
+                    timedOut: false
+                )
+            }
+        )
+        let agent = process(
+            pid: 500,
+            parent: 400,
+            group: 500,
+            command: "claude",
+            startedAt: 500
+        )
+        let child = process(
+            pid: 600,
+            parent: 500,
+            group: 600,
+            command: "swift test",
+            startedAt: 600
+        )
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+        let session = try #require(tab.agentSession)
+
+        setForeground(child, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent, child])
+        #expect(tab.agentSession === session)
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+        #expect(tab.agentSession === session)
+    }
+
+    @Test func unrelatedForegroundGroupDoesNotInheritAgentSession() throws {
+        let project = ProjectManager()
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let agent = process(
+            pid: 510,
+            parent: 400,
+            group: 510,
+            command: "codex",
+            startedAt: 510
+        )
+        let unrelated = process(
+            pid: 710,
+            parent: 400,
+            group: 710,
+            command: "git status",
+            startedAt: 710
+        )
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+        #expect(tab.agentSession != nil)
+
+        setForeground(unrelated, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent, unrelated])
+        #expect(tab.agentSession == nil)
+    }
+
+    @Test func exactForegroundWitnessMustDescendFromAgent() throws {
+        let project = ProjectManager()
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let agent = process(
+            pid: 515,
+            parent: 400,
+            group: 515,
+            command: "claude",
+            startedAt: 515
+        )
+        let unrelatedWitness = process(
+            pid: 715,
+            parent: 400,
+            group: 715,
+            command: "git status",
+            startedAt: 715
+        )
+        let staleGroupMember = process(
+            pid: 716,
+            parent: 515,
+            group: 715,
+            command: "swift test",
+            startedAt: 716
+        )
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+        #expect(tab.agentSession != nil)
+
+        setForeground(unrelatedWitness, on: tab)
+        coordinator.applySnapshotForTesting(
+            processes: [agent, unrelatedWitness, staleGroupMember]
+        )
+        #expect(tab.agentSession == nil)
+    }
+
+    @Test func replacementAgentInvalidatesPreviousGeneration() throws {
+        let project = ProjectManager()
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let original = process(
+            pid: 520,
+            parent: 400,
+            group: 520,
+            command: "claude",
+            startedAt: 520.1,
+            startIdentifier: "same-coarse-second"
+        )
+        let replacement = process(
+            pid: 520,
+            parent: 400,
+            group: 520,
+            command: "codex",
+            startedAt: 520.2,
+            startIdentifier: "same-coarse-second"
+        )
+
+        setLiveAgent(original, on: tab)
+        setForeground(original, on: tab)
+        coordinator.applySnapshotForTesting(processes: [original])
+        let previous = try #require(tab.agentSession)
+        let previousGeneration = try #require(
+            previous.processEvidence?.processGeneration
+        )
+
+        setLiveAgent(replacement, on: tab)
+        setForeground(replacement, on: tab)
+        coordinator.applySnapshotForTesting(processes: [replacement])
+        let current = try #require(tab.agentSession)
+
+        #expect(current !== previous)
+        #expect(previous.liveness == .terminated)
+        #expect(current.agentType == .codex)
+        #expect(
+            current.processEvidence?.processGeneration != previousGeneration
+        )
+    }
+
+    @Test func unrelatedPIDReuseInvalidatesPreviousAssociation() throws {
+        let project = ProjectManager()
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let agent = process(
+            pid: 530,
+            parent: 400,
+            group: 530,
+            command: "pi",
+            startedAt: 530
+        )
+        let reused = process(
+            pid: 530,
+            parent: 400,
+            group: 530,
+            command: "git status",
+            startedAt: 531
+        )
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+        let previous = try #require(tab.agentSession)
+
+        setForeground(reused, on: tab)
+        coordinator.applySnapshotForTesting(processes: [reused])
+
+        #expect(tab.agentSession == nil)
+        #expect(previous.liveness == .terminated)
+    }
+
+    @Test func foregroundGroupChangeDuringSamplingFailsClosed() throws {
+        let project = ProjectManager()
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let agent = process(
+            pid: 540,
+            parent: 400,
+            group: 540,
+            command: "claude",
+            startedAt: 540
+        )
+        let child = process(
+            pid: 640,
+            parent: 540,
+            group: 640,
+            command: "swift test",
+            startedAt: 640
+        )
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+        #expect(tab.agentSession != nil)
+
+        setForeground(child, on: tab)
+        var samples: [Int32] = [640, 740]
+        tab.foregroundProcessIDResolverForTesting = {
+            samples.isEmpty ? 740 : samples.removeFirst()
+        }
+        coordinator.applySnapshotForTesting(processes: [agent, child])
+
+        #expect(tab.agentSession == nil)
+        #expect(samples.isEmpty)
+    }
+
+    @Test func nonAuthoritativeAgentGenerationCannotOwnChildGroup() throws {
+        let project = ProjectManager()
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let agent = DetectedProcess(
+            pid: 550,
+            parentProcessID: 400,
+            processGroupID: 550,
+            command: "claude",
+            cpuTime: 0,
+            startIdentifier: "coarse-only"
+        )
+        let child = process(
+            pid: 650,
+            parent: 550,
+            group: 650,
+            command: "swift test",
+            startedAt: 650
+        )
+
+        setForeground(child, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent, child])
+
+        #expect(project.terminal.agentDetector.session(forPID: 550) != nil)
+        #expect(tab.agentSession == nil)
+    }
+
+    @Test func mismatchedAgentStartWitnessCannotOwnChildGroup() throws {
+        let detector = AgentDetector()
+        let agent = process(
+            pid: 560,
+            parent: 400,
+            group: 560,
+            command: "codex",
+            startedAt: 560
+        )
+        detector.processSnapshotDidUpdate([agent])
+        let session = try #require(detector.session(forPID: 560))
+        let mismatchedAgent = process(
+            pid: 560,
+            parent: 400,
+            group: 560,
+            command: "codex",
+            startedAt: 560.5,
+            startIdentifier: agent.startIdentifier
+        )
+        let child = process(
+            pid: 660,
+            parent: 560,
+            group: 660,
+            command: "swift test",
+            startedAt: 660
+        )
+        let childStartedAt = try #require(child.preciseStartedAt)
+        let childIdentity = try #require(
+            TerminalProcessStartIdentity(
+                processID: child.pid,
+                startedAt: childStartedAt
+            )
+        )
+
+        let result = AgentDetectionCoordinator.reconciledSession(
+            previous: session,
+            ownership: TerminalAgentOwnershipEvidence(
+                foreground: .running(
+                    processGroupID: 660,
+                    identity: childIdentity
+                ),
+                processes: [mismatchedAgent, child]
+            ),
+            detector: detector,
+            agentIdentityStillMatches: { _ in true },
+            newlyTerminated: []
+        )
+
+        #expect(result == nil)
+    }
+
+    @Test func exitedAgentDuringReconciliationCannotRetainChildOwnership()
+        throws {
+        let project = ProjectManager()
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let agent = process(
+            pid: 570,
+            parent: 400,
+            group: 570,
+            command: "claude",
+            startedAt: 570
+        )
+        let child = process(
+            pid: 670,
+            parent: 570,
+            group: 670,
+            command: "swift test",
+            startedAt: 670
+        )
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+        #expect(tab.agentSession != nil)
+
+        setForeground(child, on: tab)
+        tab.agentProcessIdentityResolverForTesting = { _ in nil }
+        coordinator.applySnapshotForTesting(processes: [agent, child])
+
+        #expect(tab.agentSession == nil)
+    }
+
+    @Test func replacedAgentDuringReconciliationCannotRetainChildOwnership()
+        throws {
+        let project = ProjectManager()
+        project.paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let tab = try #require(project.terminal.allTerminalTabs.first)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let agent = process(
+            pid: 580,
+            parent: 400,
+            group: 580,
+            command: "codex",
+            startedAt: 580
+        )
+        let child = process(
+            pid: 680,
+            parent: 580,
+            group: 680,
+            command: "swift test",
+            startedAt: 680
+        )
+
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [agent])
+        #expect(tab.agentSession != nil)
+
+        let replacementIdentity = try #require(
+            TerminalProcessStartIdentity(
+                processID: agent.pid,
+                startedAt: Date(timeIntervalSince1970: 580.5)
+            )
+        )
+        setForeground(child, on: tab)
+        tab.agentProcessIdentityResolverForTesting = { processID in
+            processID == agent.pid ? replacementIdentity : nil
+        }
+        coordinator.applySnapshotForTesting(processes: [agent, child])
+
+        #expect(tab.agentSession == nil)
     }
 
     @Test func failedPollExpiryRuleOnlyRemovesTerminatedAssociation() {
@@ -462,7 +882,11 @@ struct AgentDetectionCoordinatorTests {
         #expect(captured.1.first == "-c")
         let command = captured.1.last ?? ""
         #expect(command.contains("TZ=UTC LC_ALL=C /bin/ps"))
-        #expect(command.contains("pid=,lstart=,cputime=,command="))
+        #expect(
+            command.contains(
+                "pid=,ppid=,pgid=,lstart=,cputime=,command="
+            )
+        )
         #expect(command.contains(AgentDetectionCoordinator.psCompletionMarker))
     }
 
@@ -780,46 +1204,48 @@ struct AgentDetectionCoordinatorTests {
 
     @Test func parsePsOutputExtractsStableStartIdentifier() throws {
         let output = """
-            1234 Wed Jul 22 15:08:40 2026 0:12.45 /usr/local/bin/claude --verbose
-            5678 Wed Jul 22 15:09:39 2026 1:23.01 /sbin/launchd
+            1234 100 1234 Wed Jul 22 15:08:40 2026 0:12.45 /usr/local/bin/claude --verbose
+            5678 1 5678 Wed Jul 22 15:09:39 2026 1:23.01 /sbin/launchd
             """
 
         let processes = AgentDetectionCoordinator.parsePsOutput(output)
         let claude = try #require(processes.first)
         #expect(processes.count == 2)
         #expect(claude.pid == 1234)
+        #expect(claude.parentProcessID == 100)
+        #expect(claude.processGroupID == 1234)
         #expect(claude.command == "/usr/local/bin/claude --verbose")
         #expect(claude.cpuTime == 12)
         #expect(claude.startIdentifier == "Wed Jul 22 15:08:40 2026")
     }
 
     @Test func parsePsOutputRejectsMalformedLongStartRow() {
-        let output = "1234 Wed Jul 22 not-a-time 2026 0:12.45 claude"
+        let output = "1234 100 1234 Wed Jul 22 not-a-time 2026 0:12.45 claude"
         #expect(AgentDetectionCoordinator.parsePsOutput(output).isEmpty)
     }
 
     @Test func parsePsOutputRejectsMissingWeekdayAndBadMonth() {
         #expect(
             AgentDetectionCoordinator.parsePsOutput(
-                "1234 Jul 22 15:08:40 2026 0:12.45 claude"
+                "1234 100 1234 Jul 22 15:08:40 2026 0:12.45 claude"
             ).isEmpty
         )
         #expect(
             AgentDetectionCoordinator.parsePsOutput(
-                "1234 Wed Xxx 22 15:08:40 2026 0:12.45 claude"
+                "1234 100 1234 Wed Xxx 22 15:08:40 2026 0:12.45 claude"
             ).isEmpty
         )
     }
 
     @Test func parsePsOutputRejectsInvalidDateTimeAndWeekday() {
         let malformedRows = [
-            "1234 Thu Jul 22 15:08:40 2026 0:12.45 claude",
-            "1234 Wed Feb 30 15:08:40 2026 0:12.45 claude",
-            "1234 Wed Jul 22 24:08:40 2026 0:12.45 claude",
-            "1234 Wed Jul 22 15:60:40 2026 0:12.45 claude",
-            "1234 Wed Jul 22 15:08:60 2026 0:12.45 claude",
-            "1234 Wed Jul 22 15:08:40 1969 0:12.45 claude",
-            "1234 Wed Jul 22 15:08:40 2026 0:60.00 claude",
+            "1234 100 1234 Thu Jul 22 15:08:40 2026 0:12.45 claude",
+            "1234 100 1234 Wed Feb 30 15:08:40 2026 0:12.45 claude",
+            "1234 100 1234 Wed Jul 22 24:08:40 2026 0:12.45 claude",
+            "1234 100 1234 Wed Jul 22 15:60:40 2026 0:12.45 claude",
+            "1234 100 1234 Wed Jul 22 15:08:60 2026 0:12.45 claude",
+            "1234 100 1234 Wed Jul 22 15:08:40 1969 0:12.45 claude",
+            "1234 100 1234 Wed Jul 22 15:08:40 2026 0:60.00 claude",
         ]
         for row in malformedRows {
             #expect(AgentDetectionCoordinator.parsePsOutput(row).isEmpty)
@@ -839,6 +1265,49 @@ struct AgentDetectionCoordinatorTests {
     }
 }
 
+@MainActor
+private func setLiveAgent(
+    _ process: DetectedProcess,
+    on tab: TerminalTab
+) {
+    let identity = process.preciseStartedAt.flatMap {
+        TerminalProcessStartIdentity(processID: process.pid, startedAt: $0)
+    }
+    tab.agentProcessIdentityResolverForTesting = { processID in
+        processID == process.pid ? identity : nil
+    }
+}
+
+@MainActor
+private func setForeground(
+    _ process: DetectedProcess,
+    on tab: TerminalTab
+) {
+    tab.foregroundProcessIDOverrideForTesting = process.processGroupID
+    tab.foregroundStartOverrideForTesting = process.preciseStartedAt.flatMap {
+        TerminalProcessStartIdentity(processID: process.pid, startedAt: $0)
+    }
+}
+
+nonisolated private func process(
+    pid: Int32,
+    parent: Int32,
+    group: Int32,
+    command: String,
+    startedAt: TimeInterval,
+    startIdentifier: String? = nil
+) -> DetectedProcess {
+    DetectedProcess(
+        pid: pid,
+        parentProcessID: parent,
+        processGroupID: group,
+        command: command,
+        cpuTime: 0,
+        startIdentifier: startIdentifier ?? "generation-\(startedAt)",
+        preciseStartedAt: Date(timeIntervalSince1970: startedAt)
+    )
+}
+
 nonisolated private func completePsOutput(
     _ rows: (pid: Int32, command: String)...
 ) -> String {
@@ -847,7 +1316,7 @@ nonisolated private func completePsOutput(
     output.append(
         psRow(
             pid: 99_999,
-            command: "/bin/ps -eo pid=,lstart=,cputime=,command="
+            command: "/bin/ps -eo pid=,ppid=,pgid=,lstart=,cputime=,command="
         )
     )
     output.append(AgentDetectionCoordinator.psCompletionMarker)
@@ -855,5 +1324,5 @@ nonisolated private func completePsOutput(
 }
 
 nonisolated private func psRow(pid: Int32, command: String) -> String {
-    "\(pid) Wed Jul 22 15:08:40 2026 0:12.45 \(command)"
+    "\(pid) \(pid == 1 ? 0 : 1) \(pid) Wed Jul 22 15:08:40 2026 0:12.45 \(command)"
 }

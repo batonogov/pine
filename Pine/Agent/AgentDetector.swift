@@ -32,6 +32,13 @@ import Foundation
 nonisolated struct DetectedProcess: Sendable, Equatable {
     /// Operating-system process id.
     let pid: Int32
+    /// Parent process id from the same process-list snapshot. Used only to
+    /// prove terminal ownership while an agent's foreground child is active.
+    let parentProcessID: Int32?
+    /// Process-group id from the same process-list snapshot. Combined with
+    /// `parentProcessID` so an unrelated foreground job cannot inherit an
+    /// agent session merely because both processes are alive.
+    let processGroupID: Int32?
     /// Full command line as reported by `ps -o command=` (executable + args).
     let command: String
     /// Working directory of the process, if known. Reserved for Phase 2
@@ -55,6 +62,8 @@ nonisolated struct DetectedProcess: Sendable, Equatable {
 
     init(
         pid: Int32,
+        parentProcessID: Int32? = nil,
+        processGroupID: Int32? = nil,
         command: String,
         cwd: URL? = nil,
         cpuTime: Int? = nil,
@@ -62,6 +71,8 @@ nonisolated struct DetectedProcess: Sendable, Equatable {
         preciseStartedAt: Date? = nil
     ) {
         self.pid = pid
+        self.parentProcessID = parentProcessID
+        self.processGroupID = processGroupID
         self.command = command
         self.cwd = cwd
         self.cpuTime = cpuTime
@@ -191,7 +202,8 @@ final class AgentDetector {
     /// which is a no-op when nothing changed.
     ///
     /// - Parameter processes: the full process list as captured by the
-    ///   caller (e.g. via `ps -eo pid=,lstart=,cputime=,command=`). Order is
+    ///   caller (e.g. via
+    ///   `ps -eo pid=,ppid=,pgid=,lstart=,cputime=,command=`). Order is
     ///   not significant.
     @discardableResult
     func processSnapshotDidUpdate(
