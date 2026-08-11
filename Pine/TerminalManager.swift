@@ -74,7 +74,9 @@ struct PineAgentLaunchAuthorization {
 @Observable
 final class TerminalManager {
     /// Reference to the pane manager for creating/finding terminal panes.
-    weak var paneManager: PaneManager?
+    weak var paneManager: PaneManager? {
+        didSet { installPaneCallbacks() }
+    }
 
     /// ID of the last-focused terminal pane (for Cmd+T routing).
     var lastActiveTerminalPaneID: PaneID?
@@ -122,6 +124,15 @@ final class TerminalManager {
         UUID: PineAgentSettledLaunchIdentity
     ] = [:]
 
+    #if DEBUG
+    /// Exact route-update count used to prove a tab move publishes one durable
+    /// destination change without touching run/process identity.
+    private(set) var agentRouteUpdateCountForTesting = 0
+    /// Pane-originated destination publications. Canonical manager calls use
+    /// their own non-reporting selection path and do not increment this seam.
+    private(set) var paneActivationPublicationCountForTesting = 0
+    #endif
+
     /// `true` once agent-detection polling has started. Read-only diagnostic /
     /// test hook. Delegates to the coordinator's `isRunning` so it correctly
     /// reports `false` after a future `stop()`.
@@ -145,6 +156,21 @@ final class TerminalManager {
     ) {
         self.agentDetectionProcessRunner = agentDetectionProcessRunner
         self.agentTaskRegistry = agentTaskRegistry
+    }
+
+    /// Installs one-way pane callbacks. `PaneManager` retains these closures,
+    /// so every capture of this coordinator is weak and cannot form the
+    /// reverse strong edge `PaneManager -> TerminalManager`.
+    private func installPaneCallbacks() {
+        paneManager?.terminalTabDidMove = { [weak self] tab, paneID in
+            self?.agentTerminalDidMove(tab, to: paneID)
+        }
+        paneManager?.terminalTabDidActivate = { [weak self] paneID, tabID in
+            self?.recordTerminalActivation(paneID: paneID, tabID: tabID)
+        }
+        paneManager?.terminalPaneInventoryDidChange = { [weak self] in
+            self?.reconcileTerminalDestination()
+        }
     }
 
     /// Receives an already validated identity from `ProjectRegistry`; this
@@ -183,16 +209,159 @@ final class TerminalManager {
     }
 
     func agentTerminalDidMove(_ tab: TerminalTab, to paneID: PaneID) {
-        guard let project = agentTaskProject else { return }
-        agentTaskRegistry?.updateRoute(
-            terminalID: tab.id,
-            project: project,
-            route: AgentTaskRoute(
-                paneID: paneID.id,
-                tabID: tab.id,
-                terminalID: tab.id
+        if let project = agentTaskProject {
+            agentTaskRegistry?.updateRoute(
+                terminalID: tab.id,
+                project: project,
+                route: AgentTaskRoute(
+                    paneID: paneID.id,
+                    tabID: tab.id,
+                    terminalID: tab.id
+                )
             )
-        )
+            #if DEBUG
+            agentRouteUpdateCountForTesting += 1
+            #endif
+        }
+        _ = activateTerminal(paneID: paneID, tabID: tab.id)
+    }
+
+    // MARK: - Terminal destination routing (#1424)
+
+    /// One validated terminal command destination. Pane identity and the
+    /// pane-local active tab travel together so callers cannot accidentally
+    /// combine a stale pane pointer with a tab from another split.
+    struct Destination {
+        let paneID: PaneID
+        let tab: TerminalTab
+    }
+
+    /// Resolves the current command destination without mutating selection.
+    /// The durable pointer wins only while it still names a terminal leaf with
+    /// a live active tab; fallback then considers the focused terminal and the
+    /// remaining terminal leaves in stable tree order.
+    func resolvedDestination() -> Destination? {
+        guard let paneManager else { return nil }
+        let terminalPaneIDs = paneManager.terminalPaneIDs
+
+        func destination(in paneID: PaneID) -> Destination? {
+            guard terminalPaneIDs.contains(paneID),
+                  let state = paneManager.terminalState(for: paneID),
+                  let activeID = state.activeTerminalID,
+                  let tab = state.terminalTabs.first(where: {
+                      $0.id == activeID
+                  }) else {
+                return nil
+            }
+            return Destination(paneID: paneID, tab: tab)
+        }
+
+        if let lastActiveTerminalPaneID,
+           let destination = destination(in: lastActiveTerminalPaneID) {
+            return destination
+        }
+        if let destination = destination(in: paneManager.activePaneID) {
+            return destination
+        }
+        for paneID in terminalPaneIDs {
+            if let destination = destination(in: paneID) {
+                return destination
+            }
+        }
+        return nil
+    }
+
+    /// Canonical exact activation for terminal navigation. Validation occurs
+    /// before any mutation, and the durable destination advances only after
+    /// PaneManager atomically selects the requested pane-local tab.
+    @discardableResult
+    func activateTerminal(paneID: PaneID, tabID: UUID) -> Bool {
+        guard let paneManager,
+              paneManager.terminalPaneIDs.contains(paneID),
+              let state = paneManager.terminalState(for: paneID),
+              state.terminalTabs.contains(where: { $0.id == tabID }),
+              paneManager.selectTerminalTab(
+                  tabID,
+                  in: paneID,
+                  reportActivation: false
+              ) else {
+            return false
+        }
+        lastActiveTerminalPaneID = paneID
+        return true
+    }
+
+    /// Accepts pane-originated user activation only when the callback still
+    /// describes the pane's exact selected tab.
+    private func recordTerminalActivation(paneID: PaneID, tabID: UUID) {
+        guard let paneManager,
+              paneManager.terminalPaneIDs.contains(paneID),
+              paneManager.activePaneID == paneID,
+              paneManager.terminalState(for: paneID)?.activeTerminalID
+                == tabID else {
+            return
+        }
+        #if DEBUG
+        paneActivationPublicationCountForTesting += 1
+        #endif
+        lastActiveTerminalPaneID = paneID
+    }
+
+    /// Resolves and activates the current destination as one operation.
+    /// Callers that subsequently write retain the exact tab object selected by
+    /// this validation rather than resolving pane and tab independently.
+    func activateResolvedDestination() -> Destination? {
+        guard let destination = resolvedDestination(),
+              activateTerminal(
+                  paneID: destination.paneID,
+                  tabID: destination.tab.id
+              ) else {
+            return nil
+        }
+        return destination
+    }
+
+    /// Writes to an already activated exact destination only while that same
+    /// tab remains owned by the same terminal pane.
+    @discardableResult
+    func sendText(_ text: String, to destination: Destination) -> Bool {
+        guard let paneManager,
+              paneManager.terminalPaneIDs.contains(destination.paneID),
+              let state = paneManager.terminalState(for: destination.paneID),
+              state.activeTerminalID == destination.tab.id,
+              state.terminalTabs.contains(where: { $0 === destination.tab }) else {
+            return false
+        }
+        return destination.tab.sendText(text)
+    }
+
+    /// Reconciles only the durable pointer after a pane-tree mutation. It does
+    /// not steal focus: a removed target is replaced deterministically by the
+    /// focused valid terminal or the first valid terminal in tree order.
+    private func reconcileTerminalDestination() {
+        lastActiveTerminalPaneID = resolvedDestination()?.paneID
+    }
+
+    /// Restores destination bookkeeping without changing pane/tab focus.
+    /// Invalid persisted preferences fall back to the first valid terminal in
+    /// stable tree order and an empty terminal inventory restores `nil`.
+    func restoreTerminalDestination(preferredPaneID: PaneID?) {
+        guard let paneManager else {
+            lastActiveTerminalPaneID = nil
+            return
+        }
+        let paneIDs = paneManager.terminalPaneIDs
+        let preferredIsValid = preferredPaneID.map { paneID in
+            paneIDs.contains(paneID)
+                && paneManager.terminalState(for: paneID)?.activeTab != nil
+        } ?? false
+        if preferredIsValid {
+            lastActiveTerminalPaneID = preferredPaneID
+            return
+        }
+        lastActiveTerminalPaneID = paneIDs.first(where: { paneID in
+            paneManager.terminalState(for: paneID)?.activeTab != nil
+        })
     }
 
     func agentTaskContext(for tab: TerminalTab) -> AgentTaskBridgeContext? {
@@ -690,25 +859,53 @@ final class TerminalManager {
     ) -> (PaneID, TerminalTab)? {
         guard let pm = paneManager else { return nil }
         ensureAgentDetectionStarted()
-        if let paneID = lastActiveTerminalPaneID,
-           let state = pm.terminalState(for: paneID) {
+        if let destination = resolvedDestination(),
+           let state = pm.terminalState(for: destination.paneID) {
             let tab = state.addTab(
                 workingDirectory: workingDirectory,
                 initialProcess: initialProcess
             )
-            pm.activePaneID = paneID
-            return (paneID, tab)
+            guard activateTerminal(
+                paneID: destination.paneID,
+                tabID: tab.id
+            ) else {
+                state.removeTab(id: tab.id)
+                return nil
+            }
+            return (destination.paneID, tab)
         }
         let paneID = pm.createTerminalPaneAtBottom(
             workingDirectory: workingDirectory,
             initialProcess: initialProcess
         )
-        lastActiveTerminalPaneID = paneID
         pm.pruneEmptyEditorLeaves()
-        guard let tab = pm.terminalState(for: paneID)?.activeTab else {
+        guard let tab = pm.terminalState(for: paneID)?.activeTab,
+              activateTerminal(paneID: paneID, tabID: tab.id) else {
             return nil
         }
         return (paneID, tab)
+    }
+
+    /// Adds a tab to one exact existing terminal pane and makes it the shared
+    /// command destination. Used by the pane-local plus button so it cannot
+    /// bypass destination bookkeeping.
+    @discardableResult
+    func createTerminalTab(
+        in paneID: PaneID,
+        workingDirectory: URL?
+    ) -> TerminalTab? {
+        guard let pm = paneManager,
+              pm.terminalPaneIDs.contains(paneID) else { return nil }
+        ensureAgentDetectionStarted()
+        guard let tab = pm.addTerminalTab(
+            in: paneID,
+            workingDirectory: workingDirectory
+        ) else { return nil }
+        guard activateTerminal(paneID: paneID, tabID: tab.id) else {
+            pm.terminalState(for: paneID)?.removeTab(id: tab.id)
+            return nil
+        }
+        return tab
     }
 
     /// Creates a terminal tab in the last-used terminal pane.
@@ -722,38 +919,37 @@ final class TerminalManager {
         // later are picked up automatically (vision #933, issues #950/#951).
         ensureAgentDetectionStarted()
 
-        if let tpID = lastActiveTerminalPaneID,
-           pm.terminalState(for: tpID) != nil {
+        if let destination = resolvedDestination(),
+           createTerminalTab(
+               in: destination.paneID,
+               workingDirectory: workingDirectory
+           ) != nil {
             // Adding a tab to an existing terminal pane is not a structural
             // mutation — the layout already includes a terminal, so any
             // adjacent empty editor was already pruned (or kept on purpose).
             // No prune needed here.
-            pm.terminalState(for: tpID)?.addTab(workingDirectory: workingDirectory)
-            pm.activePaneID = tpID
         } else {
             // Create terminal pane spanning full width at bottom
             let newID = pm.createTerminalPaneAtBottom(workingDirectory: workingDirectory)
-            lastActiveTerminalPaneID = newID
             // Collapse any empty editor placeholder that was sitting next to
             // the new terminal — the user clearly wants the screen real estate
             // for terminals, not for "No File Selected".
             pm.pruneEmptyEditorLeaves()
+            if let tabID = pm.terminalState(for: newID)?.activeTerminalID {
+                _ = activateTerminal(paneID: newID, tabID: tabID)
+            }
         }
     }
 
     /// Focuses the nearest terminal pane, or creates one.
     func focusOrCreateTerminal(relativeTo editorPaneID: PaneID, workingDirectory: URL?) {
-        guard let pm = paneManager else { return }
+        guard paneManager != nil else { return }
 
-        if let tpID = lastActiveTerminalPaneID,
-           let state = pm.terminalState(for: tpID) {
-            pm.activePaneID = tpID
-            state.pendingFocusTabID = state.activeTerminalID
-        } else if let firstTP = pm.terminalPaneIDs.first,
-                  let state = pm.terminalState(for: firstTP) {
-            pm.activePaneID = firstTP
-            lastActiveTerminalPaneID = firstTP
-            state.pendingFocusTabID = state.activeTerminalID
+        if let destination = resolvedDestination() {
+            _ = activateTerminal(
+                paneID: destination.paneID,
+                tabID: destination.tab.id
+            )
         } else {
             createTerminalTab(relativeTo: editorPaneID, workingDirectory: workingDirectory)
         }

@@ -104,12 +104,13 @@ enum ProjectSessionRestorer {
         )
 
         paneManager.restoreActivePane(uuid: activePaneUUID)
-        projectManager.terminal.lastActiveTerminalPaneID = {
-            if paneManager.root.content(for: paneManager.activePaneID) == .terminal {
-                return paneManager.activePaneID
-            }
-            return paneManager.terminalPaneIDs.first
-        }()
+        let preferredTerminalPane =
+            paneManager.root.content(for: paneManager.activePaneID) == .terminal
+            ? paneManager.activePaneID
+            : nil
+        projectManager.terminal.restoreTerminalDestination(
+            preferredPaneID: preferredTerminalPane
+        )
         let restoredSwitchOrder = resolveGlobalSwitchOrder(
             session.globalTabSwitchOrder ?? [],
             paneManager: paneManager,
@@ -339,7 +340,6 @@ enum ProjectSessionRestorer {
                state.terminalTabs.indices.contains(activeIndex) {
                 state.activeTerminalID = state.terminalTabs[activeIndex].id
             }
-            projectManager.terminal.lastActiveTerminalPaneID = existingPaneID
             return
         }
 

@@ -767,6 +767,72 @@ struct GlobalTabSwitcherTests {
         #expect(details.contains { $0.contains("Sources") })
     }
 
+    @Test("Global switch to a terminal updates the command destination")
+    func terminalSwitchUpdatesDestinationWithoutReorderingMRU() throws {
+        let paneManager = PaneManager()
+        let terminalManager = TerminalManager()
+        terminalManager.paneManager = paneManager
+        let editorPane = paneManager.activePaneID
+        let editorManager = try #require(
+            paneManager.tabManager(for: editorPane)
+        )
+        let editor = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/global-routing.swift"),
+            content: "",
+            savedContent: ""
+        )
+        editorManager.tabs.append(editor)
+        #expect(paneManager.selectEditorTab(editor.id, in: editorPane))
+        let firstPane = paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let secondPane = try #require(paneManager.createTerminalPane(
+            relativeTo: firstPane,
+            axis: .horizontal,
+            workingDirectory: nil
+        ))
+        let firstTab = try #require(
+            paneManager.terminalState(for: firstPane)?.activeTab
+        )
+        let secondTab = try #require(
+            paneManager.terminalState(for: secondPane)?.activeTab
+        )
+        #expect(paneManager.selectTerminalTab(
+            secondTab.id,
+            in: secondPane
+        ))
+        #expect(paneManager.selectTerminalTab(firstTab.id, in: firstPane))
+        #expect(terminalManager.lastActiveTerminalPaneID == firstPane)
+        let originalOrder = paneManager.globalTabSwitchOrder
+
+        #expect(paneManager.beginGlobalTabSwitcherSession(initialOffset: 1))
+
+        // Overlay preview is selection-only: it must not move real focus,
+        // destination bookkeeping, or MRU until commit.
+        #expect(paneManager.activePaneID == firstPane)
+        #expect(terminalManager.lastActiveTerminalPaneID == firstPane)
+        #expect(paneManager.globalTabSwitchOrder == originalOrder)
+        paneManager.commitGlobalTabSwitcher()
+
+        #expect(paneManager.activePaneID == secondPane)
+        #expect(
+            paneManager.terminalState(for: secondPane)?.activeTerminalID
+                == secondTab.id
+        )
+        #expect(
+            paneManager.terminalState(for: secondPane)?.pendingFocusTabID
+                == secondTab.id
+        )
+        #expect(terminalManager.lastActiveTerminalPaneID == secondPane)
+        #expect(paneManager.globalTabSwitchOrder.first == GlobalTabIdentity(
+            paneID: secondPane,
+            tabID: secondTab.id,
+            contentType: .terminal
+        ))
+        #expect(paneManager.globalTabSwitchOrder.count == originalOrder.count)
+        #expect(Set(paneManager.globalTabSwitchOrder).count == originalOrder.count)
+    }
+
     @Test("Path normalization is lexical and respects component boundaries")
     func lexicalRelativePathNormalization() {
         let root = URL(fileURLWithPath: "/nonexistent/project")

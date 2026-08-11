@@ -119,13 +119,9 @@ extension ContentView {
         // shell is rooted in the project directory via current `ShellSettings`.
         // `addTab` sets `pendingFocusTabID`, so the bounded AppKit focus
         // coordinator requests first-responder once the terminal view attaches.
+        // `ProjectManager.addTerminalTab` also performs canonical terminal
+        // activation, so no pane-local focus repair is needed here.
         projectManager.addTerminalTab()
-        // Make the terminal pane the active pane so the focus request targets it.
-        if let terminalPaneID = paneManager.terminalPaneIDs.first {
-            paneManager.activePaneID = terminalPaneID
-            paneManager.terminalState(for: terminalPaneID)?.pendingFocusTabID =
-                paneManager.terminalState(for: terminalPaneID)?.activeTerminalID
-        }
     }
 
     func recoverTabs() {
@@ -613,10 +609,12 @@ extension ContentView {
             projectManager.addTerminalTab()
         }
 
-        // Find the active terminal pane's state
-        guard let tpID = terminal.lastActiveTerminalPaneID ?? paneManager.terminalPaneIDs.first,
-              let state = paneManager.terminalState(for: tpID),
-              let activeTab = state.activeTab else { return }
+        // Resolve and activate one validated destination. A stale non-nil
+        // pointer must never suppress the stable surviving-pane fallback.
+        guard let destination = terminal.activateResolvedDestination() else {
+            return
+        }
+        let activeTab = destination.tab
 
         // A single known agent executable is an explicit Pine-owned launch.
         // Shell expressions and argument-bearing commands remain ordinary,
@@ -633,7 +631,7 @@ extension ContentView {
         }
 
         // Send ordinary text followed by newline to execute.
-        activeTab.sendText(text + "\n")
+        terminal.sendText(text + "\n", to: destination)
     }
 
     // MARK: - Menu notification handlers (#1051, #1133)

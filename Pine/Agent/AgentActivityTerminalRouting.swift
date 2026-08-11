@@ -21,11 +21,11 @@ enum AgentTerminalNavigationRouter {
         paneManager: PaneManager,
         terminalManager: TerminalManager
     ) -> Bool {
-        guard paneManager.selectTerminalTab(tabID, in: paneID) else {
-            return false
-        }
-        terminalManager.lastActiveTerminalPaneID = paneID
-        return true
+        guard terminalManager.paneManager === paneManager else { return false }
+        return terminalManager.activateTerminal(
+            paneID: paneID,
+            tabID: tabID
+        )
     }
 }
 

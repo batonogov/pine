@@ -191,7 +191,10 @@ struct TerminalPaneTabBar: View {
                                         isActive: isActive,
                                         canClose: true,
                                         onSelect: {
-                                            paneManager.selectTerminalTab(tab.id, in: paneID)
+                                            _ = projectManager?.terminal.activateTerminal(
+                                                paneID: paneID,
+                                                tabID: tab.id
+                                            )
                                         },
                                         onClose: { closeTerminalTabWithConfirmation(tab) },
                                         onMoveLeading: paneManager.canMoveTab(
@@ -335,7 +338,7 @@ struct TerminalPaneTabBar: View {
 
                 // New terminal tab button
                 Button {
-                    paneManager.addTerminalTab(
+                    _ = projectManager?.terminal.createTerminalTab(
                         in: paneID,
                         workingDirectory: workingDirectory
                     )

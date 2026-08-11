@@ -343,6 +343,7 @@ struct ContentView: View {
                 gitProvider: workspace.gitProvider,
                 paneManager: paneManager,
                 tabManager: activeTabManager,
+                terminalManager: terminal,
                 progress: projectManager.progress,
                 onToggleTerminal: {
                     if paneManager.terminalPaneIDs.isEmpty {

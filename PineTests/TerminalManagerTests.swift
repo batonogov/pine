@@ -139,14 +139,18 @@ struct TerminalManagerTests {
         )
         manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
 
-        // Force creating a second terminal pane by clearing lastActiveTerminalPaneID
-        manager.lastActiveTerminalPaneID = nil
-        // Split the editor pane first to get a second editor pane
+        // Split the editor pane first, then create a second terminal pane
+        // explicitly. Cmd+T intentionally repairs a nil/stale destination and
+        // reuses the surviving terminal rather than manufacturing a split.
         if let newEditorID = pm.splitPane(editorPaneID, axis: .horizontal) {
             pm.tabManager(for: newEditorID)?.openTab(
                 url: URL(fileURLWithPath: "/tmp/all-term-tabs-2.swift")
             )
-            manager.createTerminalTab(relativeTo: newEditorID, workingDirectory: nil)
+            _ = pm.createTerminalPane(
+                relativeTo: newEditorID,
+                axis: .vertical,
+                workingDirectory: nil
+            )
         }
 
         #expect(pm.terminalPaneIDs.count == 2)

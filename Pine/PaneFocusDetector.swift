@@ -44,7 +44,7 @@ final class PaneFocusNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         MainActor.assumeIsolated {
-            paneManager?.activePaneID = paneID
+            _ = paneManager?.activatePane(paneID)
         }
         super.mouseDown(with: event)
     }

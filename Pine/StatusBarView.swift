@@ -13,6 +13,7 @@ struct StatusBarView: View {
     var gitProvider: GitStatusProvider
     var paneManager: PaneManager
     var tabManager: TabManager
+    var terminalManager: TerminalManager? = nil
     var progress: ProgressTracker?
     var onToggleTerminal: (() -> Void)?
     /// LSP / validator diagnostics summary for the Problems indicator (#1010).
@@ -88,8 +89,14 @@ struct StatusBarView: View {
 
             if !summaries.isEmpty {
                 AgentStatusBarItem(summaries: summaries) { paneID, tabID in
-                    paneManager.activePaneID = paneID
-                    paneManager.terminalState(for: paneID)?.activeTerminalID = tabID
+                    if let terminalManager {
+                        _ = terminalManager.activateTerminal(
+                            paneID: paneID,
+                            tabID: tabID
+                        )
+                    } else {
+                        _ = paneManager.selectTerminalTab(tabID, in: paneID)
+                    }
                 }
                 .accessibilityIdentifier(AccessibilityID.agentStatusBar)
             }

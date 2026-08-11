@@ -2431,6 +2431,13 @@ final class TerminalTab: Identifiable, Hashable {
     private var lastSearchQuery = ""
     private var lastSearchOptions = SearchOptions()
 
+    #if DEBUG
+    /// Captures the exact tab-level write in routing tests without starting a
+    /// shell or touching a real PTY.
+    @ObservationIgnored
+    var sendTextOverrideForTesting: ((String) -> Bool)?
+    #endif
+
     /// Highlights the current match using SwiftTerm's built-in find (which sets selection)
     /// and scrolls to it.
     private func highlightCurrentMatch() {
@@ -2446,6 +2453,11 @@ final class TerminalTab: Identifiable, Hashable {
     /// The text is written to the PTY as if the user typed it.
     @discardableResult
     func sendText(_ text: String) -> Bool {
+        #if DEBUG
+        if let sendTextOverrideForTesting {
+            return sendTextOverrideForTesting(text)
+        }
+        #endif
         guard isProcessRunning else { return false }
         let data = Array(text.utf8)
         terminalView.process.send(data: data[...])
