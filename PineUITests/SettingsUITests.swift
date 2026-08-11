@@ -113,7 +113,7 @@ final class SettingsUITests: PineUITestCase {
         let selectedTheme = app.descendants(matching: .any)[
             "terminalThemeRow_solarized"
         ].firstMatch
-        for _ in 0..<2 where selectedTheme.isHittable == false {
+        for _ in 0..<5 where selectedTheme.isHittable == false {
             scrollView.swipeUp()
         }
         XCTAssertTrue(
