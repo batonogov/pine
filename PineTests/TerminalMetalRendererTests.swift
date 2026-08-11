@@ -828,16 +828,12 @@ struct TerminalMetalRendererTests {
         let drawable = try #require(captureDelegate.drawable)
         let texture = drawable.texture
         let device = try #require(metalView.device)
-        var footprint: CursorFootprint?
-        let rendered = await waitForThemeRepaint {
-            footprint = try? metalCursorFootprint(
-                in: texture,
-                device: device
-            )
-            return footprint != nil
-        }
-        try #require(rendered, "Metal cursor pixels were not rendered")
-        return try #require(footprint)
+        try #require(
+            waitForMetalRendererCompletion(renderer),
+            "SwiftTerm Metal frame did not complete"
+        )
+        let footprint = try metalCursorFootprint(in: texture, device: device)
+        return try #require(footprint, "Metal cursor pixels were not rendered")
     }
 
     private func metalCursorFootprint(
@@ -892,6 +888,23 @@ struct TerminalMetalRendererTests {
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         return commandBuffer.status
+    }
+
+    /// SwiftTerm signals this semaphore from the renderer command buffer's
+    /// completion handler. Waiting for and restoring its permit creates an
+    /// explicit producer-completion boundary before the independent readback.
+    private func waitForMetalRendererCompletion(
+        _ renderer: any MTKViewDelegate
+    ) -> Bool {
+        let semaphore = Mirror(reflecting: renderer).children.first {
+            $0.label == "frameSemaphore"
+        }?.value as? DispatchSemaphore
+        guard let semaphore,
+              semaphore.wait(timeout: .now() + .seconds(2)) == .success else {
+            return false
+        }
+        semaphore.signal()
+        return true
     }
 
     private func cursorFootprint(

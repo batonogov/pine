@@ -92,7 +92,13 @@ final class SettingsUITests: PineUITestCase {
             "Fresh settings should enable cursor blinking"
         )
 
-        blockSegment.click()
+        verticalBarSegment.click()
+        app.typeKey(.rightArrow, modifierFlags: [])
+        let blockSelected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == true"),
+            object: blockSegment
+        )
+        wait(for: [blockSelected], timeout: 5)
         XCTAssertTrue(blockSegment.isSelected)
         XCTAssertFalse(verticalBarSegment.isSelected)
         XCTAssertEqual(
@@ -494,16 +500,14 @@ final class SettingsUITests: PineUITestCase {
         }
     }
 
-    /// SwiftUI's segmented `Picker` exposes native segments with different AX
-    /// roles across macOS releases. Query by their localized label instead of
-    /// assuming that every segment is represented as a button.
+    /// SwiftUI's segmented `Picker` exposes its selectable children as native
+    /// radio buttons on macOS. Query that semantic role so `isSelected` reads
+    /// from the control rather than from its label-only descendant.
     private func pickerSegment(
         labeled label: String,
         in picker: XCUIElement
     ) -> XCUIElement {
-        picker.descendants(matching: .any).matching(
-            NSPredicate(format: "label == %@", label)
-        ).firstMatch
+        picker.radioButtons[label].firstMatch
     }
 
     private func openSettings(
