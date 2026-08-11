@@ -92,8 +92,9 @@ final class SettingsUITests: PineUITestCase {
             "Fresh settings should enable cursor blinking"
         )
 
-        verticalBarSegment.click()
-        app.typeKey(.rightArrow, modifierFlags: [])
+        // XCUI's click invokes the native radio button's AXPress action and
+        // does not depend on the runner's global Full Keyboard Access setting.
+        blockSegment.click()
         let blockSelected = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value == %@", "Block"),
             object: cursorPicker
