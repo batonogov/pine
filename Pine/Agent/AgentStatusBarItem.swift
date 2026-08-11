@@ -31,6 +31,10 @@ struct AgentStatusSummary: Identifiable, Equatable {
     let state: AgentState
     /// Freshness of Pine's process evidence for the session.
     let liveness: AgentLiveness
+    /// Accuracy of the lifecycle evidence behind `state`.
+    let lifecycleAccuracy: FirstPartyAgentNotificationAccuracy
+    /// Compatibility-catalog ceiling applied to `lifecycleAccuracy`.
+    let declaredLifecycleAccuracy: FirstPartyAgentNotificationAccuracy
     /// Terminal pane hosting this agent's tab (for click-to-navigate).
     let paneID: PaneID
     /// Terminal tab hosting this agent (for click-to-navigate).
@@ -39,12 +43,19 @@ struct AgentStatusSummary: Identifiable, Equatable {
     /// A stale waiting-input heuristic must not demand user attention: Pine
     /// no longer has current evidence that the session is still waiting.
     var needsAttention: Bool {
-        liveness == .live && state.needsAttention
+        liveness == .live && userFacingState.needsAttention
     }
 
     /// Active-work indication is likewise gated by fresh process evidence.
     var isActivelyWorking: Bool {
-        liveness == .live && state.isActive
+        liveness == .live && userFacingState.isActive
+    }
+
+    var userFacingState: AgentState {
+        state.userFacing(
+            declaredAccuracy: declaredLifecycleAccuracy,
+            evidenceAccuracy: lifecycleAccuracy
+        )
     }
 
     init(
@@ -52,6 +63,8 @@ struct AgentStatusSummary: Identifiable, Equatable {
         agentType: AgentType,
         state: AgentState,
         liveness: AgentLiveness = .live,
+        lifecycleAccuracy: FirstPartyAgentNotificationAccuracy = .processTerminationOnly,
+        accuracyPolicy: AgentLifecycleAccuracyPolicy = .production,
         paneID: PaneID,
         tabID: UUID
     ) {
@@ -59,6 +72,10 @@ struct AgentStatusSummary: Identifiable, Equatable {
         self.agentType = agentType
         self.state = state
         self.liveness = liveness
+        self.lifecycleAccuracy = lifecycleAccuracy
+        declaredLifecycleAccuracy = accuracyPolicy.accuracy(
+            for: agentType.stableIdentifier
+        )
         self.paneID = paneID
         self.tabID = tabID
     }
@@ -89,6 +106,7 @@ struct AgentStatusSummary: Identifiable, Equatable {
                         agentType: session.agentType,
                         state: session.state,
                         liveness: session.liveness,
+                        lifecycleAccuracy: session.lifecycleAccuracy,
                         paneID: paneID,
                         tabID: tab.id
                     )
@@ -227,7 +245,7 @@ extension AgentStatusSummary {
 
     @MainActor
     func detailText(locale: Locale) -> String {
-        let stateText = "\(agentType.displayName): \(state.displayName(locale: locale))"
+        let stateText = "\(agentType.displayName): \(userFacingState.displayName(locale: locale))"
         guard liveness != .live else { return stateText }
         return "\(stateText) — \(liveness.displayName(locale: locale))"
     }

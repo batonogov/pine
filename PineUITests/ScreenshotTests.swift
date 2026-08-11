@@ -85,7 +85,7 @@ final class ScreenshotTests: PineUITestCase {
         let releaseTask = inboxWindow.buttons.matching(
             NSPredicate(
                 format: "label CONTAINS %@",
-                "Approve the release announcement"
+                "Draft the release announcement"
             )
         ).firstMatch
         XCTAssertTrue(

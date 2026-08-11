@@ -159,6 +159,8 @@ final class AgentTaskRegistry {
     @ObservationIgnored
     private let flushTail: Duration
     @ObservationIgnored
+    let lifecycleAccuracyPolicy: AgentLifecycleAccuracyPolicy
+    @ObservationIgnored
     private let abandonedPersistenceLimit = 2
     @ObservationIgnored
     private var taskChangeObservers: [
@@ -173,7 +175,8 @@ final class AgentTaskRegistry {
         claimTTL: Duration = .seconds(30),
         flushTotal: Duration = .seconds(5),
         flushTail: Duration = .seconds(2),
-        limits: AgentTaskPersistenceLimits = AgentTaskPersistenceLimits()
+        limits: AgentTaskPersistenceLimits = AgentTaskPersistenceLimits(),
+        accuracyPolicy: AgentLifecycleAccuracyPolicy = .production
     ) {
         let generation = UUID()
         self.persistence = persistence
@@ -184,6 +187,7 @@ final class AgentTaskRegistry {
         self.claimTTL = claimTTL
         self.flushTotal = flushTotal
         self.flushTail = flushTail
+        lifecycleAccuracyPolicy = accuracyPolicy
     }
 
     #if DEBUG
@@ -197,13 +201,13 @@ final class AgentTaskRegistry {
                 seed: 1,
                 projectName: "Pine Demo",
                 worktreeName: nil,
-                title: "Approve the release announcement",
+                title: "Draft the release announcement",
                 agentType: .codex,
-                state: .waitingInput,
+                state: .executing,
                 liveness: .live,
                 lifecycle: .active,
-                attention: .waitingInput,
-                isUnread: true,
+                attention: .none,
+                isUnread: false,
                 startedSecondsAgo: 7 * 60,
                 verifiedSecondsAgo: 18
             ), referenceDate: referenceDate),
@@ -319,7 +323,8 @@ final class AgentTaskRegistry {
                 state: fixture.state,
                 liveness: fixture.liveness,
                 observedAt: observedAt
-            )
+            ),
+            lifecycleAccuracy: .processTerminationOnly
         ))]
         task.lifecycle = fixture.lifecycle
         task.attention = fixture.attention
@@ -1431,7 +1436,8 @@ final class AgentTaskRegistry {
                 state: AgentRunState(session.state),
                 liveness: liveness,
                 observedAt: max(session.lastObservedAt, session.startedAt)
-            )
+            ),
+            lifecycleAccuracy: session.lifecycleAccuracy
         ))
         task.route = context.route
         task.runs.append(run)
@@ -1470,12 +1476,14 @@ final class AgentTaskRegistry {
         let nextLiveness = AgentRunLiveness(session.liveness)
         let nextObservedAt = max(session.lastObservedAt, run.startedAt)
         let changed = run.state != nextState
+            || run.lifecycleAccuracy != session.lifecycleAccuracy
             || run.liveness != nextLiveness
             || run.lastObservedAt != nextObservedAt
             || route.map({ $0 != tasks[taskIndex].route }) == true
         guard changed else { return false }
 
         run.state = nextState
+        run.lifecycleAccuracy = session.lifecycleAccuracy
         run.liveness = nextLiveness
         run.lastObservedAt = nextObservedAt
         if nextLiveness == .terminated {
@@ -1517,7 +1525,11 @@ final class AgentTaskRegistry {
         let next: AgentTaskAttention
         if run.liveness != .live {
             next = .none
-        } else if run.state == .waitingInput {
+        } else if run.state == .waitingInput,
+                  lifecycleAccuracyPolicy.permitsUserFacingAttention(
+                    for: task.descriptor.typeIdentifier,
+                    evidence: run.lifecycleAccuracy
+                  ) {
             next = .waitingInput
         } else {
             next = .none

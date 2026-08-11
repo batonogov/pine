@@ -29,9 +29,80 @@ nonisolated enum FirstPartyAgentResumeCapability: String, Sendable {
     case documentedOpaqueSessionID
 }
 
-nonisolated enum FirstPartyAgentNotificationAccuracy: String, Sendable {
+nonisolated enum FirstPartyAgentNotificationAccuracy: String, Codable, Sendable {
     case processTerminationOnly
     case verifiedLifecycleTransitions
+
+    /// Whether evidence at this accuracy may drive user-facing lifecycle
+    /// claims such as "Waiting for input". Process observation proves only
+    /// presence and termination; CPU inactivity is not a prompt signal.
+    var permitsUserFacingLifecycleTransitions: Bool {
+        self == .verifiedLifecycleTransitions
+    }
+}
+
+/// The single fail-closed accuracy policy shared by detection, durable tasks,
+/// presentation, and notification delivery. Production resolves declarations
+/// from the compatibility catalog; tests may inject a future verified catalog
+/// without weakening current first-party records.
+nonisolated struct AgentLifecycleAccuracyPolicy: Sendable {
+    private let declaredAccuracy: @Sendable (
+        String
+    ) -> FirstPartyAgentNotificationAccuracy
+
+    static let production = AgentLifecycleAccuracyPolicy { identifier in
+        FirstPartyAgentCompatibilityCatalog.record(
+            stableIdentifier: identifier
+        )?.notificationAccuracy ?? .processTerminationOnly
+    }
+
+    init(
+        declaredAccuracy: @escaping @Sendable (
+            String
+        ) -> FirstPartyAgentNotificationAccuracy
+    ) {
+        self.declaredAccuracy = declaredAccuracy
+    }
+
+    func accuracy(
+        for stableIdentifier: String
+    ) -> FirstPartyAgentNotificationAccuracy {
+        declaredAccuracy(stableIdentifier)
+    }
+
+    func boundedAccuracy(
+        for stableIdentifier: String,
+        evidence: FirstPartyAgentNotificationAccuracy
+    ) -> FirstPartyAgentNotificationAccuracy {
+        Self.boundedAccuracy(
+            declared: accuracy(for: stableIdentifier),
+            evidence: evidence
+        )
+    }
+
+    func permitsUserFacingAttention(
+        for stableIdentifier: String,
+        evidence: FirstPartyAgentNotificationAccuracy
+    ) -> Bool {
+        boundedAccuracy(
+            for: stableIdentifier,
+            evidence: evidence
+        ).permitsUserFacingLifecycleTransitions
+    }
+
+    /// Bounds per-run evidence by the compatibility claim. Both the adapter
+    /// declaration and the concrete transition must be verified; either side
+    /// being process-only makes the result process-only.
+    static func boundedAccuracy(
+        declared: FirstPartyAgentNotificationAccuracy,
+        evidence: FirstPartyAgentNotificationAccuracy
+    ) -> FirstPartyAgentNotificationAccuracy {
+        guard declared.permitsUserFacingLifecycleTransitions,
+              evidence.permitsUserFacingLifecycleTransitions else {
+            return .processTerminationOnly
+        }
+        return .verifiedLifecycleTransitions
+    }
 }
 
 /// The checked-in, security-conservative compatibility claim for one agent.

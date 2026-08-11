@@ -70,11 +70,18 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
     /// It deliberately projects metadata only: prompts and terminal output do
     /// not exist on the durable task model and cannot leak into the Inbox.
     @MainActor
-    init(tasks: [AgentTask]) {
+    init(
+        tasks: [AgentTask],
+        accuracyPolicy: AgentLifecycleAccuracyPolicy = .production
+    ) {
         var grouped: [AgentInboxSectionID: [AgentInboxRow]] = [:]
         for task in tasks where task.lifecycle != .dismissed {
             let latestRun = task.runs.last
-            let section = Self.section(for: task, latestRun: latestRun)
+            let section = Self.section(
+                for: task,
+                latestRun: latestRun,
+                accuracyPolicy: accuracyPolicy
+            )
             grouped[section, default: []].append(AgentInboxRow(
                 id: task.id,
                 section: section,
@@ -83,7 +90,11 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
                 title: task.title,
                 agentName: task.descriptor.agentType.displayName,
                 lifecycle: task.lifecycle,
-                state: latestRun?.state,
+                state: Self.userFacingState(
+                    for: task,
+                    latestRun: latestRun,
+                    accuracyPolicy: accuracyPolicy
+                ),
                 liveness: latestRun?.liveness,
                 routeAvailability: task.route.availability,
                 startedAt: latestRun?.startedAt ?? task.createdAt,
@@ -102,10 +113,17 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
 
     private static func section(
         for task: AgentTask,
-        latestRun: AgentTaskRun?
+        latestRun: AgentTaskRun?,
+        accuracyPolicy: AgentLifecycleAccuracyPolicy
     ) -> AgentInboxSectionID {
         if task.attention == .waitingInput,
-           latestRun?.liveness == .live {
+           latestRun?.liveness == .live,
+           latestRun.map({
+               accuracyPolicy.permitsUserFacingAttention(
+                   for: task.descriptor.typeIdentifier,
+                   evidence: $0.lifecycleAccuracy
+               )
+           }) == true {
             return .needsAttention
         }
         if task.attention == .failed, task.isUnread {
@@ -119,6 +137,22 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
             return .working
         }
         return .history
+    }
+
+    private static func userFacingState(
+        for task: AgentTask,
+        latestRun: AgentTaskRun?,
+        accuracyPolicy: AgentLifecycleAccuracyPolicy
+    ) -> AgentRunState? {
+        guard let latestRun else { return nil }
+        guard latestRun.state == .waitingInput,
+              !accuracyPolicy.permitsUserFacingAttention(
+                for: task.descriptor.typeIdentifier,
+                evidence: latestRun.lifecycleAccuracy
+              ) else {
+            return latestRun.state
+        }
+        return .idle
     }
 
     private static func rowPrecedes(

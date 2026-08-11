@@ -386,7 +386,8 @@ struct AgentNotificationTests {
                 state: state,
                 liveness: .live,
                 observedAt: started
-            )
+            ),
+            lifecycleAccuracy: .verifiedLifecycleTransitions
         ))]
         task.updatedAt = started
         task.lastActivityAt = started

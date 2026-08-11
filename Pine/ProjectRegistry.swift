@@ -1286,7 +1286,10 @@ final class ProjectRegistry: LSPSettingsObserver {
             }
         }
         guard !tasks.isEmpty, !agentTaskProjectsByRoot.isEmpty else { return }
-        let snapshot = AgentInboxSnapshot(tasks: tasks)
+        let snapshot = AgentInboxSnapshot(
+            tasks: tasks,
+            accuracyPolicy: agentTasks.lifecycleAccuracyPolicy
+        )
         guard let needsAttention = snapshot.sections.first(where: {
             $0.id == .needsAttention
         }) else { return }

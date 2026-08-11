@@ -46,9 +46,10 @@ struct AgentInboxTests {
         )
         completed.lifecycle = .completed
 
-        let snapshot = AgentInboxSnapshot(tasks: [
-            olderWorking, completed, newerWorking, waiting,
-        ])
+        let snapshot = AgentInboxSnapshot(
+            tasks: [olderWorking, completed, newerWorking, waiting],
+            accuracyPolicy: verifiedAccuracyPolicy
+        )
 
         #expect(snapshot.sections.map(\.id) == [
             .needsAttention, .completedUnread, .working,
@@ -59,6 +60,23 @@ struct AgentInboxTests {
         #expect(working.rows.map(\.id) == [newerWorking.id, olderWorking.id])
         #expect(snapshot.rows.first?.projectName == "inbox-a")
         #expect(snapshot.rows.allSatisfy { !$0.agentName.isEmpty })
+    }
+
+    @Test("catalog ceiling keeps forged waiting evidence in Working")
+    func catalogCeilingSuppressesForgedWaitingEvidence() throws {
+        let task = makeTask(
+            seed: 90,
+            project: "/tmp/inbox-forged",
+            state: .waitingInput,
+            liveness: .live,
+            attention: .waitingInput,
+            unread: true,
+            observedAt: Date(timeIntervalSince1970: 10_000)
+        )
+
+        let snapshot = AgentInboxSnapshot(tasks: [task])
+        #expect(snapshot.sections.map(\.id) == [.working])
+        #expect(snapshot.rows.first?.state == .idle)
     }
 
     @Test("row order stays stable when polling-driven activity timestamps flip")
@@ -220,9 +238,15 @@ struct AgentInboxTests {
 
     @Test("render projection never marks unread tasks reviewed")
     func projectionHasNoReviewSideEffect() throws {
-        let registry = AgentTaskRegistry()
+        let registry = AgentTaskRegistry(
+            accuracyPolicy: verifiedAccuracyPolicy
+        )
         let identity = project("/tmp/inbox-unread")
-        let session = makeSession(seed: 20, state: .waitingInput)
+        let session = makeSession(
+            seed: 20,
+            state: .waitingInput,
+            lifecycleAccuracy: .verifiedLifecycleTransitions
+        )
         registry.bridge(
             session,
             replacing: nil,
@@ -262,8 +286,12 @@ struct AgentInboxTests {
     func exactNavigationAndReplacementFailure() async throws {
         let fixture = try InboxProjectFixture()
         defer { fixture.cleanup() }
-        let taskRegistry = AgentTaskRegistry()
-        let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
+        let taskRegistry = AgentTaskRegistry(
+            accuracyPolicy: verifiedAccuracyPolicy
+        )
+        let projectRegistry = ProjectRegistry(
+            agentTasks: taskRegistry
+        )
         let manager = try #require(
             projectRegistry.projectManager(for: fixture.project)
         )
@@ -272,7 +300,11 @@ struct AgentInboxTests {
         )
         let state = try #require(manager.paneManager.terminalState(for: pane))
         let tab = try #require(state.terminalTabs.first)
-        let session = makeSession(seed: 40, state: .waitingInput)
+        let session = makeSession(
+            seed: 40,
+            state: .waitingInput,
+            lifecycleAccuracy: .verifiedLifecycleTransitions
+        )
         manager.terminal.bridgeAgentSession(
             session,
             replacing: nil,
@@ -280,6 +312,7 @@ struct AgentInboxTests {
         )
         tab.agentSession = session
         let taskID = try #require(taskRegistry.taskID(forSessionID: session.id))
+        #expect(taskRegistry.task(for: taskID)?.isUnread == true)
 
         let focused = await projectRegistry.navigateToAgentTaskFromInbox(
             taskID,
@@ -317,8 +350,12 @@ struct AgentInboxTests {
     func notificationNavigationRejectsReplacementRace() async throws {
         let fixture = try InboxProjectFixture()
         defer { fixture.cleanup() }
-        let taskRegistry = AgentTaskRegistry()
-        let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
+        let taskRegistry = AgentTaskRegistry(
+            accuracyPolicy: verifiedAccuracyPolicy
+        )
+        let projectRegistry = ProjectRegistry(
+            agentTasks: taskRegistry
+        )
         let manager = try #require(
             projectRegistry.projectManager(for: fixture.project)
         )
@@ -327,7 +364,11 @@ struct AgentInboxTests {
         )
         let state = try #require(manager.paneManager.terminalState(for: pane))
         let tab = try #require(state.terminalTabs.first)
-        let original = makeSession(seed: 45, state: .waitingInput)
+        let original = makeSession(
+            seed: 45,
+            state: .waitingInput,
+            lifecycleAccuracy: .verifiedLifecycleTransitions
+        )
         manager.terminal.bridgeAgentSession(original, replacing: nil, in: tab)
         tab.agentSession = original
         let taskID = try #require(taskRegistry.taskID(forSessionID: original.id))
@@ -511,7 +552,10 @@ struct AgentInboxTests {
                 state: state,
                 liveness: liveness,
                 observedAt: observedAt
-            )
+            ),
+            lifecycleAccuracy: attention == .waitingInput
+                ? .verifiedLifecycleTransitions
+                : .processTerminationOnly
         ))]
         task.attention = attention
         task.isUnread = unread
@@ -614,10 +658,21 @@ struct AgentInboxTests {
         )
     }
 
-    private func makeSession(seed: Int, state: AgentState) -> AgentSession {
+    private var verifiedAccuracyPolicy: AgentLifecycleAccuracyPolicy {
+        AgentLifecycleAccuracyPolicy { _ in
+            .verifiedLifecycleTransitions
+        }
+    }
+
+    private func makeSession(
+        seed: Int,
+        state: AgentState,
+        lifecycleAccuracy: FirstPartyAgentNotificationAccuracy = .processTerminationOnly
+    ) -> AgentSession {
         let session = AgentSession(
             agentType: .codex,
             state: state,
+            lifecycleAccuracy: lifecycleAccuracy,
             startedAt: Date(timeIntervalSince1970: TimeInterval(seed))
         )
         _ = session.bindProcessEvidence(AgentProcessEvidence(
