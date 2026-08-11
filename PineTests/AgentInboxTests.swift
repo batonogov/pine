@@ -480,6 +480,284 @@ struct AgentInboxTests {
         #expect(taskRegistry.task(for: taskID) == historicalTask)
     }
 
+    @Test("background recovery cancellation and failure remain retryable")
+    func backgroundRecoveryRollbackAndRetry() async throws {
+        let fixture = try InboxProjectFixture()
+        defer { fixture.cleanup() }
+        let pausedTask = makePersistedRecoveryTask(projectURL: fixture.project)
+        let taskRegistry = AgentTaskRegistry(
+            persistence: InboxLoadedAgentTaskStore(tasks: [pausedTask])
+        )
+        let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        manager.terminal.lastActiveTerminalPaneID = pane
+        let state = try #require(manager.paneManager.terminalState(for: pane))
+        let retainedTab = try #require(state.activeTab)
+        try await requireLoadedTask(pausedTask.id, in: taskRegistry)
+
+        let liveSession = makeSession(seed: 60, state: .executing)
+        manager.terminal.bridgeAgentSession(
+            liveSession,
+            replacing: nil,
+            in: retainedTab
+        )
+        retainedTab.agentSession = liveSession
+        let liveTaskID = try #require(
+            taskRegistry.taskID(forSessionID: liveSession.id)
+        )
+        let retainedTerminalIDs = state.terminalTabs.map(\.id)
+        let canonical = projectRegistry.canonicalProjectURL(fixture.project)
+        projectRegistry.closeProjectWindow(fixture.project)
+        let expectRetainedBackgroundState = {
+            self.assertBackgroundRecoveryState(
+                projectRegistry: projectRegistry,
+                taskRegistry: taskRegistry,
+                projectURL: canonical,
+                liveTaskID: liveTaskID,
+                retained: (manager, state, retainedTerminalIDs)
+            )
+        }
+        expectRetainedBackgroundState()
+
+        var requestedURLs: [URL] = []
+        let cancelledRecovery = Task { @MainActor in
+            await projectRegistry.recoverAgentTaskFromInbox(
+                pausedTask.id,
+                action: .startNewSession,
+                openProjectWindow: { requestedURLs.append($0) },
+                waitUntilPresented: { recoveredManager in
+                    #expect(recoveredManager === manager)
+                    #expect(requestedURLs == [canonical])
+                    expectRetainedBackgroundState()
+                    return true
+                },
+                activateApplication: { _ in }
+            )
+        }
+        cancelledRecovery.cancel()
+        #expect(await cancelledRecovery.value == .projectUnavailable)
+        expectRetainedBackgroundState()
+
+        let failed = await projectRegistry.recoverAgentTaskFromInbox(
+            pausedTask.id,
+            action: .startNewSession,
+            openProjectWindow: { requestedURLs.append($0) },
+            waitUntilPresented: { recoveredManager in
+                #expect(recoveredManager === manager)
+                #expect(requestedURLs == [canonical, canonical])
+                expectRetainedBackgroundState()
+                return false
+            },
+            activateApplication: { _ in }
+        )
+        #expect(failed == .projectUnavailable)
+        expectRetainedBackgroundState()
+
+        let retried = await projectRegistry.recoverAgentTaskFromInbox(
+            pausedTask.id,
+            action: .startNewSession,
+            openProjectWindow: { requestedURLs.append($0) },
+            waitUntilPresented: { recoveredManager in
+                #expect(recoveredManager === manager)
+                #expect(requestedURLs == [canonical, canonical, canonical])
+                expectRetainedBackgroundState()
+                return true
+            },
+            activateApplication: { _ in }
+        )
+        guard case .openedNewSession(let recoveredTerminalID) = retried else {
+            Issue.record("Expected retry to open a new session")
+            return
+        }
+        #expect(projectRegistry.openProjects[canonical] === manager)
+        #expect(projectRegistry.isWindowOpen(canonical))
+        #expect(!projectRegistry.backgroundProjects.contains(canonical))
+        #expect(taskRegistry.task(for: liveTaskID)?.route.availability
+                == .available)
+        #expect(state.terminalTabs.map(\.id)
+                == retainedTerminalIDs + [recoveredTerminalID])
+    }
+
+    @Test("background vendor resume reuses retained manager and terminal pane")
+    func backgroundVendorResume() async throws {
+        let fixture = try InboxProjectFixture()
+        defer { fixture.cleanup() }
+        let executable = fixture.project.appendingPathComponent("codex")
+        try Data().write(to: executable)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: executable.path
+        )
+        let pausedTask = makePersistedRecoveryTask(
+            projectURL: fixture.project,
+            vendorIdentity: AgentVendorSessionIdentity(
+                provider: "example",
+                opaqueIdentifier: "opaque-session-1423",
+                executableVersion: "1.2.3"
+            )
+        )
+        let taskRegistry = AgentTaskRegistry(
+            persistence: InboxLoadedAgentTaskStore(tasks: [pausedTask])
+        )
+        let recipe = AgentTaskResumeRecipe(
+            provider: "example",
+            agentTypeIdentifier: pausedTask.descriptor.typeIdentifier,
+            executableAliases: ["codex"],
+            supportedVersions: ["1.2.3"],
+            identifierArgumentPrefix: ["resume", "--session"],
+            identifierArgumentSuffix: []
+        )
+        let inspector = AgentTaskRecoveryInspector(
+            resolver: ExternalToolResolver(
+                searchDirectories: [fixture.project.path]
+            ),
+            processRunner: { _, _, _, _ in
+                ProcessRunResult(
+                    stdout: "1.2.3\n",
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            },
+            recipes: [recipe]
+        )
+        let projectRegistry = ProjectRegistry(
+            agentTasks: taskRegistry,
+            agentRecoveryInspector: inspector
+        )
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        manager.terminal.lastActiveTerminalPaneID = pane
+        let state = try #require(manager.paneManager.terminalState(for: pane))
+        let retainedTerminalIDs = state.terminalTabs.map(\.id)
+        try await requireLoadedTask(pausedTask.id, in: taskRegistry)
+        let canonical = projectRegistry.canonicalProjectURL(fixture.project)
+        projectRegistry.closeProjectWindow(fixture.project)
+
+        var requestedURL: URL?
+        let result = await projectRegistry.recoverAgentTaskFromInbox(
+            pausedTask.id,
+            action: .resumeVendorSession,
+            openProjectWindow: { requestedURL = $0 },
+            waitUntilPresented: { recoveredManager in
+                #expect(requestedURL == canonical)
+                #expect(recoveredManager === manager)
+                #expect(projectRegistry.openProjects[canonical] === manager)
+                #expect(projectRegistry.backgroundProjects.contains(canonical))
+                #expect(!projectRegistry.isWindowOpen(canonical))
+                #expect(state.terminalTabs.map(\.id) == retainedTerminalIDs)
+                return true
+            },
+            activateApplication: { _ in }
+        )
+        guard case .resumed(let terminalID) = result else {
+            Issue.record("Expected documented vendor resume")
+            return
+        }
+        let resumedTab = try #require(
+            state.terminalTabs.first(where: { $0.id == terminalID })
+        )
+        #expect(projectRegistry.openProjects[canonical] === manager)
+        #expect(projectRegistry.isWindowOpen(canonical))
+        #expect(state.terminalTabs.map(\.id) == retainedTerminalIDs + [terminalID])
+        #expect(resumedTab.configuredInitialProcess == TerminalInitialProcess(
+            executablePath: executable.path,
+            arguments: ["resume", "--session", "opaque-session-1423"]
+        ))
+    }
+
+    private func makePersistedRecoveryTask(
+        projectURL: URL,
+        vendorIdentity: AgentVendorSessionIdentity? = nil
+    ) -> AgentTask {
+        let identity = project(projectURL.standardizedFileURL.path)
+        let terminalID = uuid(14_230)
+        let route = AgentTaskRoute(
+            paneID: uuid(14_231),
+            tabID: terminalID,
+            terminalID: terminalID,
+            availability: .missing
+        )
+        let startedAt = Date(timeIntervalSince1970: 100)
+        let endedAt = Date(timeIntervalSince1970: 110)
+        var task = AgentTask(
+            descriptor: AgentDescriptor(
+                agentType: .codex,
+                launchExecutable: "codex"
+            ),
+            context: AgentTaskBridgeContext(
+                project: identity,
+                route: route,
+                origin: .pineLaunched,
+                observedAt: startedAt
+            ),
+            title: "Recovery fixture",
+            objective: "Finish the release",
+            createdAt: startedAt
+        )
+        var run = AgentTaskRun(AgentTaskRunInput(
+            id: uuid(14_232),
+            terminalID: terminalID,
+            process: AgentProcessEvidence(
+                processIdentifier: 14_232,
+                processGeneration: 1,
+                startIdentifier: "recovery-fixture-1423",
+                observedStartedAt: startedAt,
+                startIsAuthoritative: true
+            ),
+            status: AgentTaskRunStatus(
+                state: .done,
+                liveness: .terminated,
+                observedAt: endedAt
+            )
+        ))
+        run.vendorIdentity = vendorIdentity
+        task.runs = [run]
+        task.lifecycle = .paused
+        task.route.availability = .missing
+        task.lastActivityAt = endedAt
+        task.updatedAt = endedAt
+        return task
+    }
+
+    private func requireLoadedTask(
+        _ taskID: UUID,
+        in registry: AgentTaskRegistry
+    ) async throws {
+        for _ in 0..<200 where registry.task(for: taskID) == nil {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        _ = try #require(registry.task(for: taskID))
+    }
+
+    private func assertBackgroundRecoveryState(
+        projectRegistry: ProjectRegistry,
+        taskRegistry: AgentTaskRegistry,
+        projectURL: URL,
+        liveTaskID: UUID,
+        retained: (
+            manager: ProjectManager,
+            state: TerminalPaneState,
+            terminalIDs: [UUID]
+        )
+    ) {
+        #expect(projectRegistry.openProjects[projectURL] === retained.manager)
+        #expect(projectRegistry.backgroundProjects.contains(projectURL))
+        #expect(!projectRegistry.isWindowOpen(projectURL))
+        #expect(taskRegistry.task(for: liveTaskID)?.route.availability
+                == .background)
+        #expect(retained.state.terminalTabs.map(\.id) == retained.terminalIDs)
+    }
+
     private func makeTask(
         seed: Int,
         project path: String,
@@ -654,5 +932,27 @@ private final class InboxProjectFixture {
 
     func cleanup() {
         try? FileManager.default.removeItem(at: root)
+    }
+}
+
+private actor InboxLoadedAgentTaskStore: AgentTaskPersisting {
+    private let tasks: [AgentTask]
+
+    init(tasks: [AgentTask]) {
+        self.tasks = tasks
+    }
+
+    func load(
+        project: AgentTaskProjectIdentity
+    ) async -> AgentTaskMetadataLoadResult {
+        AgentTaskMetadataLoadResult(status: .loaded, tasks: tasks)
+    }
+
+    func save(
+        tasks: [AgentTask],
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult {
+        .saved(taskCount: tasks.count)
     }
 }

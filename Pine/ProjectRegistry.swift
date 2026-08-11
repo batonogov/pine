@@ -237,7 +237,8 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// Reopens a persisted exact project/worktree scope after both paths have
     /// been canonicalized again. This is used by Inbox navigation and recovery.
     private func projectManager(
-        for identity: AgentTaskProjectIdentity
+        for identity: AgentTaskProjectIdentity,
+        reopenBackgroundProject: Bool = true
     ) -> ProjectManager? {
         let project = canonicalProjectURL(URL(
             fileURLWithPath: identity.canonicalProjectPath,
@@ -253,13 +254,15 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
         return projectManager(
             forCanonicalWorktree: worktree,
-            identity: identity
+            identity: identity,
+            reopenBackgroundProject: reopenBackgroundProject
         )
     }
 
     private func projectManager(
         forCanonicalWorktree canonical: URL,
-        identity: AgentTaskProjectIdentity
+        identity: AgentTaskProjectIdentity,
+        reopenBackgroundProject: Bool = true
     ) -> ProjectManager? {
         if let existing = openProjects[canonical] {
             guard agentTaskProjectsByRoot[canonical] == identity else {
@@ -298,9 +301,13 @@ final class ProjectRegistry: LSPSettingsObserver {
                     saveRecentProjects()
                     return nil
                 }
-                backgroundProjects.remove(canonical)
-                agentTasks.setWindowOpen(true, project: identity)
-                existing.terminal.setAgentTaskWindowOpen(true)
+                if reopenBackgroundProject {
+                    _ = markProjectWindowOpen(
+                        canonical,
+                        identity: identity,
+                        manager: existing
+                    )
+                }
             }
             addToRecent(canonical)
             return existing
@@ -337,6 +344,25 @@ final class ProjectRegistry: LSPSettingsObserver {
         )
         #endif
         return pm
+    }
+
+    /// Commits the retained-project presentation transition only for the
+    /// exact manager and project/worktree identity that were resolved. Inbox
+    /// recovery deliberately defers this until an eligible window exists.
+    @discardableResult
+    private func markProjectWindowOpen(
+        _ canonical: URL,
+        identity: AgentTaskProjectIdentity,
+        manager: ProjectManager
+    ) -> Bool {
+        guard openProjects[canonical] === manager,
+              agentTaskProjectsByRoot[canonical] == identity else {
+            return false
+        }
+        backgroundProjects.remove(canonical)
+        agentTasks.setWindowOpen(true, project: identity)
+        manager.terminal.setAgentTaskWindowOpen(true)
+        return true
     }
 
     #if DEBUG
@@ -718,20 +744,14 @@ final class ProjectRegistry: LSPSettingsObserver {
             Self.canonicalProjectURL(rawURL)
         }.value
         guard projectURL.path == initialTask.project.canonicalWorktreePath,
-              let manager = projectManager(for: initialTask.project),
-              manager.rootURL == projectURL else {
+              let manager = await ensureAgentInboxProjectPresented(
+                initialTask,
+                at: projectURL,
+                openProjectWindow: openProjectWindow,
+                waitUntilPresented: waitUntilPresented
+              ) else {
             return .projectUnavailable
         }
-
-        if initialTask.route.availability == .background {
-            openProjectWindow(projectURL)
-        }
-        let presented = if let waitUntilPresented {
-            await waitUntilPresented(manager)
-        } else {
-            await manager.awaitDialogOwnerWindow() != nil
-        }
-        guard presented else { return .projectUnavailable }
 
         guard let route = await resolveAgentTaskRoute(taskID),
               let currentTask = agentTasks.task(for: taskID),
@@ -795,20 +815,14 @@ final class ProjectRegistry: LSPSettingsObserver {
             Self.canonicalProjectURL(rawURL)
         }.value
         guard projectURL.path == initialTask.project.canonicalWorktreePath,
-              let manager = projectManager(for: initialTask.project),
-              manager.rootURL == projectURL else {
+              let manager = await ensureAgentInboxProjectPresented(
+                initialTask,
+                at: projectURL,
+                openProjectWindow: openProjectWindow,
+                waitUntilPresented: waitUntilPresented
+              ) else {
             return .projectUnavailable
         }
-
-        if backgroundProjects.contains(projectURL) {
-            openProjectWindow(projectURL)
-        }
-        let presented = if let waitUntilPresented {
-            await waitUntilPresented(manager)
-        } else {
-            await manager.awaitDialogOwnerWindow() != nil
-        }
-        guard presented else { return .projectUnavailable }
         guard agentTasks.task(for: taskID) == initialTask else {
             return .changedWhilePreparing
         }
@@ -857,6 +871,56 @@ final class ProjectRegistry: LSPSettingsObserver {
         case .resumed: .resumed(terminalID: terminalID)
         case .rejected: .launchRejected
         }
+    }
+
+    /// Resolves and presents one exact Inbox project without exposing an
+    /// intermediate logically-open state. The presentation requirement is
+    /// captured before retained-manager lookup, because ordinary lookup is a
+    /// reopening mutation. Success commits availability once an eligible
+    /// owner exists; cancellation or failure restores the background state.
+    private func ensureAgentInboxProjectPresented(
+        _ task: AgentTask,
+        at projectURL: URL,
+        openProjectWindow: @escaping @MainActor (URL) -> Void,
+        waitUntilPresented: (@MainActor (ProjectManager) async -> Bool)?
+    ) async -> ProjectManager? {
+        let requiresPresentation = task.route.availability == .background
+            || !isWindowOpen(projectURL)
+        guard let manager = projectManager(
+            for: task.project,
+            reopenBackgroundProject: false
+        ), manager.rootURL == projectURL else {
+            return nil
+        }
+
+        if requiresPresentation {
+            // A previously unknown durable project is admitted by lookup but
+            // still has no window. Keep that new manager transactional too.
+            closeProjectWindow(projectURL)
+            openProjectWindow(projectURL)
+        }
+        let presented = if let waitUntilPresented {
+            await waitUntilPresented(manager)
+        } else {
+            await manager.awaitDialogOwnerWindow() != nil
+        }
+        guard presented, !Task.isCancelled else {
+            if requiresPresentation
+                || manager.dialogOwnerWindow.map({
+                    !DialogPresenter.isEligibleApplicationOwner($0)
+                }) != false {
+                closeProjectWindow(projectURL)
+            }
+            return nil
+        }
+        guard markProjectWindowOpen(
+            projectURL,
+            identity: task.project,
+            manager: manager
+        ) else {
+            return nil
+        }
+        return manager
     }
 
     private func resolveAgentRecoveryTerminal(
