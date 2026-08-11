@@ -1026,9 +1026,12 @@ struct SidebarView: View {
             rows: rows
         )
         selectedFile = reconciled
-        if let reconciled {
-            navigation.scroll(to: reconciled)
-        }
+        // A passive file-system refresh must preserve the viewport. The row
+        // was already selected and visible (or intentionally off-screen), so
+        // asking ScrollViewReader to reveal it again only forces another
+        // layout pass. Consecutive file-system refreshes made those requests
+        // visible as sidebar flashing on deep trees. User-driven navigation
+        // still scrolls through `navigate(to:)`.
 
         if let renamingURL = editState.renamingURL,
            !SidebarTreeFlattener.contains(
