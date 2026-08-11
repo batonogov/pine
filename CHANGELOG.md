@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.0](https://github.com/batonogov/pine/compare/v2.2.2...v2.3.0) (2026-08-11)
+
+
+### Features
+
+* add terminal cursor settings ([#1413](https://github.com/batonogov/pine/issues/1413)) ([4961648](https://github.com/batonogov/pine/commit/496164877fb2f66c646ad2823a3a4dd6174470a8))
+
+
+### Bug Fixes
+
+* **sidebar:** prevent flicker during deep tree refresh ([#1415](https://github.com/batonogov/pine/issues/1415)) ([70d0d6b](https://github.com/batonogov/pine/commit/70d0d6bc5d3178890f8517411c2be304e6491faa))
+
 ## [2.2.2](https://github.com/batonogov/pine/compare/v2.2.1...v2.2.2) (2026-08-10)
 
 
