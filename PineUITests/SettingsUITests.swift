@@ -85,10 +85,10 @@ final class SettingsUITests: PineUITestCase {
             "Vertical Bar",
             "Fresh settings should select the thin vertical-bar default"
         )
-        let initialBlinkValue = cursorBlink.value as? String
+        let initialBlinkState = checkboxState(cursorBlink)
         XCTAssertEqual(
-            initialBlinkValue,
-            "1",
+            initialBlinkState,
+            true,
             "Fresh settings should enable cursor blinking"
         )
 
@@ -101,15 +101,15 @@ final class SettingsUITests: PineUITestCase {
         wait(for: [blockSelected], timeout: 5)
         XCTAssertEqual(cursorPicker.value as? String, "Block")
         XCTAssertEqual(
-            cursorBlink.value as? String,
-            initialBlinkValue,
+            checkboxState(cursorBlink),
+            initialBlinkState,
             "Changing shape must preserve blinking"
         )
 
         cursorBlink.click()
         XCTAssertEqual(
-            cursorBlink.value as? String,
-            "0",
+            checkboxState(cursorBlink),
+            false,
             "Blinking should be independently mutable"
         )
         XCTAssertEqual(
@@ -508,6 +508,26 @@ final class SettingsUITests: PineUITestCase {
         in picker: XCUIElement
     ) -> XCUIElement {
         picker.radioButtons[label].firstMatch
+    }
+
+    /// XCTest bridges macOS checkbox values as Bool, NSNumber, or String
+    /// depending on the runner/runtime combination.
+    private func checkboxState(_ checkbox: XCUIElement) -> Bool? {
+        if let value = checkbox.value as? Bool {
+            return value
+        }
+        if let value = checkbox.value as? NSNumber {
+            return value.boolValue
+        }
+        guard let value = checkbox.value as? String else { return nil }
+        switch value.lowercased() {
+        case "1", "true", "on":
+            return true
+        case "0", "false", "off":
+            return false
+        default:
+            return nil
+        }
     }
 
     private func openSettings(
