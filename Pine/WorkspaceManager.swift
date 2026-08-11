@@ -243,6 +243,73 @@ final class WorkspaceManager {
     /// main-actor hop.
     nonisolated private static let shallowDepth = 3
 
+    /// Controls which intermediate tree snapshots become visible while a
+    /// background load runs.
+    ///
+    /// Progressive publication is useful only for the first project load,
+    /// when rendering a shallow tree quickly is better than an empty sidebar.
+    /// Once a tree is already visible, publishing an unchanged shallow
+    /// snapshot before the full result needlessly lays out every expanded row
+    /// twice and can visibly flash deep sidebars on each FSEvents refresh.
+    nonisolated private enum TreeLoadPresentation: Sendable {
+        /// Initial load: publish shallow, then full when depth-limited.
+        case progressive
+        /// External refresh: publish shallow only when its visible structure changed.
+        case refresh
+        /// In-app mutation: the caller already published a synchronous shallow snapshot.
+        case shallowAlreadyPublished
+
+        func publishesShallowResult(
+            _ nodes: [FileNode],
+            replacing currentNodes: [FileNode],
+            ignoredPathsChanged: Bool
+        ) -> Bool {
+            switch self {
+            case .progressive:
+                true
+            case .refresh:
+                ignoredPathsChanged
+                    || !WorkspaceManager.hasSameVisibleStructure(
+                        nodes,
+                        as: currentNodes
+                    )
+            case .shallowAlreadyPublished:
+                false
+            }
+        }
+    }
+
+    /// Compares the part of a shallow snapshot that is authoritative.
+    /// Descendants below a deferred node are intentionally ignored because
+    /// the shallow loader did not inspect them. This keeps fast publication
+    /// for real additions/removals near the project root while suppressing an
+    /// identical intermediate snapshot for content-only FSEvents.
+    nonisolated private static func hasSameVisibleStructure(
+        _ refreshed: [FileNode],
+        as current: [FileNode]
+    ) -> Bool {
+        guard refreshed.count == current.count else { return false }
+
+        for (newNode, currentNode) in zip(refreshed, current) {
+            guard newNode.id == currentNode.id,
+                  newNode.isDirectory == currentNode.isDirectory,
+                  newNode.isSymlink == currentNode.isSymlink else {
+                return false
+            }
+
+            guard newNode.isDirectory, !newNode.hasDeferredChildren else {
+                continue
+            }
+            guard hasSameVisibleStructure(
+                newNode.children ?? [],
+                as: currentNode.children ?? []
+            ) else {
+                return false
+            }
+        }
+        return true
+    }
+
     /// Heavy I/O (file tree + git) runs in a detached `Task` at
     /// `userInitiated` priority; results are applied back on the main actor
     /// via `await MainActor.run { ... }`.
@@ -255,12 +322,15 @@ final class WorkspaceManager {
     /// (issue #837). Staying inside the structured-concurrency world lets
     /// the main actor and the detached worker interleave cooperatively.
     ///
-    /// Uses two-phase progressive loading: a shallow tree appears fast,
-    /// then the full tree replaces it once ready.
+    /// The initial project load is progressive: a shallow tree appears fast,
+    /// then the full tree replaces it once ready. Refreshes suppress an
+    /// unchanged shallow snapshot; genuine shallow structural changes can
+    /// still appear immediately before the final tree is ready.
     private func loadDirectoryContentsAsync(
         url: URL,
         generation: Int,
-        showProgress: Bool = true
+        showProgress: Bool = true,
+        presentation: TreeLoadPresentation = .progressive
     ) {
         // Cancel any prior in-flight load so its `MainActor.run` blocks
         // become no-ops after the generation check below.
@@ -304,7 +374,15 @@ final class WorkspaceManager {
                     if let progressID { self?.progressTracker?.endOperation(progressID) }
                     return
                 }
-                self.setRootNodes(shallowChildren)
+                let publishesShallowResult = presentation.publishesShallowResult(
+                    shallowChildren,
+                    replacing: self.rootNodes,
+                    ignoredPathsChanged: gitInfo.ignoredPaths
+                        != self.gitProvider.ignoredPaths
+                )
+                if publishesShallowResult {
+                    self.setRootNodes(shallowChildren)
+                }
                 self.gitProvider.repositoryURL = gitInfo.repositoryURL
                 self.gitProvider.gitRootPath = gitInfo.gitRootPath
                 // Atomically apply git state in a single equality-checked
@@ -485,13 +563,17 @@ final class WorkspaceManager {
         setRootNodes(shallowResult.root.children ?? [])
 
         // Phase 2 (async): full tree (if depth-limited) + git status refresh,
-        // off the main thread. Reuses the shared two-phase loader so race
-        // safety (`loadGeneration`) and git state stay consistent with the
-        // initial load and the external watcher path. The loader repeats
-        // the shallow pass; that is cheap and lands identical data, so
-        // there is no visible flicker, and it carries the git fetch that
-        // the pre-#1006 path used to trigger via a separate `gitRefreshTask`.
-        loadDirectoryContentsAsync(url: url, generation: generation, showProgress: false)
+        // off the main thread. Reuses the shared loader so race safety
+        // (`loadGeneration`) and git state stay consistent with the initial
+        // load and external watcher path. The loader still computes the
+        // shallow pass to decide whether a full load is needed, but does not
+        // publish it again because this caller already did so synchronously.
+        loadDirectoryContentsAsync(
+            url: url,
+            generation: generation,
+            showProgress: false,
+            presentation: .shallowAlreadyPublished
+        )
     }
 
     /// Background variant called by the file watcher.
@@ -510,6 +592,11 @@ final class WorkspaceManager {
         guard let url = rootURL else { return }
         loadGeneration += 1
         let generation = loadGeneration
-        loadDirectoryContentsAsync(url: url, generation: generation, showProgress: false)
+        loadDirectoryContentsAsync(
+            url: url,
+            generation: generation,
+            showProgress: false,
+            presentation: .refresh
+        )
     }
 }

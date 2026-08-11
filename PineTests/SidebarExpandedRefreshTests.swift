@@ -29,7 +29,7 @@ struct SidebarExpandedRefreshTests {
         try? FileManager.default.removeItem(at: url)
     }
 
-    // MARK: - rootNodesRevision increments on refresh
+    // MARK: - rootNodesRevision tracks published tree changes
 
     @Test("rootNodesRevision starts at zero")
     @MainActor
@@ -56,7 +56,7 @@ struct SidebarExpandedRefreshTests {
         #expect(manager.rootNodesRevision > 0, "rootNodesRevision should increment after loadDirectory")
     }
 
-    @Test("rootNodesRevision increments after refreshFileTreeAsync")
+    @Test("rootNodesRevision increments when async refresh changes the tree")
     @MainActor
     func revisionIncrementsAfterAsyncRefresh() async throws {
         let dir = try makeTempDirectory()
@@ -72,8 +72,14 @@ struct SidebarExpandedRefreshTests {
         }
 
         let revisionBeforeRefresh = manager.rootNodesRevision
+        try "new".write(
+            to: dir.appendingPathComponent("new-file.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
 
-        // Simulate an external FSEvents-triggered refresh
+        // Simulate the external FSEvents-triggered refresh before the
+        // watcher's debounce fires on its own.
         manager.refreshFileTreeAsync()
 
         // Wait for the async refresh to complete
@@ -84,7 +90,7 @@ struct SidebarExpandedRefreshTests {
 
         #expect(
             manager.rootNodesRevision > revisionBeforeRefresh,
-            "rootNodesRevision should increment after refreshFileTreeAsync"
+            "rootNodesRevision should increment when refreshFileTreeAsync publishes a changed tree"
         )
     }
 
@@ -245,6 +251,54 @@ struct SidebarExpandedRefreshTests {
             manager.rootNodesRevision >= 2,
             "Deep project should have at least 2 revision increments (shallow + full phases)"
         )
+    }
+
+    @Test("Async refresh publishes one final tree for a deep project")
+    @MainActor
+    func asyncRefreshPublishesDeepTreeOnce() async throws {
+        // Once a project is visible, an FSEvents refresh must keep that tree
+        // on screen until the full replacement is ready. Publishing the
+        // shallow and full snapshots back-to-back lays out every expanded row
+        // twice and is visible as a flash on a deep sidebar.
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let deepDir = dir.appendingPathComponent("a/b/c/d/e")
+        try FileManager.default.createDirectory(
+            at: deepDir,
+            withIntermediateDirectories: true
+        )
+        try "deep".write(
+            to: deepDir.appendingPathComponent("file.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+
+        for _ in 0..<200 {
+            try await Task.sleep(for: .milliseconds(25))
+            if !manager.isLoading { break }
+        }
+        #expect(!manager.isLoading)
+
+        // The watcher can deliver the directory's initial FSEvents batch just
+        // after the progressive load completes. Let that independent refresh
+        // settle before measuring the explicit refresh below.
+        try await Task.sleep(for: .milliseconds(300))
+        let revisionBeforeRefresh = manager.rootNodesRevision
+        manager.refreshFileTreeAsync()
+
+        for _ in 0..<200 {
+            try await Task.sleep(for: .milliseconds(25))
+            if manager.rootNodesRevision > revisionBeforeRefresh { break }
+        }
+
+        // Give a second publication enough time to arrive. Before the fix,
+        // the shallow and full phases both incremented this revision.
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(manager.rootNodesRevision == revisionBeforeRefresh + 1)
     }
 
     // MARK: - Sidebar flicker fix (#1097): loaded children survive refresh
