@@ -10,13 +10,14 @@ import SwiftUI
 
 /// Terminal preferences pane.
 ///
-/// Shell and theme changes persist and apply immediately — no Apply button.
-/// Theme changes repaint existing project and Quick Terminal sessions through
-/// `.terminalThemeChanged` without restarting their processes.
+/// Shell, theme, and cursor changes persist and apply immediately — no Apply
+/// button. Theme and cursor changes update existing project and Quick Terminal
+/// sessions without restarting their processes.
 @MainActor
 struct TerminalSettingsView: View {
     @Bindable var shell: ShellSettings
     @Bindable var theme: TerminalThemeSettings
+    @Bindable var cursor: TerminalCursorSettings
     @Bindable var quickTerminal: QuickTerminalSettings
     @State private var customArgsText: String
     private let viewportHeight: CGFloat
@@ -24,11 +25,13 @@ struct TerminalSettingsView: View {
     init(
         shell: ShellSettings,
         theme: TerminalThemeSettings = .shared,
+        cursor: TerminalCursorSettings = .shared,
         quickTerminal: QuickTerminalSettings = .shared,
         viewportHeight: CGFloat = 500
     ) {
         self.shell = shell
         self.theme = theme
+        self.cursor = cursor
         self.quickTerminal = quickTerminal
         self.viewportHeight = viewportHeight
         _customArgsText = State(
@@ -47,6 +50,8 @@ struct TerminalSettingsView: View {
                 argumentSettings
 
                 appearanceSettings
+
+                cursorSettings
 
                 themeSettings
 
@@ -178,6 +183,44 @@ struct TerminalSettingsView: View {
                     }
                 }
                 .accessibilityIdentifier(AccessibilityID.terminalThemeGrid)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+        }
+    }
+
+    private var cursorSettings: some View {
+        GroupBox(Strings.terminalCursorTitle) {
+            VStack(alignment: .leading, spacing: 10) {
+                Picker(
+                    Strings.terminalCursorShape,
+                    selection: $cursor.cursorShape
+                ) {
+                    ForEach(TerminalCursorShape.allCases, id: \.self) { shape in
+                        Text(LocalizedStringKey(shape.nameKey))
+                            .tag(shape)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel(Strings.terminalCursorShape)
+                .accessibilityValue(
+                    Text(LocalizedStringKey(cursor.cursorShape.nameKey))
+                )
+                .accessibilityIdentifier(
+                    AccessibilityID.terminalCursorShapePicker
+                )
+
+                Toggle(
+                    Strings.terminalCursorBlink,
+                    isOn: $cursor.cursorBlinks
+                )
+                .accessibilityIdentifier(
+                    AccessibilityID.terminalCursorBlinkToggle
+                )
+
+                Text(Strings.terminalCursorHelp)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)

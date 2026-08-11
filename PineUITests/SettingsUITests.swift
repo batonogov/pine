@@ -54,12 +54,64 @@ final class SettingsUITests: PineUITestCase {
 
         let scrollView = app.scrollViews["terminalSettingsScrollView"].firstMatch
         XCTAssertTrue(scrollView.exists, "Terminal settings should be scrollable")
+        let cursorPicker = app.descendants(matching: .any)[
+            "terminalCursorShapePicker"
+        ].firstMatch
+        let cursorBlink = app.descendants(matching: .any)[
+            "terminalCursorBlinkToggle"
+        ].firstMatch
+        scrollDownUntilHittable(cursorBlink, in: scrollView)
+        XCTAssertTrue(
+            cursorPicker.waitForExistence(timeout: 5),
+            "Terminal cursor shape should be reachable"
+        )
+        XCTAssertTrue(
+            cursorBlink.waitForExistence(timeout: 5),
+            "Terminal cursor blinking should be reachable"
+        )
+        XCTAssertTrue(cursorPicker.isHittable)
+        XCTAssertTrue(cursorBlink.isHittable)
+        let verticalBarSegment = pickerSegment(
+            labeled: "Vertical Bar",
+            in: cursorPicker
+        )
+        let blockSegment = pickerSegment(labeled: "Block", in: cursorPicker)
+        XCTAssertTrue(verticalBarSegment.waitForExistence(timeout: 5))
+        XCTAssertTrue(blockSegment.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            cursorPicker.value as? String,
+            "Vertical Bar",
+            "Fresh settings should select the thin vertical-bar default"
+        )
+        let initialBlinkState = checkboxState(cursorBlink)
+        // Blink mutation, persistence, notifications, and renderer propagation
+        // are covered by TerminalThemeSettingsTests and renderer tests. This
+        // UI smoke verifies that the control is reachable and exposes state.
+        XCTAssertEqual(
+            initialBlinkState,
+            true,
+            "Fresh settings should enable cursor blinking"
+        )
+
+        // XCUI's click invokes the native radio button's AXPress action and
+        // does not depend on the runner's global Full Keyboard Access setting.
+        blockSegment.click()
+        let blockSelected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Block"),
+            object: cursorPicker
+        )
+        wait(for: [blockSelected], timeout: 5)
+        XCTAssertEqual(cursorPicker.value as? String, "Block")
+        XCTAssertEqual(
+            checkboxState(cursorBlink),
+            initialBlinkState,
+            "Changing shape must preserve blinking"
+        )
+
         let selectedTheme = app.descendants(matching: .any)[
             "terminalThemeRow_solarized"
         ].firstMatch
-        for _ in 0..<2 where selectedTheme.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(selectedTheme, in: scrollView)
         XCTAssertTrue(
             selectedTheme.waitForExistence(timeout: 5),
             "Terminal theme rows should be reachable"
@@ -77,9 +129,7 @@ final class SettingsUITests: PineUITestCase {
         let enabledToggle = app.descendants(matching: .any)[
             "quickTerminalEnabledToggle"
         ].firstMatch
-        for _ in 0..<5 where enabledToggle.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(enabledToggle, in: scrollView)
         XCTAssertTrue(
             enabledToggle.waitForExistence(timeout: 5),
             "Quick Terminal controls should be embedded in Terminal Settings"
@@ -124,9 +174,7 @@ final class SettingsUITests: PineUITestCase {
         }
         XCTAssertTrue(recorder.isEnabled)
 
-        for _ in 0..<4 where recorder.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(recorder, in: scrollView)
         XCTAssertTrue(
             recorder.isHittable,
             "The hotkey recorder should be keyboard-focusable and clickable"
@@ -140,9 +188,7 @@ final class SettingsUITests: PineUITestCase {
         )
         recorder.click()
 
-        for _ in 0..<4 where edgePicker.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(edgePicker, in: scrollView)
         XCTAssertTrue(edgePicker.isHittable)
         XCTAssertTrue(
             String(describing: edgePicker.value).contains("Top"),
@@ -153,9 +199,7 @@ final class SettingsUITests: PineUITestCase {
         // tree. Unit tests cover the binding's mutation/persistence matrix;
         // this test verifies the real control's value and enabled state.
 
-        for _ in 0..<4 where sizeSlider.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(sizeSlider, in: scrollView)
         XCTAssertTrue(sizeSlider.isHittable)
         let originalSize = String(describing: sizeSlider.value)
         sizeSlider.adjust(toNormalizedSliderPosition: 0.75)
@@ -165,18 +209,14 @@ final class SettingsUITests: PineUITestCase {
             "Adjusting the size slider should update its accessible value"
         )
 
-        for _ in 0..<4 where displayPicker.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(displayPicker, in: scrollView)
         XCTAssertTrue(displayPicker.isHittable)
         XCTAssertTrue(
             String(describing: displayPicker.value).contains("Active Display"),
             "The display picker should expose its persisted selection"
         )
 
-        for _ in 0..<4 where focusToggle.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(focusToggle, in: scrollView)
         XCTAssertTrue(focusToggle.isHittable)
         let originalFocusPolicy = String(describing: focusToggle.value)
         focusToggle.click()
@@ -186,9 +226,7 @@ final class SettingsUITests: PineUITestCase {
             "The focus-loss policy should be mutable"
         )
 
-        for _ in 0..<4 where enabledToggle.isHittable == false {
-            scrollView.swipeDown()
-        }
+        scrollUpUntilHittable(enabledToggle, in: scrollView)
         XCTAssertTrue(
             enabledToggle.isHittable,
             "The master toggle should be hittable before disabling controls"
@@ -210,9 +248,7 @@ final class SettingsUITests: PineUITestCase {
         XCTAssertFalse(focusToggle.isEnabled)
 
         enabledToggle.click()
-        for _ in 0..<3 where resetButton.isHittable == false {
-            scrollView.swipeUp()
-        }
+        scrollDownUntilHittable(resetButton, in: scrollView)
         XCTAssertTrue(
             resetButton.isHittable,
             "Reset should be hittable after scrolling to Quick Terminal"
@@ -236,12 +272,10 @@ final class SettingsUITests: PineUITestCase {
             originalFocusPolicy,
             "Reset should restore the default focus-loss policy"
         )
-        for _ in 0..<5 where selectedTheme.isHittable == false {
-            scrollView.swipeDown()
-        }
         let pineTheme = app.descendants(matching: .any)[
             "terminalThemeRow_pine"
         ].firstMatch
+        scrollUpUntilHittable(pineTheme, in: scrollView)
         XCTAssertTrue(pineTheme.waitForExistence(timeout: 5))
         XCTAssertTrue(
             pineTheme.isHittable,
@@ -279,8 +313,18 @@ final class SettingsUITests: PineUITestCase {
             (
                 tab: "Terminal",
                 contentIdentifier: "terminalAppearancePicker",
-                expectedLabels: [],
-                expectedIdentifiers: []
+                expectedLabels: [
+                    "Cursor",
+                    "Shape",
+                    "Vertical Bar",
+                    "Block",
+                    "Underline",
+                    "Blink cursor",
+                ],
+                expectedIdentifiers: [
+                    "terminalCursorShapePicker",
+                    "terminalCursorBlinkToggle",
+                ]
             ),
             (
                 tab: "Language Servers",
@@ -332,8 +376,18 @@ final class SettingsUITests: PineUITestCase {
             (
                 tab: "Терминал",
                 contentIdentifier: "terminalAppearancePicker",
-                expectedLabels: [],
-                expectedIdentifiers: []
+                expectedLabels: [
+                    "Курсор",
+                    "Форма",
+                    "Вертикальная черта",
+                    "Блок",
+                    "Подчёркивание",
+                    "Мигание курсора",
+                ],
+                expectedIdentifiers: [
+                    "terminalCursorShapePicker",
+                    "terminalCursorBlinkToggle",
+                ]
             ),
             (
                 tab: "Языковые серверы",
@@ -413,6 +467,56 @@ final class SettingsUITests: PineUITestCase {
                 rawLabels.isEmpty,
                 "\(pane.tab) exposes raw localization keys: \(rawLabels)"
             )
+        }
+    }
+
+    /// SwiftUI's segmented `Picker` exposes its selectable children as native
+    /// radio buttons on macOS. Query that semantic role for interaction; the
+    /// selected shape is announced by the parent picker's explicit AX value.
+    private func pickerSegment(
+        labeled label: String,
+        in picker: XCUIElement
+    ) -> XCUIElement {
+        picker.radioButtons[label].firstMatch
+    }
+
+    private func scrollDownUntilHittable(
+        _ element: XCUIElement,
+        in scrollView: XCUIElement,
+        maxSteps: Int = 12
+    ) {
+        for _ in 0..<maxSteps where element.isHittable == false {
+            scrollView.scroll(byDeltaX: 0, deltaY: -120)
+        }
+    }
+
+    private func scrollUpUntilHittable(
+        _ element: XCUIElement,
+        in scrollView: XCUIElement,
+        maxSteps: Int = 12
+    ) {
+        for _ in 0..<maxSteps where element.isHittable == false {
+            scrollView.scroll(byDeltaX: 0, deltaY: 120)
+        }
+    }
+
+    /// XCTest bridges macOS checkbox values as Bool, NSNumber, or String
+    /// depending on the runner/runtime combination.
+    private func checkboxState(_ checkbox: XCUIElement) -> Bool? {
+        if let value = checkbox.value as? Bool {
+            return value
+        }
+        if let value = checkbox.value as? NSNumber {
+            return value.boolValue
+        }
+        guard let value = checkbox.value as? String else { return nil }
+        switch value.lowercased() {
+        case "1", "true", "on":
+            return true
+        case "0", "false", "off":
+            return false
+        default:
+            return nil
         }
     }
 

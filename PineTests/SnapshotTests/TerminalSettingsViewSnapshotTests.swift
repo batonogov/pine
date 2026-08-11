@@ -32,6 +32,7 @@ struct TerminalSettingsViewSnapshotTests {
         return TerminalSettingsView(
             shell: shell,
             theme: theme,
+            cursor: TerminalCursorSettings(defaults: defaults),
             quickTerminal: QuickTerminalSettings(defaults: defaults),
             viewportHeight: 1_080
         )

@@ -16,6 +16,8 @@ final class TerminalPaneState {
     /// uses the shared settings; injection keeps project and Quick Terminal
     /// repaint integration testable without touching global defaults.
     private let themeSettings: TerminalThemeSettings
+    /// Cursor preferences inherited by every tab, including Quick Terminal.
+    private let cursorSettings: TerminalCursorSettings
     /// The AppKit host currently presenting this pane's active terminal.
     ///
     /// SwiftUI may temporarily keep outgoing and incoming representables
@@ -62,8 +64,12 @@ final class TerminalPaneState {
 
     var tabCount: Int { terminalTabs.count }
 
-    init(themeSettings: TerminalThemeSettings = .shared) {
+    init(
+        themeSettings: TerminalThemeSettings = .shared,
+        cursorSettings: TerminalCursorSettings = .shared
+    ) {
         self.themeSettings = themeSettings
+        self.cursorSettings = cursorSettings
     }
 
     /// Consumes the terminal result of a bounded AppKit focus request.
@@ -95,7 +101,8 @@ final class TerminalPaneState {
         nextTabNumber += 1
         let tab = TerminalTab(
             name: Strings.terminalNumberedName(number),
-            themeSettings: themeSettings
+            themeSettings: themeSettings,
+            cursorSettings: cursorSettings
         )
         tab.configure(
             workingDirectory: workingDirectory,

@@ -49,10 +49,14 @@ final class QuickTerminalController {
 
     init(
         settings: QuickTerminalSettings = .shared,
-        themeSettings: TerminalThemeSettings = .shared
+        themeSettings: TerminalThemeSettings = .shared,
+        cursorSettings: TerminalCursorSettings = .shared
     ) {
         self.settings = settings
-        self.paneState = TerminalPaneState(themeSettings: themeSettings)
+        self.paneState = TerminalPaneState(
+            themeSettings: themeSettings,
+            cursorSettings: cursorSettings
+        )
         self.settingsNotificationCenter = settings.notificationCenter
         self.settingsObserver = settings.notificationCenter.addObserver(
             forName: QuickTerminalSettings.didChangeNotification,

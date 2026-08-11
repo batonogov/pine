@@ -17,6 +17,7 @@ struct PineSettingsView: View {
     let shellSettings: ShellSettings
     let editorSettings: EditorSettings
     let terminalThemeSettings: TerminalThemeSettings
+    let terminalCursorSettings: TerminalCursorSettings
     let quickTerminalSettings: QuickTerminalSettings
 
     /// Persists the last-selected pane across sessions (issue #337).
@@ -30,6 +31,7 @@ struct PineSettingsView: View {
         shellSettings: ShellSettings,
         editorSettings: EditorSettings,
         terminalThemeSettings: TerminalThemeSettings = .shared,
+        terminalCursorSettings: TerminalCursorSettings = .shared,
         quickTerminalSettings: QuickTerminalSettings = .shared
     ) {
         self.lspSettings = lspSettings
@@ -39,6 +41,7 @@ struct PineSettingsView: View {
         self.shellSettings = shellSettings
         self.editorSettings = editorSettings
         self.terminalThemeSettings = terminalThemeSettings
+        self.terminalCursorSettings = terminalCursorSettings
         self.quickTerminalSettings = quickTerminalSettings
     }
 
@@ -56,6 +59,7 @@ struct PineSettingsView: View {
             TerminalSettingsView(
                 shell: shellSettings,
                 theme: terminalThemeSettings,
+                cursor: terminalCursorSettings,
                 quickTerminal: quickTerminalSettings
             )
             .tabItem {

@@ -31466,6 +31466,66 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "外观" } }
       }
     },
+    "settings.terminal.cursor.blink": {
+      "comment": "Toggle that controls whether the terminal cursor blinks.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Cursor blinken lassen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Blink cursor" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Hacer parpadear el cursor" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Faire clignoter le curseur" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "カーソルを点滅" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "커서 깜박임" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Fazer o cursor piscar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Мигание курсора" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "光标闪烁" } }
+      }
+    },
+    "settings.terminal.cursor.help": {
+      "comment": "Explains that terminal applications may temporarily override the preferred cursor style.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Terminal-Apps können vorübergehend einen eigenen Cursor verwenden." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Terminal apps may temporarily choose their own cursor." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Las apps del terminal pueden elegir temporalmente su propio cursor." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les apps du terminal peuvent temporairement choisir leur propre curseur." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ターミナルアプリは一時的に独自のカーソルを使用できます。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "터미널 앱은 일시적으로 자체 커서를 사용할 수 있습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Apps do terminal podem escolher temporariamente o próprio cursor." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Терминальные приложения могут временно выбирать свой вид курсора." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "终端应用可以临时选择自己的光标样式。" } }
+      }
+    },
+    "settings.terminal.cursor.shape": {
+      "comment": "Label for the terminal cursor shape picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Form" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Shape" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Forma" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Forme" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "形状" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "모양" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Forma" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Форма" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "形状" } }
+      }
+    },
+    "settings.terminal.cursor.title": {
+      "comment": "Heading for terminal cursor settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Cursor" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Cursor" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Cursor" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Curseur" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "カーソル" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "커서" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cursor" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Курсор" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "光标" } }
+      }
+    },
     "settings.terminal.arguments": {
       "comment": "Heading for terminal process arguments.",
       "extractionState": "manual",
@@ -31719,6 +31779,51 @@
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Seguir o sistema" } },
         "ru": { "stringUnit": { "state": "translated", "value": "Как в системе" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "跟随系统" } }
+      }
+    },
+    "terminal.cursor.shape.block": {
+      "comment": "Block-shaped terminal cursor option.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Block" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Block" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Bloque" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Bloc" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ブロック" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "블록" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Bloco" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Блок" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "方块" } }
+      }
+    },
+    "terminal.cursor.shape.underline": {
+      "comment": "Underline-shaped terminal cursor option.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Unterstrich" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Underline" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Subrayado" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Souligné" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "下線" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "밑줄" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Sublinhado" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Подчёркивание" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "下划线" } }
+      }
+    },
+    "terminal.cursor.shape.verticalBar": {
+      "comment": "Vertical-bar terminal cursor option.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Vertikaler Balken" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Vertical Bar" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Barra vertical" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Barre verticale" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "縦線" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "세로 막대" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Barra vertical" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Вертикальная черта" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "竖线" } }
       }
     },
     "terminal.theme.digital-rain.name": {
