@@ -73,8 +73,11 @@ final class SettingsUITests: PineUITestCase {
         )
         XCTAssertTrue(cursorPicker.isHittable)
         XCTAssertTrue(cursorBlink.isHittable)
-        let verticalBarSegment = cursorPicker.buttons["Vertical Bar"].firstMatch
-        let blockSegment = cursorPicker.buttons["Block"].firstMatch
+        let verticalBarSegment = pickerSegment(
+            labeled: "Vertical Bar",
+            in: cursorPicker
+        )
+        let blockSegment = pickerSegment(labeled: "Block", in: cursorPicker)
         XCTAssertTrue(verticalBarSegment.waitForExistence(timeout: 5))
         XCTAssertTrue(blockSegment.waitForExistence(timeout: 5))
         XCTAssertTrue(
@@ -489,6 +492,18 @@ final class SettingsUITests: PineUITestCase {
                 "\(pane.tab) exposes raw localization keys: \(rawLabels)"
             )
         }
+    }
+
+    /// SwiftUI's segmented `Picker` exposes native segments with different AX
+    /// roles across macOS releases. Query by their localized label instead of
+    /// assuming that every segment is represented as a button.
+    private func pickerSegment(
+        labeled label: String,
+        in picker: XCUIElement
+    ) -> XCUIElement {
+        picker.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", label)
+        ).firstMatch
     }
 
     private func openSettings(

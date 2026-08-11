@@ -827,14 +827,26 @@ struct TerminalMetalRendererTests {
         terminalView.drawMetalFrameNow()
         let drawable = try #require(captureDelegate.drawable)
         let texture = drawable.texture
-        try #require(await waitForThemeRepaint {
-            drawable.presentedTime > 0
-        }, "Metal cursor frame was not presented")
+        let device = try #require(metalView.device)
+        var footprint: CursorFootprint?
+        let rendered = await waitForThemeRepaint {
+            footprint = try? metalCursorFootprint(
+                in: texture,
+                device: device
+            )
+            return footprint != nil
+        }
+        try #require(rendered, "Metal cursor pixels were not rendered")
+        return try #require(footprint)
+    }
 
+    private func metalCursorFootprint(
+        in texture: MTLTexture,
+        device: MTLDevice
+    ) throws -> CursorFootprint? {
         let bytesPerPixel = 4
         let bytesPerRow = ((texture.width * bytesPerPixel + 255) / 256) * 256
         let byteCount = bytesPerRow * texture.height
-        let device = try #require(metalView.device)
         let buffer = try #require(device.makeBuffer(
             length: byteCount,
             options: .storageModeShared
@@ -858,10 +870,10 @@ struct TerminalMetalRendererTests {
             destinationBytesPerImage: byteCount
         )
         blitEncoder.endEncoding()
-        #expect(commitAndWait(commandBuffer) == .completed)
+        guard commitAndWait(commandBuffer) == .completed else { return nil }
 
         let bytes = buffer.contents().assumingMemoryBound(to: UInt8.self)
-        let footprint = try #require(cursorFootprint(
+        return cursorFootprint(
             width: texture.width,
             height: texture.height
         ) { x, y in
@@ -871,8 +883,7 @@ struct TerminalMetalRendererTests {
             let red = bytes[offset + 2]
             let alpha = bytes[offset + 3]
             return red > 200 && green < 80 && blue < 80 && alpha > 200
-        })
-        return footprint
+        }
     }
 
     private func commitAndWait(
