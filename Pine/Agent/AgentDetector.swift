@@ -127,6 +127,15 @@ final class AgentDetector {
     /// Authoritative microsecond process start seen for each tracked pid.
     private var preciseStartByPID: [Int32: Date] = [:]
 
+    /// Compares optional per-poll enrichment with the immutable precise start
+    /// already proven for a tracked pid. An unavailable sample is uncertainty:
+    /// only a different current value is positive replacement evidence.
+    private enum PreciseStartObservation {
+        case unavailable
+        case consistent
+        case contradictory
+    }
+
     /// Monotonic detector-owned process generation. It advances for every
     /// newly recognised process, including PID reuse and command replacement.
     private var nextProcessGeneration: UInt64 = 0
@@ -235,20 +244,19 @@ final class AgentDetector {
                 } else {
                     false
                 }
-                let preciseStartChanged = if let previousStart = preciseStartByPID[process.pid],
-                                             let currentStart = process.preciseStartedAt {
-                    previousStart != currentStart
-                } else {
-                    false
-                }
-                let preciseAuthorityLost = preciseStartByPID[process.pid] != nil
-                    && process.preciseStartedAt == nil
+                let preciseStartObservation = Self.preciseStartObservation(
+                    previous: preciseStartByPID[process.pid],
+                    current: process.preciseStartedAt
+                )
 
                 // A pid may exec another agent or be recycled for the same
                 // command. A changed lstart value proves a new generation;
-                // cumulative CPU regression is the conservative fallback.
+                // cumulative CPU regression is the conservative fallback. A
+                // missing precise enrichment is not replacement evidence: the
+                // last authoritative witness remains immutable until a later
+                // sample either confirms or positively contradicts it.
                 if existing.agentType != resolved || startChanged
-                    || preciseStartChanged || preciseAuthorityLost
+                    || preciseStartObservation == .contradictory
                     || cpuRegressed {
                     if let terminatedID = markDone(pid: process.pid) {
                         newlyTerminated.insert(terminatedID)
@@ -361,6 +369,15 @@ final class AgentDetector {
     }
 
     // MARK: - Internal
+
+    private static func preciseStartObservation(
+        previous: Date?,
+        current: Date?
+    ) -> PreciseStartObservation {
+        guard let current else { return .unavailable }
+        guard let previous else { return .consistent }
+        return current == previous ? .consistent : .contradictory
+    }
 
     /// Transitions the session for `pid` to `.done` and removes the pid
     /// mapping so that pid reuse later creates a fresh session.
