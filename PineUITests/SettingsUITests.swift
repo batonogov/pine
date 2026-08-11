@@ -80,11 +80,11 @@ final class SettingsUITests: PineUITestCase {
         let blockSegment = pickerSegment(labeled: "Block", in: cursorPicker)
         XCTAssertTrue(verticalBarSegment.waitForExistence(timeout: 5))
         XCTAssertTrue(blockSegment.waitForExistence(timeout: 5))
-        XCTAssertTrue(
-            verticalBarSegment.isSelected,
+        XCTAssertEqual(
+            cursorPicker.value as? String,
+            "Vertical Bar",
             "Fresh settings should select the thin vertical-bar default"
         )
-        XCTAssertFalse(blockSegment.isSelected)
         let initialBlinkValue = cursorBlink.value as? String
         XCTAssertEqual(
             initialBlinkValue,
@@ -95,12 +95,11 @@ final class SettingsUITests: PineUITestCase {
         verticalBarSegment.click()
         app.typeKey(.rightArrow, modifierFlags: [])
         let blockSelected = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "isSelected == true"),
-            object: blockSegment
+            predicate: NSPredicate(format: "value == %@", "Block"),
+            object: cursorPicker
         )
         wait(for: [blockSelected], timeout: 5)
-        XCTAssertTrue(blockSegment.isSelected)
-        XCTAssertFalse(verticalBarSegment.isSelected)
+        XCTAssertEqual(cursorPicker.value as? String, "Block")
         XCTAssertEqual(
             cursorBlink.value as? String,
             initialBlinkValue,
@@ -113,8 +112,9 @@ final class SettingsUITests: PineUITestCase {
             "0",
             "Blinking should be independently mutable"
         )
-        XCTAssertTrue(
-            blockSegment.isSelected,
+        XCTAssertEqual(
+            cursorPicker.value as? String,
+            "Block",
             "Changing blinking must preserve the selected shape"
         )
 
@@ -501,8 +501,8 @@ final class SettingsUITests: PineUITestCase {
     }
 
     /// SwiftUI's segmented `Picker` exposes its selectable children as native
-    /// radio buttons on macOS. Query that semantic role so `isSelected` reads
-    /// from the control rather than from its label-only descendant.
+    /// radio buttons on macOS. Query that semantic role for interaction; the
+    /// selected shape is announced by the parent picker's explicit AX value.
     private func pickerSegment(
         labeled label: String,
         in picker: XCUIElement

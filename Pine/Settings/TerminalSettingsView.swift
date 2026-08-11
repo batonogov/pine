@@ -203,6 +203,9 @@ struct TerminalSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityLabel(Strings.terminalCursorShape)
+                .accessibilityValue(
+                    Text(LocalizedStringKey(cursor.cursorShape.nameKey))
+                )
                 .accessibilityIdentifier(
                     AccessibilityID.terminalCursorShapePicker
                 )
