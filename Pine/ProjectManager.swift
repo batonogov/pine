@@ -1537,9 +1537,6 @@ final class ProjectManager {
         paneManager.configureTerminalTab = { [weak self] tab in
             self?.terminal.configureAgentLifecycle(for: tab)
         }
-        paneManager.terminalTabDidMove = { [weak self] tab, paneID in
-            self?.terminal.agentTerminalDidMove(tab, to: paneID)
-        }
         problemsController.configureDocumentStatesProvider { [weak self] in
             self?.problemsDocumentStates ?? []
         }

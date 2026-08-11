@@ -122,6 +122,7 @@ final class TerminalPaneState {
         terminalTabs.removeAll { $0.id == id }
         if activeTerminalID == id {
             activeTerminalID = terminalTabs.last?.id
+            pendingFocusTabID = activeTerminalID
         }
         onTabInventoryChanged?()
     }

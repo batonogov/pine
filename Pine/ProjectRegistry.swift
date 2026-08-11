@@ -783,9 +783,9 @@ final class ProjectRegistry: LSPSettingsObserver {
             return .projectUnavailable
         }
 
-        guard manager.paneManager.selectTerminalTab(
-            route.tabID,
-            in: PaneID(id: route.paneID)
+        guard manager.terminal.activateTerminal(
+            paneID: PaneID(id: route.paneID),
+            tabID: route.tabID
         ) else {
             return .routeStale
         }
@@ -854,9 +854,9 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard let route = resolveAgentRecoveryTerminal(
             terminalID,
             in: manager
-        ), manager.paneManager.selectTerminalTab(
-            route.tabID,
-            in: PaneID(id: route.paneID)
+        ), manager.terminal.activateTerminal(
+            paneID: PaneID(id: route.paneID),
+            tabID: route.tabID
         ) else { return .launchRejected }
 
         if let activateApplication {

@@ -295,9 +295,14 @@ struct AgentInboxTests {
         let manager = try #require(
             projectRegistry.projectManager(for: fixture.project)
         )
-        let pane = manager.paneManager.createTerminalPaneAtBottom(
+        let firstPane = manager.paneManager.createTerminalPaneAtBottom(
             workingDirectory: fixture.project
         )
+        let pane = try #require(manager.paneManager.createTerminalPane(
+            relativeTo: firstPane,
+            axis: .horizontal,
+            workingDirectory: fixture.project
+        ))
         let state = try #require(manager.paneManager.terminalState(for: pane))
         let tab = try #require(state.terminalTabs.first)
         let session = makeSession(
@@ -313,6 +318,7 @@ struct AgentInboxTests {
         tab.agentSession = session
         let taskID = try #require(taskRegistry.taskID(forSessionID: session.id))
         #expect(taskRegistry.task(for: taskID)?.isUnread == true)
+        manager.terminal.lastActiveTerminalPaneID = firstPane
 
         let focused = await projectRegistry.navigateToAgentTaskFromInbox(
             taskID,
@@ -327,6 +333,7 @@ struct AgentInboxTests {
         )))
         #expect(state.activeTerminalID == tab.id)
         #expect(state.pendingFocusTabID == tab.id)
+        #expect(manager.terminal.lastActiveTerminalPaneID == pane)
         #expect(taskRegistry.task(for: taskID)?.isUnread == false)
 
         session.applyLiveness(.terminated)

@@ -91,6 +91,7 @@ struct ProjectSessionRestorerTests {
         ))
         #expect(projectManager.paneManager.root == layout)
         #expect(projectManager.paneManager.activePaneID == editorB)
+        #expect(projectManager.terminal.lastActiveTerminalPaneID == terminal)
 
         let managerA = try #require(projectManager.paneManager.tabManager(for: editorA))
         let managerB = try #require(projectManager.paneManager.tabManager(for: editorB))
@@ -216,7 +217,60 @@ struct ProjectSessionRestorerTests {
         )
 
         #expect(projectManager.paneManager.activePaneID == rightPane)
+        #expect(projectManager.terminal.lastActiveTerminalPaneID == nil)
         #expect(projectManager.paneManager.tabManager(for: rightPane)?.activeTab?.url == rightURL)
+    }
+
+    @Test("Editor-focused restore chooses the first valid terminal without stealing focus")
+    func terminalDestinationFallbackUsesStableOrderWithoutFocusTheft() throws {
+        let (root, files) = try fixture(files: ["focused.swift"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = try #require(files["focused.swift"])
+        let editor = PaneID()
+        let firstTerminal = PaneID()
+        let secondTerminal = PaneID()
+        let layout = PaneNode.split(
+            .horizontal,
+            first: .leaf(editor, .editor),
+            second: .split(
+                .vertical,
+                first: .leaf(firstTerminal, .terminal),
+                second: .leaf(secondTerminal, .terminal),
+                ratio: 0.5
+            ),
+            ratio: 0.5
+        )
+        var session = SessionState(
+            projectPath: root.path,
+            openFilePaths: [file.path]
+        )
+        session.paneLayoutData = try JSONEncoder().encode(layout)
+        session.paneTabAssignments = [editor.id.uuidString: [file.path]]
+        session.paneActiveEditorPaths = [editor.id.uuidString: file.path]
+        session.activePaneID = editor.id.uuidString
+        session.terminalPaneTabCounts = [
+            firstTerminal.id.uuidString: 1,
+            secondTerminal.id.uuidString: 1,
+        ]
+
+        let projectManager = ProjectManager()
+        _ = ProjectSessionRestorer.restore(
+            session,
+            into: projectManager,
+            rootURL: root
+        )
+
+        #expect(projectManager.paneManager.activePaneID == editor)
+        #expect(
+            projectManager.paneManager.tabManager(for: editor)?
+                .pendingFocusTabID
+                == projectManager.paneManager.tabManager(for: editor)?
+                    .activeTabID
+        )
+        #expect(
+            projectManager.terminal.lastActiveTerminalPaneID
+                == firstTerminal
+        )
     }
 
     @Test("Pinned and preview state is pane-scoped for duplicate file paths")

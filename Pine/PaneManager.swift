@@ -80,6 +80,17 @@ final class PaneManager {
     /// Reports value-only terminal route changes after a completed tab move.
     var terminalTabDidMove: ((TerminalTab, PaneID) -> Void)?
 
+    /// Reports successful terminal user activations that originate inside the
+    /// pane model (for example global-switcher commits). The terminal
+    /// coordinator uses this value-only callback to keep its durable command
+    /// destination current without a reverse object reference.
+    var terminalTabDidActivate: ((PaneID, UUID) -> Void)?
+
+    /// Reports completed pane-inventory mutations so the terminal coordinator
+    /// can invalidate a removed command destination without retaining this
+    /// pane tree. The callback is installed with a weak coordinator capture.
+    var terminalPaneInventoryDidChange: (() -> Void)?
+
     /// Saved root before maximize, for restore.
     private(set) var savedRootBeforeMaximize: PaneNode?
 
@@ -116,6 +127,9 @@ final class PaneManager {
     /// Prevents the activation callbacks owned by pane-local managers from
     /// reordering the MRU list while a keyboard cycle is in progress.
     private var isPerformingGlobalTabSwitch = false
+    /// Suppresses the pane-originated terminal callback while
+    /// `TerminalManager.activateTerminal` performs its own exact bookkeeping.
+    private var isSuppressingTerminalActivationCallback = false
 
     /// The live visual MRU switcher session (`nil` unless Control-Tab overlay
     /// is up). Created by `beginGlobalTabSwitcherSession()`, torn down on commit
@@ -317,6 +331,7 @@ final class PaneManager {
         activePaneID = identity.paneID
         terminalState.activeTerminalID = identity.tabID
         terminalState.pendingFocusTabID = identity.tabID
+        terminalTabDidActivate?(identity.paneID, identity.tabID)
         return true
     }
 
@@ -1197,6 +1212,7 @@ final class PaneManager {
             root = .leaf(newID, .editor)
             activePaneID = newID
             reconcileGlobalTabSwitcherAfterInventoryChange()
+            terminalPaneInventoryDidChange?()
             return
         }
 
@@ -1213,6 +1229,7 @@ final class PaneManager {
             activePaneID = root.firstLeafID ?? activePaneID
         }
         reconcileGlobalTabSwitcherAfterInventoryChange()
+        terminalPaneInventoryDidChange?()
     }
 
     /// Updates the split ratio for a divider adjacent to a pane.
@@ -1238,16 +1255,46 @@ final class PaneManager {
     /// Selects a terminal tab, activates its pane, and requests first responder
     /// for the newly selected terminal content.
     @discardableResult
-    func selectTerminalTab(_ tabID: UUID, in paneID: PaneID) -> Bool {
+    func selectTerminalTab(
+        _ tabID: UUID,
+        in paneID: PaneID,
+        reportActivation: Bool = true
+    ) -> Bool {
         guard let terminalState = terminalStates[paneID],
               terminalState.terminalTabs.contains(where: { $0.id == tabID }) else {
             return false
         }
+        let activeTabChanged = terminalState.activeTerminalID != tabID
         activePaneID = paneID
+        let previousSuppression = isSuppressingTerminalActivationCallback
+        isSuppressingTerminalActivationCallback = !reportActivation
         terminalState.activeTerminalID = tabID
+        isSuppressingTerminalActivationCallback = previousSuppression
         terminalState.pendingFocusTabID = tabID
         recordTabActivation(paneID: paneID, tabID: tabID, contentType: .terminal)
+        if reportActivation, !activeTabChanged {
+            terminalTabDidActivate?(paneID, tabID)
+        }
         return true
+    }
+
+    /// Activates a pane from a user focus gesture. Terminal panes preserve the
+    /// exact active tab and route through normal terminal selection; editor
+    /// panes only update pane focus.
+    @discardableResult
+    func activatePane(_ paneID: PaneID) -> Bool {
+        switch root.content(for: paneID) {
+        case .terminal:
+            guard let tabID = terminalStates[paneID]?.activeTerminalID else {
+                return false
+            }
+            return selectTerminalTab(tabID, in: paneID)
+        case .editor:
+            activePaneID = paneID
+            return true
+        case nil:
+            return false
+        }
     }
 
     // MARK: - Pointer-free tab movement
@@ -1367,13 +1414,17 @@ final class PaneManager {
                 action: action
             ) else { return false }
             let result: TabInsertionResult
+            let terminalDidSetWillPublish: Bool
             switch contentType {
             case .editor:
+                terminalDidSetWillPublish = false
                 result = tabManagers[paneID]?.moveTab(
                     id: tabID,
                     toInsertionIndex: insertionIndex
                 ) ?? .rejected
             case .terminal:
+                terminalDidSetWillPublish = activePaneID == paneID
+                    && terminalStates[paneID]?.activeTerminalID != tabID
                 result = terminalStates[paneID]?.moveTab(
                     id: tabID,
                     toInsertionIndex: insertionIndex
@@ -1382,6 +1433,9 @@ final class PaneManager {
             guard result == .moved else { return false }
             activePaneID = paneID
             recordTabActivation(paneID: paneID, tabID: tabID, contentType: contentType)
+            if contentType == .terminal, !terminalDidSetWillPublish {
+                terminalTabDidActivate?(paneID, tabID)
+            }
             return true
         case .previousPane, .nextPane:
             guard let destinationPaneID = adjacentPane(
@@ -1670,7 +1724,12 @@ final class PaneManager {
         // The projected leaf is now the only visible pane. Keep the focus
         // model aligned even when the maximize button consumed the click
         // before PaneFocusDetector could mark this pane active.
-        activePaneID = paneID
+        if content == .terminal,
+           let tabID = terminalStates[paneID]?.activeTerminalID {
+            _ = selectTerminalTab(tabID, in: paneID)
+        } else {
+            activePaneID = paneID
+        }
     }
 
     func restoreFromMaximize() {
@@ -1763,6 +1822,7 @@ final class PaneManager {
         } else if let firstLeaf = root.firstLeafID {
             activePaneID = firstLeaf
         }
+        terminalPaneInventoryDidChange?()
         return true
     }
 
@@ -2104,12 +2164,17 @@ final class PaneManager {
         switch intent {
         case .reorder(_, let destinationPaneID, let insertionIndex):
             let result: TabInsertionResult
+            let terminalDidSetWillPublish: Bool
             if key.contentType == .editor {
+                terminalDidSetWillPublish = false
                 result = tabManagers[destinationPaneID]?.moveTab(
                     id: key.tabID,
                     toInsertionIndex: insertionIndex
                 ) ?? .rejected
             } else {
+                terminalDidSetWillPublish = activePaneID == destinationPaneID
+                    && terminalStates[destinationPaneID]?.activeTerminalID
+                        != key.tabID
                 result = terminalStates[destinationPaneID]?.moveTab(
                     id: key.tabID,
                     toInsertionIndex: insertionIndex
@@ -2117,6 +2182,10 @@ final class PaneManager {
             }
             if result.accepted {
                 activePaneID = destinationPaneID
+                if key.contentType == .terminal,
+                   !terminalDidSetWillPublish {
+                    terminalTabDidActivate?(destinationPaneID, key.tabID)
+                }
             }
             return result.accepted
 
@@ -2325,12 +2394,16 @@ final class PaneManager {
                   let terminalState,
                   self.terminalStates[paneID] === terminalState,
                   !self.isPerformingGlobalTabSwitch,
+                  !self.isSuppressingTerminalActivationCallback,
                   let tabID else { return }
             self.recordTabActivation(
                 paneID: paneID,
                 tabID: tabID,
                 contentType: .terminal
             )
+            if self.activePaneID == paneID {
+                self.terminalTabDidActivate?(paneID, tabID)
+            }
         }
         terminalState.onTabInventoryChanged = { [weak self, weak terminalState] in
             guard let self,

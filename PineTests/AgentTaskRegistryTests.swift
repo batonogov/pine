@@ -1918,6 +1918,9 @@ struct AgentTaskRegistryTests {
         let taskID = try #require(
             taskRegistry.taskID(forSessionID: replacement.id)
         )
+        let taskBeforeMove = try #require(taskRegistry.task(for: taskID))
+        let routeUpdatesBeforeMove =
+            manager.terminal.agentRouteUpdateCountForTesting
         #expect(taskID != historicalTaskID)
         #expect(
             taskRegistry.task(for: historicalTaskID)?.route.availability
@@ -1934,6 +1937,17 @@ struct AgentTaskRegistryTests {
             from: firstPane,
             to: secondPane
         ))
+        let taskAfterMove = try #require(taskRegistry.task(for: taskID))
+        #expect(
+            manager.terminal.agentRouteUpdateCountForTesting
+                == routeUpdatesBeforeMove + 1
+        )
+        #expect(taskAfterMove.runs == taskBeforeMove.runs)
+        #expect(tab.agentSession === replacement)
+        #expect(
+            tab.agentSession?.processEvidence
+                == taskBeforeMove.runs.last?.process
+        )
         #expect(taskRegistry.task(for: taskID)?.route.paneID == secondPane.id)
         #expect(
             await projectRegistry.resolveAgentTaskRoute(taskID)?.paneID
