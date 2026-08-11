@@ -281,11 +281,11 @@ struct TerminalManagerCoordinatorTests {
 
 nonisolated private func completeClaudePsSnapshot() -> String {
     [
-        "1 Wed Jul 22 15:08:40 2026 0:12.45 /sbin/launchd",
-        "100 Wed Jul 22 15:08:40 2026 0:12.45 claude",
+        "1 0 1 Wed Jul 22 15:08:40 2026 0:12.45 /sbin/launchd",
+        "100 1 100 Wed Jul 22 15:08:40 2026 0:12.45 claude",
         """
-        99999 Wed Jul 22 15:08:40 2026 0:12.45 \
-        /bin/ps -eo pid=,lstart=,cputime=,command=
+        99999 1 99999 Wed Jul 22 15:08:40 2026 0:12.45 \
+        /bin/ps -eo pid=,ppid=,pgid=,lstart=,cputime=,command=
         """,
         AgentDetectionCoordinator.psCompletionMarker,
     ].joined(separator: "\n")

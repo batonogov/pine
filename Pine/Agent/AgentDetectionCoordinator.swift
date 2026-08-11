@@ -12,6 +12,11 @@
 import Darwin
 import Foundation
 
+nonisolated struct TerminalAgentOwnershipEvidence: Sendable {
+    let foreground: TerminalForegroundProcessSnapshot
+    let processes: [DetectedProcess]
+}
+
 nonisolated enum AgentMonotonicCounter {
     static func next(after value: UInt64) -> UInt64? {
         guard value < UInt64.max else { return nil }
@@ -195,7 +200,8 @@ nonisolated final class AgentDetectionCoordinator {
         DispatchQueue.main.async(execute: work)
     }
 
-    /// Parses raw `ps -eo pid=,lstart=,cputime=,command=` output.
+    /// Parses raw
+    /// `ps -eo pid=,ppid=,pgid=,lstart=,cputime=,command=` output.
     /// `nonisolated` so it is callable from the background polling queue
     /// via `captureSnapshot`. Relies on `DetectedProcess` being `nonisolated`
     /// so its init is reachable from here.
@@ -213,20 +219,27 @@ nonisolated final class AgentDetectionCoordinator {
         for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
-            guard tokens.count >= 8,
+            guard tokens.count >= 10,
                   let pid = Int32(tokens[0]),
-                  parseLongStart(tokens[1...5]) != nil,
-                  let cpuTime = parseCpuTime(String(tokens[6])) else {
+                  pid > 0,
+                  let parentProcessID = Int32(tokens[1]),
+                  parentProcessID >= 0,
+                  let processGroupID = Int32(tokens[2]),
+                  processGroupID > 0,
+                  parseLongStart(tokens[3...7]) != nil,
+                  let cpuTime = parseCpuTime(String(tokens[8])) else {
                 continue
             }
-            let command = tokens[7...].joined(separator: " ")
+            let command = tokens[9...].joined(separator: " ")
             guard !command.isEmpty else { continue }
             processes.append(
                 DetectedProcess(
                     pid: pid,
+                    parentProcessID: parentProcessID,
+                    processGroupID: processGroupID,
                     command: command,
                     cpuTime: cpuTime,
-                    startIdentifier: tokens[1...5].joined(separator: " ")
+                    startIdentifier: tokens[3...7].joined(separator: " ")
                 )
             )
         }
@@ -243,6 +256,8 @@ nonisolated final class AgentDetectionCoordinator {
             processes: processes.map { process in
                 DetectedProcess(
                     pid: process.pid,
+                    parentProcessID: process.parentProcessID,
+                    processGroupID: process.processGroupID,
                     command: process.command,
                     cwd: process.cwd,
                     cpuTime: process.cpuTime,
@@ -505,7 +520,7 @@ nonisolated final class AgentDetectionCoordinator {
     nonisolated static let psCompletionMarker = "__PINE_PS_SNAPSHOT_COMPLETE__"
 
     nonisolated private static let psSnapshotCommand = [
-        "TZ=UTC LC_ALL=C /bin/ps -eo pid=,lstart=,cputime=,command=;",
+        "TZ=UTC LC_ALL=C /bin/ps -eo pid=,ppid=,pgid=,lstart=,cputime=,command=;",
         "status=$?;",
         "printf '\\n\(psCompletionMarker)\\n';",
         "exit \"$status\"",
@@ -729,8 +744,14 @@ nonisolated final class AgentDetectionCoordinator {
                 let previous = tab.agentSession
                 let current = reconciledSession(
                     previous: previous,
-                    foregroundPID: tab.foregroundProcessID,
+                    ownership: TerminalAgentOwnershipEvidence(
+                        foreground: tab.foregroundProcessSnapshot(),
+                        processes: processes
+                    ),
                     detector: detector,
+                    agentIdentityStillMatches: {
+                        tab.agentProcessIdentityStillMatches($0)
+                    },
                     newlyTerminated: newlyTerminated
                 )
                 if let current {
@@ -752,19 +773,125 @@ nonisolated final class AgentDetectionCoordinator {
     @MainActor
     static func reconciledSession(
         previous: AgentSession?,
-        foregroundPID: Int32,
+        ownership: TerminalAgentOwnershipEvidence,
         detector: AgentDetector,
+        agentIdentityStillMatches: (
+            TerminalProcessStartIdentity
+        ) -> Bool,
         newlyTerminated: Set<UUID>
     ) -> AgentSession? {
-        if foregroundPID > 0, let current = detector.session(forPID: foregroundPID) {
+        if let current = foregroundOwner(
+            foreground: ownership.foreground,
+            processes: ownership.processes,
+            detector: detector,
+            agentIdentityStillMatches: agentIdentityStillMatches
+        ) {
             return current
         }
+        // A live foreground group that has no exact ancestry proof is new or
+        // unrelated work. It may not inherit even the one-poll exit badge.
+        guard ownership.foreground == .idle else { return nil }
         guard let previous,
               previous.liveness == .terminated,
               newlyTerminated.contains(previous.id) else {
             return nil
         }
         return previous
+    }
+
+    /// Returns the unique live agent generation that owns the exact current
+    /// foreground process-group member. The member's authoritative start time
+    /// closes the sampling race between `ps` and `tcgetpgrp`; walking only
+    /// parent links captured in that same snapshot proves ancestry. Ambiguous,
+    /// incomplete, and unrelated process trees fail closed.
+    @MainActor
+    private static func foregroundOwner(
+        foreground: TerminalForegroundProcessSnapshot,
+        processes: [DetectedProcess],
+        detector: AgentDetector,
+        agentIdentityStillMatches: (
+            TerminalProcessStartIdentity
+        ) -> Bool
+    ) -> AgentSession? {
+        guard case .running(let processGroupID, let identity) = foreground,
+              processGroupID > 1 else {
+            return nil
+        }
+        var processesByPID: [Int32: DetectedProcess] = [:]
+        for process in processes {
+            guard processesByPID.updateValue(process, forKey: process.pid)
+                    == nil else {
+                return nil
+            }
+        }
+        guard let witness = processesByPID[identity.processID],
+              witness.processGroupID == processGroupID,
+              witness.preciseStartedAt.flatMap({
+                  TerminalProcessStartIdentity(
+                      processID: witness.pid,
+                      startedAt: $0
+                  )
+              }) == identity else {
+            return nil
+        }
+
+        var owners: [UUID: AgentSession] = [:]
+        var processID = identity.processID
+        var visited: Set<Int32> = []
+        while processID > 1, visited.insert(processID).inserted {
+            if let session = detector.session(forPID: processID) {
+                guard exactGenerationMatches(
+                    session,
+                    process: processesByPID[processID],
+                    liveIdentityStillMatches: agentIdentityStillMatches
+                ) else {
+                    return nil
+                }
+                owners[session.id] = session
+            }
+            guard let parent = processesByPID[processID]?.parentProcessID,
+                  parent > 1 else {
+                break
+            }
+            processID = parent
+        }
+        guard owners.count == 1 else { return nil }
+        return owners.values.first
+    }
+
+    /// `session(forPID:)` proves that this is the detector's current logical
+    /// generation. Match its immutable authoritative OS start witness against
+    /// the current `ps` row as well, so same-second PID reuse, precision loss,
+    /// or a stale ancestry row cannot transfer terminal ownership.
+    @MainActor
+    private static func exactGenerationMatches(
+        _ session: AgentSession,
+        process: DetectedProcess?,
+        liveIdentityStillMatches: (
+            TerminalProcessStartIdentity
+        ) -> Bool
+    ) -> Bool {
+        guard session.liveness == .live,
+              session.state != .done,
+              let process,
+              let evidence = session.processEvidence,
+              evidence.startIsAuthoritative,
+              evidence.processIdentifier == process.pid,
+              let sessionIdentity = TerminalProcessStartIdentity(
+                  processEvidence: evidence
+              ),
+              let preciseStartedAt = process.preciseStartedAt,
+              let processIdentity = TerminalProcessStartIdentity(
+                  processID: process.pid,
+                  startedAt: preciseStartedAt
+              ),
+              sessionIdentity == processIdentity,
+              liveIdentityStillMatches(sessionIdentity),
+              let evidenceStart = evidence.startIdentifier,
+              evidenceStart == process.startIdentifier else {
+            return false
+        }
+        return true
     }
 
     /// A failed poll cannot detach a session whose process evidence is merely
@@ -806,6 +933,25 @@ nonisolated final class AgentDetectionCoordinator {
         )
         Self.applySnapshot(
             snapshot,
+            detector: detector,
+            terminalManager: terminalManager
+        )
+    }
+
+    /// Applies a simulated complete process tree through the production
+    /// detector + terminal reconciliation path. Tests supply authoritative
+    /// starts directly because synthetic pids cannot be verified by libproc.
+    @MainActor internal func applySnapshotForTesting(
+        processes: [DetectedProcess]
+    ) {
+        let observation = AgentObservationStamp(
+            wallTime: Date(),
+            uptime: uptimeProvider(),
+            generation: testingRun.generation,
+            sequence: testingRun.nextSequence() ?? UInt64.max
+        )
+        Self.applySnapshot(
+            .success(processes: processes, observation: observation),
             detector: detector,
             terminalManager: terminalManager
         )
