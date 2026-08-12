@@ -18,10 +18,13 @@ struct MultiProjectAgentJourneyTests {
     func fixturePublicationFailureCleanup(phase: String) async throws {
         let fixture = try MultiProjectAgentLifecycleFixture()
         defer { fixture.cleanup() }
-        try await fixture.assertPublicationFailureCleansChild(
-            agent: "pi",
-            phase: phase
-        )
+        for iteration in 0..<5 {
+            try await fixture.assertPublicationFailureCleansChild(
+                agent: "pi",
+                phase: phase,
+                iteration: iteration
+            )
+        }
     }
 
     @Test("real snapshots route agents across projects and registry rollback")
@@ -548,10 +551,11 @@ private final class MultiProjectAgentLifecycleFixture {
 
     func assertPublicationFailureCleansChild(
         agent: String,
-        phase: String
+        phase: String,
+        iteration: Int
     ) async throws {
         let processState = state.appending(
-            path: "fault-\(phase)-\(UUID().uuidString)",
+            path: "fault-\(phase)-\(iteration)-\(UUID().uuidString)",
             directoryHint: .isDirectory
         )
         try FileManager.default.createDirectory(
@@ -608,23 +612,16 @@ private final class MultiProjectAgentLifecycleFixture {
         processes.append(controlled)
 
         do {
-            try await Self.awaitFile(
-                processState.appending(path: "fault-armed"),
+            // The child handshake is deliberately independent of every file
+            // publication being faulted. posix_spawn gives Swift the exact
+            // direct-child leader; its validated private pgid then exposes the
+            // Python-owned sleep through libproc before the fault is released.
+            let child = try await Self.awaitOwnedChild(
+                parent: parent,
+                processGroupID: processGroupID,
                 agent: agent,
-                phase: "fault \(phase) armed"
+                phase: "fault \(phase) child handshake iteration \(iteration)"
             )
-            let childPID = try Self.readPID(
-                processState.appending(path: "owned-child.pid"),
-                agent: agent,
-                phase: "owned child publication"
-            )
-            let child = try await Self.awaitIdentity(
-                pid: childPID,
-                expectedParent: pid,
-                agent: agent,
-                phase: "fault child identity"
-            )
-            #expect(Darwin.getpgid(childPID) == processGroupID)
             controlled.registerOwnedIdentity(child)
 
             try Data("release".utf8).write(
@@ -637,7 +634,7 @@ private final class MultiProjectAgentLifecycleFixture {
                 phase: "signal mask restoration"
             )
             try await controlled.awaitExit()
-            #expect(UserTaskProcessInspector.identity(for: childPID) != child)
+            #expect(UserTaskProcessInspector.identity(for: child.processID) != child)
             #expect(UserTaskProcessInspector.identity(for: pid) != parent)
         } catch {
             controlled.forceCleanup()
@@ -805,20 +802,45 @@ private final class MultiProjectAgentLifecycleFixture {
         )
     }
 
-    private static func readPID(
-        _ url: URL,
+    private static func awaitOwnedChild(
+        parent: UserTaskProcessIdentity,
+        processGroupID: pid_t,
         agent: String,
         phase: String
-    ) throws -> pid_t {
-        guard let value = try? String(contentsOf: url, encoding: .utf8),
-              let pid = pid_t(value), pid > 1 else {
-            throw ControlledAgentLifecycleError.phaseTimeout(
-                agent: agent,
-                phase: phase,
-                processIdentifier: -1
-            )
+    ) async throws -> UserTaskProcessIdentity {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while clock.now < deadline {
+            try Task.checkCancellation()
+            guard UserTaskProcessInspector.identity(for: parent.processID)
+                    == parent,
+                  processGroupID == parent.processID,
+                  Darwin.getpgid(parent.processID) == processGroupID else {
+                break
+            }
+            if case .known(let processIDs) =
+                UserTaskProcessInspector.processIDs(inGroup: processGroupID) {
+                for processID in processIDs where processID != parent.processID {
+                    guard Darwin.getpgid(processID) == processGroupID,
+                          let child = UserTaskProcessInspector.identity(
+                            for: processID,
+                            expectedParent: parent.processID
+                          ),
+                          Darwin.getpgid(processID) == processGroupID,
+                          UserTaskProcessInspector.identity(for: processID)
+                            == child else {
+                        continue
+                    }
+                    return child
+                }
+            }
+            try await clock.sleep(for: .milliseconds(10))
         }
-        return pid
+        throw ControlledAgentLifecycleError.phaseTimeout(
+            agent: agent,
+            phase: phase,
+            processIdentifier: parent.processID
+        )
     }
 
     nonisolated private static func check(
@@ -1003,9 +1025,7 @@ old_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
 mask_restored = False
 try:
     child = subprocess.Popen(["/bin/sleep", "3600"])
-    write("owned-child.pid", child.pid)
     if failure_phase != "none":
-        write("fault-armed", failure_phase)
         release = os.path.join(state, "fault-release")
         deadline = time.monotonic() + 5
         while not os.path.exists(release):
