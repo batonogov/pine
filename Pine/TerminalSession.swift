@@ -184,6 +184,14 @@ nonisolated enum AcknowledgedPTYWriter {
 final class PineTerminalView: LocalProcessTerminalView {
     private var redrawBackgroundColor: CGColor?
     private var initialMetalRedrawWorkItems: [DispatchWorkItem] = []
+    /// Serializes Pine's cursor policy with SwiftTerm's PTY parser. Process
+    /// output may arrive away from MainActor while Settings changes arrive on
+    /// the main thread, so both the streaming parser and preferred style live
+    /// behind the same lock as the corresponding Terminal mutation.
+    private let cursorStyleLock = NSLock()
+    private var cursorSequenceTracker = DECSCUSRStreamTracker()
+    private var preferredCursorStyle: CursorStyle?
+    private var activeCursorDirective: DECSCUSRStreamTracker.Directive?
     #if DEBUG
     /// Per-view seam for exercising the production CoreGraphics fallback
     /// without mutating process-wide launch arguments or environment.
@@ -392,7 +400,7 @@ final class PineTerminalView: LocalProcessTerminalView {
         let contentBefore = slice.isEmpty || !shouldInspectContent
             ? nil
             : VisibleContentState(terminal: getTerminal())
-        super.dataReceived(slice: slice)
+        feedTrackingCursorStyle(slice: slice)
         guard let contentBefore,
               VisibleContentState(terminal: getTerminal()) != contentBefore,
               claimFirstVisibleContent() else { return }
@@ -403,6 +411,65 @@ final class PineTerminalView: LocalProcessTerminalView {
             DispatchQueue.main.async { [weak self] in
                 self?.scheduleFirstVisibleContentRecoveryIfNeeded()
             }
+        }
+    }
+
+    /// Atomically updates Pine's cached preference and SwiftTerm's live
+    /// cursor. A settings change also becomes the current authority until a
+    /// later valid explicit DECSCUSR command arrives.
+    func applyPreferredCursorStyle(_ style: CursorStyle) {
+        cursorStyleLock.lock()
+        defer { cursorStyleLock.unlock() }
+        preferredCursorStyle = style
+        activeCursorDirective = .preferred
+        getTerminal().setCursorStyle(style)
+    }
+
+    /// Runs SwiftTerm and Pine's cursor-policy resolution on the exact same
+    /// delivery path. Enforcing the last valid directive after `super` avoids
+    /// an asynchronous repair frame and also prevents unsupported or embedded
+    /// lookalikes from superseding a valid reset/explicit command.
+    private func feedTrackingCursorStyle(slice: ArraySlice<UInt8>) {
+        cursorStyleLock.lock()
+        defer { cursorStyleLock.unlock() }
+
+        if let directive = cursorSequenceTracker.consume(slice) {
+            activeCursorDirective = directive
+        }
+        super.dataReceived(slice: slice)
+
+        switch activeCursorDirective {
+        case .preferred:
+            if let preferredCursorStyle {
+                getTerminal().setCursorStyle(preferredCursorStyle)
+            }
+        case .explicit(let parameter):
+            if let style = Self.cursorStyle(forDECSCUSRParameter: parameter) {
+                getTerminal().setCursorStyle(style)
+            }
+        case nil:
+            break
+        }
+    }
+
+    private static func cursorStyle(
+        forDECSCUSRParameter parameter: Int
+    ) -> CursorStyle? {
+        switch parameter {
+        case 1:
+            return .blinkBlock
+        case 2:
+            return .steadyBlock
+        case 3:
+            return .blinkUnderline
+        case 4:
+            return .steadyUnderline
+        case 5:
+            return .blinkBar
+        case 6:
+            return .steadyBar
+        default:
+            return nil
         }
     }
 
@@ -1877,10 +1944,12 @@ final class TerminalTab: Identifiable, Hashable {
         self.themeNotificationCenter = themeSettings.notificationCenter
         self.cursorSettings = cursorSettings
         self.cursorNotificationCenter = cursorSettings.notificationCenter
-        self.terminalView = PineTerminalView(
+        let terminalView = PineTerminalView(
             frame: TerminalContainerView.defaultTerminalFrame,
             options: TerminalOptions(cursorStyle: cursorSettings.cursorStyle)
         )
+        terminalView.applyPreferredCursorStyle(cursorSettings.cursorStyle)
+        self.terminalView = terminalView
         self.terminalView.setAccessibilityElement(true)
         self.terminalView.setAccessibilityRole(.textArea)
         self.terminalView.setAccessibilityIdentifier(AccessibilityID.terminalSurface)
@@ -1947,7 +2016,11 @@ final class TerminalTab: Identifiable, Hashable {
     /// or system-appearance updates: terminal applications may use DECSCUSR to
     /// own the cursor until the next user-initiated settings change.
     internal func applyPreferredCursorStyle() {
-        terminalView.getTerminal().setCursorStyle(cursorSettings.cursorStyle)
+        guard let terminalView = terminalView as? PineTerminalView else {
+            terminalView.getTerminal().setCursorStyle(cursorSettings.cursorStyle)
+            return
+        }
+        terminalView.applyPreferredCursorStyle(cursorSettings.cursorStyle)
     }
 
     /// Applies the terminal's appearance-aware colors and keeps SwiftTerm's

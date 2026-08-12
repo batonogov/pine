@@ -74,7 +74,8 @@ private extension CursorStyle {
 ///
 /// The six concrete SwiftTerm styles are stored through their stable
 /// `tagName`. Live tabs observe a cursor-only notification so unrelated theme,
-/// focus, redraw, and renderer events never overwrite a TUI's DECSCUSR style.
+/// focus, redraw, and renderer events never overwrite a TUI's explicit
+/// DECSCUSR style. A DECSCUSR default-reset command restores this preference.
 @MainActor
 @Observable
 final class TerminalCursorSettings {
@@ -158,8 +159,8 @@ final class TerminalCursorSettings {
 
 extension Notification.Name {
     /// Posted only when the user changes cursor shape or blinking. Live tabs
-    /// apply the new preference once; subsequent DECSCUSR sequences remain in
-    /// control until the user changes the preference again (#1409).
+    /// apply the new preference once; subsequent explicit DECSCUSR sequences
+    /// remain in control until the user changes the preference again (#1409).
     static let terminalCursorStyleChanged = Notification.Name(
         "terminalCursorStyleChanged"
     )
