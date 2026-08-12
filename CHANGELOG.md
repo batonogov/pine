@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.3.1](https://github.com/batonogov/pine/compare/v2.3.0...v2.3.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* disambiguate concurrent agent inbox sessions ([#1434](https://github.com/batonogov/pine/issues/1434)) ([e968e4c](https://github.com/batonogov/pine/commit/e968e4c7cb2ff138ee7f1da08754a52c4a1b1f11))
+* keep CPU-flat agent waits non-actionable ([#1428](https://github.com/batonogov/pine/issues/1428)) ([69b8564](https://github.com/batonogov/pine/commit/69b8564557b731e815a51af53bf196c6b574e2dd))
+* keep terminal destination routing current ([#1431](https://github.com/batonogov/pine/issues/1431)) ([ab3103f](https://github.com/batonogov/pine/commit/ab3103f4fb1bee4a10494822991213087a8366c5))
+* preserve agent generation during start uncertainty ([#1430](https://github.com/batonogov/pine/issues/1430)) ([055a97e](https://github.com/batonogov/pine/commit/055a97e022e3b8d18fe83659724bebd686e0d415))
+* reopen background projects before inbox recovery ([#1426](https://github.com/batonogov/pine/issues/1426)) ([66a7992](https://github.com/batonogov/pine/commit/66a79921d0e304cc31fdbbedafbe8af49ee9e9dc))
+* restore configured cursor after terminal reset ([#1435](https://github.com/batonogov/pine/issues/1435)) ([87dccb8](https://github.com/batonogov/pine/commit/87dccb8f09f76a4730e6eafae6e8eade63fee56c))
+* retain agent ownership through foreground children ([#1427](https://github.com/batonogov/pine/issues/1427)) ([f15faf6](https://github.com/batonogov/pine/commit/f15faf6b0c77094fb7f10873389a40274e655315))
+* scope agent activity to project terminals ([#1433](https://github.com/batonogov/pine/issues/1433)) ([7b1dd53](https://github.com/batonogov/pine/commit/7b1dd535d3f2dc048c3a7872ffbd5f12a4b2db07))
+
 ## [2.3.0](https://github.com/batonogov/pine/compare/v2.2.2...v2.3.0) (2026-08-11)
 
 
