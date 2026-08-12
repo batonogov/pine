@@ -796,6 +796,10 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         approvedCloseWindow = nil
         let closingGeneration = ownerWindowGeneration
         if let ownerWindow {
+            projectManager.recordCompletedDialogOwnerLifecycle(
+                ownerWindow,
+                generation: closingGeneration
+            )
             DialogPresenter.ownerDidClose(ownerWindow)
         }
         appDelegate?.handleProjectWindowDisappear(
@@ -811,7 +815,11 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     /// representable updates during one live window generation must never
     /// reset the once-only close guard.
     func beginNewWindowLifecycle(on window: NSWindow) {
-        guard didHandleClose else { return }
+        guard didHandleClose,
+              projectManager.authorizeCompletedDialogOwnerLifecycle(
+                window,
+                generation: ownerWindowGeneration
+              ) else { return }
         didHandleClose = false
         observeWindowClose(window)
     }

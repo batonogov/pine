@@ -387,6 +387,8 @@ final class ProjectManager {
     @ObservationIgnored
     private var retiredDialogOwnerWindows: [RetiredDialogOwnerWindow] = []
     @ObservationIgnored
+    private var completedDialogOwnerWindow: RetiredDialogOwnerWindow?
+    @ObservationIgnored
     private var dialogOperationTail: Task<Void, Never>?
     @ObservationIgnored
     private var dialogOperationGeneration = 0
@@ -1592,6 +1594,7 @@ final class ProjectManager {
         guard retiredDialogOwnerGeneration(for: window) == nil else {
             return dialogOwnerWindowGeneration
         }
+        completedDialogOwnerWindow = nil
         if dialogOwnerWindow !== window {
             dialogOwnerWindowGeneration = UUID()
         }
@@ -1606,6 +1609,7 @@ final class ProjectManager {
     func prepareForWindowPresentation() {
         let previousOwner = dialogOwnerWindow
         let previousGeneration = dialogOwnerWindowGeneration
+        let completedOwner = completedDialogOwnerWindow?.window
         if let previousOwner {
             retiredDialogOwnerWindows.removeAll {
                 $0.window == nil || $0.window === previousOwner
@@ -1625,6 +1629,16 @@ final class ProjectManager {
                 DialogPresenter.ownerDidClose(previousOwner)
             }
         }
+        // SwiftUI can reopen a completed WindowGroup lifecycle by ordering the
+        // same NSWindow instance front without updating its representable.
+        // Re-arm only an owner whose old close callback already committed;
+        // unfinished retired owners remain fenced until a fresh window binds.
+        if let completedOwner,
+           let delegate = completedOwner.delegate as? CloseDelegate,
+           delegate.projectManager === self,
+           delegate.didCompleteWindowLifecycle {
+            delegate.beginNewWindowLifecycle(on: completedOwner)
+        }
     }
 
     func retiredDialogOwnerGeneration(for window: NSWindow) -> UUID? {
@@ -1632,6 +1646,37 @@ final class ProjectManager {
         return retiredDialogOwnerWindows.first(where: {
             $0.window === window
         })?.generation
+    }
+
+    func recordCompletedDialogOwnerLifecycle(
+        _ window: NSWindow,
+        generation: UUID?
+    ) {
+        guard let generation,
+              dialogOwnerWindow === window,
+              dialogOwnerWindowGeneration == generation else { return }
+        completedDialogOwnerWindow = RetiredDialogOwnerWindow(
+            window: window,
+            generation: generation
+        )
+    }
+
+    func authorizeCompletedDialogOwnerLifecycle(
+        _ window: NSWindow,
+        generation: UUID?
+    ) -> Bool {
+        guard let generation,
+              let completed = completedDialogOwnerWindow,
+              completed.window === window,
+              completed.generation == generation else {
+            return false
+        }
+        if let retiredGeneration = retiredDialogOwnerGeneration(for: window) {
+            guard retiredGeneration == generation else { return false }
+            retiredDialogOwnerWindows.removeAll { $0.window === window }
+        }
+        completedDialogOwnerWindow = nil
+        return true
     }
 
     func unbindDialogOwnerWindow(_ window: NSWindow) {
