@@ -24,8 +24,23 @@ nonisolated enum AgentMonotonicCounter {
     }
 }
 
+/// Main-actor consumer boundary for one application-owned process snapshot.
+/// Consumers receive the already captured, parsed, and generation-fenced
+/// result; none of them owns another timer or invokes `ps`.
+@MainActor
+protocol AgentProcessSnapshotConsuming: AnyObject {
+    func consumeAgentProcessSnapshot(
+        _ processes: [DetectedProcess],
+        observation: AgentObservationStamp
+    )
+
+    func consumeAgentProcessSnapshotFailure(
+        observation: AgentObservationStamp
+    )
+}
+
 /// Captures one machine-wide process snapshot and fans it out to every
-/// project-local detector. Production owns one instance in `ProjectRegistry`;
+/// subscribed detector. Production owns one instance in `ProjectRegistry`;
 /// standalone terminal-manager tests keep using a private instance.
 nonisolated final class AgentProcessSnapshotPoller {
     private let processRunner: ProcessRunner
@@ -60,14 +75,14 @@ nonisolated final class AgentProcessSnapshotPoller {
     }
 
     @MainActor
-    func subscribe(_ coordinator: AgentDetectionCoordinator) {
-        sink.insert(coordinator)
+    func subscribe(_ consumer: any AgentProcessSnapshotConsuming) {
+        sink.insert(consumer)
         startIfNeeded()
     }
 
     @MainActor
-    func unsubscribe(_ coordinator: AgentDetectionCoordinator) {
-        sink.remove(coordinator)
+    func unsubscribe(_ consumer: any AgentProcessSnapshotConsuming) {
+        sink.remove(consumer)
         if sink.isEmpty {
             stopPolling()
         }
@@ -174,46 +189,56 @@ nonisolated final class AgentProcessSnapshotPoller {
 
 @MainActor
 private final class AgentProcessSnapshotSink {
-    private final class WeakCoordinator {
-        weak var value: AgentDetectionCoordinator?
+    private final class WeakConsumer {
+        weak var value: (any AgentProcessSnapshotConsuming)?
 
-        init(_ value: AgentDetectionCoordinator) {
+        init(_ value: any AgentProcessSnapshotConsuming) {
             self.value = value
         }
     }
 
-    private var coordinators: [ObjectIdentifier: WeakCoordinator] = [:]
+    private var consumers: [ObjectIdentifier: WeakConsumer] = [:]
 
     var count: Int {
-        pruneReleasedCoordinators()
-        return coordinators.count
+        pruneReleasedConsumers()
+        return consumers.count
     }
 
     var isEmpty: Bool {
-        pruneReleasedCoordinators()
-        return coordinators.isEmpty
+        pruneReleasedConsumers()
+        return consumers.isEmpty
     }
 
-    func insert(_ coordinator: AgentDetectionCoordinator) {
-        pruneReleasedCoordinators()
-        coordinators[ObjectIdentifier(coordinator)] = WeakCoordinator(
-            coordinator
+    func insert(_ consumer: any AgentProcessSnapshotConsuming) {
+        pruneReleasedConsumers()
+        consumers[ObjectIdentifier(consumer)] = WeakConsumer(
+            consumer
         )
     }
 
-    func remove(_ coordinator: AgentDetectionCoordinator) {
-        coordinators.removeValue(forKey: ObjectIdentifier(coordinator))
+    func remove(_ consumer: any AgentProcessSnapshotConsuming) {
+        consumers.removeValue(forKey: ObjectIdentifier(consumer))
     }
 
     func apply(_ snapshot: AgentProcessSnapshot) {
-        pruneReleasedCoordinators()
-        for coordinator in coordinators.values.compactMap(\.value) {
-            coordinator.receive(snapshot)
+        pruneReleasedConsumers()
+        for consumer in consumers.values.compactMap(\.value) {
+            switch snapshot {
+            case .success(let processes, let observation):
+                consumer.consumeAgentProcessSnapshot(
+                    processes,
+                    observation: observation
+                )
+            case .failed(let observation):
+                consumer.consumeAgentProcessSnapshotFailure(
+                    observation: observation
+                )
+            }
         }
     }
 
-    private func pruneReleasedCoordinators() {
-        coordinators = coordinators.filter { $0.value.value != nil }
+    private func pruneReleasedConsumers() {
+        consumers = consumers.filter { $0.value.value != nil }
     }
 }
 
@@ -247,7 +272,8 @@ private final class AgentProcessSnapshotSink {
 /// `nonisolated` `makePollHandler()` so the closure is nonisolated. Note that
 /// `captureSnapshot` being `nonisolated` is NOT sufficient on its own — only
 /// the closure literal's own isolation matters at the dispatch boundary.
-nonisolated final class AgentDetectionCoordinator {
+nonisolated final class AgentDetectionCoordinator:
+    AgentProcessSnapshotConsuming {
     let detector: AgentDetector
     weak var terminalManager: TerminalManager?
     private let poller: AgentProcessSnapshotPoller
@@ -324,7 +350,22 @@ nonisolated final class AgentDetectionCoordinator {
         return true
     }
 
-    @MainActor fileprivate func receive(_ snapshot: AgentProcessSnapshot) {
+    @MainActor
+    func consumeAgentProcessSnapshot(
+        _ processes: [DetectedProcess],
+        observation: AgentObservationStamp
+    ) {
+        receive(.success(processes: processes, observation: observation))
+    }
+
+    @MainActor
+    func consumeAgentProcessSnapshotFailure(
+        observation: AgentObservationStamp
+    ) {
+        receive(.failed(observation: observation))
+    }
+
+    @MainActor private func receive(_ snapshot: AgentProcessSnapshot) {
         #if DEBUG
         receivedSnapshotCountForTesting += 1
         #endif

@@ -1283,6 +1283,7 @@ struct AgentInboxTests {
         return AgentInboxRow(
             id: id,
             section: .working,
+            surface: .projectWindow,
             projectPath: "/tmp/Pine Demo",
             worktreePath: "/tmp/Pine Demo",
             projectName: "Pine Demo",

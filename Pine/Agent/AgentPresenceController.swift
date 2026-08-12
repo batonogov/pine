@@ -145,9 +145,11 @@ final class AgentPresenceController {
     /// compatibility catalog on the main actor.
     static func dockMenuAgentTitle(for task: AgentTask) -> String {
         let agent = task.descriptor.agentType.displayName
-        let projectName = URL(
-            fileURLWithPath: task.project.canonicalProjectPath
-        ).lastPathComponent
+        let projectName = task.route.surface == .quickTerminalStandalone
+            ? Strings.quickTerminalText()
+            : URL(
+                fileURLWithPath: task.project.canonicalProjectPath
+            ).lastPathComponent
         let trimmedTitle = task.title?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmedTitle, !trimmedTitle.isEmpty {

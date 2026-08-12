@@ -294,27 +294,26 @@ struct WelcomeView: View {
             return
         }
         NativeCommandDelivery.deferToNextMainRunLoop {
-            _ = openProject(at: url)
+            Task { @MainActor in
+                guard let projectManager = await registry
+                        .projectManagerForRecentProject(url),
+                      !Task.isCancelled,
+                      let canonical = projectManager.rootURL?
+                        .standardizedFileURL,
+                      registry.openProjects[canonical] === projectManager
+                else { return }
+                openProjectWindow(canonical)
+                closeWelcome()
+            }
         }
     }
 
     @discardableResult
     private func openProject(at url: URL) -> ProjectManager? {
         let canonical = registry.canonicalProjectURL(url)
-        if let appDelegate {
-            guard appDelegate.openRecentProject(
-                canonical,
-                fallbackOpenProjectWindow: { url in
-                    openProjectWindow(url)
-                }
-            ) else {
-                return nil
-            }
-            return registry.openProjects[canonical]
-        }
-
-        // Preview/fallback hosts without AppDelegate still preserve the
-        // registry's retained ProjectManager instead of rebuilding it.
+        // Environment, drop, and folder-picker opens are ordinary folder
+        // admissions. Only explicit Recent actions consume persisted
+        // project/worktree identity through the async exact-record path above.
         guard let projectManager = registry.projectManager(for: canonical) else {
             return nil
         }

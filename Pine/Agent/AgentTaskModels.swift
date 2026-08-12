@@ -41,17 +41,38 @@ nonisolated enum AgentTaskRouteAvailability: String, Codable, Sendable {
     case missing
 }
 
+/// The runtime surface that owns a terminal route.
+///
+/// Surface identity is navigation and lifecycle authority. A project pane and
+/// the application-wide Quick Terminal must never become interchangeable only
+/// because their runtime UUIDs happen to match.
+nonisolated enum AgentTaskTerminalSurface: String, Codable, Hashable, Sendable {
+    case projectWindow
+    case quickTerminalProject
+    case quickTerminalStandalone
+
+    var isQuickTerminal: Bool {
+        self != .projectWindow
+    }
+
+    var isProjectBacked: Bool {
+        self != .quickTerminalStandalone
+    }
+}
+
 /// Stable value route back to the terminal surface that owns a run.
 ///
 /// `terminalID` identifies the terminal lifetime; `tabID` and `paneID` locate
 /// it in the current layout. Moving a tab changes only `paneID`.
 nonisolated struct AgentTaskRoute: Codable, Equatable, Sendable {
+    let surface: AgentTaskTerminalSurface
     let paneID: UUID
     let tabID: UUID
     let terminalID: UUID
     var availability: AgentTaskRouteAvailability
 
     private enum CodingKeys: String, CodingKey {
+        case surface
         case paneID
         case tabID
         case terminalID
@@ -59,15 +80,43 @@ nonisolated struct AgentTaskRoute: Codable, Equatable, Sendable {
     }
 
     init(
+        surface: AgentTaskTerminalSurface = .projectWindow,
         paneID: UUID,
         tabID: UUID,
         terminalID: UUID,
         availability: AgentTaskRouteAvailability = .available
     ) {
+        self.surface = surface
         self.paneID = paneID
         self.tabID = tabID
         self.terminalID = terminalID
         self.availability = availability
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        // Routes persisted before Quick Terminal integration are all project
+        // pane routes. Decode them additively without a metadata schema bump.
+        surface = try values.decodeIfPresent(
+            AgentTaskTerminalSurface.self,
+            forKey: .surface
+        ) ?? .projectWindow
+        paneID = try values.decode(UUID.self, forKey: .paneID)
+        tabID = try values.decode(UUID.self, forKey: .tabID)
+        terminalID = try values.decode(UUID.self, forKey: .terminalID)
+        availability = try values.decode(
+            AgentTaskRouteAvailability.self,
+            forKey: .availability
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(surface, forKey: .surface)
+        try values.encode(paneID, forKey: .paneID)
+        try values.encode(tabID, forKey: .tabID)
+        try values.encode(terminalID, forKey: .terminalID)
+        try values.encode(availability, forKey: .availability)
     }
 }
 

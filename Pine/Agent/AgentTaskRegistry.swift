@@ -10,6 +10,7 @@ import Observation
 
 nonisolated private struct AgentTaskTerminalKey: Hashable, Sendable {
     let project: AgentTaskProjectIdentity
+    let surface: AgentTaskTerminalSurface
     let terminalID: UUID
 }
 
@@ -458,6 +459,7 @@ final class AgentTaskRegistry {
         guard let task = task(for: taskID) else { return false }
         let key = AgentTaskTerminalKey(
             project: task.project,
+            surface: task.route.surface,
             terminalID: terminalID
         )
         return taskIDByTerminal[key] == taskID
@@ -511,6 +513,7 @@ final class AgentTaskRegistry {
                     taskID: existingTaskID,
                     key: AgentTaskTerminalKey(
                         project: task.project,
+                        surface: task.route.surface,
                         terminalID: task.route.terminalID
                     )
                 )
@@ -602,8 +605,9 @@ final class AgentTaskRegistry {
                 removeLiveOwnership(
                     taskID: taskID,
                     key: AgentTaskTerminalKey(
-                    project: task.project,
-                    terminalID: task.route.terminalID
+                        project: task.project,
+                        surface: task.route.surface,
+                        terminalID: task.route.terminalID
                     )
                 )
             }
@@ -927,7 +931,7 @@ final class AgentTaskRegistry {
     ) {
         var projects = Set<AgentTaskProjectIdentity>()
         for key in Array(pendingClaims.keys)
-        where matchesProject(key.project) {
+        where key.surface == .projectWindow && matchesProject(key.project) {
             guard var claim = pendingClaims[key] else { continue }
             if isOpen, claim.route.availability == .background {
                 claim.route.availability = .available
@@ -939,7 +943,10 @@ final class AgentTaskRegistry {
             pendingClaims[key] = claim
         }
         for (_, taskID) in taskIDByTerminal
-        where task(for: taskID).map({ matchesProject($0.project) }) == true {
+        where task(for: taskID).map({
+            $0.route.surface == .projectWindow
+                && matchesProject($0.project)
+        }) == true {
             guard let index = taskIndex(for: taskID) else { continue }
             let availability = tasks[index].route.availability
             if isOpen, availability == .background {
@@ -968,6 +975,7 @@ final class AgentTaskRegistry {
         expireClaims()
         let key = AgentTaskTerminalKey(
             project: project,
+            surface: route.surface,
             terminalID: terminalID
         )
         guard !isTerminating,
@@ -978,9 +986,11 @@ final class AgentTaskRegistry {
             pendingClaims[key] = claim
         }
         guard let taskID = taskIDByTerminal[key],
-              let index = taskIndex(for: taskID) else { return }
+              let index = taskIndex(for: taskID),
+              tasks[index].route.surface == route.surface else { return }
         let availability = tasks[index].route.availability
         tasks[index].route = AgentTaskRoute(
+            surface: route.surface,
             paneID: route.paneID,
             tabID: route.tabID,
             terminalID: route.terminalID,
@@ -992,6 +1002,7 @@ final class AgentTaskRegistry {
         )
         taskIDByTerminal[AgentTaskTerminalKey(
             project: project,
+            surface: route.surface,
             terminalID: terminalID
         )] = tasks[index].id
         markDirty(project)
@@ -1002,11 +1013,16 @@ final class AgentTaskRegistry {
     func markTerminalClosed(
         terminalID: UUID,
         project: AgentTaskProjectIdentity,
+        surface: AgentTaskTerminalSurface = .projectWindow,
         at timestamp: Date = Date()
     ) {
         expireClaims()
         guard !isTerminating else { return }
-        let key = AgentTaskTerminalKey(project: project, terminalID: terminalID)
+        let key = AgentTaskTerminalKey(
+            project: project,
+            surface: surface,
+            terminalID: terminalID
+        )
         cancelClaim(for: key)
         guard let taskID = taskIDByTerminal[key],
               let index = taskIndex(for: taskID) else { return }
@@ -1522,9 +1538,11 @@ final class AgentTaskRegistry {
         tasks[taskIndex].runs[runIndex] = run
         if let route,
            route.terminalID == run.terminalID,
-           route.tabID == run.terminalID {
+           route.tabID == run.terminalID,
+           route.surface == tasks[taskIndex].route.surface {
             let availability = tasks[taskIndex].route.availability
             tasks[taskIndex].route = AgentTaskRoute(
+                surface: route.surface,
                 paneID: route.paneID,
                 tabID: route.tabID,
                 terminalID: route.terminalID,
@@ -1674,6 +1692,7 @@ final class AgentTaskRegistry {
         taskIDByRunID[run.id] = task.id
         taskIDByTerminal[AgentTaskTerminalKey(
             project: task.project,
+            surface: task.route.surface,
             terminalID: task.route.terminalID
         )] = task.id
     }
@@ -1759,6 +1778,7 @@ final class AgentTaskRegistry {
     ) -> AgentTaskTerminalKey {
         AgentTaskTerminalKey(
             project: context.project,
+            surface: context.route.surface,
             terminalID: context.route.terminalID
         )
     }
@@ -1930,6 +1950,7 @@ final class AgentTaskRegistry {
     ) -> Bool {
         guard let task = task(for: taskID),
               task.project == context.project,
+              task.route.surface == context.route.surface,
               task.route.terminalID == context.route.terminalID,
               task.descriptor.agentType == session.agentType,
               let run = task.runs.last,
@@ -1953,6 +1974,7 @@ final class AgentTaskRegistry {
         guard let index = taskIndex(forRunID: sessionID) else { return }
         let key = AgentTaskTerminalKey(
             project: tasks[index].project,
+            surface: tasks[index].route.surface,
             terminalID: tasks[index].route.terminalID
         )
         endRun(sessionID: sessionID, at: timestamp)

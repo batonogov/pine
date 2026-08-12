@@ -18,6 +18,7 @@ nonisolated enum AgentInboxSectionID: String, CaseIterable, Sendable {
 nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     let id: UUID
     let section: AgentInboxSectionID
+    let surface: AgentTaskTerminalSurface
     let projectPath: String
     let worktreePath: String
     let projectName: String
@@ -40,7 +41,8 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     }
 
     var canRecover: Bool {
-        !canNavigateToLiveRun
+        surface == .projectWindow
+            && !canNavigateToLiveRun
             && (lifecycle == .paused || lifecycle == .completed)
             && liveness != .live
     }
@@ -69,13 +71,16 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
         accuracyPolicy: AgentLifecycleAccuracyPolicy = .production
     ) {
         let visibleTasks = tasks.filter { $0.lifecycle != .dismissed }
+        let projectBackedTasks = visibleTasks.filter {
+            $0.route.surface.isProjectBacked
+        }
         let projectNames = Self.shortestUniquePathLabels(
-            visibleTasks.map(\.project.canonicalProjectPath)
+            projectBackedTasks.map(\.project.canonicalProjectPath)
         )
         // Worktrees form their own label namespace. A worktree basename must
         // neither widen a project label nor be widened by one.
         let worktreeNames = Self.shortestUniquePathLabels(
-            visibleTasks.compactMap { task in
+            projectBackedTasks.compactMap { task in
                 task.project.canonicalWorktreePath
                     == task.project.canonicalProjectPath
                     ? nil
@@ -104,14 +109,20 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
             grouped[section, default: []].append(AgentInboxRow(
                 id: task.id,
                 section: section,
-                projectPath: task.project.canonicalProjectPath,
-                worktreePath: task.project.canonicalWorktreePath,
-                projectName: projectNames[
-                    task.project.canonicalProjectPath
-                ] ?? task.project.canonicalProjectPath,
-                worktreeName: worktreeNames[
-                    task.project.canonicalWorktreePath
-                ],
+                surface: task.route.surface,
+                projectPath: task.route.surface.isProjectBacked
+                    ? task.project.canonicalProjectPath
+                    : "",
+                worktreePath: task.route.surface.isProjectBacked
+                    ? task.project.canonicalWorktreePath
+                    : "",
+                projectName: Self.projectName(
+                    for: task,
+                    projectNames: projectNames
+                ),
+                worktreeName: task.route.surface.isProjectBacked
+                    ? worktreeNames[task.project.canonicalWorktreePath]
+                    : nil,
                 terminalLabel: Self.terminalLabel(
                     for: task,
                     terminalIDsByScope: terminalIDsByScope,
@@ -143,6 +154,7 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
 
     private struct TerminalLabelScope: Hashable {
         let project: AgentTaskProjectIdentity
+        let surface: AgentTaskTerminalSurface
         let source: TerminalLabelSource
     }
 
@@ -156,6 +168,7 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
     ) -> TerminalLabelScope {
         TerminalLabelScope(
             project: task.project,
+            surface: task.route.surface,
             source: task.presentationContext.map {
                 .stable($0.terminalLabel)
             } ?? .legacyFallback
@@ -168,6 +181,10 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
         terminalIDsByScope: [TerminalLabelScope: Set<UUID>],
         tokensByScope: [TerminalLabelScope: [UUID: String]]
     ) -> String {
+        if task.route.surface == .quickTerminalStandalone {
+            return task.presentationContext?.terminalLabel
+                ?? Strings.quickTerminalText()
+        }
         let scope = terminalLabelScope(for: task)
         let token = tokensByScope[scope]?[task.route.terminalID]
             ?? task.route.terminalID.uuidString
@@ -178,6 +195,19 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
             return stableLabel
         }
         return "\(stableLabel) · #\(token)"
+    }
+
+    @MainActor
+    private static func projectName(
+        for task: AgentTask,
+        projectNames: [String: String]
+    ) -> String {
+        guard task.route.surface.isProjectBacked else {
+            return task.presentationContext?.terminalLabel
+                ?? Strings.quickTerminalText()
+        }
+        return projectNames[task.project.canonicalProjectPath]
+            ?? task.project.canonicalProjectPath
     }
 
     /// Returns deterministic shortest trailing path suffixes. Equal canonical

@@ -1882,6 +1882,17 @@ final class TerminalTab: Identifiable, Hashable {
     private let shellSettings: ShellSettings
     private let agentHandoffSettings: AgentHandoffSettings
     private var processStarted = false
+    private var processStartValidationTask: Task<Void, Never>?
+    private var processStartValidationGeneration = UUID()
+    private var workingDirectoryValidator:
+        (@Sendable (URL) async -> Bool)?
+    #if DEBUG
+    var validationCommitSeamForTesting:
+        @Sendable () async -> Void = {}
+    var isStartValidationPendingForTesting: Bool {
+        processStartValidationTask != nil
+    }
+    #endif
     /// Stable Pine-owned duplicate of SwiftTerm's master PTY. The holder has
     /// its own lock so nonisolated `deinit` can close it safely as a final
     /// lifecycle backstop.
@@ -2079,6 +2090,19 @@ final class TerminalTab: Identifiable, Hashable {
         self.initialProcess = initialProcess
     }
 
+    /// Installs the project admission validator used immediately before a
+    /// lazy PTY launch. The validator performs filesystem work off-main and
+    /// its generation is rotated so an older suspended result cannot start a
+    /// process after the tab was rebound or torn down.
+    func configureWorkingDirectoryValidation(
+        _ validator: (@Sendable (URL) async -> Bool)?
+    ) {
+        processStartValidationGeneration = UUID()
+        processStartValidationTask?.cancel()
+        processStartValidationTask = nil
+        workingDirectoryValidator = validator
+    }
+
     /// Builds the environment dictionary for the terminal child process.
     ///
     /// Starts from the current process environment, removes host-terminal-
@@ -2165,9 +2189,38 @@ final class TerminalTab: Identifiable, Hashable {
     func startIfNeeded() {
         // Final project reclamation may race a delayed NSViewRepresentable
         // update. A terminated tab is a tombstone and must never fork again.
-        guard !isTerminated, !processStarted else { return }
+        guard !isTerminated, !processStarted,
+              processStartValidationTask == nil else { return }
         guard terminalView.frame.size.width > 0,
               terminalView.frame.size.height > 0 else { return }
+        if let workingDirectory, let workingDirectoryValidator {
+            let generation = processStartValidationGeneration
+            processStartValidationTask = Task { @MainActor [weak self] in
+                guard await workingDirectoryValidator(workingDirectory) else {
+                    self?.processStartValidationTask = nil
+                    return
+                }
+                #if DEBUG
+                await self?.validationCommitSeamForTesting()
+                #endif
+                let valid = await workingDirectoryValidator(workingDirectory)
+                guard let self else { return }
+                self.processStartValidationTask = nil
+                guard !Task.isCancelled,
+                      valid,
+                      !self.isTerminated,
+                      !self.processStarted,
+                      self.processStartValidationGeneration == generation,
+                      self.workingDirectory == workingDirectory else { return }
+                self.startProcessNow()
+            }
+            return
+        }
+        startProcessNow()
+    }
+
+    private func startProcessNow() {
+        guard !isTerminated, !processStarted else { return }
         processStarted = true
 
         let env = buildEnvironment()
@@ -2196,6 +2249,9 @@ final class TerminalTab: Identifiable, Hashable {
         }
         guard !isTerminated else { return }
         isTerminated = true
+        processStartValidationGeneration = UUID()
+        processStartValidationTask?.cancel()
+        processStartValidationTask = nil
         acknowledgedPTYLease.invalidate()
         terminalView.terminate()
     }

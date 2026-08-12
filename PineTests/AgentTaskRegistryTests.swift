@@ -2872,8 +2872,9 @@ struct AgentTaskRegistryTests {
         ])
         let route = try #require(task["route"] as? [String: Any])
         #expect(Set(route.keys) == [
-            "availability", "paneID", "tabID", "terminalID",
+            "availability", "paneID", "surface", "tabID", "terminalID",
         ])
+        #expect(route["surface"] as? String == "projectWindow")
         let descriptor = try #require(task["descriptor"] as? [String: Any])
         #expect(Set(descriptor.keys) == ["launchExecutable", "typeIdentifier"])
         #expect(descriptor["launchExecutable"] as? String == "claude")

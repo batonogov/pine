@@ -8,6 +8,31 @@
 import SwiftUI
 import AppKit
 
+nonisolated enum AgentNotificationSettingsProjection {
+    static func projectOptions(
+        tasks: [AgentTask]
+    ) -> [(path: String, label: String)] {
+        let values = tasks
+            .filter { $0.route.surface.isProjectBacked }
+            .map {
+                let path = $0.project.canonicalProjectPath
+                return (
+                    path,
+                    URL(fileURLWithPath: path).lastPathComponent
+                )
+            }
+        return Dictionary(
+            values,
+            uniquingKeysWith: { current, _ in current }
+        )
+        .map { (path: $0.key, label: $0.value) }
+        .sorted {
+            $0.label.localizedStandardCompare($1.label)
+                == .orderedAscending
+        }
+    }
+}
+
 @MainActor
 struct PineSettingsView: View {
     let lspSettings: LSPSettings
@@ -149,11 +174,9 @@ private struct AgentNotificationSettingsView: View {
     }
 
     private var projectOptions: [(String, String)] {
-        let values = agentTasks.tasks.map {
-            ($0.project.canonicalProjectPath, URL(fileURLWithPath: $0.project.canonicalProjectPath).lastPathComponent)
-        }
-        return Dictionary(values, uniquingKeysWith: { current, _ in current })
-            .sorted { $0.value.localizedStandardCompare($1.value) == .orderedAscending }
+        AgentNotificationSettingsProjection.projectOptions(
+            tasks: agentTasks.tasks
+        )
     }
 
     private var taskOptions: [(UUID, String)] {
