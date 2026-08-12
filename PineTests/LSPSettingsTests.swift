@@ -596,6 +596,135 @@ struct LSPSettingsLifecycleTests {
         #expect(clients.last?.opens.first?.text == "let value = 2")
     }
 
+    @Test("Background suspend is idempotent and resume replays latest buffers once")
+    func backgroundSuspendAndResume() async throws {
+        let settings = makeSettings()
+        var clients: [RecordingLSPClient] = []
+        let manager = LSPManager(
+            settings: settings,
+            resolver: TestLSPResolver(executablePath: "/bin/echo")
+        ) { _ in
+            let client = RecordingLSPClient()
+            clients.append(client)
+            return client
+        }
+        let url = URL(fileURLWithPath: "/project/App.swift")
+
+        manager.didOpen(
+            url: url,
+            contentRevision: 1,
+            text: "let value = 1"
+        )
+        await waitUntil { manager.servers["swift"]?.state == .initialized }
+        let original = try #require(clients.first)
+
+        manager.suspendForBackground()
+        manager.suspendForBackground()
+        #expect(manager.presentationLifecycle == .backgroundSuspended)
+        #expect(manager.servers.isEmpty)
+        #expect(original.shutdownCount == 1)
+
+        manager.didChange(
+            url: url,
+            contentRevision: 2,
+            text: "let value = 2"
+        )
+        manager.resumeFromBackground()
+        manager.resumeFromBackground()
+        await waitUntil {
+            clients.count == 2
+                && manager.servers["swift"]?.state == .initialized
+        }
+
+        let replacement = try #require(clients.last)
+        #expect(manager.presentationLifecycle == .active)
+        #expect(replacement.starts.count == 1)
+        #expect(replacement.opens.count == 1)
+        #expect(replacement.opens.first?.text == "let value = 2")
+    }
+
+    @Test("Delayed old presentation close preserves the reopened owner")
+    func delayedOldClosePreservesReopenedPresentation() async throws {
+        let settings = makeSettings()
+        let client = RecordingLSPClient()
+        let manager = LSPManager(
+            settings: settings,
+            resolver: TestLSPResolver(executablePath: "/bin/echo")
+        ) { _ in client }
+        let url = URL(fileURLWithPath: "/project/App.swift")
+        let oldPresentation = UUID()
+        let reopenedPresentation = UUID()
+
+        manager.didOpen(
+            url: url,
+            ownerID: oldPresentation,
+            contentRevision: 1,
+            text: "old"
+        )
+        await waitUntil { client.opens.count == 1 }
+        manager.didOpen(
+            url: url,
+            ownerID: reopenedPresentation,
+            contentRevision: 2,
+            text: "reopened"
+        )
+
+        // SwiftUI can deliver this disappearance after the replacement view's
+        // onAppear. Its unique presentation token must not close the reopen.
+        manager.didClose(url: url, ownerID: oldPresentation)
+        manager.didChange(
+            url: url,
+            ownerID: reopenedPresentation,
+            contentRevision: 3,
+            text: "reopened latest"
+        )
+
+        #expect(client.closes.isEmpty)
+        #expect(Array(client.changes.map(\.text).suffix(2)) == [
+            "reopened",
+            "reopened latest"
+        ])
+        manager.didClose(url: url, ownerID: reopenedPresentation)
+        #expect(client.closes == [url.absoluteString])
+    }
+
+    @Test("Suspend during initialize fences stale completion after resume")
+    func suspendDuringInitializeAndResume() async throws {
+        let settings = makeSettings()
+        let suspended = SuspendedStartLSPClient()
+        var replacements: [RecordingLSPClient] = []
+        var creationCount = 0
+        let manager = LSPManager(
+            settings: settings,
+            resolver: TestLSPResolver(executablePath: "/bin/echo")
+        ) { _ in
+            creationCount += 1
+            if creationCount == 1 { return suspended }
+            let replacement = RecordingLSPClient()
+            replacements.append(replacement)
+            return replacement
+        }
+        let url = URL(fileURLWithPath: "/project/App.swift")
+
+        manager.didOpen(url: url, text: "before")
+        await waitUntil { suspended.isWaitingToStart }
+        manager.suspendForBackground()
+        manager.didChange(url: url, text: "after")
+        manager.resumeFromBackground()
+        await waitUntil {
+            manager.servers["swift"]?.state == .initialized
+        }
+
+        suspended.resumeStart(true)
+        await Task.yield()
+
+        let replacement = try #require(replacements.first)
+        #expect(suspended.shutdownCount == 2)
+        #expect(suspended.opens.isEmpty)
+        #expect(replacement.opens.map(\.text) == ["after"])
+        #expect(manager.servers["swift"]?.state == .initialized)
+    }
+
     @Test("A stale initialize cannot replace a reconfigured client")
     func reconfigureDuringInitialize() async throws {
         let settings = makeSettings()

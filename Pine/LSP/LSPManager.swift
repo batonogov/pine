@@ -30,6 +30,12 @@ import os
 @Observable
 final class LSPManager {
 
+    enum PresentationLifecycle: Equatable {
+        case active
+        case backgroundSuspended
+        case invalidated
+    }
+
     private struct OpenDocument {
         let url: URL
         let version: Int
@@ -139,8 +145,14 @@ final class LSPManager {
     private var stoppingClients:
         [ObjectIdentifier: any LSPClientProtocol] = [:]
 
-    /// Permanently prevents work from relaunching after project destruction.
-    private var isInvalidated = false
+    /// Separates reversible project-window suspension from final destruction.
+    private(set) var presentationLifecycle: PresentationLifecycle = .active
+    private var isInvalidated: Bool {
+        presentationLifecycle == .invalidated
+    }
+    private var isBackgroundSuspended: Bool {
+        presentationLifecycle == .backgroundSuspended
+    }
     private var lifecycleEpoch = 0
 
     init(
@@ -162,10 +174,64 @@ final class LSPManager {
         rootURI = url.map { $0.absoluteString }
     }
 
+    /// Stops every language-server process while retaining the current editor
+    /// mirrors. A later window reopen can replay those buffers exactly once.
+    func suspendForBackground() {
+        guard presentationLifecycle == .active else { return }
+        presentationLifecycle = .backgroundSuspended
+        lifecycleEpoch &+= 1
+
+        let activeLanguages = Set(servers.keys).union(restartingLanguages)
+        for language in activeLanguages {
+            bumpGeneration(for: language)
+        }
+
+        var clients: [ObjectIdentifier: any LSPClientProtocol] =
+            stoppingClients
+        for entry in servers.values {
+            clients[ObjectIdentifier(entry.client)] = entry.client
+        }
+        for client in clients.values {
+            client.shutdown()
+        }
+
+        servers.removeAll()
+        stoppingClients.removeAll()
+        openedDocumentsByLanguage.removeAll()
+        restartingLanguages.removeAll()
+        diagnosticsByURI = [:]
+        rawDiagnosticsByURI = [:]
+        problemsDiagnosticsByURI = [:]
+        unavailableLanguages.removeAll()
+        bumpDiagnosticsGeneration()
+    }
+
+    /// Restarts only the language servers needed by currently open buffers.
+    /// The lifecycle epoch fences initialize tasks left behind by suspension.
+    func resumeFromBackground() {
+        guard presentationLifecycle == .backgroundSuspended else { return }
+        presentationLifecycle = .active
+        lifecycleEpoch &+= 1
+        guard enabled else { return }
+
+        let epoch = lifecycleEpoch
+        let languages = Set(openDocuments.values.compactMap {
+            LanguageServerRegistry.server(for: $0.url)?.language
+        })
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for language in languages.sorted() {
+                await replayDocuments(for: language, epoch: epoch)
+                guard canContinue(epoch: epoch) else { return }
+            }
+        }
+    }
+
     /// Shuts down every running server. Called on project close and app
     /// termination so no orphan language-server processes survive.
     func shutdownAll() {
-        isInvalidated = true
+        guard presentationLifecycle != .invalidated else { return }
+        presentationLifecycle = .invalidated
         lifecycleEpoch &+= 1
 
         let activeLanguages = Set(servers.keys).union(restartingLanguages)
@@ -754,7 +820,10 @@ final class LSPManager {
     /// the `initialize` handshake) if it isn't. Returns `false` if the server
     /// binary is missing or the handshake failed.
     private func ensureServer(for config: LanguageServerConfig) async -> Bool {
-        guard enabled, !isInvalidated, !Task.isCancelled else {
+        guard enabled,
+              !isInvalidated,
+              !isBackgroundSuspended,
+              !Task.isCancelled else {
             return false
         }
         guard !restartingLanguages.contains(config.language) else {
@@ -823,6 +892,7 @@ final class LSPManager {
 
         guard enabled,
               !isInvalidated,
+              !isBackgroundSuspended,
               !Task.isCancelled,
               lifecycleEpoch == epoch,
               !restartingLanguages.contains(config.language),
@@ -923,6 +993,7 @@ final class LSPManager {
     /// are included with their latest text.
     private func sendPendingDidOpen(for language: String) {
         guard !isInvalidated,
+              !isBackgroundSuspended,
               servers[language]?.state == .initialized else {
             return
         }
@@ -1010,6 +1081,7 @@ final class LSPManager {
 
     private func canContinue(epoch: Int) -> Bool {
         !isInvalidated
+            && !isBackgroundSuspended
             && !Task.isCancelled
             && lifecycleEpoch == epoch
     }

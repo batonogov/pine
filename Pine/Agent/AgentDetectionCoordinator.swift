@@ -24,6 +24,199 @@ nonisolated enum AgentMonotonicCounter {
     }
 }
 
+/// Captures one machine-wide process snapshot and fans it out to every
+/// project-local detector. Production owns one instance in `ProjectRegistry`;
+/// standalone terminal-manager tests keep using a private instance.
+nonisolated final class AgentProcessSnapshotPoller {
+    private let processRunner: ProcessRunner
+    private let pollInterval: TimeInterval
+    private let initialPollDelay: TimeInterval
+    private let uptimeProvider: @Sendable () -> TimeInterval
+    private let pollQueue = DispatchQueue(
+        label: "com.pine.agent-detection",
+        qos: .utility
+    )
+    private let lifecycleGate = AgentPollingLifecycleGate()
+    private let testingRun = AgentPollingRun(generation: 0)
+    private let sink: AgentProcessSnapshotSink
+    private var timer: DispatchSourceTimer?
+
+    @MainActor private(set) var isRunning = false
+
+    @MainActor
+    init(
+        processRunner: @escaping ProcessRunner = runRealProcess,
+        pollInterval: TimeInterval = 2.0,
+        initialPollDelay: TimeInterval? = nil,
+        uptimeProvider: @escaping @Sendable () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        }
+    ) {
+        self.processRunner = processRunner
+        self.pollInterval = pollInterval
+        self.initialPollDelay = initialPollDelay ?? pollInterval
+        self.uptimeProvider = uptimeProvider
+        self.sink = AgentProcessSnapshotSink()
+    }
+
+    @MainActor
+    func subscribe(_ coordinator: AgentDetectionCoordinator) {
+        sink.insert(coordinator)
+        startIfNeeded()
+    }
+
+    @MainActor
+    func unsubscribe(_ coordinator: AgentDetectionCoordinator) {
+        sink.remove(coordinator)
+        if sink.isEmpty {
+            stopPolling()
+        }
+    }
+
+    @MainActor
+    private func startIfNeeded() {
+        guard !isRunning, !sink.isEmpty else { return }
+        guard let generation = lifecycleGate.begin() else { return }
+        isRunning = true
+        let run = AgentPollingRun(generation: generation)
+        let timer = DispatchSource.makeTimerSource(queue: pollQueue)
+        timer.schedule(
+            deadline: .now() + initialPollDelay,
+            repeating: pollInterval
+        )
+        timer.setEventHandler(handler: makePollHandler(run: run))
+        timer.resume()
+        self.timer = timer
+    }
+
+    @MainActor
+    private func stopPolling() {
+        guard isRunning else { return }
+        isRunning = false
+        lifecycleGate.end()
+        timer?.cancel()
+        timer = nil
+    }
+
+    nonisolated private func makePollHandler(
+        run: AgentPollingRun
+    ) -> () -> Void {
+        { [weak self] in self?.captureSnapshot(run: run) }
+    }
+
+    nonisolated private func captureSnapshot(run: AgentPollingRun) {
+        // Do not queue repeated `ps` results behind a busy MainActor. A later
+        // timer tick can capture fresher state after this delivery completes.
+        guard let sequence = run.beginSnapshot() else { return }
+        let snapshot = makeSnapshot(
+            generation: run.generation,
+            sequence: sequence
+        )
+        let sink = self.sink
+        let lifecycleGate = self.lifecycleGate
+        let work = DispatchWorkItem {
+            MainActor.assumeIsolated {
+                defer { run.completeSnapshot() }
+                guard lifecycleGate.accepts(run.generation) else { return }
+                sink.apply(snapshot)
+            }
+        }
+        DispatchQueue.main.async(execute: work)
+    }
+
+    nonisolated private func makeSnapshot(
+        generation: UInt64,
+        sequence: UInt64
+    ) -> AgentProcessSnapshot {
+        let result = processRunner(
+            "/bin/sh",
+            ["-c", AgentDetectionCoordinator.psSnapshotCommand],
+            "",
+            3.0
+        )
+        let observation = AgentObservationStamp(
+            wallTime: Date(),
+            uptime: uptimeProvider(),
+            generation: generation,
+            sequence: sequence
+        )
+        return AgentDetectionCoordinator.enrichProcessStarts(
+            AgentDetectionCoordinator.makeSnapshot(
+                from: result,
+                observation: observation
+            )
+        )
+    }
+
+    #if DEBUG
+    @MainActor
+    func runSnapshotForTesting() {
+        sink.apply(captureSnapshotForTesting())
+    }
+
+    @MainActor
+    fileprivate func captureSnapshotForTesting() -> AgentProcessSnapshot {
+        makeSnapshot(
+            generation: testingRun.generation,
+            sequence: testingRun.nextSequence() ?? UInt64.max
+        )
+    }
+
+    @MainActor
+    var subscriberCountForTesting: Int { sink.count }
+    #endif
+
+    deinit {
+        lifecycleGate.end()
+        timer?.cancel()
+    }
+}
+
+@MainActor
+private final class AgentProcessSnapshotSink {
+    private final class WeakCoordinator {
+        weak var value: AgentDetectionCoordinator?
+
+        init(_ value: AgentDetectionCoordinator) {
+            self.value = value
+        }
+    }
+
+    private var coordinators: [ObjectIdentifier: WeakCoordinator] = [:]
+
+    var count: Int {
+        pruneReleasedCoordinators()
+        return coordinators.count
+    }
+
+    var isEmpty: Bool {
+        pruneReleasedCoordinators()
+        return coordinators.isEmpty
+    }
+
+    func insert(_ coordinator: AgentDetectionCoordinator) {
+        pruneReleasedCoordinators()
+        coordinators[ObjectIdentifier(coordinator)] = WeakCoordinator(
+            coordinator
+        )
+    }
+
+    func remove(_ coordinator: AgentDetectionCoordinator) {
+        coordinators.removeValue(forKey: ObjectIdentifier(coordinator))
+    }
+
+    func apply(_ snapshot: AgentProcessSnapshot) {
+        pruneReleasedCoordinators()
+        for coordinator in coordinators.values.compactMap(\.value) {
+            coordinator.receive(snapshot)
+        }
+    }
+
+    private func pruneReleasedCoordinators() {
+        coordinators = coordinators.filter { $0.value.value != nil }
+    }
+}
+
 /// Polls `ps` off the main thread and drives `AgentDetector` lifecycle,
 /// then maps detected agent pids to terminal tabs via `tcgetpgrp`.
 ///
@@ -57,18 +250,18 @@ nonisolated enum AgentMonotonicCounter {
 nonisolated final class AgentDetectionCoordinator {
     let detector: AgentDetector
     weak var terminalManager: TerminalManager?
-    private let processRunner: ProcessRunner
-    private let pollInterval: TimeInterval
+    private let poller: AgentProcessSnapshotPoller
     private let uptimeProvider: @Sendable () -> TimeInterval
-    private let pollQueue = DispatchQueue(label: "com.pine.agent-detection", qos: .utility)
-    private let lifecycleGate = AgentPollingLifecycleGate()
     private let testingRun = AgentPollingRun(generation: 0)
-    private var timer: DispatchSourceTimer?
 
     /// Whether polling is active. Read/written only from `@MainActor` methods
     /// (`start`/`stop`); the background polling path does not touch it.
     private(set) var isRunning = false
+    #if DEBUG
+    @MainActor private(set) var receivedSnapshotCountForTesting = 0
+    #endif
 
+    @MainActor
     init(
         detector: AgentDetector,
         terminalManager: TerminalManager?,
@@ -80,40 +273,32 @@ nonisolated final class AgentDetectionCoordinator {
     ) {
         self.detector = detector
         self.terminalManager = terminalManager
-        self.processRunner = processRunner
-        self.pollInterval = pollInterval
         self.uptimeProvider = uptimeProvider
+        self.poller = AgentProcessSnapshotPoller(
+            processRunner: processRunner,
+            pollInterval: pollInterval,
+            uptimeProvider: uptimeProvider
+        )
+    }
+
+    @MainActor
+    init(
+        detector: AgentDetector,
+        terminalManager: TerminalManager?,
+        poller: AgentProcessSnapshotPoller
+    ) {
+        self.detector = detector
+        self.terminalManager = terminalManager
+        self.poller = poller
+        self.uptimeProvider = {
+            ProcessInfo.processInfo.systemUptime
+        }
     }
 
     @MainActor func start() {
         guard !isRunning else { return }
-        guard let generation = lifecycleGate.begin() else { return }
         isRunning = true
-        let run = AgentPollingRun(generation: generation)
-        let timer = DispatchSource.makeTimerSource(queue: pollQueue)
-        timer.schedule(deadline: .now() + pollInterval, repeating: pollInterval)
-        // Build the handler via the nonisolated makePollHandler(): a closure
-        // literal written here (inside the @MainActor start()) would inherit
-        // MainActor isolation and trap when the source invokes it on
-        // pollQueue — see the class doc and the release 1.31.1 crash fix.
-        timer.setEventHandler(handler: makePollHandler(run: run))
-        timer.resume()
-        self.timer = timer
-    }
-
-    /// Builds the timer's event handler in a `nonisolated` function so the
-    /// returned closure is nonisolated. The `DispatchSource` timer invokes
-    /// this handler directly on `pollQueue` (no actor hop); a MainActor-
-    /// isolated handler would trip Swift's executor-isolation assertion
-    /// (`swift_task_isCurrentExecutorWithFlagsImpl` → `dispatch_assert_queue`)
-    /// and trap the process (release 1.31.1 crash). `captureSnapshot` is
-    /// itself `nonisolated`, so a nonisolated handler can call it directly.
-    /// Returns `() -> Void` (not `@Sendable`) so the closure may capture the
-    /// non-Sendable `self` without a strict-concurrency violation.
-    nonisolated private func makePollHandler(
-        run: AgentPollingRun
-    ) -> () -> Void {
-        { [weak self] in self?.captureSnapshot(run: run) }
+        poller.subscribe(self)
     }
 
     @MainActor func stop() {
@@ -135,69 +320,19 @@ nonisolated final class AgentDetectionCoordinator {
     private func suspendPolling() -> Bool {
         guard isRunning else { return false }
         isRunning = false
-        lifecycleGate.end()
-        timer?.cancel()
-        timer = nil
+        poller.unsubscribe(self)
         return true
     }
 
-    deinit {
-        lifecycleGate.end()
-        timer?.cancel()
-    }
-
-    /// Runs on `pollQueue`: captures the process list, parses it, then hops
-    /// to main to apply the snapshot. `nonisolated` so the nonisolated timer
-    /// handler (`makePollHandler`) can call it directly off-main. A handler's
-    /// isolation is determined by where its closure literal is written, not
-    /// by this method's isolation — that is why the handler lives in
-    /// `makePollHandler`, not inline in `start()` (see the class doc and the
-    /// release 1.31.1 crash fix).
-    ///
-    /// Uses `DispatchWorkItem` + `MainActor.assumeIsolated` instead of
-    /// `Task { @MainActor in }` to match the `FileSystemWatcher` pattern:
-    /// `DispatchWorkItem` does not require `@Sendable` so non-Sendable
-    /// references (`detector`, `terminalManager`) can be captured. The
-    /// references are extracted to locals BEFORE the hop so the
-    /// `@MainActor` closure never captures `self`, avoiding the strict-
-    /// concurrency "sending 'self' risks causing data races" error.
-    nonisolated private func captureSnapshot(run: AgentPollingRun) {
-        guard let sequence = run.nextSequence() else {
-            lifecycleGate.end()
-            return
-        }
-        let result = processRunner(
-            "/bin/sh",
-            ["-c", Self.psSnapshotCommand],
-            "",
-            3.0
+    @MainActor fileprivate func receive(_ snapshot: AgentProcessSnapshot) {
+        #if DEBUG
+        receivedSnapshotCountForTesting += 1
+        #endif
+        Self.applySnapshot(
+            snapshot,
+            detector: detector,
+            terminalManager: terminalManager
         )
-        let observation = AgentObservationStamp(
-            wallTime: Date(),
-            uptime: uptimeProvider(),
-            generation: run.generation,
-            sequence: sequence
-        )
-        let snapshot = Self.enrichProcessStarts(Self.makeSnapshot(
-            from: result,
-            observation: observation
-        ))
-        // Extract references before the hop — the DispatchWorkItem closure
-        // must not capture `self` (nonisolated, non-Sendable).
-        let detector = self.detector
-        let termManager = self.terminalManager
-        let lifecycleGate = self.lifecycleGate
-        let work = DispatchWorkItem {
-            MainActor.assumeIsolated {
-                guard lifecycleGate.accepts(run.generation) else { return }
-                Self.applySnapshot(
-                    snapshot,
-                    detector: detector,
-                    terminalManager: termManager
-                )
-            }
-        }
-        DispatchQueue.main.async(execute: work)
     }
 
     /// Parses raw
@@ -246,7 +381,7 @@ nonisolated final class AgentDetectionCoordinator {
         return processes
     }
 
-    nonisolated private static func enrichProcessStarts(
+    nonisolated fileprivate static func enrichProcessStarts(
         _ snapshot: AgentProcessSnapshot
     ) -> AgentProcessSnapshot {
         guard case .success(let processes, let observation) = snapshot else {
@@ -519,7 +654,7 @@ nonisolated final class AgentDetectionCoordinator {
     /// Unlike any particular process row, this is guaranteed to be last.
     nonisolated static let psCompletionMarker = "__PINE_PS_SNAPSHOT_COMPLETE__"
 
-    nonisolated private static let psSnapshotCommand = [
+    nonisolated fileprivate static let psSnapshotCommand = [
         "TZ=UTC LC_ALL=C /bin/ps -eo pid=,ppid=,pgid=,lstart=,cputime=,command=;",
         "status=$?;",
         "printf '\\n\(psCompletionMarker)\\n';",
@@ -682,7 +817,7 @@ nonisolated final class AgentDetectionCoordinator {
     /// malformed exit-zero stdout with an authoritative full process list.
     /// A valid non-agent row still yields a non-empty parsed list and is
     /// therefore authoritative absence for tracked agents.
-    nonisolated private static func makeSnapshot(
+    nonisolated fileprivate static func makeSnapshot(
         from result: ProcessRunResult,
         observation: AgentObservationStamp
     ) -> AgentProcessSnapshot {
@@ -921,27 +1056,7 @@ nonisolated final class AgentDetectionCoordinator {
     /// returns. Uses the injected `processRunner` (mock in tests), parses via
     /// `parsePsOutput`, then calls `applySnapshot` directly on the main actor.
     @MainActor internal func runSnapshotForTesting() {
-        let result = processRunner(
-            "/bin/sh",
-            ["-c", Self.psSnapshotCommand],
-            "",
-            3.0
-        )
-        let observation = AgentObservationStamp(
-            wallTime: Date(),
-            uptime: uptimeProvider(),
-            generation: testingRun.generation,
-            sequence: testingRun.nextSequence() ?? UInt64.max
-        )
-        let snapshot = Self.makeSnapshot(
-            from: result,
-            observation: observation
-        )
-        Self.applySnapshot(
-            snapshot,
-            detector: detector,
-            terminalManager: terminalManager
-        )
+        receive(poller.captureSnapshotForTesting())
     }
 
     /// Applies a simulated complete process tree through the production
@@ -985,6 +1100,7 @@ nonisolated private final class AgentPollingRun: @unchecked Sendable {
     let generation: UInt64
     private let lock = NSLock()
     private var sequence: UInt64 = 0
+    private var snapshotInFlight = false
 
     init(generation: UInt64) {
         self.generation = generation
@@ -998,6 +1114,24 @@ nonisolated private final class AgentPollingRun: @unchecked Sendable {
         }
         sequence = next
         return sequence
+    }
+
+    func beginSnapshot() -> UInt64? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !snapshotInFlight,
+              let next = AgentMonotonicCounter.next(after: sequence) else {
+            return nil
+        }
+        snapshotInFlight = true
+        sequence = next
+        return sequence
+    }
+
+    func completeSnapshot() {
+        lock.lock()
+        snapshotInFlight = false
+        lock.unlock()
     }
 }
 

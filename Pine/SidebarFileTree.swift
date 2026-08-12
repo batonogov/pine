@@ -327,9 +327,6 @@ private struct SidebarFileTreeNode: View {
         requestKeyboardFocus: Bool
     ) {
         selection = node
-        if requestKeyboardFocus {
-            onKeyboardFocusRequested()
-        }
         navigation.resetTypeAhead()
         if !expansion.isExpanded(node.url) {
             loadDeferredChildrenIfNeeded()
@@ -339,6 +336,12 @@ private struct SidebarFileTreeNode: View {
             expansion: expansion,
             debounced: debounced
         )
+        if requestKeyboardFocus {
+            // Queue the responder retry only after disclosure has invalidated
+            // the SwiftUI tree. That makes the retry follow reconciliation
+            // instead of being displaced by it on accessibility presses.
+            onKeyboardFocusRequested()
+        }
     }
 
     private func setFolderExpanded(_ expanded: Bool) {

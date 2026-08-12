@@ -727,7 +727,7 @@ struct CloseDelegateTests {
         #expect(targetProject.dialogOwnerWindow == nil)
     }
 
-    @Test func interceptorRearmsRetainedDelegateForReopenedWindowGeneration() async throws {
+    @Test func retainedReopenRearmsCompletedDelegateWithoutCoordinatorUpdate() async throws {
         let dir = try makeTempDir()
         let otherDir = try makeTempDir()
         defer {
@@ -763,14 +763,10 @@ struct CloseDelegateTests {
 
         #expect(registry.projectManager(for: dir) === project)
         #expect(registry.isWindowOpen(dir))
-        coordinator.installDelegate(
-            on: window,
-            projectManager: project,
-            registry: registry,
-            projectURL: dir,
-            appDelegate: appDelegate
-        )
 
+        // macOS 26 can order the same WindowGroup NSWindow front without an
+        // update/move callback for its NSViewRepresentable. Admission must
+        // therefore re-arm the delegate from the completed close record.
         #expect(window.delegate === interceptor)
         #expect(!interceptor.didCompleteWindowLifecycle)
         #expect(project.dialogOwnerWindow === window)
@@ -786,6 +782,61 @@ struct CloseDelegateTests {
         #expect(project.dialogOwnerWindow == nil)
         coordinator.detach()
         #expect(window.delegate === original)
+    }
+
+    @Test func staleCloseCannotReplaceCompletedOwnerChosenForReopen() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let appDelegate = AppDelegate()
+        let oldWindow = NSWindow()
+        let currentWindow = NSWindow()
+        let oldDelegate = CloseDelegate(
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate,
+            original: nil
+        )
+        let currentDelegate = CloseDelegate(
+            projectManager: project,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: appDelegate,
+            original: nil
+        )
+        oldWindow.delegate = oldDelegate
+        currentWindow.delegate = currentDelegate
+        oldDelegate.observeWindowClose(oldWindow)
+        currentDelegate.observeWindowClose(currentWindow)
+        defer {
+            oldDelegate.detachFromWindow()
+            currentDelegate.detachFromWindow()
+            oldWindow.delegate = nil
+            currentWindow.delegate = nil
+        }
+
+        // B is the exact current owner and completes the close that moves the
+        // project to the background. A's older callback arrives afterwards.
+        currentDelegate.windowWillClose(Notification(
+            name: NSWindow.willCloseNotification,
+            object: currentWindow
+        ))
+        oldDelegate.windowWillClose(Notification(
+            name: NSWindow.willCloseNotification,
+            object: oldWindow
+        ))
+        #expect(currentDelegate.didCompleteWindowLifecycle)
+        #expect(oldDelegate.didCompleteWindowLifecycle)
+        #expect(!registry.isWindowOpen(dir))
+
+        // Admission may reuse B without a representable update. The stale A
+        // callback must not have replaced B's completed-lifecycle record.
+        #expect(registry.projectManager(for: dir) === project)
+        #expect(!currentDelegate.didCompleteWindowLifecycle)
+        #expect(oldDelegate.didCompleteWindowLifecycle)
+        #expect(project.dialogOwnerWindow === currentWindow)
     }
 }
 

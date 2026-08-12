@@ -248,8 +248,25 @@ nonisolated private final class TerminationAwaitResolver<Result: Sendable>:
 /// Thin coordinator that owns the workspace, terminal, and tab managers.
 /// Passed via environment so views can access all sub-managers.
 @MainActor
+private final class RetiredDialogOwnerWindow {
+    weak var window: NSWindow?
+    let generation: UUID
+
+    init(window: NSWindow, generation: UUID) {
+        self.window = window
+        self.generation = generation
+    }
+}
+
+@MainActor
 @Observable
 final class ProjectManager {
+    enum PresentationLifecycle: Equatable {
+        case visible
+        case backgroundSuspended
+        case destroyed
+    }
+
     private static let terminationInstallDeadlineQueue = DispatchQueue(
         label: "com.pine.project.termination-install-deadline",
         qos: .userInteractive
@@ -349,7 +366,7 @@ final class ProjectManager {
     let searchProvider = ProjectSearchProvider()
     let quickOpenProvider = QuickOpenProvider()
     let progress = ProgressTracker()
-    let contextFileWriter = ContextFileWriter()
+    let contextFileWriter: ContextFileWriter
     /// Language Server Protocol manager — owns per-language server processes
     /// and aggregates diagnostics (#1010, parent #994). Spawned lazily on the
     /// first open of a matching file; shut down on project close / app quit.
@@ -365,6 +382,12 @@ final class ProjectManager {
     /// background) from extending the NSWindow lifetime.
     @ObservationIgnored
     private(set) weak var dialogOwnerWindow: NSWindow?
+    @ObservationIgnored
+    private(set) var dialogOwnerWindowGeneration = UUID()
+    @ObservationIgnored
+    private var retiredDialogOwnerWindows: [RetiredDialogOwnerWindow] = []
+    @ObservationIgnored
+    private var completedDialogOwnerWindow: RetiredDialogOwnerWindow?
     @ObservationIgnored
     private var dialogOperationTail: Task<Void, Never>?
     @ObservationIgnored
@@ -1511,12 +1534,34 @@ final class ProjectManager {
     let taskRunStore = UserTaskRunStore()
     /// Recovery snapshots and their lifecycle are owned by the main actor.
     private(set) var recoveryManager: RecoveryManager?
+    private(set) var presentationLifecycle: PresentationLifecycle = .visible
+    #if DEBUG
+    private(set) var editorServiceSuspendCountForTesting = 0
+    private(set) var editorServiceResumeCountForTesting = 0
+    #endif
+    private var editorContextCommandGeneration: UInt64 = 0
+    private let contextPresentationIdentity: ContextPresentationIdentity
+
+    #if DEBUG
+    func removeRecoveryManagerForTesting() {
+        recoveryManager?.cancelScheduledSnapshot()
+        recoveryManager?.stopPeriodicSnapshots()
+        recoveryManager = nil
+    }
+    #endif
 
     init(
         lspSettings: LSPSettings = .shared,
-        agentTaskRegistry: AgentTaskRegistry? = nil
+        agentProcessSnapshotPoller: AgentProcessSnapshotPoller? = nil,
+        agentTaskRegistry: AgentTaskRegistry? = nil,
+        contextFileWriter: ContextFileWriter = ContextFileWriter(),
+        contextPresentationIdentity: ContextPresentationIdentity =
+            ContextPresentationIdentity(epoch: 1)
     ) {
+        self.contextFileWriter = contextFileWriter
+        self.contextPresentationIdentity = contextPresentationIdentity
         self.terminal = TerminalManager(
+            agentProcessSnapshotPoller: agentProcessSnapshotPoller,
             agentTaskRegistry: agentTaskRegistry
         )
         self.lspManager = LSPManager(settings: lspSettings)
@@ -1544,8 +1589,94 @@ final class ProjectManager {
         terminal.paneManager = paneManager
     }
 
-    func bindDialogOwnerWindow(_ window: NSWindow) {
+    @discardableResult
+    func bindDialogOwnerWindow(_ window: NSWindow) -> UUID {
+        guard retiredDialogOwnerGeneration(for: window) == nil else {
+            return dialogOwnerWindowGeneration
+        }
+        completedDialogOwnerWindow = nil
+        if dialogOwnerWindow !== window {
+            dialogOwnerWindowGeneration = UUID()
+        }
         dialogOwnerWindow = window
+        return dialogOwnerWindowGeneration
+    }
+
+    /// Starts a registry-authorized window presentation before SwiftUI can
+    /// bind its replacement NSWindow. Rotating now, rather than at the later
+    /// bind, fences a delayed close from the previous window during the gap
+    /// between retained-manager admission and replacement-window capture.
+    func prepareForWindowPresentation() {
+        let previousOwner = dialogOwnerWindow
+        let previousGeneration = dialogOwnerWindowGeneration
+        let completedOwner = completedDialogOwnerWindow?.window
+        if let previousOwner {
+            retiredDialogOwnerWindows.removeAll {
+                $0.window == nil || $0.window === previousOwner
+            }
+            retiredDialogOwnerWindows.append(RetiredDialogOwnerWindow(
+                window: previousOwner,
+                generation: previousGeneration
+            ))
+        }
+        dialogOwnerWindowGeneration = UUID()
+        dialogOwnerWindow = nil
+        if let previousOwner {
+            if let delegate = previousOwner.delegate as? CloseDelegate,
+               delegate.projectManager === self {
+                delegate.retirePresentationAuthorization(for: previousOwner)
+            } else {
+                DialogPresenter.ownerDidClose(previousOwner)
+            }
+        }
+        // SwiftUI can reopen a completed WindowGroup lifecycle by ordering the
+        // same NSWindow instance front without updating its representable.
+        // Re-arm only an owner whose old close callback already committed;
+        // unfinished retired owners remain fenced until a fresh window binds.
+        if let completedOwner,
+           let delegate = completedOwner.delegate as? CloseDelegate,
+           delegate.projectManager === self,
+           delegate.didCompleteWindowLifecycle {
+            delegate.beginNewWindowLifecycle(on: completedOwner)
+        }
+    }
+
+    func retiredDialogOwnerGeneration(for window: NSWindow) -> UUID? {
+        retiredDialogOwnerWindows.removeAll { $0.window == nil }
+        return retiredDialogOwnerWindows.first(where: {
+            $0.window === window
+        })?.generation
+    }
+
+    func recordCompletedDialogOwnerLifecycle(
+        _ window: NSWindow,
+        generation: UUID?
+    ) {
+        guard let generation,
+              dialogOwnerWindow === window,
+              dialogOwnerWindowGeneration == generation else { return }
+        completedDialogOwnerWindow = RetiredDialogOwnerWindow(
+            window: window,
+            generation: generation
+        )
+    }
+
+    func authorizeCompletedDialogOwnerLifecycle(
+        _ window: NSWindow,
+        generation: UUID?
+    ) -> Bool {
+        guard let generation,
+              let completed = completedDialogOwnerWindow,
+              completed.window === window,
+              completed.generation == generation else {
+            return false
+        }
+        if let retiredGeneration = retiredDialogOwnerGeneration(for: window) {
+            guard retiredGeneration == generation else { return false }
+            retiredDialogOwnerWindows.removeAll { $0.window === window }
+        }
+        completedDialogOwnerWindow = nil
+        return true
     }
 
     func unbindDialogOwnerWindow(_ window: NSWindow) {
@@ -1643,6 +1774,57 @@ final class ProjectManager {
         }
         manager.startPeriodicSnapshots()
         recoveryManager = manager
+    }
+
+    /// Stops services that exist only to keep a visible editor current while
+    /// retaining PTYs, terminal buffers, agent identity, and user-task owners.
+    func suspendEditorServices() {
+        guard presentationLifecycle == .visible else { return }
+        presentationLifecycle = .backgroundSuspended
+        #if DEBUG
+        editorServiceSuspendCountForTesting += 1
+        #endif
+        recoveryManager?.snapshotDirtyTabs(allTabs)
+        recoveryManager?.cancelScheduledSnapshot()
+        recoveryManager?.stopPeriodicSnapshots()
+        workspace.suspend()
+        searchProvider.cancel()
+        lspManager.suspendForBackground()
+        cleanupEditorContext()
+    }
+
+    /// Re-arms each visible-editor service once for one retained manager.
+    func resumeEditorServices() {
+        guard presentationLifecycle == .backgroundSuspended else { return }
+        presentationLifecycle = .visible
+        #if DEBUG
+        editorServiceResumeCountForTesting += 1
+        #endif
+        workspace.resume()
+        recoveryManager?.startPeriodicSnapshots()
+        lspManager.resumeFromBackground()
+        synchronizeAgentHandoff()
+        problemsController.refreshDocumentOwnership()
+    }
+
+    /// Final resource teardown used only after registry reclamation proves
+    /// there is no process/task ownership left to preserve.
+    func shutdownReclaimableProject() {
+        guard presentationLifecycle != .destroyed else { return }
+        presentationLifecycle = .destroyed
+        recoveryManager?.snapshotDirtyTabs(allTabs)
+        recoveryManager?.cancelScheduledSnapshot()
+        recoveryManager?.stopPeriodicSnapshots()
+        workspace.suspend()
+        searchProvider.cancel()
+        lspManager.shutdownAll()
+        terminal.shutdownPermanently()
+    }
+
+    var requiresBackgroundRetention: Bool {
+        allTabs.contains(where: \.isDirty)
+            || terminal.requiresBackgroundRetention
+            || hasOutstandingUserTaskExecution
     }
 
     /// Applies project-owned services to every editor group, including groups
@@ -2201,7 +2383,17 @@ final class ProjectManager {
     /// Pushes the current editor context (active file, cursor position) to the
     /// context file writer. Called when the active tab or cursor position changes.
     func updateEditorContext() {
-        guard let rootURL = workspace.rootURL else { return }
+        guard presentationLifecycle == .visible else { return }
+        publishEditorContext(projectRoot: workspace.rootURL)
+    }
+
+    /// Captures one complete desired handoff state on the main actor. Every
+    /// asynchronous actor command carries a monotonic presentation generation,
+    /// so a delayed hidden-window cleanup cannot delete a newer reopen publish
+    /// (and a delayed old publish cannot resurrect a cleaned-up snapshot).
+    private func publishEditorContext(projectRoot: URL?) {
+        guard presentationLifecycle == .visible,
+              let rootURL = projectRoot else { return }
         let tab = activeTabManager.activeTab
         let relativePath = ContextFileWriter.relativePath(
             fileURL: tab?.fileURL,
@@ -2213,20 +2405,43 @@ final class ProjectManager {
                 rootURL: rootURL
             )
         }
+        editorContextCommandGeneration &+= 1
+        let command = ContextPresentationCommand(
+            identity: contextPresentationIdentity,
+            sequence: editorContextCommandGeneration
+        )
+        let isEnabled = AgentHandoffSettings.shared.isReadOnlyContextEnabled
+        let cursorLine = tab?.cursorLine
+        let cursorColumn = tab?.cursorColumn
+        let payload = ContextFileWriter.Payload(
+            openFiles: openFiles,
+            currentFile: relativePath,
+            cursorLine: cursorLine,
+            cursorColumn: cursorColumn
+        )
         Task {
-            await contextFileWriter.update(
-                openFiles: openFiles,
-                currentFile: relativePath,
-                cursorLine: tab?.cursorLine,
-                cursorColumn: tab?.cursorColumn
+            await contextFileWriter.publishPresentationSnapshot(
+                projectRoot: rootURL,
+                isReadOnlySharingEnabled: isEnabled,
+                payload: payload,
+                command: command
             )
         }
     }
 
     /// Cleans up the context file. Called when the project window closes.
     func cleanupEditorContext() {
+        guard let rootURL = workspace.rootURL else { return }
+        editorContextCommandGeneration &+= 1
+        let command = ContextPresentationCommand(
+            identity: contextPresentationIdentity,
+            sequence: editorContextCommandGeneration
+        )
         Task {
-            await contextFileWriter.cleanup()
+            await contextFileWriter.cleanupPresentationSnapshot(
+                projectRoot: rootURL,
+                command: command
+            )
         }
     }
 
@@ -2234,15 +2449,10 @@ final class ProjectManager {
     /// revokes its bounded read-only snapshot.
     func synchronizeAgentHandoff(projectRoot: URL? = nil) {
         let rootURL = projectRoot ?? workspace.rootURL
-        let isEnabled = AgentHandoffSettings.shared.isReadOnlyContextEnabled
-        Task {
-            if let rootURL {
-                await contextFileWriter.setProjectRoot(rootURL)
-            }
-            await contextFileWriter.setReadOnlySharingEnabled(isEnabled)
-            if isEnabled {
-                self.updateEditorContext()
-            }
+        if presentationLifecycle == .visible, let rootURL {
+            publishEditorContext(projectRoot: rootURL)
+        } else {
+            cleanupEditorContext()
         }
     }
 

@@ -502,6 +502,10 @@ enum DialogPresenter {
         window: NSWindow,
         projectManager: ProjectManager
     ) -> DialogPresentationContext {
+        guard projectManager.retiredDialogOwnerGeneration(for: window) == nil else {
+            ownerDidClose(window)
+            return .unscoped
+        }
         // A project owns one document window. SwiftUI can replace that
         // window during scene restoration, so retire every obsolete binding
         // (and abort its queued sheets) before installing the new anchor.
@@ -613,13 +617,22 @@ enum DialogPresenter {
 
     /// Captures the current project window. Welcome and Settings windows are
     /// intentionally excluded from document/project decisions.
-    static func forKeyProject() -> DialogPresentationContext {
-        guard let keyWindow = NSApp.keyWindow else { return .unscoped }
+    static func forKeyProject(
+        keyWindow: NSWindow? = NSApp.keyWindow
+    ) -> DialogPresentationContext {
+        guard let keyWindow else { return .unscoped }
         let window = keyWindow.sheetParent ?? keyWindow
         if projectManager(for: window) != nil {
             return context(for: window)
         }
         guard let delegate = window.delegate as? CloseDelegate else {
+            return .unscoped
+        }
+        guard delegate.authorizesOwnerRecovery(
+            for: window,
+            presentationGeneration:
+                delegate.projectManager.dialogOwnerWindowGeneration
+        ) else {
             return .unscoped
         }
         return register(window: window, projectManager: delegate.projectManager)
@@ -663,11 +676,15 @@ enum DialogPresenter {
 
         guard let match = candidates.first(where: { window in
             guard acceptsWindow(window),
-                  let delegate = window.delegate as? CloseDelegate,
-                  !delegate.didCompleteWindowLifecycle else {
+                  let delegate = window.delegate as? CloseDelegate else {
                 return false
             }
             return delegate.projectManager === projectManager
+                && delegate.authorizesOwnerRecovery(
+                    for: window,
+                    presentationGeneration:
+                        projectManager.dialogOwnerWindowGeneration
+                )
         }), let delegate = match.delegate as? CloseDelegate else {
             return nil
         }

@@ -3,9 +3,68 @@
 //  PineTests
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Pine
+
+nonisolated private final class BlockingInboxProcessRunner: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var didEnter = false
+    private var isReleased = false
+
+    var hasEntered: Bool {
+        condition.withLock { didEnter }
+    }
+
+    func run() -> ProcessRunResult {
+        condition.lock()
+        didEnter = true
+        condition.broadcast()
+        while !isReleased {
+            condition.wait()
+        }
+        condition.unlock()
+        return ProcessRunResult(
+            stdout: "1.2.3\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false
+        )
+    }
+
+    func release() {
+        condition.withLock {
+            isReleased = true
+            condition.broadcast()
+        }
+    }
+}
+
+private actor BlockingInboxProjectCanonicalizer {
+    private var entered = false
+    private var released = false
+
+    func canonicalize(_ url: URL) async -> URL {
+        entered = true
+        while !released {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return ProjectRegistry.canonicalProjectURL(url)
+    }
+
+    func waitUntilEntered() async -> Bool {
+        for _ in 0..<200 {
+            if entered { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return entered
+    }
+
+    func release() {
+        released = true
+    }
+}
 
 @MainActor
 struct AgentInboxTests {
@@ -319,6 +378,12 @@ struct AgentInboxTests {
         let taskID = try #require(taskRegistry.taskID(forSessionID: session.id))
         #expect(taskRegistry.task(for: taskID)?.isUnread == true)
         manager.terminal.lastActiveTerminalPaneID = firstPane
+        let presentationWindow = makeEligibleProjectWindow()
+        manager.bindDialogOwnerWindow(presentationWindow)
+        defer {
+            manager.unbindDialogOwnerWindow(presentationWindow)
+            presentationWindow.orderOut(nil)
+        }
 
         let focused = await projectRegistry.navigateToAgentTaskFromInbox(
             taskID,
@@ -335,6 +400,16 @@ struct AgentInboxTests {
         #expect(state.pendingFocusTabID == tab.id)
         #expect(manager.terminal.lastActiveTerminalPaneID == pane)
         #expect(taskRegistry.task(for: taskID)?.isUnread == false)
+
+        #expect(await projectRegistry.navigateToAgentTaskFromInbox(
+            taskID,
+            openProjectWindow: { _ in },
+            waitUntilPresented: { _ in false },
+            activateApplication: { _ in }
+        ) == .projectUnavailable)
+        let canonical = projectRegistry.canonicalProjectURL(fixture.project)
+        #expect(projectRegistry.openProjects[canonical] === manager)
+        #expect(!projectRegistry.backgroundProjects.contains(canonical))
 
         session.applyLiveness(.terminated)
         let replacement = makeSession(seed: 41, state: .executing)
@@ -384,6 +459,12 @@ struct AgentInboxTests {
             runID: original.id,
             processGeneration: 45
         )
+        let presentationWindow = makeEligibleProjectWindow()
+        manager.bindDialogOwnerWindow(presentationWindow)
+        defer {
+            manager.unbindDialogOwnerWindow(presentationWindow)
+            presentationWindow.orderOut(nil)
+        }
 
         let result = await projectRegistry.navigateToAgentTaskFromInbox(
             taskID,
@@ -431,11 +512,32 @@ struct AgentInboxTests {
         let taskID = try #require(taskRegistry.taskID(forSessionID: session.id))
         projectRegistry.closeProjectWindow(fixture.project)
         var openedURL: URL?
+        var presentationWindow: NSWindow?
+        defer {
+            if let presentationWindow {
+                manager.unbindDialogOwnerWindow(presentationWindow)
+                presentationWindow.orderOut(nil)
+            }
+        }
 
         let result = await projectRegistry.navigateToAgentTaskFromInbox(
             taskID,
             openProjectWindow: { openedURL = $0 },
-            waitUntilPresented: { _ in true },
+            waitUntilPresented: { recoveredManager in
+                #expect(recoveredManager === manager)
+                let window = self.makeEligibleProjectWindow()
+                presentationWindow = window
+                recoveredManager.bindDialogOwnerWindow(window)
+                projectRegistry.runBackgroundReclamationPassForTesting()
+                await Task.yield()
+                #expect(projectRegistry.openProjects[
+                    projectRegistry.canonicalProjectURL(fixture.project)
+                ] === manager)
+                #expect(projectRegistry.backgroundProjects.contains(
+                    projectRegistry.canonicalProjectURL(fixture.project)
+                ))
+                return true
+            },
             activateApplication: { _ in }
         )
 
@@ -510,6 +612,12 @@ struct AgentInboxTests {
         )
         let historicalTask = try #require(taskRegistry.task(for: taskID))
         #expect(historicalTask.lifecycle == .paused)
+        let presentationWindow = makeEligibleProjectWindow()
+        manager.bindDialogOwnerWindow(presentationWindow)
+        defer {
+            manager.unbindDialogOwnerWindow(presentationWindow)
+            presentationWindow.orderOut(nil)
+        }
 
         let result = await projectRegistry.recoverAgentTaskFromInbox(
             taskID,
@@ -545,48 +653,55 @@ struct AgentInboxTests {
         )
         manager.terminal.lastActiveTerminalPaneID = pane
         let state = try #require(manager.paneManager.terminalState(for: pane))
-        let retainedTab = try #require(state.activeTab)
+        _ = try #require(state.activeTab)
         try await requireLoadedTask(pausedTask.id, in: taskRegistry)
 
-        let liveSession = makeSession(seed: 60, state: .executing)
-        manager.terminal.bridgeAgentSession(
-            liveSession,
-            replacing: nil,
-            in: retainedTab
-        )
-        retainedTab.agentSession = liveSession
-        let liveTaskID = try #require(
-            taskRegistry.taskID(forSessionID: liveSession.id)
-        )
         let retainedTerminalIDs = state.terminalTabs.map(\.id)
         let canonical = projectRegistry.canonicalProjectURL(fixture.project)
         projectRegistry.closeProjectWindow(fixture.project)
         let expectRetainedBackgroundState = {
             self.assertBackgroundRecoveryState(
                 projectRegistry: projectRegistry,
-                taskRegistry: taskRegistry,
                 projectURL: canonical,
-                liveTaskID: liveTaskID,
                 retained: (manager, state, retainedTerminalIDs)
             )
         }
         expectRetainedBackgroundState()
 
         var requestedURLs: [URL] = []
+        var presentationWindow: NSWindow?
+        defer {
+            if let presentationWindow {
+                manager.unbindDialogOwnerWindow(presentationWindow)
+                presentationWindow.orderOut(nil)
+            }
+        }
+        var cancellationWaitEntered = false
         let cancelledRecovery = Task { @MainActor in
             await projectRegistry.recoverAgentTaskFromInbox(
                 pausedTask.id,
                 action: .startNewSession,
                 openProjectWindow: { requestedURLs.append($0) },
                 waitUntilPresented: { recoveredManager in
+                    cancellationWaitEntered = true
                     #expect(recoveredManager === manager)
                     #expect(requestedURLs == [canonical])
                     expectRetainedBackgroundState()
-                    return true
+                    projectRegistry.runBackgroundReclamationPassForTesting()
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .milliseconds(5))
+                    }
+                    return false
                 },
                 activateApplication: { _ in }
             )
         }
+        for _ in 0..<100 where !cancellationWaitEntered {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        try #require(cancellationWaitEntered)
+        projectRegistry.runBackgroundReclamationPassForTesting()
+        expectRetainedBackgroundState()
         cancelledRecovery.cancel()
         #expect(await cancelledRecovery.value == .projectUnavailable)
         expectRetainedBackgroundState()
@@ -614,6 +729,9 @@ struct AgentInboxTests {
                 #expect(recoveredManager === manager)
                 #expect(requestedURLs == [canonical, canonical, canonical])
                 expectRetainedBackgroundState()
+                let window = self.makeEligibleProjectWindow()
+                presentationWindow = window
+                recoveredManager.bindDialogOwnerWindow(window)
                 return true
             },
             activateApplication: { _ in }
@@ -625,8 +743,6 @@ struct AgentInboxTests {
         #expect(projectRegistry.openProjects[canonical] === manager)
         #expect(projectRegistry.isWindowOpen(canonical))
         #expect(!projectRegistry.backgroundProjects.contains(canonical))
-        #expect(taskRegistry.task(for: liveTaskID)?.route.availability
-                == .available)
         #expect(state.terminalTabs.map(\.id)
                 == retainedTerminalIDs + [recoveredTerminalID])
     }
@@ -692,6 +808,13 @@ struct AgentInboxTests {
         projectRegistry.closeProjectWindow(fixture.project)
 
         var requestedURL: URL?
+        var presentationWindow: NSWindow?
+        defer {
+            if let presentationWindow {
+                manager.unbindDialogOwnerWindow(presentationWindow)
+                presentationWindow.orderOut(nil)
+            }
+        }
         let result = await projectRegistry.recoverAgentTaskFromInbox(
             pausedTask.id,
             action: .resumeVendorSession,
@@ -703,6 +826,9 @@ struct AgentInboxTests {
                 #expect(projectRegistry.backgroundProjects.contains(canonical))
                 #expect(!projectRegistry.isWindowOpen(canonical))
                 #expect(state.terminalTabs.map(\.id) == retainedTerminalIDs)
+                let window = self.makeEligibleProjectWindow()
+                presentationWindow = window
+                recoveredManager.bindDialogOwnerWindow(window)
                 return true
             },
             activateApplication: { _ in }
@@ -721,6 +847,261 @@ struct AgentInboxTests {
             executablePath: executable.path,
             arguments: ["resume", "--session", "opaque-session-1423"]
         ))
+    }
+
+    @Test("failed presentation cannot roll back a newer successful operation")
+    func concurrentPresentationRollbackIsTokenQualified() async throws {
+        let fixture = try InboxProjectFixture()
+        defer { fixture.cleanup() }
+        let pausedTask = makePersistedRecoveryTask(projectURL: fixture.project)
+        let taskRegistry = AgentTaskRegistry(
+            persistence: InboxLoadedAgentTaskStore(tasks: [pausedTask])
+        )
+        let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        manager.terminal.lastActiveTerminalPaneID = pane
+        let state = try #require(manager.paneManager.terminalState(for: pane))
+        let originalIDs = state.terminalTabs.map(\.id)
+        try await requireLoadedTask(pausedTask.id, in: taskRegistry)
+        let canonical = projectRegistry.canonicalProjectURL(fixture.project)
+        projectRegistry.closeProjectWindow(fixture.project)
+
+        var firstWaitEntered = false
+        var releaseFirstWait = false
+        let first = Task { @MainActor in
+            await projectRegistry.recoverAgentTaskFromInbox(
+                pausedTask.id,
+                action: .startNewSession,
+                openProjectWindow: { _ in },
+                waitUntilPresented: { _ in
+                    firstWaitEntered = true
+                    while !releaseFirstWait {
+                        try? await Task.sleep(for: .milliseconds(2))
+                    }
+                    return false
+                },
+                activateApplication: { _ in }
+            )
+        }
+        for _ in 0..<200 where !firstWaitEntered {
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        try #require(firstWaitEntered)
+
+        let window = makeEligibleProjectWindow()
+        defer {
+            manager.unbindDialogOwnerWindow(window)
+            window.orderOut(nil)
+        }
+        let second = await projectRegistry.recoverAgentTaskFromInbox(
+            pausedTask.id,
+            action: .startNewSession,
+            openProjectWindow: { _ in },
+            waitUntilPresented: { recoveredManager in
+                #expect(recoveredManager === manager)
+                recoveredManager.bindDialogOwnerWindow(window)
+                return true
+            },
+            activateApplication: { _ in }
+        )
+        guard case .openedNewSession(let terminalID) = second else {
+            Issue.record("Expected newer presentation to succeed")
+            releaseFirstWait = true
+            _ = await first.value
+            return
+        }
+        releaseFirstWait = true
+        #expect(await first.value == .projectUnavailable)
+
+        #expect(projectRegistry.openProjects[canonical] === manager)
+        #expect(!projectRegistry.backgroundProjects.contains(canonical))
+        #expect(projectRegistry.isWindowOpen(canonical))
+        #expect(state.terminalTabs.map(\.id) == originalIDs + [terminalID])
+    }
+
+    @Test("cancelled Inbox canonicalization cannot background a reopened window")
+    func cancelledCanonicalizationPreservesConcurrentOpen() async throws {
+        try await assertStaleCanonicalizationPreservesConcurrentOpen(
+            mutateTask: false
+        )
+    }
+
+    @Test("mutated Inbox task cannot background a concurrently reopened window")
+    func mutatedTaskDuringCanonicalizationPreservesConcurrentOpen() async throws {
+        try await assertStaleCanonicalizationPreservesConcurrentOpen(
+            mutateTask: true
+        )
+    }
+
+    @Test("recovery lease survives inspector await and fences stale launch")
+    func recoveryRevalidatesAfterInspectorAwait() async throws {
+        let fixture = try InboxProjectFixture()
+        defer { fixture.cleanup() }
+        let executable = fixture.project.appendingPathComponent("codex")
+        try Data().write(to: executable)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: executable.path
+        )
+        let pausedTask = makePersistedRecoveryTask(
+            projectURL: fixture.project,
+            vendorIdentity: AgentVendorSessionIdentity(
+                provider: "example",
+                opaqueIdentifier: "blocked-session-1421",
+                executableVersion: "1.2.3"
+            )
+        )
+        let taskRegistry = AgentTaskRegistry(
+            persistence: InboxLoadedAgentTaskStore(tasks: [pausedTask])
+        )
+        let blocker = BlockingInboxProcessRunner()
+        let inspector = AgentTaskRecoveryInspector(
+            resolver: ExternalToolResolver(
+                searchDirectories: [fixture.project.path]
+            ),
+            processRunner: { _, _, _, _ in blocker.run() },
+            recipes: [AgentTaskResumeRecipe(
+                provider: "example",
+                agentTypeIdentifier: pausedTask.descriptor.typeIdentifier,
+                executableAliases: ["codex"],
+                supportedVersions: ["1.2.3"],
+                identifierArgumentPrefix: ["resume", "--session"],
+                identifierArgumentSuffix: []
+            )]
+        )
+        let projectRegistry = ProjectRegistry(
+            agentTasks: taskRegistry,
+            agentRecoveryInspector: inspector
+        )
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        let pane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        manager.terminal.lastActiveTerminalPaneID = pane
+        let state = try #require(manager.paneManager.terminalState(for: pane))
+        let originalIDs = state.terminalTabs.map(\.id)
+        try await requireLoadedTask(pausedTask.id, in: taskRegistry)
+        let canonical = projectRegistry.canonicalProjectURL(fixture.project)
+        projectRegistry.closeProjectWindow(fixture.project)
+        let window = makeEligibleProjectWindow()
+        defer {
+            blocker.release()
+            manager.unbindDialogOwnerWindow(window)
+            window.orderOut(nil)
+        }
+
+        let recovery = Task { @MainActor in
+            await projectRegistry.recoverAgentTaskFromInbox(
+                pausedTask.id,
+                action: .resumeVendorSession,
+                openProjectWindow: { _ in },
+                waitUntilPresented: { recoveredManager in
+                    recoveredManager.bindDialogOwnerWindow(window)
+                    return true
+                },
+                activateApplication: { _ in }
+            )
+        }
+        for _ in 0..<200 where !blocker.hasEntered {
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        try #require(blocker.hasEntered)
+
+        projectRegistry.closeProjectWindow(
+            canonical,
+            expectedManager: manager,
+            expectedWindowGeneration: manager.dialogOwnerWindowGeneration
+        )
+        projectRegistry.runBackgroundReclamationPassForTesting()
+        #expect(projectRegistry.openProjects[canonical] === manager)
+        #expect(projectRegistry.backgroundProjects.contains(canonical))
+        blocker.release()
+
+        #expect(await recovery.value == .changedWhilePreparing)
+        #expect(state.terminalTabs.map(\.id) == originalIDs)
+    }
+
+    private func makeEligibleProjectWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.orderFront(nil)
+        return window
+    }
+
+    private func assertStaleCanonicalizationPreservesConcurrentOpen(
+        mutateTask: Bool
+    ) async throws {
+        let fixture = try InboxProjectFixture()
+        defer { fixture.cleanup() }
+        let pausedTask = makePersistedRecoveryTask(projectURL: fixture.project)
+        let taskRegistry = AgentTaskRegistry(
+            persistence: InboxLoadedAgentTaskStore(tasks: [pausedTask])
+        )
+        let canonicalizer = BlockingInboxProjectCanonicalizer()
+        let projectRegistry = ProjectRegistry(
+            agentTasks: taskRegistry,
+            agentInboxProjectCanonicalizer: { url in
+                await canonicalizer.canonicalize(url)
+            }
+        )
+        let manager = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        try await requireLoadedTask(pausedTask.id, in: taskRegistry)
+        let canonical = projectRegistry.canonicalProjectURL(fixture.project)
+        projectRegistry.closeProjectWindow(canonical)
+
+        let recovery = Task { @MainActor in
+            await projectRegistry.recoverAgentTaskFromInbox(
+                pausedTask.id,
+                action: .startNewSession,
+                openProjectWindow: { _ in },
+                activateApplication: { _ in }
+            )
+        }
+        let entered = await canonicalizer.waitUntilEntered()
+        try #require(entered)
+
+        // Another UI action wins while Inbox is suspended canonicalizing the
+        // old snapshot. Its valid owner must not be cleared transactionally.
+        let reopened = try #require(
+            projectRegistry.projectManager(for: fixture.project)
+        )
+        #expect(reopened === manager)
+        let window = makeEligibleProjectWindow()
+        manager.bindDialogOwnerWindow(window)
+        defer {
+            manager.unbindDialogOwnerWindow(window)
+            window.orderOut(nil)
+        }
+
+        if mutateTask {
+            var replacement = pausedTask
+            replacement.title = (replacement.title ?? "Recovery fixture")
+                + " changed"
+            taskRegistry.setTasksForTesting([replacement])
+        } else {
+            recovery.cancel()
+        }
+        await canonicalizer.release()
+
+        #expect(await recovery.value == .projectUnavailable)
+        #expect(projectRegistry.openProjects[canonical] === manager)
+        #expect(!projectRegistry.backgroundProjects.contains(canonical))
+        #expect(projectRegistry.isWindowOpen(canonical))
+        #expect(manager.dialogOwnerWindow === window)
+        #expect(manager.presentationLifecycle == .visible)
     }
 
     private func makePersistedRecoveryTask(
@@ -789,9 +1170,7 @@ struct AgentInboxTests {
 
     private func assertBackgroundRecoveryState(
         projectRegistry: ProjectRegistry,
-        taskRegistry: AgentTaskRegistry,
         projectURL: URL,
-        liveTaskID: UUID,
         retained: (
             manager: ProjectManager,
             state: TerminalPaneState,
@@ -801,8 +1180,6 @@ struct AgentInboxTests {
         #expect(projectRegistry.openProjects[projectURL] === retained.manager)
         #expect(projectRegistry.backgroundProjects.contains(projectURL))
         #expect(!projectRegistry.isWindowOpen(projectURL))
-        #expect(taskRegistry.task(for: liveTaskID)?.route.availability
-                == .background)
         #expect(retained.state.terminalTabs.map(\.id) == retained.terminalIDs)
     }
 

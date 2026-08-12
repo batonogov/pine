@@ -441,6 +441,15 @@ struct PaneLeafView: View {
         )
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
+        .background {
+            LSPDocumentPresentationLifecycle(
+                manager: projectManager.lspManager,
+                url: tab.fileURL,
+                contentRevision: tab.contentVersion,
+                text: tab.content
+            )
+            .id(tab.id)
+        }
         .onAppear {
             goToLineOffset = nil
             projectManager.problemsController.refreshDocumentOwnership()
@@ -450,22 +459,12 @@ struct PaneLeafView: View {
                     content: tab.content,
                     revision: tab.contentVersion
                 )
-                projectManager.lspManager.didOpen(
-                    url: fileURL,
-                    ownerID: tab.id,
-                    contentRevision: tab.contentVersion,
-                    text: tab.content
-                )
             }
             installLSPUIEndpoint(tabManager: tabManager)
         }
         .onDisappear {
             configValidator.clear()
             if let fileURL = tab.fileURL {
-                projectManager.lspManager.didClose(
-                    url: fileURL,
-                    ownerID: tab.id
-                )
                 projectManager.problemsController.removeConfigDiagnostics(
                     owner: problemsOwner(
                         for: tab,
@@ -486,32 +485,14 @@ struct PaneLeafView: View {
                 content: newValue,
                 revision: tab.contentVersion
             )
-            projectManager.lspManager.didChange(
-                url: fileURL,
-                ownerID: tab.id,
-                contentRevision: tab.contentVersion,
-                text: newValue
-            )
         }
-        .onChange(of: tab.fileURL) { oldURL, newURL in
+        .onChange(of: tab.fileURL) { _, newURL in
             configValidator.clear()
-            if let oldURL {
-                projectManager.lspManager.didClose(
-                    url: oldURL,
-                    ownerID: tab.id
-                )
-            }
             if let newURL {
                 configValidator.validate(
                     url: newURL,
                     content: tab.content,
                     revision: tab.contentVersion
-                )
-                projectManager.lspManager.didOpen(
-                    url: newURL,
-                    ownerID: tab.id,
-                    contentRevision: tab.contentVersion,
-                    text: tab.content
                 )
             }
             projectManager.problemsController.refreshDocumentOwnership()
@@ -871,5 +852,55 @@ struct PaneLeafView: View {
                 paneManager.removePane(paneID)
             }
         }
+    }
+}
+
+/// Owns one LSP document lease for one mounted editor presentation. A durable
+/// tab ID can be reused across a window reopen, while these UUIDs cannot; an
+/// old view's delayed disappearance therefore removes only its own buffer.
+private struct LSPDocumentPresentationLifecycle: View {
+    let manager: LSPManager
+    let url: URL?
+    let contentRevision: UInt64
+    let text: String
+    @State private var ownerID = UUID()
+
+    var body: some View {
+        Color.clear
+            .onAppear {
+                guard let url else { return }
+                manager.didOpen(
+                    url: url,
+                    ownerID: ownerID,
+                    contentRevision: contentRevision,
+                    text: text
+                )
+            }
+            .onDisappear {
+                guard let url else { return }
+                manager.didClose(url: url, ownerID: ownerID)
+            }
+            .onChange(of: text) { _, newText in
+                guard let url else { return }
+                manager.didChange(
+                    url: url,
+                    ownerID: ownerID,
+                    contentRevision: contentRevision,
+                    text: newText
+                )
+            }
+            .onChange(of: url) { oldURL, newURL in
+                if let oldURL {
+                    manager.didClose(url: oldURL, ownerID: ownerID)
+                }
+                if let newURL {
+                    manager.didOpen(
+                        url: newURL,
+                        ownerID: ownerID,
+                        contentRevision: contentRevision,
+                        text: text
+                    )
+                }
+            }
     }
 }
