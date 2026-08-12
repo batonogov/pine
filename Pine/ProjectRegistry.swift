@@ -91,6 +91,16 @@ struct TerminationSaveInventoryAuthorization {
 @MainActor
 @Observable
 final class ProjectRegistry: LSPSettingsObserver {
+    private struct AgentInboxPresentationAuthorization {
+        let projectURL: URL
+        let projectIdentity: AgentTaskProjectIdentity
+        let manager: ProjectManager
+        let operationID: UUID
+        let leaseID: UUID
+        let ownerWindow: NSWindow
+        let ownerWindowGeneration: UUID
+    }
+
     /// Open projects keyed by their root directory URL.
     private(set) var openProjects: [URL: ProjectManager] = [:]
     /// Projects whose window was closed but whose ProjectManager (and terminal processes)
@@ -116,6 +126,27 @@ final class ProjectRegistry: LSPSettingsObserver {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let fileManager: FileManager
     @ObservationIgnored private let agentRecoveryInspector: AgentTaskRecoveryInspector
+    @ObservationIgnored private let agentProcessSnapshotPoller: AgentProcessSnapshotPoller
+    @ObservationIgnored private let agentInboxProjectCanonicalizer:
+        @Sendable (URL) async -> URL
+    @ObservationIgnored private let contextPresentationGate =
+        ContextPresentationCommandGate()
+    @ObservationIgnored private var contextPresentationEpochs: [URL: UInt64] = [:]
+    @ObservationIgnored private let backgroundReclamationInterval: Duration
+    @ObservationIgnored private let backgroundReclamationBatchSize: Int
+    @ObservationIgnored private var backgroundReclamationTask: Task<Void, Never>?
+    @ObservationIgnored private var backgroundReclamationQueue: [UInt64: URL] = [:]
+    @ObservationIgnored private var backgroundReclamationQueuedURLs: Set<URL> = []
+    @ObservationIgnored private var nextBackgroundReclamationQueueID: UInt64 = 0
+    @ObservationIgnored private var nextBackgroundReclamationDequeueID: UInt64 = 0
+    @ObservationIgnored private var backgroundReclamationCycleRemaining = 0
+    #if DEBUG
+    @ObservationIgnored private(set) var lastReclaimPassCountForTesting = 0
+    #endif
+    @ObservationIgnored
+    private var backgroundPresentationLeases: [URL: Set<UUID>] = [:]
+    @ObservationIgnored
+    private var agentInboxPresentationOperations: [URL: UUID] = [:]
     @ObservationIgnored
     private var agentTaskProjectsByRoot: [URL: AgentTaskProjectIdentity] = [:] {
         didSet {
@@ -156,6 +187,16 @@ final class ProjectRegistry: LSPSettingsObserver {
         fileManager: FileManager = .default,
         agentTasks: AgentTaskRegistry? = nil,
         agentRecoveryInspector: AgentTaskRecoveryInspector = AgentTaskRecoveryInspector(),
+        agentInboxProjectCanonicalizer: @escaping @Sendable (URL) async -> URL = { rawURL in
+            await Task.detached {
+                ProjectRegistry.canonicalProjectURL(rawURL)
+            }.value
+        },
+        agentDetectionProcessRunner: @escaping ProcessRunner = runRealProcess,
+        agentDetectionPollInterval: TimeInterval = 2.0,
+        agentDetectionInitialPollDelay: TimeInterval? = nil,
+        backgroundReclamationInterval: Duration = .seconds(30),
+        backgroundReclamationBatchSize: Int = 4,
         clearRecentProjects: Bool = CommandLine.arguments.contains(
             "--clear-recent-projects"
         )
@@ -165,6 +206,14 @@ final class ProjectRegistry: LSPSettingsObserver {
         self.defaults = defaults
         self.fileManager = fileManager
         self.agentRecoveryInspector = agentRecoveryInspector
+        self.agentInboxProjectCanonicalizer = agentInboxProjectCanonicalizer
+        self.agentProcessSnapshotPoller = AgentProcessSnapshotPoller(
+            processRunner: agentDetectionProcessRunner,
+            pollInterval: agentDetectionPollInterval,
+            initialPollDelay: agentDetectionInitialPollDelay
+        )
+        self.backgroundReclamationInterval = backgroundReclamationInterval
+        self.backgroundReclamationBatchSize = max(1, backgroundReclamationBatchSize)
         if clearRecentProjects {
             defaults.removeObject(forKey: Self.recentProjectsKey)
         }
@@ -212,6 +261,13 @@ final class ProjectRegistry: LSPSettingsObserver {
         )
     }
 
+    /// Non-admitting lookup for SwiftUI scene roots that may outlive their
+    /// native window. A stale hidden `ProjectWindowView` must never recreate a
+    /// manager after bounded reclamation.
+    func projectManagerIfAdmitted(for projectURL: URL) -> ProjectManager? {
+        openProjects[canonicalProjectURL(projectURL)]
+    }
+
     /// Opens a Pine-managed worktree while retaining the owning repository as
     /// the shared project scope. Sibling worktrees therefore remain comparable
     /// without sharing terminal, task, event, checkpoint, or notification IDs.
@@ -238,7 +294,8 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// been canonicalized again. This is used by Inbox navigation and recovery.
     private func projectManager(
         for identity: AgentTaskProjectIdentity,
-        reopenBackgroundProject: Bool = true
+        reopenBackgroundProject: Bool = true,
+        admitMissingProjectInBackground: Bool = false
     ) -> ProjectManager? {
         let project = canonicalProjectURL(URL(
             fileURLWithPath: identity.canonicalProjectPath,
@@ -255,14 +312,16 @@ final class ProjectRegistry: LSPSettingsObserver {
         return projectManager(
             forCanonicalWorktree: worktree,
             identity: identity,
-            reopenBackgroundProject: reopenBackgroundProject
+            reopenBackgroundProject: reopenBackgroundProject,
+            admitMissingProjectInBackground: admitMissingProjectInBackground
         )
     }
 
     private func projectManager(
         forCanonicalWorktree canonical: URL,
         identity: AgentTaskProjectIdentity,
-        reopenBackgroundProject: Bool = true
+        reopenBackgroundProject: Bool = true,
+        admitMissingProjectInBackground: Bool = false
     ) -> ProjectManager? {
         if let existing = openProjects[canonical] {
             guard agentTaskProjectsByRoot[canonical] == identity else {
@@ -276,7 +335,7 @@ final class ProjectRegistry: LSPSettingsObserver {
                     // Directory was deleted while in background — clean up
                     existing.requestUserTaskShutdown()
                     existing.terminal.terminateAll()
-                    existing.shutdownLanguageServers()
+                    existing.shutdownReclaimableProject()
                     let ownerID = ObjectIdentifier(existing)
                     detachedTaskCleanupProjects[ownerID] = existing
                     Task { @MainActor [weak self] in
@@ -302,6 +361,7 @@ final class ProjectRegistry: LSPSettingsObserver {
                     return nil
                 }
                 if reopenBackgroundProject {
+                    existing.prepareForWindowPresentation()
                     _ = markProjectWindowOpen(
                         canonical,
                         identity: identity,
@@ -327,9 +387,18 @@ final class ProjectRegistry: LSPSettingsObserver {
         ), isProjectDir.boolValue else { return nil }
         guard !isProjectAdmissionFrozenForTermination else { return nil }
         agentTasks.registerProject(identity)
+        let contextEpoch = contextPresentationEpochs[canonical, default: 0] &+ 1
+        contextPresentationEpochs[canonical] = contextEpoch
         let pm = ProjectManager(
             lspSettings: lspSettings,
-            agentTaskRegistry: agentTasks
+            agentProcessSnapshotPoller: agentProcessSnapshotPoller,
+            agentTaskRegistry: agentTasks,
+            contextFileWriter: ContextFileWriter(
+                presentationGate: contextPresentationGate
+            ),
+            contextPresentationIdentity: ContextPresentationIdentity(
+                epoch: contextEpoch
+            )
         )
         if isAutoSaveFrozenForTermination {
             pm.freezeAutoSaveForTermination()
@@ -337,6 +406,17 @@ final class ProjectRegistry: LSPSettingsObserver {
         pm.loadDirectory(url: canonical, agentTaskProject: identity)
         openProjects[canonical] = pm
         agentTaskProjectsByRoot[canonical] = identity
+        if admitMissingProjectInBackground {
+            backgroundProjects.insert(canonical)
+            pm.suspendEditorServices()
+            agentTasks.setWindowOpen(false, project: identity)
+            pm.terminal.setAgentTaskWindowOpen(false)
+            enqueueBackgroundReclamationCandidate(canonical)
+            scheduleBackgroundReclamationIfNeeded()
+        } else {
+            agentTasks.setWindowOpen(true, project: identity)
+            pm.terminal.setAgentTaskWindowOpen(true)
+        }
         addToRecent(canonical)
         #if DEBUG
         seedAgentRecoveryUITestFixture(
@@ -360,6 +440,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             return false
         }
         backgroundProjects.remove(canonical)
+        manager.resumeEditorServices()
         agentTasks.setWindowOpen(true, project: identity)
         manager.terminal.setAgentTaskWindowOpen(true)
         return true
@@ -569,13 +650,172 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// sessions and user tasks continue in the background; reopening the
     /// project restores access to their current state and output history.
     func closeProjectWindow(_ url: URL) {
+        closeProjectWindow(
+            url,
+            expectedManager: nil,
+            expectedWindowGeneration: nil
+        )
+    }
+
+    /// Window-delegate close path. Both object identity and binding generation
+    /// must still match so a delayed close from window A cannot background a
+    /// replacement manager/window B registered for the same URL.
+    func closeProjectWindow(
+        _ url: URL,
+        expectedManager: ProjectManager?,
+        expectedWindowGeneration: UUID?
+    ) {
         let canonical = canonicalProjectURL(url)
-        guard openProjects[canonical] != nil else { return }
+        guard let manager = openProjects[canonical] else { return }
+        if let expectedManager, manager !== expectedManager { return }
+        if let expectedWindowGeneration,
+           manager.dialogOwnerWindowGeneration != expectedWindowGeneration {
+            return
+        }
+        manager.saveSession()
         backgroundProjects.insert(canonical)
+        manager.suspendEditorServices()
         if let identity = agentTaskProjectsByRoot[canonical] {
             agentTasks.setWindowOpen(false, project: identity)
         }
-        openProjects[canonical]?.terminal.setAgentTaskWindowOpen(false)
+        manager.terminal.setAgentTaskWindowOpen(false)
+        enqueueBackgroundReclamationCandidate(canonical)
+        scheduleBackgroundReclamationIfNeeded()
+    }
+
+    /// Reclaims one bounded set of editor-only background managers. Process,
+    /// launch, agent, and user-task evidence all fail closed and keep the exact
+    /// manager alive for the next pass.
+    func runBackgroundReclamationPassForTesting() {
+        let hasMoreInCycle = reclaimIdleBackgroundProjects()
+        scheduleBackgroundReclamationIfNeeded(
+            delayUntilNextCycle: !hasMoreInCycle
+        )
+    }
+
+    #if DEBUG
+    var agentSnapshotSubscriberCountForTesting: Int {
+        agentProcessSnapshotPoller.subscriberCountForTesting
+    }
+
+    func runAgentProcessSnapshotForTesting() {
+        agentProcessSnapshotPoller.runSnapshotForTesting()
+    }
+    #endif
+
+    /// Processes at most one fixed-size batch. Retained projects rotate to the
+    /// next delayed cycle; remaining candidates in the current cycle continue
+    /// on later MainActor turns without another 30-second delay.
+    @discardableResult
+    private func reclaimIdleBackgroundProjects() -> Bool {
+        guard !isProjectAdmissionFrozenForTermination,
+              !isAutoSaveFrozenForTermination else { return false }
+        if backgroundReclamationCycleRemaining == 0 {
+            backgroundReclamationCycleRemaining =
+                backgroundReclamationQueuedURLs.count
+        }
+        let candidateLimit = min(
+            backgroundReclamationBatchSize,
+            backgroundReclamationCycleRemaining
+        )
+        var processedCount = 0
+        for _ in 0..<candidateLimit {
+            guard let canonical = dequeueBackgroundReclamationCandidate() else {
+                backgroundReclamationCycleRemaining = 0
+                break
+            }
+            backgroundReclamationCycleRemaining -= 1
+            processedCount += 1
+            guard let manager = openProjects[canonical],
+                  backgroundProjects.contains(canonical) else {
+                continue
+            }
+            guard backgroundPresentationLeases[canonical]?.isEmpty != false,
+                  !manager.requiresBackgroundRetention else {
+                enqueueBackgroundReclamationCandidate(canonical)
+                continue
+            }
+            manager.saveSession()
+            manager.shutdownReclaimableProject()
+            openProjects.removeValue(forKey: canonical)
+            agentTaskProjectsByRoot.removeValue(forKey: canonical)
+            backgroundProjects.remove(canonical)
+        }
+        #if DEBUG
+        lastReclaimPassCountForTesting = processedCount
+        #endif
+        return backgroundReclamationCycleRemaining > 0
+    }
+
+    private func enqueueBackgroundReclamationCandidate(_ canonical: URL) {
+        guard backgroundReclamationQueuedURLs.insert(canonical).inserted else {
+            return
+        }
+        let queueID = nextBackgroundReclamationQueueID
+        nextBackgroundReclamationQueueID &+= 1
+        backgroundReclamationQueue[queueID] = canonical
+    }
+
+    private func dequeueBackgroundReclamationCandidate() -> URL? {
+        while nextBackgroundReclamationDequeueID
+                < nextBackgroundReclamationQueueID {
+            let queueID = nextBackgroundReclamationDequeueID
+            nextBackgroundReclamationDequeueID &+= 1
+            guard let canonical = backgroundReclamationQueue.removeValue(
+                forKey: queueID
+            ), backgroundReclamationQueuedURLs.remove(canonical) != nil else {
+                continue
+            }
+            return canonical
+        }
+        return nil
+    }
+
+    private func scheduleBackgroundReclamationIfNeeded(
+        delayUntilNextCycle: Bool = true
+    ) {
+        guard backgroundReclamationTask == nil,
+              !backgroundReclamationQueuedURLs.isEmpty,
+              !isProjectAdmissionFrozenForTermination,
+              !isAutoSaveFrozenForTermination else { return }
+        let interval = backgroundReclamationInterval
+        backgroundReclamationTask = Task { @MainActor [weak self] in
+            if delayUntilNextCycle {
+                try? await Task.sleep(for: interval)
+            } else {
+                await Task.yield()
+            }
+            guard let self, !Task.isCancelled else { return }
+            backgroundReclamationTask = nil
+            let hasMoreInCycle = reclaimIdleBackgroundProjects()
+            scheduleBackgroundReclamationIfNeeded(
+                delayUntilNextCycle: !hasMoreInCycle
+            )
+        }
+    }
+
+    @discardableResult
+    func retainBackgroundProjectForPresentation(
+        _ url: URL,
+        manager: ProjectManager
+    ) -> UUID? {
+        let canonical = canonicalProjectURL(url)
+        guard openProjects[canonical] === manager else { return nil }
+        let leaseID = UUID()
+        backgroundPresentationLeases[canonical, default: []].insert(leaseID)
+        return leaseID
+    }
+
+    func releaseBackgroundProjectPresentation(
+        _ leaseID: UUID,
+        for url: URL
+    ) {
+        let canonical = canonicalProjectURL(url)
+        backgroundPresentationLeases[canonical]?.remove(leaseID)
+        if backgroundPresentationLeases[canonical]?.isEmpty == true {
+            backgroundPresentationLeases[canonical] = nil
+        }
+        scheduleBackgroundReclamationIfNeeded()
     }
 
     /// Closes a project and removes it from open projects.
@@ -652,9 +892,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
         )
-        let projectURL = await Task.detached {
-            Self.canonicalProjectURL(rawURL)
-        }.value
+        let projectURL = await agentInboxProjectCanonicalizer(rawURL)
         guard let currentTask = agentTasks.task(for: taskID),
               currentTask == task,
               currentTask.lifecycle == .active,
@@ -740,11 +978,9 @@ final class ProjectRegistry: LSPSettingsObserver {
             fileURLWithPath: initialTask.project.canonicalWorktreePath,
             isDirectory: true
         )
-        let projectURL = await Task.detached {
-            Self.canonicalProjectURL(rawURL)
-        }.value
+        let projectURL = await agentInboxProjectCanonicalizer(rawURL)
         guard projectURL.path == initialTask.project.canonicalWorktreePath,
-              let manager = await ensureAgentInboxProjectPresented(
+              let presentation = await ensureAgentInboxProjectPresented(
                 initialTask,
                 at: projectURL,
                 openProjectWindow: openProjectWindow,
@@ -752,6 +988,8 @@ final class ProjectRegistry: LSPSettingsObserver {
               ) else {
             return .projectUnavailable
         }
+        let manager = presentation.manager
+        defer { finishAgentInboxPresentation(presentation) }
 
         guard let route = await resolveAgentTaskRoute(taskID),
               let currentTask = agentTasks.task(for: taskID),
@@ -766,7 +1004,7 @@ final class ProjectRegistry: LSPSettingsObserver {
                   taskID: taskID,
                   terminalID: route.terminalID,
                   runID: run.id
-              ) else {
+              ), presentationIsCurrent(presentation) else {
             return .routeStale
         }
 
@@ -811,11 +1049,9 @@ final class ProjectRegistry: LSPSettingsObserver {
             fileURLWithPath: initialTask.project.canonicalWorktreePath,
             isDirectory: true
         )
-        let projectURL = await Task.detached {
-            Self.canonicalProjectURL(rawURL)
-        }.value
+        let projectURL = await agentInboxProjectCanonicalizer(rawURL)
         guard projectURL.path == initialTask.project.canonicalWorktreePath,
-              let manager = await ensureAgentInboxProjectPresented(
+              let presentation = await ensureAgentInboxProjectPresented(
                 initialTask,
                 at: projectURL,
                 openProjectWindow: openProjectWindow,
@@ -823,6 +1059,8 @@ final class ProjectRegistry: LSPSettingsObserver {
               ) else {
             return .projectUnavailable
         }
+        let manager = presentation.manager
+        defer { finishAgentInboxPresentation(presentation) }
         guard agentTasks.task(for: taskID) == initialTask else {
             return .changedWhilePreparing
         }
@@ -841,6 +1079,14 @@ final class ProjectRegistry: LSPSettingsObserver {
             return .launchRejected
         }
 
+        // No suspension occurs between this full ownership fence and launch.
+        // A concurrent presentation, stale close, reclaim, task mutation, or
+        // owner replacement therefore cannot launch into an obsolete manager.
+        guard !Task.isCancelled,
+              agentTasks.task(for: taskID) == initialTask,
+              presentationIsCurrent(presentation) else {
+            return .changedWhilePreparing
+        }
         let result = manager.terminal.launchAgentRecovery(plan)
         let terminalID: UUID
         switch result {
@@ -883,33 +1129,109 @@ final class ProjectRegistry: LSPSettingsObserver {
         at projectURL: URL,
         openProjectWindow: @escaping @MainActor (URL) -> Void,
         waitUntilPresented: (@MainActor (ProjectManager) async -> Bool)?
-    ) async -> ProjectManager? {
-        let requiresPresentation = task.route.availability == .background
-            || !isWindowOpen(projectURL)
-        guard let manager = projectManager(
-            for: task.project,
-            reopenBackgroundProject: false
-        ), manager.rootURL == projectURL else {
+    ) async -> AgentInboxPresentationAuthorization? {
+        // Canonicalization suspends the caller. Revalidate the value snapshot
+        // before retained lookup can admit/background a manager or disturb a
+        // window that another operation opened while that await was pending.
+        let canonicalProjectIdentityURL = canonicalProjectURL(URL(
+            fileURLWithPath: task.project.canonicalProjectPath,
+            isDirectory: true
+        ))
+        guard !Task.isCancelled,
+              agentTasks.task(for: task.id) == task,
+              projectURL.path == task.project.canonicalWorktreePath,
+              canonicalProjectIdentityURL.path
+                == task.project.canonicalProjectPath else {
             return nil
+        }
+        let manager: ProjectManager
+        if let existing = openProjects[projectURL] {
+            guard agentTaskProjectsByRoot[projectURL] == task.project,
+                  existing.rootURL == projectURL else {
+                return nil
+            }
+            manager = existing
+        } else {
+            guard let admitted = projectManager(
+                for: task.project,
+                reopenBackgroundProject: false,
+                admitMissingProjectInBackground: true
+            ), admitted.rootURL == projectURL,
+                agentTasks.task(for: task.id) == task,
+                agentTaskProjectsByRoot[projectURL] == task.project else {
+                return nil
+            }
+            manager = admitted
+        }
+        let hasEligibleCurrentOwner = manager.dialogOwnerWindow.map {
+            DialogPresenter.isEligibleApplicationOwner($0)
+        } == true
+        let requiresPresentation = backgroundProjects.contains(projectURL)
+            || !isWindowOpen(projectURL)
+            || !hasEligibleCurrentOwner
+        let operationID = UUID()
+        agentInboxPresentationOperations[projectURL] = operationID
+        guard let presentationLease = retainBackgroundProjectForPresentation(
+            projectURL,
+            manager: manager
+        ) else {
+            if agentInboxPresentationOperations[projectURL] == operationID {
+                agentInboxPresentationOperations[projectURL] = nil
+            }
+            return nil
+        }
+        var transfersAuthorization = false
+        defer {
+            if !transfersAuthorization {
+                releaseBackgroundProjectPresentation(
+                    presentationLease,
+                    for: projectURL
+                )
+                if agentInboxPresentationOperations[projectURL] == operationID {
+                    agentInboxPresentationOperations[projectURL] = nil
+                }
+            }
         }
 
         if requiresPresentation {
+            guard !Task.isCancelled,
+                  agentTasks.task(for: task.id) == task,
+                  openProjects[projectURL] === manager,
+                  agentTaskProjectsByRoot[projectURL] == task.project else {
+                return nil
+            }
             // A previously unknown durable project is admitted by lookup but
             // still has no window. Keep that new manager transactional too.
-            closeProjectWindow(projectURL)
+            manager.prepareForWindowPresentation()
+            closeProjectWindow(
+                projectURL,
+                expectedManager: manager,
+                expectedWindowGeneration: nil
+            )
             openProjectWindow(projectURL)
         }
-        let presented = if let waitUntilPresented {
-            await waitUntilPresented(manager)
+        let presentationReported: Bool
+        if let waitUntilPresented {
+            presentationReported = await waitUntilPresented(manager)
         } else {
-            await manager.awaitDialogOwnerWindow() != nil
+            presentationReported = await manager.awaitDialogOwnerWindow() != nil
         }
-        guard presented, !Task.isCancelled else {
-            if requiresPresentation
-                || manager.dialogOwnerWindow.map({
-                    !DialogPresenter.isEligibleApplicationOwner($0)
-                }) != false {
-                closeProjectWindow(projectURL)
+        guard presentationReported,
+              !Task.isCancelled,
+              agentInboxPresentationOperations[projectURL] == operationID,
+              openProjects[projectURL] === manager,
+              agentTaskProjectsByRoot[projectURL] == task.project,
+              let ownerWindow = manager.dialogOwnerWindow,
+              DialogPresenter.isEligibleApplicationOwner(ownerWindow) else {
+            if requiresPresentation,
+               backgroundProjects.contains(projectURL),
+               agentInboxPresentationOperations[projectURL] == operationID {
+                closeProjectWindow(
+                    projectURL,
+                    expectedManager: manager,
+                    expectedWindowGeneration:
+                        manager.dialogOwnerWindowGeneration
+                )
             }
             return nil
         }
@@ -920,7 +1242,51 @@ final class ProjectRegistry: LSPSettingsObserver {
         ) else {
             return nil
         }
-        return manager
+        let authorization = AgentInboxPresentationAuthorization(
+            projectURL: projectURL,
+            projectIdentity: task.project,
+            manager: manager,
+            operationID: operationID,
+            leaseID: presentationLease,
+            ownerWindow: ownerWindow,
+            ownerWindowGeneration: manager.dialogOwnerWindowGeneration
+        )
+        transfersAuthorization = true
+        return authorization
+    }
+
+    private func presentationIsCurrent(
+        _ authorization: AgentInboxPresentationAuthorization
+    ) -> Bool {
+        !Task.isCancelled
+            && agentInboxPresentationOperations[authorization.projectURL]
+                == authorization.operationID
+            && openProjects[authorization.projectURL]
+                === authorization.manager
+            && agentTaskProjectsByRoot[authorization.projectURL]
+                == authorization.projectIdentity
+            && !backgroundProjects.contains(authorization.projectURL)
+            && authorization.manager.presentationLifecycle == .visible
+            && authorization.manager.dialogOwnerWindow
+                === authorization.ownerWindow
+            && authorization.manager.dialogOwnerWindowGeneration
+                == authorization.ownerWindowGeneration
+            && DialogPresenter.isEligibleApplicationOwner(
+                authorization.ownerWindow
+            )
+    }
+
+    private func finishAgentInboxPresentation(
+        _ authorization: AgentInboxPresentationAuthorization
+    ) {
+        releaseBackgroundProjectPresentation(
+            authorization.leaseID,
+            for: authorization.projectURL
+        )
+        if agentInboxPresentationOperations[authorization.projectURL]
+                == authorization.operationID {
+            agentInboxPresentationOperations[authorization.projectURL] = nil
+        }
     }
 
     private func resolveAgentRecoveryTerminal(
@@ -961,9 +1327,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
         )
-        let projectURL = await Task.detached {
-            Self.canonicalProjectURL(rawURL)
-        }.value
+        let projectURL = await agentInboxProjectCanonicalizer(rawURL)
         guard let currentTask = agentTasks.task(for: task.id),
               currentTask == task,
               agentTasks.canResumeTask(task.id),
@@ -997,6 +1361,8 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     func freezeAgentTasksForTermination() {
         isProjectAdmissionFrozenForTermination = true
+        backgroundReclamationTask?.cancel()
+        backgroundReclamationTask = nil
         for manager in openProjects.values {
             manager.terminal.freezeAgentTasksForTermination()
         }
@@ -1008,6 +1374,11 @@ final class ProjectRegistry: LSPSettingsObserver {
     func freezeAutoSaveForTermination() {
         guard !isAutoSaveFrozenForTermination else { return }
         isAutoSaveFrozenForTermination = true
+        // This is the first mutation in the Quit transaction, before human
+        // decisions and inventory capture. Freeze reclamation here so that
+        // captured project/tab ownership cannot disappear mid-handshake.
+        backgroundReclamationTask?.cancel()
+        backgroundReclamationTask = nil
         openProjects.values.forEach { $0.freezeAutoSaveForTermination() }
         detachedTaskCleanupProjects.values.forEach {
             $0.freezeAutoSaveForTermination()
@@ -1060,6 +1431,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         detachedTaskCleanupProjects.values.forEach {
             $0.cancelAutoSaveTerminationFreeze()
         }
+        scheduleBackgroundReclamationIfNeeded()
     }
 
     func finishAutoSaveTerminationFreeze() {
@@ -1097,6 +1469,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             manager.terminal.cancelAgentTaskTermination()
         }
         isProjectAdmissionFrozenForTermination = false
+        scheduleBackgroundReclamationIfNeeded()
         return rollbackWasSaved
     }
 
@@ -1285,9 +1658,16 @@ final class ProjectRegistry: LSPSettingsObserver {
 
         lspSettingsChangeTask?.cancel()
         lspSettingsChangeTask = nil
+        backgroundReclamationTask?.cancel()
+        backgroundReclamationTask = nil
+        backgroundReclamationQueue.removeAll()
+        backgroundReclamationQueuedURLs.removeAll()
+        backgroundReclamationCycleRemaining = 0
+        backgroundPresentationLeases.removeAll()
+        agentInboxPresentationOperations.removeAll()
         for (_, pm) in openProjects {
             pm.terminal.terminateAll()
-            pm.shutdownLanguageServers()
+            pm.shutdownReclaimableProject()
         }
         openProjects.removeAll()
         agentTaskProjectsByRoot.removeAll()

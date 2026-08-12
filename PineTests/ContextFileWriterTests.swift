@@ -960,6 +960,100 @@ struct ContextFileWriterTests {
         #expect(decoded.cursorColumn == 0)
     }
 
+    @Test func presentationGenerationOrdersCleanupAndRepublish() async throws {
+        let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(
+            at: projectRoot,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let gate = ContextPresentationCommandGate()
+        let oldWriter = ContextFileWriter(presentationGate: gate)
+        let newWriter = ContextFileWriter(presentationGate: gate)
+        for writer in [oldWriter, newWriter] {
+            await writer.setContextsDirectory(contextsDir)
+            await writer.setDebounceInterval(0.01)
+        }
+        let oldIdentity = ContextPresentationIdentity(epoch: 1)
+        let newIdentity = ContextPresentationIdentity(epoch: 2)
+        let visible = ContextFileWriter.Payload(
+            openFiles: ["Visible.swift"],
+            currentFile: "Visible.swift",
+            cursorLine: 7,
+            cursorColumn: 3
+        )
+
+        await newWriter.publishPresentationSnapshot(
+            projectRoot: projectRoot,
+            isReadOnlySharingEnabled: true,
+            payload: visible,
+            command: ContextPresentationCommand(
+                identity: newIdentity,
+                sequence: 1
+            )
+        )
+        await oldWriter.cleanupPresentationSnapshot(
+            projectRoot: projectRoot,
+            command: ContextPresentationCommand(
+                identity: oldIdentity,
+                sequence: 2
+            )
+        )
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(try readPayload(
+            projectRoot: projectRoot,
+            contextsDir: contextsDir
+        ).currentFile == "Visible.swift")
+
+        await newWriter.cleanupPresentationSnapshot(
+            projectRoot: projectRoot,
+            command: ContextPresentationCommand(
+                identity: newIdentity,
+                sequence: 2
+            )
+        )
+        await oldWriter.publishPresentationSnapshot(
+            projectRoot: projectRoot,
+            isReadOnlySharingEnabled: true,
+            payload: visible,
+            command: ContextPresentationCommand(
+                identity: oldIdentity,
+                sequence: 3
+            )
+        )
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(!FileManager.default.fileExists(atPath: contextFileURL(
+            projectRoot: projectRoot,
+            contextsDir: contextsDir
+        ).path))
+    }
+
+    @Test func hiddenProjectManagerDoesNotPublishEditorContext() async throws {
+        let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(
+            at: projectRoot,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let writer = ContextFileWriter()
+        await writer.setContextsDirectory(contextsDir)
+        await writer.setDebounceInterval(0.01)
+        let manager = ProjectManager(contextFileWriter: writer)
+        manager.loadDirectory(url: projectRoot)
+        manager.suspendEditorServices()
+        try await Task.sleep(for: .milliseconds(20))
+        await writer.setProjectRoot(nil)
+
+        manager.updateEditorContext()
+        try await Task.sleep(for: .milliseconds(20))
+
+        #expect(await writer.projectRoot == nil)
+    }
+
     // MARK: - TabManager.onEditorContextChanged callback
 
     @Test func tabManagerCallsContextChangedOnActiveTabSwitch() {

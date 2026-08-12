@@ -2163,7 +2163,9 @@ final class TerminalTab: Identifiable, Hashable {
     /// the correct column/row count for the PTY. Starting with a zero frame
     /// causes a blank terminal (issue #661).
     func startIfNeeded() {
-        guard !processStarted else { return }
+        // Final project reclamation may race a delayed NSViewRepresentable
+        // update. A terminated tab is a tombstone and must never fork again.
+        guard !isTerminated, !processStarted else { return }
         guard terminalView.frame.size.width > 0,
               terminalView.frame.size.height > 0 else { return }
         processStarted = true

@@ -7,6 +7,77 @@ import CryptoKit
 import Darwin
 import Foundation
 
+/// Registry-issued identity for one manager incarnation of a canonical root.
+/// The epoch orders different managers; the nonce rejects accidental epoch
+/// reuse, and each manager's command sequence orders its own show/hide events.
+nonisolated struct ContextPresentationIdentity: Sendable, Equatable {
+    let epoch: UInt64
+    let nonce: UUID
+
+    init(epoch: UInt64, nonce: UUID = UUID()) {
+        self.epoch = epoch
+        self.nonce = nonce
+    }
+}
+
+nonisolated struct ContextPresentationCommand: Sendable, Equatable {
+    let identity: ContextPresentationIdentity
+    let sequence: UInt64
+}
+
+/// One registry owns one gate shared by every writer it creates. File actions
+/// for the same canonical root run under this lock, so an old manager's actor
+/// cannot approve a cleanup and race a newer manager's publish to disk.
+nonisolated final class ContextPresentationCommandGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latestByProject: [String: ContextPresentationCommand] = [:]
+
+    @discardableResult
+    func accept(
+        projectIdentity: String,
+        command: ContextPresentationCommand,
+        perform: () -> Void
+    ) -> Bool {
+        lock.withLock {
+            if let latest = latestByProject[projectIdentity],
+               !Self.isSameOrNewer(command, than: latest) {
+                return false
+            }
+            latestByProject[projectIdentity] = command
+            perform()
+            return true
+        }
+    }
+
+    @discardableResult
+    func performIfCurrent(
+        projectIdentity: String,
+        command: ContextPresentationCommand,
+        perform: () -> Void
+    ) -> Bool {
+        lock.withLock {
+            guard latestByProject[projectIdentity] == command else {
+                return false
+            }
+            perform()
+            return true
+        }
+    }
+
+    private static func isSameOrNewer(
+        _ candidate: ContextPresentationCommand,
+        than latest: ContextPresentationCommand
+    ) -> Bool {
+        if candidate.identity.epoch != latest.identity.epoch {
+            return candidate.identity.epoch > latest.identity.epoch
+        }
+        guard candidate.identity.nonce == latest.identity.nonce else {
+            return false
+        }
+        return candidate.sequence >= latest.sequence
+    }
+}
+
 /// Writes an explicitly enabled, read-only editor-context snapshot to
 /// `~/Library/Application Support/Pine/contexts/`.
 ///
@@ -51,6 +122,7 @@ actor ContextFileWriter {
     private(set) var hasPendingWrite = false
     /// Invalidates stale debounce tasks after updates, revocation, or re-scope.
     private var updateGeneration: UInt64 = 0
+    private let presentationGate: ContextPresentationCommandGate
 
     /// Override for the contexts directory. Used by tests.
     private var contextsDirOverride: URL?
@@ -69,7 +141,59 @@ actor ContextFileWriter {
         return encoder
     }()
 
+    init(
+        presentationGate: ContextPresentationCommandGate =
+            ContextPresentationCommandGate()
+    ) {
+        self.presentationGate = presentationGate
+    }
+
     // MARK: - Public API
+
+    /// Atomically applies one complete visible-window handoff state. The
+    /// caller captures `commandGeneration` on the main actor; stale commands
+    /// are discarded before they can re-scope, revoke, or write the file.
+    func publishPresentationSnapshot(
+        projectRoot: URL,
+        isReadOnlySharingEnabled: Bool,
+        payload: Payload,
+        command: ContextPresentationCommand
+    ) {
+        let projectIdentity = Self.projectIdentity(for: projectRoot)
+        presentationGate.accept(
+            projectIdentity: projectIdentity,
+            command: command
+        ) {
+            setProjectRoot(projectRoot)
+            setReadOnlySharingEnabled(isReadOnlySharingEnabled)
+            guard isReadOnlySharingEnabled else { return }
+            scheduleUpdate(
+                payload: Payload(
+                    projectIdentity: projectIdentity,
+                    openFiles: payload.openFiles,
+                    currentFile: payload.currentFile,
+                    cursorLine: payload.cursorLine,
+                    cursorColumn: payload.cursorColumn
+                ),
+                presentationCommand: command
+            )
+        }
+    }
+
+    /// Revokes a hidden window's snapshot only if no later visible-window
+    /// command has already reached the actor.
+    func cleanupPresentationSnapshot(
+        projectRoot: URL,
+        command: ContextPresentationCommand
+    ) {
+        presentationGate.accept(
+            projectIdentity: Self.projectIdentity(for: projectRoot),
+            command: command
+        ) {
+            setProjectRoot(projectRoot)
+            cleanup()
+        }
+    }
 
     /// Sets the project root directory. Must be called before `update(...)`.
     /// Also removes the legacy `.pine-context.json` from the project root if present.
@@ -134,6 +258,20 @@ actor ContextFileWriter {
             cursorColumn: Self.boundedCoordinate(cursorColumn)
         )
 
+        scheduleUpdate(payload: payload, presentationCommand: nil)
+    }
+
+    private func scheduleUpdate(
+        payload: Payload,
+        presentationCommand: ContextPresentationCommand?
+    ) {
+        let boundedPayload = Payload(
+            projectIdentity: payload.projectIdentity,
+            openFiles: Self.boundedRelativePaths(payload.openFiles),
+            currentFile: Self.boundedCurrentFile(payload.currentFile),
+            cursorLine: Self.boundedCoordinate(payload.cursorLine),
+            cursorColumn: Self.boundedCoordinate(payload.cursorColumn)
+        )
         debounceTask?.cancel()
         updateGeneration &+= 1
         hasPendingWrite = true
@@ -147,7 +285,11 @@ actor ContextFileWriter {
                 return // Cancelled
             }
             guard let self else { return }
-            await self.writeContext(payload, generation: generation)
+            await self.writeContext(
+                boundedPayload,
+                generation: generation,
+                presentationCommand: presentationCommand
+            )
         }
     }
 
@@ -199,7 +341,8 @@ actor ContextFileWriter {
 
     private func writeContext(
         _ payload: Payload,
-        generation: UInt64
+        generation: UInt64,
+        presentationCommand: ContextPresentationCommand?
     ) {
         guard generation == updateGeneration,
               isReadOnlySharingEnabled else {
@@ -211,6 +354,22 @@ actor ContextFileWriter {
             }
         }
         guard let fileURL = contextFileURL else { return }
+
+        if let presentationCommand {
+            let projectIdentity = payload.projectIdentity
+            presentationGate.performIfCurrent(
+                projectIdentity: projectIdentity,
+                command: presentationCommand
+            ) {
+                writeContextToDisk(payload, fileURL: fileURL)
+            }
+            return
+        }
+
+        writeContextToDisk(payload, fileURL: fileURL)
+    }
+
+    private func writeContextToDisk(_ payload: Payload, fileURL: URL) {
 
         // Skip redundant writes
         if payload == lastWrittenContext { return }

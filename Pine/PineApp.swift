@@ -151,17 +151,7 @@ private struct ProjectWindowView: View {
             // Hidden windows from closed projects still get re-rendered by SwiftUI;
             // calling projectManager(for:) would silently re-add the closed project
             // to openProjects, breaking the "show Welcome when last project closes" logic.
-            if let pm = registry.openProjects[
-                registry.canonicalProjectURL(projectURL)
-            ] ?? {
-                // Fallback: the project may have been opened through a path
-                // that canonicalizes differently (e.g. before the AppDelegate
-                // bridge wired openProjectWindow). Try a direct registry lookup
-                // as a last resort so the window always shows content.
-                registry.projectManager(
-                    for: registry.canonicalProjectURL(projectURL)
-                )
-            }() {
+            if let pm = registry.projectManagerIfAdmitted(for: projectURL) {
                 ContentView()
                     .id(ObjectIdentifier(pm))
                     .environment(pm)
@@ -334,9 +324,11 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                            registry.canonicalProjectURL(projectURL)
                        ] === projectManager {
                         existing.beginNewWindowLifecycle(on: window)
-                    } else if !existing.didCompleteWindowLifecycle {
-                        existing.observeWindowClose(window)
                     }
+                    // An unfinished delegate already observes this exact
+                    // window. Re-observing during coordinator transfer would
+                    // also renew dialog authorization and could resurrect a
+                    // retired A before B binds.
                     return
                 }
                 let existingOriginal = existing.original
@@ -495,6 +487,12 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     /// CloseDelegate is always deallocated on the main thread.
     nonisolated(unsafe) private var closeObserver: Any?
     private weak var ownerWindow: NSWindow?
+    private var ownerWindowGeneration: UUID?
+    /// Recovery is intentionally narrower than close handling. A retained
+    /// delegate must still report A's eventual close with A's generation, but
+    /// once the registry starts presenting B it may no longer restore A as a
+    /// dialog owner merely because A remains visible for another run-loop turn.
+    private var ownerRecoveryIsAuthorized = false
     private(set) var dialogContext = DialogPresentationContext.unscoped
     private var closeDecisionTask: Task<Void, Never>?
     private weak var approvedCloseWindow: NSWindow?
@@ -539,10 +537,28 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             DialogPresenter.ownerDidClose(previousWindow)
         }
         ownerWindow = window
+        if let retiredGeneration = projectManager
+            .retiredDialogOwnerGeneration(for: window) {
+            // Keep A's close callback armed with A's stale generation, but do
+            // not let a transferred or newly wrapped delegate turn A into the
+            // current dialog owner again.
+            ownerWindowGeneration = retiredGeneration
+            ownerRecoveryIsAuthorized = false
+            dialogContext = .unscoped
+            DialogPresenter.ownerDidClose(window)
+            installCloseObserver(for: window)
+            return
+        }
         dialogContext = DialogPresenter.register(
             window: window,
             projectManager: projectManager
         )
+        ownerWindowGeneration = projectManager.dialogOwnerWindowGeneration
+        ownerRecoveryIsAuthorized = true
+        installCloseObserver(for: window)
+    }
+
+    private func installCloseObserver(for window: NSWindow) {
         closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
@@ -552,6 +568,26 @@ class CloseDelegate: NSObject, NSWindowDelegate {
                 self?.handleWindowClose()
             }
         }
+    }
+
+    /// Revokes only presentation recovery for the current installation.
+    /// Close observation deliberately remains armed so a delayed close still
+    /// reaches the registry carrying the now-stale window generation.
+    func retirePresentationAuthorization(for window: NSWindow) {
+        guard ownerWindow === window else { return }
+        ownerRecoveryIsAuthorized = false
+        dialogContext = .unscoped
+        DialogPresenter.ownerDidClose(window)
+    }
+
+    func authorizesOwnerRecovery(
+        for window: NSWindow,
+        presentationGeneration: UUID
+    ) -> Bool {
+        ownerRecoveryIsAuthorized
+            && !didHandleClose
+            && ownerWindow === window
+            && ownerWindowGeneration == presentationGeneration
     }
 
     deinit {
@@ -754,14 +790,19 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     private func handleWindowClose() {
         guard !didHandleClose else { return }
         didHandleClose = true
+        ownerRecoveryIsAuthorized = false
         closeDecisionTask?.cancel()
         closeDecisionTask = nil
         approvedCloseWindow = nil
+        let closingGeneration = ownerWindowGeneration
         if let ownerWindow {
             DialogPresenter.ownerDidClose(ownerWindow)
         }
         appDelegate?.handleProjectWindowDisappear(
-            projectURL: projectURL, registry: registry
+            projectURL: projectURL,
+            registry: registry,
+            expectedManager: projectManager,
+            expectedWindowGeneration: closingGeneration
         )
     }
 
@@ -789,6 +830,8 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             DialogPresenter.ownerDidClose(ownerWindow)
         }
         ownerWindow = nil
+        ownerWindowGeneration = nil
+        ownerRecoveryIsAuthorized = false
         dialogContext = .unscoped
     }
 
@@ -983,14 +1026,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
     /// Handles cleanup when a project window disappears: saves session,
     /// removes from registry, and shows Welcome if no projects remain.
-    func handleProjectWindowDisappear(projectURL: URL, registry: ProjectRegistry) {
+    func handleProjectWindowDisappear(
+        projectURL: URL,
+        registry: ProjectRegistry,
+        expectedManager: ProjectManager? = nil,
+        expectedWindowGeneration: UUID? = nil
+    ) {
         guard !isTerminating else { return }
         // Save session before closing so it can be restored
         // when the user reopens this project from Welcome or Open Recent.
         let canonical = registry.canonicalProjectURL(projectURL)
-        registry.openProjects[canonical]?.saveSession()
-        registry.openProjects[canonical]?.cleanupEditorContext()
-        registry.closeProjectWindow(projectURL)
+        guard let manager = registry.openProjects[canonical],
+              expectedManager == nil || manager === expectedManager,
+              expectedWindowGeneration == nil
+                || manager.dialogOwnerWindowGeneration
+                    == expectedWindowGeneration else {
+            return
+        }
+        manager.saveSession()
+        manager.cleanupEditorContext()
+        registry.closeProjectWindow(
+            projectURL,
+            expectedManager: expectedManager,
+            expectedWindowGeneration: expectedWindowGeneration
+        )
         // Show Welcome if no windows are open (check non-background projects)
         let hasOpenWindows = registry.openProjects.keys.contains { url in
             !registry.backgroundProjects.contains(url)

@@ -146,6 +146,10 @@ final class TerminalManager {
     /// the macos-26 fork/spawn hang, #1060). Read once at boot; stored
     /// privately so it cannot be mutated after construction.
     private let agentDetectionProcessRunner: ProcessRunner
+    /// Shared in production so every project consumes one machine-wide `ps`
+    /// snapshot. Nil for standalone managers, which retain their private-poller
+    /// test seam through `agentDetectionProcessRunner`.
+    private let agentProcessSnapshotPoller: AgentProcessSnapshotPoller?
 
     /// Application-lifetime registry and canonical project scope. The
     /// registry itself retains value metadata only; terminal objects retain no
@@ -155,6 +159,10 @@ final class TerminalManager {
     private var agentTaskProject: AgentTaskProjectIdentity?
     @ObservationIgnored
     private var agentTaskCallbacksFrozen = false
+    /// Final project teardown is irreversible. Stale view/layout callbacks may
+    /// still reference this coordinator, but they cannot create, activate, or
+    /// start terminal work after invalidation.
+    private(set) var isPermanentlyInvalidated = false
     @ObservationIgnored
     private var agentTaskWindowOpen = true
     @ObservationIgnored
@@ -198,6 +206,11 @@ final class TerminalManager {
     /// test hook. Delegates to the coordinator's `isRunning` so it correctly
     /// reports `false` after a future `stop()`.
     var isAgentDetectionPolling: Bool { agentCoordinator?.isRunning ?? false }
+    #if DEBUG
+    var receivedAgentSnapshotCountForTesting: Int {
+        agentCoordinator?.receivedSnapshotCountForTesting ?? 0
+    }
+    #endif
 
     /// Coordinator that polls `ps` off the main thread and reconciles agent
     /// sessions with terminal tabs. Started lazily by
@@ -213,9 +226,11 @@ final class TerminalManager {
     /// injection pattern used by `ExternalFileFormatter` / `FileFormatter`.
     init(
         agentDetectionProcessRunner: @escaping ProcessRunner = runRealProcess,
+        agentProcessSnapshotPoller: AgentProcessSnapshotPoller? = nil,
         agentTaskRegistry: AgentTaskRegistry? = nil
     ) {
         self.agentDetectionProcessRunner = agentDetectionProcessRunner
+        self.agentProcessSnapshotPoller = agentProcessSnapshotPoller
         self.agentTaskRegistry = agentTaskRegistry
     }
 
@@ -237,6 +252,7 @@ final class TerminalManager {
     /// Receives an already validated identity from `ProjectRegistry`; this
     /// method performs no filesystem work on MainActor.
     func configureAgentTaskProject(_ project: AgentTaskProjectIdentity) {
+        guard !isPermanentlyInvalidated else { return }
         if let agentTaskProject, agentTaskProject != project {
             ownedAgentHistoryLedger.removeAll()
             ownedAgentHistoryOrder.removeAll()
@@ -253,10 +269,15 @@ final class TerminalManager {
     }
 
     func setAgentTaskWindowOpen(_ isOpen: Bool) {
+        guard !isPermanentlyInvalidated else { return }
         agentTaskWindowOpen = isOpen
     }
 
     func configureAgentLifecycle(for tab: TerminalTab) {
+        guard !isPermanentlyInvalidated else {
+            tab.stop()
+            return
+        }
         guard let agentTaskRegistry, let project = agentTaskProject else { return }
         tab.onLifecycleEnded = { [weak self, weak agentTaskRegistry] terminalID in
             if let reservation = self?.launchReservations.removeValue(
@@ -274,6 +295,7 @@ final class TerminalManager {
     }
 
     func agentTerminalDidMove(_ tab: TerminalTab, to paneID: PaneID) {
+        guard !isPermanentlyInvalidated else { return }
         if let project = agentTaskProject {
             agentTaskRegistry?.updateRoute(
                 terminalID: tab.id,
@@ -341,7 +363,8 @@ final class TerminalManager {
     /// PaneManager atomically selects the requested pane-local tab.
     @discardableResult
     func activateTerminal(paneID: PaneID, tabID: UUID) -> Bool {
-        guard let paneManager,
+        guard !isPermanentlyInvalidated,
+              let paneManager,
               paneManager.terminalPaneIDs.contains(paneID),
               let state = paneManager.terminalState(for: paneID),
               state.terminalTabs.contains(where: { $0.id == tabID }),
@@ -390,7 +413,8 @@ final class TerminalManager {
     /// tab remains owned by the same terminal pane.
     @discardableResult
     func sendText(_ text: String, to destination: Destination) -> Bool {
-        guard let paneManager,
+        guard !isPermanentlyInvalidated,
+              let paneManager,
               paneManager.terminalPaneIDs.contains(destination.paneID),
               let state = paneManager.terminalState(for: destination.paneID),
               state.activeTerminalID == destination.tab.id,
@@ -411,6 +435,7 @@ final class TerminalManager {
     /// Invalid persisted preferences fall back to the first valid terminal in
     /// stable tree order and an empty terminal inventory restores `nil`.
     func restoreTerminalDestination(preferredPaneID: PaneID?) {
+        guard !isPermanentlyInvalidated else { return }
         guard let paneManager else {
             lastActiveTerminalPaneID = nil
             return
@@ -430,7 +455,8 @@ final class TerminalManager {
     }
 
     func agentTaskContext(for tab: TerminalTab) -> AgentTaskBridgeContext? {
-        guard let paneManager,
+        guard !isPermanentlyInvalidated,
+              let paneManager,
               let project = agentTaskProject,
               let paneID = paneManager.terminalPaneIDs.first(where: { paneID in
                   paneManager.terminalState(for: paneID)?
@@ -459,7 +485,8 @@ final class TerminalManager {
         in tab: TerminalTab,
         reservation: AgentTaskLaunchReservation? = nil
     ) {
-        guard !agentTaskCallbacksFrozen,
+        guard !isPermanentlyInvalidated,
+              !agentTaskCallbacksFrozen,
               let base = agentTaskContext(for: tab),
               let agentTaskRegistry else { return }
         let ownedReservation = reservation ?? launchReservations[tab.id]
@@ -612,7 +639,8 @@ final class TerminalManager {
         title: String? = nil,
         objective: String? = nil
     ) -> AgentTaskLaunchResult {
-        guard !agentTaskCallbacksFrozen,
+        guard !isPermanentlyInvalidated,
+              !agentTaskCallbacksFrozen,
               let base = agentTaskContext(for: tab),
               let agentTaskRegistry else { return .rejected }
         if let reservation = launchReservations[tab.id] {
@@ -780,7 +808,8 @@ final class TerminalManager {
         command: String,
         in tab: TerminalTab
     ) async -> AgentTaskLaunchResult {
-        guard let agentTaskRegistry,
+        guard !isPermanentlyInvalidated,
+              let agentTaskRegistry,
               let task = agentTaskRegistry.task(for: taskID),
               task.descriptor.launchExecutable == command,
               Self.exactAgentLaunchDescriptor(for: command) == task.descriptor,
@@ -818,7 +847,8 @@ final class TerminalManager {
         taskID: UUID,
         in tab: TerminalTab
     ) -> AgentTaskLaunchResult {
-        guard !agentTaskCallbacksFrozen,
+        guard !isPermanentlyInvalidated,
+              !agentTaskCallbacksFrozen,
               let base = agentTaskContext(for: tab),
               let agentTaskRegistry else { return .rejected }
         if let reservation = launchReservations[tab.id] {
@@ -870,7 +900,8 @@ final class TerminalManager {
     }
 
     func cancelAgentTaskTermination() {
-        guard agentTaskCallbacksFrozen else { return }
+        guard !isPermanentlyInvalidated,
+              agentTaskCallbacksFrozen else { return }
         agentTaskCallbacksFrozen = false
         acknowledgedAgentLaunches.removeAll()
         if paneManager?.allTerminalTabs.isEmpty == false {
@@ -891,7 +922,8 @@ final class TerminalManager {
     func launchAgentRecovery(
         _ plan: AgentTaskRecoveryPlan
     ) -> AgentTaskRecoveryLaunchResult {
-        guard let pm = paneManager,
+        guard !isPermanentlyInvalidated,
+              let pm = paneManager,
               let project = agentTaskProject,
               project == plan.project,
               project.canonicalWorktreePath
@@ -965,7 +997,8 @@ final class TerminalManager {
         in paneID: PaneID,
         workingDirectory: URL?
     ) -> TerminalTab? {
-        guard let pm = paneManager,
+        guard !isPermanentlyInvalidated,
+              let pm = paneManager,
               pm.terminalPaneIDs.contains(paneID) else { return nil }
         ensureAgentDetectionStarted()
         guard let tab = pm.addTerminalTab(
@@ -982,7 +1015,7 @@ final class TerminalManager {
     /// Creates a terminal tab in the last-used terminal pane.
     /// If no terminal pane exists, creates one below the given editor pane.
     func createTerminalTab(relativeTo editorPaneID: PaneID, workingDirectory: URL?) {
-        guard let pm = paneManager else { return }
+        guard !isPermanentlyInvalidated, let pm = paneManager else { return }
         // Boot agent detection on the first terminal creation. Idempotent —
         // the guard inside makes repeated calls a no-op. The coordinator
         // lives for the lifetime of this `TerminalManager` and reconciles
@@ -1014,7 +1047,7 @@ final class TerminalManager {
 
     /// Focuses the nearest terminal pane, or creates one.
     func focusOrCreateTerminal(relativeTo editorPaneID: PaneID, workingDirectory: URL?) {
-        guard paneManager != nil else { return }
+        guard !isPermanentlyInvalidated, paneManager != nil else { return }
 
         if let destination = resolvedDestination() {
             _ = activateTerminal(
@@ -1192,6 +1225,21 @@ final class TerminalManager {
         allTerminalTabs.contains { $0.hasForegroundProcess }
     }
 
+    /// Exact process/launch evidence that requires a background project to
+    /// retain its terminal objects. Stale agent evidence is uncertainty and
+    /// therefore fails closed until a later successful shared snapshot.
+    var requiresBackgroundRetention: Bool {
+        !launchReservations.isEmpty
+            || !launchWritesInFlight.isEmpty
+            || !acknowledgedAgentLaunches.isEmpty
+            || allTerminalTabs.contains { tab in
+                tab.isProcessRunning
+                    || tab.agentSession.map {
+                        $0.liveness != .terminated
+                    } == true
+            }
+    }
+
     var tabsWithForegroundProcesses: [TerminalTab] {
         allTerminalTabs.filter { $0.hasForegroundProcess }
     }
@@ -1203,7 +1251,7 @@ final class TerminalManager {
     }
 
     func startTerminals(workingDirectory: URL?) {
-        guard let pm = paneManager else { return }
+        guard !isPermanentlyInvalidated, let pm = paneManager else { return }
         for state in pm.terminalStates.values {
             state.startTabs(workingDirectory: workingDirectory)
         }
@@ -1228,20 +1276,49 @@ final class TerminalManager {
     /// creates tabs via `state.addTab` directly, bypassing `createTerminalTab`).
     /// Internal rather than private so the restore path can reach it.
     func ensureAgentDetectionStarted() {
-        guard agentCoordinator == nil else { return }
+        guard !isPermanentlyInvalidated,
+              !agentTaskCallbacksFrozen,
+              agentCoordinator == nil else { return }
         // Allow UI tests (and users hitting the macos-26 fork/spawn hang,
         // #1060) to disable the coordinator entirely. Without this gate the
         // repeated 2s `ps` fork hangs the terminal UI-test shards on macos-26
         // runners — unit tests inject a no-op runner instead, so they do not
         // set this flag and still exercise the boot path.
         if Self.isAgentDetectionDisabled { return }
-        let coord = AgentDetectionCoordinator(
-            detector: agentDetector,
-            terminalManager: self,
-            processRunner: agentDetectionProcessRunner
-        )
+        let coord: AgentDetectionCoordinator
+        if let agentProcessSnapshotPoller {
+            coord = AgentDetectionCoordinator(
+                detector: agentDetector,
+                terminalManager: self,
+                poller: agentProcessSnapshotPoller
+            )
+        } else {
+            coord = AgentDetectionCoordinator(
+                detector: agentDetector,
+                terminalManager: self,
+                processRunner: agentDetectionProcessRunner
+            )
+        }
         agentCoordinator = coord
         coord.start()
+    }
+
+    /// Removes this project from application-wide process observation. Final
+    /// reclamation calls this only after proving no live/stale process owner
+    /// remains, so clearing tab-local detector state cannot lose live work.
+    func shutdownAgentDetection() {
+        agentCoordinator?.stop()
+        agentCoordinator = nil
+    }
+
+    /// Permanently tears down every PTY and rejects all later terminal work.
+    /// This is distinct from reversible project-window suspension.
+    func shutdownPermanently() {
+        guard !isPermanentlyInvalidated else { return }
+        isPermanentlyInvalidated = true
+        terminateAll()
+        agentTaskCallbacksFrozen = true
+        shutdownAgentDetection()
     }
 
     /// `true` when agent detection is explicitly disabled via the

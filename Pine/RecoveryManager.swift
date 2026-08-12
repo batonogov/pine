@@ -391,6 +391,9 @@ final class RecoveryManager {
         periodicTimer = nil
     }
 
+    /// Internal lifecycle observability for project suspend/resume tests.
+    var isPeriodicSnapshotting: Bool { periodicTimer != nil }
+
     /// Schedules a debounced snapshot (5 seconds after last edit).
     func scheduleSnapshot() {
         // Lazily create the debouncer (captures self weakly).

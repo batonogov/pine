@@ -8,6 +8,14 @@
 import os
 import SwiftUI
 
+@MainActor
+protocol WorkspaceFileWatching: AnyObject {
+    func watch(directory: URL)
+    func stop()
+}
+
+extension FileSystemWatcher: WorkspaceFileWatching {}
+
 /// Thread-safe result storage for parallel top-level `FileNode` construction.
 ///
 /// The specialized API keeps mutable storage behind a lock, so callers cannot
@@ -56,7 +64,11 @@ final class WorkspaceManager {
     weak var progressTracker: ProgressTracker?
     /// File-watcher lifecycle is driven on the main actor.
     /// `FileSystemWatcher.stop()` is itself thread-safe (uses queue.sync).
-    private var fileWatcher: FileSystemWatcher?
+    private var fileWatcher: (any WorkspaceFileWatching)?
+    private let fileWatcherFactory: (
+        @escaping @MainActor () -> Void
+    ) -> any WorkspaceFileWatching
+    private(set) var isSuspended = false
 
     /// Incremented on every file-watcher event so ContentView can trigger
     /// external change detection on open tabs.
@@ -78,6 +90,19 @@ final class WorkspaceManager {
 
     /// Continuations waiting for `isLoading` to become `false`.
     private var loadingContinuations: [CheckedContinuation<Void, Never>] = []
+
+    init(
+        fileWatcherFactory: @escaping (
+            @escaping @MainActor () -> Void
+        ) -> any WorkspaceFileWatching = { callback in
+            FileSystemWatcher(
+                debounceInterval: WorkspaceManager.watcherDebounce,
+                callback: callback
+            )
+        }
+    ) {
+        self.fileWatcherFactory = fileWatcherFactory
+    }
 
     /// Debounce interval for `onRootNodesChanged` notifications.
     private static let rootNodesChangedDebounce: TimeInterval = 0.2
@@ -129,6 +154,7 @@ final class WorkspaceManager {
     /// Schedules a debounced `onRootNodesChanged` notification.
     /// Cancels any pending notification so rapid updates coalesce into one.
     private func notifyRootNodesChanged() {
+        guard !isSuspended else { return }
         // Lazily create the debouncer (captures self weakly).
         if rootNodesChangedDebouncer == nil {
             rootNodesChangedDebouncer = Debouncer(
@@ -185,6 +211,7 @@ final class WorkspaceManager {
     }
 
     func loadDirectory(url: URL) {
+        isSuspended = false
         // Stop old watcher immediately so it cannot fire events
         // that would bump loadGeneration and race with the new load.
         fileWatcher?.stop()
@@ -228,10 +255,11 @@ final class WorkspaceManager {
         // (or any external process) appear in the sidebar almost immediately.
         // The previous default (500ms) combined with the watcher's own event
         // coalescing made the sidebar feel unresponsive to shell commands.
-        let watcher = FileSystemWatcher(debounceInterval: Self.watcherDebounce) { [weak self] in
+        let watcher = fileWatcherFactory { [weak self] in
             // This closure runs on main (guaranteed by FileSystemWatcher).
-            self?.externalChangeToken += 1
-            self?.refreshFileTreeAsync()
+            guard let self, !self.isSuspended else { return }
+            self.externalChangeToken += 1
+            self.refreshFileTreeAsync()
         }
         watcher.watch(directory: url)
         fileWatcher = watcher
@@ -374,6 +402,12 @@ final class WorkspaceManager {
                     if let progressID { self?.progressTracker?.endOperation(progressID) }
                     return
                 }
+                guard !self.isSuspended else {
+                    if let progressID {
+                        self.progressTracker?.endOperation(progressID)
+                    }
+                    return
+                }
                 let publishesShallowResult = presentation.publishesShallowResult(
                     shallowChildren,
                     replacing: self.rootNodes,
@@ -423,6 +457,12 @@ final class WorkspaceManager {
             await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else {
                     if let progressID { self?.progressTracker?.endOperation(progressID) }
+                    return
+                }
+                guard !self.isSuspended else {
+                    if let progressID {
+                        self.progressTracker?.endOperation(progressID)
+                    }
                     return
                 }
                 self.setRootNodes(fullChildren)
@@ -546,7 +586,7 @@ final class WorkspaceManager {
     /// shallow cost is paid only for direct user mutations, which are
     /// infrequent, and not for every external FSEvents burst.
     func refreshFileTree() {
-        guard let url = rootURL else { return }
+        guard !isSuspended, let url = rootURL else { return }
         loadGeneration += 1
         let generation = loadGeneration
         let ignoredPaths = gitProvider.ignoredPaths
@@ -589,7 +629,7 @@ final class WorkspaceManager {
     /// removed; `loadGeneration` is enough to keep concurrent refreshes
     /// consistent and the duplicate cost of an echoed event is invisible.
     func refreshFileTreeAsync() {
-        guard let url = rootURL else { return }
+        guard !isSuspended, let url = rootURL else { return }
         loadGeneration += 1
         let generation = loadGeneration
         loadDirectoryContentsAsync(
@@ -599,4 +639,30 @@ final class WorkspaceManager {
             presentation: .refresh
         )
     }
+
+    /// Cancels invisible workspace work while preserving the last tree/git
+    /// snapshot for an instant retained-project reopen.
+    func suspend() {
+        guard !isSuspended else { return }
+        isSuspended = true
+        loadGeneration &+= 1
+        loadingTask?.cancel()
+        loadingTask = nil
+        fileWatcher?.stop()
+        fileWatcher = nil
+        rootNodesChangedDebouncer?.cancel()
+        isLoading = false
+        resumeLoadingContinuations()
+    }
+
+    /// Reinstalls one watcher and refreshes the preserved tree after reopen.
+    func resume() {
+        guard isSuspended else { return }
+        isSuspended = false
+        guard let url = rootURL else { return }
+        startWatching(url: url)
+        refreshFileTreeAsync()
+    }
+
+    var hasActiveFileWatcherForTesting: Bool { fileWatcher != nil }
 }
