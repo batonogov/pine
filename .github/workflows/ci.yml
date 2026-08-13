@@ -551,13 +551,14 @@ jobs:
               -only-testing:PineUITests/AgentInboxToolbarButtonTests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
-          # Shard 3 — Navigation (31 tests)
+          # Shard 3 — Navigation + lifecycle (34 tests)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
               -only-testing:PineUITests/QuickOpenUITests
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/DiffNavigationUITests
+              -only-testing:PineUITests/ApplicationLifecycleProcessTests
           # Shard 4 — Editor Chrome (31 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
@@ -643,6 +644,14 @@ jobs:
           python3 .github/scripts/detect_flaky_tests.py \
             UITestResults.xcresult --github-summary \
             --output-file flaky-shard-${{ strategy.job-index }}.json
+
+      - name: Upload Lifecycle Process Results
+        if: always() && matrix.shard-name == 'Navigation'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lifecycle-process-results
+          path: UITestResults.xcresult
+          retention-days: 7
 
       - name: Upload Flaky Report
         if: success() || failure()

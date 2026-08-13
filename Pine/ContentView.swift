@@ -152,6 +152,9 @@ struct ContentView: View {
             await registry.seedLiveAgentUITestFixture(
                 afterWindowBindingFor: projectManager
             )
+            LifecycleProcessTestDriver.shared.startIfRequested(
+                projectManager: projectManager
+            )
             #endif
         }
         .sheet(isPresented: $showRecoveryDialog) {

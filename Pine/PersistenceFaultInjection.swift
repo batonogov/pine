@@ -6,6 +6,9 @@
 //
 
 import Foundation
+#if DEBUG
+import Darwin
+#endif
 
 nonisolated enum PersistenceStoreKind: String, CaseIterable, Sendable {
     case preferences
@@ -100,6 +103,9 @@ nonisolated struct PersistenceFaultInjector: Sendable {
         return PersistenceFaultInjector { store, phase in
             guard store == fault.store,
                   phase == fault.phase else { return }
+            if fault.failure == .interrupted {
+                PersistenceProcessInterruption.terminate(at: fault)
+            }
             throw fault.failure
         }
         #else
@@ -107,6 +113,42 @@ nonisolated struct PersistenceFaultInjector: Sendable {
         #endif
     }()
 }
+
+#if DEBUG
+/// Turns the explicit process-level `interrupted` fault into the crash that
+/// the release gate needs to exercise. Unit fault plans still throw
+/// `.interrupted` normally; only the launched app's opt-in environment path
+/// can terminate the process.
+nonisolated private enum PersistenceProcessInterruption {
+    static func terminate(at fault: PersistenceFault) -> Never {
+        writeDurableDiagnostic(fault.encoded)
+        _ = Darwin.kill(Darwin.getpid(), SIGKILL)
+        fatalError("SIGKILL failed for persistence interruption fixture")
+    }
+
+    private static func writeDurableDiagnostic(_ diagnostic: String) {
+        guard let directory = ProcessInfo.processInfo.environment[
+            "PINE_LIFECYCLE_DIAGNOSTICS_DIRECTORY"
+        ], directory.hasPrefix("/") else { return }
+        let path = URL(fileURLWithPath: directory, isDirectory: true)
+            .appendingPathComponent("persistence-interruption.log")
+            .path
+        let descriptor = Darwin.open(
+            path,
+            O_WRONLY | O_CREAT | O_APPEND,
+            S_IRUSR | S_IWUSR
+        )
+        guard descriptor >= 0 else { return }
+        defer { _ = Darwin.close(descriptor) }
+        let bytes = Array("\(diagnostic)\n".utf8)
+        bytes.withUnsafeBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            _ = Darwin.write(descriptor, baseAddress, buffer.count)
+        }
+        _ = Darwin.fsync(descriptor)
+    }
+}
+#endif
 
 /// Thread-safe, ordered, one-shot fault plan. Unrelated checkpoints cannot
 /// consume the next planned injection.
