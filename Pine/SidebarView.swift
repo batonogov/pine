@@ -155,7 +155,7 @@ final class SidebarKeyboardFocusController {
     /// A disclosure change can rebuild the SwiftUI host after an AppKit focus
     /// claim has already succeeded. Keep the retry window bounded, but cover
     /// both the next run loop and the later reconciliation pass.
-    private static let focusRetryDelays: [TimeInterval] = [0, 0.1]
+    private static let focusRetryDelays: [TimeInterval] = [0, 0.1, 0.5]
 
     private weak var responderView: SidebarKeyboardResponderView?
     private(set) var isFocused = false

@@ -167,7 +167,6 @@ final class SidebarFolderClickTests: PineUITestCase {
         XCTAssertTrue(child.waitForExistence(timeout: 3))
         XCTAssertTrue(alpha.isSelected)
         XCTAssertEqual(alpha.value as? String, "expanded")
-
         app.typeKey(.leftArrow, modifierFlags: [])
         XCTAssertTrue(child.waitForNonExistence(timeout: 3))
         XCTAssertTrue(alpha.isSelected)
