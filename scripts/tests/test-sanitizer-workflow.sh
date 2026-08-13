@@ -81,7 +81,8 @@ while IFS= read -r suite; do
         fail "invalid manifest entry: $suite"
     fi
     type_name="${suite#PineTests/}"
-    if ! rg -q "struct[[:space:]]+$type_name" "$REPO_ROOT/PineTests"; then
+    if ! grep -RqsE --include='*.swift' \
+        "struct[[:space:]]+$type_name" "$REPO_ROOT/PineTests"; then
         fail "manifest suite does not exist: $suite"
     fi
 done <<< "$suites"
