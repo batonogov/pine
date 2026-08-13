@@ -138,6 +138,12 @@ final class RecoveryManager {
             do {
                 let data = try Data(contentsOf: file)
                 let entry = try decoder.decode(RecoveryEntry.self, from: data)
+                guard entry.hasSupportedSchema else {
+                    Self.logger.error(
+                        "Refusing unsupported recovery schema in \(name)"
+                    )
+                    continue
+                }
                 results.append((uuid, entry))
             } catch {
                 Self.logger.error("Failed to read recovery entry \(name): \(error)")
@@ -354,6 +360,12 @@ final class RecoveryManager {
             do {
                 let data = try Data(contentsOf: file)
                 let entry = try decoder.decode(RecoveryEntry.self, from: data)
+                guard entry.hasSupportedSchema else {
+                    Self.logger.error(
+                        "Refusing unsupported recovery schema during cleanup"
+                    )
+                    continue
+                }
                 if entry.timestamp < cutoff {
                     do {
                         try FileManager.default.removeItem(at: file)

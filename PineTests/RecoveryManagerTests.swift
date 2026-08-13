@@ -87,6 +87,51 @@ struct RecoveryManagerTests {
         #expect(entry.originalPath == "/Users/test/file.swift")
         #expect(entry.content == "modified code")
         #expect(entry.encoding == .utf16)
+        #expect(entry.schemaVersion == RecoveryEntry.currentSchemaVersion)
+    }
+
+    @Test func futureSchemaFailsClosedWithoutOverwrite() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        let id = UUID()
+        let file = dir.appendingPathComponent("\(id.uuidString).json")
+        let entry = RecoveryEntry(
+            schemaVersion: RecoveryEntry.currentSchemaVersion + 1,
+            originalPath: "/sanitized/project/file.swift",
+            content: "future contents"
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(entry)
+        try data.write(to: file)
+
+        #expect(manager.pendingRecoveryEntries().isEmpty)
+        #expect(try Data(contentsOf: file) == data)
+    }
+
+    @Test func legacySnapshotWithoutSchemaRemainsReadable() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        let id = UUID()
+        let legacy = """
+        {
+          "originalPath": "/sanitized/project/file.swift",
+          "content": "legacy contents",
+          "timestamp": "2026-01-01T00:00:00Z",
+          "encodingRawValue": 4
+        }
+        """
+        try Data(legacy.utf8).write(
+            to: dir.appendingPathComponent("\(id.uuidString).json")
+        )
+
+        let entries = manager.pendingRecoveryEntries()
+        #expect(entries.count == 1)
+        #expect(entries.first?.0 == id)
+        #expect(entries.first?.1.schemaVersion == nil)
+        #expect(entries.first?.1.content == "legacy contents")
     }
 
     @Test func snapshotSkipsCleanTabs() throws {

@@ -54,6 +54,25 @@ struct SessionStateTests {
         #expect(loaded?.existingFileURLs.count == 2)
         #expect(loaded?.existingFileURLs[0].path == file1.path)
         #expect(loaded?.existingFileURLs[1].path == file2.path)
+        #expect(loaded?.schemaVersion == SessionState.currentSchemaVersion)
+    }
+
+    @Test func futureSchemaFailsClosedWithoutOverwrite() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let futureState = SessionState(
+            schemaVersion: SessionState.currentSchemaVersion + 1,
+            projectPath: tempDir.path,
+            openFilePaths: []
+        )
+        let data = try JSONEncoder().encode(futureState)
+        defaults.set(data, forKey: "lastSessionState")
+
+        #expect(SessionState.load(for: tempDir, defaults: defaults) == nil)
+        #expect(defaults.data(forKey: "lastSessionState") == data)
     }
 
     // MARK: - Missing project folder

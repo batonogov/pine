@@ -7,6 +7,9 @@ import Foundation
 
 /// Represents a snapshot of unsaved editor content for crash recovery.
 struct RecoveryEntry: Codable, Sendable {
+    static let currentSchemaVersion = 1
+    /// Missing for snapshots written before persistence versioning.
+    let schemaVersion: Int?
     /// Path to the original file on disk (empty string for untitled tabs).
     let originalPath: String
     /// Display name retained for an untitled buffer. Optional keeps snapshots
@@ -23,13 +26,20 @@ struct RecoveryEntry: Codable, Sendable {
         String.Encoding(rawValue: encodingRawValue)
     }
 
+    var hasSupportedSchema: Bool {
+        guard let schemaVersion else { return true }
+        return (0...Self.currentSchemaVersion).contains(schemaVersion)
+    }
+
     init(
+        schemaVersion: Int? = Self.currentSchemaVersion,
         originalPath: String,
         untitledName: String? = nil,
         content: String,
         timestamp: Date = Date(),
         encoding: String.Encoding = .utf8
     ) {
+        self.schemaVersion = schemaVersion
         self.originalPath = originalPath
         self.untitledName = untitledName
         self.content = content
