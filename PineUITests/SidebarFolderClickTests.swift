@@ -26,6 +26,20 @@ final class SidebarFolderClickTests: PineUITestCase {
         ) == .completed
     }
 
+    private func waitForKeyboardFocus(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasFocus == true"),
+            object: element
+        )
+        return XCTWaiter.wait(
+            for: [expectation],
+            timeout: timeout
+        ) == .completed
+    }
+
     override func setUpWithError() throws {
         try super.setUpWithError()
         projectURL = try createTempProject(
@@ -167,6 +181,10 @@ final class SidebarFolderClickTests: PineUITestCase {
         XCTAssertTrue(child.waitForExistence(timeout: 3))
         XCTAssertTrue(alpha.isSelected)
         XCTAssertEqual(alpha.value as? String, "expanded")
+        XCTAssertTrue(
+            waitForKeyboardFocus(alpha),
+            "Folder activation should restore sidebar keyboard focus"
+        )
 
         app.typeKey(.leftArrow, modifierFlags: [])
         XCTAssertTrue(child.waitForNonExistence(timeout: 3))
