@@ -12,11 +12,16 @@ import Testing
 @Suite("Dock Menu Tests")
 @MainActor
 struct DockMenuTests {
-    private func settleDeferredCommand() async {
+    private func settleDeferredCommand(
+        until condition: @MainActor () -> Bool
+    ) async {
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async {
                 continuation.resume()
             }
+        }
+        for _ in 0..<200 where !condition() {
+            try? await Task.sleep(for: .milliseconds(10))
         }
     }
 
@@ -161,7 +166,7 @@ struct DockMenuTests {
 
         delegate.dockMenuOpenProject(item)
         #expect(openedURL == nil)
-        await settleDeferredCommand()
+        await settleDeferredCommand { openedURL != nil }
 
         #expect(openedURL == canonical)
         #expect(delegate.registry.isProjectOpen(canonical))
@@ -213,13 +218,15 @@ struct DockMenuTests {
         #expect(!openCalled)
     }
 
-    @Test func dockMenuOpenProjectReopensBackgroundProject() async throws {
+    @Test func dockMenuOpenProjectRequestsReopenForBackgroundProject() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
         let canonical = dir.resolvingSymlinksInPath()
         let delegate = makeDelegate()
-        _ = delegate.registry.projectManager(for: canonical)
+        let manager = try #require(
+            delegate.registry.projectManager(for: canonical)
+        )
         // Move to background (simulates window close)
         delegate.registry.closeProjectWindow(canonical)
         #expect(delegate.registry.backgroundProjects.contains(canonical))
@@ -232,9 +239,13 @@ struct DockMenuTests {
 
         delegate.dockMenuOpenProject(item)
         #expect(openedURL == nil)
-        await settleDeferredCommand()
+        await settleDeferredCommand { openedURL != nil }
 
         #expect(openedURL == canonical)
-        #expect(!delegate.registry.backgroundProjects.contains(canonical))
+        // The stub records the SwiftUI scene request but does not create its
+        // replacement window. The manager stays retained in the background
+        // until that new scene binds it to a live AppKit window.
+        #expect(delegate.registry.openProjects[canonical] === manager)
+        #expect(delegate.registry.backgroundProjects.contains(canonical))
     }
 }
