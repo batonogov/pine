@@ -182,6 +182,37 @@ struct SidebarAccessibilityHostedTests {
         #expect(window.firstResponder === responder)
     }
 
+    @Test("Row focus claim survives delayed accessibility activation")
+    func responderFocusRetryAfterDelayedAccessibilityActivation() async throws {
+        let controller = SidebarKeyboardFocusController()
+        let responder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let accessibilityTarget = SidebarFocusAcceptingTestView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(responder)
+        window.contentView?.addSubview(accessibilityTarget)
+        controller.attach(responder)
+        defer { window.orderOut(nil) }
+
+        #expect(controller.requestFocus(retryOnNextRunLoop: true))
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(window.makeFirstResponder(accessibilityTarget))
+        #expect(!controller.isFocused)
+
+        try await Task.sleep(for: .milliseconds(350))
+
+        #expect(controller.isFocused)
+        #expect(window.firstResponder === responder)
+    }
+
     @Test("Explicit editor focus cancels a pending sidebar retry")
     func explicitEditorFocusCancelsSidebarRetry() async throws {
         let controller = SidebarKeyboardFocusController()
