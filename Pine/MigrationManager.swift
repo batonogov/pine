@@ -61,16 +61,25 @@ struct MigrationManager {
     func runMigrations() {
         let hasVersionKey = defaults.object(forKey: Self.schemaVersionKey) != nil
         let storedVersion = defaults.integer(forKey: Self.schemaVersionKey)
+        let registeredVersion = migrations.map(\.to).max() ?? Self.latestVersion
+        let targetVersion = max(Self.latestVersion, registeredVersion)
 
-        if storedVersion == Self.latestVersion {
-            Logger.migration.info("Schema already at version \(Self.latestVersion), no migrations needed")
+        if storedVersion == targetVersion {
+            Logger.migration.info("Schema already at version \(targetVersion), no migrations needed")
+            return
+        }
+
+        guard storedVersion < targetVersion else {
+            Logger.migration.error(
+                "Refusing unknown future schema v\(storedVersion); supported through v\(targetVersion)"
+            )
             return
         }
 
         if !hasVersionKey && !hasExistingData() {
             // Fresh install — no data to migrate, just stamp latest version
-            Logger.migration.info("Fresh install detected, setting schema version to \(Self.latestVersion)")
-            defaults.set(Self.latestVersion, forKey: Self.schemaVersionKey)
+            Logger.migration.info("Fresh install detected, setting schema version to \(targetVersion)")
+            defaults.set(targetVersion, forKey: Self.schemaVersionKey)
             return
         }
 
@@ -84,8 +93,8 @@ struct MigrationManager {
             currentVersion = migration.to
         }
 
-        defaults.set(Self.latestVersion, forKey: Self.schemaVersionKey)
-        Logger.migration.info("Migration complete, schema now at version \(Self.latestVersion)")
+        defaults.set(targetVersion, forKey: Self.schemaVersionKey)
+        Logger.migration.info("Migration complete, schema now at version \(targetVersion)")
     }
 
     // MARK: - Private
