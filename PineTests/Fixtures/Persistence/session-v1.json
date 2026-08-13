@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "projectPath": "{{PROJECT_PATH}}",
+  "openFilePaths": ["{{PROJECT_PATH}}/Sources/App.swift"],
+  "activeFilePath": "{{PROJECT_PATH}}/Sources/App.swift",
+  "pinnedPaths": ["{{PROJECT_PATH}}/Sources/App.swift"]
+}

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "canonicalProjectPath": "{{PROJECT_PATH}}",
+  "canonicalWorktreePath": "{{PROJECT_PATH}}",
+  "tasks": []
+}

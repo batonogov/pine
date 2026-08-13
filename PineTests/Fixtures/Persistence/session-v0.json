@@ -1,0 +1,5 @@
+{
+  "projectPath": "{{PROJECT_PATH}}",
+  "openFilePaths": ["{{PROJECT_PATH}}/Sources/App.swift"],
+  "activeFilePath": "{{PROJECT_PATH}}/Sources/App.swift"
+}
