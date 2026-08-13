@@ -126,6 +126,29 @@ struct TerminalAgentResumeAction: Identifiable {
     let action: () -> Void
 }
 
+/// Shared identity/status label used by project terminal tabs and Quick
+/// Terminal. Reusing the same `AgentTabBadge` keeps liveness, attention,
+/// lifecycle-accuracy and Reduce Motion semantics identical on both surfaces.
+struct TerminalTabIdentityLabel: View {
+    let tab: TerminalTab
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "terminal")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+
+            Text(tab.name)
+                .font(.system(size: 11))
+                .lineLimit(1)
+
+            if let session = tab.agentSession {
+                AgentTabBadge(session: session)
+            }
+        }
+    }
+}
+
 struct TerminalNativeTabItem: View {
     let tab: TerminalTab
     let isActive: Bool
@@ -160,17 +183,7 @@ struct TerminalNativeTabItem: View {
                     .reportsTabCloseGlyphFrame()
             }
 
-            Image(systemName: "terminal")
-                .font(.system(size: 9))
-                .foregroundStyle(.secondary)
-
-            Text(tab.name)
-                .font(.system(size: 11))
-                .lineLimit(1)
-
-            if let session = tab.agentSession {
-                AgentTabBadge(session: session)
-            }
+            TerminalTabIdentityLabel(tab: tab)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)

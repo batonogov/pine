@@ -24,6 +24,10 @@ nonisolated struct AgentManagedWorktree: Sendable, Equatable {
     let worktreeRoot: URL
     let branchName: String
     let baseCommit: String
+    /// Filesystem-instance proof captured by the worktree service before the
+    /// managed identity leaves its serialized creation boundary. Consumers
+    /// must revalidate it off the main actor before admitting the worktree.
+    let repositoryProof: RecentAgentTaskRepositoryProof
 }
 
 nonisolated enum AgentWorktreeCreateFailure: Error, Sendable, Equatable {
@@ -165,6 +169,12 @@ actor AgentWorktreeService {
         ) else {
             return .failed(.invalidRepository)
         }
+        guard let initialRepositoryProof =
+                RecentAgentTaskFilesystemValidator.repositoryProof(
+                    forRepository: repository
+                ) else {
+            return .failed(.invalidRepository)
+        }
         guard let managedRoot = secureExistingDirectory(request.managedRoot)
         else {
             return .failed(.unsafeManagedRoot)
@@ -221,13 +231,26 @@ actor AgentWorktreeService {
             return .failed(.primaryCheckoutChanged(destination))
         }
 
+        let identity = AgentTaskProjectIdentity(
+            canonicalProjectPath: repository.path,
+            canonicalWorktreePath: destination.path
+        )
+        guard let finalRepositoryProof =
+                RecentAgentTaskFilesystemValidator.repositoryProof(
+                    for: identity
+                ), finalRepositoryProof.identifiesSameRepository(
+                    as: initialRepositoryProof
+                ) else {
+            return .failed(.createdWorktreeInvalid(destination))
+        }
         return .created(AgentManagedWorktree(
             taskID: request.taskID,
             repositoryRoot: repository,
             managedRoot: managedRoot,
             worktreeRoot: destination,
             branchName: request.branchName,
-            baseCommit: baseCommit
+            baseCommit: baseCommit,
+            repositoryProof: finalRepositoryProof
         ))
     }
 

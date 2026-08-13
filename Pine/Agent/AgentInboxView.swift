@@ -253,11 +253,13 @@ struct AgentInboxView: View {
             HStack(spacing: 5) {
                 Image(systemName: "terminal")
                 Text(verbatim: row.terminalLabel)
-                Image(systemName: "folder")
-                Text(verbatim: row.projectName)
-                if let worktreeName = row.worktreeName {
-                    Image(systemName: "arrow.triangle.branch")
-                    Text(verbatim: worktreeName)
+                if row.surface.isProjectBacked {
+                    Image(systemName: "folder")
+                    Text(verbatim: row.projectName)
+                    if let worktreeName = row.worktreeName {
+                        Image(systemName: "arrow.triangle.branch")
+                        Text(verbatim: worktreeName)
+                    }
                 }
             }
             .font(.caption)
@@ -408,9 +410,11 @@ struct AgentInboxView: View {
         fields.append(row.agentName)
         fields.append(statusText(for: row, locale: locale))
         fields.append(row.terminalLabel)
-        fields.append(row.projectName)
-        if let worktreeName = row.worktreeName {
-            fields.append(worktreeName)
+        if row.surface.isProjectBacked {
+            fields.append(row.projectName)
+            if let worktreeName = row.worktreeName {
+                fields.append(worktreeName)
+            }
         }
         return fields.joined(separator: ", ")
     }

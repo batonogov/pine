@@ -669,7 +669,7 @@ struct NativeFileWindowMenuTests {
     }
 
     @Test("Open Recent uses the Welcome fallback without a SwiftUI bridge")
-    func openRecentUsesWelcomeFallback() throws {
+    func openRecentUsesWelcomeFallback() async throws {
         let directory = try makeTemporaryDirectory(
             prefix: "pine-recent-fallback"
         )
@@ -679,7 +679,7 @@ struct NativeFileWindowMenuTests {
         delegate.openProjectWindow = nil
         var openedURL: URL?
 
-        let didOpen = delegate.openRecentProject(
+        let didOpen = await delegate.openRecentProject(
             directory,
             fallbackOpenProjectWindow: { openedURL = $0 }
         )
@@ -711,6 +711,9 @@ struct NativeFileWindowMenuTests {
             DispatchQueue.main.async {
                 continuation.resume()
             }
+        }
+        for _ in 0..<200 where openedURL == nil {
+            try? await Task.sleep(for: .milliseconds(2))
         }
 
         let canonical = delegate.registry.canonicalProjectURL(directory)

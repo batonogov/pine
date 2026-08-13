@@ -1408,6 +1408,13 @@ enum Strings {
     static let menuTerminal: LocalizedStringKey = "menu.terminal"
     static let menuNewTerminalTab: LocalizedStringKey = "menu.newTerminalTab"
     static let menuQuickTerminal: LocalizedStringKey = "menu.quickTerminal"
+    static func quickTerminalText(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "menu.quickTerminal",
+            fallback: "Quick Terminal",
+            locale: locale
+        )
+    }
     static let menuTogglePreview: LocalizedStringKey = "menu.togglePreview"
     static let menuView: LocalizedStringKey = "menu.view"
     static let menuGit: LocalizedStringKey = "menu.git"

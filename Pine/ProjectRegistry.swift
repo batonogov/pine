@@ -5,8 +5,993 @@
 //  Created by Claude on 13.03.2026.
 //
 
+import Darwin
 import os
 import SwiftUI
+
+nonisolated struct RecentAgentTaskFilesystemObjectProof:
+    Codable, Equatable, Sendable {
+    let device: UInt64
+    let inode: UInt64
+    let generation: UInt64
+    let birthSeconds: Int64
+    let birthNanoseconds: Int64
+    let kind: UInt16
+}
+
+nonisolated struct RecentAgentTaskRepositoryProof:
+    Codable, Equatable, Sendable {
+    let commonDirectoryDevice: UInt64
+    let commonDirectoryInode: UInt64
+    let commonDirectoryGeneration: UInt64
+    let commonDirectoryBirthSeconds: Int64
+    let commonDirectoryBirthNanoseconds: Int64
+    /// Exact linked-worktree instance. Older records decode these as nil and
+    /// therefore fail closed for every distinct project/worktree admission.
+    let projectRoot: RecentAgentTaskFilesystemObjectProof?
+    let projectGitDirectory: RecentAgentTaskFilesystemObjectProof?
+    let worktreeRoot: RecentAgentTaskFilesystemObjectProof?
+    let worktreeGitDirectory: RecentAgentTaskFilesystemObjectProof?
+
+    init(
+        commonDirectoryDevice: UInt64,
+        commonDirectoryInode: UInt64,
+        commonDirectoryGeneration: UInt64,
+        commonDirectoryBirthSeconds: Int64,
+        commonDirectoryBirthNanoseconds: Int64,
+        projectRoot: RecentAgentTaskFilesystemObjectProof? = nil,
+        projectGitDirectory: RecentAgentTaskFilesystemObjectProof? = nil,
+        worktreeRoot: RecentAgentTaskFilesystemObjectProof? = nil,
+        worktreeGitDirectory: RecentAgentTaskFilesystemObjectProof? = nil
+    ) {
+        self.commonDirectoryDevice = commonDirectoryDevice
+        self.commonDirectoryInode = commonDirectoryInode
+        self.commonDirectoryGeneration = commonDirectoryGeneration
+        self.commonDirectoryBirthSeconds = commonDirectoryBirthSeconds
+        self.commonDirectoryBirthNanoseconds = commonDirectoryBirthNanoseconds
+        self.projectRoot = projectRoot
+        self.projectGitDirectory = projectGitDirectory
+        self.worktreeRoot = worktreeRoot
+        self.worktreeGitDirectory = worktreeGitDirectory
+    }
+
+    var hasExactWorktreeInstance: Bool {
+        projectRoot != nil
+            && projectGitDirectory != nil
+            && worktreeRoot != nil
+            && worktreeGitDirectory != nil
+    }
+
+    func identifiesSameRepository(
+        as other: RecentAgentTaskRepositoryProof
+    ) -> Bool {
+        commonDirectoryDevice == other.commonDirectoryDevice
+            && commonDirectoryInode == other.commonDirectoryInode
+            && commonDirectoryGeneration == other.commonDirectoryGeneration
+            && commonDirectoryBirthSeconds
+                == other.commonDirectoryBirthSeconds
+            && commonDirectoryBirthNanoseconds
+                == other.commonDirectoryBirthNanoseconds
+    }
+}
+
+nonisolated private struct RecentAgentTaskProjectRecord:
+    Codable, Equatable, Sendable {
+    let identity: AgentTaskProjectIdentity
+    let repositoryProof: RecentAgentTaskRepositoryProof?
+}
+
+nonisolated private func unsignedFilesystemIdentity<Identity>(
+    _ identity: Identity
+) -> UInt64 where Identity: FixedWidthInteger {
+    // Darwin's `dev_t` is signed on supported SDKs. A value with its high bit
+    // set must preserve that kernel bit pattern rather than trap in UInt64's
+    // checked signed conversion. This also leaves unsigned `ino_t` unchanged.
+    UInt64(truncatingIfNeeded: identity)
+}
+
+nonisolated private struct StableFilesystemObjectIdentity: Equatable, Sendable {
+    let device: UInt64
+    let inode: UInt64
+    let generation: UInt64
+    let birthSeconds: Int64
+    let birthNanoseconds: Int64
+    let kind: UInt16
+
+    init(_ information: stat) {
+        device = unsignedFilesystemIdentity(information.st_dev)
+        inode = unsignedFilesystemIdentity(information.st_ino)
+        generation = unsignedFilesystemIdentity(information.st_gen)
+        birthSeconds = Int64(information.st_birthtimespec.tv_sec)
+        birthNanoseconds = Int64(information.st_birthtimespec.tv_nsec)
+        kind = information.st_mode & S_IFMT
+    }
+
+    init(
+        device: UInt64,
+        inode: UInt64,
+        generation: UInt64,
+        birthSeconds: Int64,
+        birthNanoseconds: Int64,
+        kind: UInt16
+    ) {
+        self.device = device
+        self.inode = inode
+        self.generation = generation
+        self.birthSeconds = birthSeconds
+        self.birthNanoseconds = birthNanoseconds
+        self.kind = kind
+    }
+
+    var persistedProof: RecentAgentTaskFilesystemObjectProof {
+        RecentAgentTaskFilesystemObjectProof(
+            device: device,
+            inode: inode,
+            generation: generation,
+            birthSeconds: birthSeconds,
+            birthNanoseconds: birthNanoseconds,
+            kind: kind
+        )
+    }
+}
+
+/// A descriptor-held path witness. Keeping the descriptor alive prevents the
+/// validated object from disappearing while every graph edge is rechecked;
+/// comparing its captured identity with both `fstat` and the current path
+/// rejects atomic path replacement without doing filesystem I/O on MainActor.
+nonisolated private final class StablePathDescriptor: @unchecked Sendable {
+    let url: URL
+    let descriptor: Int32
+    let information: stat
+    let kind: UInt16
+    private let parent: StablePathDescriptor?
+    private let entryName: String?
+
+    init?(url: URL, kind: UInt16) {
+        let flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW
+            | (kind == S_IFDIR ? O_DIRECTORY : 0)
+        let descriptor = Darwin.open(url.path, flags)
+        guard descriptor >= 0 else { return nil }
+        var information = stat()
+        var currentPath = stat()
+        guard fstat(descriptor, &information) == 0,
+              (information.st_mode & S_IFMT) == kind,
+              lstat(url.path, &currentPath) == 0,
+              RecentAgentTaskFilesystemValidator.stableIdentityMatches(
+                  information,
+                  currentPath,
+                  kind: kind
+              ) else {
+            Darwin.close(descriptor)
+            return nil
+        }
+        self.url = url
+        self.descriptor = descriptor
+        self.information = information
+        self.kind = kind
+        parent = nil
+        entryName = nil
+    }
+
+    init?(
+        parent: StablePathDescriptor,
+        entryName: String,
+        url: URL,
+        kind: UInt16
+    ) {
+        let flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW
+            | (kind == S_IFDIR ? O_DIRECTORY : 0)
+        let descriptor = entryName.withCString {
+            Darwin.openat(parent.descriptor, $0, flags)
+        }
+        guard descriptor >= 0 else { return nil }
+        var information = stat()
+        var currentEntry = stat()
+        let entryResult = entryName.withCString {
+            Darwin.fstatat(
+                parent.descriptor,
+                $0,
+                &currentEntry,
+                AT_SYMLINK_NOFOLLOW
+            )
+        }
+        guard fstat(descriptor, &information) == 0,
+              entryResult == 0,
+              RecentAgentTaskFilesystemValidator.stableIdentityMatches(
+                  information,
+                  currentEntry,
+                  kind: kind
+              ) else {
+            Darwin.close(descriptor)
+            return nil
+        }
+        self.url = url
+        self.descriptor = descriptor
+        self.information = information
+        self.kind = kind
+        self.parent = parent
+        self.entryName = entryName
+    }
+
+    deinit {
+        Darwin.close(descriptor)
+    }
+
+    func revalidate() -> Bool {
+        var descriptorState = stat()
+        var pathState = stat()
+        let pathResult: Int32
+        if let parent, let entryName {
+            pathResult = entryName.withCString {
+                Darwin.fstatat(
+                    parent.descriptor,
+                    $0,
+                    &pathState,
+                    AT_SYMLINK_NOFOLLOW
+                )
+            }
+        } else {
+            pathResult = lstat(url.path, &pathState)
+        }
+        guard fstat(descriptor, &descriptorState) == 0,
+              pathResult == 0,
+              RecentAgentTaskFilesystemValidator.stableIdentityMatches(
+                  information,
+                  descriptorState,
+                  kind: kind
+              ),
+              RecentAgentTaskFilesystemValidator.stableIdentityMatches(
+                  descriptorState,
+                  pathState,
+                  kind: kind
+              ) else { return false }
+        if kind == S_IFREG {
+            return RecentAgentTaskFilesystemValidator
+                .stableFileMetadataMatches(information, descriptorState)
+        }
+        return true
+    }
+}
+
+/// Binds an intermediate symbolic-link edge to both its filesystem identity
+/// and exact target text. The target is resolved explicitly by the descriptor
+/// walker; no later open is allowed to follow an unrecorded link implicitly.
+nonisolated private final class StableSymlinkWitness: @unchecked Sendable {
+    let parent: StablePathDescriptor
+    let entryName: String
+    let information: stat
+    let target: String
+
+    init?(parent: StablePathDescriptor, entryName: String) {
+        guard let snapshot = Self.snapshot(
+            parent: parent,
+            entryName: entryName
+        ) else { return nil }
+        self.parent = parent
+        self.entryName = entryName
+        information = snapshot.information
+        target = snapshot.target
+    }
+
+    func revalidate() -> Bool {
+        guard let current = Self.snapshot(
+            parent: parent,
+            entryName: entryName
+        ) else { return false }
+        return RecentAgentTaskFilesystemValidator.stableIdentityMatches(
+            information,
+            current.information,
+            kind: S_IFLNK
+        ) && current.target == target
+    }
+
+    private static func snapshot(
+        parent: StablePathDescriptor,
+        entryName: String
+    ) -> (information: stat, target: String)? {
+        var before = stat()
+        let beforeResult = entryName.withCString {
+            Darwin.fstatat(
+                parent.descriptor,
+                $0,
+                &before,
+                AT_SYMLINK_NOFOLLOW
+            )
+        }
+        guard beforeResult == 0,
+              (before.st_mode & S_IFMT) == S_IFLNK else { return nil }
+        var bytes = [UInt8](repeating: 0, count: Int(PATH_MAX) + 1)
+        let count = entryName.withCString { name in
+            bytes.withUnsafeMutableBytes { buffer in
+                Darwin.readlinkat(
+                    parent.descriptor,
+                    name,
+                    buffer.baseAddress,
+                    Int(PATH_MAX)
+                )
+            }
+        }
+        guard count > 0, count <= Int(PATH_MAX) else { return nil }
+        var after = stat()
+        let afterResult = entryName.withCString {
+            Darwin.fstatat(
+                parent.descriptor,
+                $0,
+                &after,
+                AT_SYMLINK_NOFOLLOW
+            )
+        }
+        guard afterResult == 0,
+              RecentAgentTaskFilesystemValidator.stableIdentityMatches(
+                  before,
+                  after,
+                  kind: S_IFLNK
+              ),
+              let target = String(
+                  bytes: bytes.prefix(count),
+                  encoding: .utf8
+              ),
+              !target.isEmpty,
+              !target.utf8.contains(0) else { return nil }
+        return (before, target)
+    }
+}
+
+/// Records that `commondir` did not exist relative to the exact Git directory
+/// descriptor. A creation after graph resolution changes repository meaning
+/// and must invalidate the whole lease.
+nonisolated private struct MissingDirectoryEntryWitness: @unchecked Sendable {
+    let parent: StablePathDescriptor
+    let entryName: String
+
+    func revalidate() -> Bool {
+        var information = stat()
+        let result = entryName.withCString {
+            Darwin.fstatat(
+                parent.descriptor,
+                $0,
+                &information,
+                AT_SYMLINK_NOFOLLOW
+            )
+        }
+        return result == -1 && errno == ENOENT
+    }
+}
+
+/// Holds every filesystem object and absent edge used to derive one project /
+/// worktree relationship. Callers retain this through their final MainActor
+/// commit and perform a detached revalidation immediately before mutation.
+nonisolated final class RecentAgentTaskFilesystemValidationLease:
+    @unchecked Sendable {
+    let identity: AgentTaskProjectIdentity
+    let proof: RecentAgentTaskRepositoryProof?
+    let canonicalWorktree: URL
+    private let descriptors: [StablePathDescriptor]
+    private let symlinks: [StableSymlinkWitness]
+    private let missingEntries: [MissingDirectoryEntryWitness]
+
+    fileprivate init(
+        identity: AgentTaskProjectIdentity,
+        proof: RecentAgentTaskRepositoryProof?,
+        canonicalWorktree: URL,
+        descriptors: [StablePathDescriptor],
+        symlinks: [StableSymlinkWitness],
+        missingEntries: [MissingDirectoryEntryWitness]
+    ) {
+        self.identity = identity
+        self.proof = proof
+        self.canonicalWorktree = canonicalWorktree
+        self.descriptors = descriptors
+        self.symlinks = symlinks
+        self.missingEntries = missingEntries
+    }
+
+    func revalidate() -> Bool {
+        descriptors.allSatisfy { $0.revalidate() }
+            && symlinks.allSatisfy { $0.revalidate() }
+            && missingEntries.allSatisfy { $0.revalidate() }
+    }
+}
+
+nonisolated private struct PreparedQuickTerminalAgentScope: @unchecked Sendable {
+    let registration: QuickTerminalAgentScopeRegistration
+    let sourceRecord: RecentAgentTaskProjectRecord?
+    let lease: RecentAgentTaskFilesystemValidationLease
+}
+
+/// Immutable filesystem validation used only from detached tasks. It owns no
+/// application state and never hops onto the main actor for path, stat, or
+/// bounded Git-control-file I/O.
+nonisolated enum RecentAgentTaskFilesystemValidator {
+    private struct WorkingTreeGraph {
+        let workingTreeURL: URL
+        let root: StablePathDescriptor
+        let gitDirectory: StablePathDescriptor
+        let commonDirectory: StablePathDescriptor
+        let descriptors: [StablePathDescriptor]
+        let symlinks: [StableSymlinkWitness]
+        let missingEntries: [MissingDirectoryEntryWitness]
+    }
+
+    private struct DirectoryDescriptorWalk {
+        let final: StablePathDescriptor
+        let descriptors: [StablePathDescriptor]
+        let symlinks: [StableSymlinkWitness]
+    }
+
+    fileprivate static func preparedRegistration(
+        workingDirectory: URL,
+        requestedSurface: AgentTaskTerminalSurface,
+        record: RecentAgentTaskProjectRecord?
+    ) -> PreparedQuickTerminalAgentScope? {
+        guard requestedSurface.isQuickTerminal,
+              let canonicalWorkingDirectory = canonicalExistingDirectory(
+                  workingDirectory
+              ),
+              let standaloneLease = validationLease(
+                  for: AgentTaskProjectIdentity(
+                      canonicalProjectPath: canonicalWorkingDirectory.path,
+                      canonicalWorktreePath: canonicalWorkingDirectory.path
+                  ),
+                  expectedProof: nil
+              ) else { return nil }
+        if requestedSurface == .quickTerminalProject,
+           let record,
+           record.identity.canonicalWorktreePath
+                == canonicalWorkingDirectory.path,
+           let projectLease = validationLease(
+               for: record.identity,
+               expectedProof: record.repositoryProof
+           ) {
+            return PreparedQuickTerminalAgentScope(
+                registration: QuickTerminalAgentScopeRegistration(
+                    project: record.identity,
+                    surface: .quickTerminalProject
+                ),
+                sourceRecord: record,
+                lease: projectLease
+            )
+        }
+        return PreparedQuickTerminalAgentScope(
+            registration: QuickTerminalAgentScopeRegistration(
+                project: standaloneLease.identity,
+                surface: .quickTerminalStandalone
+            ),
+            sourceRecord: record,
+            lease: standaloneLease
+        )
+    }
+
+    fileprivate static func validationLease(
+        for identity: AgentTaskProjectIdentity,
+        expectedProof: RecentAgentTaskRepositoryProof?
+    ) -> RecentAgentTaskFilesystemValidationLease? {
+        let projectURL = URL(
+            fileURLWithPath: identity.canonicalProjectPath,
+            isDirectory: true
+        ).standardizedFileURL
+        let worktreeURL = URL(
+            fileURLWithPath: identity.canonicalWorktreePath,
+            isDirectory: true
+        ).standardizedFileURL
+        guard projectURL.path == identity.canonicalProjectPath,
+              worktreeURL.path == identity.canonicalWorktreePath else {
+            return nil
+        }
+
+        if projectURL == worktreeURL {
+            guard expectedProof == nil,
+                  let root = canonicalDirectoryDescriptor(projectURL) else {
+                return nil
+            }
+            let lease = RecentAgentTaskFilesystemValidationLease(
+                identity: identity,
+                proof: nil,
+                canonicalWorktree: worktreeURL,
+                descriptors: [root],
+                symlinks: [],
+                missingEntries: []
+            )
+            return lease.revalidate() ? lease : nil
+        }
+
+        guard let expectedProof,
+              let project = workingTreeGraph(projectURL),
+              let worktree = workingTreeGraph(worktreeURL),
+              project.workingTreeURL == projectURL,
+              worktree.workingTreeURL == worktreeURL,
+              project.commonDirectory.url.path
+                == worktree.commonDirectory.url.path,
+              StableFilesystemObjectIdentity(
+                  project.commonDirectory.information
+              ) == StableFilesystemObjectIdentity(
+                  worktree.commonDirectory.information
+              ) else { return nil }
+        let proof = repositoryProof(
+            project: project,
+            worktree: worktree
+        )
+        guard expectedProof.hasExactWorktreeInstance,
+              proof == expectedProof else { return nil }
+        let lease = RecentAgentTaskFilesystemValidationLease(
+            identity: identity,
+            proof: proof,
+            canonicalWorktree: worktreeURL,
+            descriptors: project.descriptors + worktree.descriptors,
+            symlinks: project.symlinks + worktree.symlinks,
+            missingEntries: project.missingEntries
+                + worktree.missingEntries
+        )
+        return lease.revalidate() ? lease : nil
+    }
+
+    static func repositoryProof(
+        for identity: AgentTaskProjectIdentity,
+        afterGraphResolution: (() -> Void)? = nil
+    ) -> RecentAgentTaskRepositoryProof? {
+        guard identity.canonicalProjectPath
+                != identity.canonicalWorktreePath,
+              let project = workingTreeGraph(URL(
+                  fileURLWithPath: identity.canonicalProjectPath,
+                  isDirectory: true
+              )),
+              let worktree = workingTreeGraph(URL(
+                  fileURLWithPath: identity.canonicalWorktreePath,
+                  isDirectory: true
+              )),
+              project.workingTreeURL.path
+                == identity.canonicalProjectPath,
+              worktree.workingTreeURL.path
+                == identity.canonicalWorktreePath,
+              project.commonDirectory.url.path
+                == worktree.commonDirectory.url.path,
+              StableFilesystemObjectIdentity(
+                  project.commonDirectory.information
+              ) == StableFilesystemObjectIdentity(
+                  worktree.commonDirectory.information
+              ) else { return nil }
+        let proof = repositoryProof(
+            project: project,
+            worktree: worktree
+        )
+        let lease = RecentAgentTaskFilesystemValidationLease(
+            identity: identity,
+            proof: proof,
+            canonicalWorktree: worktree.workingTreeURL,
+            descriptors: project.descriptors + worktree.descriptors,
+            symlinks: project.symlinks + worktree.symlinks,
+            missingEntries: project.missingEntries
+                + worktree.missingEntries
+        )
+        afterGraphResolution?()
+        return lease.revalidate() ? proof : nil
+    }
+
+    /// Captures the repository instance before a managed worktree mutation.
+    /// The worktree service compares this token with the linked worktree's
+    /// common-directory token after creation, so a path replacement at any
+    /// suspension boundary fails closed instead of changing logical owner.
+    static func repositoryProof(
+        forRepository repository: URL
+    ) -> RecentAgentTaskRepositoryProof? {
+        guard let graph = workingTreeGraph(repository),
+              graph.workingTreeURL.path == repository.path else { return nil }
+        let proof = repositoryProof(commonDirectory: graph.commonDirectory)
+        let lease = RecentAgentTaskFilesystemValidationLease(
+            identity: AgentTaskProjectIdentity(
+                canonicalProjectPath: graph.workingTreeURL.path,
+                canonicalWorktreePath: graph.workingTreeURL.path
+            ),
+            proof: proof,
+            canonicalWorktree: graph.workingTreeURL,
+            descriptors: graph.descriptors,
+            symlinks: graph.symlinks,
+            missingEntries: graph.missingEntries
+        )
+        return lease.revalidate() ? proof : nil
+    }
+
+    private static func repositoryProof(
+        commonDirectory: StablePathDescriptor
+    ) -> RecentAgentTaskRepositoryProof {
+        let identity = StableFilesystemObjectIdentity(
+            commonDirectory.information
+        )
+        return RecentAgentTaskRepositoryProof(
+            commonDirectoryDevice: identity.device,
+            commonDirectoryInode: identity.inode,
+            commonDirectoryGeneration: identity.generation,
+            commonDirectoryBirthSeconds: identity.birthSeconds,
+            commonDirectoryBirthNanoseconds: identity.birthNanoseconds
+        )
+    }
+
+    private static func repositoryProof(
+        project: WorkingTreeGraph,
+        worktree: WorkingTreeGraph
+    ) -> RecentAgentTaskRepositoryProof {
+        let common = StableFilesystemObjectIdentity(
+            project.commonDirectory.information
+        )
+        return RecentAgentTaskRepositoryProof(
+            commonDirectoryDevice: common.device,
+            commonDirectoryInode: common.inode,
+            commonDirectoryGeneration: common.generation,
+            commonDirectoryBirthSeconds: common.birthSeconds,
+            commonDirectoryBirthNanoseconds: common.birthNanoseconds,
+            projectRoot: StableFilesystemObjectIdentity(
+                project.root.information
+            ).persistedProof,
+            projectGitDirectory: StableFilesystemObjectIdentity(
+                project.gitDirectory.information
+            ).persistedProof,
+            worktreeRoot: StableFilesystemObjectIdentity(
+                worktree.root.information
+            ).persistedProof,
+            worktreeGitDirectory: StableFilesystemObjectIdentity(
+                worktree.gitDirectory.information
+            ).persistedProof
+        )
+    }
+
+    private static func workingTreeGraph(
+        _ workingTree: URL
+    ) -> WorkingTreeGraph? {
+        let workingTreeURL = workingTree.standardizedFileURL
+        guard let rootWalk = directoryDescriptorWalk(
+            workingTreeURL
+        ) else {
+            return nil
+        }
+        let root = rootWalk.final
+        var descriptors = rootWalk.descriptors
+        var symlinks = rootWalk.symlinks
+        var missingEntries: [MissingDirectoryEntryWitness] = []
+        let controlPath = workingTreeURL.appendingPathComponent(
+            ".git",
+            isDirectory: false
+        )
+        var controlState = stat()
+        guard lstat(controlPath.path, &controlState) == 0 else { return nil }
+
+        let gitDirectory: StablePathDescriptor
+        switch controlState.st_mode & S_IFMT {
+        case S_IFDIR:
+            guard let walk = directoryDescriptorWalk(controlPath) else {
+                return nil
+            }
+            gitDirectory = walk.final
+            descriptors.append(contentsOf: walk.descriptors)
+            symlinks.append(contentsOf: walk.symlinks)
+        case S_IFREG:
+            guard let control = StablePathDescriptor(
+                parent: root,
+                entryName: ".git",
+                url: controlPath,
+                kind: S_IFREG
+            ), let contents = boundedGitPathFile(control),
+                contents.hasPrefix("gitdir: ") else { return nil }
+            descriptors.append(control)
+            let path = String(contents.dropFirst("gitdir: ".count))
+            guard !path.isEmpty else { return nil }
+            let candidate = path.hasPrefix("/")
+                ? URL(fileURLWithPath: path, isDirectory: true)
+                : root.url.appendingPathComponent(path, isDirectory: true)
+            guard let walk = directoryDescriptorWalk(
+                candidate
+            ) else { return nil }
+            gitDirectory = walk.final
+            descriptors.append(contentsOf: walk.descriptors)
+            symlinks.append(contentsOf: walk.symlinks)
+        default:
+            return nil
+        }
+
+        var commonControlState = stat()
+        let commonControlResult = "commondir".withCString {
+            Darwin.fstatat(
+                gitDirectory.descriptor,
+                $0,
+                &commonControlState,
+                AT_SYMLINK_NOFOLLOW
+            )
+        }
+        if commonControlResult == -1 {
+            guard errno == ENOENT else { return nil }
+            missingEntries.append(MissingDirectoryEntryWitness(
+                parent: gitDirectory,
+                entryName: "commondir"
+            ))
+            let graph = WorkingTreeGraph(
+                workingTreeURL: workingTreeURL,
+                root: root,
+                gitDirectory: gitDirectory,
+                commonDirectory: gitDirectory,
+                descriptors: descriptors,
+                symlinks: symlinks,
+                missingEntries: missingEntries
+            )
+            return graphIsStable(graph) ? graph : nil
+        }
+
+        guard (commonControlState.st_mode & S_IFMT) == S_IFREG else {
+            return nil
+        }
+        let commonControlPath = gitDirectory.url.appendingPathComponent(
+            "commondir",
+            isDirectory: false
+        )
+        guard let commonControl = StablePathDescriptor(
+            parent: gitDirectory,
+            entryName: "commondir",
+            url: commonControlPath,
+            kind: S_IFREG
+        ), let commonPath = boundedGitPathFile(commonControl) else {
+            return nil
+        }
+        descriptors.append(commonControl)
+        let candidate = commonPath.hasPrefix("/")
+            ? URL(fileURLWithPath: commonPath, isDirectory: true)
+            : gitDirectory.url.appendingPathComponent(
+                commonPath,
+                isDirectory: true
+            )
+        guard let commonWalk = directoryDescriptorWalk(
+            candidate
+        ) else { return nil }
+        let commonDirectory = commonWalk.final
+        descriptors.append(contentsOf: commonWalk.descriptors)
+        symlinks.append(contentsOf: commonWalk.symlinks)
+        let graph = WorkingTreeGraph(
+            workingTreeURL: workingTreeURL,
+            root: root,
+            gitDirectory: gitDirectory,
+            commonDirectory: commonDirectory,
+            descriptors: descriptors,
+            symlinks: symlinks,
+            missingEntries: missingEntries
+        )
+        return graphIsStable(graph) ? graph : nil
+    }
+
+    private static func graphIsStable(_ graph: WorkingTreeGraph) -> Bool {
+        graph.descriptors.allSatisfy { $0.revalidate() }
+            && graph.symlinks.allSatisfy { $0.revalidate() }
+            && graph.missingEntries.allSatisfy { $0.revalidate() }
+    }
+
+    private static func canonicalDirectoryDescriptor(
+        _ candidate: URL
+    ) -> StablePathDescriptor? {
+        let canonical = candidate.resolvingSymlinksInPath().standardizedFileURL
+        return directoryDescriptorWalk(canonical)?.final
+    }
+
+    /// Opens each canonical path component separately with `O_NOFOLLOW` and
+    /// retains every descriptor in the resulting validation graph. Git path
+    /// expressions that contain an intermediate symlink therefore fail
+    /// closed; replacing a previously ordinary component with a symlink (or
+    /// any other object) invalidates its retained descriptor/path token.
+    private static func directoryDescriptorWalk(
+        _ candidate: URL
+    ) -> DirectoryDescriptorWalk? {
+        guard let normalizedPath = lexicallyNormalizedAbsolutePath(
+            candidate.path
+        ) else { return nil }
+        var currentURL = URL(fileURLWithPath: "/", isDirectory: true)
+        guard let root = StablePathDescriptor(
+            url: currentURL,
+            kind: S_IFDIR
+        ) else { return nil }
+        var descriptors = [root]
+        var symlinks: [StableSymlinkWitness] = []
+        var current = root
+        var components = normalizedPath.split(separator: "/").map(String.init)
+        var followedLinkCount = 0
+        while !components.isEmpty {
+            let component = components.removeFirst()
+            guard component != ".", component != "..", !component.isEmpty
+            else { return nil }
+            var entryState = stat()
+            let entryResult = component.withCString {
+                Darwin.fstatat(
+                    current.descriptor,
+                    $0,
+                    &entryState,
+                    AT_SYMLINK_NOFOLLOW
+                )
+            }
+            guard entryResult == 0 else { return nil }
+            if (entryState.st_mode & S_IFMT) == S_IFLNK {
+                guard followedLinkCount < 40 else { return nil }
+                guard let witness = StableSymlinkWitness(
+                          parent: current,
+                          entryName: component
+                      ) else {
+                    return nil
+                }
+                followedLinkCount += 1
+                symlinks.append(witness)
+                var targetPath = witness.target.hasPrefix("/")
+                    ? witness.target
+                    : currentURL.path + "/" + witness.target
+                if !components.isEmpty {
+                    targetPath += "/" + components.joined(separator: "/")
+                }
+                guard let resolvedPath = lexicallyNormalizedAbsolutePath(
+                    targetPath
+                ) else { return nil }
+                components = resolvedPath.split(separator: "/")
+                    .map(String.init)
+                current = root
+                currentURL = URL(
+                    fileURLWithPath: "/",
+                    isDirectory: true
+                )
+                continue
+            }
+            guard (entryState.st_mode & S_IFMT) == S_IFDIR else {
+                return nil
+            }
+            let nextURL = currentURL.appendingPathComponent(
+                component,
+                isDirectory: true
+            )
+            guard let next = StablePathDescriptor(
+                parent: current,
+                entryName: component,
+                url: nextURL,
+                kind: S_IFDIR
+            ) else { return nil }
+            descriptors.append(next)
+            current = next
+            currentURL = nextURL
+        }
+        return DirectoryDescriptorWalk(
+            final: current,
+            descriptors: descriptors,
+            symlinks: symlinks
+        )
+    }
+
+    /// Foundation canonicalizes `/private/var` back to `/var` on macOS. That
+    /// is useful for app identity but would loop while explicitly resolving
+    /// `/var -> private/var`. Git control paths need purely lexical dot-segment
+    /// removal so the descriptor walker, not Foundation, owns every symlink.
+    private static func lexicallyNormalizedAbsolutePath(
+        _ path: String
+    ) -> String? {
+        guard path.hasPrefix("/") else { return nil }
+        var result: [Substring] = []
+        for component in path.split(separator: "/", omittingEmptySubsequences: true) {
+            switch component {
+            case ".":
+                continue
+            case "..":
+                guard !result.isEmpty else { return nil }
+                result.removeLast()
+            default:
+                result.append(component)
+            }
+        }
+        return "/" + result.joined(separator: "/")
+    }
+
+    fileprivate static func canonicalExistingDirectory(
+        _ candidate: URL
+    ) -> URL? {
+        guard let descriptor = canonicalDirectoryDescriptor(candidate),
+              descriptor.revalidate() else { return nil }
+        return candidate.standardizedFileURL
+    }
+
+    fileprivate static func boundedGitPathFile(
+        _ url: URL,
+        beforeRead: (() -> Void)? = nil
+    ) -> String? {
+        guard let descriptor = StablePathDescriptor(
+            url: url,
+            kind: S_IFREG
+        ), let data = stableRegularFileBytes(
+            descriptor,
+            byteLimit: 4_096,
+            beforeRead: beforeRead
+        ), let text = String(data: data, encoding: .utf8) else { return nil }
+        return boundedGitPathLine(text)
+    }
+
+    private static func boundedGitPathFile(
+        _ descriptor: StablePathDescriptor
+    ) -> String? {
+        guard let data = stableRegularFileBytes(
+            descriptor,
+            byteLimit: 4_096
+        ), let text = String(data: data, encoding: .utf8) else { return nil }
+        return boundedGitPathLine(text)
+    }
+
+    private static func boundedGitPathLine(_ text: String) -> String? {
+        var bytes = Array(text.utf8)
+        if bytes.suffix(2).elementsEqual([0x0D, 0x0A]) {
+            bytes.removeLast(2)
+        } else if bytes.last == 0x0A {
+            bytes.removeLast()
+        }
+        guard !bytes.isEmpty,
+              !bytes.contains(0x00),
+              !bytes.contains(0x0A),
+              !bytes.contains(0x0D) else { return nil }
+        return String(bytes: bytes, encoding: .utf8)
+    }
+
+    private static func stableRegularFileBytes(
+        _ descriptor: StablePathDescriptor,
+        byteLimit: Int,
+        beforeRead: (() -> Void)? = nil
+    ) -> Data? {
+        guard byteLimit > 0 else { return nil }
+        let before = descriptor.information
+        guard (before.st_mode & S_IFMT) == S_IFREG,
+              before.st_size > 0,
+              before.st_size <= Int64(byteLimit) else { return nil }
+        beforeRead?()
+
+        var bytes = [UInt8](repeating: 0, count: byteLimit + 1)
+        var count = 0
+        var reachedEndOfFile = false
+        while count < bytes.count {
+            let readCount = bytes.withUnsafeMutableBytes { buffer in
+                Darwin.read(
+                    descriptor.descriptor,
+                    buffer.baseAddress?.advanced(by: count),
+                    buffer.count - count
+                )
+            }
+            if readCount < 0 {
+                guard errno == EINTR else { return nil }
+                continue
+            }
+            if readCount == 0 {
+                reachedEndOfFile = true
+                break
+            }
+            count += readCount
+        }
+
+        var after = stat()
+        guard fstat(descriptor.descriptor, &after) == 0,
+              stableFileMetadataMatches(before, after),
+              descriptor.revalidate(),
+              reachedEndOfFile,
+              Int64(count) == before.st_size,
+              count <= byteLimit else { return nil }
+        return Data(bytes.prefix(count))
+    }
+
+    fileprivate static func stableFileMetadataMatches(
+        _ lhs: stat,
+        _ rhs: stat
+    ) -> Bool {
+        stableIdentityMatches(lhs, rhs, kind: S_IFREG)
+            && lhs.st_mode == rhs.st_mode
+            && lhs.st_size == rhs.st_size
+            && lhs.st_nlink == rhs.st_nlink
+            && lhs.st_mtimespec.tv_sec == rhs.st_mtimespec.tv_sec
+            && lhs.st_mtimespec.tv_nsec == rhs.st_mtimespec.tv_nsec
+            && lhs.st_ctimespec.tv_sec == rhs.st_ctimespec.tv_sec
+            && lhs.st_ctimespec.tv_nsec == rhs.st_ctimespec.tv_nsec
+    }
+
+    fileprivate static func stableIdentityMatches(
+        _ lhs: stat,
+        _ rhs: stat,
+        kind: UInt16
+    ) -> Bool {
+        let left = StableFilesystemObjectIdentity(lhs)
+        let right = StableFilesystemObjectIdentity(rhs)
+        return left == right && left.kind == kind
+    }
+}
 
 nonisolated enum AgentInboxNavigationResult: Equatable, Sendable {
     case focused(AgentTaskRoute)
@@ -23,6 +1008,21 @@ nonisolated enum AgentInboxRecoveryResult: Equatable, Sendable {
     case unavailable(AgentTaskRecoveryUnavailableReason)
     case changedWhilePreparing
     case launchRejected
+}
+
+nonisolated struct QuickTerminalAgentScopeRegistration: Equatable, Sendable {
+    let project: AgentTaskProjectIdentity
+    let surface: AgentTaskTerminalSurface
+}
+
+/// Weak runtime boundary from durable task metadata back to the single
+/// application-owned Quick Terminal. ProjectRegistry retains no panel, tab,
+/// process, or detector object through this protocol.
+@MainActor
+protocol QuickTerminalAgentRouting: AnyObject {
+    func resolveQuickTerminalAgentRoute(for task: AgentTask) -> AgentTaskRoute?
+    func revealQuickTerminalAgentRoute(for task: AgentTask) -> AgentTaskRoute?
+    func isQuickTerminalAgentTaskPresented(_ task: AgentTask) -> Bool
 }
 
 #if DEBUG
@@ -120,8 +1120,12 @@ final class ProjectRegistry: LSPSettingsObserver {
     let lspSettings: LSPSettings
     /// Application-lifetime durable agent identity across every project.
     let agentTasks: AgentTaskRegistry
+    @ObservationIgnored
+    weak var quickTerminalAgentRouter: (any QuickTerminalAgentRouting)?
 
     private static let recentProjectsKey = "recentProjectPaths"
+    private static let recentProjectAgentIdentitiesKey =
+        "recentProjectAgentTaskIdentities"
     private static let maxRecentProjects = 10
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let fileManager: FileManager
@@ -129,6 +1133,13 @@ final class ProjectRegistry: LSPSettingsObserver {
     @ObservationIgnored private let agentProcessSnapshotPoller: AgentProcessSnapshotPoller
     @ObservationIgnored private let agentInboxProjectCanonicalizer:
         @Sendable (URL) async -> URL
+    /// Testable suspension boundary between detached validation and its final
+    /// detached revalidation. Production is a no-op; no filesystem operation
+    /// from this protocol executes on MainActor.
+    @ObservationIgnored private let agentTaskFilesystemValidationCommitSeam:
+        @Sendable () async -> Void
+    @ObservationIgnored private let agentTaskWorkspaceValidationSeam:
+        @Sendable () async -> Void
     @ObservationIgnored private let contextPresentationGate =
         ContextPresentationCommandGate()
     @ObservationIgnored private var contextPresentationEpochs: [URL: UInt64] = [:]
@@ -158,7 +1169,27 @@ final class ProjectRegistry: LSPSettingsObserver {
             recomputeAgentInboxAttentionCounts()
         }
     }
-
+    /// Exact repository/worktree identities retained independently of live
+    /// managers so Quick Terminal never fabricates project ownership from a
+    /// recent worktree URL after background reclamation or app relaunch.
+    @ObservationIgnored
+    private var recentAgentTaskProjectsByRoot: [
+        URL: RecentAgentTaskProjectRecord
+    ] = [:]
+    /// Rotates whenever the persisted Recent identity inventory changes.
+    /// Async Recent admission captures this token with its exact record and
+    /// checks both again after the final detached filesystem revalidation, so
+    /// remove/re-add and A -> B -> A record ABA cannot commit stale authority.
+    @ObservationIgnored
+    private var recentAgentTaskRecordsGeneration = UUID()
+    /// Admission-time proof for live managers. It is deliberately not
+    /// regenerated while that manager remains admitted: replacing both the
+    /// repository and worktree directories at the same paths must not bless a
+    /// stale manager with the replacement repository's identity.
+    @ObservationIgnored
+    private var agentTaskRepositoryProofsByRoot: [
+        URL: RecentAgentTaskRepositoryProof
+    ] = [:]
     /// Per-project count of durable agent tasks in the Inbox's
     /// `needsAttention` section, keyed by canonical project URL (#1337).
     ///
@@ -192,6 +1223,8 @@ final class ProjectRegistry: LSPSettingsObserver {
                 ProjectRegistry.canonicalProjectURL(rawURL)
             }.value
         },
+        agentTaskFilesystemValidationCommitSeam: @escaping @Sendable () async -> Void = {},
+        agentTaskWorkspaceValidationSeam: @escaping @Sendable () async -> Void = {},
         agentDetectionProcessRunner: @escaping ProcessRunner = runRealProcess,
         agentDetectionPollInterval: TimeInterval = 2.0,
         agentDetectionInitialPollDelay: TimeInterval? = nil,
@@ -207,6 +1240,9 @@ final class ProjectRegistry: LSPSettingsObserver {
         self.fileManager = fileManager
         self.agentRecoveryInspector = agentRecoveryInspector
         self.agentInboxProjectCanonicalizer = agentInboxProjectCanonicalizer
+        self.agentTaskFilesystemValidationCommitSeam =
+            agentTaskFilesystemValidationCommitSeam
+        self.agentTaskWorkspaceValidationSeam = agentTaskWorkspaceValidationSeam
         self.agentProcessSnapshotPoller = AgentProcessSnapshotPoller(
             processRunner: agentDetectionProcessRunner,
             pollInterval: agentDetectionPollInterval,
@@ -216,6 +1252,9 @@ final class ProjectRegistry: LSPSettingsObserver {
         self.backgroundReclamationBatchSize = max(1, backgroundReclamationBatchSize)
         if clearRecentProjects {
             defaults.removeObject(forKey: Self.recentProjectsKey)
+            defaults.removeObject(
+                forKey: Self.recentProjectAgentIdentitiesKey
+            )
         }
         loadRecentProjects()
         #if DEBUG
@@ -261,6 +1300,63 @@ final class ProjectRegistry: LSPSettingsObserver {
         )
     }
 
+    /// Opens one Recent entry through its persisted immutable identity.
+    ///
+    /// Linked worktrees must never pass through the ordinary URL-only opener,
+    /// which intentionally models an independently opened folder as
+    /// `project == worktree`. This path instead captures the exact Recent
+    /// record and generation, builds a descriptor-held graph lease off-main,
+    /// crosses the injectable suspension boundary, then revalidates both the
+    /// lease and record immediately before the synchronous admission commit.
+    /// A stale or missing linked-worktree proof fails closed without rewriting
+    /// the persisted record.
+    func projectManagerForRecentProject(
+        _ projectURL: URL
+    ) async -> ProjectManager? {
+        guard !isProjectAdmissionFrozenForTermination else { return nil }
+        let canonical = await Task.detached(priority: .utility) {
+            Self.canonicalProjectURL(projectURL)
+        }.value
+        guard !Task.isCancelled,
+              !isProjectAdmissionFrozenForTermination else { return nil }
+
+        let capturedRecord = recentAgentTaskProjectsByRoot[canonical]
+        let capturedGeneration = recentAgentTaskRecordsGeneration
+        let identity = capturedRecord?.identity ?? AgentTaskProjectIdentity(
+            canonicalProjectPath: canonical.path,
+            canonicalWorktreePath: canonical.path
+        )
+        guard identity.canonicalWorktreePath == canonical.path else {
+            return nil
+        }
+        let expectedProof = capturedRecord?.repositoryProof
+        let lease = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.validationLease(
+                for: identity,
+                expectedProof: expectedProof
+            )
+        }.value
+        guard !Task.isCancelled, let lease else { return nil }
+
+        await agentTaskFilesystemValidationCommitSeam()
+        let isStillValid = await Task.detached(priority: .utility) {
+            lease.revalidate()
+        }.value
+        guard !Task.isCancelled,
+              isStillValid,
+              !isProjectAdmissionFrozenForTermination,
+              recentAgentTaskRecordsGeneration == capturedGeneration,
+              recentAgentTaskProjectsByRoot[canonical] == capturedRecord else {
+            return nil
+        }
+        return projectManager(
+            forCanonicalWorktree: canonical,
+            identity: identity,
+            repositoryProof: expectedProof,
+            validationLease: lease
+        )
+    }
+
     /// Non-admitting lookup for SwiftUI scene roots that may outlive their
     /// native window. A stale hidden `ProjectWindowView` must never recreate a
     /// manager after bounded reclamation.
@@ -268,10 +1364,158 @@ final class ProjectRegistry: LSPSettingsObserver {
         openProjects[canonicalProjectURL(projectURL)]
     }
 
+    /// Registers the immutable persistence/ownership scope captured when the
+    /// keep-alive Quick Terminal session is first created. A project-backed
+    /// session reuses the exact open worktree identity when available; the
+    /// standalone fallback remains explicitly distinguished by its route
+    /// surface and is never presented as a project in Agent Inbox.
+    func resolveQuickTerminalAgentScope(
+        workingDirectory: URL,
+        surface: AgentTaskTerminalSurface
+    ) async -> QuickTerminalAgentScopeRegistration? {
+        guard surface.isQuickTerminal else { return nil }
+        let canonical = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.canonicalExistingDirectory(
+                workingDirectory
+            )
+        }.value
+        guard !Task.isCancelled, let canonical else { return nil }
+
+        let exactProjectRecord = exactAgentTaskProjectRecord(for: canonical)
+        let prepared = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.preparedRegistration(
+                workingDirectory: canonical,
+                requestedSurface: surface,
+                record: exactProjectRecord
+            )
+        }.value
+        guard !Task.isCancelled, let prepared else { return nil }
+        let isStillValid = await Task.detached(priority: .utility) {
+            prepared.lease.revalidate()
+        }.value
+        guard !Task.isCancelled, isStillValid else { return nil }
+        if prepared.registration.surface == .quickTerminalProject {
+            guard exactAgentTaskProjectRecord(for: canonical)
+                == exactProjectRecord else { return nil }
+        }
+        return prepared.registration
+    }
+
+    /// Final scope commit invoked only after the controller's generation and
+    /// termination fences accepted the prepared registration. The graph is
+    /// rebuilt from the current immutable registry record, an injectable
+    /// suspension is crossed, then every held descriptor/path/absence witness
+    /// is revalidated off-main immediately before the no-await registration.
+    func commitQuickTerminalAgentScope(
+        _ registration: QuickTerminalAgentScopeRegistration,
+        workingDirectory: URL,
+        requestedSurface: AgentTaskTerminalSurface
+    ) async -> Bool {
+        guard requestedSurface.isQuickTerminal else { return false }
+        let canonical = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.canonicalExistingDirectory(
+                workingDirectory
+            )
+        }.value
+        guard !Task.isCancelled, let canonical else { return false }
+        let exactProjectRecord = exactAgentTaskProjectRecord(for: canonical)
+        let prepared = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.preparedRegistration(
+                workingDirectory: canonical,
+                requestedSurface: requestedSurface,
+                record: exactProjectRecord
+            )
+        }.value
+        guard !Task.isCancelled,
+              let prepared,
+              prepared.registration == registration else { return false }
+        await agentTaskFilesystemValidationCommitSeam()
+        let isStillValid = await Task.detached(priority: .utility) {
+            prepared.lease.revalidate()
+        }.value
+        guard !Task.isCancelled,
+              isStillValid,
+              exactAgentTaskProjectRecord(for: canonical)
+                == exactProjectRecord else { return false }
+        agentTasks.registerProject(registration.project)
+        return true
+    }
+
+    /// Rebuilds the exact filesystem lease for a later lazy consumer such as
+    /// Quick Terminal PTY start. Registration never turns a path into a
+    /// permanently trusted capability.
+    func validateQuickTerminalAgentScope(
+        _ registration: QuickTerminalAgentScopeRegistration,
+        workingDirectory: URL
+    ) async -> Bool {
+        let canonical = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.canonicalExistingDirectory(
+                workingDirectory
+            )
+        }.value
+        guard !Task.isCancelled, let canonical else { return false }
+        let record = exactAgentTaskProjectRecord(for: canonical)
+        let prepared = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.preparedRegistration(
+                workingDirectory: canonical,
+                requestedSurface: registration.surface,
+                record: record
+            )
+        }.value
+        guard !Task.isCancelled,
+              let prepared,
+              prepared.registration == registration else { return false }
+        let valid = await Task.detached(priority: .utility) {
+            prepared.lease.revalidate()
+        }.value
+        return !Task.isCancelled
+            && valid
+            && exactAgentTaskProjectRecord(for: canonical) == record
+    }
+
+    private func exactAgentTaskProjectRecord(
+        for canonical: URL
+    ) -> RecentAgentTaskProjectRecord? {
+        if let liveIdentity = agentTaskProjectsByRoot[canonical] {
+            return RecentAgentTaskProjectRecord(
+                identity: liveIdentity,
+                repositoryProof: agentTaskRepositoryProofsByRoot[canonical]
+            )
+        }
+        return recentAgentTaskProjectsByRoot[canonical]
+    }
+
+    /// Attaches the keep-alive Quick Terminal to the same application-owned
+    /// process poller as project terminals. The opt-out matches project
+    /// detection and this method never creates a second capture source.
+    @discardableResult
+    func subscribeQuickTerminalAgentSnapshots(
+        _ consumer: any AgentProcessSnapshotConsuming
+    ) -> Bool {
+        guard !Self.isAgentDetectionDisabled else { return false }
+        agentProcessSnapshotPoller.subscribe(consumer)
+        return true
+    }
+
+    func unsubscribeQuickTerminalAgentSnapshots(
+        _ consumer: any AgentProcessSnapshotConsuming
+    ) {
+        agentProcessSnapshotPoller.unsubscribe(consumer)
+    }
+
+    private static var isAgentDetectionDisabled: Bool {
+        CommandLine.arguments.contains("--disable-agent-detection")
+            || ProcessInfo.processInfo.environment[
+                "PINE_DISABLE_AGENT_DETECTION"
+            ] != nil
+    }
+
     /// Opens a Pine-managed worktree while retaining the owning repository as
     /// the shared project scope. Sibling worktrees therefore remain comparable
     /// without sharing terminal, task, event, checkpoint, or notification IDs.
-    func projectManager(for worktree: AgentManagedWorktree) -> ProjectManager? {
+    func projectManager(
+        for worktree: AgentManagedWorktree
+    ) async -> ProjectManager? {
         let repository = canonicalProjectURL(worktree.repositoryRoot)
         let managedRoot = canonicalProjectURL(worktree.managedRoot)
         let worktreeRoot = canonicalProjectURL(worktree.worktreeRoot)
@@ -281,12 +1525,27 @@ final class ProjectRegistry: LSPSettingsObserver {
               worktreeRoot.deletingLastPathComponent() == managedRoot else {
             return nil
         }
+        let identity = AgentTaskProjectIdentity(
+            canonicalProjectPath: repository.path,
+            canonicalWorktreePath: worktreeRoot.path
+        )
+        let lease = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.validationLease(
+                for: identity,
+                expectedProof: worktree.repositoryProof
+            )
+        }.value
+        guard !Task.isCancelled, let lease else { return nil }
+        await agentTaskFilesystemValidationCommitSeam()
+        let isStillValid = await Task.detached(priority: .utility) {
+            lease.revalidate()
+        }.value
+        guard !Task.isCancelled, isStillValid else { return nil }
         return projectManager(
             forCanonicalWorktree: worktreeRoot,
-            identity: AgentTaskProjectIdentity(
-                canonicalProjectPath: repository.path,
-                canonicalWorktreePath: worktreeRoot.path
-            )
+            identity: identity,
+            repositoryProof: worktree.repositoryProof,
+            validationLease: lease
         )
     }
 
@@ -296,7 +1555,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         for identity: AgentTaskProjectIdentity,
         reopenBackgroundProject: Bool = true,
         admitMissingProjectInBackground: Bool = false
-    ) -> ProjectManager? {
+    ) async -> ProjectManager? {
         let project = canonicalProjectURL(URL(
             fileURLWithPath: identity.canonicalProjectPath,
             isDirectory: true
@@ -309,9 +1568,37 @@ final class ProjectRegistry: LSPSettingsObserver {
               worktree.path == identity.canonicalWorktreePath else {
             return nil
         }
+        var validationLease: RecentAgentTaskFilesystemValidationLease?
+        var repositoryProof: RecentAgentTaskRepositoryProof?
+        if project != worktree {
+            guard let exactRecord = exactAgentTaskProjectRecord(for: worktree),
+                  exactRecord.identity == identity,
+                  let expectedProof = exactRecord.repositoryProof else {
+                return nil
+            }
+            let lease = await Task.detached(priority: .utility) {
+                RecentAgentTaskFilesystemValidator.validationLease(
+                    for: identity,
+                    expectedProof: expectedProof
+                )
+            }.value
+            guard !Task.isCancelled, let lease else { return nil }
+            await agentTaskFilesystemValidationCommitSeam()
+            let isStillValid = await Task.detached(priority: .utility) {
+                lease.revalidate()
+            }.value
+            guard !Task.isCancelled,
+                  isStillValid,
+                  exactAgentTaskProjectRecord(for: worktree)
+                    == exactRecord else { return nil }
+            repositoryProof = expectedProof
+            validationLease = lease
+        }
         return projectManager(
             forCanonicalWorktree: worktree,
             identity: identity,
+            repositoryProof: repositoryProof,
+            validationLease: validationLease,
             reopenBackgroundProject: reopenBackgroundProject,
             admitMissingProjectInBackground: admitMissingProjectInBackground
         )
@@ -320,45 +1607,72 @@ final class ProjectRegistry: LSPSettingsObserver {
     private func projectManager(
         forCanonicalWorktree canonical: URL,
         identity: AgentTaskProjectIdentity,
+        repositoryProof: RecentAgentTaskRepositoryProof? = nil,
+        validationLease: RecentAgentTaskFilesystemValidationLease? = nil,
         reopenBackgroundProject: Bool = true,
         admitMissingProjectInBackground: Bool = false
     ) -> ProjectManager? {
+        // Retain descriptor ownership through the entire synchronous commit.
+        // Distinct project/worktree callers cannot enter without this lease.
+        guard identity.canonicalProjectPath == identity.canonicalWorktreePath
+                || validationLease != nil else { return nil }
+        let hasValidatedFilesystem = validationLease?.identity == identity
+            && validationLease?.canonicalWorktree == canonical
+        guard validationLease == nil || hasValidatedFilesystem else {
+            return nil
+        }
         if let existing = openProjects[canonical] {
             guard agentTaskProjectsByRoot[canonical] == identity else {
                 return nil
             }
+            if identity.canonicalProjectPath
+                != identity.canonicalWorktreePath {
+                guard let validationLease else { return nil }
+                existing.replaceAgentTaskFilesystemAdmission(
+                    validationLease,
+                    identity: identity
+                )
+            }
             // Verify directory still exists when reopening from background
             if backgroundProjects.contains(canonical) {
-                var isDir: ObjCBool = false
-                guard fileManager.fileExists(atPath: canonical.path, isDirectory: &isDir),
-                      isDir.boolValue else {
-                    // Directory was deleted while in background — clean up
-                    existing.requestUserTaskShutdown()
-                    existing.terminal.terminateAll()
-                    existing.shutdownReclaimableProject()
-                    let ownerID = ObjectIdentifier(existing)
-                    detachedTaskCleanupProjects[ownerID] = existing
-                    Task { @MainActor [weak self] in
-                        let didStop = await existing.shutdownUserTasks(
-                            until: .now() + 2
-                        )
-                        if didStop {
-                            self?.detachedTaskCleanupProjects.removeValue(
-                                forKey: ownerID
+                if !hasValidatedFilesystem {
+                    var isDir: ObjCBool = false
+                    guard fileManager.fileExists(
+                        atPath: canonical.path,
+                        isDirectory: &isDir
+                    ), isDir.boolValue else {
+                        // Directory was deleted while in background — clean up
+                        existing.requestUserTaskShutdown()
+                        existing.terminal.terminateAll()
+                        existing.shutdownReclaimableProject()
+                        let ownerID = ObjectIdentifier(existing)
+                        detachedTaskCleanupProjects[ownerID] = existing
+                        Task { @MainActor [weak self] in
+                            let didStop = await existing.shutdownUserTasks(
+                                until: .now() + 2
                             )
+                            if didStop {
+                                self?.detachedTaskCleanupProjects.removeValue(
+                                    forKey: ownerID
+                                )
+                            }
                         }
+                        openProjects.removeValue(forKey: canonical)
+                        agentTaskProjectsByRoot.removeValue(forKey: canonical)
+                        agentTaskRepositoryProofsByRoot.removeValue(
+                            forKey: canonical
+                        )
+                        backgroundProjects.remove(canonical)
+                        agentTasks.setWindowOpen(
+                            false,
+                            project: identity
+                        )
+                        existing.terminal.setAgentTaskWindowOpen(false)
+                        recentProjects.removeAll { $0 == canonical }
+                        removeRecentAgentTaskRecord(for: canonical)
+                        saveRecentProjects()
+                        return nil
                     }
-                    openProjects.removeValue(forKey: canonical)
-                    agentTaskProjectsByRoot.removeValue(forKey: canonical)
-                    backgroundProjects.remove(canonical)
-                    agentTasks.setWindowOpen(
-                        false,
-                        project: identity
-                    )
-                    existing.terminal.setAgentTaskWindowOpen(false)
-                    recentProjects.removeAll { $0 == canonical }
-                    saveRecentProjects()
-                    return nil
                 }
                 if reopenBackgroundProject {
                     existing.prepareForWindowPresentation()
@@ -369,22 +1683,27 @@ final class ProjectRegistry: LSPSettingsObserver {
                     )
                 }
             }
-            addToRecent(canonical)
+            addToRecent(canonical, identity: identity)
             return existing
         }
         // Validate that the directory still exists
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: canonical.path, isDirectory: &isDir),
-              isDir.boolValue else {
-            recentProjects.removeAll { $0 == canonical }
-            saveRecentProjects()
-            return nil
+        if !hasValidatedFilesystem {
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(
+                atPath: canonical.path,
+                isDirectory: &isDir
+            ), isDir.boolValue else {
+                recentProjects.removeAll { $0 == canonical }
+                removeRecentAgentTaskRecord(for: canonical)
+                saveRecentProjects()
+                return nil
+            }
+            var isProjectDir: ObjCBool = false
+            guard fileManager.fileExists(
+                atPath: identity.canonicalProjectPath,
+                isDirectory: &isProjectDir
+            ), isProjectDir.boolValue else { return nil }
         }
-        var isProjectDir: ObjCBool = false
-        guard fileManager.fileExists(
-            atPath: identity.canonicalProjectPath,
-            isDirectory: &isProjectDir
-        ), isProjectDir.boolValue else { return nil }
         guard !isProjectAdmissionFrozenForTermination else { return nil }
         agentTasks.registerProject(identity)
         let contextEpoch = contextPresentationEpochs[canonical, default: 0] &+ 1
@@ -393,6 +1712,8 @@ final class ProjectRegistry: LSPSettingsObserver {
             lspSettings: lspSettings,
             agentProcessSnapshotPoller: agentProcessSnapshotPoller,
             agentTaskRegistry: agentTasks,
+            workspaceFilesystemValidationSeam:
+                agentTaskWorkspaceValidationSeam,
             contextFileWriter: ContextFileWriter(
                 presentationGate: contextPresentationGate
             ),
@@ -403,9 +1724,17 @@ final class ProjectRegistry: LSPSettingsObserver {
         if isAutoSaveFrozenForTermination {
             pm.freezeAutoSaveForTermination()
         }
-        pm.loadDirectory(url: canonical, agentTaskProject: identity)
+        pm.loadDirectory(
+            url: canonical,
+            agentTaskProject: identity,
+            filesystemAdmission: validationLease
+        )
         openProjects[canonical] = pm
         agentTaskProjectsByRoot[canonical] = identity
+        if let repositoryProof,
+           identity.canonicalProjectPath != identity.canonicalWorktreePath {
+            agentTaskRepositoryProofsByRoot[canonical] = repositoryProof
+        }
         if admitMissingProjectInBackground {
             backgroundProjects.insert(canonical)
             pm.suspendEditorServices()
@@ -417,7 +1746,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             agentTasks.setWindowOpen(true, project: identity)
             pm.terminal.setAgentTaskWindowOpen(true)
         }
-        addToRecent(canonical)
+        addToRecent(canonical, identity: identity)
         #if DEBUG
         seedAgentRecoveryUITestFixture(
             project: identity
@@ -758,6 +2087,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             manager.shutdownReclaimableProject()
             openProjects.removeValue(forKey: canonical)
             agentTaskProjectsByRoot.removeValue(forKey: canonical)
+            agentTaskRepositoryProofsByRoot.removeValue(forKey: canonical)
             backgroundProjects.remove(canonical)
         }
         #if DEBUG
@@ -858,6 +2188,11 @@ final class ProjectRegistry: LSPSettingsObserver {
                   terminalID: task.route.terminalID,
                   runID: run.id
               ) else { return false }
+        if task.route.surface.isQuickTerminal {
+            return quickTerminalAgentRouter?
+                .isQuickTerminalAgentTaskPresented(task) == true
+        }
+        guard task.route.surface == .projectWindow else { return false }
         let projectURL = URL(
             fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
@@ -907,6 +2242,19 @@ final class ProjectRegistry: LSPSettingsObserver {
                   terminalID: task.route.terminalID,
                   runID: run.id
               ) else { return nil }
+        if task.route.surface.isQuickTerminal {
+            guard let route = quickTerminalAgentRouter?
+                    .resolveQuickTerminalAgentRoute(for: task),
+                  route == task.route,
+                  agentTasks.task(for: taskID) == task,
+                  agentTasks.isExactLiveOwner(
+                    taskID: taskID,
+                    terminalID: route.terminalID,
+                    runID: run.id
+                  ) else { return nil }
+            return route
+        }
+        guard task.route.surface == .projectWindow else { return nil }
         let rawURL = URL(
             fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
@@ -993,6 +2341,35 @@ final class ProjectRegistry: LSPSettingsObserver {
             return .routeStale
         }
 
+        if initialTask.route.surface.isQuickTerminal {
+            guard let run = initialTask.runs.last,
+                  run.liveness == .live,
+                  run.endedAt == nil,
+                  agentTasks.isExactLiveOwner(
+                    taskID: taskID,
+                    terminalID: initialTask.route.terminalID,
+                    runID: run.id
+                  ),
+                  let route = quickTerminalAgentRouter?
+                    .revealQuickTerminalAgentRoute(for: initialTask),
+                  route == initialTask.route,
+                  let currentTask = agentTasks.task(for: taskID),
+                  currentTask == initialTask,
+                  matches(currentTask, expectedNotificationRoute),
+                  agentTasks.isExactLiveOwner(
+                    taskID: taskID,
+                    terminalID: route.terminalID,
+                    runID: run.id
+                  ) else {
+                return .routeStale
+            }
+            _ = agentTasks.setReviewed(true, taskID: taskID)
+            return .focused(route)
+        }
+        guard initialTask.route.surface == .projectWindow else {
+            return .routeStale
+        }
+
         let rawURL = URL(
             fileURLWithPath: initialTask.project.canonicalWorktreePath,
             isDirectory: true
@@ -1064,6 +2441,12 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard let initialTask = agentTasks.task(for: taskID) else {
             return .taskMissing
         }
+        // Recovery currently launches only into project-pane TerminalManager.
+        // Quick Terminal tasks must never fall through this path and admit a
+        // project manager from durable path metadata.
+        guard initialTask.route.surface == .projectWindow else {
+            return .launchRejected
+        }
         let rawURL = URL(
             fileURLWithPath: initialTask.project.canonicalWorktreePath,
             isDirectory: true
@@ -1097,6 +2480,11 @@ final class ProjectRegistry: LSPSettingsObserver {
             }
             return .launchRejected
         }
+
+        guard await manager.revalidateAgentTaskFilesystemAdmission(
+            expectedIdentity: initialTask.project,
+            workingDirectory: plan.workingDirectory
+        ) else { return .changedWhilePreparing }
 
         // No suspension occurs between this full ownership fence and launch.
         // A concurrent presentation, stale close, reclaim, task mutation, or
@@ -1163,24 +2551,17 @@ final class ProjectRegistry: LSPSettingsObserver {
                 == task.project.canonicalProjectPath else {
             return nil
         }
-        let manager: ProjectManager
-        if let existing = openProjects[projectURL] {
-            guard agentTaskProjectsByRoot[projectURL] == task.project,
-                  existing.rootURL == projectURL else {
-                return nil
-            }
-            manager = existing
-        } else {
-            guard let admitted = projectManager(
-                for: task.project,
-                reopenBackgroundProject: false,
-                admitMissingProjectInBackground: true
-            ), admitted.rootURL == projectURL,
-                agentTasks.task(for: task.id) == task,
-                agentTaskProjectsByRoot[projectURL] == task.project else {
-                return nil
-            }
-            manager = admitted
+        // Even an already-retained background manager must cross the same
+        // repository-instance validation boundary. Path equality alone cannot
+        // resume A after its repository/worktree paths were replaced by B.
+        guard let manager = await projectManager(
+            for: task.project,
+            reopenBackgroundProject: false,
+            admitMissingProjectInBackground: true
+        ), manager.rootURL == projectURL,
+            agentTasks.task(for: task.id) == task,
+            agentTaskProjectsByRoot[projectURL] == task.project else {
+            return nil
         }
         let hasEligibleCurrentOwner = manager.dialogOwnerWindow.map {
             DialogPresenter.isEligibleApplicationOwner($0)
@@ -1254,6 +2635,10 @@ final class ProjectRegistry: LSPSettingsObserver {
             }
             return nil
         }
+        guard await manager.revalidateAgentTaskFilesystemAdmission(
+            expectedIdentity: task.project,
+            workingDirectory: projectURL
+        ) else { return nil }
         guard markProjectWindowOpen(
             projectURL,
             identity: task.project,
@@ -1342,6 +2727,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         _ task: AgentTask,
         targetTerminalID: UUID
     ) async -> AgentTaskRoute? {
+        guard task.route.surface == .projectWindow else { return nil }
         let rawURL = URL(
             fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
@@ -1690,6 +3076,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
         openProjects.removeAll()
         agentTaskProjectsByRoot.removeAll()
+        agentTaskRepositoryProofsByRoot.removeAll()
         backgroundProjects.removeAll()
         detachedTaskCleanupProjects.removeAll()
         return true
@@ -1806,6 +3193,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     func removeFromRecent(_ url: URL) {
         let canonical = canonicalProjectURL(url)
         recentProjects.removeAll { $0 == canonical }
+        removeRecentAgentTaskRecord(for: canonical)
         saveRecentProjects()
     }
 
@@ -1813,16 +3201,43 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// Welcome, and Dock menu) through the registry's single shared source.
     func clearRecentProjects() {
         recentProjects.removeAll()
+        if !recentAgentTaskProjectsByRoot.isEmpty {
+            recentAgentTaskProjectsByRoot.removeAll()
+            recentAgentTaskRecordsGeneration = UUID()
+        }
         saveRecentProjects()
     }
 
-    private func addToRecent(_ url: URL) {
-        let canonical = canonicalProjectURL(url)
+    private func addToRecent(
+        _ url: URL,
+        identity: AgentTaskProjectIdentity
+    ) {
+        // Every caller has already resolved the registry key. Avoid repeating
+        // filesystem canonicalization on MainActor at the admission commit.
+        let canonical = url.standardizedFileURL
         recentProjects.removeAll { $0 == canonical }
         recentProjects.insert(canonical, at: 0)
+        let retainedProof: RecentAgentTaskRepositoryProof? = if let liveProof =
+            agentTaskRepositoryProofsByRoot[canonical] {
+            liveProof
+        } else if recentAgentTaskProjectsByRoot[canonical]?.identity
+                    == identity {
+            recentAgentTaskProjectsByRoot[canonical]?.repositoryProof
+        } else {
+            nil
+        }
+        recentAgentTaskProjectsByRoot[canonical] =
+            RecentAgentTaskProjectRecord(
+                identity: identity,
+                repositoryProof: retainedProof
+            )
         if recentProjects.count > Self.maxRecentProjects {
             recentProjects = Array(recentProjects.prefix(Self.maxRecentProjects))
         }
+        recentAgentTaskProjectsByRoot = recentAgentTaskProjectsByRoot.filter {
+            recentProjects.contains($0.key)
+        }
+        recentAgentTaskRecordsGeneration = UUID()
         saveRecentProjects()
     }
 
@@ -1847,6 +3262,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             return canonical
         }
         recentProjects = Array(recentProjects.prefix(Self.maxRecentProjects))
+        loadRecentAgentTaskProjectIdentities()
         if paths != recentProjects.map(\.path) {
             saveRecentProjects()
         }
@@ -1855,7 +3271,97 @@ final class ProjectRegistry: LSPSettingsObserver {
     private func saveRecentProjects() {
         let paths = recentProjects.map(\.path)
         defaults.set(paths, forKey: Self.recentProjectsKey)
+        let records = recentProjects.compactMap {
+            recentAgentTaskProjectsByRoot[$0]
+        }
+        if let data = try? JSONEncoder().encode(records) {
+            defaults.set(data, forKey: Self.recentProjectAgentIdentitiesKey)
+        }
     }
+
+    private func loadRecentAgentTaskProjectIdentities() {
+        guard let data = defaults.data(
+            forKey: Self.recentProjectAgentIdentitiesKey
+        ), let records = try? JSONDecoder().decode(
+            [RecentAgentTaskProjectRecord].self,
+            from: data
+        ) else {
+            recentAgentTaskProjectsByRoot = [:]
+            recentAgentTaskRecordsGeneration = UUID()
+            return
+        }
+        let recentByPath = Dictionary(
+            uniqueKeysWithValues: recentProjects.map { ($0.path, $0) }
+        )
+        recentAgentTaskProjectsByRoot = records.reduce(into: [:]) { result, record in
+            let identity = record.identity
+            let project = URL(
+                fileURLWithPath: identity.canonicalProjectPath,
+                isDirectory: true
+            ).standardizedFileURL
+            let worktree = URL(
+                fileURLWithPath: identity.canonicalWorktreePath,
+                isDirectory: true
+            ).standardizedFileURL
+            guard project.path == identity.canonicalProjectPath,
+                  worktree.path == identity.canonicalWorktreePath,
+                  let canonical = recentByPath[worktree.path],
+                  result[canonical] == nil,
+                  project == worktree || record.repositoryProof != nil else {
+                return
+            }
+            result[canonical] = record
+        }
+        recentAgentTaskRecordsGeneration = UUID()
+    }
+
+    private func removeRecentAgentTaskRecord(for canonical: URL) {
+        guard recentAgentTaskProjectsByRoot.removeValue(
+            forKey: canonical
+        ) != nil else { return }
+        recentAgentTaskRecordsGeneration = UUID()
+    }
+
+    #if DEBUG
+    nonisolated static func unsignedFilesystemIdentityForTesting(
+        _ value: Int64
+    ) -> UInt64 {
+        unsignedFilesystemIdentity(value)
+    }
+
+    nonisolated static func filesystemIdentityMatchesForTesting(
+        leftGeneration: UInt64,
+        rightGeneration: UInt64
+    ) -> Bool {
+        let left = StableFilesystemObjectIdentity(
+            device: 1,
+            inode: 2,
+            generation: leftGeneration,
+            birthSeconds: 3,
+            birthNanoseconds: 4,
+            kind: S_IFREG
+        )
+        let right = StableFilesystemObjectIdentity(
+            device: 1,
+            inode: 2,
+            generation: rightGeneration,
+            birthSeconds: 3,
+            birthNanoseconds: 4,
+            kind: S_IFREG
+        )
+        return left == right
+    }
+
+    nonisolated static func boundedGitPathFileForTesting(
+        _ url: URL,
+        beforeRead: @escaping () -> Void
+    ) -> String? {
+        RecentAgentTaskFilesystemValidator.boundedGitPathFile(
+            url,
+            beforeRead: beforeRead
+        )
+    }
+    #endif
 
     func canonicalProjectURL(_ projectURL: URL) -> URL {
         Self.canonicalProjectURL(projectURL)

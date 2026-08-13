@@ -925,7 +925,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     )
 
     /// Central project registry — created early so it's available for AppKit fallback.
-    var registry = ProjectRegistry()
+    var registry = ProjectRegistry() {
+        didSet {
+            if oldValue !== registry {
+                oldValue.quickTerminalAgentRouter = nil
+            }
+            bindQuickTerminalAgentRouting()
+        }
+    }
 
     /// Application-wide, permission-gated agent notification coordinator.
     lazy var agentNotifications = AgentNotificationController(
@@ -955,6 +962,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     let quickTerminalCoordinator = QuickTerminalController()
     private let hotkeyManager = GlobalHotkeyManager()
     private var hotkeySettingsBinding: QuickTerminalSettingsRuntimeBinding?
+
+    private func bindQuickTerminalAgentRouting() {
+        quickTerminalCoordinator.registry = registry
+        registry.quickTerminalAgentRouter = quickTerminalCoordinator
+    }
 
     /// `true` when the quick-terminal hotkey is explicitly disabled via the
     /// `--disable-quick-terminal` launch argument or `PINE_DISABLE_QUICK_TERMINAL`
@@ -1316,6 +1328,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        bindQuickTerminalAgentRouting()
         agentNotifications.start()
         agentPresence.start()
 
@@ -1331,7 +1344,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // in the App Sandbox without Accessibility permission; disabled by
         // launch flag for UI tests / opt-out.
         if !Self.isQuickTerminalDisabled {
-            quickTerminalCoordinator.registry = registry
             hotkeyManager.onTrigger = { @Sendable [weak self] in
                 // Hop to MainActor: toggle touches @MainActor coordinator state.
                 Task { @MainActor in self?.quickTerminalCoordinator.toggle() }
@@ -1772,10 +1784,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         fallbackOpenProjectWindow: ((URL) -> Void)? = nil
     ) {
         NativeCommandDelivery.deferToNextMainRunLoop { [weak self] in
-            _ = self?.openRecentProject(
-                url,
-                fallbackOpenProjectWindow: fallbackOpenProjectWindow
-            )
+            Task { @MainActor [weak self] in
+                _ = await self?.openRecentProject(
+                    url,
+                    fallbackOpenProjectWindow: fallbackOpenProjectWindow
+                )
+            }
         }
     }
 
@@ -1785,20 +1799,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     func openRecentProject(
         _ url: URL,
         fallbackOpenProjectWindow: ((URL) -> Void)? = nil
-    ) -> Bool {
-        let canonical = registry.canonicalProjectURL(url)
-        if registry.isWindowOpen(canonical),
-           let project = registry.openProjects[canonical],
+    ) async -> Bool {
+        let targetRegistry = registry
+        guard let project = await targetRegistry
+                .projectManagerForRecentProject(url),
+              !Task.isCancelled,
+              registry === targetRegistry,
+              let canonical = project.rootURL?.standardizedFileURL,
+              targetRegistry.openProjects[canonical] === project else {
+            return false
+        }
+        if targetRegistry.isWindowOpen(canonical),
            let window = liveProjectWindow(
                for: project,
                canonicalURL: canonical
            ) {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate()
-            // Touch the registered project manager (no-op side effect; result
-            // intentionally unused) so the Open Recent path mirrors the normal
-            // open path that resolves the manager for the canonical URL.
-            _ = registry.projectManager(for: canonical)
             hideWelcome()
             return true
         }
@@ -1806,15 +1823,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // A registry entry can briefly claim an open window after AppKit has
         // already hidden or retired its delegate. Move that model back to the
         // retained-background state before asking SwiftUI for a replacement.
-        if registry.isWindowOpen(canonical) {
-            registry.closeProjectWindow(canonical)
-        }
-        guard registry.projectManager(for: canonical) != nil else {
-            return false
+        if targetRegistry.isWindowOpen(canonical) {
+            targetRegistry.closeProjectWindow(canonical)
         }
         guard let openProjectWindow =
                 self.openProjectWindow ?? fallbackOpenProjectWindow else {
-            registry.closeProjectWindow(canonical)
+            targetRegistry.closeProjectWindow(canonical)
+            return false
+        }
+        guard !Task.isCancelled,
+              registry === targetRegistry,
+              targetRegistry.openProjects[canonical] === project else {
             return false
         }
         openProjectWindow(canonical)
@@ -2968,11 +2987,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
         registry.freezeAgentTasksForTermination()
+        quickTerminalCoordinator.freezeAgentTasksForTermination()
         registry.agentTasks.prepareForApplicationTermination()
         func rollbackAgentTasks() async {
-            guard await registry.cancelAgentTaskTermination(
+            let rollbackWasSaved = await registry.cancelAgentTaskTermination(
                 until: terminationDeadline
-            ) else {
+            )
+            quickTerminalCoordinator.cancelAgentTaskTermination()
+            guard rollbackWasSaved else {
                 Logger.app.error(
                     "Agent task rollback did not reach a clean persistence barrier"
                 )
