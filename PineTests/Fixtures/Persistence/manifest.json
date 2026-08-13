@@ -1,0 +1,18 @@
+{
+  "formatVersion": 1,
+  "fixtures": [
+    {"store":"preferences","file":"preferences-v0.json","schema":"N-1","outcome":"migrate"},
+    {"store":"preferences","file":"preferences-v1.json","schema":"current","outcome":"load"},
+    {"store":"preferences","file":"preferences-future.json","schema":"future","outcome":"reject"},
+    {"store":"session","file":"session-v0.json","schema":"N-1","outcome":"load"},
+    {"store":"session","file":"session-v1.json","schema":"current","outcome":"load"},
+    {"store":"session","file":"session-future.json","schema":"future","outcome":"reject"},
+    {"store":"recovery","file":"recovery-v0.json","schema":"N-1","outcome":"load"},
+    {"store":"recovery","file":"recovery-v1.json","schema":"current","outcome":"load"},
+    {"store":"recovery","file":"recovery-future.json","schema":"future","outcome":"reject"},
+    {"store":"agent-task","file":"agent-task-v0.json","schema":"N-2","outcome":"reject"},
+    {"store":"agent-task","file":"agent-task-v1.json","schema":"N-1","outcome":"migrate"},
+    {"store":"agent-task","file":"agent-task-v2.json","schema":"current","outcome":"load"},
+    {"store":"agent-task","file":"agent-task-future.json","schema":"future","outcome":"reject"}
+  ]
+}

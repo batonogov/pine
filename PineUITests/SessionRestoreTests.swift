@@ -12,6 +12,8 @@ import XCTest
 final class SessionRestoreTests: PineUITestCase {
 
     private var projectURL: URL!
+    private var seededSessionKey: String?
+    private let bundleID = "io.github.batonogov.pine"
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -23,6 +25,9 @@ final class SessionRestoreTests: PineUITestCase {
     }
 
     override func tearDownWithError() throws {
+        if let seededSessionKey {
+            try? runDefaults(["delete", bundleID, seededSessionKey])
+        }
         if let url = projectURL { cleanupProject(url) }
         try super.tearDownWithError()
     }
@@ -149,4 +154,84 @@ final class SessionRestoreTests: PineUITestCase {
             "Status bar should be visible after session restore"
         )
     }
+
+    func testFixtureSurvivesInjectedWriteFailureAndProcessRelaunch() throws {
+        cleanupProject(projectURL)
+        projectURL = try createTempProject(files: [
+            "Sources/App.swift": "let fixture = true\n",
+            "helper.swift": "let replacement = true\n",
+        ])
+        app.launchArguments.removeAll { $0 == "--reset-state" }
+        try seedVersionedSessionFixture()
+        app.launchEnvironment["PINE_PERSISTENCE_FAULT"] = [
+            "session",
+            "before-atomic-replace",
+            "atomic-rename",
+        ].joined(separator: ":")
+
+        launchWithProject(projectURL)
+        XCTAssertTrue(
+            waitForExistence(editorTab("App.swift"), timeout: 15),
+            "The shared versioned fixture should restore App.swift"
+        )
+        openFile("helper.swift")
+
+        let closeButton = app.windows.firstMatch
+            .buttons["_XCUI:CloseWindow"].firstMatch
+        XCTAssertTrue(closeButton.exists)
+        closeButton.click()
+        XCTAssertTrue(
+            waitForExistence(app.windows["welcome"], timeout: 10),
+            "Closing the project should attempt the injected session save"
+        )
+        app.terminate()
+
+        app.launchEnvironment.removeValue(forKey: "PINE_PERSISTENCE_FAULT")
+        launchWithProject(projectURL)
+        XCTAssertTrue(
+            waitForExistence(editorTab("App.swift"), timeout: 15),
+            "Relaunch should consume the original last-known-good fixture"
+        )
+        XCTAssertFalse(
+            editorTab("helper.swift").exists,
+            "The failed replacement must not become the restored session"
+        )
+    }
+
+    private func seedVersionedSessionFixture() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                "PineTests/Fixtures/Persistence/session-v0.json"
+            )
+        let fixture = try String(
+            contentsOf: fixtureURL,
+            encoding: .utf8
+        ).replacingOccurrences(
+            of: "{{PROJECT_PATH}}",
+            with: projectURL.resolvingSymlinksInPath().path
+        )
+        let data = Data(fixture.utf8)
+        let hex = data.map { String(format: "%02x", $0) }.joined()
+        let key = "sessionState:\(projectURL.resolvingSymlinksInPath().path)"
+        try runDefaults(["write", bundleID, key, "-data", hex])
+        seededSessionKey = key
+    }
+
+    private func runDefaults(_ arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment["DEVELOPER_DIR"] = environment["DEVELOPER_DIR"]
+            ?? "/Applications/Xcode.app/Contents/Developer"
+        process.environment = environment
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+
 }

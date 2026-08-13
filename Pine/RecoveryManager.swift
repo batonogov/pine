@@ -37,6 +37,7 @@ final class RecoveryManager {
     nonisolated static let debounceDelay: TimeInterval = 5
 
     private let recoveryDirectory: URL
+    private let faultInjector: PersistenceFaultInjector
     private var periodicTimer: Timer?
     private var snapshotDebouncer: Debouncer?
     /// Old crash IDs whose recovered buffers now live under a runtime tab ID.
@@ -49,8 +50,12 @@ final class RecoveryManager {
     /// Tabs provider — set by ProjectManager so periodic snapshots can access current tabs.
     var tabsProvider: (() -> [EditorTab])?
 
-    init(recoveryDirectory: URL) {
+    init(
+        recoveryDirectory: URL,
+        faultInjector: PersistenceFaultInjector = .processEnvironment
+    ) {
         self.recoveryDirectory = recoveryDirectory
+        self.faultInjector = faultInjector
     }
 
     /// Convenience initializer for a specific project.
@@ -138,6 +143,12 @@ final class RecoveryManager {
             do {
                 let data = try Data(contentsOf: file)
                 let entry = try decoder.decode(RecoveryEntry.self, from: data)
+                guard entry.hasSupportedSchema else {
+                    Self.logger.error(
+                        "Refusing unsupported recovery schema in \(name)"
+                    )
+                    continue
+                }
                 results.append((uuid, entry))
             } catch {
                 Self.logger.error("Failed to read recovery entry \(name): \(error)")
@@ -354,6 +365,12 @@ final class RecoveryManager {
             do {
                 let data = try Data(contentsOf: file)
                 let entry = try decoder.decode(RecoveryEntry.self, from: data)
+                guard entry.hasSupportedSchema else {
+                    Self.logger.error(
+                        "Refusing unsupported recovery schema during cleanup"
+                    )
+                    continue
+                }
                 if entry.timestamp < cutoff {
                     do {
                         try FileManager.default.removeItem(at: file)
@@ -437,11 +454,39 @@ final class RecoveryManager {
         )
 
         do {
+            try faultInjector.checkpoint(
+                store: .recovery,
+                phase: .beforeWrite
+            )
             let data = try encoder.encode(entry)
+            try faultInjector.checkpoint(
+                store: .recovery,
+                phase: .afterTemporaryWrite
+            )
+            try faultInjector.checkpoint(
+                store: .recovery,
+                phase: .beforeSync
+            )
+            try faultInjector.checkpoint(
+                store: .recovery,
+                phase: .beforeAtomicReplace
+            )
             try data.write(
                 to: recoveryFileURL(for: tab.id),
                 options: .atomic
             )
+            do {
+                try faultInjector.checkpoint(
+                    store: .recovery,
+                    phase: .afterAtomicReplace
+                )
+            } catch {
+                let tabName = tab.fileName
+                Self.logger.error(
+                    "Recovery snapshot replaced but durability is unknown for tab \(tabName): \(error)"
+                )
+                return false
+            }
         } catch {
             Self.logger.error(
                 "Failed to write recovery file for tab \(tab.fileName): \(error)"

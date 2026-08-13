@@ -152,8 +152,14 @@ final class SidebarEditState {
 @MainActor
 @Observable
 final class SidebarKeyboardFocusController {
+    /// A disclosure change can rebuild the SwiftUI host after an AppKit focus
+    /// claim has already succeeded. Keep the retry window bounded, but cover
+    /// both the next run loop and the later reconciliation pass.
+    private static let focusRetryDelays: [TimeInterval] = [0, 0.1]
+
     private weak var responderView: SidebarKeyboardResponderView?
     private(set) var isFocused = false
+    private var focusRequestGeneration = 0
 
     func attach(_ responderView: SidebarKeyboardResponderView) {
         self.responderView = responderView
@@ -165,24 +171,39 @@ final class SidebarKeyboardFocusController {
 
     @discardableResult
     func requestFocus(retryOnNextRunLoop: Bool = false) -> Bool {
-        let focused: Bool
-        if let responderView, let window = responderView.window {
-            focused = window.makeFirstResponder(responderView)
-                && window.firstResponder === responderView
-        } else {
-            focused = false
-        }
+        focusRequestGeneration &+= 1
+        let generation = focusRequestGeneration
+        let focused = attemptFocus()
         if retryOnNextRunLoop {
             // A pointer action can arrive while SwiftUI is still attaching the
             // representable, or an editor preview can displace a successful
-            // claim later in the same layout transaction. Retry once after
-            // that transaction settles; never form an unbounded focus loop.
-            DispatchQueue.main.async { [weak self] in
-                guard let self, !self.isFocused else { return }
-                _ = self.requestFocus()
+            // claim during a later disclosure reconciliation pass. Retry at
+            // two bounded points; an explicit editor-focus action invalidates
+            // this generation before either retry can steal focus back.
+            for delay in Self.focusRetryDelays {
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + delay
+                ) { [weak self] in
+                    guard let self,
+                          self.focusRequestGeneration == generation,
+                          !self.isFocused else { return }
+                    _ = self.attemptFocus()
+                }
             }
         }
         return focused
+    }
+
+    func cancelPendingFocusRetry() {
+        focusRequestGeneration &+= 1
+    }
+
+    private func attemptFocus() -> Bool {
+        guard let responderView, let window = responderView.window else {
+            return false
+        }
+        return window.makeFirstResponder(responderView)
+            && window.firstResponder === responderView
     }
 
     private func updateFocus(_ focused: Bool) {
@@ -639,7 +660,13 @@ struct SidebarView: View {
                                 nodes: workspace.rootNodes,
                                 treeRevision: workspace.rootNodesRevision,
                                 selection: $selectedFile,
-                                onFileOpen: onFileOpen,
+                                onFileOpen: { node, disposition in
+                                    if disposition.requestsEditorFocus {
+                                        keyboardFocusController
+                                            .cancelPendingFocusRetry()
+                                    }
+                                    onFileOpen(node, disposition)
+                                },
                                 isKeyboardFocused: keyboardFocusController.isFocused
                                     && controlActiveState == .key,
                                 onKeyboardFocusRequested: {

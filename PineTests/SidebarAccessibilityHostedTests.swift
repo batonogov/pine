@@ -152,6 +152,66 @@ struct SidebarAccessibilityHostedTests {
         #expect(window.firstResponder === responder)
     }
 
+    @Test("Row focus claim survives a later disclosure reconciliation")
+    func responderFocusRetryAfterDisclosureReconciliation() async throws {
+        let controller = SidebarKeyboardFocusController()
+        let responder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let replacement = SidebarFocusAcceptingTestView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(responder)
+        window.contentView?.addSubview(replacement)
+        controller.attach(responder)
+        defer { window.orderOut(nil) }
+
+        #expect(controller.requestFocus(retryOnNextRunLoop: true))
+        #expect(window.makeFirstResponder(replacement))
+        #expect(!controller.isFocused)
+
+        try await Task.sleep(for: .milliseconds(150))
+
+        #expect(controller.isFocused)
+        #expect(window.firstResponder === responder)
+    }
+
+    @Test("Explicit editor focus cancels a pending sidebar retry")
+    func explicitEditorFocusCancelsSidebarRetry() async throws {
+        let controller = SidebarKeyboardFocusController()
+        let responder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let editor = SidebarFocusAcceptingTestView(
+            frame: NSRect(x: 0, y: 0, width: 100, height: 100)
+        )
+        let window = NSWindow(
+            contentRect: editor.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(editor)
+        window.contentView?.addSubview(responder)
+        controller.attach(responder)
+        defer { window.orderOut(nil) }
+
+        #expect(controller.requestFocus(retryOnNextRunLoop: true))
+        controller.cancelPendingFocusRetry()
+        #expect(window.makeFirstResponder(editor))
+
+        try await Task.sleep(for: .milliseconds(150))
+
+        #expect(!controller.isFocused)
+        #expect(window.firstResponder === editor)
+    }
+
     @Test("Physical and interpreted printable input share one callback")
     func responderInputClassification() throws {
         let responder = SidebarKeyboardResponderView(frame: .zero)
@@ -465,4 +525,8 @@ private struct SidebarAccessibilityHostedHarness: View {
         )
         .frame(width: 220, height: 24)
     }
+}
+
+private final class SidebarFocusAcceptingTestView: NSView {
+    override var acceptsFirstResponder: Bool { true }
 }

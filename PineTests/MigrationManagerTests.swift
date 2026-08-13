@@ -87,7 +87,7 @@ struct MigrationManagerTests {
         manager.runMigrations()
 
         #expect(order == [1, 2, 3])
-        #expect(defaults.integer(forKey: MigrationManager.schemaVersionKey) == MigrationManager.latestVersion)
+        #expect(defaults.integer(forKey: MigrationManager.schemaVersionKey) == 3)
     }
 
     @Test func migration_skips_already_applied() {
@@ -105,6 +105,28 @@ struct MigrationManagerTests {
         manager.runMigrations()
 
         #expect(ranVersions == [3])
+    }
+
+    @Test func migration_unknownFutureSchemaFailsClosed() {
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
+        let futureVersion = MigrationManager.latestVersion + 1
+        defaults.set(futureVersion, forKey: MigrationManager.schemaVersionKey)
+        defaults.set("future-data", forKey: "futureOnlyPreference")
+
+        var migrationRan = false
+        var manager = MigrationManager(defaults: defaults)
+        manager.registerMigration(from: 0, to: 1) { defs in
+            migrationRan = true
+            defs.removeObject(forKey: "futureOnlyPreference")
+        }
+
+        manager.runMigrations()
+
+        #expect(!migrationRan)
+        #expect(defaults.integer(forKey: MigrationManager.schemaVersionKey) == futureVersion)
+        #expect(defaults.string(forKey: "futureOnlyPreference") == "future-data")
     }
 
     // MARK: - Idempotency

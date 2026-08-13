@@ -1,0 +1,5 @@
+{
+  "pineSchemaVersion": 999,
+  "futureOnlyPreference": "preserve-verbatim",
+  "recentProjectPaths": ["{{PROJECT_PATH}}"]
+}

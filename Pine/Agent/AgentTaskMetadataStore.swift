@@ -108,6 +108,7 @@ nonisolated struct AgentTaskStoreHooks: Sendable {
 nonisolated struct AgentTaskStoreConfiguration: Sendable {
     let privateComponentCount: Int?
     let cleanup: AgentTaskCleanupConfiguration
+    let faultInjector: PersistenceFaultInjector
     #if DEBUG
     let hooks: AgentTaskStoreHooks
     #endif
@@ -116,19 +117,23 @@ nonisolated struct AgentTaskStoreConfiguration: Sendable {
     init(
         privateComponentCount: Int? = nil,
         cleanup: AgentTaskCleanupConfiguration = AgentTaskCleanupConfiguration(),
+        faultInjector: PersistenceFaultInjector = .processEnvironment,
         hooks: AgentTaskStoreHooks = AgentTaskStoreHooks()
     ) {
         self.privateComponentCount = privateComponentCount
         self.cleanup = cleanup
+        self.faultInjector = faultInjector
         self.hooks = hooks
     }
     #else
     init(
         privateComponentCount: Int? = nil,
-        cleanup: AgentTaskCleanupConfiguration = AgentTaskCleanupConfiguration()
+        cleanup: AgentTaskCleanupConfiguration = AgentTaskCleanupConfiguration(),
+        faultInjector: PersistenceFaultInjector = .processEnvironment
     ) {
         self.privateComponentCount = privateComponentCount
         self.cleanup = cleanup
+        self.faultInjector = faultInjector
     }
     #endif
 }
@@ -563,6 +568,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         } catch AgentTaskDirectoryError.lockContention {
             return .rejected(.lockContention)
         } catch AgentTaskDirectoryError.transient {
+            return .rejected(.transientIO)
+        } catch PersistenceFailureKind.noSpace {
+            return .rejected(.storageLimit)
+        } catch is PersistenceFailureKind {
             return .rejected(.transientIO)
         } catch {
             return .rejected(.transientIO)
@@ -1258,6 +1267,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         authorization: AgentTaskPublicationAuthorization?,
         verifyContext: @escaping () -> Bool
     ) throws {
+        try configuration.faultInjector.checkpoint(
+            store: .agentTask,
+            phase: .beforeWrite
+        )
         guard verifyContext() else { throw AgentTaskDirectoryError.unsafe }
         let initialFinalIdentity = try existingPrivateFileIdentity(
             fileName,
@@ -1316,10 +1329,22 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         }
         writerIdentity = opened
         try writeAll(data, descriptor: descriptor)
+        do {
+            try configuration.faultInjector.checkpoint(
+                store: .agentTask,
+                phase: .beforeSync
+            )
+        } catch {
+            throw AgentTaskDirectoryError.durabilityUnknown
+        }
         guard durableSync(descriptor, target: .metadataFile) else {
             throw AgentTaskDirectoryError.durabilityUnknown
         }
         reportPhase(.temporaryWritten)
+        try configuration.faultInjector.checkpoint(
+            store: .agentTask,
+            phase: .afterTemporaryWrite
+        )
         guard verifyContext(),
               fstat(descriptor, &opened) == 0,
               fstatat(
@@ -1405,6 +1430,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 fileName
             ) == 0
         }
+        try configuration.faultInjector.checkpoint(
+            store: .agentTask,
+            phase: .beforeAtomicReplace
+        )
         let decision = authorization?.publish(operation: publish)
             ?? (publish() ? .published : .failed)
         switch decision {
@@ -1416,6 +1445,14 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             throw AgentTaskDirectoryError.superseded
         }
         published = true
+        do {
+            try configuration.faultInjector.checkpoint(
+                store: .agentTask,
+                phase: .afterAtomicReplace
+            )
+        } catch {
+            throw AgentTaskDirectoryError.durabilityUnknownAfterPublication
+        }
         guard verifyContext(),
               fstatat(
                   directoryDescriptor,

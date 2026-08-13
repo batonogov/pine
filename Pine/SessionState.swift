@@ -43,6 +43,8 @@ struct SessionTabReference: Codable, Equatable, Sendable {
 /// a project from Welcome or Open Recent restores its last workspace state.
 struct SessionState: Codable, Sendable {
     private static let logger = Logger.app
+    static let currentSchemaVersion = 1
+    var schemaVersion: Int?
     var projectPath: String
     var openFilePaths: [String]
     var activeFilePath: String?
@@ -88,6 +90,57 @@ struct SessionState: Codable, Sendable {
     /// Per-terminal-pane active tab indices. Key is pane UUID string.
     var terminalPaneActiveIndices: [String: Int]?
 
+    var hasSupportedSchema: Bool {
+        guard let schemaVersion else { return true }
+        return (0...Self.currentSchemaVersion).contains(schemaVersion)
+    }
+
+    init(
+        schemaVersion: Int? = Self.currentSchemaVersion,
+        projectPath: String,
+        openFilePaths: [String],
+        activeFilePath: String? = nil,
+        previewModes: [String: String]? = nil,
+        highlightingDisabledPaths: [String]? = nil,
+        editorStates: [String: PerTabEditorState]? = nil,
+        pinnedPaths: [String]? = nil,
+        paneLayoutData: Data? = nil,
+        paneTabAssignments: [String: [String]]? = nil,
+        activePaneID: String? = nil,
+        paneActiveEditorPaths: [String: String]? = nil,
+        panePinnedPaths: [String: [String]]? = nil,
+        paneTransientPreviewPaths: [String: String]? = nil,
+        globalTabSwitchOrder: [SessionTabReference]? = nil,
+        terminalTabCount: Int? = nil,
+        activeTerminalIndex: Int? = nil,
+        isTerminalVisible: Bool? = nil,
+        isTerminalMaximized: Bool? = nil,
+        terminalPaneTabCounts: [String: Int]? = nil,
+        terminalPaneActiveIndices: [String: Int]? = nil
+    ) {
+        self.schemaVersion = schemaVersion
+        self.projectPath = projectPath
+        self.openFilePaths = openFilePaths
+        self.activeFilePath = activeFilePath
+        self.previewModes = previewModes
+        self.highlightingDisabledPaths = highlightingDisabledPaths
+        self.editorStates = editorStates
+        self.pinnedPaths = pinnedPaths
+        self.paneLayoutData = paneLayoutData
+        self.paneTabAssignments = paneTabAssignments
+        self.activePaneID = activePaneID
+        self.paneActiveEditorPaths = paneActiveEditorPaths
+        self.panePinnedPaths = panePinnedPaths
+        self.paneTransientPreviewPaths = paneTransientPreviewPaths
+        self.globalTabSwitchOrder = globalTabSwitchOrder
+        self.terminalTabCount = terminalTabCount
+        self.activeTerminalIndex = activeTerminalIndex
+        self.isTerminalVisible = isTerminalVisible
+        self.isTerminalMaximized = isTerminalMaximized
+        self.terminalPaneTabCounts = terminalPaneTabCounts
+        self.terminalPaneActiveIndices = terminalPaneActiveIndices
+    }
+
     // MARK: - UserDefaults keys
 
     /// Legacy single-project key (kept for migration from older versions).
@@ -117,6 +170,7 @@ struct SessionState: Codable, Sendable {
 
     // MARK: - Save
 
+    @discardableResult
     static func save(
         projectURL: URL,
         openFileURLs: [URL],
@@ -134,8 +188,9 @@ struct SessionState: Codable, Sendable {
         panePinnedPaths: [String: [String]]? = nil,
         paneTransientPreviewPaths: [String: String]? = nil,
         globalTabSwitchOrder: [SessionTabReference]? = nil,
-        defaults: UserDefaults = .standard
-    ) {
+        defaults: UserDefaults = .standard,
+        faultInjector: PersistenceFaultInjector = .processEnvironment
+    ) -> Bool {
         let state = SessionState(
             projectPath: projectURL.path,
             openFilePaths: openFileURLs.map(\.path),
@@ -155,10 +210,45 @@ struct SessionState: Codable, Sendable {
             terminalPaneActiveIndices: terminalPaneActiveIndices
         )
         do {
-            let data = try JSONEncoder().encode(state)
+            try faultInjector.checkpoint(
+                store: .session,
+                phase: .beforeWrite
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(state)
+            try faultInjector.checkpoint(
+                store: .session,
+                phase: .afterTemporaryWrite
+            )
+            try faultInjector.checkpoint(
+                store: .session,
+                phase: .beforeSync
+            )
+            try faultInjector.checkpoint(
+                store: .session,
+                phase: .beforeAtomicReplace
+            )
             defaults.set(data, forKey: key(for: projectURL))
+            do {
+                try faultInjector.checkpoint(
+                    store: .session,
+                    phase: .afterAtomicReplace
+                )
+            } catch {
+                let projectName = projectURL.lastPathComponent
+                logger.error(
+                    "Session state replaced but durability is unknown for \(projectName): \(error)"
+                )
+                return false
+            }
+            return true
         } catch {
-            logger.error("Failed to encode session state for \(projectURL.lastPathComponent): \(error)")
+            let projectName = projectURL.lastPathComponent
+            logger.error(
+                "Failed to persist session state for \(projectName): \(error)"
+            )
+            return false
         }
     }
 
@@ -177,6 +267,12 @@ struct SessionState: Codable, Sendable {
             // Try legacy key as fallback for migration
             return loadLegacy(for: projectURL, defaults: defaults)
         }
+        guard state.hasSupportedSchema else {
+            logger.error(
+                "Refusing unsupported session schema for \(projectURL.lastPathComponent)"
+            )
+            return nil
+        }
         guard directoryExists(at: state.projectPath) else { return nil }
         return state
     }
@@ -191,6 +287,10 @@ struct SessionState: Codable, Sendable {
             state = try JSONDecoder().decode(SessionState.self, from: data)
         } catch {
             logger.error("Failed to decode legacy session state: \(error)")
+            return nil
+        }
+        guard state.hasSupportedSchema else {
+            logger.error("Refusing unsupported legacy session schema")
             return nil
         }
         let canonical = projectURL.resolvingSymlinksInPath().path

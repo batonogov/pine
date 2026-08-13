@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 999,
+  "revision": "00000000-0000-0000-0000-000000000999",
+  "canonicalProjectPath": "{{PROJECT_PATH}}",
+  "canonicalWorktreePath": "{{PROJECT_PATH}}",
+  "tasks": [],
+  "futureOnlyState": "preserve-verbatim"
+}

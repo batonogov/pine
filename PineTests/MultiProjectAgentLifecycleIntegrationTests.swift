@@ -789,7 +789,13 @@ private final class MultiProjectAgentLifecycleFixture {
         phase: String
     ) async throws {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
+        // The controlled Python process has already published an exact child
+        // identity before this wait. A loaded macOS runner can still take
+        // more than two seconds to schedule it after the release-file rename;
+        // keep the wait bounded but align it with the fixture's own 5-second
+        // release deadline so a safe cleanup test does not become a scheduler
+        // lottery.
+        let deadline = clock.now.advanced(by: .seconds(5))
         while clock.now < deadline {
             try Task.checkCancellation()
             if FileManager.default.fileExists(atPath: url.path) { return }
