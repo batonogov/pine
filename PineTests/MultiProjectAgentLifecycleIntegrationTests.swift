@@ -5,10 +5,11 @@ import Testing
 
 @testable import Pine
 
-/// Partial control-plane coverage for #1422: this suite uses real production
-/// process snapshots and exact project routing, but deliberately does not
-/// claim Pine PTY launch/close, scrollback, confirmed-Quit process ownership,
-/// or Quick Terminal coverage. Those remain with #1436 and #1420.
+/// End-to-end control-plane coverage for #1422. The primary journey launches
+/// controlled agents through Pine's real SwiftTerm PTYs, feeds real process
+/// snapshots through the production coordinator, and commits termination
+/// through the application-wide Quit transaction. Quick Terminal's matching
+/// production boundary is covered by `QuickTerminalAgentDetectionTests`.
 @Suite("Multi-project agent snapshot routing", .serialized)
 @MainActor
 struct MultiProjectAgentJourneyTests {
@@ -43,6 +44,7 @@ struct MultiProjectAgentJourneyTests {
             agentDetectionPollInterval: 3_600,
             agentDetectionInitialPollDelay: 3_600
         )
+        defer { _ = projects.destroyAllProjects() }
         let managerA = try #require(projects.projectManager(for: fixture.projectA))
         let managerB = try #require(projects.projectManager(for: fixture.projectB))
         #expect(managerA !== managerB)
@@ -54,9 +56,33 @@ struct MultiProjectAgentJourneyTests {
         // Each launch returns only after its child PID/start identity is
         // durably published. Keeping setup sequential means a later failure
         // cannot strand an earlier fixture with unknown ownership.
-        let pi = try await fixture.launchReady(agent: "pi")
-        let codex = try await fixture.launchReady(agent: "codex")
-        let claude = try await fixture.launchReady(agent: "claude")
+        let pi = try await fixture.launchReady(
+            agent: "pi",
+            in: routeA.tabs[0]
+        )
+        let codex = try await fixture.launchReady(
+            agent: "codex",
+            in: routeA.tabs[1]
+        )
+        let claude = try await fixture.launchReady(
+            agent: "claude",
+            in: routeB.tabs[0]
+        )
+        #expect(
+            routeA.tabs[0].processTreeControllerForTesting?.rootIdentity
+                == pi.identity
+        )
+        #expect(
+            routeA.tabs[1].processTreeControllerForTesting?.rootIdentity
+                == codex.identity
+        )
+        #expect(
+            routeB.tabs[0].processTreeControllerForTesting?.rootIdentity
+                == claude.identity
+        )
+        for tab in routeA.tabs + routeB.tabs {
+            #expect(tab.hasAcknowledgedPTYLeaseForTesting)
+        }
 
         let processTree = try #require(
             await projects.captureRealAgentProcessesForTesting()
@@ -240,36 +266,47 @@ struct MultiProjectAgentJourneyTests {
                 > (piSession.processEvidence?.processGeneration ?? 0)
         )
 
-        // A cancelled termination transaction restores the exact
-        // live/background availability projection for current project owners.
+        // The real application Quit transaction must roll back without
+        // stopping either PTY when the user cancels its summary.
         projects.closeProjectWindow(fixture.projectB)
-        projects.freezeAgentTasksForTermination()
-        tasks.prepareForApplicationTermination()
-        #expect(await tasks.flushPersistence() == .saved)
-        #expect(tasks.tasks.allSatisfy {
-            $0.route.availability == .missing && $0.lifecycle != .active
-        })
-        #expect(await projects.cancelAgentTaskTermination())
+        let delegate = AppDelegate()
+        delegate.registry = projects
+        let cancelledQuit = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .applicationQuitSummary)
+                return .alertThirdButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+        #expect(!cancelledQuit)
         #expect(tasks.task(for: codexTaskID)?.route.availability == .available)
         #expect(tasks.task(for: claudeTaskID)?.route.availability == .background)
         #expect(routeA.tabs[1].agentSession === codexSession)
         #expect(routeB.tabs[0].agentSession === claudeSession)
-
-        // This final phase proves registry freeze/persistence/destruction only.
-        // The processes are intentionally still live after manager teardown:
-        // production confirmed-Quit process ownership remains #1436's scope.
-        projects.freezeAgentTasksForTermination()
-        tasks.prepareForApplicationTermination()
-        #expect(await tasks.flushPersistence() == .saved)
-        #expect(projects.destroyAllProjects())
-        #expect(projects.openProjects.isEmpty)
         #expect(codex.isRunning)
         #expect(claude.isRunning)
 
-        codex.terminate()
-        claude.terminate()
+        // Quit Anyway authorizes the exact terminal generations captured by
+        // the summary. Registry destruction is the same synchronous commit
+        // performed by AppDelegate after the decision; TerminalTab then owns
+        // bounded TERM-to-KILL cleanup for both real PTY trees.
+        let confirmedQuit = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                #expect(template == .applicationQuitSummary)
+                return .alertSecondButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 5
+        )
+        #expect(confirmedQuit)
+        #expect(projects.destroyAllProjects())
+        #expect(projects.openProjects.isEmpty)
         try await codex.awaitExit()
         try await claude.awaitExit()
+        #expect(!codex.isRunning)
+        #expect(!claude.isRunning)
+        for tab in routeA.tabs + routeB.tabs {
+            #expect(!tab.hasAcknowledgedPTYLeaseForTesting)
+        }
     }
 
     private func makeTerminalRoute(
@@ -468,7 +505,11 @@ private final class MultiProjectAgentLifecycleFixture {
         }
     }
 
-    func launchReady(agent: String) async throws -> ControlledAgentProcess {
+    @MainActor
+    func launchReady(
+        agent: String,
+        in tab: TerminalTab
+    ) async throws -> ControlledAgentProcess {
         let processState = state.appending(
             path: "\(agent)-\(UUID().uuidString)",
             directoryHint: .isDirectory
@@ -478,56 +519,47 @@ private final class MultiProjectAgentLifecycleFixture {
             withIntermediateDirectories: false
         )
         let script = scripts.appending(path: agent)
-        // `posix_spawn` is normally quick but is still a blocking syscall. Run
-        // it away from this @MainActor integration journey; the subsequent
-        // ownership handshake and every cleanup wait remain explicitly bounded.
-        let pid = try await Task.detached(priority: .userInitiated) {
-            try Self.spawn(
-                agent: agent,
-                script: script,
-                state: processState,
-                failurePhase: nil
+        tab.configure(
+            workingDirectory: agent == "claude" ? projectB : projectA,
+            initialProcess: TerminalInitialProcess(
+                executablePath: "/usr/bin/python3",
+                arguments: [script.path, processState.path, "none"]
             )
-        }.value
+        )
+        tab.terminalView.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 300
+        )
+        tab.startIfNeeded()
+
         let clock = ContinuousClock()
-        let identityDeadline = clock.now.advanced(by: .seconds(1))
-        var identity: UserTaskProcessIdentity?
-        do {
-            while clock.now < identityDeadline {
-                try Task.checkCancellation()
-                identity = UserTaskProcessInspector.identity(
-                    for: pid,
-                    expectedParent: Darwin.getpid()
-                )
-                if identity != nil { break }
-                try await clock.sleep(for: .milliseconds(10))
-            }
-        } catch {
-            Self.cleanupUnidentifiedDirectChild(
-                agent: agent,
-                pid: pid,
-                state: processState
-            )
-            throw error
+        let startDeadline = clock.now.advanced(by: .seconds(3))
+        while clock.now < startDeadline,
+              !tab.isProcessRunning
+                || tab.processTreeControllerForTesting == nil {
+            try Task.checkCancellation()
+            try await clock.sleep(for: .milliseconds(10))
         }
-        guard let identity else {
-            Self.cleanupUnidentifiedDirectChild(
-                agent: agent,
-                pid: pid,
-                state: processState
-            )
+        guard tab.isProcessRunning,
+              let controller = tab.processTreeControllerForTesting else {
+            tab.stop()
             throw ControlledAgentLifecycleError.phaseTimeout(
                 agent: agent,
-                phase: "authoritative launch identity",
-                processIdentifier: pid
+                phase: "real PTY launch",
+                processIdentifier: -1
             )
         }
+        let identity = controller.rootIdentity
+        let pid = identity.processID
         let processGroupID = Darwin.getpgid(pid)
         let controlled = ControlledAgentProcess(
             name: agent,
             identity: identity,
             processGroupID: processGroupID,
-            state: processState
+            state: processState,
+            terminalController: controller
         )
         processes.append(controlled)
         guard processGroupID == pid else {
@@ -1071,6 +1103,7 @@ private final class ControlledAgentProcess {
     let identity: UserTaskProcessIdentity
     let processGroupID: pid_t
     let state: URL
+    private let terminalController: TerminalProcessTreeController?
     private var knownIdentities: [pid_t: UserTaskProcessIdentity]
     private var didReap = false
 
@@ -1090,12 +1123,14 @@ private final class ControlledAgentProcess {
         name: String,
         identity: UserTaskProcessIdentity,
         processGroupID: pid_t,
-        state: URL
+        state: URL,
+        terminalController: TerminalProcessTreeController? = nil
     ) {
         self.name = name
         self.identity = identity
         self.processGroupID = processGroupID
         self.state = state
+        self.terminalController = terminalController
         knownIdentities = [identity.processID: identity]
     }
 
@@ -1143,6 +1178,23 @@ private final class ControlledAgentProcess {
     func awaitExit() async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(3))
+        if let terminalController {
+            while clock.now < deadline {
+                captureOwnedGroupMembers()
+                if !ownedIdentitiesAreCurrent {
+                    let stopped = await Task.detached(priority: .utility) {
+                        terminalController.waitForTermination(timeout: 3)
+                    }.value
+                    if stopped { return }
+                }
+                try await clock.sleep(for: .milliseconds(10))
+            }
+            throw ControlledAgentLifecycleError.phaseTimeout(
+                agent: name,
+                phase: "terminal-owned identity-qualified exit",
+                processIdentifier: pid
+            )
+        }
         while clock.now < deadline {
             captureOwnedGroupMembers()
             if !ownedIdentitiesAreCurrent, reapIfExited() { return }
@@ -1165,6 +1217,16 @@ private final class ControlledAgentProcess {
     }
 
     func forceCleanup() {
+        if let terminalController {
+            terminalController.requestTermination()
+            if !terminalController.waitForTermination(timeout: 3) {
+                let message =
+                    "Bounded terminal cleanup failed for controlled \(name) "
+                        + "root pid \(pid)"
+                Issue.record(Comment(rawValue: message))
+            }
+            return
+        }
         captureOwnedGroupMembers()
         signalOwnedProcesses(SIGTERM)
         if waitForOwnedExit(until: .now() + .milliseconds(500)) {
