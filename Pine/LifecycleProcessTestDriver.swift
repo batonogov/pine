@@ -67,23 +67,13 @@ final class LifecycleProcessTestDriver {
         let request = diagnosticsDirectory.appendingPathComponent(
             "request-next-generation"
         )
-        let source = DispatchSource.makeTimerSource(
-            queue: DispatchQueue.global(qos: .utility)
-        )
-        source.schedule(
-            deadline: .now(),
-            repeating: .milliseconds(50)
-        )
-        source.setEventHandler { [weak self] in
-            guard FileManager.default.fileExists(atPath: request.path),
-                  (try? FileManager.default.removeItem(at: request)) != nil
-            else { return }
+        generationControl = LifecycleProcessGenerationControl.make(
+            request: request
+        ) { [weak self] in
             Task { @MainActor [weak self] in
                 self?.spawnTerminalGeneration()
             }
         }
-        source.resume()
-        generationControl = source
     }
 
     private func spawnTerminalGeneration() {
@@ -146,6 +136,29 @@ final class LifecycleProcessTestDriver {
         } catch {
             return nil
         }
+    }
+}
+
+nonisolated enum LifecycleProcessGenerationControl {
+    static func make(
+        request: URL,
+        onRequest: @escaping @Sendable () -> Void
+    ) -> DispatchSourceTimer {
+        let source = DispatchSource.makeTimerSource(
+            queue: DispatchQueue.global(qos: .utility)
+        )
+        source.schedule(
+            deadline: .now(),
+            repeating: .milliseconds(50)
+        )
+        source.setEventHandler {
+            guard FileManager.default.fileExists(atPath: request.path),
+                  (try? FileManager.default.removeItem(at: request)) != nil
+            else { return }
+            onRequest()
+        }
+        source.resume()
+        return source
     }
 }
 
