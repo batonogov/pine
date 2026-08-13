@@ -95,6 +95,11 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   -destination 'platform=macOS' -only-testing:PineUITests
 ```
 
+Release candidates also use the focused manual
+[accessibility and localization checklist](docs/accessibility-release-checklist.md)
+for VoiceOver, physical-keyboard, pseudolanguage, and appearance checks that
+XCUITest cannot assert reliably.
+
 ### Linting
 
 Run SwiftLint before every commit and fix all warnings and errors:

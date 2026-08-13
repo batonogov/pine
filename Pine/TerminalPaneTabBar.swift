@@ -351,6 +351,7 @@ struct TerminalPaneTabBar: View {
                 .buttonStyle(.plain)
                 .help(Strings.newTerminal)
                 .accessibilityIdentifier(AccessibilityID.newTerminalButton)
+                .accessibilityLabel(Strings.newTerminal)
                 .accessibilityAddTraits(.isButton)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -379,6 +380,11 @@ struct TerminalPaneTabBar: View {
             .help(paneManager.maximizedPaneID == paneID
                   ? Strings.restoreTerminal : Strings.maximizeTerminal)
             .accessibilityIdentifier(AccessibilityID.maximizeTerminalButton)
+            .accessibilityLabel(
+                paneManager.maximizedPaneID == paneID
+                    ? Strings.restoreTerminal
+                    : Strings.maximizeTerminal
+            )
 
             // Close terminal pane
             Button {
