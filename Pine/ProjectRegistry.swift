@@ -2031,6 +2031,24 @@ final class ProjectRegistry: LSPSettingsObserver {
         agentProcessSnapshotPoller.runSnapshotForTesting()
     }
 
+    /// Runs the same off-main capture used by production polling, but without
+    /// waiting for the timer. Reserved for deterministic integration tests
+    /// that launch controlled local processes.
+    func runRealAgentProcessSnapshotForTesting() async {
+        await agentProcessSnapshotPoller.runRealSnapshotForTesting()
+    }
+
+    func captureRealAgentProcessesForTesting() async -> [DetectedProcess]? {
+        await agentProcessSnapshotPoller.captureRealProcessesForTesting()
+    }
+
+    func applyCompleteAgentProcessTreeForTesting(
+        _ processes: [DetectedProcess]
+    ) {
+        agentProcessSnapshotPoller.applyCompleteProcessTreeForTesting(
+            processes
+        )
+    }
     #endif
 
     /// Processes at most one fixed-size batch. Retained projects rotate to the

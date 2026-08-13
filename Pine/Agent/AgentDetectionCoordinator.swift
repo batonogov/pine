@@ -143,6 +143,20 @@ nonisolated final class AgentProcessSnapshotPoller {
         generation: UInt64,
         sequence: UInt64
     ) -> AgentProcessSnapshot {
+        Self.makeSnapshot(
+            processRunner: processRunner,
+            uptimeProvider: uptimeProvider,
+            generation: generation,
+            sequence: sequence
+        )
+    }
+
+    nonisolated private static func makeSnapshot(
+        processRunner: @escaping ProcessRunner,
+        uptimeProvider: @escaping @Sendable () -> TimeInterval,
+        generation: UInt64,
+        sequence: UInt64
+    ) -> AgentProcessSnapshot {
         let result = processRunner(
             "/bin/sh",
             ["-c", AgentDetectionCoordinator.psSnapshotCommand],
@@ -169,6 +183,60 @@ nonisolated final class AgentProcessSnapshotPoller {
         sink.apply(captureSnapshotForTesting())
     }
 
+    /// Captures through the production background-queue boundary before
+    /// delivering to subscribers. Integration tests use this variant with
+    /// ``runRealProcess`` so the main-thread precondition on process execution
+    /// remains enforced exactly as it is for timer-driven polling.
+    @MainActor
+    func runRealSnapshotForTesting() async {
+        sink.apply(await captureRealSnapshotForTesting())
+    }
+
+    /// Captures the exact enriched production sample without publishing it.
+    /// Real-process integration tests use the returned start/group witnesses
+    /// as controlled foreground evidence. This seam does not launch a PTY.
+    @MainActor
+    func captureRealProcessesForTesting() async -> [DetectedProcess]? {
+        let snapshot = await captureRealSnapshotForTesting()
+        guard case .success(let processes, _) = snapshot else { return nil }
+        return processes
+    }
+
+    @MainActor
+    private func captureRealSnapshotForTesting() async -> AgentProcessSnapshot {
+        let processRunner = processRunner
+        let uptimeProvider = uptimeProvider
+        let generation = testingRun.generation
+        let sequence = testingRun.nextSequence() ?? UInt64.max
+        let snapshot = await withCheckedContinuation { continuation in
+            pollQueue.async(execute: Self.makeTestingCaptureHandler(
+                processRunner: processRunner,
+                uptimeProvider: uptimeProvider,
+                generation: generation,
+                sequence: sequence,
+                continuation: continuation
+            ))
+        }
+        return snapshot
+    }
+
+    nonisolated private static func makeTestingCaptureHandler(
+        processRunner: @escaping ProcessRunner,
+        uptimeProvider: @escaping @Sendable () -> TimeInterval,
+        generation: UInt64,
+        sequence: UInt64,
+        continuation: CheckedContinuation<AgentProcessSnapshot, Never>
+    ) -> @Sendable () -> Void {
+        {
+            continuation.resume(returning: Self.makeSnapshot(
+                processRunner: processRunner,
+                uptimeProvider: uptimeProvider,
+                generation: generation,
+                sequence: sequence
+            ))
+        }
+    }
+
     @MainActor
     fileprivate func captureSnapshotForTesting() -> AgentProcessSnapshot {
         makeSnapshot(
@@ -179,6 +247,20 @@ nonisolated final class AgentProcessSnapshotPoller {
 
     @MainActor
     var subscriberCountForTesting: Int { sink.count }
+
+    /// Publishes one controlled complete process tree on the same monotonic
+    /// sequence as real captures. This exercises detector generation changes
+    /// without claiming that the host kernel reused a PID during the test.
+    @MainActor
+    func applyCompleteProcessTreeForTesting(_ processes: [DetectedProcess]) {
+        let observation = AgentObservationStamp(
+            wallTime: Date(),
+            uptime: uptimeProvider(),
+            generation: testingRun.generation,
+            sequence: testingRun.nextSequence() ?? UInt64.max
+        )
+        sink.apply(.success(processes: processes, observation: observation))
+    }
     #endif
 
     deinit {
