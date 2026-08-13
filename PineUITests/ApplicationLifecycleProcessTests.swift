@@ -207,9 +207,12 @@ final class ApplicationLifecycleProcessTests: PineUITestCase {
             timeout: 5
         )
         let generation = try captureOwnedGeneration(1)
-        try Data().write(to: faultArmURL, options: .atomic)
         requestQuit()
-        clickButton("Quit Anyway")
+        let quitAnywayButton = waitForSheetButton("Quit Anyway")
+        // Arm only after the human decision is visible. Session autosaves
+        // before this point must not consume the controlled crash checkpoint.
+        try Data().write(to: faultArmURL, options: .atomic)
+        quitAnywayButton.click()
 
         XCTAssertTrue(
             waitForProcessToStop(pineProcessIdentifier, timeout: 15),
@@ -300,12 +303,27 @@ final class ApplicationLifecycleProcessTests: PineUITestCase {
         _ title: String,
         timeout: TimeInterval = 10
     ) {
-        let button = app.buttons[title].firstMatch
+        waitForSheetButton(title, timeout: timeout).click()
+    }
+
+    private func waitForSheetButton(
+        _ title: String,
+        timeout: TimeInterval = 10
+    ) -> XCUIElement {
+        // Scope the query to the visible sheet. A process-wide button query
+        // can resolve macOS's mirrored Touch Bar item before the real alert
+        // button, and XCUITest cannot click that synthetic element.
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(
+            sheet.waitForExistence(timeout: timeout),
+            "Expected a sheet containing the \(title) button"
+        )
+        let button = sheet.buttons[title].firstMatch
         XCTAssertTrue(
             button.waitForExistence(timeout: timeout),
             "Expected \(title) button"
         )
-        button.click()
+        return button
     }
 
     private func terminalTab(_ name: String) -> XCUIElement {
