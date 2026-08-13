@@ -376,6 +376,8 @@ final class WorkspaceManager {
         let progressID = showProgress
             ? progressTracker?.beginOperation(Strings.progressLoadingProject)
             : nil
+        let filesystemValidator = filesystemValidator
+        let filesystemValidationSeam = filesystemValidationSeam
 
         loadingTask = Task.detached(priority: .userInitiated) { [weak self] in
             // Shared cleanup closure — ends the progress operation on MainActor.
@@ -389,13 +391,13 @@ final class WorkspaceManager {
                 }
             }
 
-            if let validator = await self?.filesystemValidator {
+            if let validator = filesystemValidator {
                 guard await validator() else {
                     await self?.invalidateFilesystemLoad(generation: generation)
                     await cleanupProgress()
                     return
                 }
-                await self?.filesystemValidationSeam()
+                await filesystemValidationSeam()
                 guard !Task.isCancelled, await validator() else {
                     await self?.invalidateFilesystemLoad(generation: generation)
                     await cleanupProgress()
@@ -418,7 +420,7 @@ final class WorkspaceManager {
             }
             let shallowChildren = shallowResult.root.children ?? []
 
-            if let validator = await self?.filesystemValidator,
+            if let validator = filesystemValidator,
                !(await validator()) {
                 await self?.invalidateFilesystemLoad(generation: generation)
                 await cleanupProgress()
@@ -482,7 +484,7 @@ final class WorkspaceManager {
                 )
             }
 
-            if let validator = await self?.filesystemValidator,
+            if let validator = filesystemValidator,
                !(await validator()) {
                 await self?.invalidateFilesystemLoad(generation: generation)
                 await cleanupProgress()
