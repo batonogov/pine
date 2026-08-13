@@ -268,6 +268,43 @@ struct TerminationSaveCoordinatorSecurityTests {
         )
     }
 
+    @Test func failedCleanupReportsArtifactInRenamedDirectory() async throws {
+        let container = try makeDirectory()
+        defer { remove(container) }
+        let directory = container.appendingPathComponent("project")
+        let movedDirectory = container.appendingPathComponent("project-moved")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        let staged = try await stage(
+            content: "private bytes retained after rename",
+            destination: directory.appendingPathComponent("cleanup-moved.txt")
+        )
+        try FileManager.default.moveItem(at: directory, to: movedDirectory)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        #expect(Darwin.chmod(movedDirectory.path, mode_t(0o500)) == 0)
+        let result = TerminationSaveCoordinator.cleanup([staged])
+        #expect(Darwin.chmod(movedDirectory.path, mode_t(0o700)) == 0)
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("Expected cleanup failure in the renamed directory")
+            return
+        }
+        let expectedArtifact = movedDirectory.appendingPathComponent(
+            staged.stagingURL.lastPathComponent
+        )
+        #expect(
+            retainedArtifacts.map { $0.resolvingSymlinksInPath() }
+                == [expectedArtifact.resolvingSymlinksInPath()]
+        )
+        #expect(FileManager.default.fileExists(atPath: expectedArtifact.path))
+        #expect(TerminationSaveCoordinator.cleanup([staged]) == .cleaned)
+    }
+
     @Test func installedDestinationReportsRetainedRecoveryFailure() async throws {
         let directory = try makeDirectory()
         defer { remove(directory) }
@@ -656,6 +693,54 @@ struct TerminationSaveCoordinatorSecurityTests {
             try String(contentsOf: destination, encoding: .utf8)
                 == "late external new bytes"
         )
+    }
+
+    @Test func finalVerificationReportsDestinationAfterParentRename() async throws {
+        let container = try makeDirectory()
+        defer { remove(container) }
+        let directory = container.appendingPathComponent("project")
+        let movedDirectory = container.appendingPathComponent("project-moved")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        let destination = directory.appendingPathComponent("new-moved.txt")
+        let staged = try await stage(
+            content: "installed before parent rename",
+            destination: destination
+        )
+
+        let result = await TerminationSaveCoordinator.install(
+            staged,
+            until: .now() + 5,
+            beforeFinalInstalledFence: {
+                try? FileManager.default.moveItem(
+                    at: directory,
+                    to: movedDirectory
+                )
+                try? FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: false
+                )
+            }
+        )
+
+        guard case .failed(_, let retainedArtifacts) = result else {
+            Issue.record("A renamed parent must fail final verification")
+            return
+        }
+        let movedDestination = movedDirectory.appendingPathComponent(
+            destination.lastPathComponent
+        )
+        #expect(
+            retainedArtifacts.map { $0.resolvingSymlinksInPath() }
+                == [movedDestination.resolvingSymlinksInPath()]
+        )
+        #expect(
+            try String(contentsOf: movedDestination, encoding: .utf8)
+                == "installed before parent rename"
+        )
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
     }
 
     private func stage(

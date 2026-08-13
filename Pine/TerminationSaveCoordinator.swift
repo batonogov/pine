@@ -1113,43 +1113,75 @@ nonisolated enum TerminationSaveCoordinator {
         leaf: String,
         fallback: URL
     ) -> URL {
-        currentArtifactURL(
+        resolvedArtifactURL(
+            parentDescriptor: parentDescriptor,
+            leaf: leaf,
+            fallback: fallback
+        ) ?? fallback
+    }
+
+    private static func resolvedArtifactURL(
+        parentDescriptor: Int32,
+        leaf: String,
+        fallback: URL?
+    ) -> URL? {
+        if let fallback,
+           fallback.lastPathComponent == leaf,
+           directoryPathMatches(
+               parentDescriptor: parentDescriptor,
+               url: fallback.deletingLastPathComponent()
+           ) {
+            return fallback
+        }
+        return currentArtifactURL(
             parentDescriptor: parentDescriptor,
             leaf: leaf
-        ) ?? fallback
+        )
     }
 
     private static func currentArtifactURL(
         parentDescriptor: Int32,
         leaf: String
     ) -> URL? {
-        var path = [CChar](
-            repeating: 0,
-            count: 4 * Int(MAXPATHLEN)
+        var descriptorInfo = vnode_fdinfowithpath()
+        let expectedSize = MemoryLayout<vnode_fdinfowithpath>.size
+        guard expectedSize <= Int(Int32.max) else { return nil }
+        let result = withUnsafeMutablePointer(to: &descriptorInfo) { pointer in
+            Darwin.proc_pidfdinfo(
+                Darwin.getpid(),
+                parentDescriptor,
+                PROC_PIDFDVNODEPATHINFO,
+                pointer,
+                Int32(expectedSize)
+            )
+        }
+        guard result == Int32(expectedSize) else { return nil }
+        let currentPath = withUnsafeBytes(
+            of: &descriptorInfo.pvip.vip_path
+        ) { buffer -> String? in
+            let path = buffer.bindMemory(to: CChar.self)
+            let terminator = path.firstIndex(of: 0) ?? path.endIndex
+            guard terminator != path.startIndex else { return nil }
+            let pathBytes = path[..<terminator].map(UInt8.init(bitPattern:))
+            return String(bytes: pathBytes, encoding: .utf8)
+        }
+        guard let currentPath else {
+            return nil
+        }
+        let currentParentURL = URL(
+            fileURLWithPath: currentPath,
+            isDirectory: true
         )
-        guard let handle = Darwin.dlopen(nil, RTLD_LAZY | RTLD_LOCAL) else {
+        var descriptorStatus = stat()
+        var pathStatus = stat()
+        guard Darwin.fstat(parentDescriptor, &descriptorStatus) == 0,
+              (descriptorStatus.st_mode & S_IFMT) == S_IFDIR,
+              Darwin.lstat(currentParentURL.path, &pathStatus) == 0,
+              (pathStatus.st_mode & S_IFMT) == S_IFDIR,
+              sameObject(descriptorStatus, pathStatus) else {
             return nil
         }
-        defer { Darwin.dlclose(handle) }
-        guard let symbol = Darwin.dlsym(handle, "fcntl") else {
-            return nil
-        }
-        typealias FcntlPath = @convention(c) (
-            Int32,
-            Int32,
-            UnsafeMutableRawPointer?
-        ) -> Int32
-        let fcntlPath = unsafeBitCast(symbol, to: FcntlPath.self)
-        let result = path.withUnsafeMutableBytes { buffer in
-            fcntlPath(parentDescriptor, F_GETPATH, buffer.baseAddress)
-        }
-        guard result == 0 else { return nil }
-        let terminator = path.firstIndex(of: 0) ?? path.endIndex
-        let pathBytes = path[..<terminator].map(UInt8.init(bitPattern:))
-        guard let currentPath = String(bytes: pathBytes, encoding: .utf8) else {
-            return nil
-        }
-        return URL(fileURLWithPath: currentPath)
+        return currentParentURL
             .appendingPathComponent(leaf)
     }
 
@@ -2034,10 +2066,11 @@ nonisolated enum TerminationSaveCoordinator {
             if errno == ENOENT { return .removed }
             return .failed(
                 message: "Could not quarantine an artifact before cleanup",
-                retainedURL: currentArtifactURL(
+                retainedURL: resolvedArtifactURL(
                     parentDescriptor: parentDescriptor,
-                    leaf: leaf
-                ) ?? fallbackOriginalURL
+                    leaf: leaf,
+                    fallback: fallbackOriginalURL
+                )
             )
         }
         do {
@@ -2045,10 +2078,11 @@ nonisolated enum TerminationSaveCoordinator {
         } catch {
             return .failed(
                 message: "Could not make artifact quarantine durable",
-                retainedURL: currentArtifactURL(
+                retainedURL: resolvedArtifactURL(
                     parentDescriptor: parentDescriptor,
-                    leaf: cleanupLeaf
-                ) ?? fallbackCleanupURL
+                    leaf: cleanupLeaf,
+                    fallback: fallbackCleanupURL
+                )
             )
         }
         guard regularFileMatches(
@@ -2067,19 +2101,23 @@ nonisolated enum TerminationSaveCoordinator {
             }
             return .failed(
                 message: "An artifact changed identity during cleanup",
-                retainedURL: currentArtifactURL(
+                retainedURL: resolvedArtifactURL(
                     parentDescriptor: parentDescriptor,
-                    leaf: restored ? leaf : cleanupLeaf
-                ) ?? (restored ? fallbackOriginalURL : fallbackCleanupURL)
+                    leaf: restored ? leaf : cleanupLeaf,
+                    fallback: restored
+                        ? fallbackOriginalURL
+                        : fallbackCleanupURL
+                )
             )
         }
         guard Darwin.unlinkat(parentDescriptor, cleanupLeaf, 0) == 0 else {
             return .failed(
                 message: "Could not unlink a quarantined artifact",
-                retainedURL: currentArtifactURL(
+                retainedURL: resolvedArtifactURL(
                     parentDescriptor: parentDescriptor,
-                    leaf: cleanupLeaf
-                ) ?? fallbackCleanupURL
+                    leaf: cleanupLeaf,
+                    fallback: fallbackCleanupURL
+                )
             )
         }
         do {
