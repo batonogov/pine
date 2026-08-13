@@ -39,33 +39,11 @@ struct SourceKitLSPIntegrationTests {
         }
 
         do {
-            let sourceKitPath = try #require(
-                SourceKitLSPSmokeConfiguration.sourceKitLSPPath
+            try await startSourceKitClient(
+                client: client,
+                fixture: fixture,
+                stderrHandle: stderrHandle
             )
-            let started = try await boundedValue(
-                step: "initialize",
-                timeout: .seconds(25),
-                client: client
-            ) {
-                await client.start(
-                    command: sourceKitPath,
-                    arguments: [
-                        "--scratch-path",
-                        fixture.scratchURL.path,
-                        "--default-workspace-type",
-                        "swiftPM"
-                    ],
-                    rootURI: fixture.rootURL.absoluteString,
-                    environment: fixture.environment,
-                    currentDirectoryURL: fixture.rootURL,
-                    standardError: stderrHandle,
-                    initializationTimeout: .seconds(20)
-                )
-            }
-            guard started else {
-                throw SourceKitLSPSmokeError.failed("initialize returned false")
-            }
-
             var diagnostics: [LSPDiagnostic] = []
             client.onDiagnostics = { notification in
                 guard fixture.matchesDocumentURI(notification.uri) else {
@@ -90,10 +68,23 @@ struct SourceKitLSPIntegrationTests {
                 }
             }
 
-            let symbolOffset = try #require(fixture.callSymbolOffset)
+            client.didChange(
+                uri: fixture.fileURL.absoluteString,
+                text: fixture.repairedSource
+            )
+            try await waitUntil(
+                step: "publishDiagnostics after didChange",
+                timeout: .seconds(20)
+            ) {
+                diagnostics.isEmpty
+            }
+
+            let symbolOffset = try #require(
+                fixture.callSymbolOffset(in: fixture.repairedSource)
+            )
             let position = LSPPositionConverter.lspPosition(
                 utf16Offset: symbolOffset,
-                in: fixture.source
+                in: fixture.repairedSource
             )
             #expect(position.line == fixture.callLine)
             #expect(position.character == fixture.callCharacter)
@@ -161,10 +152,123 @@ struct SourceKitLSPIntegrationTests {
             )
         }
     }
+
+    @Test(
+        "Failure, cancellation, and timeout reap SourceKit-LSP",
+        .enabled(
+            if: SourceKitLSPSmokeConfiguration.isRunnable,
+            Comment(
+                rawValue: SourceKitLSPSmokeConfiguration.skipReason
+            )
+        ),
+        .timeLimit(.minutes(2))
+    )
+    func forcedCleanupPaths() async throws {
+        for trigger in SourceKitLSPSmokeCleanupTrigger.allCases {
+            try await verifyForcedCleanup(trigger)
+        }
+    }
+
+    private func verifyForcedCleanup(
+        _ trigger: SourceKitLSPSmokeCleanupTrigger
+    ) async throws {
+        let fixture = try SourceKitLSPFixture()
+        defer { fixture.remove() }
+
+        let stderrHandle = try FileHandle(forWritingTo: fixture.stderrURL)
+        defer { try? stderrHandle.close() }
+
+        let client = LSPClient(language: "swift")
+        defer {
+            if client.transport.isRunning {
+                client.shutdown()
+            }
+        }
+        try await startSourceKitClient(
+            client: client,
+            fixture: fixture,
+            stderrHandle: stderrHandle
+        )
+        let processID = try #require(client.transport.processIdentifier)
+
+        switch trigger {
+        case .failure:
+            do {
+                throw SourceKitLSPSmokeError.failed("injected failure")
+            } catch {
+                client.shutdown()
+            }
+        case .cancellation:
+            let operation = Task { @MainActor in
+                try await boundedValue(
+                    step: "cancelled operation",
+                    timeout: .seconds(10),
+                    client: client
+                ) {
+                    do {
+                        try await Task.sleep(for: .seconds(10))
+                    } catch {
+                        return false
+                    }
+                    return true
+                }
+            }
+            await Task.yield()
+            operation.cancel()
+            do {
+                _ = try await operation.value
+                Issue.record("cancelled operation unexpectedly completed")
+            } catch is CancellationError {
+                break
+            } catch {
+                Issue.record("unexpected cancellation error: \(error)")
+            }
+        case .timeout:
+            do {
+                let _: Bool = try await boundedValue(
+                    step: "injected timeout",
+                    timeout: .milliseconds(25),
+                    client: client
+                ) {
+                    do {
+                        try await Task.sleep(for: .seconds(10))
+                    } catch {
+                        return false
+                    }
+                    return true
+                }
+                Issue.record("timed operation unexpectedly completed")
+            } catch SourceKitLSPSmokeError.timeout {
+                break
+            } catch {
+                Issue.record("unexpected timeout error: \(error)")
+            }
+        }
+
+        let stopped = await waitForProcessExit(
+            processID,
+            timeout: .seconds(3)
+        )
+        #expect(!client.transport.isRunning)
+        #expect(
+            stopped,
+            "\(trigger.rawValue) left SourceKit-LSP process \(processID)"
+        )
+    }
+}
+
+private enum SourceKitLSPSmokeCleanupTrigger: String, CaseIterable {
+    case failure
+    case cancellation
+    case timeout
 }
 
 nonisolated private enum SourceKitLSPSmokeConfiguration {
     static let optInEnvironmentVariable = "PINE_RUN_SOURCEKIT_LSP_SMOKE"
+    static let executableEnvironmentVariable =
+        "PINE_SOURCEKIT_LSP_EXECUTABLE"
+    static let artifactsEnvironmentVariable =
+        "PINE_SOURCEKIT_LSP_ARTIFACTS_DIR"
 
     static let isOptedIn =
         ProcessInfo.processInfo.environment[optInEnvironmentVariable] == "1"
@@ -189,6 +293,14 @@ nonisolated private enum SourceKitLSPSmokeConfiguration {
 
     private static func resolveSourceKitLSP() -> String? {
         let environment = ProcessInfo.processInfo.environment
+        if let explicitPath = environment[executableEnvironmentVariable] {
+            guard FileManager.default.isExecutableFile(
+                atPath: explicitPath
+            ) else {
+                return nil
+            }
+            return explicitPath
+        }
         if let developerDirectory = environment["DEVELOPER_DIR"] {
             let candidate = URL(fileURLWithPath: developerDirectory)
                 .appendingPathComponent(
@@ -255,7 +367,25 @@ private struct SourceKitLSPFixture {
             ".build",
             isDirectory: true
         )
-        stderrURL = rootURL.appendingPathComponent("sourcekit-lsp.stderr")
+        if let artifactsPath = ProcessInfo.processInfo.environment[
+            SourceKitLSPSmokeConfiguration.artifactsEnvironmentVariable
+        ], !artifactsPath.isEmpty {
+            let artifactsURL = URL(
+                fileURLWithPath: artifactsPath,
+                isDirectory: true
+            )
+            try fileManager.createDirectory(
+                at: artifactsURL,
+                withIntermediateDirectories: true
+            )
+            stderrURL = artifactsURL.appendingPathComponent(
+                "\(rootURL.lastPathComponent).stderr"
+            )
+        } else {
+            stderrURL = rootURL.appendingPathComponent(
+                "sourcekit-lsp.stderr"
+            )
+        }
         fileURL = rootURL.appendingPathComponent(
             "Sources/Smoke/main.swift"
         )
@@ -379,8 +509,15 @@ private struct SourceKitLSPFixture {
         return result
     }
 
-    var callSymbolOffset: Int? {
-        let range = (source as NSString).range(
+    var repairedSource: String {
+        source.replacingOccurrences(
+            of: "let broken: Int = tree",
+            with: "let repaired: String = tree"
+        )
+    }
+
+    func callSymbolOffset(in text: String) -> Int? {
+        let range = (text as NSString).range(
             of: "greet",
             options: .backwards
         )
@@ -447,9 +584,44 @@ private enum SourceKitLSPSmokeError: Error, CustomStringConvertible {
     }
 }
 
+@MainActor
+private func startSourceKitClient(
+    client: LSPClient,
+    fixture: SourceKitLSPFixture,
+    stderrHandle: FileHandle
+) async throws {
+    let sourceKitPath = try #require(
+        SourceKitLSPSmokeConfiguration.sourceKitLSPPath
+    )
+    let started = try await boundedValue(
+        step: "initialize",
+        timeout: .seconds(25),
+        client: client
+    ) {
+        await client.start(
+            command: sourceKitPath,
+            arguments: [
+                "--scratch-path",
+                fixture.scratchURL.path,
+                "--default-workspace-type",
+                "swiftPM"
+            ],
+            rootURI: fixture.rootURL.absoluteString,
+            environment: fixture.environment,
+            currentDirectoryURL: fixture.rootURL,
+            standardError: stderrHandle,
+            initializationTimeout: .seconds(20)
+        )
+    }
+    guard started else {
+        throw SourceKitLSPSmokeError.failed("initialize returned false")
+    }
+}
+
 private enum BoundedResult<Value: Sendable>: Sendable {
     case value(Value)
     case timedOut
+    case cancelled
 }
 
 @MainActor
@@ -470,7 +642,7 @@ private func boundedValue<Value: Sendable>(
             do {
                 try await Task.sleep(for: timeout)
             } catch {
-                return .timedOut
+                return .cancelled
             }
             return .timedOut
         }
@@ -482,14 +654,38 @@ private func boundedValue<Value: Sendable>(
             )
         }
         group.cancelAll()
+        if Task.isCancelled {
+            client.shutdown()
+            throw CancellationError()
+        }
         switch first {
         case .value(let value):
             return value
         case .timedOut:
             client.shutdown()
             throw SourceKitLSPSmokeError.timeout(step)
+        case .cancelled:
+            client.shutdown()
+            throw CancellationError()
         }
     }
+}
+
+@MainActor
+private func waitForProcessExit(
+    _ processID: pid_t,
+    timeout: Duration
+) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    repeat {
+        errno = 0
+        if Darwin.kill(processID, 0) == -1, errno == ESRCH {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(25))
+    } while clock.now < deadline
+    return false
 }
 
 @MainActor

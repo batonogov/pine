@@ -1,0 +1,109 @@
+# NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
+# To update an action: find the new version's commit SHA on GitHub (Tags -> verify commit),
+# replace the SHA, and keep the "# vX" comment in sync.
+name: Nightly SourceKit-LSP Smoke
+
+on:
+  schedule:
+    # Run after the other nightly test lanes to reduce runner contention.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-sourcekit-lsp
+  cancel-in-progress: false
+
+# This scheduled/manual lane intentionally starts outside blocking PR CI.
+# Promotion criteria live in .github/SOURCEKIT_LSP_SMOKE.md.
+jobs:
+  sourcekit-lsp-smoke:
+    name: Real SourceKit-LSP Smoke
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+
+      - name: Ensure Metal Toolchain
+        run: bash scripts/ensure-metal-toolchain.sh
+
+      - name: Locate SourceKit-LSP in Selected Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          sourcekit_lsp="$(xcrun --find sourcekit-lsp 2>/dev/null || true)"
+          if [ -z "$sourcekit_lsp" ] || [ ! -x "$sourcekit_lsp" ]; then
+            echo "::error::The selected Xcode toolchain does not provide an executable sourcekit-lsp"
+            exit 1
+          fi
+          case "$sourcekit_lsp" in
+            "$DEVELOPER_DIR"/*) ;;
+            *)
+              echo "::error::sourcekit-lsp resolved outside the selected Xcode: $sourcekit_lsp"
+              exit 1
+              ;;
+          esac
+          echo "Using sourcekit-lsp at $sourcekit_lsp"
+          echo "PINE_SOURCEKIT_LSP_EXECUTABLE=$sourcekit_lsp" >> "$GITHUB_ENV"
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Run Real SourceKit-LSP Smoke
+        shell: bash
+        env:
+          PINE_RUN_SOURCEKIT_LSP_SMOKE: "1"
+          PINE_SOURCEKIT_LSP_ARTIFACTS_DIR: ${{ github.workspace }}/SourceKitLSPArtifacts
+        run: |
+          set -euo pipefail
+          mkdir -p SourceKitLSPArtifacts
+          result_bundle="SourceKitLSPResults.xcresult"
+          console_log="SourceKitLSPArtifacts/xcodebuild.log"
+          test_started_at="$(date +%s)"
+          set +e
+          xcodebuild test \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PineTests/SourceKitLSPIntegrationTests \
+            -enableCodeCoverage NO \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -resultBundlePath "$result_bundle" \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            PINE_RUN_SOURCEKIT_LSP_SMOKE=1 \
+            PINE_SOURCEKIT_LSP_EXECUTABLE="$PINE_SOURCEKIT_LSP_EXECUTABLE" \
+            PINE_SOURCEKIT_LSP_ARTIFACTS_DIR="$PINE_SOURCEKIT_LSP_ARTIFACTS_DIR" \
+            2>&1 | tee "$console_log"
+          test_exit=${PIPESTATUS[0]}
+          set -e
+
+          python3 .github/scripts/validate_test_results.py \
+            "$result_bundle" \
+            --xcodebuild-exit "$test_exit" \
+            --started-at "$test_started_at" \
+            --github-summary
+
+      - name: Upload SourceKit-LSP Results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: SourceKitLSP-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            SourceKitLSPResults.xcresult
+            SourceKitLSPArtifacts
+          if-no-files-found: warn
+          retention-days: 14

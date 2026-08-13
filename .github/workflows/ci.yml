@@ -85,6 +85,9 @@ jobs:
       - name: Tests for sanitizer workflow
         run: bash scripts/tests/test-sanitizer-workflow.sh
 
+      - name: Tests for SourceKit-LSP smoke workflow
+        run: bash scripts/tests/test-sourcekit-lsp-workflow.sh
+
       - name: Tests for DMG packaging scripts
         run: bash scripts/tests/test-dmg-packaging.sh
 
