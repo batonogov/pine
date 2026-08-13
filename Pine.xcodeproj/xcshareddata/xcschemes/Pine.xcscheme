@@ -50,6 +50,16 @@
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
+            key = "PINE_SOURCEKIT_LSP_EXECUTABLE"
+            value = "$(PINE_SOURCEKIT_LSP_EXECUTABLE)"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "PINE_SOURCEKIT_LSP_ARTIFACTS_DIR"
+            value = "$(PINE_SOURCEKIT_LSP_ARTIFACTS_DIR)"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "PINE_RECORD_SNAPSHOTS"
             value = "$(PINE_RECORD_SNAPSHOTS)"
             isEnabled = "YES">
