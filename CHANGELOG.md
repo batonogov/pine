@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.3.2](https://github.com/batonogov/pine/compare/v2.3.1...v2.3.2) (2026-08-13)
+
+
+### Bug Fixes
+
+* **ci:** canonicalize SourceKit-LSP toolchain paths ([#1454](https://github.com/batonogov/pine/issues/1454)) ([1a09ac8](https://github.com/batonogov/pine/commit/1a09ac89fbc65e3c365dabbd209e2783029b4409))
+* make descriptor path recovery sanitizer-safe ([#1451](https://github.com/batonogov/pine/issues/1451)) ([a52b384](https://github.com/batonogov/pine/commit/a52b384cdb2412eb127c740d8ca156b37d76016e))
+* suspend background project editor services ([#1447](https://github.com/batonogov/pine/issues/1447)) ([1279ef8](https://github.com/batonogov/pine/commit/1279ef89c576b8a868169955691aa922bd6ebc5d))
+* **terminal:** wire Quick Terminal agents into detection and Agent Inbox ([#1449](https://github.com/batonogov/pine/issues/1449)) ([ef54da3](https://github.com/batonogov/pine/commit/ef54da397f2219ee0d632c15876c8492b7ba0fcd))
+
+
+### Documentation
+
+* codify issue swarm review flow ([#1445](https://github.com/batonogov/pine/issues/1445)) ([f234c3a](https://github.com/batonogov/pine/commit/f234c3a391b1f067dda7530c849471ec327bc4d4))
+
 ## [2.3.1](https://github.com/batonogov/pine/compare/v2.3.0...v2.3.1) (2026-08-12)
 
 
