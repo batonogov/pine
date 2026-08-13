@@ -1882,6 +1882,9 @@ final class TerminalTab: Identifiable, Hashable {
     private let shellSettings: ShellSettings
     private let agentHandoffSettings: AgentHandoffSettings
     private var processStarted = false
+    /// Identity-qualified ownership for the exact shell generation and every
+    /// observed descendant launched through this tab's real PTY.
+    private var processTreeController: TerminalProcessTreeController?
     private var processStartValidationTask: Task<Void, Never>?
     private var processStartValidationGeneration = UUID()
     private var workingDirectoryValidator:
@@ -2237,6 +2240,9 @@ final class TerminalTab: Identifiable, Hashable {
             execName: nil,
             currentDirectory: dir
         )
+        processTreeController = TerminalProcessTreeController(
+            rootProcessID: terminalView.process.shellPid
+        )
         _ = acknowledgedPTYLease.acquire(
             borrowing: terminalView.process.childfd
         )
@@ -2252,6 +2258,7 @@ final class TerminalTab: Identifiable, Hashable {
         processStartValidationGeneration = UUID()
         processStartValidationTask?.cancel()
         processStartValidationTask = nil
+        processTreeController?.requestTermination()
         acknowledgedPTYLease.invalidate()
         terminalView.terminate()
     }
@@ -2261,6 +2268,7 @@ final class TerminalTab: Identifiable, Hashable {
             didReportLifecycleEnd = true
             onLifecycleEnded?(id)
         }
+        processTreeController?.requestTermination()
         isTerminated = true
         acknowledgedPTYLease.invalidate()
     }
@@ -2613,6 +2621,10 @@ final class TerminalTab: Identifiable, Hashable {
     #if DEBUG
     var hasAcknowledgedPTYLeaseForTesting: Bool {
         acknowledgedPTYLease.isActiveForTesting
+    }
+
+    var processTreeControllerForTesting: TerminalProcessTreeController? {
+        processTreeController
     }
     #endif
 
