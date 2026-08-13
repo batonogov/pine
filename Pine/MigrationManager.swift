@@ -41,10 +41,15 @@ struct MigrationManager {
     ]
 
     private let defaults: UserDefaults
+    private let faultInjector: PersistenceFaultInjector
     private var migrations: [(from: Int, to: Int, migrate: (UserDefaults) -> Void)] = []
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        faultInjector: PersistenceFaultInjector = .processEnvironment
+    ) {
         self.defaults = defaults
+        self.faultInjector = faultInjector
     }
 
     /// Registers a migration step from one version to the next.
@@ -58,7 +63,8 @@ struct MigrationManager {
     /// - Fresh install (no existing data, no version key): stamps latest version, skips migrations.
     /// - Existing install without version key: treats as version 0 and runs all migrations.
     /// - Existing install with version key: runs only migrations newer than the stored version.
-    func runMigrations() {
+    @discardableResult
+    func runMigrations() -> Bool {
         let hasVersionKey = defaults.object(forKey: Self.schemaVersionKey) != nil
         let storedVersion = defaults.integer(forKey: Self.schemaVersionKey)
         let registeredVersion = migrations.map(\.to).max() ?? Self.latestVersion
@@ -66,35 +72,81 @@ struct MigrationManager {
 
         if storedVersion == targetVersion {
             Logger.migration.info("Schema already at version \(targetVersion), no migrations needed")
-            return
+            return true
         }
 
         guard storedVersion < targetVersion else {
             Logger.migration.error(
                 "Refusing unknown future schema v\(storedVersion); supported through v\(targetVersion)"
             )
-            return
+            return false
         }
 
         if !hasVersionKey && !hasExistingData() {
             // Fresh install — no data to migrate, just stamp latest version
-            Logger.migration.info("Fresh install detected, setting schema version to \(targetVersion)")
-            defaults.set(targetVersion, forKey: Self.schemaVersionKey)
-            return
+            do {
+                try runPreReplacementCheckpoints()
+                Logger.migration.info(
+                    "Fresh install detected, setting schema version to \(targetVersion)"
+                )
+                defaults.set(targetVersion, forKey: Self.schemaVersionKey)
+                try faultInjector.checkpoint(
+                    store: .preferences,
+                    phase: .afterAtomicReplace
+                )
+                return true
+            } catch {
+                Logger.migration.error(
+                    "Failed to persist fresh-install schema v\(targetVersion): \(error)"
+                )
+                return false
+            }
         }
 
         // Run pending migrations
+        let original = defaults.dictionaryRepresentation()
         var currentVersion = storedVersion
         let sortedMigrations = migrations.sorted { $0.from < $1.from }
+        var didReplace = false
 
-        for migration in sortedMigrations where migration.from >= currentVersion {
-            Logger.migration.info("Running migration v\(migration.from) → v\(migration.to)")
-            migration.migrate(defaults)
-            currentVersion = migration.to
+        do {
+            try faultInjector.checkpoint(
+                store: .preferences,
+                phase: .beforeWrite
+            )
+            for migration in sortedMigrations where migration.from >= currentVersion {
+                Logger.migration.info("Running migration v\(migration.from) → v\(migration.to)")
+                migration.migrate(defaults)
+                currentVersion = migration.to
+            }
+            try faultInjector.checkpoint(
+                store: .preferences,
+                phase: .afterTemporaryWrite
+            )
+            try faultInjector.checkpoint(
+                store: .preferences,
+                phase: .beforeSync
+            )
+            try faultInjector.checkpoint(
+                store: .preferences,
+                phase: .beforeAtomicReplace
+            )
+
+            defaults.set(targetVersion, forKey: Self.schemaVersionKey)
+            didReplace = true
+            try faultInjector.checkpoint(
+                store: .preferences,
+                phase: .afterAtomicReplace
+            )
+            Logger.migration.info("Migration complete, schema now at version \(targetVersion)")
+            return true
+        } catch {
+            if !didReplace { restoreDefaults(original) }
+            Logger.migration.error(
+                "Migration to schema v\(targetVersion) failed safely: \(error)"
+            )
+            return false
         }
-
-        defaults.set(targetVersion, forKey: Self.schemaVersionKey)
-        Logger.migration.info("Migration complete, schema now at version \(targetVersion)")
     }
 
     // MARK: - Private
@@ -113,11 +165,38 @@ struct MigrationManager {
         return false
     }
 
+    private func runPreReplacementCheckpoints() throws {
+        for phase in [
+            PersistenceWritePhase.beforeWrite,
+            .afterTemporaryWrite,
+            .beforeSync,
+            .beforeAtomicReplace,
+        ] {
+            try faultInjector.checkpoint(store: .preferences, phase: phase)
+        }
+    }
+
+    private func restoreDefaults(_ snapshot: [String: Any]) {
+        for key in defaults.dictionaryRepresentation().keys
+            where snapshot[key] == nil {
+            defaults.removeObject(forKey: key)
+        }
+        for (key, value) in snapshot {
+            defaults.set(value, forKey: key)
+        }
+    }
+
     // MARK: - Default Migrations
 
     /// Creates a MigrationManager with all built-in migrations registered.
-    static func withDefaultMigrations(defaults: UserDefaults = .standard) -> MigrationManager {
-        var manager = MigrationManager(defaults: defaults)
+    static func withDefaultMigrations(
+        defaults: UserDefaults = .standard,
+        faultInjector: PersistenceFaultInjector = .processEnvironment
+    ) -> MigrationManager {
+        var manager = MigrationManager(
+            defaults: defaults,
+            faultInjector: faultInjector
+        )
 
         // Migration v0 → v1: Clean up stale recent projects that no longer exist on disk
         manager.registerMigration(from: 0, to: 1) { defs in

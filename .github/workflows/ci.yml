@@ -537,7 +537,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Terminal (33 tests)
+          # Shard 1 — Terminal (34 tests)
           - shard-name: "Terminal"
             test-classes: >-
               -only-testing:PineUITests/TerminalTests

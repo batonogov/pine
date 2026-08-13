@@ -78,7 +78,7 @@ struct PersistenceFixtureCorpusTests {
         #expect(future.dictionaryRepresentation() as NSDictionary == original)
     }
 
-    @Test("session fixtures load legacy/current and preserve future data")
+    @Test("session fixtures normalize idempotently and preserve future data")
     func sessionFixtures() throws {
         let project = try makeProject()
         defer { try? FileManager.default.removeItem(at: project) }
@@ -97,6 +97,22 @@ struct PersistenceFixtureCorpusTests {
             )
             #expect(state.schemaVersion == expectedVersion)
             #expect(state.activeFileURL?.lastPathComponent == "App.swift")
+
+            #expect(saveNormalizedSession(state, for: project, in: defaults))
+            let normalized = try #require(
+                SessionState.load(for: project, defaults: defaults)
+            )
+            #expect(
+                normalized.schemaVersion == SessionState.currentSchemaVersion
+            )
+            let first = try sessionRecord(in: defaults)
+            #expect(
+                saveNormalizedSession(normalized, for: project, in: defaults)
+            )
+            #expect(try sessionRecord(in: defaults) == first)
+
+            SessionState.clear(for: project, defaults: defaults)
+            defaults.removeObject(forKey: "lastSessionState")
         }
 
         let future = try fixtureData("session-future.json", project: project)
@@ -105,7 +121,7 @@ struct PersistenceFixtureCorpusTests {
         #expect(defaults.data(forKey: "lastSessionState") == future)
     }
 
-    @Test("recovery fixtures load legacy/current and preserve future data")
+    @Test("recovery fixtures normalize idempotently and preserve future data")
     func recoveryFixtures() throws {
         let project = try makeProject()
         defer { try? FileManager.default.removeItem(at: project) }
@@ -127,7 +143,37 @@ struct PersistenceFixtureCorpusTests {
             let entries = manager.pendingRecoveryEntries()
             let entry = try #require(entries.first(where: { $0.0 == id })?.1)
             #expect(entry.schemaVersion == expectedVersion)
-            try FileManager.default.removeItem(at: url)
+
+            var tab = EditorTab(
+                url: URL(fileURLWithPath: entry.originalPath),
+                content: entry.content,
+                savedContent: ""
+            )
+            tab.encoding = entry.encoding
+            #expect(manager.migrateRecoverySnapshot(from: id, to: tab))
+            let normalized = try #require(
+                manager.pendingRecoveryEntries().first {
+                    $0.0 == tab.id
+                }?.1
+            )
+            #expect(
+                normalized.schemaVersion == RecoveryEntry.currentSchemaVersion
+            )
+            #expect(normalized.originalPath == entry.originalPath)
+            #expect(normalized.content == entry.content)
+
+            #expect(manager.migrateRecoverySnapshot(from: tab.id, to: tab))
+            let repeated = try #require(
+                manager.pendingRecoveryEntries().first {
+                    $0.0 == tab.id
+                }?.1
+            )
+            #expect(
+                repeated.schemaVersion == RecoveryEntry.currentSchemaVersion
+            )
+            #expect(repeated.originalPath == normalized.originalPath)
+            #expect(repeated.content == normalized.content)
+            manager.deleteRecoveryFile(for: tab.id)
         }
 
         let id = UUID()
@@ -171,6 +217,55 @@ struct PersistenceFixtureCorpusTests {
         #expect(legacy.status == .loaded)
         #expect(legacy.requiresMigration)
 
+        let generation = UUID()
+        let revision = try #require(
+            UUID(uuidString: "11111111-1111-4111-8111-111111111111")
+        )
+        let fence = AgentTaskPublicationFence(generation: generation)
+        let firstTicket = AgentTaskPersistenceTicket(
+            generation: generation,
+            sequence: 1,
+            projectKey: identity.persistenceKey,
+            expectedDiskRevision: legacy.revision,
+            nextDiskRevision: revision
+        )
+        fence.authorize(firstTicket)
+        #expect(
+            await store.save(
+                tasks: legacy.tasks,
+                project: identity,
+                authorization: AgentTaskPublicationAuthorization(
+                    ticket: firstTicket,
+                    fence: fence
+                )
+            ) == .saved(taskCount: legacy.tasks.count)
+        )
+        let normalized = await store.load(project: identity)
+        #expect(normalized.status == .loaded)
+        #expect(!normalized.requiresMigration)
+        #expect(normalized.revision == .versioned(revision))
+        let firstNormalizedData = try Data(contentsOf: url)
+
+        let secondTicket = AgentTaskPersistenceTicket(
+            generation: generation,
+            sequence: 2,
+            projectKey: identity.persistenceKey,
+            expectedDiskRevision: .versioned(revision),
+            nextDiskRevision: revision
+        )
+        fence.authorize(secondTicket)
+        #expect(
+            await store.save(
+                tasks: normalized.tasks,
+                project: identity,
+                authorization: AgentTaskPublicationAuthorization(
+                    ticket: secondTicket,
+                    fence: fence
+                )
+            ) == .saved(taskCount: normalized.tasks.count)
+        )
+        #expect(try Data(contentsOf: url) == firstNormalizedData)
+
         try installAgentFixture("agent-task-v2.json", at: url, project: project)
         let current = await store.load(project: identity)
         #expect(current.status == .loaded)
@@ -180,6 +275,75 @@ struct PersistenceFixtureCorpusTests {
         let future = try Data(contentsOf: url)
         #expect(await store.load(project: identity).status == .rejected(.unknownSchema))
         #expect(try Data(contentsOf: url) == future)
+    }
+
+    @Test("corrupt, oversized, and invalid inputs are rejected untouched")
+    func invalidInputsFailClosed() async throws {
+        let project = try makeProject()
+        defer { try? FileManager.default.removeItem(at: project) }
+        let (defaults, defaultsName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+
+        let truncatedSession = Data("{\"schemaVersion\":1".utf8)
+        defaults.set(truncatedSession, forKey: "lastSessionState")
+        #expect(SessionState.load(for: project, defaults: defaults) == nil)
+        #expect(defaults.data(forKey: "lastSessionState") == truncatedSession)
+
+        let recovery = project.appendingPathComponent("Recovery")
+        try FileManager.default.createDirectory(
+            at: recovery,
+            withIntermediateDirectories: true
+        )
+        let recoveryURL = recovery.appendingPathComponent("\(UUID()).json")
+        let truncatedRecovery = Data("{\"schemaVersion\":1".utf8)
+        try truncatedRecovery.write(to: recoveryURL)
+        #expect(
+            RecoveryManager(recoveryDirectory: recovery)
+                .pendingRecoveryEntries().isEmpty
+        )
+        #expect(try Data(contentsOf: recoveryURL) == truncatedRecovery)
+
+        let storage = project.appendingPathComponent("storage")
+        try FileManager.default.createDirectory(
+            at: storage,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let identity = AgentTaskProjectIdentity(
+            canonicalProjectPath: project.path,
+            canonicalWorktreePath: project.path
+        )
+        let metadataURL = AgentTaskMetadataStore.metadataURL(
+            for: identity,
+            storageRoot: storage
+        )
+        let store = AgentTaskMetadataStore(storageRoot: storage)
+
+        let oversized = Data(repeating: 0x41, count: 1_048_577)
+        try installPrivate(oversized, at: metadataURL)
+        #expect(
+            await store.load(project: identity).status
+                == .rejected(.storageLimit)
+        )
+        #expect(try Data(contentsOf: metadataURL) == oversized)
+
+        let invalid = Data(
+            """
+            {
+              "schemaVersion": 2,
+              "revision": "22222222-2222-4222-8222-222222222222",
+              "canonicalProjectPath": "/different/project",
+              "canonicalWorktreePath": "/different/project",
+              "tasks": []
+            }
+            """.utf8
+        )
+        try installPrivate(invalid, at: metadataURL)
+        #expect(
+            await store.load(project: identity).status
+                == .rejected(.invalidMetadata)
+        )
+        #expect(try Data(contentsOf: metadataURL) == invalid)
     }
 
     private func installAgentFixture(
@@ -192,6 +356,50 @@ struct PersistenceFixtureCorpusTests {
             [.posixPermissions: 0o600],
             ofItemAtPath: url.path
         )
+    }
+
+    private func installPrivate(_ data: Data, at url: URL) throws {
+        try data.write(to: url, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path
+        )
+    }
+
+    private func saveNormalizedSession(
+        _ state: SessionState,
+        for project: URL,
+        in defaults: UserDefaults
+    ) -> Bool {
+        SessionState.save(
+            projectURL: project,
+            openFileURLs: state.existingFileURLs,
+            activeFileURL: state.activeFileURL,
+            previewModes: state.previewModes,
+            highlightingDisabledPaths: state.highlightingDisabledPaths,
+            editorStates: state.editorStates,
+            pinnedPaths: state.pinnedPaths,
+            terminalPaneTabCounts: state.terminalPaneTabCounts,
+            terminalPaneActiveIndices: state.terminalPaneActiveIndices,
+            paneLayoutData: state.paneLayoutData,
+            paneTabAssignments: state.paneTabAssignments,
+            activePaneID: state.activePaneID,
+            paneActiveEditorPaths: state.paneActiveEditorPaths,
+            panePinnedPaths: state.panePinnedPaths,
+            paneTransientPreviewPaths: state.paneTransientPreviewPaths,
+            globalTabSwitchOrder: state.globalTabSwitchOrder,
+            defaults: defaults,
+            faultInjector: .none
+        )
+    }
+
+    private func sessionRecord(in defaults: UserDefaults) throws -> Data {
+        let key = try #require(
+            defaults.dictionaryRepresentation().keys.first {
+                $0.hasPrefix("sessionState:")
+            }
+        )
+        return try #require(defaults.data(forKey: key))
     }
 
     private func installPreferences(

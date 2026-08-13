@@ -170,6 +170,7 @@ struct SessionState: Codable, Sendable {
 
     // MARK: - Save
 
+    @discardableResult
     static func save(
         projectURL: URL,
         openFileURLs: [URL],
@@ -187,8 +188,9 @@ struct SessionState: Codable, Sendable {
         panePinnedPaths: [String: [String]]? = nil,
         paneTransientPreviewPaths: [String: String]? = nil,
         globalTabSwitchOrder: [SessionTabReference]? = nil,
-        defaults: UserDefaults = .standard
-    ) {
+        defaults: UserDefaults = .standard,
+        faultInjector: PersistenceFaultInjector = .processEnvironment
+    ) -> Bool {
         let state = SessionState(
             projectPath: projectURL.path,
             openFilePaths: openFileURLs.map(\.path),
@@ -208,10 +210,45 @@ struct SessionState: Codable, Sendable {
             terminalPaneActiveIndices: terminalPaneActiveIndices
         )
         do {
-            let data = try JSONEncoder().encode(state)
+            try faultInjector.checkpoint(
+                store: .session,
+                phase: .beforeWrite
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(state)
+            try faultInjector.checkpoint(
+                store: .session,
+                phase: .afterTemporaryWrite
+            )
+            try faultInjector.checkpoint(
+                store: .session,
+                phase: .beforeSync
+            )
+            try faultInjector.checkpoint(
+                store: .session,
+                phase: .beforeAtomicReplace
+            )
             defaults.set(data, forKey: key(for: projectURL))
+            do {
+                try faultInjector.checkpoint(
+                    store: .session,
+                    phase: .afterAtomicReplace
+                )
+            } catch {
+                let projectName = projectURL.lastPathComponent
+                logger.error(
+                    "Session state replaced but durability is unknown for \(projectName): \(error)"
+                )
+                return false
+            }
+            return true
         } catch {
-            logger.error("Failed to encode session state for \(projectURL.lastPathComponent): \(error)")
+            let projectName = projectURL.lastPathComponent
+            logger.error(
+                "Failed to persist session state for \(projectName): \(error)"
+            )
+            return false
         }
     }
 
