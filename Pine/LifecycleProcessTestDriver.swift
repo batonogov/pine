@@ -7,6 +7,7 @@
 
 #if DEBUG
 import Foundation
+import SwiftTerm
 
 /// Installs deterministic dirty-editor and live-PTY state in the real Pine
 /// process. The process test can request a second terminal generation with
@@ -38,6 +39,7 @@ final class LifecycleProcessTestDriver {
         }
         self.projectManager = projectManager
         self.diagnosticsDirectory = diagnosticsDirectory
+        writeProcessIdentifier()
 
         if ProcessInfo.processInfo.environment[
             "PINE_LIFECYCLE_FIXTURE_DIRTY"
@@ -57,8 +59,12 @@ final class LifecycleProcessTestDriver {
             }
         }
 
-        spawnTerminalGeneration()
-        installGenerationControl()
+        if ProcessInfo.processInfo.environment[
+            "PINE_LIFECYCLE_FIXTURE_TERMINAL"
+        ] != "0" {
+            spawnTerminalGeneration()
+            installGenerationControl()
+        }
         record("fixture-ready")
     }
 
@@ -85,8 +91,7 @@ final class LifecycleProcessTestDriver {
             executablePath: "/bin/sh",
             arguments: [
                 "-c",
-                "echo $$ > \"$1/owned-$2.pid\"; "
-                    + "child=0; "
+                "child=0; "
                     + "trap 'test \"$child\" -le 0 || kill \"$child\" "
                     + "2>/dev/null; exit 0' HUP INT TERM; "
                     + "while :; do /bin/sleep 60 & child=$!; "
@@ -97,8 +102,9 @@ final class LifecycleProcessTestDriver {
                 String(generation),
             ]
         )
+        let tab: TerminalTab?
         if let terminalPaneID {
-            _ = projectManager.paneManager.addTerminalTab(
+            tab = projectManager.paneManager.addTerminalTab(
                 in: terminalPaneID,
                 workingDirectory: rootURL,
                 initialProcess: process
@@ -109,8 +115,63 @@ final class LifecycleProcessTestDriver {
                     workingDirectory: rootURL,
                     initialProcess: process
                 )
+            tab = terminalPaneID.flatMap {
+                projectManager.paneManager.terminalState(for: $0)?.activeTab
+            }
         }
         record("terminal-generation-\(generation)-requested")
+        guard let tab else {
+            record("terminal-generation-\(generation)-missing-tab")
+            return
+        }
+        // Production starts PTYs lazily from TerminalContainerView.layout().
+        // The process-level gate must not depend on CI window-layout timing:
+        // drive the same production start path once the real tab is owned.
+        tab.startIfNeeded()
+        recordStartedProcess(for: tab, generation: generation)
+    }
+
+    private func recordStartedProcess(
+        for tab: TerminalTab,
+        generation: Int
+    ) {
+        guard let diagnosticsDirectory else { return }
+        Task { @MainActor [weak tab] in
+            for _ in 0..<200 {
+                guard let tab else { return }
+                let processIdentifier = tab.terminalView.process.shellPid
+                if tab.isProcessRunning, processIdentifier > 1 {
+                    let url = diagnosticsDirectory.appendingPathComponent(
+                        "owned-\(generation).pid"
+                    )
+                    try? Data("\(processIdentifier)\n".utf8).write(
+                        to: url,
+                        options: .atomic
+                    )
+                    LifecycleProcessDiagnostics.record(
+                        "terminal-generation-\(generation)-started-"
+                            + "pid-\(processIdentifier)",
+                        in: diagnosticsDirectory
+                    )
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            LifecycleProcessDiagnostics.record(
+                "terminal-generation-\(generation)-start-timeout",
+                in: diagnosticsDirectory
+            )
+        }
+    }
+
+    private func writeProcessIdentifier() {
+        guard let diagnosticsDirectory else { return }
+        let processIdentifier = ProcessInfo.processInfo.processIdentifier
+        let url = diagnosticsDirectory.appendingPathComponent("pine.pid")
+        try? Data("\(processIdentifier)\n".utf8).write(
+            to: url,
+            options: .atomic
+        )
     }
 
     private func record(_ phase: String) {

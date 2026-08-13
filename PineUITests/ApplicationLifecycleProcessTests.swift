@@ -76,11 +76,15 @@ final class ApplicationLifecycleProcessTests: PineUITestCase {
     }
 
     func testCleanQuitStopsTheRealApplicationProcess() throws {
-        launchWithProject(projectURL)
+        try launchLifecycleFixture(dirty: false, terminal: false)
+        let pineProcessIdentifier = try waitForPID(
+            named: "pine.pid",
+            timeout: 5
+        )
         requestQuit()
 
         XCTAssertTrue(
-            waitForApplicationToStop(timeout: 10),
+            waitForProcessToStop(pineProcessIdentifier, timeout: 35),
             "A clean project should quit without a confirmation sheet"
         )
         recordPhase("clean-quit-completed")
@@ -88,6 +92,10 @@ final class ApplicationLifecycleProcessTests: PineUITestCase {
 
     func testCancelGenerationFailureAndRetryPreserveOwnership() throws {
         try launchLifecycleFixture()
+        let pineProcessIdentifier = try waitForPID(
+            named: "pine.pid",
+            timeout: 5
+        )
         let firstGeneration = try captureOwnedGeneration(1)
         let unrelated = try launchUnrelatedProcess()
 
@@ -142,7 +150,7 @@ final class ApplicationLifecycleProcessTests: PineUITestCase {
         try setProjectPermissions(0o755)
         requestReviewedSaveAndTerminalShutdown()
         XCTAssertTrue(
-            waitForApplicationToStop(timeout: 15),
+            waitForProcessToStop(pineProcessIdentifier, timeout: 35),
             "Retrying after the save failure should complete Quit"
         )
         recordPhase("quit-retry-completed")
@@ -183,18 +191,28 @@ final class ApplicationLifecycleProcessTests: PineUITestCase {
             "before-atomic-replace",
             "interrupted",
         ].joined(separator: ":")
+        let faultArmURL = diagnosticsURL.appendingPathComponent(
+            "arm-persistence-fault"
+        )
+        app.launchEnvironment["PINE_PERSISTENCE_FAULT_ARM_FILE"] =
+            faultArmURL.path
 
         launchWithProject(projectURL)
         XCTAssertTrue(
             editorTab("App.swift").waitForExistence(timeout: 15),
             "The last committed fixture should restore before interruption"
         )
+        let pineProcessIdentifier = try waitForPID(
+            named: "pine.pid",
+            timeout: 5
+        )
         let generation = try captureOwnedGeneration(1)
+        try Data().write(to: faultArmURL, options: .atomic)
         requestQuit()
         clickButton("Quit Anyway")
 
         XCTAssertTrue(
-            waitForApplicationToStop(timeout: 15),
+            waitForProcessToStop(pineProcessIdentifier, timeout: 15),
             "The controlled checkpoint should kill the real Pine process"
         )
         XCTAssertTrue(
@@ -213,6 +231,9 @@ final class ApplicationLifecycleProcessTests: PineUITestCase {
             $0 == "--ui-test-lifecycle-process"
         }
         app.launchEnvironment.removeValue(forKey: "PINE_PERSISTENCE_FAULT")
+        app.launchEnvironment.removeValue(
+            forKey: "PINE_PERSISTENCE_FAULT_ARM_FILE"
+        )
         app.launchEnvironment.removeValue(
             forKey: "PINE_LIFECYCLE_FIXTURE_DIRTY"
         )
@@ -233,15 +254,30 @@ final class ApplicationLifecycleProcessTests: PineUITestCase {
         recordPhase("relaunch-restored-last-commit")
     }
 
-    private func launchLifecycleFixture() throws {
+    private func launchLifecycleFixture(
+        dirty: Bool = true,
+        terminal: Bool = true
+    ) throws {
         app.launchArguments.removeAll { $0 == "--reset-state" }
         app.launchArguments.append("--ui-test-lifecycle-process")
         app.launchEnvironment[
             "PINE_LIFECYCLE_DIAGNOSTICS_DIRECTORY"
         ] = diagnosticsURL.path
+        app.launchEnvironment["PINE_LIFECYCLE_FIXTURE_DIRTY"] =
+            dirty ? "1" : "0"
+        app.launchEnvironment["PINE_LIFECYCLE_FIXTURE_TERMINAL"] =
+            terminal ? "1" : "0"
         launchWithProject(projectURL)
-        XCTAssertTrue(editorTab("dirty.swift").waitForExistence(timeout: 15))
-        XCTAssertTrue(terminalTab("Terminal 1").waitForExistence(timeout: 15))
+        if dirty {
+            XCTAssertTrue(
+                editorTab("dirty.swift").waitForExistence(timeout: 15)
+            )
+        }
+        if terminal {
+            XCTAssertTrue(
+                terminalTab("Terminal 1").waitForExistence(timeout: 15)
+            )
+        }
     }
 
     private func requestQuit() {

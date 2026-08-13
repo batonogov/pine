@@ -100,9 +100,15 @@ nonisolated struct PersistenceFaultInjector: Sendable {
         let fault = PersistenceFault(encoded: encoded) else {
             return .none
         }
+        let armFile = ProcessInfo.processInfo.environment[
+            "PINE_PERSISTENCE_FAULT_ARM_FILE"
+        ].map { URL(fileURLWithPath: $0).standardizedFileURL }
         return PersistenceFaultInjector { store, phase in
             guard store == fault.store,
-                  phase == fault.phase else { return }
+                  phase == fault.phase,
+                  armFile.map({
+                      FileManager.default.fileExists(atPath: $0.path)
+                  }) ?? true else { return }
             if fault.failure == .interrupted {
                 PersistenceProcessInterruption.terminate(at: fault)
             }
