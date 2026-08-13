@@ -68,7 +68,10 @@ enum AgentNotificationTransitionResolver {
                 kind: kind,
                 observedAt: newRun.lastObservedAt,
                 agentName: safeDisplayName(for: task),
-                projectName: sanitizedProjectName(task.project.canonicalProjectPath),
+                projectName: task.route.surface.isProjectBacked
+                    ? sanitizedProjectName(task.project.canonicalProjectPath)
+                    : task.presentationContext?.terminalLabel
+                        ?? Strings.quickTerminalText(),
                 taskTitle: sanitizedTitle(task.title),
                 startedAt: newRun.startedAt
             )

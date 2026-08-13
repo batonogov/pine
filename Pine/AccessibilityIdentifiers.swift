@@ -43,6 +43,8 @@ nonisolated enum AccessibilityID {
     static let quickTerminalHideOnFocusLossToggle =
         "quickTerminalHideOnFocusLossToggle"
     static let quickTerminalResetButton = "quickTerminalResetButton"
+    static let quickTerminalContent = "quickTerminalContent"
+    static let quickTerminalAgentIdentity = "quickTerminalAgentIdentity"
 
     // MARK: - Welcome window
     static let welcomeOpenFolderButton = "welcomeOpenFolderButton"

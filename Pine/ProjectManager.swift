@@ -341,7 +341,7 @@ final class ProjectManager {
         case invalidated
     }
 
-    let workspace = WorkspaceManager()
+    let workspace: WorkspaceManager
     let terminal: TerminalManager
     /// Structured agent-action feed for the Activity Panel (vision #933,
     /// Phase 2 — Visibility, issue #1072).
@@ -1541,6 +1541,13 @@ final class ProjectManager {
     #endif
     private var editorContextCommandGeneration: UInt64 = 0
     private let contextPresentationIdentity: ContextPresentationIdentity
+    @ObservationIgnored
+    private var agentTaskFilesystemAdmission:
+        RecentAgentTaskFilesystemValidationLease?
+    @ObservationIgnored
+    private var agentTaskFilesystemAdmissionGeneration = UUID()
+    @ObservationIgnored
+    private var agentTaskFilesystemIdentity: AgentTaskProjectIdentity?
 
     #if DEBUG
     func removeRecoveryManagerForTesting() {
@@ -1554,10 +1561,15 @@ final class ProjectManager {
         lspSettings: LSPSettings = .shared,
         agentProcessSnapshotPoller: AgentProcessSnapshotPoller? = nil,
         agentTaskRegistry: AgentTaskRegistry? = nil,
+        workspaceFilesystemValidationSeam:
+            @escaping @Sendable () async -> Void = {},
         contextFileWriter: ContextFileWriter = ContextFileWriter(),
         contextPresentationIdentity: ContextPresentationIdentity =
             ContextPresentationIdentity(epoch: 1)
     ) {
+        self.workspace = WorkspaceManager(
+            filesystemValidationSeam: workspaceFilesystemValidationSeam
+        )
         self.contextFileWriter = contextFileWriter
         self.contextPresentationIdentity = contextPresentationIdentity
         self.terminal = TerminalManager(
@@ -1581,6 +1593,7 @@ final class ProjectManager {
         }
         paneManager.configureTerminalTab = { [weak self] tab in
             self?.terminal.configureAgentLifecycle(for: tab)
+            self?.configureFilesystemAdmission(for: tab)
         }
         problemsController.configureDocumentStatesProvider { [weak self] in
             self?.problemsDocumentStates ?? []
@@ -1819,6 +1832,8 @@ final class ProjectManager {
         searchProvider.cancel()
         lspManager.shutdownAll()
         terminal.shutdownPermanently()
+        agentTaskFilesystemAdmission = nil
+        agentTaskFilesystemAdmissionGeneration = UUID()
     }
 
     var requiresBackgroundRetention: Bool {
@@ -2090,15 +2105,36 @@ final class ProjectManager {
     }
     func loadDirectory(
         url: URL,
-        agentTaskProject: AgentTaskProjectIdentity? = nil
+        agentTaskProject: AgentTaskProjectIdentity? = nil,
+        filesystemAdmission:
+            RecentAgentTaskFilesystemValidationLease? = nil
     ) {
-        workspace.loadDirectory(url: url)
-        terminal.configureAgentTaskProject(
-            agentTaskProject ?? AgentTaskProjectIdentity(
+        let projectIdentity = agentTaskProject ?? AgentTaskProjectIdentity(
                 canonicalProjectPath: url.path,
                 canonicalWorktreePath: url.path
-            )
         )
+        replaceAgentTaskFilesystemAdmission(
+            filesystemAdmission,
+            identity: projectIdentity
+        )
+        let admissionGeneration = agentTaskFilesystemAdmissionGeneration
+        let workspaceValidator: (@Sendable () async -> Bool)?
+        if filesystemAdmission != nil {
+            workspaceValidator = { [weak self] in
+                guard let self else { return false }
+                return await self.revalidateAgentTaskFilesystemAdmission(
+                    expectedGeneration: admissionGeneration,
+                    workingDirectory: url
+                )
+            }
+        } else {
+            workspaceValidator = nil
+        }
+        workspace.loadDirectory(
+            url: url,
+            filesystemValidator: workspaceValidator
+        )
+        terminal.configureAgentTaskProject(projectIdentity)
         setupRecovery(projectURL: url)
         agentHistory.updateProjectRoot(url)
         synchronizeAgentHandoff(projectRoot: url)
@@ -2107,6 +2143,60 @@ final class ProjectManager {
         seedAgentActivityUITestFixture(projectURL: url)
         seedAgentAttentionUITestFixture(projectURL: url)
         #endif
+    }
+
+    /// Replaces only an already-proved descriptor lease. No filesystem work
+    /// occurs on MainActor; a new generation fences every load/PTY validation
+    /// still in flight for the prior admitted instance.
+    func replaceAgentTaskFilesystemAdmission(
+        _ admission: RecentAgentTaskFilesystemValidationLease?,
+        identity: AgentTaskProjectIdentity
+    ) {
+        agentTaskFilesystemAdmission = admission
+        agentTaskFilesystemIdentity = identity
+        agentTaskFilesystemAdmissionGeneration = UUID()
+        paneManager.allTerminalTabs.forEach(configureFilesystemAdmission)
+    }
+
+    private func configureFilesystemAdmission(for tab: TerminalTab) {
+        guard agentTaskFilesystemAdmission != nil else {
+            tab.configureWorkingDirectoryValidation(nil)
+            return
+        }
+        tab.configureWorkingDirectoryValidation { [weak self] directory in
+            guard let self else { return false }
+            return await self.revalidateAgentTaskFilesystemAdmission(
+                workingDirectory: directory
+            )
+        }
+    }
+
+    func revalidateAgentTaskFilesystemAdmission(
+        expectedIdentity: AgentTaskProjectIdentity? = nil,
+        expectedGeneration: UUID? = nil,
+        workingDirectory: URL? = nil
+    ) async -> Bool {
+        guard let identity = agentTaskFilesystemIdentity else { return false }
+        if let expectedIdentity, expectedIdentity != identity { return false }
+        if let workingDirectory,
+           workingDirectory.standardizedFileURL.path
+            != identity.canonicalWorktreePath { return false }
+        if identity.canonicalProjectPath == identity.canonicalWorktreePath {
+            return true
+        }
+        guard let admission = agentTaskFilesystemAdmission else { return false }
+        let generation = agentTaskFilesystemAdmissionGeneration
+        if let expectedGeneration, expectedGeneration != generation {
+            return false
+        }
+        let valid = await Task.detached(priority: .utility) {
+            admission.revalidate()
+        }.value
+        return !Task.isCancelled
+            && valid
+            && agentTaskFilesystemAdmission === admission
+            && agentTaskFilesystemAdmissionGeneration == generation
+            && agentTaskFilesystemIdentity == identity
     }
 
     // MARK: - Agent activity file-system correlation (#1072)

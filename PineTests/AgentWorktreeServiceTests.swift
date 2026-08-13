@@ -299,8 +299,12 @@ struct AgentWorktreeServiceTests {
             defaults: defaults,
             agentTasks: taskRegistry
         )
-        let leftManager = try #require(projects.projectManager(for: left))
-        let rightManager = try #require(projects.projectManager(for: right))
+        let leftManager = try #require(
+            await projects.projectManager(for: left)
+        )
+        let rightManager = try #require(
+            await projects.projectManager(for: right)
+        )
         _ = await taskRegistry.flushPersistence()
 
         let leftTab = try terminalTab(in: leftManager, at: left.worktreeRoot)

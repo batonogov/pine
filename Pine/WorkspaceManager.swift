@@ -68,6 +68,8 @@ final class WorkspaceManager {
     private let fileWatcherFactory: (
         @escaping @MainActor () -> Void
     ) -> any WorkspaceFileWatching
+    private let filesystemValidationSeam: @Sendable () async -> Void
+    private var filesystemValidator: (@Sendable () async -> Bool)?
     private(set) var isSuspended = false
 
     /// Incremented on every file-watcher event so ContentView can trigger
@@ -99,9 +101,12 @@ final class WorkspaceManager {
                 debounceInterval: WorkspaceManager.watcherDebounce,
                 callback: callback
             )
-        }
+        },
+        filesystemValidationSeam:
+            @escaping @Sendable () async -> Void = {}
     ) {
         self.fileWatcherFactory = fileWatcherFactory
+        self.filesystemValidationSeam = filesystemValidationSeam
     }
 
     /// Debounce interval for `onRootNodesChanged` notifications.
@@ -210,7 +215,11 @@ final class WorkspaceManager {
         loadDirectory(url: url)
     }
 
-    func loadDirectory(url: URL) {
+    func loadDirectory(
+        url: URL,
+        filesystemValidator: (@Sendable () async -> Bool)? = nil
+    ) {
+        self.filesystemValidator = filesystemValidator
         isSuspended = false
         // Stop old watcher immediately so it cannot fire events
         // that would bump loadGeneration and race with the new load.
@@ -367,6 +376,8 @@ final class WorkspaceManager {
         let progressID = showProgress
             ? progressTracker?.beginOperation(Strings.progressLoadingProject)
             : nil
+        let filesystemValidator = filesystemValidator
+        let filesystemValidationSeam = filesystemValidationSeam
 
         loadingTask = Task.detached(priority: .userInitiated) { [weak self] in
             // Shared cleanup closure — ends the progress operation on MainActor.
@@ -377,6 +388,20 @@ final class WorkspaceManager {
                     await MainActor.run { [weak self] in
                         self?.progressTracker?.endOperation(progressID)
                     }
+                }
+            }
+
+            if let validator = filesystemValidator {
+                guard await validator() else {
+                    await self?.invalidateFilesystemLoad(generation: generation)
+                    await cleanupProgress()
+                    return
+                }
+                await filesystemValidationSeam()
+                guard !Task.isCancelled, await validator() else {
+                    await self?.invalidateFilesystemLoad(generation: generation)
+                    await cleanupProgress()
+                    return
                 }
             }
 
@@ -394,6 +419,13 @@ final class WorkspaceManager {
                 )
             }
             let shallowChildren = shallowResult.root.children ?? []
+
+            if let validator = filesystemValidator,
+               !(await validator()) {
+                await self?.invalidateFilesystemLoad(generation: generation)
+                await cleanupProgress()
+                return
+            }
 
             if Task.isCancelled { await cleanupProgress(); return }
 
@@ -452,6 +484,13 @@ final class WorkspaceManager {
                 )
             }
 
+            if let validator = filesystemValidator,
+               !(await validator()) {
+                await self?.invalidateFilesystemLoad(generation: generation)
+                await cleanupProgress()
+                return
+            }
+
             if Task.isCancelled { await cleanupProgress(); return }
 
             await MainActor.run { [weak self] in
@@ -471,6 +510,16 @@ final class WorkspaceManager {
                 if let progressID { self.progressTracker?.endOperation(progressID) }
             }
         }
+    }
+
+    private func invalidateFilesystemLoad(generation: Int) {
+        guard loadGeneration == generation else { return }
+        loadGeneration &+= 1
+        fileWatcher?.stop()
+        fileWatcher = nil
+        isSuspended = true
+        isLoading = false
+        resumeLoadingContinuations()
     }
 
     /// Plain-data snapshot of the git state captured off-main during a load.
