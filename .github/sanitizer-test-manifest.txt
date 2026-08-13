@@ -1,0 +1,24 @@
+# Terminal, PTY-adjacent subprocess ownership, SwiftTerm, AppKit, and Metal.
+PineTests/UserTaskRunnerTests
+PineTests/TerminalProcessConfirmationTests
+PineTests/TerminalMetalRendererTests
+
+# Agent detection, terminal ownership, and durable task persistence.
+PineTests/AgentDetectionCoordinatorTests
+PineTests/AgentProjectTerminalOwnershipTests
+PineTests/AgentTaskRegistryTests
+
+# File-system events and external-change races.
+PineTests/FileSystemWatcherTests
+PineTests/TabExternalChangeDetectorTests
+PineTests/ExternalChangeRefreshRegressionTests
+
+# Language-server process lifecycle and stream transport.
+PineTests/LSPProcessTransportTests
+
+# Tabs, panes, projects, windows, and termination-save coordination.
+PineTests/TabManagerTests
+PineTests/PaneManagerTests
+PineTests/ProjectRegistryTests
+PineTests/WindowLifecycleTests
+PineTests/TerminationSaveCoordinatorSecurityTests

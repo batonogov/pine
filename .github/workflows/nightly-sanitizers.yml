@@ -1,0 +1,171 @@
+# NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
+# To update an action: find the new version's commit SHA on GitHub (Tags -> verify commit),
+# replace the SHA, and keep the "# vX" comment in sync.
+name: Nightly Sanitizers
+
+on:
+  schedule:
+    # Run after nightly performance and fuzz jobs to reduce runner contention.
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-sanitizers
+  cancel-in-progress: false
+
+# These scheduled/manual jobs intentionally start outside blocking PR CI. A
+# sanitizer finding still fails its job. Promotion criteria live in
+# .github/SANITIZER_TESTING.md.
+jobs:
+  address-sanitizer:
+    name: AddressSanitizer
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+
+      - name: Ensure Metal Toolchain
+        run: bash scripts/ensure-metal-toolchain.sh
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Run AddressSanitizer Manifest
+        shell: bash
+        env:
+          ASAN_OPTIONS: abort_on_error=1:halt_on_error=1:log_path=${{ github.workspace }}/SanitizerDiagnostics/asan
+        run: |
+          set -euo pipefail
+          mkdir -p SanitizerDiagnostics
+          test_selection=()
+          while IFS= read -r suite || [ -n "$suite" ]; do
+            if [[ "$suite" =~ ^[[:space:]]*($|#) ]]; then
+              continue
+            fi
+            test_selection+=("-only-testing:$suite")
+          done < .github/sanitizer-test-manifest.txt
+
+          result_bundle="AddressSanitizerResults.xcresult"
+          console_log="SanitizerDiagnostics/address-xcodebuild.log"
+          test_started_at="$(date +%s)"
+          set +e
+          xcodebuild test \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            "${test_selection[@]}" \
+            -enableAddressSanitizer YES \
+            -enableCodeCoverage NO \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -resultBundlePath "$result_bundle" \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee "$console_log"
+          test_exit=${PIPESTATUS[0]}
+          set -e
+
+          python3 .github/scripts/validate_test_results.py \
+            "$result_bundle" \
+            --xcodebuild-exit "$test_exit" \
+            --started-at "$test_started_at" \
+            --github-summary
+
+      - name: Upload AddressSanitizer Results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: AddressSanitizer-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            AddressSanitizerResults.xcresult
+            SanitizerDiagnostics
+          if-no-files-found: warn
+          retention-days: 14
+
+  thread-sanitizer:
+    name: ThreadSanitizer
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+
+      - name: Ensure Metal Toolchain
+        run: bash scripts/ensure-metal-toolchain.sh
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Run ThreadSanitizer Manifest
+        shell: bash
+        env:
+          TSAN_OPTIONS: abort_on_error=1:halt_on_error=1:log_path=${{ github.workspace }}/SanitizerDiagnostics/tsan
+        run: |
+          set -euo pipefail
+          mkdir -p SanitizerDiagnostics
+          test_selection=()
+          while IFS= read -r suite || [ -n "$suite" ]; do
+            if [[ "$suite" =~ ^[[:space:]]*($|#) ]]; then
+              continue
+            fi
+            test_selection+=("-only-testing:$suite")
+          done < .github/sanitizer-test-manifest.txt
+
+          result_bundle="ThreadSanitizerResults.xcresult"
+          console_log="SanitizerDiagnostics/thread-xcodebuild.log"
+          test_started_at="$(date +%s)"
+          set +e
+          xcodebuild test \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            "${test_selection[@]}" \
+            -enableThreadSanitizer YES \
+            -enableCodeCoverage NO \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -resultBundlePath "$result_bundle" \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee "$console_log"
+          test_exit=${PIPESTATUS[0]}
+          set -e
+
+          python3 .github/scripts/validate_test_results.py \
+            "$result_bundle" \
+            --xcodebuild-exit "$test_exit" \
+            --started-at "$test_started_at" \
+            --github-summary
+
+      - name: Upload ThreadSanitizer Results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ThreadSanitizer-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ThreadSanitizerResults.xcresult
+            SanitizerDiagnostics
+          if-no-files-found: warn
+          retention-days: 14
