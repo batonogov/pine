@@ -41,8 +41,11 @@ jobs:
             echo "::error::The selected Xcode toolchain does not provide an executable sourcekit-lsp"
             exit 1
           fi
+          developer_dir="$(cd "$DEVELOPER_DIR" && pwd -P)"
+          sourcekit_lsp_dir="$(cd "$(dirname "$sourcekit_lsp")" && pwd -P)"
+          sourcekit_lsp="$sourcekit_lsp_dir/$(basename "$sourcekit_lsp")"
           case "$sourcekit_lsp" in
-            "$DEVELOPER_DIR"/*) ;;
+            "$developer_dir"/*) ;;
             *)
               echo "::error::sourcekit-lsp resolved outside the selected Xcode: $sourcekit_lsp"
               exit 1
