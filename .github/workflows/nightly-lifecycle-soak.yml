@@ -1,0 +1,161 @@
+# NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
+name: Nightly Lifecycle Resource Soak
+
+on:
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+    inputs:
+      cycles:
+        description: Number of bounded lifecycle cycles
+        required: false
+        default: '100'
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  lifecycle-soak:
+    name: Lifecycle Resource Soak
+    runs-on: macos-26
+    timeout-minutes: 60
+    concurrency:
+      group: nightly-lifecycle-soak
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+
+      - name: Download Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Run Lifecycle Soak
+        id: soak
+        continue-on-error: true
+        env:
+          PINE_LIFECYCLE_SOAK: '1'
+          PINE_SOAK_ARTIFACTS_DIR: ${{ github.workspace }}/LifecycleSoakArtifacts
+          PINE_SOAK_CYCLES: ${{ inputs.cycles || '100' }}
+          PINE_SOAK_SEED: '1443'
+        run: |
+          mkdir -p "$PINE_SOAK_ARTIFACTS_DIR"
+          jq -n \
+            --argjson enabled true \
+            --argjson cycles "$PINE_SOAK_CYCLES" \
+            --argjson seed "$PINE_SOAK_SEED" \
+            --arg artifactsDirectory "$PINE_SOAK_ARTIFACTS_DIR" \
+            --arg rendererPolicy alternating-coregraphics-automatic \
+            '{
+              enabled: $enabled,
+              cycles: $cycles,
+              seed: $seed,
+              artifactsDirectory: $artifactsDirectory,
+              rendererPolicy: $rendererPolicy
+            }' \
+            > "$PINE_SOAK_ARTIFACTS_DIR/config.json"
+          xcodebuild test \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PinePerformanceTests/LifecycleResourceSoakTests/testLifecycleResourceSoak \
+            -resultBundlePath LifecycleSoakResults.xcresult \
+            -maximum-parallel-testing-workers 1 \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 1800 \
+            -maximum-test-execution-time-allowance 2400 \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            PINE_LIFECYCLE_SOAK="$PINE_LIFECYCLE_SOAK" \
+            PINE_SOAK_ARTIFACTS_DIR="$PINE_SOAK_ARTIFACTS_DIR" \
+            PINE_SOAK_CYCLES="$PINE_SOAK_CYCLES" \
+            PINE_SOAK_SEED="$PINE_SOAK_SEED"
+
+      - name: Retain Signpost Data
+        if: always()
+        run: |
+          mkdir -p LifecycleSoakArtifacts
+          /usr/bin/log show \
+            --last 60m \
+            --signpost \
+            --style json \
+            --predicate 'subsystem == "io.github.batonogov.pine"' \
+            > LifecycleSoakArtifacts/signposts.json \
+            2> LifecycleSoakArtifacts/signposts.stderr || true
+
+      - name: Summarize Lifecycle Soak
+        id: summary
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.soak.outcome }}
+        run: |
+          python3 .github/scripts/summarize_lifecycle_soak.py \
+            LifecycleSoakArtifacts/lifecycle-soak-report.json \
+            --test-outcome "$TEST_OUTCOME" \
+            --github-output "$GITHUB_OUTPUT" \
+            | tee LifecycleSoakArtifacts/summary.md
+          cat LifecycleSoakArtifacts/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Lifecycle Evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: LifecycleSoak-${{ github.run_id }}
+          path: |
+            LifecycleSoakResults.xcresult
+            LifecycleSoakArtifacts
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Create or Update Persistent Regression Issue
+        if: always() && steps.summary.outputs.has_regression == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title='[nightly-soak] Lifecycle resource regression'
+          existing=$(gh issue list \
+            --state open \
+            --search "$title in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"$title\") | .number" \
+            | head -n 1)
+          body=$(printf 'Persistent lifecycle resource regression.\n\n**Run:** %s\n\n%s' \
+            "$RUN_URL" \
+            "$(cat LifecycleSoakArtifacts/summary.md)")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+            exit 0
+          fi
+
+          previous=$(gh run list \
+            --workflow nightly-lifecycle-soak.yml \
+            --limit 5 \
+            --json databaseId,conclusion \
+            --jq ".[] | select(.databaseId != $RUN_ID and .conclusion != \"\") | .conclusion" \
+            | head -n 1)
+          if [ "$previous" = 'failure' ]; then
+            gh issue create \
+              --title "$title" \
+              --body "$body" \
+              --label 'bug,performance,testing'
+          else
+            echo 'First failing run; waiting for one consecutive failure before opening an issue.'
+          fi
+
+      - name: Fail on Hard Regression
+        if: always() && steps.summary.outputs.has_regression == 'true'
+        run: exit 1

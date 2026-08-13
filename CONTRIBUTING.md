@@ -102,6 +102,23 @@ candidates retain the short manual
 for VoiceOver announcements, physical-key behavior that bypasses XCUITest, and
 visual review of the retained pseudolanguage screenshots.
 
+### Lifecycle resource soak
+
+The scheduled `Nightly Lifecycle Resource Soak` runs 100 deterministic cycles
+with seed `1443`. Each cycle opens, backgrounds, resumes, and tears down a real
+project manager; churns tabs, panes, search, and file watching; launches and
+stops a controlled local Codex process tree through SwiftTerm; and crashes,
+restarts, and gracefully shuts down a local fake LSP. Terminal cycles alternate
+between forced CoreGraphics and the automatic Metal-with-fallback path.
+
+The job measures peak and settled memory, lifecycle and idle CPU, descriptors,
+PTYs, and child-process identities. It always retains the `.xcresult`, JSON
+report, process snapshots, and signposts. Hard cleanup regressions fail the job;
+shared-runner noise remains a trend warning. A deduplicated issue is opened only
+after consecutive failing scheduled runs. Use the workflow's `cycles` input for
+a shorter manual diagnostic run; no vendor CLI, credential, network service, or
+user project is involved.
+
 ### Linting
 
 Run SwiftLint before every commit and fix all warnings and errors:

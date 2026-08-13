@@ -1,0 +1,47 @@
+#!/usr/bin/python3
+"""Controlled local agent process tree for lifecycle soak coverage."""
+
+import os
+import signal
+import subprocess
+import sys
+import time
+
+
+child = None
+
+
+def stop(_signal, _frame):
+    if child is not None and child.poll() is None:
+        child.terminate()
+        try:
+            child.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=1)
+    raise SystemExit(0)
+
+
+def main():
+    global child
+    trace_path = sys.argv[1]
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    child = subprocess.Popen(["/bin/sleep", "30"])
+
+    temporary = trace_path + ".tmp"
+    with open(temporary, "w", encoding="ascii") as trace:
+        trace.write(f"ready parent={os.getpid()} child={child.pid}\n")
+        trace.flush()
+        os.fsync(trace.fileno())
+    os.replace(temporary, trace_path)
+
+    try:
+        while child.poll() is None:
+            time.sleep(0.1)
+    finally:
+        stop(signal.SIGTERM, None)
+
+
+if __name__ == "__main__":
+    main()
