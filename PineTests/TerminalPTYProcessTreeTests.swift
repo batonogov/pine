@@ -110,9 +110,13 @@ private final class TerminalPTYFixtureHarness {
         )
         tab.startIfNeeded()
         guard tab.isProcessRunning else {
+            tab.stop()
+            try? FileManager.default.removeItem(at: directoryURL)
             throw PTYFixtureError.processDidNotStart
         }
         guard let controller = tab.processTreeControllerForTesting else {
+            tab.stop()
+            try? FileManager.default.removeItem(at: directoryURL)
             throw PTYFixtureError.processOwnershipUnavailable
         }
         self.controller = controller
@@ -310,6 +314,7 @@ struct TerminalPTYProcessTreeTests {
             ("exit-failure\n", "natural-failure"),
         ] {
             let harness = try TerminalPTYFixtureHarness(scenario: "tree")
+            defer { harness.cleanup() }
             let ready = try #require(await PTYFixtureTrace.wait(
                 for: "ready",
                 at: harness.traceURL
@@ -337,7 +342,6 @@ struct TerminalPTYProcessTreeTests {
             #expect(!PTYFixtureTrace.identityIsLive(rootIdentity))
             #expect(!PTYFixtureTrace.identityIsLive(childIdentity))
             #expect(!harness.tab.hasAcknowledgedPTYLeaseForTesting)
-            harness.cleanup()
         }
     }
 
