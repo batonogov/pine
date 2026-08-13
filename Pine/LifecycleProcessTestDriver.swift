@@ -91,12 +91,12 @@ final class LifecycleProcessTestDriver {
             executablePath: "/bin/sh",
             arguments: [
                 "-c",
-                "child=0; "
+                "set -m; child=0; "
                     + "trap 'test \"$child\" -le 0 || kill \"$child\" "
                     + "2>/dev/null; exit 0' HUP INT TERM; "
                     + "while :; do /bin/sleep 60 & child=$!; "
                     + "echo $child > \"$1/owned-$2-child.pid\"; "
-                    + "wait \"$child\"; done",
+                    + "fg %1; done",
                 "pine-lifecycle-fixture",
                 diagnosticsDirectory.path,
                 String(generation),
