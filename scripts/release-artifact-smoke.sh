@@ -81,6 +81,21 @@ SPARKLE_SOURCE="$(absolute_directory "$SPARKLE_SOURCE_ARGUMENT")"
 OUTPUT_PARENT="$(cd "$(dirname "$OUTPUT_ARGUMENT")" && pwd -P)"
 OUTPUT_ROOT="$OUTPUT_PARENT/$(basename "$OUTPUT_ARGUMENT")"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+APPCAST_SERVER="$REPO_ROOT/scripts/appcast-loopback-server.py"
+
+[ -f "$APPCAST_SERVER" ] \
+    || die "appcast loopback server not found: $APPCAST_SERVER"
+
+# Startup budget for the loopback update feed. Overridable so the script's own
+# regression tests can exercise the timeout path without stalling CI.
+SERVER_TIMEOUT_SECONDS="${PINE_RELEASE_SMOKE_SERVER_TIMEOUT:-30}"
+case "$SERVER_TIMEOUT_SECONDS" in
+    ''|0|*[!0-9]*)
+        die "appcast server timeout must be a positive integer:" \
+            "$SERVER_TIMEOUT_SECONDS"
+        ;;
+esac
+SERVER_ATTEMPTS=$((SERVER_TIMEOUT_SECONDS * 10))
 
 LOGS="$OUTPUT_ROOT/logs"
 METADATA="$OUTPUT_ROOT/metadata"
@@ -260,32 +275,52 @@ FEED_HASH="$(shasum -a 256 "$FEED_DMG" | awk '{print $1}')"
     || die "local update feed does not contain the candidate DMG bytes"
 
 PORT_FILE="$METADATA/appcast-port.txt"
-python3 - "$FEED_ROOT" "$PORT_FILE" <<'PYTHON' \
-    > "$LOGS/appcast-server.log" 2>&1 &
-import http.server
-import pathlib
-import sys
-
-root = pathlib.Path(sys.argv[1])
-port_file = pathlib.Path(sys.argv[2])
-handler = lambda *args, **kwargs: http.server.SimpleHTTPRequestHandler(
-    *args, directory=root, **kwargs
-)
-server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-port_file.write_text(str(server.server_address[1]), encoding="utf-8")
-server.serve_forever()
-PYTHON
+SERVER_LOG="$LOGS/appcast-server.log"
+python3 "$APPCAST_SERVER" "$FEED_ROOT" "$PORT_FILE" \
+    > "$SERVER_LOG" 2>&1 &
 SERVER_PID="$!"
 
-for _ in {1..100}; do
-    [ -s "$PORT_FILE" ] && break
-    kill -0 "$SERVER_PID" >/dev/null 2>&1 \
-        || die "local appcast server exited before startup"
-    sleep 0.1
-done
-[ -s "$PORT_FILE" ] || die "local appcast server did not publish its port"
+# `kill -0` succeeds for a zombie, so a server that died during startup would
+# otherwise be indistinguishable from one that is merely slow, and every
+# startup failure would surface as the timeout below.
+server_is_running() {
+    local state
+    state="$(ps -o state= -p "$SERVER_PID" 2>/dev/null | tr -d '[:space:]')"
+    case "$state" in
+        ''|Z*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
 
-APPCAST_PORT="$(cat "$PORT_FILE")"
+report_appcast_server_log() {
+    echo "--- appcast server log ---" >&2
+    cat "$SERVER_LOG" >&2 2>/dev/null || true
+    echo "--- end appcast server log ---" >&2
+}
+
+attempt=0
+while [ "$attempt" -lt "$SERVER_ATTEMPTS" ]; do
+    [ -s "$PORT_FILE" ] && break
+    server_is_running || {
+        report_appcast_server_log
+        die "local appcast server exited before startup"
+    }
+    sleep 0.1
+    attempt=$((attempt + 1))
+done
+if [ ! -s "$PORT_FILE" ]; then
+    report_appcast_server_log
+    die "local appcast server did not publish its port within" \
+        "${SERVER_TIMEOUT_SECONDS}s"
+fi
+
+APPCAST_PORT="$(tr -d '[:space:]' < "$PORT_FILE")"
+case "$APPCAST_PORT" in
+    ''|*[!0-9]*)
+        report_appcast_server_log
+        die "local appcast server published an invalid port: $APPCAST_PORT"
+        ;;
+esac
 APPCAST_URL="http://127.0.0.1:$APPCAST_PORT/appcast.xml"
 DMG_URL="http://127.0.0.1:$APPCAST_PORT/$(basename "$FEED_DMG")"
 PINE_APPCAST_SOURCE="$APPCAST" \

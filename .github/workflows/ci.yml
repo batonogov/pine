@@ -101,6 +101,9 @@ jobs:
       - name: Tests for release artifact smoke
         run: bash scripts/tests/test-release-artifact-smoke.sh
 
+      - name: Tests for release smoke loopback feed server
+        run: bash scripts/tests/test-appcast-server.sh
+
       - name: Tests for screenshot workflow coverage
         run: bash scripts/tests/test-screenshot-workflow.sh
 

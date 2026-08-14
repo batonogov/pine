@@ -5,6 +5,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
 SMOKE_SCRIPT="$REPO_ROOT/scripts/release-artifact-smoke.sh"
 RELEASE_WORKFLOW="$REPO_ROOT/.github/workflows/release.yml"
+REAL_PYTHON3="$(command -v python3)"
 PASS=0
 FAIL=0
 TEST_ROOT=""
@@ -227,6 +228,28 @@ FAKE
 exit 0
 FAKE
 
+    # Only the loopback feed server is faked; every other python3 invocation
+    # (the appcast rewrite) must reach the real interpreter.
+    cat > "$TEST_ROOT/bin/python3" <<FAKE
+#!/bin/bash
+for argument in "\$@"; do
+    case "\$argument" in
+        *appcast-loopback-server.py)
+            case "\${TEST_APPCAST_SERVER_MODE:-normal}" in
+                die)
+                    echo 'fake appcast server exploded' >&2
+                    exit 3
+                    ;;
+                hang)
+                    exec sleep 600
+                    ;;
+            esac
+            ;;
+    esac
+done
+exec "$REAL_PYTHON3" "\$@"
+FAKE
+
     chmod +x "$TEST_ROOT/bin/"*
 }
 
@@ -377,6 +400,51 @@ if [ -n "$smoke_line" ] \
 else
     fail "release workflow integration"
 fi
+
+echo "Test 7: a feed server that dies at startup is named, not timed out"
+setup_fixture
+export TEST_APPCAST_SERVER_MODE=die
+if run_smoke > "$TEST_ROOT/run.log" 2>&1; then
+    fail "dead feed server was accepted"
+elif grep -q 'exited before startup' "$TEST_ROOT/run.log" \
+    && grep -q 'fake appcast server exploded' "$TEST_ROOT/run.log" \
+    && ! grep -q 'did not publish its port' "$TEST_ROOT/run.log"; then
+    pass "startup failure reported with the server log"
+else
+    cat "$TEST_ROOT/run.log"
+    fail "dead feed server diagnostic"
+fi
+unset TEST_APPCAST_SERVER_MODE
+
+echo "Test 8: a feed server that never publishes a port times out and fails"
+setup_fixture
+export TEST_APPCAST_SERVER_MODE=hang
+export PINE_RELEASE_SMOKE_SERVER_TIMEOUT=1
+if run_smoke > "$TEST_ROOT/run.log" 2>&1; then
+    fail "stalled feed server was accepted"
+elif grep -q 'did not publish its port within 1s' "$TEST_ROOT/run.log" \
+    && grep -q 'appcast server log' "$TEST_ROOT/run.log" \
+    && [ ! -d "$TEST_ROOT/output/ReleaseArtifactSmoke.xcresult" ]; then
+    pass "startup timeout fails closed before the release gate runs"
+else
+    cat "$TEST_ROOT/run.log"
+    fail "stalled feed server diagnostic"
+fi
+unset TEST_APPCAST_SERVER_MODE
+unset PINE_RELEASE_SMOKE_SERVER_TIMEOUT
+
+echo "Test 9: a non-numeric startup budget is rejected"
+setup_fixture
+export PINE_RELEASE_SMOKE_SERVER_TIMEOUT=soon
+if run_smoke > "$TEST_ROOT/run.log" 2>&1; then
+    fail "non-numeric startup budget was accepted"
+elif grep -q 'timeout must be a positive integer' "$TEST_ROOT/run.log"; then
+    pass "invalid startup budget rejected"
+else
+    cat "$TEST_ROOT/run.log"
+    fail "invalid startup budget diagnostic"
+fi
+unset PINE_RELEASE_SMOKE_SERVER_TIMEOUT
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
