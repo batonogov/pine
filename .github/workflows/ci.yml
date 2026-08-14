@@ -88,6 +88,13 @@ jobs:
       - name: Tests for SourceKit-LSP smoke workflow
         run: bash scripts/tests/test-sourcekit-lsp-workflow.sh
 
+      - name: Unit tests for lifecycle soak summary
+        working-directory: .github/scripts
+        run: python3 -m unittest test_summarize_lifecycle_soak.py -v
+
+      - name: Tests for lifecycle soak workflow
+        run: bash scripts/tests/test-lifecycle-soak-workflow.sh
+
       - name: Tests for DMG packaging scripts
         run: bash scripts/tests/test-dmg-packaging.sh
 
