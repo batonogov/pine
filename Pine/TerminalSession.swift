@@ -1851,6 +1851,7 @@ final class TerminalTab: Identifiable, Hashable {
     let terminalView: LocalProcessTerminalView
     fileprivate(set) var isTerminated = false
     private var didReportLifecycleEnd = false
+    private var deferredTerminationLifecycleEnd = false
     /// The AppKit container currently presenting `terminalView`.
     ///
     /// A pane maximize/restore can keep outgoing and incoming SwiftUI
@@ -2263,6 +2264,32 @@ final class TerminalTab: Identifiable, Hashable {
         terminalView.terminate()
     }
 
+    /// Starts final application-termination cleanup and returns the exact
+    /// process-tree owner whose bounded completion must be observed before
+    /// the Pine process is allowed to exit. Ordinary tab closes remain
+    /// asynchronous; only the app-wide Quit transaction waits for this
+    /// handle, because exiting the parent would otherwise abandon its cleanup
+    /// queue and could leave foreground/background descendants alive.
+    func stopForApplicationTermination() -> TerminalProcessTreeController? {
+        let controller = processTreeController
+        if !didReportLifecycleEnd {
+            didReportLifecycleEnd = true
+            deferredTerminationLifecycleEnd = true
+        }
+        stop()
+        return controller
+    }
+
+    /// A failed application-Quit transaction keeps the process stopped but
+    /// returns Pine to normal task ownership. Publish the lifecycle end only
+    /// after the durable termination snapshot has been rolled back, so an
+    /// acknowledged launch cannot disappear from that snapshot mid-commit.
+    func reportDeferredApplicationTerminationLifecycleEnd() {
+        guard deferredTerminationLifecycleEnd else { return }
+        deferredTerminationLifecycleEnd = false
+        onLifecycleEnded?(id)
+    }
+
     func processDidTerminate() {
         if !didReportLifecycleEnd {
             didReportLifecycleEnd = true
@@ -2387,6 +2414,7 @@ final class TerminalTab: Identifiable, Hashable {
     }
 
     private func readForegroundProcessID() -> Int32 {
+        guard !isTerminated else { return -1 }
         #if DEBUG
         if let foregroundProcessIDResolverForTesting {
             return foregroundProcessIDResolverForTesting()

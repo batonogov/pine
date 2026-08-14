@@ -91,14 +91,20 @@ nonisolated struct PersistenceFaultInjector: Sendable {
     /// Release builds deliberately ignore test-only process configuration.
     static let processEnvironment: PersistenceFaultInjector = {
         #if DEBUG
-        guard let encoded = ProcessInfo.processInfo.environment[
-            "PINE_PERSISTENCE_FAULT"
-        ],
-        let fault = PersistenceFault(encoded: encoded) else {
+        let environment = ProcessInfo.processInfo.environment
+        let fault = environment["PINE_PERSISTENCE_FAULT"].flatMap(
+            PersistenceFault.init(encoded:)
+        )
+        let pause = PersistenceProcessCheckpointPause(
+            environment: environment
+        )
+        guard fault != nil || pause != nil else {
             return .none
         }
         return PersistenceFaultInjector { store, phase in
-            guard store == fault.store,
+            try pause?.pauseIfMatching(store: store, phase: phase)
+            guard let fault,
+                  store == fault.store,
                   phase == fault.phase else { return }
             throw fault.failure
         }
@@ -107,6 +113,72 @@ nonisolated struct PersistenceFaultInjector: Sendable {
         #endif
     }()
 }
+
+#if DEBUG
+/// Test-only kill checkpoint used by the real-process lifecycle gate. The
+/// marker contains only phase and PID; it never records payload bytes, paths,
+/// environment values, prompts, or credentials. A hard timeout prevents a
+/// malformed harness configuration from hanging a developer launch forever.
+nonisolated private struct PersistenceProcessCheckpointPause: Sendable {
+    private struct Marker: Codable {
+        let store: String
+        let phase: String
+        let processIdentifier: Int32
+    }
+
+    private let store: PersistenceStoreKind
+    private let phase: PersistenceWritePhase
+    private let directory: URL
+
+    init?(environment: [String: String]) {
+        guard let encoded = environment["PINE_PERSISTENCE_PAUSE"],
+              let directoryPath = environment[
+                "PINE_PERSISTENCE_CHECKPOINT_DIRECTORY"
+              ] else { return nil }
+        let fields = encoded.split(
+            separator: ":",
+            omittingEmptySubsequences: false
+        )
+        guard fields.count == 2,
+              let store = PersistenceStoreKind(rawValue: String(fields[0])),
+              let phase = PersistenceWritePhase(
+                rawValue: String(fields[1])
+              ) else { return nil }
+        self.store = store
+        self.phase = phase
+        directory = URL(
+            fileURLWithPath: directoryPath,
+            isDirectory: true
+        )
+    }
+
+    func pauseIfMatching(
+        store: PersistenceStoreKind,
+        phase: PersistenceWritePhase
+    ) throws {
+        guard self.store == store, self.phase == phase else { return }
+        let marker = Marker(
+            store: store.rawValue,
+            phase: phase.rawValue,
+            processIdentifier: ProcessInfo.processInfo.processIdentifier
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(marker).write(
+            to: directory.appending(path: "persistence-checkpoint.json"),
+            options: .atomic
+        )
+
+        let release = directory.appending(path: "persistence-release")
+        let deadline = DispatchTime.now() + .seconds(10)
+        repeat {
+            if FileManager.default.fileExists(atPath: release.path) { return }
+            Thread.sleep(forTimeInterval: 0.01)
+        } while DispatchTime.now() < deadline
+        throw PersistenceFailureKind.interrupted
+    }
+}
+#endif
 
 /// Thread-safe, ordered, one-shot fault plan. Unrelated checkpoints cannot
 /// consume the next planned injection.

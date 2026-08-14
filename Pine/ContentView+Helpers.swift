@@ -44,7 +44,10 @@ extension ContentView {
         guard projectManager.allTabs.isEmpty,
               projectManager.allTerminalTabs.isEmpty else { return .skipped }
 
-        guard let session = SessionState.load(for: rootURL) else {
+        guard let session = SessionState.load(
+            for: rootURL,
+            defaults: projectManager.sessionDefaults
+        ) else {
             // No persisted session for this root — candidate for terminal
             // seeding (subject to recovery discovery in the caller).
             return .noSavedSession

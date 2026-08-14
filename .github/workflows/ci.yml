@@ -327,6 +327,7 @@ jobs:
     timeout-minutes: 60
     env:
       COVERAGE_THRESHOLD: 70
+      PINE_LIFECYCLE_DIAGNOSTICS: ${{ github.workspace }}/LifecycleDiagnostics
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -351,7 +352,7 @@ jobs:
       - name: Unit Tests
         run: |
           RESULT_BUNDLE="TestResults.xcresult"
-          rm -rf "$RESULT_BUNDLE"
+          rm -rf "$RESULT_BUNDLE" LifecycleDiagnostics
           TEST_STARTED_AT="$(date +%s)"
 
           set +e
@@ -384,6 +385,17 @@ jobs:
             --xcodebuild-exit "$TEST_EXIT" \
             --started-at "$TEST_STARTED_AT" \
             --github-summary
+
+      - name: Upload Unit Test Results
+        if: success() || failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unit-test-results
+          path: |
+            TestResults.xcresult
+            LifecycleDiagnostics
+          retention-days: 7
+          if-no-files-found: warn
 
       # Snapshot references must be recorded on a runner: a developer Mac
       # rasterizes SF Symbols and text differently enough to sit outside the
