@@ -7,6 +7,7 @@
 
 import Foundation
 import Observation
+import os
 
 nonisolated private struct AgentTaskTerminalKey: Hashable, Sendable {
     let project: AgentTaskProjectIdentity
@@ -1364,6 +1365,10 @@ final class AgentTaskRegistry {
         _ project: AgentTaskProjectIdentity,
         rejection: AgentTaskMetadataRejection
     ) {
+        let diagnostic = String(describing: rejection)
+        Logger.task.error(
+            "Agent task metadata load rejected: \(diagnostic, privacy: .public)"
+        )
         loadStatusByProject[project.persistenceKey] = .rejected(rejection)
         loadedProjects.remove(project)
         diskRevisionByProject[project] = nil
@@ -1883,8 +1888,11 @@ final class AgentTaskRegistry {
                 )
             case .publishedButDurabilityUnknown(_, let revision):
                 diskRevisionByProject[project] = .versioned(revision)
-            case .rejected:
-                break
+            case .rejected(let rejection):
+                let diagnostic = String(describing: rejection)
+                Logger.task.error(
+                    "Agent task metadata save rejected: \(diagnostic, privacy: .public)"
+                )
             }
             let ownsTail = persistenceTailTicket == ticket
             if ownsTail {

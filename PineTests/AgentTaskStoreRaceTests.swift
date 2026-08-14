@@ -57,6 +57,36 @@ struct AgentTaskStoreRaceTests {
         #expect(permissions.intValue & 0o777 == 0o700)
     }
 
+    @Test("default Application Support anchor may carry system permissions")
+    func defaultApplicationSupportAnchorCreatesPrivateLeaf() async throws {
+        let fixture = try StoreRaceFixture()
+        defer { fixture.cleanup() }
+        let applicationSupport = fixture.root.appendingPathComponent(
+            "Application Support"
+        )
+        try FileManager.default.createDirectory(
+            at: applicationSupport,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o755]
+        )
+        let store = AgentTaskMetadataStore(
+            applicationSupportDirectory: applicationSupport
+        )
+
+        #expect(await store.save(tasks: [], project: fixture.identity)
+            == .saved(taskCount: 0))
+        let privateStorage = applicationSupport.appendingPathComponent(
+            ".pine-agent-tasks-private"
+        )
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: privateStorage.path
+        )
+        let permissions = try #require(
+            attributes[.posixPermissions] as? NSNumber
+        )
+        #expect(permissions.intValue & 0o777 == 0o700)
+    }
+
     @Test("owned intermediate symlink is rejected without traversal")
     func ownedIntermediateSymlinkIsRejected() async throws {
         let fixture = try StoreRaceFixture()

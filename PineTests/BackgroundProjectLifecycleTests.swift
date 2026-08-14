@@ -115,6 +115,36 @@ struct BackgroundProjectLifecycleTests {
         #expect(manager.editorServiceResumeCountForTesting == 1)
     }
 
+    @Test("key restored scene repairs a suspended empty file tree")
+    func keySceneRepairsSuspendedTree() async throws {
+        let directory = try makeTempDirectory()
+        defer { cleanup(directory) }
+        try "visible".write(
+            to: directory.appendingPathComponent("visible.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let registry = makeRegistry()
+        let manager = try #require(registry.projectManager(for: directory))
+
+        registry.closeProjectWindow(directory)
+        #expect(manager.presentationLifecycle == .backgroundSuspended)
+        #expect(manager.workspace.isSuspended)
+
+        #expect(registry.reconcileKeyProjectPresentation(manager))
+        await waitUntil {
+            manager.workspace.rootNodes.contains { $0.name == "visible.txt" }
+        }
+
+        #expect(registry.isWindowOpen(directory))
+        #expect(manager.presentationLifecycle == .visible)
+        #expect(!manager.workspace.isSuspended)
+        #expect(manager.workspace.hasActiveFileWatcherForTesting)
+        #expect(manager.workspace.rootNodes.contains {
+            $0.name == "visible.txt"
+        })
+    }
+
     @Test("workspace watcher events are fenced while suspended and rearmed")
     func workspaceWatcherEventsFollowLifecycle() throws {
         let directory = try makeTempDirectory()

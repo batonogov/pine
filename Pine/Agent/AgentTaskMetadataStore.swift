@@ -426,6 +426,11 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     private static let directoryName = ".pine-agent-tasks-private"
 
     private let storageRoot: URL?
+    /// Injectable so tests can exercise the production Application Support
+    /// layout without touching the developer's real home directory. macOS may
+    /// attach its own ACL to this trusted anchor; only Pine's child directory
+    /// is required to be ACL-free and mode 0700.
+    private let applicationSupportDirectory: URL?
     private let limits: AgentTaskPersistenceLimits
     private let configuration: AgentTaskStoreConfiguration
     private let fileManager = FileManager()
@@ -433,10 +438,12 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
 
     init(
         storageRoot: URL? = nil,
+        applicationSupportDirectory: URL? = nil,
         limits: AgentTaskPersistenceLimits = AgentTaskPersistenceLimits(),
         configuration: AgentTaskStoreConfiguration = AgentTaskStoreConfiguration()
     ) {
         self.storageRoot = storageRoot
+        self.applicationSupportDirectory = applicationSupportDirectory
         self.limits = limits
         self.configuration = configuration
     }
@@ -740,10 +747,11 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         if let storageRoot {
             return storageRoot.standardizedFileURL
         }
-        guard let base = fileManager.urls(
+        let base = applicationSupportDirectory ?? fileManager.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        ).first else {
+        ).first
+        guard let base else {
             return URL(fileURLWithPath: "/dev/null/pine-agent-tasks")
         }
         return base.resolvingSymlinksInPath()
@@ -757,7 +765,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         let components = url.standardizedFileURL.pathComponents.dropFirst()
         let names = Array(components)
         let privateCount = configuration.privateComponentCount
-            ?? (storageRoot == nil ? 2 : 1)
+            ?? 1
         guard !names.isEmpty, (1...names.count).contains(privateCount) else {
             throw AgentTaskDirectoryError.unsafe
         }

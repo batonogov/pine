@@ -567,6 +567,25 @@ extension ContentView {
 
 extension ContentView {
 
+    /// A key scene is authoritative evidence that its retained project is
+    /// visible. Reconcile a restoration race, then self-heal an empty settled
+    /// tree whose initial load may have been cancelled just before activation.
+    func reconcileKeyProjectPresentation() {
+        let wasSuspended = workspace.isSuspended
+        guard controlActiveState == .key,
+              registry.reconcileKeyProjectPresentation(projectManager) else {
+            return
+        }
+        if !wasSuspended,
+           workspace.rootURL != nil,
+           workspace.rootNodesRevision == 0,
+           workspace.rootNodes.isEmpty,
+           !workspace.isLoading,
+           !workspace.isSuspended {
+            workspace.refreshFileTreeAsync()
+        }
+    }
+
     var totalLineCount: Int {
         guard let content = activeTab?.content else { return 1 }
         let ns = content as NSString
