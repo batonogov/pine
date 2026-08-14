@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.4](https://github.com/batonogov/pine/compare/v2.3.3...v2.3.4) (2026-08-14)
+
+
+### Bug Fixes
+
+* **release:** publish the smoke feed port without reverse DNS ([#1466](https://github.com/batonogov/pine/issues/1466)) ([44add88](https://github.com/batonogov/pine/commit/44add886ac86372a9383807626dd82a52d2c2cf8))
+
 ## [2.3.3](https://github.com/batonogov/pine/compare/v2.3.2...v2.3.3) (2026-08-14)
 
 
