@@ -993,6 +993,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     /// handlers know not to clear the saved session during app quit.
     private(set) var isTerminating = false
     private var terminationDecisionTask: Task<Void, Never>?
+    #if DEBUG
+    /// Retained only when a separately launched Debug app process opts into
+    /// the lifecycle integration protocol. Normal developer/UI-test launches
+    /// never create the driver or replace the production presenters.
+    private var applicationLifecycleProcessDriver:
+        ApplicationLifecycleProcessDriver?
+    var terminationAlertPresenterForProcessTest: TerminationAlertPresenter?
+    var terminationSaveAllForProcessTest: TerminationSaveAll?
+    var terminationDeadlineForProcessTest: DispatchTime?
+    #endif
     private var welcomeVisibilityGeneration = 0
     private var pendingWelcomeEnsureTask: Task<Void, Never>?
 
@@ -1290,6 +1300,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        if let driver = ApplicationLifecycleProcessDriver.fromEnvironment() {
+            applicationLifecycleProcessDriver = driver
+            registry = driver.makeRegistry()
+            return
+        }
+        #endif
+
         // Must be set before applicationDidFinishLaunching — the system runs
         // window restoration between willFinishLaunching and didFinishLaunching.
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
@@ -1327,6 +1345,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        if let applicationLifecycleProcessDriver {
+            applicationLifecycleProcessDriver.start(appDelegate: self)
+            return
+        }
+        #endif
+
         NSWindow.allowsAutomaticWindowTabbing = false
         bindQuickTerminalAgentRouting()
         agentNotifications.start()
@@ -1966,7 +1991,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 reply(false)
                 return
             }
+            #if DEBUG
+            let shouldTerminate = await confirmApplicationTermination(
+                presentAlert: terminationAlertPresenterForProcessTest,
+                saveAll: terminationSaveAllForProcessTest,
+                terminationDeadlineOverride:
+                    terminationDeadlineForProcessTest
+            )
+            #else
             let shouldTerminate = await confirmApplicationTermination()
+            #endif
             terminationDecisionTask = nil
             isTerminating = shouldTerminate
             if shouldTerminate {
@@ -3154,13 +3188,101 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
 
+        // A real application exit destroys the queues that perform terminal
+        // process-tree cleanup. Request every authorized stop now and wait
+        // off-main under the shared forward deadline, before the synchronous
+        // discard/task commit makes Quit irreversible. Cancelled and
+        // save-failed Quit paths return before this point, preserving dirty
+        // buffers and live terminals.
+        var terminalStopControllers: [TerminalProcessTreeController] = []
+        var terminalStopTabs: [TerminalTab] = []
+        func rollbackAfterRequestedTerminalStops() async {
+            await rollbackAgentTasks()
+            terminalStopTabs.forEach {
+                $0.reportDeferredApplicationTerminationLifecycleEnd()
+            }
+            guard let remaining = remainingTerminationDuration(
+                until: terminationDeadline
+            ), await registry.agentTasks.flushPersistence(
+                maximumDuration: remaining
+            ) == .saved else {
+                Logger.app.error(
+                    "Terminal-stop rollback did not reach a clean persistence barrier"
+                )
+                return
+            }
+        }
+        for projectManager in registry.openProjects.values {
+            let identifier = ObjectIdentifier(projectManager)
+            let tabs = projectManager.terminal.allTerminalTabs
+            let authorization: TerminalTabCloseAuthorization
+            if let captured = terminalAuthorizations[identifier] {
+                authorization = captured
+            } else {
+                let current = TerminalTabCloseAuthorization.authorizing(
+                    tabs: tabs
+                )
+                guard !current.requiresConfirmation else {
+                    await rollbackAfterRequestedTerminalStops()
+                    await presentTerminationFailure()
+                    return false
+                }
+                authorization = current
+            }
+            let capturedLaunches = agentLaunchAuthorizations[identifier]
+            let currentLaunches = projectManager.terminal
+                .capturePineAgentLaunchAuthorization()
+            terminalStopTabs.append(contentsOf: tabs)
+            guard let controllers = authorization.requestAuthorizedStops(
+                tabs,
+                pineAgentLaunches: capturedLaunches,
+                currentPineAgentLaunches: currentLaunches
+            ) else {
+                await rollbackAfterRequestedTerminalStops()
+                await presentTerminationFailure()
+                return false
+            }
+            terminalStopControllers.append(contentsOf: controllers)
+        }
+        terminalStopTabs.append(
+            contentsOf: quickTerminalCoordinator.paneState.terminalTabs
+        )
+        guard let quickTerminalAuthorization,
+              let quickTerminalControllers = quickTerminalAuthorization
+                .requestAuthorizedStops(
+                    quickTerminalCoordinator.paneState.terminalTabs
+                ) else {
+            await rollbackAfterRequestedTerminalStops()
+            await presentTerminationFailure()
+            return false
+        }
+        terminalStopControllers.append(
+            contentsOf: quickTerminalControllers
+        )
+        guard await TerminalTabCloseAuthorization.waitForAuthorizedStops(
+            terminalStopControllers,
+            until: forwardDeadline
+        ) else {
+            await rollbackAfterRequestedTerminalStops()
+            await presentTerminationFailure()
+            return false
+        }
+
+        // The waits above suspend the main actor. Reject any process/tab/task
+        // generation that appeared before the final synchronous commit.
+        guard destructiveAuthorizationsStillCoverCurrentState() else {
+            await rollbackAfterRequestedTerminalStops()
+            await presentTerminationFailure()
+            return false
+        }
+
         // Two-phase destructive commit: no project is mutated until every
         // project/terminal/task and editor authorization above passes.
         for projectManager in registry.openProjects.values {
             let identifier = ObjectIdentifier(projectManager)
             if let authorization = discardAuthorizations[identifier],
                !projectManager.canCommitDiscard(authorization) {
-                await rollbackAgentTasks()
+                await rollbackAfterRequestedTerminalStops()
                 await presentTerminationFailure()
                 return false
             }
@@ -3172,7 +3294,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                    authorization,
                    postReloadNotifications: false
                 ) {
-                await rollbackAgentTasks()
+                await rollbackAfterRequestedTerminalStops()
                 await presentTerminationFailure()
                 return false
             }
@@ -3184,7 +3306,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             Logger.app.critical(
                 "Prepared user-task shutdown changed during synchronous commit"
             )
-            await rollbackAgentTasks()
+            await rollbackAfterRequestedTerminalStops()
             await presentTerminationFailure()
             return false
         }

@@ -39,6 +39,9 @@ assets/screenshot-unknown-*.png
 # Snapshot test failure artifacts
 PineTests/SnapshotTests/__Snapshots__/*.actual.png
 
+# Sanitized process-level test diagnostics uploaded by CI
+LifecycleDiagnostics/
+
 # Agents
 .claude/
 .pi/

@@ -1534,6 +1534,10 @@ final class ProjectManager {
     let taskRunStore = UserTaskRunStore()
     /// Recovery snapshots and their lifecycle are owned by the main actor.
     private(set) var recoveryManager: RecoveryManager?
+    /// Project-scoped session persistence. Production uses `.standard`;
+    /// process-level lifecycle tests inject a namespaced suite so launching a
+    /// second real Pine process cannot read or overwrite developer state.
+    let sessionDefaults: UserDefaults
     private(set) var presentationLifecycle: PresentationLifecycle = .visible
     #if DEBUG
     private(set) var editorServiceSuspendCountForTesting = 0
@@ -1559,6 +1563,7 @@ final class ProjectManager {
 
     init(
         lspSettings: LSPSettings = .shared,
+        sessionDefaults: UserDefaults = .standard,
         agentProcessSnapshotPoller: AgentProcessSnapshotPoller? = nil,
         agentTaskRegistry: AgentTaskRegistry? = nil,
         workspaceFilesystemValidationSeam:
@@ -1567,6 +1572,7 @@ final class ProjectManager {
         contextPresentationIdentity: ContextPresentationIdentity =
             ContextPresentationIdentity(epoch: 1)
     ) {
+        self.sessionDefaults = sessionDefaults
         self.workspace = WorkspaceManager(
             filesystemValidationSeam: workspaceFilesystemValidationSeam
         )
@@ -2086,7 +2092,8 @@ final class ProjectManager {
             paneActiveEditorPaths: paneActiveEditorPaths,
             panePinnedPaths: panePinnedPaths,
             paneTransientPreviewPaths: paneTransientPreviewPaths,
-            globalTabSwitchOrder: globalTabSwitchOrder
+            globalTabSwitchOrder: globalTabSwitchOrder,
+            defaults: sessionDefaults
         )
     }
 

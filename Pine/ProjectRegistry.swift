@@ -1710,6 +1710,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         contextPresentationEpochs[canonical] = contextEpoch
         let pm = ProjectManager(
             lspSettings: lspSettings,
+            sessionDefaults: defaults,
             agentProcessSnapshotPoller: agentProcessSnapshotPoller,
             agentTaskRegistry: agentTasks,
             workspaceFilesystemValidationSeam:

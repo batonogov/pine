@@ -255,6 +255,55 @@ struct TerminalTabCloseAuthorization {
         }
         return true
     }
+
+    /// Requests the final, authorization-fenced terminal stops for application
+    /// Quit. The caller collects every project and Quick Terminal controller
+    /// before performing one shared wait, so all trees tear down concurrently.
+    func requestAuthorizedStops(
+        _ tabs: [TerminalTab],
+        pineAgentLaunches: PineAgentLaunchAuthorization? = nil,
+        currentPineAgentLaunches: PineAgentLaunchAuthorization? = nil
+    ) -> [TerminalProcessTreeController]? {
+        guard stillCovers(
+            tabs,
+            pineAgentLaunches: pineAgentLaunches,
+            currentPineAgentLaunches: currentPineAgentLaunches
+        ) else { return nil }
+        var controllers: [TerminalProcessTreeController] = []
+        var runningTreeWasUnowned = false
+        for tab in tabs {
+            let wasRunning = tab.isProcessRunning
+            if let controller = tab.stopForApplicationTermination() {
+                controllers.append(controller)
+            } else if wasRunning {
+                runningTreeWasUnowned = true
+            }
+        }
+        return runningTreeWasUnowned ? nil : controllers
+    }
+
+    /// Waits off-main for every exact process tree to finish its bounded
+    /// TERM-to-KILL cleanup under one absolute application-Quit deadline.
+    static func waitForAuthorizedStops(
+        _ controllers: [TerminalProcessTreeController],
+        until deadline: DispatchTime
+    ) async -> Bool {
+        guard !controllers.isEmpty else { return true }
+
+        return await Task.detached(priority: .userInitiated) {
+            for controller in controllers {
+                let now = DispatchTime.now().uptimeNanoseconds
+                guard now < deadline.uptimeNanoseconds else { return false }
+                let remaining = Double(
+                    deadline.uptimeNanoseconds - now
+                ) / 1_000_000_000
+                guard controller.waitForTermination(timeout: remaining) else {
+                    return false
+                }
+            }
+            return true
+        }.value
+    }
 }
 
 @MainActor
