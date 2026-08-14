@@ -1,8 +1,11 @@
 # Accessibility and Localization Release Check
 
-Run this short manual pass for release candidates after automated unit and UI
-checks are green. Record the exact macOS and Xcode/SDK versions described in
-`AGENTS.md`, plus the language, appearance, and accessibility settings used.
+Run this short manual pass for release candidates after the automated unit and
+`A11y & Localization` UI matrix is green. The matrix distributes all nine
+supported locales across four focused jobs, exercises a keyboard-only critical
+journey, and retains double-length/representative layout screenshots plus AX
+trees. Record the exact macOS and Xcode/SDK versions described in `AGENTS.md`,
+plus the language, appearance, and accessibility settings used.
 
 ## Representative configurations
 
@@ -31,10 +34,11 @@ checks are green. Record the exact macOS and Xcode/SDK versions described in
 
 ## Physical-keyboard journey
 
-Without using the pointer, open a file, create a second tab, switch tabs and
-panes, save, create/focus a terminal, operate its controls, and open Agent
-Inbox. This remains manual because macOS XCUITest accessibility events bypass
-Pine's local `NSEvent` monitors for several production shortcuts.
+Repeat the automated keyboard-only path on physical hardware: open a file,
+create a second tab, switch tabs and panes, save, create/focus a terminal,
+operate its controls, and open Agent Inbox. This remains a short manual check
+because macOS XCUITest accessibility events bypass Pine's local `NSEvent`
+monitors for several production shortcuts.
 
 Fail the release check for raw localization keys, unexpected English fallback,
 empty required labels, clipped controls, missing actions, or focus traps.

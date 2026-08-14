@@ -24,6 +24,7 @@ SHARD_PATTERN = re.compile(r'^\s*-\s+shard-name:\s*"?([^"]+?)"?\s*$')
 ASSIGNMENT_PATTERN = re.compile(
     r"-only-testing:PineUITests/([A-Za-z0-9_]+)"
 )
+JOB_PATTERN = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 
 
 class ShardValidationError(Exception):
@@ -77,8 +78,23 @@ def parse_shards(workflow: Path) -> dict[str, list[str]]:
     """Parse shard-name/test-class pairs from the UI test matrix."""
     shards: dict[str, list[str]] = {}
     current_shard: str | None = None
+    in_ui_test_job = False
 
     for line in workflow.read_text(encoding="utf-8").splitlines():
+        job_match = JOB_PATTERN.match(line)
+        if job_match:
+            job_name = job_match.group(1)
+            if job_name == "ui-tests":
+                in_ui_test_job = True
+                current_shard = None
+                continue
+            if in_ui_test_job:
+                break
+            continue
+
+        if not in_ui_test_job:
+            continue
+
         shard_match = SHARD_PATTERN.match(line)
         if shard_match:
             current_shard = shard_match.group(1)
@@ -97,7 +113,9 @@ def parse_shards(workflow: Path) -> dict[str, list[str]]:
             shards[current_shard].append(class_name)
 
     if not shards:
-        raise ShardValidationError(f"no UI test shards found in {workflow}")
+        raise ShardValidationError(
+            f"no UI test shards found in the ui-tests job in {workflow}"
+        )
     return shards
 
 

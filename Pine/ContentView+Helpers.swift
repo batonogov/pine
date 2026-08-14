@@ -174,6 +174,27 @@ extension ContentView {
         isSearchPresented = true
         projectManager.searchProvider.search(in: rootURL)
     }
+
+    #if DEBUG
+    /// Seeds one deterministic dirty buffer for focused accessibility tests.
+    /// XCUITest cannot insert text into `GutterTextView`, so the fixture
+    /// supplies content after the test itself opens the target file. Production
+    /// and ordinary test launches cannot activate this path.
+    func seedAccessibilityDirtyBufferIfNeeded() {
+        let arguments = ProcessInfo.processInfo.arguments
+        let environment = ProcessInfo.processInfo.environment
+        guard !didSeedAccessibilityDirtyBuffer,
+              arguments.contains("--ui-test-a11y-dirty-buffer"),
+              let targetName = environment["PINE_UI_TEST_DIRTY_FILE"],
+              let marker = environment["PINE_UI_TEST_DIRTY_MARKER"],
+              marker.isEmpty == false,
+              let activeTab = activeTabManager.activeTab,
+              activeTab.fileName == targetName else { return }
+
+        activeTabManager.updateContent(activeTab.content + marker)
+        didSeedAccessibilityDirtyBuffer = true
+    }
+    #endif
 }
 
 // MARK: - File management & sidebar sync

@@ -39,12 +39,20 @@ final class AlphaTests: PineUITestCase {
             workflow = Path(directory) / "ci.yml"
             workflow.write_text(
                 """
+jobs:
+  ui-tests:
+    strategy:
+      matrix:
+        include:
           - shard-name: "First"
             test-classes: >-
               -only-testing:PineUITests/AlphaTests
           - shard-name: "Second"
             test-classes: >-
               -only-testing:PineUITests/BetaTests
+  focused-smoke:
+    steps:
+      - run: xcodebuild -only-testing:PineUITests/AlphaTests
 """,
                 encoding="utf-8",
             )
