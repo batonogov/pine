@@ -44,6 +44,9 @@ struct ContentView: View {
     @State var isBranchSwitcherPresented = false
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
+    #if DEBUG
+    @State var didSeedAccessibilityDirtyBuffer = false
+    #endif
     /// Shared command-overlay router (#975). Owns the single active navigation
     /// overlay (including Agent Attention)
     /// and captures/restores the previous AppKit first responder.
@@ -144,6 +147,9 @@ struct ContentView: View {
             seedInitialTerminalIfNeeded(disposition: disposition)
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
+            #if DEBUG
+            seedAccessibilityDirtyBufferIfNeeded()
+            #endif
             refreshBlame()
             #if DEBUG
             // Seed only after the project window has installed its native
@@ -250,6 +256,9 @@ struct ContentView: View {
         }
         .onChange(of: activeTabManager.activeTabID) { _, _ in
             syncSidebarSelection()
+            #if DEBUG
+            seedAccessibilityDirtyBufferIfNeeded()
+            #endif
             refreshLineDiffs()
             refreshBlame()
             projectManager.saveSession()

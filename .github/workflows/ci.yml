@@ -566,13 +566,14 @@ jobs:
               -only-testing:PineUITests/AgentInboxToolbarButtonTests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
-          # Shard 3 — Navigation (31 tests)
+          # Shard 3 — Navigation (34 tests; accessibility matrix skips here)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
               -only-testing:PineUITests/QuickOpenUITests
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/DiffNavigationUITests
+              -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
           # Shard 4 — Editor Chrome (31 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
@@ -667,6 +668,135 @@ jobs:
           name: flaky-ui-${{ strategy.job-index }}
           path: flaky-shard-${{ strategy.job-index }}.json
           retention-days: 1
+
+  # A small release-critical UI matrix, separate from the ordinary seven-shard
+  # suite. All supported locales render once across four jobs; only the
+  # representative configuration in each job captures layout diagnostics.
+  accessibility-localization-smoke:
+    name: "A11y & Localization (${{ matrix.name }})"
+    runs-on: macos-26
+    needs: build
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "en-es-fr-light"
+            locales: "en|en_US;es|es_ES;fr|fr_FR"
+            appearance: "Light"
+            reduce_motion: false
+            differentiate_without_color: false
+            keyboard_journey: true
+            capture_layout: false
+            pseudolocalized: false
+          - name: "de-pt-dark-reduce-motion"
+            locales: "de|de_DE;pt-BR|pt_BR"
+            appearance: "Dark"
+            reduce_motion: true
+            differentiate_without_color: false
+            keyboard_journey: false
+            capture_layout: true
+            pseudolocalized: false
+          - name: "ja-ko-zh-light-differentiate"
+            locales: "ja|ja_JP;ko|ko_KR;zh-Hans|zh_CN"
+            appearance: "Light"
+            reduce_motion: false
+            differentiate_without_color: true
+            keyboard_journey: false
+            capture_layout: true
+            pseudolocalized: false
+          - name: "ru-dark-both-double-length"
+            locales: "ru|ru_RU"
+            appearance: "Dark"
+            reduce_motion: true
+            differentiate_without_color: true
+            keyboard_journey: false
+            capture_layout: true
+            pseudolocalized: true
+    env:
+      PINE_A11Y_SMOKE_ENABLED: "1"
+      PINE_A11Y_CONFIGURATION: ${{ matrix.name }}
+      PINE_A11Y_LOCALES: ${{ matrix.locales }}
+      PINE_A11Y_APPEARANCE: ${{ matrix.appearance }}
+      PINE_A11Y_REDUCE_MOTION: ${{ matrix.reduce_motion }}
+      PINE_A11Y_DIFFERENTIATE_WITHOUT_COLOR: ${{ matrix.differentiate_without_color }}
+      PINE_A11Y_KEYBOARD_JOURNEY: ${{ matrix.keyboard_journey }}
+      PINE_A11Y_CAPTURE_LAYOUT: ${{ matrix.capture_layout }}
+      PINE_A11Y_PSEUDOLOCALIZED: ${{ matrix.pseudolocalized }}
+      PINE_A11Y_DIAGNOSTICS: A11yDiagnostics
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+
+      - name: Download Build Products
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: build-products
+
+      - name: Extract Build Products
+        run: |
+          sha256sum -c build-products.sha256
+          for attempt in 1 2 3; do
+            if tar --zstd -xf build-products.tar.zst; then
+              echo "Extraction succeeded on attempt $attempt"
+              break
+            fi
+            echo "::warning::Extraction failed on attempt $attempt, retrying..."
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Extraction failed after 3 attempts"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Configure Accessibility Preferences
+        run: |
+          defaults write com.apple.universalaccess reduceMotion \
+            -bool "$PINE_A11Y_REDUCE_MOTION"
+          defaults write com.apple.universalaccess differentiateWithoutColor \
+            -bool "$PINE_A11Y_DIFFERENTIATE_WITHOUT_COLOR"
+          killall cfprefsd 2>/dev/null || true
+
+          {
+            sw_vers
+            xcodebuild -version
+            echo "macOS SDK version: $(xcrun --sdk macosx --show-sdk-version)"
+            echo "macOS SDK build: $(xcrun --sdk macosx --show-sdk-build-version)"
+            echo "configuration: $PINE_A11Y_CONFIGURATION"
+            echo "locales: $PINE_A11Y_LOCALES"
+            echo "appearance: $PINE_A11Y_APPEARANCE"
+            echo "reduce motion: $PINE_A11Y_REDUCE_MOTION"
+            echo "differentiate without color: $PINE_A11Y_DIFFERENTIATE_WITHOUT_COLOR"
+          } > a11y-environment.txt
+
+      - name: Accessibility and Localization Smoke
+        run: |
+          rm -rf AccessibilityLocalizationSmoke.xcresult A11yDiagnostics
+          xcodebuild test-without-building \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PineUITests/AccessibilityLocalizationSmokeTests \
+            -maximum-parallel-testing-workers 1 \
+            -test-timeouts-enabled YES \
+            -resultBundlePath AccessibilityLocalizationSmoke.xcresult \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload Focused Accessibility Diagnostics
+        if: failure() || matrix.capture_layout
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: a11y-localization-${{ matrix.name }}
+          path: |
+            AccessibilityLocalizationSmoke.xcresult
+            A11yDiagnostics
+            a11y-environment.txt
+          retention-days: 7
+          if-no-files-found: warn
 
   # Aggregate flaky UI test reports from all shards into a single PR comment
   flaky-summary:

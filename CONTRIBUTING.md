@@ -95,10 +95,12 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   -destination 'platform=macOS' -only-testing:PineUITests
 ```
 
-Release candidates also use the focused manual
+CI also runs a focused accessibility/localization smoke across every supported
+locale plus representative appearance and display-accessibility states. Release
+candidates retain the short manual
 [accessibility and localization checklist](docs/accessibility-release-checklist.md)
-for VoiceOver, physical-keyboard, pseudolanguage, and appearance checks that
-XCUITest cannot assert reliably.
+for VoiceOver announcements, physical-key behavior that bypasses XCUITest, and
+visual review of the retained pseudolanguage screenshots.
 
 ### Linting
 
