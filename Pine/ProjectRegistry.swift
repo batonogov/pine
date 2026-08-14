@@ -3094,6 +3094,30 @@ final class ProjectRegistry: LSPSettingsObserver {
         return openProjects[canonical] != nil && !backgroundProjects.contains(canonical)
     }
 
+    /// Repairs a retained manager when AppKit makes its SwiftUI project scene
+    /// key without replaying the normal Open Recent admission path. This can
+    /// happen when window restoration reuses a WindowGroup scene after an
+    /// earlier close callback suspended editor-only services.
+    @discardableResult
+    func reconcileKeyProjectPresentation(
+        _ projectManager: ProjectManager
+    ) -> Bool {
+        guard let rootURL = projectManager.rootURL else { return false }
+        let canonical = canonicalProjectURL(rootURL)
+        guard openProjects[canonical] === projectManager,
+              let identity = agentTaskProjectsByRoot[canonical] else {
+            return false
+        }
+        guard backgroundProjects.contains(canonical) else {
+            return projectManager.presentationLifecycle == .visible
+        }
+        return markProjectWindowOpen(
+            canonical,
+            identity: identity,
+            manager: projectManager
+        )
+    }
+
     /// Checks if a project is already open (including background).
     func isProjectOpen(_ url: URL) -> Bool {
         openProjects[canonicalProjectURL(url)] != nil

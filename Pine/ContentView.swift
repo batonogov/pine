@@ -133,6 +133,7 @@ struct ContentView: View {
             )
         }
         .task {
+            reconcileKeyProjectPresentation()
             let disposition = restoreSessionIfNeeded()
             if case .restored(let result) = disposition, result.didRestoreEditorTabs {
                 refreshLineDiffs()
@@ -159,6 +160,10 @@ struct ContentView: View {
                 afterWindowBindingFor: projectManager
             )
             #endif
+        }
+        .onChange(of: controlActiveState) { _, newState in
+            guard newState == .key else { return }
+            reconcileKeyProjectPresentation()
         }
         .sheet(isPresented: $showRecoveryDialog) {
             RecoveryDialogView(
