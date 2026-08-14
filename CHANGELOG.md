@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.3](https://github.com/batonogov/pine/compare/v2.3.2...v2.3.3) (2026-08-14)
+
+
+### Bug Fixes
+
+* restore sidebar and quit persistence ([#1464](https://github.com/batonogov/pine/issues/1464)) ([2e11d52](https://github.com/batonogov/pine/commit/2e11d5212ba1b9071a8ac920c16bdf022e41c636))
+
 ## [2.3.2](https://github.com/batonogov/pine/compare/v2.3.1...v2.3.2) (2026-08-13)
 
 
