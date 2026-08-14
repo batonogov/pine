@@ -91,6 +91,9 @@ jobs:
       - name: Tests for DMG packaging scripts
         run: bash scripts/tests/test-dmg-packaging.sh
 
+      - name: Tests for release artifact smoke
+        run: bash scripts/tests/test-release-artifact-smoke.sh
+
       - name: Tests for screenshot workflow coverage
         run: bash scripts/tests/test-screenshot-workflow.sh
 
@@ -578,7 +581,7 @@ jobs:
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/CheckForUpdatesTests
               -only-testing:PineUITests/SplitPaneRoutingUITests
-          # Shard 5 — Files & Save (33 tests)
+          # Shard 5 — Files & Save (34 tests, release smoke skips outside release CI)
           - shard-name: "Files & Save"
             test-classes: >-
               -only-testing:PineUITests/EditorSaveFlowTests
@@ -587,6 +590,7 @@ jobs:
               -only-testing:PineUITests/SidebarFileOperationsTests
               -only-testing:PineUITests/UserTaskExecutionUITests
               -only-testing:PineUITests/UnsavedChangesUITests
+              -only-testing:PineUITests/ReleaseArtifactSmokeTests
           # Shard 6 — Search & Panes (32 tests)
           - shard-name: "Search & Panes"
             test-classes: >-

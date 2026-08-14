@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   build-and-release:
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
@@ -60,6 +60,7 @@ jobs:
             -scheme Pine \
             -archivePath $RUNNER_TEMP/Pine.xcarchive \
             -destination "generic/platform=macOS" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             CODE_SIGN_STYLE=Manual \
@@ -218,6 +219,67 @@ jobs:
           fi
           echo "Appcast URL and DMG file validated successfully"
 
+      - name: Download previous signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASES_JSON=$(gh release list \
+            --exclude-drafts \
+            --exclude-pre-releases \
+            --limit 20 \
+            --json tagName)
+          PREVIOUS_TAG=$(RELEASES_JSON="$RELEASES_JSON" \
+            CURRENT_TAG="$GITHUB_REF_NAME" \
+            python3 -c '
+          import json
+          import os
+
+          releases = json.loads(os.environ["RELEASES_JSON"])
+          current = os.environ["CURRENT_TAG"]
+          print(next((
+              release["tagName"]
+              for release in releases
+              if release["tagName"] != current
+          ), ""))
+          ')
+          [ -n "$PREVIOUS_TAG" ] || {
+            echo "::error::No previous stable Pine release found"
+            exit 1
+          }
+
+          mkdir -p "$RUNNER_TEMP/previous-release"
+          gh release download "$PREVIOUS_TAG" \
+            --pattern 'Pine-*.dmg' \
+            --dir "$RUNNER_TEMP/previous-release"
+
+          PREVIOUS_DMGS=("$RUNNER_TEMP"/previous-release/Pine-*.dmg)
+          if [ "${#PREVIOUS_DMGS[@]}" -ne 1 ] \
+            || [ ! -f "${PREVIOUS_DMGS[0]}" ]; then
+            echo "::error::Expected exactly one previous Pine DMG"
+            exit 1
+          fi
+          echo "PREVIOUS_DMG=${PREVIOUS_DMGS[0]}" >> "$GITHUB_ENV"
+          echo "Previous signed release: $PREVIOUS_TAG"
+
+      - name: Record candidate DMG hash before publication
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          mkdir -p "$RUNNER_TEMP/publication-metadata"
+          shasum -a 256 "$RUNNER_TEMP/Pine-${VERSION}.dmg" \
+            | tee "$RUNNER_TEMP/publication-metadata/candidate-before-publication.sha256"
+
+      - name: Run signed release artifact smoke
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          bash scripts/release-artifact-smoke.sh \
+            "$RUNNER_TEMP/Pine-${VERSION}.dmg" \
+            "$PREVIOUS_DMG" \
+            "$VERSION" \
+            "$GITHUB_RUN_NUMBER" \
+            "$RUNNER_TEMP/appcast.xml" \
+            "$RUNNER_TEMP/SourcePackages/checkouts/Sparkle" \
+            "$RUNNER_TEMP/release-smoke"
+
       - name: Upload DMG to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -234,6 +296,45 @@ jobs:
               --title "Pine ${VERSION}" \
               --generate-notes
           fi
+
+      - name: Verify published DMG matches tested bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          mkdir -p "$RUNNER_TEMP/published-release"
+          gh release download "$GITHUB_REF_NAME" \
+            --pattern "Pine-${VERSION}.dmg" \
+            --dir "$RUNNER_TEMP/published-release"
+
+          PUBLISHED_DMG="$RUNNER_TEMP/published-release/Pine-${VERSION}.dmg"
+          shasum -a 256 "$PUBLISHED_DMG" \
+            | tee "$RUNNER_TEMP/publication-metadata/candidate-after-publication.sha256"
+          TESTED_SHA=$(awk '{print $1}' \
+            "$RUNNER_TEMP/publication-metadata/candidate-before-publication.sha256")
+          PUBLISHED_SHA=$(awk '{print $1}' \
+            "$RUNNER_TEMP/publication-metadata/candidate-after-publication.sha256")
+          if [ "$PUBLISHED_SHA" != "$TESTED_SHA" ]; then
+            echo "::error::Published DMG differs from the tested candidate"
+            exit 1
+          fi
+
+      - name: Upload release smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-smoke-diagnostics-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release-smoke/logs
+            ${{ runner.temp }}/release-smoke/ReleaseArtifactSmoke.xcresult
+            ${{ runner.temp }}/release-smoke/metadata/appcast.json
+            ${{ runner.temp }}/release-smoke/metadata/release-smoke.txt
+            ${{ runner.temp }}/release-smoke/metadata/toolchain.txt
+            ${{ runner.temp }}/release-smoke/metadata/candidate-before-smoke.sha256
+            ${{ runner.temp }}/release-smoke/metadata/candidate-after-smoke.sha256
+            ${{ runner.temp }}/publication-metadata
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Update Homebrew Tap
         env:
