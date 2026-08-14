@@ -780,7 +780,7 @@ jobs:
             -destination "platform=macOS" \
             -derivedDataPath DerivedData \
             -only-testing:PineUITests/AccessibilityLocalizationSmokeTests \
-            -parallel-testing-enabled NO \
+            -maximum-parallel-testing-workers 1 \
             -test-timeouts-enabled YES \
             -resultBundlePath AccessibilityLocalizationSmoke.xcresult \
             CODE_SIGN_IDENTITY=- \
