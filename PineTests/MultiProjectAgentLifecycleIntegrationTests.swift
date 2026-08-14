@@ -217,9 +217,11 @@ struct MultiProjectAgentJourneyTests {
             ProjectRegistry.canonicalProjectURL(fixture.projectA)
         ))
 
-        // A real complete snapshot proves one terminated PID. A subsequent
-        // complete tree with a controlled same-PID/different-start row then
-        // exercises the detector's logical generation replacement.
+        // A real complete snapshot proves one terminated PID. Because a
+        // terminated tab now fails closed, a fresh live PTY owns the route for
+        // the controlled same-PID/different-start row. Its real root remains
+        // controller-owned while the detector exercises logical generation
+        // replacement from the synthetic process snapshot.
         let piProcessGroupID = pi.processGroupID
         pi.terminate()
         try await pi.awaitExit()
@@ -237,12 +239,28 @@ struct MultiProjectAgentJourneyTests {
             startIdentifier: "replacement-generation",
             preciseStartedAt: replacementStart
         )
-        routeA.tabs[0].foregroundStartOverrideForTesting =
+        let replacementTab = try #require(
+            managerA.terminal.createTerminalTab(
+                in: routeA.pane,
+                workingDirectory: fixture.projectA
+            )
+        )
+        let replacementCarrier = try await fixture.launchReady(
+            agent: "pi",
+            in: replacementTab
+        )
+        #expect(
+            replacementTab.processTreeControllerForTesting?.rootIdentity
+                == replacementCarrier.identity
+        )
+        replacementTab.foregroundProcessIDOverrideForTesting =
+            piProcessGroupID
+        replacementTab.foregroundStartOverrideForTesting =
             TerminalProcessStartIdentity(
                 processID: pi.pid,
                 startedAt: replacementStart
             )
-        routeA.tabs[0].agentProcessIdentityResolverForTesting = { processID in
+        replacementTab.agentProcessIdentityResolverForTesting = { processID in
             guard processID == pi.pid else { return nil }
             return TerminalProcessStartIdentity(
                 processID: pi.pid,
@@ -254,9 +272,11 @@ struct MultiProjectAgentJourneyTests {
         )
         #expect(postTerminationTree.contains { $0.pid == 1 })
         projects.applyCompleteAgentProcessTreeForTesting(
-            postTerminationTree.filter { $0.pid != pi.pid } + [replacement]
+            postTerminationTree.filter {
+                $0.pid != pi.pid && $0.pid != replacementCarrier.pid
+            } + [replacement]
         )
-        guard let replacementSession = routeA.tabs[0].agentSession else {
+        guard let replacementSession = replacementTab.agentSession else {
             throw phaseError(pi, "controlled generation publication")
         }
         #expect(replacementSession !== piSession)
@@ -285,6 +305,7 @@ struct MultiProjectAgentJourneyTests {
         #expect(routeB.tabs[0].agentSession === claudeSession)
         #expect(codex.isRunning)
         #expect(claude.isRunning)
+        #expect(replacementCarrier.isRunning)
 
         // Quit Anyway authorizes the exact terminal generations captured by
         // the summary. Registry destruction is the same synchronous commit
@@ -302,9 +323,11 @@ struct MultiProjectAgentJourneyTests {
         #expect(projects.openProjects.isEmpty)
         try await codex.awaitExit()
         try await claude.awaitExit()
+        try await replacementCarrier.awaitExit()
         #expect(!codex.isRunning)
         #expect(!claude.isRunning)
-        for tab in routeA.tabs + routeB.tabs {
+        #expect(!replacementCarrier.isRunning)
+        for tab in routeA.tabs + routeB.tabs + [replacementTab] {
             #expect(!tab.hasAcknowledgedPTYLeaseForTesting)
         }
     }
@@ -562,15 +585,6 @@ private final class MultiProjectAgentLifecycleFixture {
             terminalController: controller
         )
         processes.append(controlled)
-        guard processGroupID == pid else {
-            controlled.forceCleanup()
-            processes.removeLast()
-            throw ControlledAgentLifecycleError.invalidProcessGroup(
-                agent: agent,
-                processIdentifier: pid,
-                processGroupIdentifier: processGroupID
-            )
-        }
         do {
             try await controlled.awaitDurableReady()
             return controlled
@@ -1101,7 +1115,7 @@ finally:
 private final class ControlledAgentProcess {
     let name: String
     let identity: UserTaskProcessIdentity
-    let processGroupID: pid_t
+    private(set) var processGroupID: pid_t
     let state: URL
     private let terminalController: TerminalProcessTreeController?
     private var knownIdentities: [pid_t: UserTaskProcessIdentity]
@@ -1151,9 +1165,21 @@ private final class ControlledAgentProcess {
                let child = UserTaskProcessInspector.identity(
                    for: observedChildPID,
                    expectedParent: pid
-               ), Darwin.getpgid(observedChildPID) == processGroupID,
+               ), terminalController != nil
+                    || Darwin.getpgid(observedChildPID) == processGroupID,
                UserTaskProcessInspector.identity(for: observedChildPID) == child {
                 knownIdentities[child.processID] = child
+                // `forkpty` may finish moving its root into the final process
+                // group after the controller captures the root identity. The
+                // controller owns this exact parent/child tree independently
+                // of PGID, so refresh the diagnostic group only after the
+                // durable handshake proves both generations are still live.
+                if terminalController != nil {
+                    let settledProcessGroupID = Darwin.getpgid(pid)
+                    if settledProcessGroupID > 1 {
+                        processGroupID = settledProcessGroupID
+                    }
+                }
                 captureOwnedGroupMembers()
                 return
             }
