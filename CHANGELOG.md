@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.5](https://github.com/batonogov/pine/compare/v2.3.4...v2.3.5) (2026-08-15)
+
+
+### Bug Fixes
+
+* **release:** skip incomplete previous releases ([#1468](https://github.com/batonogov/pine/issues/1468)) ([2bfb191](https://github.com/batonogov/pine/commit/2bfb191d5b12f3c9986430c4d112754a5d3fb725))
+
 ## [2.3.4](https://github.com/batonogov/pine/compare/v2.3.3...v2.3.4) (2026-08-14)
 
 
