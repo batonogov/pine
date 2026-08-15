@@ -223,42 +223,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RELEASES_JSON=$(gh release list \
-            --exclude-drafts \
-            --exclude-pre-releases \
-            --limit 20 \
-            --json tagName)
-          PREVIOUS_TAG=$(RELEASES_JSON="$RELEASES_JSON" \
-            CURRENT_TAG="$GITHUB_REF_NAME" \
-            python3 -c '
-          import json
-          import os
-
-          releases = json.loads(os.environ["RELEASES_JSON"])
-          current = os.environ["CURRENT_TAG"]
-          print(next((
-              release["tagName"]
-              for release in releases
-              if release["tagName"] != current
-          ), ""))
-          ')
-          [ -n "$PREVIOUS_TAG" ] || {
-            echo "::error::No previous stable Pine release found"
-            exit 1
-          }
+          RELEASES_JSON=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100")
+          PREVIOUS_TAG=$(printf '%s' "$RELEASES_JSON" \
+            | python3 .github/scripts/select_previous_release.py \
+                "$GITHUB_REF_NAME")
+          PREVIOUS_VERSION=${PREVIOUS_TAG#v}
+          PREVIOUS_FILENAME="Pine-${PREVIOUS_VERSION}.dmg"
 
           mkdir -p "$RUNNER_TEMP/previous-release"
           gh release download "$PREVIOUS_TAG" \
-            --pattern 'Pine-*.dmg' \
+            --pattern "$PREVIOUS_FILENAME" \
             --dir "$RUNNER_TEMP/previous-release"
 
-          PREVIOUS_DMGS=("$RUNNER_TEMP"/previous-release/Pine-*.dmg)
-          if [ "${#PREVIOUS_DMGS[@]}" -ne 1 ] \
-            || [ ! -f "${PREVIOUS_DMGS[0]}" ]; then
-            echo "::error::Expected exactly one previous Pine DMG"
+          PREVIOUS_DMG="$RUNNER_TEMP/previous-release/$PREVIOUS_FILENAME"
+          if [ ! -f "$PREVIOUS_DMG" ]; then
+            echo "::error::Previous Pine DMG download is missing"
             exit 1
           fi
-          echo "PREVIOUS_DMG=${PREVIOUS_DMGS[0]}" >> "$GITHUB_ENV"
+          echo "PREVIOUS_DMG=$PREVIOUS_DMG" >> "$GITHUB_ENV"
           echo "Previous signed release: $PREVIOUS_TAG"
 
       - name: Record candidate DMG hash before publication

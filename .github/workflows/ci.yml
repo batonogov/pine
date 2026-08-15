@@ -92,6 +92,10 @@ jobs:
         working-directory: .github/scripts
         run: python3 -m unittest test_summarize_lifecycle_soak.py -v
 
+      - name: Unit tests for previous release selection
+        working-directory: .github/scripts
+        run: python3 -m unittest test_select_previous_release.py -v
+
       - name: Tests for lifecycle soak workflow
         run: bash scripts/tests/test-lifecycle-soak-workflow.sh
 
