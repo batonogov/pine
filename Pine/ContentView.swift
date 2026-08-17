@@ -83,7 +83,7 @@ struct ContentView: View {
                             // owner before capturing the presentation context;
                             // otherwise the panel silently aborts right after
                             // the window appears or is replaced (#1344).
-                            if let url = await registry.openProjectViaPanel(for: projectManager) {
+                            if let url = await registry.chooseProjectViaPanel(for: projectManager) {
                                 await projectWindowSession.openProject(
                                     url,
                                     registry: registry
