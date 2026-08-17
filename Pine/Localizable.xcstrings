@@ -11069,6 +11069,171 @@
         }
       }
     },
+    "projectSwitcher.error.agentMissing %@": {
+      "comment": "Agent executable disappeared after the menu was opened. The argument is the agent name.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "%@ ist auf diesem Mac nicht mehr verfügbar." } },
+        "en": { "stringUnit": { "state": "translated", "value": "%@ is no longer available on this Mac." } },
+        "es": { "stringUnit": { "state": "translated", "value": "%@ ya no está disponible en este Mac." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ n’est plus disponible sur ce Mac." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "%@はこのMacでは利用できなくなりました。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 Mac에서 더 이상 %@을(를) 사용할 수 없습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%@ não está mais disponível neste Mac." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "%@ больше не доступен на этом Mac." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此 Mac 上已无法使用 %@。" } }
+      }
+    },
+    "projectSwitcher.error.alreadyOpen": {
+      "comment": "Shown when a project selected for the current workspace belongs to another Pine window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Dieses Projekt ist bereits in einem anderen Fenster geöffnet." } },
+        "en": { "stringUnit": { "state": "translated", "value": "This project is already open in another window." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Este proyecto ya está abierto en otra ventana." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce projet est déjà ouvert dans une autre fenêtre." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このプロジェクトは別のウインドウですでに開かれています。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 프로젝트는 이미 다른 윈도우에서 열려 있습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Este projeto já está aberto em outra janela." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Этот проект уже открыт в другом окне." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此项目已在另一个窗口中打开。" } }
+      }
+    },
+    "projectSwitcher.error.destinationExists": {
+      "comment": "Diagnostic shown when the generated managed worktree destination already exists.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Der Worktree-Ordner ist bereits vorhanden." } },
+        "en": { "stringUnit": { "state": "translated", "value": "The worktree folder already exists." } },
+        "es": { "stringUnit": { "state": "translated", "value": "La carpeta del worktree ya existe." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le dossier du worktree existe déjà." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "worktreeフォルダはすでに存在します。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "worktree 폴더가 이미 존재합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A pasta da worktree já existe." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Папка worktree уже существует." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "工作树文件夹已存在。" } }
+      }
+    },
+    "projectSwitcher.error.launch %@": {
+      "comment": "Agent launch failure after worktree creation. The argument is the agent name.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine hat den Worktree erstellt, konnte %@ aber nicht starten." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine created the worktree, but couldn’t start %@." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine creó el worktree, pero no pudo iniciar %@." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine a créé le worktree, mais n’a pas pu lancer %@." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pineでworktreeを作成しましたが、%@を起動できませんでした。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine에서 worktree를 만들었지만 %@을(를) 시작할 수 없습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine criou a worktree, mas não pôde iniciar %@." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine создал worktree, но не смог запустить %@." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 已创建工作树，但无法启动 %@。" } }
+      }
+    },
+    "projectSwitcher.error.notGitRepository": {
+      "comment": "Diagnostic shown when New Agent is used outside a Git repository.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Das ausgewählte Projekt ist kein Git-Repository." } },
+        "en": { "stringUnit": { "state": "translated", "value": "The selected project is not a Git repository." } },
+        "es": { "stringUnit": { "state": "translated", "value": "El proyecto seleccionado no es un repositorio Git." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le projet sélectionné n’est pas un dépôt Git." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "選択したプロジェクトはGitリポジトリではありません。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "선택한 프로젝트가 Git 저장소가 아닙니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O projeto selecionado não é um repositório Git." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Выбранный проект не является Git-репозиторием." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选项目不是 Git 仓库。" } }
+      }
+    },
+    "projectSwitcher.error.open %@": {
+      "comment": "Project open failure. The argument is the project folder name.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine konnte „%@“ nicht öffnen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine couldn’t open “%@”." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine no pudo abrir «%@»." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine n’a pas pu ouvrir « %@ »." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pineで「%@」を開けませんでした。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine에서 ‘%@’을(를) 열 수 없습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine não pôde abrir “%@”." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine не удалось открыть «%@»." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 无法打开“%@”。" } }
+      }
+    },
+    "projectSwitcher.error.title": {
+      "comment": "Title for project switcher and agent launch errors.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aktion konnte nicht abgeschlossen werden" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Couldn’t Complete Action" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudo completar la acción" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Impossible de terminer l’action" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "操作を完了できませんでした" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업을 완료할 수 없음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Não foi possível concluir a ação" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Не удалось выполнить действие" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法完成操作" } }
+      }
+    },
+    "projectSwitcher.error.worktree %@": {
+      "comment": "Worktree creation failure. The argument contains a short diagnostic.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine konnte keinen isolierten Worktree erstellen. %@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine couldn’t create an isolated worktree. %@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine no pudo crear un worktree aislado. %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine n’a pas pu créer de worktree isolé. %@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pineで分離されたworktreeを作成できませんでした。%@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine에서 격리된 worktree를 만들 수 없습니다. %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine não pôde criar uma worktree isolada. %@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine не удалось создать изолированный worktree. %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 无法创建隔离的工作树。%@" } }
+      }
+    },
+    "projectSwitcher.newAgent": {
+      "comment": "Menu action that creates an isolated worktree and launches an agent in it.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Neuer Agent …" } },
+        "en": { "stringUnit": { "state": "translated", "value": "New Agent…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Nuevo agente…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nouvel agent…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "新しいエージェント…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "새 에이전트…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Novo agente…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Новый агент…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建智能体…" } }
+      }
+    },
+    "projectSwitcher.noAgents": {
+      "comment": "Shown when no supported command-line coding agent is installed.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Keine unterstützten Agenten installiert" } },
+        "en": { "stringUnit": { "state": "translated", "value": "No supported agents installed" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No hay agentes compatibles instalados" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucun agent compatible installé" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "対応エージェントがインストールされていません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "지원되는 에이전트가 설치되어 있지 않음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhum agente compatível instalado" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Поддерживаемые агенты не установлены" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "未安装支持的智能体" } }
+      }
+    },
+    "projectSwitcher.tooltip": {
+      "comment": "Tooltip for the project switcher in the project window toolbar.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Projekt wechseln" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Switch projects" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Cambiar de proyecto" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Changer de projet" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロジェクトを切り替える" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "프로젝트 전환" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Alternar projetos" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Переключить проект" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "切换项目" } }
+      }
+    },
     "quickOpen.noResults": {
       "comment": "Shown when Quick Open search finds no matching files.",
       "extractionState": "manual",

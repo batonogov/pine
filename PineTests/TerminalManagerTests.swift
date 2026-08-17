@@ -36,6 +36,25 @@ struct TerminalManagerTests {
         #expect(manager.lastActiveTerminalPaneID == nil)
     }
 
+    @Test("new agent terminal rejects a mismatched launch descriptor")
+    func newAgentTerminalRejectsMismatchedDescriptor() async {
+        let paneManager = PaneManager()
+        let manager = TerminalManager()
+        manager.paneManager = paneManager
+
+        let result = await manager.launchAgentInNewTerminal(
+            "codex",
+            descriptor: AgentDescriptor(
+                agentType: .claudeCode,
+                launchExecutable: "claude"
+            ),
+            workingDirectory: URL(fileURLWithPath: "/tmp")
+        )
+
+        #expect(result == .rejected)
+        #expect(manager.allTerminalTabs.isEmpty)
+    }
+
     @Test("createTerminalTab creates pane when no terminal pane exists")
     func createTerminalTabCreatesPane() {
         let pm = PaneManager()

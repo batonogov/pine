@@ -204,7 +204,7 @@ extension ContentView {
     func openNewProject() {
         Task { @MainActor in
             guard let url = await registry.openProjectViaPanel(for: projectManager) else { return }
-            openWindow(value: url)
+            await projectWindowSession.openProject(url, registry: registry)
         }
     }
 

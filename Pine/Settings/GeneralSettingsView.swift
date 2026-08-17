@@ -113,7 +113,9 @@ struct GeneralSettingsView: View {
                         .accessibilityIdentifier(
                             AccessibilityID.generalFontSizeSlider
                         )
-                        Text("\(Int(fontSizeSettings.fontSize)) pt")
+                        Text(
+                            verbatim: "\(Int(fontSizeSettings.fontSize)) pt"
+                        )
                             .monospacedDigit()
                             .frame(minWidth: 48, alignment: .trailing)
                     }

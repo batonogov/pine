@@ -705,6 +705,43 @@ final class TerminalManager {
         }
     }
 
+    /// Creates an ordinary shell terminal rooted in an isolated worktree,
+    /// waits for its exact PTY generation to become writable, then uses the
+    /// existing Pine-owned reservation path to launch one known agent token.
+    /// The shell remains interactive after the agent exits.
+    func launchAgentInNewTerminal(
+        _ command: String,
+        descriptor: AgentDescriptor,
+        workingDirectory: URL,
+        maximumAttempts: Int = 120,
+        waitForNextAttempt: (@MainActor () async -> Void)? = nil
+    ) async -> AgentTaskLaunchResult {
+        guard Self.exactAgentLaunchDescriptor(for: command) == descriptor,
+              !isPermanentlyInvalidated else { return .rejected }
+        ensureAgentDetectionStarted()
+        guard let (_, tab) = createTerminalTabForRecovery(
+            workingDirectory: workingDirectory,
+            initialProcess: nil
+        ) else { return .rejected }
+
+        let wait = waitForNextAttempt ?? {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        for _ in 0..<max(0, maximumAttempts) where !tab.isProcessRunning {
+            guard !Task.isCancelled else {
+                cancelAgentLaunch(in: tab)
+                return .rejected
+            }
+            await wait()
+        }
+        guard tab.isProcessRunning else { return .rejected }
+        return await launchAgentCommand(
+            command,
+            descriptor: descriptor,
+            in: tab
+        )
+    }
+
 #if DEBUG
     var agentCallbacksFrozenForTesting: Bool {
         agentTaskCallbacksFrozen

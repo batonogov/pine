@@ -1364,6 +1364,16 @@ final class ProjectRegistry: LSPSettingsObserver {
         openProjects[canonicalProjectURL(projectURL)]
     }
 
+    /// Whether an admitted URL is an ordinary folder project rather than a
+    /// linked-worktree scope that requires its persisted exact proof.
+    func isOrdinaryProjectScope(_ projectURL: URL) -> Bool {
+        let canonical = canonicalProjectURL(projectURL)
+        guard let identity = agentTaskProjectsByRoot[canonical] else {
+            return false
+        }
+        return identity.canonicalProjectPath == identity.canonicalWorktreePath
+    }
+
     /// Registers the immutable persistence/ownership scope captured when the
     /// keep-alive Quick Terminal session is first created. A project-backed
     /// session reuses the exact open worktree identity when available; the

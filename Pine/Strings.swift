@@ -726,6 +726,86 @@ enum Strings {
         )
     }
 
+    // MARK: - Project switcher
+    static let projectSwitcherTooltip: LocalizedStringKey =
+        "projectSwitcher.tooltip"
+    static let projectSwitcherNewAgent: LocalizedStringKey =
+        "projectSwitcher.newAgent"
+    static let projectSwitcherNoAgents: LocalizedStringKey =
+        "projectSwitcher.noAgents"
+    static let projectSwitcherErrorTitle: LocalizedStringKey =
+        "projectSwitcher.error.title"
+    static var projectSwitcherAlreadyOpenText: String {
+        String(
+            localized: "projectSwitcher.error.alreadyOpen",
+            defaultValue: "This project is already open in another window."
+        )
+    }
+
+    static func projectSwitcherOpenFailureText(
+        _ projectName: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "projectSwitcher.error.open %@",
+            fallback: "Pine couldn’t open “%@”.",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [projectName]
+        )
+    }
+
+    static func projectSwitcherAgentMissingText(
+        _ agentName: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "projectSwitcher.error.agentMissing %@",
+            fallback: "%@ is no longer available on this Mac.",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [agentName]
+        )
+    }
+
+    static func projectSwitcherWorktreeFailureText(
+        _ reason: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "projectSwitcher.error.worktree %@",
+            fallback: "Pine couldn’t create an isolated worktree. %@",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [reason]
+        )
+    }
+
+    static func projectSwitcherAgentLaunchFailureText(
+        _ agentName: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "projectSwitcher.error.launch %@",
+            fallback: "Pine created the worktree, but couldn’t start %@.",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [agentName]
+        )
+    }
+
     // MARK: - Agent notifications (#1306)
     static let agentNotificationsSettingsTitle: LocalizedStringKey =
         "agentNotifications.settings.title"
