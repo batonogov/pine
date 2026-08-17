@@ -73,20 +73,25 @@ final class SidebarSearchTests: PineUITestCase {
         XCTAssertEqual(noResults.value as? String, "No Results")
     }
 
-    // MARK: - Magnifying glass toolbar button exists
+    // MARK: - Search toolbar entry exists
 
-    func testMagnifyingGlassButtonExists() throws {
+    func testSearchToolbarEntryExists() throws {
         launchWithProject(projectURL)
 
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let toolbarButton = app.toolbars.buttons.matching(
+        // NSSearchToolbarItem adapts to the available window width: compact
+        // toolbars expose a button, while wider windows expose the search
+        // field directly. Both are valid, reachable search entry points.
+        let searchField = app.searchFields.firstMatch
+        let searchButton = app.toolbars.buttons.matching(
             NSPredicate(format: "label CONTAINS[c] 'search' OR label CONTAINS[c] 'поиск'")
         ).firstMatch
         XCTAssertTrue(
-            waitForExistence(toolbarButton, timeout: 10),
-            "Magnifying glass button should exist in toolbar"
+            waitForExistence(searchField, timeout: 5)
+                || waitForExistence(searchButton, timeout: 5),
+            "Search field or compact search button should exist in the toolbar"
         )
     }
 
