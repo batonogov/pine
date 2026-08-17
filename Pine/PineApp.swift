@@ -26,7 +26,7 @@ struct PineApp: App {
                 ProjectWindowView(projectURL: projectURL, registry: registry, appDelegate: appDelegate)
             }
         }
-        .defaultSize(width: 1280, height: 800)
+        .defaultSize(width: 1440, height: 900)
         .defaultLaunchBehavior(.suppressed)
         .commands {
             PineAppMenuCommands(
@@ -143,7 +143,21 @@ private struct ProjectWindowView: View {
     let projectURL: URL
     let registry: ProjectRegistry
     let appDelegate: AppDelegate
+    @State private var windowSession: ProjectWindowSession
     @Environment(\.openWindow) var openWindow
+
+    init(
+        projectURL: URL,
+        registry: ProjectRegistry,
+        appDelegate: AppDelegate
+    ) {
+        self.projectURL = projectURL
+        self.registry = registry
+        self.appDelegate = appDelegate
+        _windowSession = State(initialValue: ProjectWindowSession(
+            initialProjectURL: projectURL
+        ))
+    }
 
     var body: some View {
         Group {
@@ -151,7 +165,9 @@ private struct ProjectWindowView: View {
             // Hidden windows from closed projects still get re-rendered by SwiftUI;
             // calling projectManager(for:) would silently re-add the closed project
             // to openProjects, breaking the "show Welcome when last project closes" logic.
-            if let pm = registry.projectManagerIfAdmitted(for: projectURL) {
+            if let pm = registry.projectManagerIfAdmitted(
+                for: windowSession.activeProjectURL
+            ) {
                 ContentView()
                     .id(ObjectIdentifier(pm))
                     .environment(pm)
@@ -161,16 +177,36 @@ private struct ProjectWindowView: View {
                     .environment(pm.paneManager)
                     .environment(pm.toastManager)
                     .environment(registry)
+                    .environment(windowSession)
                     .focusedSceneValue(\.projectManager, pm)
                     .background {
                         WindowCloseInterceptor(
                             projectManager: pm,
                             registry: registry,
-                            projectURL: projectURL,
-                            appDelegate: appDelegate
+                            projectURL: windowSession.activeProjectURL,
+                            appDelegate: appDelegate,
+                            windowSession: windowSession
                         )
                     }
             }
+        }
+        .task {
+            await windowSession.restoreIfNeeded(registry: registry)
+        }
+        .alert(
+            Strings.projectSwitcherErrorTitle,
+            isPresented: Binding(
+                get: { windowSession.alertMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        windowSession.alertMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button(Strings.dialogOK, role: .cancel) {}
+        } message: {
+            Text(windowSession.alertMessage ?? "")
         }
         .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
         // Note: project cleanup (session save, Welcome restore) is handled by
@@ -188,6 +224,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
     let registry: ProjectRegistry
     let projectURL: URL
     let appDelegate: AppDelegate
+    var windowSession: ProjectWindowSession? = nil
 
     func makeNSView(context: Context) -> InterceptorView {
         let view = InterceptorView()
@@ -198,7 +235,8 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                 projectManager: projectManager,
                 registry: registry,
                 projectURL: projectURL,
-                appDelegate: appDelegate
+                appDelegate: appDelegate,
+                windowSession: windowSession
             )
         }
         return view
@@ -215,7 +253,8 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                 projectManager: projectManager,
                 registry: registry,
                 projectURL: projectURL,
-                appDelegate: appDelegate
+                appDelegate: appDelegate,
+                windowSession: windowSession
             )
         }
     }
@@ -250,6 +289,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
         // Strong reference to keep the original delegate alive
         var originalDelegate: (any NSWindowDelegate)?
         weak var installedWindow: NSWindow?
+        weak var windowSession: ProjectWindowSession?
         private var lifecycleObservers: [Any] = []
         /// Once a replacement coordinator adopts this installation, SwiftUI
         /// may still deliver a stale update or move callback to the old
@@ -262,10 +302,12 @@ struct WindowCloseInterceptor: NSViewRepresentable {
             registry: ProjectRegistry,
             projectURL: URL,
             appDelegate: AppDelegate,
+            windowSession: ProjectWindowSession? = nil,
             presentAlert: CloseDelegate.CloseAlertPresenter? = nil,
             saveAll: CloseDelegate.CloseSaveAll? = nil
         ) {
             guard !isSuperseded else { return }
+            self.windowSession = windowSession
             if installedWindow !== window {
                 retireCurrentInstallation(restoringOriginal: true)
                 installedWindow = window
@@ -318,6 +360,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                     closeDelegate = existing
                     originalDelegate = retainedOriginal
                     existing.interceptorOwner = self
+                    existing.windowSession = windowSession
                     if existing.didCompleteWindowLifecycle,
                        registry.isWindowOpen(projectURL),
                        registry.openProjects[
@@ -345,6 +388,7 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                 presentAlert: presentAlert,
                 saveAll: saveAll
             )
+            delegate.windowSession = windowSession
             closeDelegate = delegate
             originalDelegate = original
             delegate.interceptorOwner = self
@@ -386,7 +430,8 @@ struct WindowCloseInterceptor: NSViewRepresentable {
                                 projectManager: projectManager,
                                 registry: registry,
                                 projectURL: projectURL,
-                                appDelegate: appDelegate
+                                appDelegate: appDelegate,
+                                windowSession: self.windowSession
                             )
                         }
                     }
@@ -470,6 +515,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     let registry: ProjectRegistry
     let projectURL: URL
     weak var appDelegate: AppDelegate?
+    weak var windowSession: ProjectWindowSession?
     /// Weak ref to original — Coordinator holds the strong ref separately
     /// to avoid a potential retain cycle through the delegate chain.
     weak var original: (any NSWindowDelegate)?
@@ -802,6 +848,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             )
             DialogPresenter.ownerDidClose(ownerWindow)
         }
+        windowSession?.windowDidClose(registry: registry)
         appDelegate?.handleProjectWindowDisappear(
             projectURL: projectURL,
             registry: registry,
@@ -1840,6 +1887,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                canonicalURL: canonical
            ) {
             window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            hideWelcome()
+            return true
+        }
+
+        // File > Open Recent follows the same one-window project flow as the
+        // toolbar switcher when a project window is currently eligible. A
+        // linked worktree can join only when this exact session already owns
+        // its persisted proof; otherwise the existing separate-scene path
+        // remains the fail-closed fallback.
+        if let destination = nativeCommandDestination(requestedProject: nil),
+           let windowSession = destination.delegate.windowSession,
+           windowSession.managedWorktrees[canonical] != nil
+                || targetRegistry.isOrdinaryProjectScope(canonical) {
+            if windowSession.managedWorktrees[canonical] != nil {
+                await windowSession.activate(
+                    canonical,
+                    registry: targetRegistry
+                )
+            } else {
+                await windowSession.openProject(
+                    canonical,
+                    registry: targetRegistry,
+                    allowAlreadyOpenTarget: true
+                )
+            }
+            guard windowSession.activeProjectURL == canonical else {
+                return false
+            }
+            destination.window.makeKeyAndOrderFront(nil)
             NSApp.activate()
             hideWelcome()
             return true

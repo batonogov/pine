@@ -1364,6 +1364,16 @@ final class ProjectRegistry: LSPSettingsObserver {
         openProjects[canonicalProjectURL(projectURL)]
     }
 
+    /// Whether an admitted URL is an ordinary folder project rather than a
+    /// linked-worktree scope that requires its persisted exact proof.
+    func isOrdinaryProjectScope(_ projectURL: URL) -> Bool {
+        let canonical = canonicalProjectURL(projectURL)
+        guard let identity = agentTaskProjectsByRoot[canonical] else {
+            return false
+        }
+        return identity.canonicalProjectPath == identity.canonicalWorktreePath
+    }
+
     /// Registers the immutable persistence/ownership scope captured when the
     /// keep-alive Quick Terminal session is first created. A project-backed
     /// session reuses the exact open worktree identity when available; the
@@ -1931,6 +1941,21 @@ final class ProjectRegistry: LSPSettingsObserver {
     func openProjectViaPanel(
         context: DialogPresentationContext
     ) async -> URL? {
+        guard let canonical = await chooseProjectViaPanel(context: context),
+              projectManager(for: canonical) != nil else { return nil }
+        return canonical
+    }
+
+    /// Chooses a project directory without admitting it into the registry.
+    ///
+    /// Multi-project windows need to perform their own collision check before
+    /// admission. Reusing ``openProjectViaPanel(context:)`` there would create
+    /// the manager first, making a newly selected directory indistinguishable
+    /// from a project already presented by another window.
+    @discardableResult
+    func chooseProjectViaPanel(
+        context: DialogPresentationContext
+    ) async -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -1940,9 +1965,7 @@ final class ProjectRegistry: LSPSettingsObserver {
 
         guard await panel.runSheet(on: context) == .OK,
               let url = panel.url else { return nil }
-        let canonical = canonicalProjectURL(url)
-        guard projectManager(for: canonical) != nil else { return nil }
-        return canonical
+        return canonicalProjectURL(url)
     }
 
     /// Opens a project via folder picker, first waiting for the project
@@ -1974,6 +1997,28 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
         let context = DialogPresenter.forProject(projectManager)
         return await openProjectViaPanel(context: context)
+    }
+
+    /// Project-window variant of ``chooseProjectViaPanel(context:)``. It keeps
+    /// the same bounded owner recovery as the admitting API while leaving the
+    /// selected URL untouched until the window session validates it.
+    @discardableResult
+    func chooseProjectViaPanel(
+        for projectManager: ProjectManager,
+        maximumAttempts: Int = 80,
+        waitForNextAttempt: (@MainActor () async -> Void)? = nil,
+        isEligible: (@MainActor (NSWindow) -> Bool)? = nil
+    ) async -> URL? {
+        guard await projectManager.awaitDialogOwnerWindow(
+            maximumAttempts: maximumAttempts,
+            waitForNextAttempt: waitForNextAttempt,
+            isEligible: isEligible
+        ) != nil else {
+            Logger.app.error("Open Folder aborted: no eligible project dialog owner after bounded recovery (#1407)")
+            return nil
+        }
+        let context = DialogPresenter.forProject(projectManager)
+        return await chooseProjectViaPanel(context: context)
     }
 
     /// Closes the project window but keeps the ProjectManager alive. Terminal

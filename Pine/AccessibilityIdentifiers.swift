@@ -57,6 +57,14 @@ nonisolated enum AccessibilityID {
     // MARK: - Main editor window
     static let sidebar = "sidebar"
     static let openFolderToolbarButton = "openFolderToolbarButton"
+    static let projectSwitcher = "projectSwitcher"
+    static let projectSwitcherNewAgent = "projectSwitcherNewAgent"
+    static func projectSwitcherProject(_ name: String) -> String {
+        "projectSwitcherProject_\(name)"
+    }
+    static func projectSwitcherWorktree(_ id: UUID) -> String {
+        "projectSwitcherWorktree_\(id.uuidString)"
+    }
     static func fileNode(_ name: String) -> String { "fileNode_\(name)" }
     static let inlineRenameTextField = "inlineRenameTextField"
 

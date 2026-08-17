@@ -213,6 +213,37 @@ struct SidebarAccessibilityHostedTests {
         #expect(window.firstResponder === responder)
     }
 
+    @Test("Row focus claim survives expanded search toolbar activation")
+    func responderFocusRetryAfterExpandedSearchActivation() async throws {
+        let controller = SidebarKeyboardFocusController()
+        let responder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let searchField = NSSearchField(
+            frame: NSRect(x: 0, y: 0, width: 180, height: 24)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(responder)
+        window.contentView?.addSubview(searchField)
+        controller.attach(responder)
+        defer { window.orderOut(nil) }
+
+        #expect(controller.requestFocus(retryOnNextRunLoop: true))
+        try await Task.sleep(for: .milliseconds(750))
+        #expect(window.makeFirstResponder(searchField))
+        #expect(!controller.isFocused)
+
+        try await Task.sleep(for: .milliseconds(350))
+
+        #expect(controller.isFocused)
+        #expect(window.firstResponder === responder)
+    }
+
     @Test("Explicit editor focus cancels a pending sidebar retry")
     func explicitEditorFocusCancelsSidebarRetry() async throws {
         let controller = SidebarKeyboardFocusController()
@@ -237,7 +268,9 @@ struct SidebarAccessibilityHostedTests {
         controller.cancelPendingFocusRetry()
         #expect(window.makeFirstResponder(editor))
 
-        try await Task.sleep(for: .milliseconds(150))
+        // Wait beyond the final bounded retry so this locks the entire retry
+        // window, including the expanded-toolbar reconciliation attempt.
+        try await Task.sleep(for: .milliseconds(1_100))
 
         #expect(!controller.isFocused)
         #expect(window.firstResponder === editor)

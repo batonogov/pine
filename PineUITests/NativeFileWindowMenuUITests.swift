@@ -53,6 +53,26 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         ) == .completed
     }
 
+    private func switchProject(to url: URL) {
+        let switcher = app.descendants(matching: .any)[
+            "projectSwitcher"
+        ].firstMatch
+        XCTAssertTrue(
+            switcher.waitForExistence(timeout: 5),
+            "The project switcher should be visible"
+        )
+        switcher.click()
+
+        let project = app.descendants(matching: .any)[
+            "projectSwitcherProject_\(url.lastPathComponent)"
+        ].firstMatch
+        XCTAssertTrue(
+            project.waitForExistence(timeout: 5),
+            "The switcher should contain \(url.lastPathComponent)"
+        )
+        project.click()
+    }
+
     /// Polls for the first hittable text field within `timeout`.
     ///
     /// `NSOpenPanel`'s "Go to Folder" sheet animates its path field in
@@ -428,11 +448,11 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         XCTAssertTrue(agentStatus.label.contains("Executing"))
     }
 
-    func testOpenFolderSelectsDirectoryAndRoutesCommandToNewWindow() throws {
+    func testOpenFolderAddsProjectToCurrentWindowAndPreservesContexts() throws {
         launchWithProject(projectURL)
-        let firstWindow = app.windows[projectURL.lastPathComponent].firstMatch
         XCTAssertTrue(
-            firstWindow.waitForExistence(timeout: 10),
+            app.windows[projectURL.lastPathComponent]
+                .firstMatch.waitForExistence(timeout: 10),
             "The original project window should be visible"
         )
 
@@ -475,31 +495,46 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         )
         openButton.click()
 
-        let secondWindow = app.windows[
-            secondProjectURL.lastPathComponent
-        ].firstMatch
         XCTAssertTrue(
-            secondWindow.waitForExistence(timeout: 10),
-            "Selecting a directory should open its project window"
+            app.descendants(matching: .any)["fileNode_second.swift"]
+                .firstMatch.waitForExistence(timeout: 10),
+            "The current window should switch to the selected project"
         )
+
+        switchProject(to: projectURL)
         XCTAssertTrue(
-            secondWindow.descendants(matching: .any)[
-                "fileNode_second.swift"
-            ].firstMatch.waitForExistence(timeout: 10),
-            "The new window should display the selected project"
+            app.descendants(matching: .any)["fileNode_main.swift"]
+                .firstMatch.waitForExistence(timeout: 10),
+            "The original project should remain available in the switcher"
+        )
+
+        switchProject(to: secondProjectURL)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["fileNode_second.swift"]
+                .firstMatch.waitForExistence(timeout: 10),
+            "Switching back should restore the second project context"
         )
 
         clickMenuBarItem("File")
         app.menuItems["New File"].firstMatch.click()
 
         XCTAssertTrue(
-            secondWindow.buttons["editorTab_Untitled"]
+            app.buttons["editorTab_Untitled"]
                 .firstMatch.waitForExistence(timeout: 5),
-            "File > New File should route to the newly focused project"
+            "File > New File should route to the active project"
         )
+
+        switchProject(to: projectURL)
         XCTAssertFalse(
-            firstWindow.buttons["editorTab_Untitled"].firstMatch.exists,
-            "The command must not mutate the background project"
+            app.buttons["editorTab_Untitled"].firstMatch.exists,
+            "The command must not mutate the inactive project"
+        )
+
+        switchProject(to: secondProjectURL)
+        XCTAssertTrue(
+            app.buttons["editorTab_Untitled"]
+                .firstMatch.waitForExistence(timeout: 5),
+            "The active project's tabs should survive project switches"
         )
     }
 

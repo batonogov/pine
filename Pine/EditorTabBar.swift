@@ -409,7 +409,12 @@ struct EditorTabBar: View {
                             paneManager.selectEditorTab(tab.id, in: paneID)
                         } label: {
                             Label {
-                                Text("\(tab.fileName)\(tab.isDirty ? " \u{25CF}" : "")")
+                                HStack(spacing: 0) {
+                                    Text(verbatim: tab.fileName)
+                                    if tab.isDirty {
+                                        Text(" \u{25CF}")
+                                    }
+                                }
                             } icon: {
                                 Image(systemName: tab.isPinned
                                       ? "pin.fill"

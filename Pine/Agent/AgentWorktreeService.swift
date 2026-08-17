@@ -17,7 +17,7 @@ nonisolated struct AgentWorktreeCreateRequest: Sendable, Equatable {
     let startPoint: String
 }
 
-nonisolated struct AgentManagedWorktree: Sendable, Equatable {
+nonisolated struct AgentManagedWorktree: Codable, Sendable, Equatable {
     let taskID: UUID
     let repositoryRoot: URL
     let managedRoot: URL

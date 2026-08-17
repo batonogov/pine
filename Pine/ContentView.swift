@@ -26,6 +26,7 @@ struct ContentView: View {
     @Environment(TabManager.self) var primaryTabManager
     @Environment(PaneManager.self) var paneManager
     @Environment(ProjectRegistry.self) var registry
+    @Environment(ProjectWindowSession.self) var projectWindowSession
     @Environment(\.openWindow) var openWindow
 
     @Environment(\.controlActiveState) var controlActiveState
@@ -82,8 +83,11 @@ struct ContentView: View {
                             // owner before capturing the presentation context;
                             // otherwise the panel silently aborts right after
                             // the window appears or is replaced (#1344).
-                            if let url = await registry.openProjectViaPanel(for: projectManager) {
-                                openWindow(value: url)
+                            if let url = await registry.chooseProjectViaPanel(for: projectManager) {
+                                await projectWindowSession.openProject(
+                                    url,
+                                    registry: registry
+                                )
                             }
                         }
                     } label: {
@@ -110,6 +114,14 @@ struct ContentView: View {
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                ProjectSwitcherView(
+                    session: projectWindowSession,
+                    registry: registry,
+                    onOpenProject: { openNewProject() }
+                )
+            }
+
             // Agent Inbox entry point in the project window toolbar (#1337).
             // Additive to the existing ⌘⇧I chord and Window menu item.
             ToolbarItem(placement: .primaryAction) {
@@ -535,6 +547,9 @@ private struct ProblemsPanelRefreshObserver: ViewModifier {
 #Preview {
     let projectManager = ProjectManager()
     let registry = ProjectRegistry()
+    let windowSession = ProjectWindowSession(
+        initialProjectURL: URL(fileURLWithPath: "/tmp/Pine Preview")
+    )
     ContentView()
         .environment(projectManager)
         .environment(projectManager.workspace)
@@ -543,4 +558,5 @@ private struct ProblemsPanelRefreshObserver: ViewModifier {
         .environment(projectManager.paneManager)
         .environment(projectManager.toastManager)
         .environment(registry)
+        .environment(windowSession)
 }

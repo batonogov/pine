@@ -154,8 +154,9 @@ final class SidebarEditState {
 final class SidebarKeyboardFocusController {
     /// A disclosure change can rebuild the SwiftUI host after an AppKit focus
     /// claim has already succeeded. Keep the retry window bounded, but cover
-    /// both the next run loop and the later reconciliation pass.
-    private static let focusRetryDelays: [TimeInterval] = [0, 0.1, 0.5]
+    /// the next run loop, disclosure reconciliation, and the later AppKit
+    /// activation used by an expanded search toolbar item.
+    private static let focusRetryDelays: [TimeInterval] = [0, 0.1, 0.5, 1.0]
 
     private weak var responderView: SidebarKeyboardResponderView?
     private(set) var isFocused = false
@@ -177,9 +178,9 @@ final class SidebarKeyboardFocusController {
         if retryOnNextRunLoop {
             // A pointer action can arrive while SwiftUI is still attaching the
             // representable, or an editor preview can displace a successful
-            // claim during a later disclosure reconciliation pass. Retry at
-            // two bounded points; an explicit editor-focus action invalidates
-            // this generation before either retry can steal focus back.
+            // claim during a later disclosure or toolbar reconciliation pass.
+            // An explicit editor-focus action invalidates this generation
+            // before any retry can steal focus back.
             for delay in Self.focusRetryDelays {
                 DispatchQueue.main.asyncAfter(
                     deadline: .now() + delay
