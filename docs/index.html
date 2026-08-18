@@ -1164,6 +1164,38 @@
                 </div>
             </section>
 
+            <section class="scroll-story" id="new">
+                <div class="scroll-story-sticky">
+                    <div class="scroll-story-copy">
+                        <span class="section-kicker" data-i18n="release.kicker">The Pine loop</span>
+                        <h2 data-i18n="release.title">The terminal stays real. The context stops scattering.</h2>
+                        <p data-i18n="release.desc">Pine connects real terminal sessions to the code, projects, diagnostics, and decisions around them without hiding the tools you already trust.</p>
+                        <ol class="story-steps">
+                            <li class="is-current" data-story-step="0"><span>01</span><strong data-i18n="release.li1">Agents keep running in interoperable terminal sessions</strong></li>
+                            <li data-story-step="1"><span>02</span><strong data-i18n="release.li2">Pine connects activity to the exact project, pane, and task</strong></li>
+                            <li data-story-step="2"><span>03</span><strong data-i18n="release.li3">Code, Git changes, diagnostics, and attention stay visible together</strong></li>
+                            <li data-story-step="3"><span>04</span><strong data-i18n="release.li4">You review and decide; Pine does not replace the tools in the loop</strong></li>
+                        </ol>
+                    </div>
+                    <div class="story-visual" aria-hidden="true">
+                        <div class="story-glow"></div>
+                        <figure class="story-frame is-current" data-story-frame="0">
+                            <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-terminal.png" alt="Pine built-in terminal" data-i18n-alt="screenshots.alt3">
+                        </figure>
+                        <figure class="story-frame" data-story-frame="1">
+                            <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-agent-inbox.png" alt="Pine Agent Inbox showing agent tasks across projects" data-i18n-alt="screenshots.alt0">
+                        </figure>
+                        <figure class="story-frame" data-story-frame="2">
+                            <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine code editor with syntax highlighting and file tree" data-i18n-alt="screenshots.alt2">
+                        </figure>
+                        <figure class="story-frame" data-story-frame="3">
+                            <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-markdown.png" alt="Pine Markdown preview in split mode" data-i18n-alt="screenshots.alt4">
+                        </figure>
+                        <div class="story-counter"><span id="story-counter-current">01</span><span>04</span></div>
+                    </div>
+                </div>
+            </section>
+
             <section class="section">
                 <div class="mini-grid">
                     <article class="mini-card">
@@ -1186,23 +1218,6 @@
                         <h3 data-i18n="mini.practicalTitle">Git where it matters</h3>
                         <p data-i18n="mini.practicalDesc">Status in the tree, branch switching, and diff markers directly in the editor.</p>
                     </article>
-                </div>
-            </section>
-
-            <section class="section" id="new">
-                <div class="release-card">
-                    <div class="release-copy">
-                        <span class="section-kicker" data-i18n="release.kicker">The Pine loop</span>
-                        <h2 data-i18n="release.title">The terminal stays real. The context stops scattering.</h2>
-                        <p data-i18n="release.desc">Pine connects real terminal sessions to the code, projects, diagnostics, and decisions around them without hiding the tools you already trust.</p>
-                        <a class="btn btn-secondary" href="#why" data-i18n="release.cta">Explore the workspace</a>
-                    </div>
-                    <ul class="release-list">
-                        <li data-i18n="release.li1">Agents keep running in interoperable terminal sessions</li>
-                        <li data-i18n="release.li2">Pine connects activity to the exact project, pane, and task</li>
-                        <li data-i18n="release.li3">Code, Git changes, diagnostics, and attention stay visible together</li>
-                        <li data-i18n="release.li4">You review and decide; Pine does not replace the tools in the loop</li>
-                    </ul>
                 </div>
             </section>
 
@@ -2451,6 +2466,175 @@
             currentLang = this.value;
             applyLang(currentLang);
         });
+
+        function setupScrollMotion() {
+            var motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+            if (motionPreference.matches) return;
+
+            document.documentElement.classList.add("scroll-motion");
+
+            var progress = document.createElement("div");
+            progress.className = "scroll-progress";
+            progress.setAttribute("aria-hidden", "true");
+            document.body.appendChild(progress);
+
+            var revealGroups = [
+                ".section-head > *",
+                ".mini-card",
+                ".scroll-story-copy > .section-kicker, .scroll-story-copy > h2, .scroll-story-copy > p",
+                ".compare-card",
+                ".feature-card",
+                ".screenshot-gallery figure",
+                ".manifesto-card > *",
+                ".story-card > *",
+                ".install-panel > *",
+                "footer > *"
+            ];
+            var revealTargets = [];
+
+            revealGroups.forEach(function(selector, groupIndex) {
+                document.querySelectorAll(selector).forEach(function(element, index) {
+                    element.classList.add("scroll-reveal");
+                    element.style.setProperty("--reveal-delay", ((index % 4) * 85) + "ms");
+                    if ((groupIndex + index) % 3 === 1) element.classList.add("reveal-left");
+                    if ((groupIndex + index) % 3 === 2) element.classList.add("reveal-right");
+                    revealTargets.push(element);
+                });
+            });
+
+            var sceneTargets = Array.from(document.querySelectorAll(
+                ".manifesto-card, .story-card, .install-panel"
+            ));
+            sceneTargets.forEach(function(element) {
+                element.classList.add("scroll-scene");
+            });
+
+            var entranceObserver = new IntersectionObserver(function(entries, observer) {
+                entries.forEach(function(entry) {
+                    if (!entry.isIntersecting) return;
+                    entry.target.classList.add("is-visible");
+                    observer.unobserve(entry.target);
+                });
+            }, {
+                threshold: 0.13,
+                rootMargin: "0px 0px -7% 0px"
+            });
+
+            revealTargets.concat(sceneTargets).forEach(function(element) {
+                if (element.getBoundingClientRect().top < window.innerHeight * 0.94) {
+                    element.classList.add("is-visible");
+                } else {
+                    entranceObserver.observe(element);
+                }
+            });
+
+            var heroVisual = document.querySelector(".hero-visual");
+            var galleryImages = Array.from(document.querySelectorAll(".screenshot-trigger img"));
+            var scrollStory = document.querySelector(".scroll-story");
+            var storySticky = document.querySelector(".scroll-story-sticky");
+            var storyFrames = Array.from(document.querySelectorAll(".story-frame"));
+            var storySteps = Array.from(document.querySelectorAll(".story-steps li"));
+            var storyCounter = document.getElementById("story-counter-current");
+            var manifestoCard = document.querySelector(".manifesto-card");
+            var framePending = false;
+
+            function clamp(value, min, max) {
+                return Math.min(max, Math.max(min, value));
+            }
+
+            function elementDrift(element, viewportHeight) {
+                var rect = element.getBoundingClientRect();
+                var centerOffset = viewportHeight * 0.5 - (rect.top + rect.height * 0.5);
+                return clamp(centerOffset / (viewportHeight + rect.height), -0.5, 0.5);
+            }
+
+            function updateScrollMotion() {
+                var viewportHeight = window.innerHeight;
+                var maxScroll = document.documentElement.scrollHeight - viewportHeight;
+                var pageProgress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+                progress.style.transform = "scaleX(" + clamp(pageProgress, 0, 1) + ")";
+
+                if (heroVisual) {
+                    var heroDrift = elementDrift(heroVisual, viewportHeight);
+                    heroVisual.style.setProperty("--frame-shift", (heroDrift * -54) + "px");
+                    heroVisual.style.setProperty("--main-shift", (heroDrift * -24) + "px");
+                    heroVisual.style.setProperty("--inbox-shift", (heroDrift * 42) + "px");
+                    heroVisual.style.setProperty("--chip-one-shift", (heroDrift * 70) + "px");
+                    heroVisual.style.setProperty("--chip-two-shift", (heroDrift * -58) + "px");
+                    heroVisual.style.setProperty("--chip-three-shift", (heroDrift * 46) + "px");
+                }
+
+                galleryImages.forEach(function(image, index) {
+                    var drift = elementDrift(image, viewportHeight);
+                    var direction = index % 2 === 0 ? -1 : 1;
+                    image.style.setProperty("--image-shift", (drift * direction * 28) + "px");
+                });
+
+                if (manifestoCard) {
+                    var manifestoDrift = elementDrift(manifestoCard, viewportHeight);
+                    manifestoCard.style.setProperty("--watermark-shift", (manifestoDrift * -90) + "px");
+                }
+
+                if (scrollStory && storySticky && storyFrames.length) {
+                    var storyRect = scrollStory.getBoundingClientRect();
+                    var storyDistance = Math.max(1, scrollStory.offsetHeight - viewportHeight);
+                    var storyProgress = clamp(-storyRect.top / storyDistance, 0, 0.999);
+                    var storyPosition = Math.min(
+                        storyFrames.length - 1,
+                        storyProgress * storyFrames.length
+                    );
+                    var currentStoryStep = Math.min(
+                        storyFrames.length - 1,
+                        Math.round(storyPosition)
+                    );
+
+                    storyFrames.forEach(function(frame, index) {
+                        var distance = Math.abs(index - storyPosition);
+                        var visibility = clamp(1 - distance * 1.18, 0, 1);
+                        var verticalShift = (index - storyPosition) * 74;
+                        var scale = 0.9 + visibility * 0.1;
+                        frame.style.opacity = visibility;
+                        frame.style.filter = "blur(" + ((1 - visibility) * 10) + "px)";
+                        frame.style.transform = "translate3d(0," + verticalShift +
+                            "px," + ((1 - visibility) * -90) +
+                            "px) rotateX(" + ((1 - visibility) * 4) +
+                            "deg) scale(" + scale + ")";
+                        frame.classList.toggle("is-current", index === currentStoryStep);
+                    });
+
+                    storySteps.forEach(function(step, index) {
+                        step.classList.toggle("is-current", index === currentStoryStep);
+                        step.classList.toggle("is-passed", index < currentStoryStep);
+                    });
+
+                    if (storyCounter) {
+                        storyCounter.textContent = String(currentStoryStep + 1).padStart(2, "0");
+                    }
+                    storySticky.style.setProperty(
+                        "--story-glow-x",
+                        ((storyProgress - 0.5) * 18) + "%"
+                    );
+                    storySticky.style.setProperty(
+                        "--story-glow-shift",
+                        ((storyProgress - 0.5) * 90) + "px"
+                    );
+                }
+
+                framePending = false;
+            }
+
+            function requestScrollFrame() {
+                if (framePending) return;
+                framePending = true;
+                window.requestAnimationFrame(updateScrollMotion);
+            }
+
+            window.addEventListener("scroll", requestScrollFrame, {passive: true});
+            window.addEventListener("resize", requestScrollFrame);
+            updateScrollMotion();
+        }
+
+        setupScrollMotion();
 
         // Lightbox for screenshots
         var lightbox = document.getElementById("lightbox");
