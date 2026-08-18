@@ -22,27 +22,28 @@
 
 Pine reflects agent activity, file changes, diagnostics, and Git context across a fast native workspace without turning into another AI dashboard. Built with SwiftUI and AppKit for macOS 26 Liquid Glass — no Electron runtime.
 
-## New in Pine 2.0
+## One workspace for code and CLI agents
 
 <p align="center">
   <img src="assets/screenshot-agent-inbox.png" width="760" alt="Pine Agent Inbox showing agent tasks across projects">
 </p>
 
-- **Cross-project Agent Inbox** keeps durable tasks together and routes back to the exact live session
-- **Safer agent workflows** add isolated worktrees, task recovery, and evidence-based completion briefs
-- **Useful signals without surveillance** provide actionable, privacy-bounded notifications and first-party CLI-agent adapters
-- **A polished release experience** brings a branded DMG installer and Pine's new app icon
+- **Agents stay in real terminal sessions** while Pine keeps activity, files, diagnostics, and Git context visible beside them
+- **Multi-project workspaces** keep related projects in one native window with fast switching and precise ownership
+- **Cross-project Agent Inbox** preserves durable task context and routes back to the exact project, pane, and live session
+- **Resilient terminal presentation** can rebuild a stalled display without restarting the shell or losing scrollback
 
-See the [Pine 2.0 release notes](https://github.com/batonogov/pine/releases/tag/v2.0.0) for the complete changelog.
+See the [latest release](https://github.com/batonogov/pine/releases/latest) for the current changelog.
 
 ## Features
 
 - **Native macOS** — SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
 - **Agent-aware workflow** — Tracks durable tasks across projects in Agent Inbox, routes back to the exact live session, and sends privacy-bounded notifications for verified events or detected process exits
+- **Multi-project workspaces** — Keep related projects in one native window, switch from the toolbar, and close one project without disturbing the rest of the workspace
 - **LSP code intelligence** — Diagnostics, completion, hover, go-to-definition, code actions, rename, and a Problems panel
 - **Syntax highlighting** — bundled grammars for Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
 - **Split panes** — Drag tabs to edges to split horizontally or vertically. Drag between panes to move. Resize with divider
-- **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Multiple tabs, themes, TUI apps, clickable file and OSC 8 links, send-to-terminal, pane maximize, and a global quick-terminal hotkey
+- **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Multiple tabs, themes, TUI apps, clickable file and OSC 8 links, send-to-terminal, pane maximize, a global quick-terminal hotkey, and display recovery that preserves the running shell
 - **Lightweight extensibility** — User grammars, tasks, and keybindings without an extension marketplace
 - **Git integration** — File status in sidebar, diff markers in gutter, blame view, branch switching from title bar or Git menu
 - **Symbol navigation** — Jump to functions and classes with Cmd+R
