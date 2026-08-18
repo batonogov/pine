@@ -21,6 +21,89 @@ struct ProjectWindowSessionTests {
         )
     }
 
+    @Test("a fresh restored scene admits its initial project exactly once")
+    func freshSceneRestoration() async throws {
+        let fixture = try ProjectWindowSessionFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let session = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+
+        #expect(
+            registry.projectManagerIfAdmitted(for: fixture.firstProject) == nil
+        )
+        #expect(
+            await session.restoreIfNeeded(registry: registry) == .restored
+        )
+        let manager = try #require(
+            registry.projectManagerIfAdmitted(for: fixture.firstProject)
+        )
+
+        session.windowDidClose(registry: registry)
+        registry.closeProjectWindow(fixture.firstProject)
+        #expect(
+            await session.restoreIfNeeded(registry: registry)
+                == .alreadyRestored
+        )
+        #expect(
+            registry.projectManagerIfAdmitted(for: fixture.firstProject)
+                === manager
+        )
+        #expect(!registry.isWindowOpen(fixture.firstProject))
+    }
+
+    @Test("cold restoration keeps a closed anchor closed")
+    func closedAnchorColdRestoration() async throws {
+        let fixture = try ProjectWindowSessionFixture()
+        defer { fixture.cleanup() }
+        let firstRegistry = fixture.makeRegistry()
+        _ = try #require(
+            firstRegistry.projectManager(for: fixture.firstProject)
+        )
+        let session = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+        await session.openProject(
+            fixture.secondProject,
+            registry: firstRegistry
+        )
+        #expect(
+            await session.closeProject(
+                fixture.firstProject,
+                registry: firstRegistry
+            )
+        )
+        session.windowDidClose(registry: firstRegistry)
+
+        let coldRegistry = fixture.makeRegistry()
+        let restored = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+
+        #expect(
+            await restored.restoreIfNeeded(registry: coldRegistry)
+                == .restored
+        )
+        #expect(
+            restored.activeProjectURL
+                == fixture.secondProject.standardizedFileURL
+        )
+        #expect(
+            coldRegistry.projectManagerIfAdmitted(
+                for: fixture.secondProject
+            ) != nil
+        )
+        #expect(
+            coldRegistry.projectManagerIfAdmitted(
+                for: fixture.firstProject
+            ) == nil
+        )
+    }
+
     @Test("switching keeps each project alive and restores the active project")
     func switchingAndRestoration() async throws {
         let fixture = try ProjectWindowSessionFixture()
@@ -66,7 +149,7 @@ struct ProjectWindowSessionTests {
             initialProjectURL: fixture.secondProject,
             defaults: fixture.defaults
         )
-        await restored.restoreIfNeeded(registry: registry)
+        _ = await restored.restoreIfNeeded(registry: registry)
 
         #expect(
             restored.sceneProjectURL
@@ -205,7 +288,7 @@ struct ProjectWindowSessionTests {
             initialProjectURL: fixture.firstProject,
             defaults: fixture.defaults
         )
-        await session.restoreIfNeeded(registry: registry)
+        _ = await session.restoreIfNeeded(registry: registry)
 
         #expect(session.managedWorktrees.count == 1)
         #expect(

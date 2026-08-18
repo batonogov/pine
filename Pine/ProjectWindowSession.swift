@@ -31,6 +31,12 @@ nonisolated struct ProjectWindowGroup: Identifiable, Equatable, Sendable {
     var id: URL { projectURL }
 }
 
+enum ProjectWindowRestorationResult: Equatable {
+    case restored
+    case unavailable
+    case alreadyRestored
+}
+
 @MainActor
 @Observable
 final class ProjectWindowSession {
@@ -124,6 +130,10 @@ final class ProjectWindowSession {
             projectURLs = [initial]
             managedWorktrees = [:]
             activeProjectURL = initial
+            // A restored SwiftUI WindowGroup scene starts with a fresh
+            // ProjectRegistry. Treat its scene value as restoration work even
+            // when this window never wrote multi-project state of its own.
+            pendingRestoredActiveURL = initial
         }
     }
 
@@ -230,12 +240,19 @@ final class ProjectWindowSession {
         }
     }
 
-    func restoreIfNeeded(registry: ProjectRegistry) async {
-        guard !didRestore else { return }
+    func restoreIfNeeded(
+        registry: ProjectRegistry
+    ) async -> ProjectWindowRestorationResult {
+        guard !didRestore else { return .alreadyRestored }
         didRestore = true
-        guard let target = pendingRestoredActiveURL else { return }
+        guard let target = pendingRestoredActiveURL else {
+            return .unavailable
+        }
         pendingRestoredActiveURL = nil
         await activate(target, registry: registry, reportFailure: false)
+        return registry.projectManagerIfAdmitted(for: activeProjectURL) == nil
+            ? .unavailable
+            : .restored
     }
 
     func openProject(

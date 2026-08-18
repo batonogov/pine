@@ -148,6 +148,7 @@ private struct ProjectWindowView: View {
     let appDelegate: AppDelegate
     @State private var windowSession: ProjectWindowSession
     @Environment(\.openWindow) var openWindow
+    @Environment(\.dismissWindow) var dismissWindow
 
     init(
         projectURL: URL,
@@ -191,6 +192,13 @@ private struct ProjectWindowView: View {
                             windowSession: windowSession
                         )
                     }
+            } else {
+                // EmptyView does not enter the rendered hierarchy, so a task
+                // attached to an otherwise empty Group never gets a chance to
+                // admit a cold-restored project. Keep a real view mounted
+                // until restoration either supplies ContentView or fails.
+                ProgressView(Strings.progressLoadingProject)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .task {
@@ -198,7 +206,13 @@ private struct ProjectWindowView: View {
             // mid-restore should still find this window rather than open a
             // second one for a project this window is about to show.
             registry.registerWindowSession(windowSession)
-            await windowSession.restoreIfNeeded(registry: registry)
+            let result = await windowSession.restoreIfNeeded(
+                registry: registry
+            )
+            guard result == .unavailable else { return }
+            registry.unregisterWindowSession(windowSession)
+            dismissWindow(value: projectURL)
+            appDelegate.showWelcome()
         }
         .onDisappear {
             registry.unregisterWindowSession(windowSession)
@@ -1845,6 +1859,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
            ) {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate()
+            hideWelcome()
+            return true
+        }
+
+        // A cold-restored multi-project scene can own this project before it
+        // has installed a CloseDelegate. Raise that scene by its stable anchor
+        // instead of opening the active project URL as a second WindowGroup
+        // value. Once activated, the restored scene observes the admitted
+        // manager and replaces its loading placeholder with ContentView.
+        if let windowSession = targetRegistry.windowSession(
+            owning: canonical
+        ) {
+            await windowSession.activate(
+                canonical,
+                registry: targetRegistry
+            )
+            guard windowSession.activeProjectURL == canonical,
+                  let openProjectWindow = self.openProjectWindow
+                    ?? fallbackOpenProjectWindow else {
+                return false
+            }
+            openProjectWindow(windowSession.sceneProjectURL)
             hideWelcome()
             return true
         }
