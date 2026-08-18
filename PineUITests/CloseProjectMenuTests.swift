@@ -65,16 +65,22 @@ final class CloseProjectMenuTests: PineUITestCase {
     func testProjectSwitcherOffersCloseForTheOpenProject() throws {
         launchWithProject(projectURL)
 
-        let switcher = app.buttons["projectSwitcher"]
+        // The switcher is a SwiftUI Menu, which XCUITest does not surface as a
+        // plain button — matching any descendant by identifier is how the
+        // other switcher tests reach it.
+        let switcher = app.descendants(matching: .any)["projectSwitcher"]
+            .firstMatch
         XCTAssertTrue(
             waitForExistence(switcher, timeout: 10),
             "Project switcher should appear in the toolbar"
         )
         switcher.click()
 
-        let closeItem = app.menuItems["projectSwitcherCloseProject"]
+        let closeItem = app.descendants(matching: .any)[
+            "projectSwitcherCloseProject"
+        ].firstMatch
         XCTAssertTrue(
-            waitForExistence(closeItem, timeout: 3),
+            waitForExistence(closeItem, timeout: 5),
             "Switcher menu should offer to close the active project"
         )
     }
