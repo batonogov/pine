@@ -194,7 +194,14 @@ private struct ProjectWindowView: View {
             }
         }
         .task {
+            // Announce the window before restoring it: routing that arrives
+            // mid-restore should still find this window rather than open a
+            // second one for a project this window is about to show.
+            registry.registerWindowSession(windowSession)
             await windowSession.restoreIfNeeded(registry: registry)
+        }
+        .onDisappear {
+            registry.unregisterWindowSession(windowSession)
         }
         .alert(
             Strings.projectSwitcherErrorTitle,

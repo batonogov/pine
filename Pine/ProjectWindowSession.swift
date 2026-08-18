@@ -117,6 +117,26 @@ final class ProjectWindowSession {
         }
     }
 
+    /// Whether this window holds `url` — as one of its projects, or as an
+    /// agent worktree hanging off one. Callers routing to a project (the Agent
+    /// Inbox, a notification) ask this to find the window that already owns it
+    /// instead of opening a second one.
+    ///
+    /// Expects an already-canonical URL: the window stores standardized paths,
+    /// and resolving symlinks here would suspend a synchronous lookup.
+    func contains(_ url: URL) -> Bool {
+        let target = url.standardizedFileURL
+        return projectURLs.contains(target) || managedWorktrees[target] != nil
+    }
+
+    #if DEBUG
+    /// Seeds a managed worktree without running the real create/launch path,
+    /// so membership lookups can be tested without a git repository.
+    func adoptWorktreeForTesting(_ worktree: AgentManagedWorktree) {
+        managedWorktrees[worktree.worktreeRoot.standardizedFileURL] = worktree
+    }
+    #endif
+
     var activeRepositoryURL: URL {
         managedWorktrees[activeProjectURL]?.repositoryRoot
             ?? activeProjectURL

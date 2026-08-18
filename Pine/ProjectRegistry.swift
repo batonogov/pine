@@ -1123,6 +1123,26 @@ final class ProjectRegistry: LSPSettingsObserver {
     @ObservationIgnored
     weak var quickTerminalAgentRouter: (any QuickTerminalAgentRouting)?
 
+    /// Live window sessions, weakly held. A window session belongs to its
+    /// SwiftUI scene and dies with it; the registry only needs to be able to
+    /// ask "which window already holds this project?", and a strong reference
+    /// here would keep closed windows answering that question forever.
+    ///
+    /// Released entries are compacted on every read, so a missed
+    /// ``unregisterWindowSession(_:)`` costs one empty box, not a leak.
+    @ObservationIgnored
+    private var windowSessionRefs: [WeakWindowSession] = []
+
+    /// The window session that most recently became key. This is the window a
+    /// user means by "here" — where a project with no window of its own should
+    /// open rather than in a new window.
+    @ObservationIgnored
+    private weak var keyWindowSessionRef: ProjectWindowSession?
+
+    private struct WeakWindowSession {
+        weak var session: ProjectWindowSession?
+    }
+
     private static let recentProjectsKey = "recentProjectPaths"
     private static let recentProjectAgentIdentitiesKey =
         "recentProjectAgentTaskIdentities"
@@ -2649,12 +2669,12 @@ final class ProjectRegistry: LSPSettingsObserver {
             // A previously unknown durable project is admitted by lookup but
             // still has no window. Keep that new manager transactional too.
             manager.prepareForWindowPresentation()
-            closeProjectWindow(
+            guard await routeToWindow(
                 projectURL,
-                expectedManager: manager,
-                expectedWindowGeneration: nil
-            )
-            openProjectWindow(projectURL)
+                task: task,
+                manager: manager,
+                openProjectWindow: openProjectWindow
+            ) else { return nil }
         }
         let presentationReported: Bool
         if let waitUntilPresented {
@@ -2703,6 +2723,84 @@ final class ProjectRegistry: LSPSettingsObserver {
         )
         transfersAuthorization = true
         return authorization
+    }
+
+    /// Puts one Inbox project on screen, and reports whether the caller's
+    /// transaction survived doing so.
+    ///
+    /// Multi-project windows are why this is not a bare `openProjectWindow`.
+    /// A project sitting behind its neighbour in an existing window is
+    /// suspended, so `isWindowOpen` reports no window at all and the direct
+    /// path opens a second one — the Inbox spawning windows for projects that
+    /// were open the whole time. Ask the windows first: whichever one owns the
+    /// project switches to it, and opening its *scene* URL raises that window
+    /// instead of creating another.
+    ///
+    /// A project no window owns goes to the key window, for the same reason a
+    /// user opened several projects in one window to begin with. Only when
+    /// there is no window at all does this fall back to opening one.
+    private func routeToWindow(
+        _ projectURL: URL,
+        task: AgentTask,
+        manager: ProjectManager,
+        openProjectWindow: @escaping @MainActor (URL) -> Void
+    ) async -> Bool {
+        if let session = windowSession(owning: projectURL) {
+            await session.activate(projectURL, registry: self)
+            guard agentInboxTransactionHolds(
+                projectURL,
+                task: task,
+                manager: manager
+            ) else { return false }
+            openProjectWindow(session.sceneProjectURL)
+            return true
+        }
+
+        if let session = keyWindowSession() {
+            await session.openProject(
+                projectURL,
+                registry: self,
+                allowAlreadyOpenTarget: true
+            )
+            guard agentInboxTransactionHolds(
+                projectURL,
+                task: task,
+                manager: manager
+            ) else { return false }
+            // The window can refuse — the directory may have gone missing
+            // between admission and here, and the session drops targets it
+            // cannot activate. Only claim the window if it took the project.
+            if session.contains(canonicalProjectURL(projectURL)) {
+                openProjectWindow(session.sceneProjectURL)
+                return true
+            }
+        }
+
+        closeProjectWindow(
+            projectURL,
+            expectedManager: manager,
+            expectedWindowGeneration: nil
+        )
+        openProjectWindow(projectURL)
+        return true
+    }
+
+    /// What must still hold after routing suspends: the project binding and
+    /// the manager this presentation authorized are the ones in effect.
+    ///
+    /// Deliberately not the task value. Presenting a project marks its window
+    /// open, which rewrites the very task being routed to — comparing against
+    /// the pre-presentation snapshot would reject every success. Task freshness
+    /// is re-established by the caller after presentation, against the route it
+    /// is about to focus.
+    private func agentInboxTransactionHolds(
+        _ projectURL: URL,
+        task: AgentTask,
+        manager: ProjectManager
+    ) -> Bool {
+        !Task.isCancelled
+            && openProjects[projectURL] === manager
+            && agentTaskProjectsByRoot[projectURL] == task.project
     }
 
     private func presentationIsCurrent(
@@ -3137,6 +3235,64 @@ final class ProjectRegistry: LSPSettingsObserver {
     func isWindowOpen(_ url: URL) -> Bool {
         let canonical = canonicalProjectURL(url)
         return openProjects[canonical] != nil && !backgroundProjects.contains(canonical)
+    }
+
+    // MARK: - Window sessions
+
+    /// Announces a window session while its scene is alive. Idempotent: SwiftUI
+    /// re-runs a scene's task on restoration, and the same session must not be
+    /// counted twice.
+    func registerWindowSession(_ session: ProjectWindowSession) {
+        compactWindowSessions()
+        guard !windowSessionRefs.contains(where: { $0.session === session })
+        else { return }
+        windowSessionRefs.append(WeakWindowSession(session: session))
+    }
+
+    func unregisterWindowSession(_ session: ProjectWindowSession) {
+        windowSessionRefs.removeAll {
+            $0.session == nil || $0.session === session
+        }
+        if keyWindowSessionRef === session {
+            keyWindowSessionRef = nil
+        }
+    }
+
+    /// Records the window the user is looking at. Called when a project scene
+    /// becomes key, which is the only evidence of "current window" that does
+    /// not depend on AppKit window ordering being settled.
+    func noteKeyWindowSession(_ session: ProjectWindowSession) {
+        registerWindowSession(session)
+        keyWindowSessionRef = session
+    }
+
+    /// The window holding `url`, if any — including as an agent worktree.
+    ///
+    /// A project belongs to at most one window: ``ProjectWindowSession``
+    /// refuses to open a project another window already shows, so the first
+    /// match is the only match.
+    func windowSession(owning url: URL) -> ProjectWindowSession? {
+        let canonical = canonicalProjectURL(url)
+        compactWindowSessions()
+        return windowSessionRefs.lazy
+            .compactMap(\.session)
+            .first { $0.contains(canonical) }
+    }
+
+    /// The window a project with no window of its own should open into.
+    ///
+    /// Falls back to the most recently registered live session when nothing
+    /// has been key yet — at launch the first window may be routed to before
+    /// it ever reports key, and putting the project there still beats opening
+    /// a second window.
+    func keyWindowSession() -> ProjectWindowSession? {
+        compactWindowSessions()
+        if let keyWindowSessionRef { return keyWindowSessionRef }
+        return windowSessionRefs.last?.session
+    }
+
+    private func compactWindowSessions() {
+        windowSessionRefs.removeAll { $0.session == nil }
     }
 
     /// Repairs a retained manager when AppKit makes its SwiftUI project scene
