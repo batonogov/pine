@@ -122,8 +122,29 @@ final class ProjectWindowSession {
             ?? activeProjectURL
     }
 
+    /// Display name per project root, each shortened to the least path that
+    /// still tells it apart from the others in this window. Two checkouts
+    /// named `infra` are ordinary in a monorepo-per-client layout, and the
+    /// switcher has to be readable in that case, not just in the easy one.
+    var projectDisplayNames: [URL: String] {
+        ProjectDisplayNames.resolve(for: projectURLs)
+    }
+
+    /// Name for one root of this window. A URL the window does not hold —
+    /// a worktree root, or a project already removed — keeps its folder name:
+    /// there is nothing here for it to collide with.
+    func displayName(for url: URL) -> String {
+        projectDisplayNames[url.standardizedFileURL] ?? url.lastPathComponent
+    }
+
+    /// The active repository alone, with no branch suffix. This is what the
+    /// window title falls back to when no file is open.
+    var activeProjectDisplayName: String {
+        displayName(for: activeRepositoryURL)
+    }
+
     var activeDisplayName: String {
-        let projectName = activeRepositoryURL.lastPathComponent
+        let projectName = activeProjectDisplayName
         guard let worktree = managedWorktrees[activeProjectURL] else {
             return projectName
         }
