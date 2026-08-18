@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.5.0](https://github.com/batonogov/pine/compare/v2.4.0...v2.5.0) (2026-08-18)
+
+
+### Features
+
+* close one project without closing its window ([#1479](https://github.com/batonogov/pine/issues/1479)) ([5ff0414](https://github.com/batonogov/pine/commit/5ff0414ac50a501509ab7fb2e7e8748ad44e8ef2))
+
+
+### Bug Fixes
+
+* route Inbox tasks into the window that already holds the project ([#1477](https://github.com/batonogov/pine/issues/1477)) ([331c4b5](https://github.com/batonogov/pine/commit/331c4b5e2c584aad4efb5e742968d4eb301da07b))
+* tell same-named projects apart in the switcher ([#1476](https://github.com/batonogov/pine/issues/1476)) ([0a71bdc](https://github.com/batonogov/pine/commit/0a71bdc1db87318c0bc1e4214897f866db2821fe))
+
 ## [2.4.0](https://github.com/batonogov/pine/compare/v2.3.5...v2.4.0) (2026-08-18)
 
 
