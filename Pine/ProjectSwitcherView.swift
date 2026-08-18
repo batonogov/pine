@@ -48,7 +48,7 @@ struct ProjectSwitcherView: View {
                     // included. Naming the branch here would promise less
                     // than the item does.
                     Text(verbatim: Strings.projectSwitcherCloseProjectTitle(
-                        session.activeRepositoryURL.lastPathComponent
+                        session.displayName(for: session.activeRepositoryURL)
                     ))
                 } icon: {
                     Image(systemName: MenuIcons.closeProject)
