@@ -80,13 +80,20 @@ struct ProjectSwitcherView: View {
                     Text(label)
                         .lineLimit(1)
                 }
-                Image(systemName: MenuIcons.projectSwitcherDisclosure)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize(horizontal: true, vertical: false)
+        // No `menuStyle` and no hand-drawn chevron: the toolbar's own style
+        // is what sizes the item chrome and draws the disclosure indicator.
+        // `.borderlessButton` opted out of both and pinned the control to a
+        // chrome narrower than the round items beside it while holding two
+        // glyphs instead of one, so the icon and the chevron sat flush
+        // against the capsule with no breathing room. It also kept the label
+        // full-strength white while every neighbour, and the window title,
+        // dimmed with an inactive window. Measured on macOS 27 beta at 2×:
+        // 33pt beside 35pt neighbours before, 41.5pt after. The exact metric
+        // moves with the OS and the display scale; the relationship — a
+        // busier control is never the narrowest one on the strip — does not,
+        // which is what `EditorWindowTests` asserts.
         .help(Strings.projectSwitcherTooltip)
         // Spoken name stays the project even when the visible text is
         // suppressed as a duplicate — an icon-only control must not reach

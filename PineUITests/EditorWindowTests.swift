@@ -413,6 +413,57 @@ final class EditorWindowTests: PineUITestCase {
         )
     }
 
+    // MARK: - Project switcher is not narrower than its toolbar neighbours
+
+    /// The switcher opted out of the toolbar's own control style, which
+    /// pinned it to a chrome narrower than the round items beside it while it
+    /// holds two glyphs — an icon and a disclosure chevron — instead of one.
+    /// Both sat flush against the capsule and the control read as squashed.
+    ///
+    /// The assertion is relative rather than a hardcoded point size: the
+    /// toolbar metric differs between macOS 26 and 27 and between display
+    /// scales, but a control holding more content than its neighbour must
+    /// never come out narrower than it on the same strip.
+    func testProjectSwitcherIsWiderThanSingleGlyphToolbarButtons() throws {
+        let metricsProject = try createTempProject(
+            files: ["main.swift": "let greeting = \"Hello\"\n"],
+            projectName: "SwitcherMetrics"
+        )
+        defer { cleanupProject(metricsProject) }
+
+        launchWithProject(metricsProject)
+
+        let switcher = app.descendants(matching: .any)[
+            "projectSwitcher"
+        ].firstMatch
+        XCTAssertTrue(
+            waitForExistence(switcher, timeout: 10),
+            "The project switcher should be visible in the toolbar"
+        )
+
+        let openFolder = app.descendants(matching: .any)[
+            "openFolderToolbarButton"
+        ].firstMatch
+        XCTAssertTrue(
+            waitForExistence(openFolder, timeout: 5),
+            "The sidebar's Open Folder button should be visible"
+        )
+
+        let neighbourWidth = openFolder.frame.width
+        XCTAssertGreaterThan(
+            neighbourWidth,
+            0,
+            "A visible toolbar button must report a real frame"
+        )
+        XCTAssertGreaterThan(
+            switcher.frame.width,
+            neighbourWidth,
+            "The switcher carries an icon and a disclosure chevron, so its "
+                + "chrome must be wider than a single-glyph toolbar button "
+                + "(\(switcher.frame.width) vs \(neighbourWidth))"
+        )
+    }
+
     // MARK: - Sidebar context menu has Reveal in Finder
 
     func testSidebarContextMenuRevealInFinder() throws {
