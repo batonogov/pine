@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/batonogov/pine/compare/v2.5.0...v2.5.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* restore project windows without duplicates ([#1480](https://github.com/batonogov/pine/issues/1480)) ([1634f6f](https://github.com/batonogov/pine/commit/1634f6f69c47b798037b8d8a9af4f3770d47511b))
+
 ## [2.5.0](https://github.com/batonogov/pine/compare/v2.4.0...v2.5.0) (2026-08-18)
 
 
