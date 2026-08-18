@@ -364,6 +364,55 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(revealProject.exists, "View menu should contain 'Reveal Project in Finder'")
     }
 
+    // MARK: - Window title does not repeat the project switcher label
+
+    /// The toolbar's project switcher already names the project. The native
+    /// title showed that same name again, printing one word twice in a single
+    /// strip; it now carries the active file and falls back to the project
+    /// only when no editor tab is open.
+    func testWindowTitleShowsActiveFileInsteadOfRepeatingProjectName() throws {
+        let namedProject = try createTempProject(
+            files: [
+                "main.swift": "let greeting = \"Hello\"\n",
+                "utils.swift": "func helper() {}\n"
+            ],
+            projectName: "TitleFixture"
+        )
+        defer { cleanupProject(namedProject) }
+
+        launchWithProject(namedProject)
+
+        XCTAssertTrue(
+            waitForExistence(app.windows["TitleFixture"], timeout: 10),
+            "With no editor tab open the window keeps the project name"
+        )
+
+        openFile("main.swift")
+        XCTAssertTrue(
+            waitForExistence(app.windows["main.swift"], timeout: 5),
+            "An open file should title the window"
+        )
+        XCTAssertTrue(
+            app.windows["TitleFixture"].waitForNonExistence(timeout: 5),
+            "The project name must leave the title bar while a file is open "
+                + "— the project switcher is the one place that shows it"
+        )
+
+        openFile("utils.swift")
+        XCTAssertTrue(
+            waitForExistence(app.windows["utils.swift"], timeout: 5),
+            "Activating another tab should retitle the window"
+        )
+
+        let close = editorTabCloseButton("utils.swift")
+        XCTAssertTrue(waitForExistence(close, timeout: 5))
+        close.click()
+        XCTAssertTrue(
+            waitForExistence(app.windows["main.swift"], timeout: 5),
+            "Closing the active tab should retitle to the next active file"
+        )
+    }
+
     // MARK: - Sidebar context menu has Reveal in Finder
 
     func testSidebarContextMenuRevealInFinder() throws {

@@ -65,6 +65,18 @@ struct ContentView: View {
 
     var activeTab: EditorTab? { activeTabManager.activeTab }
 
+    /// Title-bar text. The title carries the active file and the switcher
+    /// carries the project, so neither repeats the other.
+    var windowChrome: WindowChromePresentation {
+        WindowChromePresentation(
+            activeFileName: activeTab?.fileName,
+            repositoryName: projectWindowSession
+                .activeRepositoryURL
+                .lastPathComponent,
+            switcherLabel: projectWindowSession.activeDisplayName
+        )
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarSearchableContent(
@@ -111,13 +123,14 @@ struct ContentView: View {
             isSearchPresented: $isSearchPresented
         ))
         .frame(minWidth: 800, minHeight: 500)
-        .navigationTitle(workspace.projectName)
+        .navigationTitle(windowChrome.title)
         .navigationSubtitle(branchSubtitle)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 ProjectSwitcherView(
                     session: projectWindowSession,
                     registry: registry,
+                    label: windowChrome.switcherLabel,
                     onOpenProject: { openNewProject() }
                 )
             }
