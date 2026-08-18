@@ -572,8 +572,12 @@ extension ContentView {
     /// tree whose initial load may have been cancelled just before activation.
     func reconcileKeyProjectPresentation() {
         let wasSuspended = workspace.isSuspended
-        guard controlActiveState == .key,
-              registry.reconcileKeyProjectPresentation(projectManager) else {
+        guard controlActiveState == .key else { return }
+        // Becoming key is what makes this the window a user means by "here",
+        // and it is the signal a project with no window of its own is routed
+        // by. Record it whether or not the reconcile below finds work.
+        registry.noteKeyWindowSession(projectWindowSession)
+        guard registry.reconcileKeyProjectPresentation(projectManager) else {
             return
         }
         if !wasSuspended,
