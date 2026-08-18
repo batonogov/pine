@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.4.0](https://github.com/batonogov/pine/compare/v2.3.5...v2.4.0) (2026-08-18)
+
+
+### Features
+
+* add multi-project workspaces ([44228ae](https://github.com/batonogov/pine/commit/44228aec73bb380367b0b5c42d7f25345e1acd97))
+* add multi-project workspaces ([8f8a350](https://github.com/batonogov/pine/commit/8f8a350ef173c9ec084da99a5ced3b20835f2177))
+* **terminal:** add Recover Terminal Display command ([#1472](https://github.com/batonogov/pine/issues/1472)) ([#1473](https://github.com/batonogov/pine/issues/1473)) ([630dcd1](https://github.com/batonogov/pine/commit/630dcd1a319806ca78cd76d8161c8ff948a8f008))
+
+
+### Bug Fixes
+
+* defer project admission until selection validation ([0329a27](https://github.com/batonogov/pine/commit/0329a27c830240d198c1a738f0fd6a3baa109762))
+* give the project switcher the toolbar's own chrome ([#1475](https://github.com/batonogov/pine/issues/1475)) ([6378160](https://github.com/batonogov/pine/commit/63781608b2436becc0e45e8d3a829c9c18e7bf2e))
+* preserve sidebar focus with expanded toolbar ([6492535](https://github.com/batonogov/pine/commit/6492535b97d0b8e9f3ef21ac579971b3916bc54c))
+* stop repeating the project name in the title bar ([#1474](https://github.com/batonogov/pine/issues/1474)) ([a621921](https://github.com/batonogov/pine/commit/a621921204469df0ac3d4976cffc093d8ef1bc63))
+
 ## [2.3.5](https://github.com/batonogov/pine/compare/v2.3.4...v2.3.5) (2026-08-15)
 
 
