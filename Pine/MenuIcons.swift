@@ -105,4 +105,15 @@ nonisolated enum MenuIcons {
     static let copyPath = "doc.on.clipboard"
     static let copyRelativePath = "link"
     static let revealInSidebar = "sidebar.left"
+
+    // MARK: - Project switcher (#1470)
+    // These live here rather than inline in the view so `MenuIconTests`
+    // proves they resolve: an unknown SF Symbol name renders as nothing at
+    // all, which is invisible in review and easy to miss on screen.
+    static let projectSwitcher = "square.stack"
+    static let projectSwitcherNewAgent = "sparkles"
+    static let projectSwitcherOpenFolder = "folder.badge.plus"
+    static let projectSwitcherDisclosure = "chevron.down"
+    static let projectSwitcherActive = "checkmark"
+    static let projectSwitcherProject = "folder"
 }

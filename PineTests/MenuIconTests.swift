@@ -59,4 +59,44 @@ struct MenuIconTests {
             "SF Symbol '\(symbol)' used by '\(menuItem)' does not exist"
         )
     }
+
+    // MARK: - Project switcher icons (ProjectSwitcherView.swift, #1470)
+
+    // The switcher shipped with `folder.stack`, which is not an SF Symbol.
+    // It rendered as nothing and stayed unnoticed because a text label sat
+    // beside it. Its toolbar control can now be icon-only, so a missing
+    // symbol would leave a bare chevron.
+    @Test(arguments: [
+        (MenuIcons.projectSwitcher, "Project switcher toolbar control"),
+        (MenuIcons.projectSwitcherDisclosure, "Project switcher chevron"),
+        (MenuIcons.projectSwitcherNewAgent, "New Agent"),
+        (MenuIcons.projectSwitcherOpenFolder, "Open Folder (switcher menu)"),
+        (MenuIcons.projectSwitcherActive, "Active project checkmark"),
+        (MenuIcons.projectSwitcherProject, "Inactive project"),
+    ])
+    func projectSwitcherIconExists(_ symbol: String, _ element: String) {
+        #expect(
+            NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil,
+            "SF Symbol '\(symbol)' used by '\(element)' does not exist"
+        )
+    }
+
+    // MARK: - Agent worktree state icons (ProjectSwitcherView.swift)
+
+    @Test(arguments: [
+        ("checkmark", "Active worktree"),
+        ("exclamationmark.circle.fill", "Worktree waiting for input"),
+        ("xmark.circle.fill", "Failed worktree"),
+        ("checkmark.circle", "Completed worktree"),
+        ("circle.fill", "Live worktree"),
+        ("circle", "Idle worktree"),
+    ])
+    func worktreeStateIconExists(_ symbol: String, _ state: String) {
+        // These encode agent state in the switcher menu. A missing symbol
+        // makes two different states look identical rather than merely blank.
+        #expect(
+            NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil,
+            "SF Symbol '\(symbol)' used by '\(state)' does not exist"
+        )
+    }
 }

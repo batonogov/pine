@@ -10,6 +10,10 @@ import SwiftUI
 struct ProjectSwitcherView: View {
     let session: ProjectWindowSession
     let registry: ProjectRegistry
+    /// Text beside the icon, or `nil` when the window title already says the
+    /// same thing and the switcher should not repeat it. Resolved by
+    /// ``WindowChromePresentation``.
+    let label: String?
     let onOpenProject: () -> Void
 
     var body: some View {
@@ -44,7 +48,7 @@ struct ProjectSwitcherView: View {
             } label: {
                 Label(
                     Strings.projectSwitcherNewAgent,
-                    systemImage: "sparkles"
+                    systemImage: MenuIcons.projectSwitcherNewAgent
                 )
             }
             .disabled(
@@ -54,7 +58,10 @@ struct ProjectSwitcherView: View {
             .accessibilityIdentifier(AccessibilityID.projectSwitcherNewAgent)
 
             Button(action: onOpenProject) {
-                Label(Strings.menuOpenFolder, systemImage: "folder.badge.plus")
+                Label(
+                    Strings.menuOpenFolder,
+                    systemImage: MenuIcons.projectSwitcherOpenFolder
+                )
             }
             .disabled(session.isLaunchingAgent)
         } label: {
@@ -63,11 +70,17 @@ struct ProjectSwitcherView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Image(systemName: "folder.stack")
+                    // Was `folder.stack`, which is not an SF Symbol and so
+                    // rendered as nothing — invisible while the label sat
+                    // beside it, a bare chevron once the label could be
+                    // suppressed.
+                    Image(systemName: MenuIcons.projectSwitcher)
                 }
-                Text(session.activeDisplayName)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
+                if let label {
+                    Text(label)
+                        .lineLimit(1)
+                }
+                Image(systemName: MenuIcons.projectSwitcherDisclosure)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -75,6 +88,10 @@ struct ProjectSwitcherView: View {
         .menuStyle(.borderlessButton)
         .fixedSize(horizontal: true, vertical: false)
         .help(Strings.projectSwitcherTooltip)
+        // Spoken name stays the project even when the visible text is
+        // suppressed as a duplicate — an icon-only control must not reach
+        // VoiceOver as an unnamed button.
+        .accessibilityLabel(Text(session.activeDisplayName))
         .accessibilityIdentifier(AccessibilityID.projectSwitcher)
     }
 
@@ -89,8 +106,8 @@ struct ProjectSwitcherView: View {
                 Text(url.lastPathComponent)
             } icon: {
                 Image(systemName: session.activeProjectURL == url
-                    ? "checkmark"
-                    : "folder")
+                    ? MenuIcons.projectSwitcherActive
+                    : MenuIcons.projectSwitcherProject)
             }
         }
         .disabled(session.isLaunchingAgent)
