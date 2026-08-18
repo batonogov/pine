@@ -28,6 +28,7 @@ struct PineAppMenuCommandsTests {
                 checkForUpdatesAction: {}
             ),
             toggleQuickTerminal: {},
+            recoverQuickTerminalDisplay: {},
             recentProjects: { [] },
             showAgentInbox: {}
         )

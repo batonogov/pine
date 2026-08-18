@@ -170,6 +170,18 @@ final class QuickTerminalController {
 
     // MARK: - Public
 
+    /// Rebuilds the quick terminal's presentation layer, recovering a session
+    /// stuck on a renderer that refuses every frame (see
+    /// `TerminalTab.recoverDisplay()`).
+    ///
+    /// Only while on screen: a hidden panel is detached, so a rebuild would be
+    /// discarded and the next `show()` repaints through the ordinary
+    /// attachment path anyway.
+    func recoverDisplay() {
+        guard isVisible else { return }
+        paneState.activeTab?.recoverDisplay()
+    }
+
     /// Shows the quick terminal if hidden, hides it if visible. Bound to the
     /// global hotkey and the menu command.
     func toggle() {

@@ -35,6 +35,9 @@ struct PineApp: App {
                 toggleQuickTerminal: { [weak appDelegate] in
                     appDelegate?.quickTerminalCoordinator.toggle()
                 },
+                recoverQuickTerminalDisplay: { [weak appDelegate] in
+                    appDelegate?.quickTerminalCoordinator.recoverDisplay()
+                },
                 recentProjects: { [weak appDelegate] in
                     appDelegate?.registry.recentProjects ?? []
                 },

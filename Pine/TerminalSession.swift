@@ -383,6 +383,49 @@ final class PineTerminalView: LocalProcessTerminalView {
         }
     }
 
+    /// Rebuilds the presentation layer on explicit user request, recovering a
+    /// terminal whose renderer stopped presenting frames.
+    ///
+    /// SwiftTerm's Metal renderer re-requests a dropped frame only from the
+    /// completion handler of a *submitted* command buffer. Both refusal paths
+    /// in `MetalTerminalRenderer.draw(in:)` — a busy frame semaphore and a
+    /// missing drawable/render-pass descriptor — set the pending-redraw flag
+    /// without submitting anything, so nothing ever consumes it. The view then
+    /// keeps accepting input and PTY output while never presenting a frame,
+    /// and no invalidation from Pine recovers it: `setNeedsDisplay` and
+    /// `drawMetalFrameNow()` both re-enter the same refusal.
+    ///
+    /// Recreating the renderer is the only escape — it installs a fresh
+    /// `MTKView`, semaphore, and drawable chain while `Terminal`, the PTY, and
+    /// the scrollback stay untouched. CoreGraphics has no such trap, so a
+    /// repaint through the backend-aware bridge is both necessary and
+    /// sufficient there.
+    ///
+    /// No-op while detached: `viewDidMoveToWindow` rebuilds and repaints on
+    /// the next real attachment anyway.
+    func recoverRendererNow() {
+        guard window != nil else { return }
+
+        if isUsingMetalRenderer {
+            do {
+                try setUseMetal(false)
+                try setUseMetal(true)
+            } catch {
+                Logger.terminal.error(
+                    "SwiftTerm Metal renderer recreation during display recovery failed: \(String(describing: error), privacy: .public)"
+                )
+            }
+            if isUsingMetalRenderer {
+                // A freshly created CAMetalLayer can miss its first drawable
+                // exactly like one created on attach; reuse the same bounded
+                // retry batch instead of betting recovery on a single frame.
+                scheduleInitialMetalRedrawRetries()
+            }
+        }
+
+        requestRendererDisplay()
+    }
+
     /// Re-arms first-frame recovery when visible terminal content first
     /// changes, rather than relying solely on the earlier view-attachment
     /// window. This matters for shells whose startup takes longer than the
@@ -2370,6 +2413,27 @@ final class TerminalTab: Identifiable, Hashable {
         if terminalView.getTerminal().isCurrentBufferAlternate {
             kickPTYWindowSize()
         }
+    }
+
+    /// User-invoked escape hatch for a terminal that renders nothing while its
+    /// shell is demonstrably alive (Terminal ▸ Recover Display).
+    ///
+    /// Unlike `refreshAfterReparent()`, this rebuilds the renderer itself
+    /// rather than only repainting: the failure it targets is a Metal
+    /// presentation chain that refuses every frame, where repainting re-enters
+    /// the same refusal (see `PineTerminalView.recoverRendererNow()`).
+    ///
+    /// SIGWINCH is raised unconditionally rather than only for the alternate
+    /// screen. A stuck renderer leaves Pine unable to tell whether the primary
+    /// buffer still matches what the child last drew, and the signal is
+    /// harmless to an ordinary shell — it simply reprints its prompt.
+    ///
+    /// A terminated tab keeps its scrollback and is still worth repainting,
+    /// but has no child to signal.
+    func recoverDisplay() {
+        (terminalView as? PineTerminalView)?.recoverRendererNow()
+        forceFullRedraw()
+        kickPTYWindowSize()
     }
 
     /// Whether the shell process is still running.

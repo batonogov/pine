@@ -1096,6 +1096,27 @@ final class TerminalManager {
         }
     }
 
+    // MARK: - Display recovery
+
+    /// Rebuilds the presentation layer of every terminal the user can actually
+    /// see in this project, recovering panes stuck on a renderer that refuses
+    /// every frame (see `TerminalTab.recoverDisplay()`).
+    ///
+    /// Scoped to the active tab of each terminal pane rather than to
+    /// `allTerminalTabs`: a background tab is detached, so recovery there is a
+    /// no-op that would still pay a renderer rebuild, and its own re-attach
+    /// already repaints it. Every visible pane is covered rather than only the
+    /// focused one — the stuck pane is frequently not the one holding focus,
+    /// and a user reaching for this command should not have to guess which.
+    ///
+    /// A permanently invalidated manager owns no live PTYs worth repainting.
+    func recoverVisibleTerminalDisplays() {
+        guard !isPermanentlyInvalidated, let pm = paneManager else { return }
+        for state in pm.terminalStates.values {
+            state.activeTab?.recoverDisplay()
+        }
+    }
+
     // MARK: - Queries (delegate to PaneManager)
 
     var allTerminalTabs: [TerminalTab] {
