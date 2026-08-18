@@ -70,9 +70,7 @@ struct ContentView: View {
     var windowChrome: WindowChromePresentation {
         WindowChromePresentation(
             activeFileName: activeTab?.fileName,
-            repositoryName: projectWindowSession
-                .activeRepositoryURL
-                .lastPathComponent,
+            repositoryName: projectWindowSession.activeProjectDisplayName,
             switcherLabel: projectWindowSession.activeDisplayName
         )
     }

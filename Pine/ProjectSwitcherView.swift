@@ -18,8 +18,12 @@ struct ProjectSwitcherView: View {
 
     var body: some View {
         Menu {
-            ForEach(Array(session.groups.enumerated()), id: \.element.id) { index, group in
-                if index > 0 {
+            let groups = session.groups
+            ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                if ProjectSwitcherMenuLayout.needsDivider(
+                    before: index,
+                    in: groups
+                ) {
                     Divider()
                 }
                 projectButton(group.projectURL)
@@ -110,7 +114,7 @@ struct ProjectSwitcherView: View {
             }
         } label: {
             Label {
-                Text(url.lastPathComponent)
+                Text(session.displayName(for: url))
             } icon: {
                 Image(systemName: session.activeProjectURL == url
                     ? MenuIcons.projectSwitcherActive
@@ -118,8 +122,12 @@ struct ProjectSwitcherView: View {
             }
         }
         .disabled(session.isLaunchingAgent)
+        // Identified by the disambiguated name, not the folder name: two roots
+        // called `infra` would otherwise answer to the same identifier, and
+        // both VoiceOver and XCUITest would only ever reach the first one.
+        // With no collision the two strings are identical, so this is stable.
         .accessibilityIdentifier(
-            AccessibilityID.projectSwitcherProject(url.lastPathComponent)
+            AccessibilityID.projectSwitcherProject(session.displayName(for: url))
         )
     }
 
@@ -149,6 +157,24 @@ struct ProjectSwitcherView: View {
         .accessibilityIdentifier(
             AccessibilityID.projectSwitcherWorktree(worktree.taskID)
         )
+    }
+}
+
+/// Where the switcher menu draws separators.
+///
+/// A divider earns its place by grouping something: a project and the agent
+/// worktrees hanging off it read as one block, and the rule separates that
+/// block from what surrounds it. Between two plain projects it groups nothing
+/// and only spreads four rows across four sections, which is why a window with
+/// no agent worktrees — the common case — now shows an unbroken list.
+nonisolated enum ProjectSwitcherMenuLayout {
+    static func needsDivider(
+        before index: Int,
+        in groups: [ProjectWindowGroup]
+    ) -> Bool {
+        guard index > 0, index < groups.count else { return false }
+        return !groups[index].worktrees.isEmpty
+            || !groups[index - 1].worktrees.isEmpty
     }
 }
 
