@@ -113,7 +113,6 @@ nonisolated enum MenuIcons {
     static let projectSwitcher = "square.stack"
     static let projectSwitcherNewAgent = "sparkles"
     static let projectSwitcherOpenFolder = "folder.badge.plus"
-    static let projectSwitcherDisclosure = "chevron.down"
     static let projectSwitcherActive = "checkmark"
     static let projectSwitcherProject = "folder"
 }
