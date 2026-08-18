@@ -175,6 +175,41 @@ struct QuickTerminalTests {
         #expect(coordinator.paneState.activeTab?.id == firstTabID)
     }
 
+    @Test("display recovery while hidden is a no-op")
+    func recoverDisplayWhileHiddenIsNoOp() throws {
+        // The panel is a separate window: the menu command fires at it
+        // unconditionally because `focusedProject` is nil while it holds focus.
+        // While hidden it is detached, so a rebuild would be discarded and the
+        // next `show()` repaints through the ordinary attachment path.
+        let fixture = try QuickTerminalControllerFixture()
+        defer { fixture.cleanUp() }
+        let coordinator = fixture.controller
+
+        coordinator.recoverDisplay()
+
+        #expect(coordinator.isVisible == false)
+        #expect(coordinator.paneState.terminalTabs.isEmpty)
+    }
+
+    @Test("display recovery while visible repaints the live session")
+    func recoverDisplayWhileVisibleRepaints() throws {
+        let fixture = try QuickTerminalControllerFixture()
+        defer { fixture.cleanUp() }
+        let coordinator = fixture.controller
+        coordinator.show()
+        let tab = try #require(coordinator.paneState.activeTab)
+        let view = try #require(tab.terminalView as? PineTerminalView)
+        var redrawRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        coordinator.recoverDisplay()
+
+        #expect(redrawRequests >= 1)
+        // Recovery repaints the session; it must never restart it.
+        #expect(coordinator.paneState.activeTab?.id == tab.id)
+        coordinator.hide()
+    }
+
     @Test("cwd resolves to most-recent project, else $HOME")
     func cwdFallbackChain() throws {
         let fixture = try QuickTerminalControllerFixture()

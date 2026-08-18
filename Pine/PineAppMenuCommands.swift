@@ -31,6 +31,10 @@ struct PineAppMenuCommands: Commands {
     /// accidentally starting another Sparkle runtime in hosted tests.
     let checkForUpdatesViewModel: CheckForUpdatesViewModel
     let toggleQuickTerminal: () -> Void
+    /// Recovers the quick terminal alongside the focused project's panes: the
+    /// panel is a separate window, so a stuck session there is unreachable
+    /// through `focusedProject`. Inert when the panel is hidden.
+    let recoverQuickTerminalDisplay: () -> Void
     /// Reads the app-scoped registry without coupling Commands back to the
     /// AppDelegate. The closure keeps hosted tests inert while preserving
     /// observation of `ProjectRegistry.recentProjects` in the menu body.
@@ -808,6 +812,27 @@ struct PineAppMenuCommands: Commands {
             }
             .keyboardShortcut(.return, modifiers: [.command, .option])
             .disabled(focusedProject?.hasTerminalPanes != true)
+
+            Divider()
+
+            // Escape hatch for a terminal that renders nothing while its shell
+            // keeps running: SwiftTerm's Metal renderer can drop into a state
+            // where every frame request is refused and no repaint recovers it,
+            // so this rebuilds the renderer itself (issue #1472).
+            //
+            // Deliberately never disabled. The quick terminal lives in its own
+            // window, where `focusedProject` is nil — gating on project panes
+            // would leave exactly the surface a user is staring at unfixable.
+            Button {
+                focusedProject?.terminal.recoverVisibleTerminalDisplays()
+                recoverQuickTerminalDisplay()
+            } label: {
+                Label(
+                    Strings.menuRecoverTerminalDisplay,
+                    systemImage: MenuIcons.recoverTerminalDisplay
+                )
+            }
+            .keyboardShortcut("r", modifiers: [.command, .option])
         }
 
         // MARK: - Tasks menu (issue #1009)
