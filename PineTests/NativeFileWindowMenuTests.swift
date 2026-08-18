@@ -690,6 +690,55 @@ struct NativeFileWindowMenuTests {
         #expect(delegate.registry.openProjects[canonical] != nil)
     }
 
+    @Test("Open Recent raises the scene that already owns the project")
+    func openRecentRaisesOwningScene() async throws {
+        let root = try makeTemporaryDirectory(
+            prefix: "pine-recent-owning-scene"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = root.appendingPathComponent("First", isDirectory: true)
+        let second = root.appendingPathComponent("Second", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: first,
+            withIntermediateDirectories: false
+        )
+        try FileManager.default.createDirectory(
+            at: second,
+            withIntermediateDirectories: false
+        )
+        let defaults = makeIsolatedDefaults()
+        let registry = ProjectRegistry(
+            lspSettings: LSPSettings(defaults: defaults),
+            defaults: defaults,
+            clearRecentProjects: false
+        )
+        _ = try #require(registry.projectManager(for: first))
+        let session = ProjectWindowSession(
+            initialProjectURL: first,
+            defaults: defaults
+        )
+        await session.openProject(second, registry: registry)
+        session.windowDidClose(registry: registry)
+        registry.closeProjectWindow(second)
+        registry.registerWindowSession(session)
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        delegate.openProjectWindow = nil
+        var openedURL: URL?
+
+        let didOpen = await delegate.openRecentProject(
+            second,
+            fallbackOpenProjectWindow: { openedURL = $0 }
+        )
+
+        #expect(didOpen)
+        #expect(openedURL == session.sceneProjectURL)
+        #expect(
+            session.activeProjectURL
+                == registry.canonicalProjectURL(second)
+        )
+    }
+
     @Test("Deferred Open Recent retains the Welcome fallback")
     func deferredOpenRecentUsesWelcomeFallback() async throws {
         let directory = try makeTemporaryDirectory(
