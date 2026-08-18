@@ -733,6 +733,24 @@ enum Strings {
         "projectSwitcher.newAgent"
     static let projectSwitcherNoAgents: LocalizedStringKey =
         "projectSwitcher.noAgents"
+
+    /// Names the project being closed, so the menu item is unambiguous in a
+    /// window holding several.
+    static func projectSwitcherCloseProjectTitle(
+        _ projectName: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "projectSwitcher.closeProject %@",
+            fallback: "Close “%@”",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [projectName]
+        )
+    }
     static let projectSwitcherErrorTitle: LocalizedStringKey =
         "projectSwitcher.error.title"
     static var projectSwitcherAlreadyOpenText: String {
@@ -1872,6 +1890,7 @@ enum Strings {
     static let menuClearMenu: LocalizedStringKey = "menu.clearMenu"
     static let menuCloseTab: LocalizedStringKey = "menu.closeTab"
     static let menuCloseWindow: LocalizedStringKey = "menu.closeWindow"
+    static let menuCloseProject: LocalizedStringKey = "menu.closeProject"
 
     // MARK: - Affordance / Accessibility Help
 

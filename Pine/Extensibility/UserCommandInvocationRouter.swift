@@ -76,7 +76,7 @@ enum UserCommandInvocationRouter {
                 object: projectManager
             )
 
-        case .newFile, .openFile, .closeTab, .closeWindow:
+        case .newFile, .openFile, .closeTab, .closeWindow, .closeProject:
             notificationCenter.post(
                 name: Notification.Name(command.notificationKey),
                 object: projectManager

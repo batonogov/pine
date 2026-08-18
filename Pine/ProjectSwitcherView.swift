@@ -15,6 +15,10 @@ struct ProjectSwitcherView: View {
     /// ``WindowChromePresentation``.
     let label: String?
     let onOpenProject: () -> Void
+    /// Takes the active project out of this window. Owned by the view that
+    /// has the dialog context, since closing may have to ask about unsaved
+    /// files first.
+    let onCloseProject: () -> Void
 
     var body: some View {
         Menu {
@@ -33,6 +37,27 @@ struct ProjectSwitcherView: View {
             }
 
             Divider()
+
+            Button {
+                onCloseProject()
+            } label: {
+                Label {
+                    // The repository, not `activeDisplayName`: with an agent
+                    // worktree active the display name carries its branch,
+                    // while closing takes out the whole project — worktrees
+                    // included. Naming the branch here would promise less
+                    // than the item does.
+                    Text(verbatim: Strings.projectSwitcherCloseProjectTitle(
+                        session.displayName(for: session.activeRepositoryURL)
+                    ))
+                } icon: {
+                    Image(systemName: MenuIcons.closeProject)
+                }
+            }
+            .disabled(session.isLaunchingAgent)
+            .accessibilityIdentifier(
+                AccessibilityID.projectSwitcherCloseProject
+            )
 
             Menu {
                 if session.availableAgentOptions.isEmpty {

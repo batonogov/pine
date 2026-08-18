@@ -39,6 +39,10 @@ final class ProjectWindowSession {
         let projectURLs: [URL]
         let worktrees: [AgentManagedWorktree]
         let activeURL: URL
+        /// Set once the user closes the project this window's scene is keyed
+        /// by. Optional so states written before project closing existed still
+        /// decode, and so the version does not have to move.
+        let closedAnchor: Bool?
     }
 
     let id = UUID()
@@ -56,6 +60,10 @@ final class ProjectWindowSession {
     @ObservationIgnored private var backgroundLeases: [URL: UUID] = [:]
     @ObservationIgnored private var pendingRestoredActiveURL: URL?
     @ObservationIgnored private var didRestore = false
+    /// Whether the user closed the project this scene is keyed by. Persisted,
+    /// because the reopening scene would otherwise hand that project straight
+    /// back on the next launch.
+    @ObservationIgnored private var didCloseAnchor = false
 
     init(
         initialProjectURL: URL,
@@ -82,18 +90,36 @@ final class ProjectWindowSession {
             for worktree in restored.worktrees {
                 worktrees[worktree.worktreeRoot.standardizedFileURL] = worktree
             }
-            if worktrees[initial] == nil, !projects.contains(initial) {
+            // The scene is keyed by the anchor project, so a window reopening
+            // always arrives asking for it. Re-adding it is right for a window
+            // that simply never had it — and wrong once the user closed it
+            // here, which would otherwise resurrect the project on every
+            // relaunch. `projects` is never emptied by closing (the last one
+            // closes the window instead), so this cannot leave a window with
+            // nothing to show.
+            let didCloseAnchor = restored.closedAnchor == true
+                && initial == anchor
+                && !projects.isEmpty
+            if worktrees[initial] == nil,
+               !projects.contains(initial),
+               !didCloseAnchor {
                 projects.insert(initial, at: 0)
             }
-            projectURLs = Self.uniqued(projects)
+            let uniqueProjects = Self.uniqued(projects)
+            projectURLs = uniqueProjects
             managedWorktrees = worktrees
-            activeProjectURL = initial
+            self.didCloseAnchor = didCloseAnchor
             let restoredActive = restored.activeURL.standardizedFileURL
-            let members = Set(projectURLs + Array(worktrees.keys))
-            pendingRestoredActiveURL = initial == anchor
-                && members.contains(restoredActive)
-                    ? restoredActive
-                    : initial
+            let members = Set(uniqueProjects + Array(worktrees.keys))
+            let restoredIsMember = members.contains(restoredActive)
+            // With the anchor gone it is not a candidate for the active
+            // project either; fall back to whatever the window does hold.
+            activeProjectURL = didCloseAnchor
+                ? (restoredIsMember ? restoredActive : uniqueProjects[0])
+                : initial
+            pendingRestoredActiveURL = initial == anchor && restoredIsMember
+                ? restoredActive
+                : activeProjectURL
         } else {
             projectURLs = [initial]
             managedWorktrees = [:]
@@ -131,9 +157,15 @@ final class ProjectWindowSession {
 
     #if DEBUG
     /// Seeds a managed worktree without running the real create/launch path,
-    /// so membership lookups can be tested without a git repository.
+    /// so membership and close behaviour can be tested without a repository.
     func adoptWorktreeForTesting(_ worktree: AgentManagedWorktree) {
         managedWorktrees[worktree.worktreeRoot.standardizedFileURL] = worktree
+    }
+
+    /// The defaults key a window with this anchor persists under. Lets a test
+    /// plant a state written by an older build.
+    static func persistenceKeyForTesting(for projectURL: URL) -> String {
+        persistenceKey(for: projectURL)
     }
     #endif
 
@@ -260,6 +292,88 @@ final class ProjectWindowSession {
             manager: manager,
             registry: registry
         )
+    }
+
+    /// Whether ``closeProject(_:registry:)`` can take `url` out of this window.
+    ///
+    /// False for the last project: a window with nothing in it is not a state
+    /// this app has, so the caller closes the window instead.
+    func canCloseProject(_ url: URL) -> Bool {
+        guard !isLaunchingAgent, projectURLs.count > 1 else { return false }
+        return projectURLs.contains(url.standardizedFileURL)
+    }
+
+    /// Takes a project out of this window, leaving it running in the
+    /// background exactly as closing its window would.
+    ///
+    /// Nothing is destroyed: `closeProject` on the registry suspends the
+    /// manager, and terminals and agents keep running. A project with unsaved
+    /// work or a live agent is pinned against background reclamation by
+    /// ``ProjectManager/requiresBackgroundRetention``, so what the user gets
+    /// back through Open Recent is the project as they left it.
+    ///
+    /// Agent worktrees created off this project leave with it — they are its
+    /// children in the switcher and would otherwise outlive their heading.
+    @discardableResult
+    func closeProject(_ url: URL, registry: ProjectRegistry) async -> Bool {
+        let target = registry.canonicalProjectURL(url).standardizedFileURL
+        guard canCloseProject(target),
+              let successor = successorAfterClosing(target) else {
+            return false
+        }
+
+        let departingWorktrees = managedWorktrees.filter {
+            $0.value.repositoryRoot.standardizedFileURL == target
+        }
+        // Switch away first: the transition suspends whatever is on screen
+        // through the normal path, so the closing project never has to be
+        // torn down mid-display.
+        let isShowingDepartingProject = activeProjectURL == target
+            || departingWorktrees[activeProjectURL] != nil
+        if isShowingDepartingProject {
+            await activate(successor, registry: registry)
+            guard activeProjectURL == successor else { return false }
+        }
+
+        for worktreeRoot in departingWorktrees.keys {
+            managedWorktrees[worktreeRoot] = nil
+            releaseBackgroundLease(for: worktreeRoot, registry: registry)
+            registry.closeProject(worktreeRoot)
+        }
+        projectURLs.removeAll { $0 == target }
+        // A presentation lease outlives the window that took it, and a leased
+        // project is never reclaimed. Hand it back, or the project leaks for
+        // the rest of the session.
+        releaseBackgroundLease(for: target, registry: registry)
+        registry.closeProject(target)
+        if target == sceneProjectURL {
+            didCloseAnchor = true
+        }
+        saveState()
+        return true
+    }
+
+    /// The project to show once `target` leaves: the one after it, or the one
+    /// before when it was last.
+    private func successorAfterClosing(_ target: URL) -> URL? {
+        guard let index = projectURLs.firstIndex(of: target) else { return nil }
+        let following = projectURLs.index(after: index)
+        if following < projectURLs.endIndex {
+            return projectURLs[following]
+        }
+        return index > projectURLs.startIndex
+            ? projectURLs[projectURLs.index(before: index)]
+            : nil
+    }
+
+    private func releaseBackgroundLease(
+        for url: URL,
+        registry: ProjectRegistry
+    ) {
+        guard let leaseID = backgroundLeases.removeValue(forKey: url) else {
+            return
+        }
+        registry.releaseBackgroundProjectPresentation(leaseID, for: url)
     }
 
     func launchAgent(
@@ -412,7 +526,8 @@ final class ProjectWindowSession {
             version: 1,
             projectURLs: projectURLs,
             worktrees: Array(managedWorktrees.values),
-            activeURL: activeProjectURL
+            activeURL: activeProjectURL,
+            closedAnchor: didCloseAnchor
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults.set(data, forKey: persistenceKey)

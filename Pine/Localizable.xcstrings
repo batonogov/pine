@@ -11129,6 +11129,21 @@
         }
       }
     },
+    "projectSwitcher.closeProject %@" : {
+      "comment" : "Project switcher command. The argument is the project name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "„%@“ schließen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Close “%@”" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cerrar «%@»" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Fermer « %@ »" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "「%@」を閉じる" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "‘%@’ 닫기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar “%@”" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Закрыть «%@»" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭“%@”" } }
+      }
+    },
     "projectSwitcher.error.agentMissing %@": {
       "comment": "Agent executable disappeared after the menu was opened. The argument is the agent name.",
       "extractionState": "manual",
@@ -32454,6 +32469,21 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limpar Menu" } },
         "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистить меню" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除菜单" } }
+      }
+    },
+    "menu.closeProject" : {
+      "comment" : "File menu command: take the current project out of its window.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Projekt schließen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Close Project" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cerrar proyecto" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Fermer le projet" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "プロジェクトを閉じる" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "프로젝트 닫기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar Projeto" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Закрыть проект" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭项目" } }
       }
     },
     "menu.closeWindow" : {

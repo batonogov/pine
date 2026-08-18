@@ -59,6 +59,7 @@ nonisolated enum AccessibilityID {
     static let openFolderToolbarButton = "openFolderToolbarButton"
     static let projectSwitcher = "projectSwitcher"
     static let projectSwitcherNewAgent = "projectSwitcherNewAgent"
+    static let projectSwitcherCloseProject = "projectSwitcherCloseProject"
     static func projectSwitcherProject(_ name: String) -> String {
         "projectSwitcherProject_\(name)"
     }

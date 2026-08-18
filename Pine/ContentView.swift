@@ -129,7 +129,8 @@ struct ContentView: View {
                     session: projectWindowSession,
                     registry: registry,
                     label: windowChrome.switcherLabel,
-                    onOpenProject: { openNewProject() }
+                    onOpenProject: { openNewProject() },
+                    onCloseProject: { closeActiveProject() }
                 )
             }
 
@@ -331,6 +332,7 @@ struct ContentView: View {
             onRefreshLineDiffs: { refreshLineDiffs() },
             onRefreshBlame: { refreshBlame() },
             onOpenNewProject: { openNewProject() },
+            onCloseProject: { closeActiveProject() },
             onHandleFileDeletion: { handleFileDeletion($0) },
             onHandleExternalChanges: { handleExternalChanges($0) },
             onNavigateToChange: { navigateToChange(direction: $0) },

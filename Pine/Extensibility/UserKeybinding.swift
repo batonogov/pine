@@ -44,6 +44,7 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case clearRecentProjects
     case closeTab
     case closeWindow
+    case closeProject
     case save
     case saveAll
     case saveAs
@@ -107,6 +108,7 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
         case .openFile: "openFile"
         case .clearRecentProjects: "clearRecentProjects"
         case .closeTab: "closeTab"
+        case .closeProject: "closeProject"
         case .closeWindow: "closeWindow"
         case .save: "user.save"
         case .saveAll: "user.saveAll"

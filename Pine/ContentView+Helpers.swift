@@ -570,6 +570,44 @@ extension ContentView {
     /// A key scene is authoritative evidence that its retained project is
     /// visible. Reconcile a restoration race, then self-heal an empty settled
     /// tree whose initial load may have been cancelled just before activation.
+    /// File → Close Project, and the switcher's own item.
+    ///
+    /// The last project in a window is a window close, not a project close:
+    /// Pine has no state for an empty project window, and routing it through
+    /// `performClose` keeps one dialog, one code path, and the existing
+    /// "show Welcome when the last window goes" behaviour.
+    func closeActiveProject() {
+        let session = projectWindowSession
+        let target = session.activeRepositoryURL
+        let context = DialogPresenter.forProject(projectManager)
+        guard session.canCloseProject(target) else {
+            context.nsWindow?.performClose(nil)
+            return
+        }
+        Task { @MainActor in
+            let decision = await ProjectCloseConfirmation.confirm(
+                projectManager: projectManager,
+                context: context
+            )
+            guard case .approve(let discard) = decision else { return }
+            if let discard,
+               !projectManager.commitDiscard(
+                   discard,
+                   postReloadNotifications: false
+               ) {
+                return
+            }
+            // Re-check rather than trusting the pre-sheet answer: the window
+            // may have lost its other projects while the sheet was up, and
+            // closing the last one has to become a window close.
+            guard session.canCloseProject(target) else {
+                context.nsWindow?.performClose(nil)
+                return
+            }
+            await session.closeProject(target, registry: registry)
+        }
+    }
+
     func reconcileKeyProjectPresentation() {
         let wasSuspended = workspace.isSuspended
         guard controlActiveState == .key else { return }

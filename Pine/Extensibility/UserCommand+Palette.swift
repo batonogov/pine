@@ -24,6 +24,8 @@ nonisolated extension UserCommand {
             String(localized: "menu.closeTab")
         case .closeWindow:
             String(localized: "menu.closeWindow")
+        case .closeProject:
+            String(localized: "menu.closeProject")
         case .save:
             String(localized: "menu.save")
         case .saveAll:
@@ -138,7 +140,7 @@ nonisolated extension UserCommand {
         case .save, .saveAll, .saveAs, .duplicate, .toggleAutoSave,
              .toggleFormatOnSave, .toggleSmartListContinuation,
              .newFile, .openFile, .clearRecentProjects,
-             .closeTab, .closeWindow,
+             .closeTab, .closeWindow, .closeProject,
              .openFolder, .quickOpen, .symbolNavigator, .commandPalette:
             .file
         case .toggleComment, .findInFile, .findAndReplace,
@@ -178,6 +180,8 @@ nonisolated extension UserCommand {
             MenuIcons.closeTab
         case .closeWindow:
             MenuIcons.closeWindow
+        case .closeProject:
+            MenuIcons.closeProject
         case .save:
             MenuIcons.save
         case .saveAll:
@@ -293,7 +297,7 @@ nonisolated extension UserCommand {
         case .newFile, .openFile,
              .quickOpen, .commandPalette, .saveAll, .toggleAutoSave,
              .toggleFormatOnSave, .toggleSmartListContinuation,
-             .closeTab, .closeWindow,
+             .closeTab, .closeWindow, .closeProject,
              .findInProject, .toggleTerminal, .newTerminalTab,
              .toggleMinimap, .toggleBlame, .toggleWordWrap,
              .revealProjectInFinder, .showAgentActivity, .showAgentHistory,
@@ -420,6 +424,10 @@ nonisolated extension UserCommand {
             value = "cmd+w"
         case .closeWindow:
             value = "cmd+shift+w"
+        case .closeProject:
+            // cmd+shift+w already closes the window; closing one project
+            // inside it is the narrower action and takes the freer chord.
+            value = "ctrl+cmd+w"
         case .showProblems:
             value = "cmd+shift+x"
         case .nextDiagnostic:
