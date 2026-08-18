@@ -214,6 +214,22 @@ struct PineAppMenuCommands: Commands {
                 keybindings.effectiveChord(for: .closeTab)
             )
             .disabled(!nativeState.canCloseTab)
+
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .closeProject,
+                    projectManager: focusedProject
+                )
+            } label: {
+                Label(
+                    Strings.menuCloseProject,
+                    systemImage: MenuIcons.closeProject
+                )
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .closeProject)
+            )
+            .disabled(focusedProject?.workspace.rootURL == nil)
         }
         // Save, Save All, Save As, Duplicate, Auto-save toggle
         CommandGroup(replacing: .saveItem) {

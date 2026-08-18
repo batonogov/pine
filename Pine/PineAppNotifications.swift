@@ -25,6 +25,9 @@ extension Notification.Name {
     static let closeTab = Notification.Name("closeTab")
     /// Closes the active project window (File → Close Window).
     static let closeWindow = Notification.Name("closeWindow")
+    /// Takes the active project out of its window, leaving the window open on
+    /// the projects beside it (File → Close Project).
+    static let closeProject = Notification.Name("closeProject")
     static let showQuickOpen = Notification.Name("showQuickOpen")
     static let showCommandPalette = Notification.Name("showCommandPalette")
     /// userInfo: ["oldURL": URL, "newURL": URL]

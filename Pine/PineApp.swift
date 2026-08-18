@@ -510,16 +510,8 @@ struct WindowCloseInterceptor: NSViewRepresentable {
 /// windowShouldClose always closes the entire window (red close button path).
 /// Cmd+W is intercepted earlier by AppDelegate's local event monitor.
 class CloseDelegate: NSObject, NSWindowDelegate {
-    typealias CloseAlertPresenter = @MainActor (
-        AlertTemplate,
-        DialogPresentationContext,
-        String,
-        String
-    ) async -> NSApplication.ModalResponse
-    typealias CloseSaveAll = @MainActor (
-        ProjectManager,
-        DialogPresentationContext
-    ) async -> Bool
+    typealias CloseAlertPresenter = ProjectCloseConfirmation.AlertPresenter
+    typealias CloseSaveAll = ProjectCloseConfirmation.SaveAll
 
     let projectManager: ProjectManager
     let registry: ProjectRegistry
@@ -554,11 +546,6 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     private weak var approvedCloseWindow: NSWindow?
     private let closeAlertPresenter: CloseAlertPresenter?
     private let closeSaveAll: CloseSaveAll?
-
-    private enum WindowCloseDecision {
-        case cancel
-        case approve(discard: DirtyEditorContentAuthorization?)
-    }
 
     init(
         projectManager: ProjectManager,
@@ -782,57 +769,17 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         return false
     }
 
+    /// Same question the project-close menu item asks, so a window and one
+    /// project inside it never disagree about unsaved work.
     private func confirmWindowClose(
         context: DialogPresentationContext
-    ) async -> WindowCloseDecision {
-        var discardAuthorization: DirtyEditorContentAuthorization?
-        let dirty = projectManager.allDirtyTabs
-        if !dirty.isEmpty {
-            let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
-            let message = Strings.unsavedChangesListMessage(fileList)
-            let response = if let closeAlertPresenter {
-                await closeAlertPresenter(
-                    .unsavedChangesBulk,
-                    context,
-                    Strings.unsavedChangesTitle,
-                    message
-                )
-            } else {
-                await AlertTemplate.unsavedChangesBulk.runSheet(
-                    on: context,
-                    messageText: Strings.unsavedChangesTitle,
-                    informativeText: message
-                )
-            }
-            switch response {
-            case .alertFirstButtonReturn:
-                let didSave = if let closeSaveAll {
-                    await closeSaveAll(projectManager, context)
-                } else {
-                    await projectManager.saveAllPaneTabs(context: context)
-                }
-                guard didSave else {
-                    return .cancel
-                }
-            case .alertSecondButtonReturn:
-                discardAuthorization = DirtyEditorContentAuthorization(
-                    tabs: dirty
-                )
-            default:
-                return .cancel
-            }
-        }
-
-        let currentDirtyTabs = projectManager.allDirtyTabs
-        if let discardAuthorization {
-            guard discardAuthorization.covers(currentDirtyTabs) else {
-                return .cancel
-            }
-            return .approve(discard: discardAuthorization)
-        }
-        return currentDirtyTabs.isEmpty
-            ? .approve(discard: nil)
-            : .cancel
+    ) async -> ProjectCloseConfirmation.Decision {
+        await ProjectCloseConfirmation.confirm(
+            projectManager: projectManager,
+            context: context,
+            presentAlert: closeAlertPresenter,
+            saveAll: closeSaveAll
+        )
     }
 
     // Forward other delegate calls to the original

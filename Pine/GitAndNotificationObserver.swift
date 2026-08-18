@@ -42,6 +42,7 @@ struct GitAndNotificationObserver: ViewModifier {
     var onRefreshLineDiffs: () -> Void
     var onRefreshBlame: () -> Void
     var onOpenNewProject: () -> Void
+    var onCloseProject: () -> Void
     var onHandleFileDeletion: (URL) -> Void
     var onHandleExternalChanges: (TabManager.ExternalChangeResult) -> Void
     var onNavigateToChange: (ContentView.ChangeDirection) -> Void
@@ -87,6 +88,21 @@ struct GitAndNotificationObserver: ViewModifier {
                 // tracking unwind before NSOpenPanel attaches its sheet.
                 NativeCommandDelivery.deferToNextMainRunLoop {
                     onOpenNewProject()
+                }
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(for: .closeProject)
+            ) { notification in
+                guard ContentView.shouldHandleTargetedCommand(
+                    notificationObject: notification.object,
+                    currentProject: projectManager,
+                    isKeyWindow: controlActiveState == .key
+                ) else { return }
+                // Same menu-tracking deferral as Open Folder above: closing
+                // may raise an unsaved-changes sheet, and AppKit must be done
+                // tracking the File menu before it attaches.
+                NativeCommandDelivery.deferToNextMainRunLoop {
+                    onCloseProject()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in

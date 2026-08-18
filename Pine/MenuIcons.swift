@@ -112,6 +112,9 @@ nonisolated enum MenuIcons {
     // all, which is invisible in review and easy to miss on screen.
     static let projectSwitcher = "square.stack"
     static let projectSwitcherNewAgent = "sparkles"
+    /// Close Project. `xmark.rectangle` reads as "this pane goes away",
+    /// distinct from the window close symbol beside it in the same menu.
+    static let closeProject = "xmark.rectangle"
     static let projectSwitcherOpenFolder = "folder.badge.plus"
     static let projectSwitcherActive = "checkmark"
     static let projectSwitcherProject = "folder"
