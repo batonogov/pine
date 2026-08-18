@@ -424,6 +424,10 @@ final class EditorWindowTests: PineUITestCase {
     /// toolbar metric differs between macOS 26 and 27 and between display
     /// scales, but a control holding more content than its neighbour must
     /// never come out narrower than it on the same strip.
+    ///
+    /// Confirmed to catch the regression: replayed on CI against a build with
+    /// `.menuStyle(.borderlessButton)` restored, it failed all three retries
+    /// at 37.0pt against a 47.0pt neighbour, and passes on the fixed build.
     func testProjectSwitcherIsWiderThanSingleGlyphToolbarButtons() throws {
         let metricsProject = try createTempProject(
             files: ["main.swift": "let greeting = \"Hello\"\n"],
