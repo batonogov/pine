@@ -135,6 +135,7 @@ jobs:
       - name: Build App
         run: |
           xcodebuild build \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -145,6 +146,7 @@ jobs:
       - name: Build for Testing
         run: |
           xcodebuild build-for-testing \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -286,6 +288,7 @@ jobs:
       - name: Build App with Xcode 27
         run: |
           xcodebuild build \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -302,6 +305,7 @@ jobs:
 
           set +e
           xcodebuild test \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -374,6 +378,7 @@ jobs:
 
           set +e
           xcodebuild test-without-building \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -659,6 +664,7 @@ jobs:
       - name: UI Tests
         run: |
           xcodebuild test-without-building \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -790,6 +796,7 @@ jobs:
         run: |
           rm -rf AccessibilityLocalizationSmoke.xcresult A11yDiagnostics
           xcodebuild test-without-building \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -970,6 +977,7 @@ jobs:
       - name: Build for Testing
         run: |
           xcodebuild build-for-testing \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -981,6 +989,7 @@ jobs:
       - name: Run Performance Tests
         run: |
           xcodebuild test-without-building \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -1041,6 +1050,7 @@ jobs:
       - name: Build for Testing
         run: |
           xcodebuild build-for-testing \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -1052,6 +1062,7 @@ jobs:
       - name: Run Fuzz Tests
         run: |
           xcodebuild test-without-building \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \

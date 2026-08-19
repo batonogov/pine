@@ -61,6 +61,7 @@ fi
 echo "Running screenshot tests (DEVELOPER_DIR=$DEVELOPER_DIR)..."
 xcodebuild_args=(
   test
+  -skipPackagePluginValidation
   -project "$REPO_ROOT/Pine.xcodeproj"
   -scheme Pine
   -destination 'platform=macOS'

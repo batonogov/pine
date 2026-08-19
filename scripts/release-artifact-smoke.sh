@@ -447,6 +447,7 @@ PINE_RELEASE_SMOKE_USER_ROOT="$USER_ROOT" \
 PINE_RELEASE_SMOKE_PROJECT="$FIXTURE_PROJECT" \
 PINE_RELEASE_SMOKE_LOGS="$LOGS" \
 xcodebuild test \
+    -skipPackagePluginValidation \
     -project Pine.xcodeproj \
     -scheme Pine \
     -destination 'platform=macOS' \
