@@ -75,6 +75,7 @@ jobs:
           test_started_at="$(date +%s)"
           set +e
           xcodebuild test \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \

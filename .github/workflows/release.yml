@@ -56,6 +56,7 @@ jobs:
       - name: Build archive
         run: |
           xcodebuild archive \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -archivePath $RUNNER_TEMP/Pine.xcarchive \

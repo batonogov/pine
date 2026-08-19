@@ -66,6 +66,7 @@ jobs:
             }' \
             > "$PINE_SOAK_ARTIFACTS_DIR/config.json"
           xcodebuild test \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \

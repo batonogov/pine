@@ -42,6 +42,7 @@ jobs:
       - name: Build for Testing
         run: |
           xcodebuild build-for-testing \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -53,6 +54,7 @@ jobs:
       - name: Run Performance Tests
         run: |
           xcodebuild test-without-building \
+            -skipPackagePluginValidation \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
