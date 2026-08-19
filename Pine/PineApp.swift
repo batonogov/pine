@@ -1024,9 +1024,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         if let hostWindow = agentInboxHostWindow() {
             prepareAgentInboxHostWindow(hostWindow)
             NativeCommandDelivery.deferToNextMainRunLoop {
-                NotificationCenter.default.post(
-                    name: .presentAgentInboxPopover,
-                    object: nil
+                AgentInboxPopoverRouter.shared.requestPresentation(
+                    in: hostWindow
                 )
             }
             return
@@ -1042,9 +1041,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             prepareAgentInboxHostWindow(window)
             await Task.yield()
             guard !Task.isCancelled else { return }
-            NotificationCenter.default.post(
-                name: .presentAgentInboxPopover,
-                object: nil
+            AgentInboxPopoverRouter.shared.requestPresentation(
+                in: window
             )
             pendingAgentInboxPresentationTask = nil
         }

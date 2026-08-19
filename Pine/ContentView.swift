@@ -143,8 +143,7 @@ struct ContentView: View {
                 }
                 .agentInboxPopover(
                     isPresented: $isAgentInboxPresented,
-                    registry: registry,
-                    isKeyWindow: controlActiveState == .key
+                    registry: registry
                 )
             }
         }

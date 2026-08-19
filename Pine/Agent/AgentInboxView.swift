@@ -13,6 +13,7 @@ struct AgentInboxView: View {
     let registry: ProjectRegistry
     let onAccessibilityAnnouncement: (String) -> Void
     let onDismiss: () -> Void
+    let explicitOpenProjectWindow: ((URL) -> Void)?
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -28,6 +29,7 @@ struct AgentInboxView: View {
     init(
         registry: ProjectRegistry,
         onDismiss: @escaping () -> Void = {},
+        openProjectWindow: ((URL) -> Void)? = nil,
         onAccessibilityAnnouncement: @escaping (String) -> Void = { message in
             NSAccessibility.post(
                 element: NSApp.keyWindow
@@ -43,6 +45,7 @@ struct AgentInboxView: View {
     ) {
         self.registry = registry
         self.onDismiss = onDismiss
+        self.explicitOpenProjectWindow = openProjectWindow
         self.onAccessibilityAnnouncement = onAccessibilityAnnouncement
     }
 
@@ -57,12 +60,11 @@ struct AgentInboxView: View {
 
                 Spacer()
 
-                HelpLink(
+                PineHelpButton(
                     anchor: PineHelp.Anchor.agentInbox,
-                    book: PineHelp.bookName
-                )
-                .accessibilityIdentifier(
-                    AccessibilityID.agentInboxHelpButton
+                    book: PineHelp.bookName,
+                    accessibilityIdentifier:
+                        AccessibilityID.agentInboxHelpButton
                 )
             }
             .padding(.horizontal, 12)
@@ -90,6 +92,7 @@ struct AgentInboxView: View {
                     Label(Strings.agentInboxEmpty, systemImage: MenuIcons.agentInbox)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier(AccessibilityID.agentInboxEmpty)
             } else {
                 inboxContents
@@ -118,6 +121,7 @@ struct AgentInboxView: View {
             activateSelection()
             return .handled
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.agentInbox)
     }
 
@@ -152,6 +156,7 @@ struct AgentInboxView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.agentInboxList)
     }
 
@@ -343,7 +348,7 @@ struct AgentInboxView: View {
             let result = await registry.recoverAgentTaskFromInbox(
                 taskID,
                 action: action,
-                openProjectWindow: { url in openWindow(value: url) }
+                openProjectWindow: openProject
             )
             switch result {
             case .openedNewSession:
@@ -362,7 +367,7 @@ struct AgentInboxView: View {
         Task { @MainActor in
             let result = await registry.navigateToAgentTaskFromInbox(
                 taskID,
-                openProjectWindow: { url in openWindow(value: url) }
+                openProjectWindow: openProject
             )
             switch result {
             case .focused:
@@ -380,6 +385,14 @@ struct AgentInboxView: View {
         case .completedUnread: Strings.agentInboxCompletedUnread
         case .working: Strings.agentInboxWorking
         case .history: Strings.agentInboxHistory
+        }
+    }
+
+    private func openProject(_ url: URL) {
+        if let explicitOpenProjectWindow {
+            explicitOpenProjectWindow(url)
+        } else {
+            openWindow(value: url)
         }
     }
 
@@ -467,51 +480,5 @@ struct AgentInboxView: View {
         case .done: Strings.agentStateDone(locale: locale)
         case nil: row.agentName
         }
-    }
-}
-
-/// Anchors the application-level Inbox to an affordance in an eligible host
-/// window. Every host observes the shared request, but only the key project or
-/// Welcome window may respond, preventing duplicate popovers in multi-window
-/// sessions (#1486).
-private struct AgentInboxPopoverPresenter: ViewModifier {
-    @Binding var isPresented: Bool
-    let registry: ProjectRegistry
-    let isKeyWindow: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .popover(isPresented: $isPresented, arrowEdge: .top) {
-                AgentInboxView(
-                    registry: registry,
-                    onDismiss: { isPresented = false }
-                )
-            }
-            .onReceive(
-                NotificationCenter.default.publisher(
-                    for: .presentAgentInboxPopover
-                )
-            ) { _ in
-                guard isKeyWindow else { return }
-                // Break synchronous menu/notification delivery before
-                // mutating SwiftUI presentation state.
-                DispatchQueue.main.async {
-                    isPresented = true
-                }
-            }
-    }
-}
-
-extension View {
-    func agentInboxPopover(
-        isPresented: Binding<Bool>,
-        registry: ProjectRegistry,
-        isKeyWindow: Bool
-    ) -> some View {
-        modifier(AgentInboxPopoverPresenter(
-            isPresented: isPresented,
-            registry: registry,
-            isKeyWindow: isKeyWindow
-        ))
     }
 }

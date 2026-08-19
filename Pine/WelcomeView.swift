@@ -108,7 +108,7 @@ struct WelcomeView: View {
                 .agentInboxPopover(
                     isPresented: $isAgentInboxPresented,
                     registry: registry,
-                    isKeyWindow: controlActiveState == .key
+                    openProjectWindow: openProjectWindow
                 )
 
                 Spacer()
