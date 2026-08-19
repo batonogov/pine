@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.2](https://github.com/batonogov/pine/compare/v2.5.1...v2.5.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* persist dismissed stale agent tasks ([#1484](https://github.com/batonogov/pine/issues/1484)) ([b1bf4ee](https://github.com/batonogov/pine/commit/b1bf4eed1aaebb2a83127b44b9dbf2da75f406f4))
+
+
+### Documentation
+
+* relaunch Pine landing page ([#1483](https://github.com/batonogov/pine/issues/1483)) ([f957184](https://github.com/batonogov/pine/commit/f957184cafe367af219e731fb439ec0f6cb9753e))
+
 ## [2.5.1](https://github.com/batonogov/pine/compare/v2.5.0...v2.5.1) (2026-08-18)
 
 
