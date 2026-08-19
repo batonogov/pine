@@ -12,6 +12,7 @@ import SwiftUI
 struct AgentInboxView: View {
     let registry: ProjectRegistry
     let onAccessibilityAnnouncement: (String) -> Void
+    let onDismiss: () -> Void
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -26,6 +27,7 @@ struct AgentInboxView: View {
 
     init(
         registry: ProjectRegistry,
+        onDismiss: @escaping () -> Void = {},
         onAccessibilityAnnouncement: @escaping (String) -> Void = { message in
             NSAccessibility.post(
                 element: NSApp.keyWindow
@@ -40,14 +42,34 @@ struct AgentInboxView: View {
         }
     ) {
         self.registry = registry
+        self.onDismiss = onDismiss
         self.onAccessibilityAnnouncement = onAccessibilityAnnouncement
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // The window title bar already names the Agent Inbox; show a
-            // transient banner only when a navigation/recovery message is
-            // active (#1339 — removed the duplicate in-window header label).
+            HStack(spacing: 8) {
+                Label(
+                    Strings.agentInboxTitle,
+                    systemImage: MenuIcons.agentInbox
+                )
+                .font(.headline)
+
+                Spacer()
+
+                HelpLink(
+                    anchor: PineHelp.Anchor.agentInbox,
+                    book: PineHelp.bookName
+                )
+                .accessibilityIdentifier(
+                    AccessibilityID.agentInboxHelpButton
+                )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
+
             if let navigationMessage {
                 HStack {
                     Spacer()
@@ -73,7 +95,7 @@ struct AgentInboxView: View {
                 inboxContents
             }
         }
-        .frame(minWidth: 420, idealWidth: 720, minHeight: 360, idealHeight: 560)
+        .frame(width: 520, height: 540)
         .focusable()
         .focused($hasKeyboardFocus)
         .focusEffectDisabled()
@@ -95,17 +117,6 @@ struct AgentInboxView: View {
         .onKeyPress(.return) {
             activateSelection()
             return .handled
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                HelpLink(
-                    anchor: PineHelp.Anchor.agentInbox,
-                    book: PineHelp.bookName
-                )
-                .accessibilityIdentifier(
-                    AccessibilityID.agentInboxHelpButton
-                )
-            }
         }
         .accessibilityIdentifier(AccessibilityID.agentInbox)
     }
@@ -336,9 +347,9 @@ struct AgentInboxView: View {
             )
             switch result {
             case .openedNewSession:
-                navigationMessage = Strings.agentInboxOpenedNewSession
+                onDismiss()
             case .resumed:
-                navigationMessage = Strings.agentInboxResumedSession
+                onDismiss()
             case .taskMissing, .projectUnavailable, .unavailable,
                     .changedWhilePreparing, .launchRejected:
                 navigationMessage = Strings.agentInboxRecoveryUnavailable
@@ -355,7 +366,7 @@ struct AgentInboxView: View {
             )
             switch result {
             case .focused:
-                navigationMessage = nil
+                onDismiss()
             case .taskMissing, .projectUnavailable, .routeStale:
                 navigationMessage = Strings.agentInboxRouteUnavailable
             }
@@ -456,5 +467,51 @@ struct AgentInboxView: View {
         case .done: Strings.agentStateDone(locale: locale)
         case nil: row.agentName
         }
+    }
+}
+
+/// Anchors the application-level Inbox to an affordance in an eligible host
+/// window. Every host observes the shared request, but only the key project or
+/// Welcome window may respond, preventing duplicate popovers in multi-window
+/// sessions (#1486).
+private struct AgentInboxPopoverPresenter: ViewModifier {
+    @Binding var isPresented: Bool
+    let registry: ProjectRegistry
+    let isKeyWindow: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .popover(isPresented: $isPresented, arrowEdge: .top) {
+                AgentInboxView(
+                    registry: registry,
+                    onDismiss: { isPresented = false }
+                )
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: .presentAgentInboxPopover
+                )
+            ) { _ in
+                guard isKeyWindow else { return }
+                // Break synchronous menu/notification delivery before
+                // mutating SwiftUI presentation state.
+                DispatchQueue.main.async {
+                    isPresented = true
+                }
+            }
+    }
+}
+
+extension View {
+    func agentInboxPopover(
+        isPresented: Binding<Bool>,
+        registry: ProjectRegistry,
+        isKeyWindow: Bool
+    ) -> some View {
+        modifier(AgentInboxPopoverPresenter(
+            isPresented: isPresented,
+            registry: registry,
+            isKeyWindow: isKeyWindow
+        ))
     }
 }

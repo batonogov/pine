@@ -5,15 +5,15 @@
 //  Project-window toolbar entry point for the Agent Inbox (#1337).
 //
 //  `ContentView` previously had no visible Inbox affordance — the only paths
-//  were the Window menu, the ⌘⇧I shortcut, and the Welcome window. This
-//  button is additive: it opens the existing `agent-inbox` window and shows
-//  an attention dot driven by the same `AgentInboxSnapshot` that the Inbox
-//  view renders, scoped to the focused project.
+//  were the View menu, the ⌘⇧I shortcut, and the Welcome window. This
+//  button is additive: it anchors the Agent Inbox popover and shows an
+//  attention dot driven by the same `AgentInboxSnapshot` that the Inbox view
+//  renders, scoped to the focused project.
 //
 
 import SwiftUI
 
-/// Toolbar button that opens the Agent Inbox window, with an attention dot
+/// Toolbar button that opens the Agent Inbox popover, with an attention dot
 /// shown while any of the focused project's durable agent tasks need input.
 ///
 /// The dot is deliberately numberless. The toolbar draws a circular chrome

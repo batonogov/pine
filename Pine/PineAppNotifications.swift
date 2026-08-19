@@ -89,6 +89,14 @@ extension Notification.Name {
     /// Opens the application-level cross-project Agent Inbox (#1305).
     static let showAgentInbox = Notification.Name("showAgentInbox")
 
+    /// Presents Agent Inbox from the key eligible project or Welcome host.
+    /// AppDelegate converts every unanchored entry point (menu, shortcut,
+    /// command palette, Dock, notification fallback) into this request after
+    /// making the correct host key (#1486).
+    static let presentAgentInboxPopover = Notification.Name(
+        "presentAgentInboxPopover"
+    )
+
     // MARK: - Agent history (#1073)
     /// Shows the persistent agent-history timeline sheet.
     static let showAgentHistory = Notification.Name("showAgentHistory")

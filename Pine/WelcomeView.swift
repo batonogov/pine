@@ -67,6 +67,7 @@ struct WelcomeView: View {
     @State private var searchText = ""
     @State private var isSearchVisible = false
     @State private var isDragTargeted = false
+    @State private var isAgentInboxPresented = false
 
     /// Recent projects filtered by the search query.
     private var filteredProjects: [URL] {
@@ -98,20 +99,17 @@ struct WelcomeView: View {
                 .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
 
                 Button {
-                    openWindow(id: "agent-inbox")
-                    NSApp.activate()
-                    #if DEBUG
-                    if ProcessInfo.processInfo.arguments.contains(
-                        "--ui-test-agent-inbox-marketing"
-                    ) {
-                        appDelegate?.hideWelcome()
-                    }
-                    #endif
+                    isAgentInboxPresented.toggle()
                 } label: {
                     Label(Strings.menuAgentInbox, systemImage: MenuIcons.agentInbox)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityIdentifier(AccessibilityID.welcomeAgentInboxButton)
+                .agentInboxPopover(
+                    isPresented: $isAgentInboxPresented,
+                    registry: registry,
+                    isKeyWindow: controlActiveState == .key
+                )
 
                 Spacer()
             }

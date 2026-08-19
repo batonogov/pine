@@ -27,8 +27,6 @@ struct ContentView: View {
     @Environment(PaneManager.self) var paneManager
     @Environment(ProjectRegistry.self) var registry
     @Environment(ProjectWindowSession.self) var projectWindowSession
-    @Environment(\.openWindow) var openWindow
-
     @Environment(\.controlActiveState) var controlActiveState
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
@@ -45,6 +43,7 @@ struct ContentView: View {
     @State var isBranchSwitcherPresented = false
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
+    @State var isAgentInboxPresented = false
     #if DEBUG
     @State var didSeedAccessibilityDirtyBuffer = false
     #endif
@@ -135,14 +134,18 @@ struct ContentView: View {
             }
 
             // Agent Inbox entry point in the project window toolbar (#1337).
-            // Additive to the existing ⌘⇧I chord and Window menu item.
+            // The popover remains additive to ⌘⇧I and the View menu (#1486).
             ToolbarItem(placement: .primaryAction) {
                 AgentInboxToolbarButton(
                     attentionCount: agentInboxAttentionCount
                 ) {
-                    openWindow(id: "agent-inbox")
-                    NSApp.activate()
+                    isAgentInboxPresented.toggle()
                 }
+                .agentInboxPopover(
+                    isPresented: $isAgentInboxPresented,
+                    registry: registry,
+                    isKeyWindow: controlActiveState == .key
+                )
             }
         }
         .background {
