@@ -178,8 +178,23 @@ final class ScreenshotTests: PineUITestCase {
     }
 
     func testCaptureTerminal() throws {
+        let swiftCode = """
+        import Foundation
+
+        struct WorkspaceRoute {
+            let project: URL
+            let terminalID: UUID
+        }
+
+        func routeAgentTask(
+            _ taskID: UUID,
+            through routes: [UUID: WorkspaceRoute]
+        ) -> WorkspaceRoute? {
+            routes[taskID]
+        }
+        """
         projectURL = try createTempProject(files: [
-            "main.swift": "print(\"Hello, Pine!\")\n"
+            "WorkspaceRouter.swift": swiftCode
         ], projectName: "Pine Demo")
         try configureMarketingShell(for: try XCTUnwrap(projectURL))
         launchWithProject(try XCTUnwrap(projectURL))
@@ -188,7 +203,7 @@ final class ScreenshotTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // Open a file first
-        let fileRow = app.sidebarNodes["fileNode_main.swift"]
+        let fileRow = app.sidebarNodes["fileNode_WorkspaceRouter.swift"]
         if waitForExistence(fileRow, timeout: 5) { fileRow.doubleClick() }
 
         // Show terminal via status bar toggle
@@ -224,6 +239,15 @@ final class ScreenshotTests: PineUITestCase {
 
         let zshConfiguration = #"""
         precmd() { print -Pn '\e]0;Terminal 1\a' }
+        print -P ''
+        print -P '%F{8}$ git diff --stat%f'
+        print -P '%F{cyan} Sources/WorkspaceRouter.swift%f | 28 +++++++++++++++++++'
+        print -P '%F{cyan} Tests/WorkspaceRouterTests.swift%f | 17 +++++++++++'
+        print -P ' 2 files changed, 45 insertions(+)'
+        print -P ''
+        print -P '%F{8}$ swift test%f'
+        print -P '%F{green}✓ 42 tests passed%f'
+        print -P ''
         PROMPT='%F{green}pine@mac%f %F{cyan}%1~%f %# '
         """#
         try zshConfiguration.write(
@@ -235,6 +259,12 @@ final class ScreenshotTests: PineUITestCase {
         let bashConfiguration = #"""
         export BASH_SILENCE_DEPRECATION_WARNING=1
         PROMPT_COMMAND='printf "\033]0;Terminal 1\007"'
+        printf '\n\033[2m$ git diff --stat\033[0m\n'
+        printf '\033[36m Sources/WorkspaceRouter.swift\033[0m | 28 +++++++++++++++++++\n'
+        printf '\033[36m Tests/WorkspaceRouterTests.swift\033[0m | 17 +++++++++++\n'
+        printf ' 2 files changed, 45 insertions(+)\n\n'
+        printf '\033[2m$ swift test\033[0m\n'
+        printf '\033[32m✓ 42 tests passed\033[0m\n\n'
         PS1='\[\e[32m\]pine@mac\[\e[0m\] \[\e[36m\]\W\[\e[0m\] \$ '
         """#
         try bashConfiguration.write(

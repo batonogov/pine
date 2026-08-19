@@ -230,7 +230,7 @@ final class AgentTaskRegistry {
             marketingTask(.init(
                 seed: 3,
                 projectName: "Pine Demo",
-                worktreeName: "release-2.0",
+                worktreeName: "release-notes",
                 title: "Capture Agent Inbox screenshots",
                 agentType: .gemini,
                 state: .executing,
@@ -245,7 +245,7 @@ final class AgentTaskRegistry {
                 seed: 4,
                 projectName: "Documentation",
                 worktreeName: nil,
-                title: "Translate the Pine 2.0 highlights",
+                title: "Translate the release highlights",
                 agentType: .openCode,
                 state: .thinking,
                 liveness: .live,

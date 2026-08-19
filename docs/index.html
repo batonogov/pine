@@ -16,7 +16,7 @@
     <meta name="twitter:description" content="The agent stays in the terminal. The code stays in view. Pine brings them together in a native macOS editor for CLI-agent workflows.">
     <meta name="twitter:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
     <meta name="twitter:image:alt" content="Pine code editor with syntax highlighting and file tree">
-    <meta name="theme-color" content="#07110d">
+    <meta name="theme-color" content="#f2f3ed">
     <link rel="canonical" href="https://batonogov.github.io/pine/">
     <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/batonogov/pine/main/assets/pine-app-icon.png">
     <style>
@@ -1089,6 +1089,7 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="page">
@@ -1098,8 +1099,8 @@
                 <span>Pine</span>
             </a>
             <nav class="nav">
-                <a href="#new" data-i18n="nav.new">Pine 2.0</a>
-                <a href="#why" data-i18n="nav.why">Why Pine</a>
+                <a href="#new" data-i18n="nav.new">Workflow</a>
+                <a href="#why" data-i18n="nav.why">Workspace</a>
                 <a href="#features" data-i18n="nav.features">Features</a>
                 <a href="#install" data-i18n="nav.install">Install</a>
                 <a href="#screenshots" data-i18n="nav.screenshots">Screenshots</a>
@@ -1124,38 +1125,49 @@
                 <div class="hero-copy">
                     <div class="hero-identity">
                         <img class="hero-logo" src="https://raw.githubusercontent.com/batonogov/pine/main/assets/pine-app-icon.png" alt="Pine app icon">
-                        <span>Pine 2.0</span>
+                        <span>Pine</span>
                     </div>
                     <div class="eyebrow" data-i18n="hero.eyebrow">Native · Agent-aware · No Electron</div>
-                    <h1 data-i18n="hero.title">A native Mac editor built for the age of CLI agents.</h1>
-                    <p class="hero-tagline" data-i18n="hero.desc">The agent stays in the terminal.&#10;The code stays in view.&#10;Pine brings them together.</p>
-                    <div class="hero-proof">
-                        <span data-i18n="hero.noElectron">No Electron</span>
-                        <span data-i18n="hero.minimalDeps">Agent-aware workflow</span>
-                        <span data-i18n="hero.terminal">Editor + terminal panes</span>
-                        <span data-i18n="hero.gitAware">LSP + Git context</span>
-                    </div>
+                    <h1 data-i18n="hero.desc">The agent stays in the terminal.&#10;The code stays in view.&#10;Pine brings them together.</h1>
+                    <p class="hero-tagline" data-i18n="hero.title">Run any CLI agent in a real terminal. Review its changes without losing sight of the code.</p>
                     <div class="hero-actions">
                         <a class="btn btn-primary" href="https://github.com/batonogov/pine/releases/latest" data-i18n="hero.download">Download Pine</a>
                         <a class="btn btn-secondary" href="https://github.com/batonogov/pine" data-i18n="hero.github">View on GitHub</a>
-                    </div>
-                    <div class="install-strip">
-                        <div class="install-strip-label" data-i18n="hero.installLabel">Install in 10 seconds</div>
-                        <code>brew install --cask batonogov/tap/pine-editor</code>
                     </div>
                 </div>
 
                 <div class="hero-visual" aria-hidden="true">
                     <div class="visual-frame"></div>
-                    <div class="shot-window">
-                        <div class="shot-card-stack">
-                            <div class="shot-card">
-                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-agent-inbox.png" alt="Pine Agent Inbox showing agent tasks across projects" data-i18n-alt="screenshots.alt0">
-                            </div>
-                            <div class="shot-chip chip-one" data-i18n="hero.chipTabs">Agent activity</div>
-                            <div class="shot-chip chip-two" data-i18n="hero.chipTerminal">Split terminal panes</div>
-                            <div class="shot-chip chip-three" data-i18n="hero.chipGit">LSP + Git diagnostics</div>
-                        </div>
+                    <div class="product-window">
+                        <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-terminal.png" alt="Pine built-in terminal" data-i18n-alt="screenshots.alt3">
+                    </div>
+                </div>
+            </section>
+
+            <section class="scroll-story" id="new">
+                <div class="scroll-story-sticky">
+                    <div class="scroll-story-copy">
+                        <span class="section-kicker" data-i18n="release.kicker">The Pine loop</span>
+                        <h2 data-i18n="release.title">One continuous loop. From agent command to code review.</h2>
+                        <p data-i18n="release.desc">Pine keeps the terminal, task context, and edited files in one native workspace, so you always know what the agent is doing and where to review it.</p>
+                        <ol class="story-steps">
+                            <li class="is-current" data-story-step="0"><span>01</span><strong data-i18n="release.li1">Run any CLI agent in a real terminal</strong></li>
+                            <li data-story-step="1"><span>02</span><strong data-i18n="release.li2">See every task and return to its exact session</strong></li>
+                            <li data-story-step="2"><span>03</span><strong data-i18n="release.li3">Review code, Git changes, and diagnostics beside the agent</strong></li>
+                        </ol>
+                    </div>
+                    <div class="story-visual" aria-hidden="true">
+                        <div class="story-glow"></div>
+                        <figure class="story-frame is-current" data-story-frame="0">
+                            <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-terminal.png" alt="Pine built-in terminal" data-i18n-alt="screenshots.alt3">
+                        </figure>
+                        <figure class="story-frame" data-story-frame="1">
+                            <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-agent-inbox.png" alt="Pine Agent Inbox showing agent tasks across projects" data-i18n-alt="screenshots.alt0">
+                        </figure>
+                        <figure class="story-frame" data-story-frame="2">
+                            <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine code editor with syntax highlighting and file tree" data-i18n-alt="screenshots.alt2">
+                        </figure>
+                        <div class="story-counter"><span id="story-counter-current">01</span><span>03</span></div>
                     </div>
                 </div>
             </section>
@@ -1185,55 +1197,38 @@
                 </div>
             </section>
 
-            <section class="section" id="new">
-                <div class="release-card">
-                    <div class="release-copy">
-                        <span class="section-kicker" data-i18n="release.kicker">New in Pine 2.0</span>
-                        <h2 data-i18n="release.title">Agent work finally has a home.</h2>
-                        <p data-i18n="release.desc">Pine 2.0 turns scattered terminal sessions into a durable, recoverable workflow while keeping the terminal as the source of truth.</p>
-                        <a class="btn btn-secondary" href="https://github.com/batonogov/pine/releases/tag/v2.0.0" data-i18n="release.cta">Read the 2.0 release notes</a>
-                    </div>
-                    <ul class="release-list">
-                        <li data-i18n="release.li1">Cross-project Agent Inbox with exact routing back to live sessions</li>
-                        <li data-i18n="release.li2">Isolated worktrees, safe task recovery, and evidence-based completion briefs</li>
-                        <li data-i18n="release.li3">Actionable private notifications and first-party CLI-agent adapters</li>
-                        <li data-i18n="release.li4">A polished branded DMG installer and a completely new Pine icon</li>
-                    </ul>
-                </div>
-            </section>
-
             <section class="section" id="why">
                 <div class="section-head">
-                    <span class="section-kicker" data-i18n="why.kicker">Why Pine</span>
-                    <h2 data-i18n="why.title">Built for the gap between bloated editors and full IDEs.</h2>
-                    <p data-i18n="why.desc">Pine keeps the parts that matter in day-to-day coding and cuts the layers that usually slow editors down.</p>
+                    <span class="section-kicker" data-i18n="why.kicker">One native workspace</span>
+                    <h2 data-i18n="why.title">Keep the whole task together.</h2>
+                    <p data-i18n="why.desc">Open related projects in one window, switch without duplicates, and keep each editor and terminal exactly where the work belongs.</p>
                 </div>
                 <div class="compare-grid">
                     <article class="compare-card compare-card-muted">
-                        <h3 data-i18n="why.keepsTitle">What Pine keeps</h3>
+                        <h3 data-i18n="why.keepsTitle">Projects stay connected</h3>
                         <ul>
-                            <li data-i18n="why.keepsLi1">Native project tree and Mac window behavior</li>
-                            <li data-i18n="why.keepsLi2">Syntax highlighting, line numbers, and find</li>
-                            <li data-i18n="why.keepsLi3">Multiple terminal tabs powered by a real PTY</li>
-                            <li data-i18n="why.keepsLi4">Git status, gutter diffs, and branch switching</li>
+                            <li data-i18n="why.keepsLi1">Add, switch, and close projects without multiplying windows</li>
+                            <li data-i18n="why.keepsLi2">Tell same-named projects apart with concise path context</li>
+                            <li data-i18n="why.keepsLi3">Route Agent Inbox tasks back to the window that owns them</li>
+                            <li data-i18n="why.keepsLi4">Suspend background editor services until a project returns</li>
                         </ul>
                     </article>
                     <article class="compare-card compare-card-accent">
-                        <h3 data-i18n="why.cutsTitle">What Pine cuts</h3>
+                        <h3 data-i18n="why.cutsTitle">Tools stay interoperable</h3>
                         <ul>
-                            <li data-i18n="why.cutsLi1">Browser engine overhead</li>
-                            <li data-i18n="why.cutsLi2">Plugin sprawl and extension dependency chains</li>
-                            <li data-i18n="why.cutsLi3">Settings archaeology before real work starts</li>
-                            <li data-i18n="why.cutsLi4">Chrome-heavy UI that competes with the code</li>
+                            <li data-i18n="why.cutsLi1">Agents remain ordinary CLI processes in real PTYs</li>
+                            <li data-i18n="why.cutsLi2">Files remain files; Git remains Git</li>
+                            <li data-i18n="why.cutsLi3">LSP servers and formatters stay replaceable</li>
+                            <li data-i18n="why.cutsLi4">No proprietary prompt or transcript lock-in</li>
                         </ul>
                     </article>
                     <article class="compare-card">
-                        <h3 data-i18n="why.feelsTitle">What that feels like</h3>
-                        <p data-i18n="why.feelsDesc">You spend less time shaping the editor and more time writing, running, and reviewing code. Pine stays in the background and keeps the loop tight.</p>
+                        <h3 data-i18n="why.feelsTitle">Context without clutter</h3>
+                        <p data-i18n="why.feelsDesc">Pine lets projects, terminals, and agent tasks share one native workspace while keeping the current decision in focus.</p>
                         <div class="hero-proof" style="margin-top: 22px;">
-                            <span data-i18n="why.feelsChip1">Open fast</span>
-                            <span data-i18n="why.feelsChip2">Stay focused</span>
-                            <span data-i18n="why.feelsChip3">Ship sooner</span>
+                            <span data-i18n="why.feelsChip1">One window</span>
+                            <span data-i18n="why.feelsChip2">Exact routing</span>
+                            <span data-i18n="why.feelsChip3">Native focus</span>
                         </div>
                     </article>
                 </div>
@@ -1258,13 +1253,13 @@
                     </article>
                     <article class="feature-card">
                         <div class="feature-badge">03</div>
-                        <h3 data-i18n="features.03title">Shape a workspace around the task.</h3>
-                        <p data-i18n="features.03desc">Split editors and terminals horizontally or vertically, drag tabs between panes, resize them, and maximize the pane that needs focus.</p>
+                        <h3 data-i18n="features.03title">Shape one workspace around multiple projects.</h3>
+                        <p data-i18n="features.03desc">Keep related projects in one window, switch from the toolbar, then split editors and terminals, drag tabs between panes, resize, and maximize.</p>
                     </article>
                     <article class="feature-card">
                         <div class="feature-badge">04</div>
                         <h3 data-i18n="features.04title">Use a terminal built for real workflows.</h3>
-                        <p data-i18n="features.04desc">Full VT100/xterm emulation with tabs, themes, TUI support, clickable file and OSC 8 links, send-to-terminal, and a global quick-terminal hotkey.</p>
+                        <p data-i18n="features.04desc">Full VT100/xterm emulation with tabs, themes, TUI support, clickable links, a global quick terminal, and display recovery that preserves the running shell.</p>
                     </article>
                     <article class="feature-card feature-wide">
                         <div class="feature-badge">05</div>
@@ -1282,7 +1277,7 @@
             <section class="section" id="screenshots">
                 <div class="section-head">
                     <span class="section-kicker" data-i18n="screenshots.kicker">Screenshots</span>
-                    <h2 data-i18n="screenshots.title">See Pine in action.</h2>
+                    <h2 data-i18n="screenshots.title">See the whole task, not disconnected tools.</h2>
                 </div>
                 <div class="screenshot-gallery">
                     <figure class="featured">
@@ -1290,20 +1285,12 @@
                         <figcaption data-i18n="screenshots.cap0">Agent Inbox keeps work from every project in one place</figcaption>
                     </figure>
                     <figure>
-                        <button class="screenshot-trigger" type="button"><img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-welcome.png" alt="Pine welcome window with recent projects" data-i18n-alt="screenshots.alt1" loading="lazy"></button>
-                        <figcaption data-i18n="screenshots.cap1">Welcome window with recent projects</figcaption>
-                    </figure>
-                    <figure>
-                        <button class="screenshot-trigger" type="button"><img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine code editor with syntax highlighting and file tree" data-i18n-alt="screenshots.alt2" loading="lazy"></button>
-                        <figcaption data-i18n="screenshots.cap2">Code editor with syntax highlighting and git gutter</figcaption>
-                    </figure>
-                    <figure>
                         <button class="screenshot-trigger" type="button"><img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-terminal.png" alt="Pine built-in terminal" data-i18n-alt="screenshots.alt3" loading="lazy"></button>
-                        <figcaption data-i18n="screenshots.cap3">Built-in terminal powered by SwiftTerm</figcaption>
+                        <figcaption data-i18n="screenshots.cap3">A real terminal stays beside the code, with the shell and scrollback intact</figcaption>
                     </figure>
                     <figure>
                         <button class="screenshot-trigger" type="button"><img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-markdown.png" alt="Pine Markdown preview in split mode" data-i18n-alt="screenshots.alt4" loading="lazy"></button>
-                        <figcaption data-i18n="screenshots.cap4">Markdown preview in side-by-side mode</figcaption>
+                        <figcaption data-i18n="screenshots.cap4">Review source and rendered output side by side</figcaption>
                     </figure>
                 </div>
             </section>
@@ -1324,10 +1311,10 @@
 
             <section class="section" id="story">
                 <div class="story-card">
-                    <span class="section-kicker" data-i18n="story.kicker">Origin</span>
-                    <h2 data-i18n="story.title">Built in 12 days by a DevOps engineer who had never written a line of Swift.</h2>
-                    <blockquote data-i18n="story.quote">"I just wanted a fast native editor for my Ansible and Helm files. VS Code felt too heavy. So I built one."</blockquote>
-                    <p data-i18n="story.body">Pine started as a personal experiment. Working daily with Ansible, Helm, and Terraform meant editing YAML, not writing apps. VS Code felt too heavy for the task. Zed was promising but not native enough. No editor felt right. Over 12 days — with AI assistance and no prior Swift knowledge — Pine was built. That experiment became a real product. It is now open source and growing with its community.</p>
+                    <span class="section-kicker" data-i18n="story.kicker">Direction</span>
+                    <h2 data-i18n="story.title">A native control surface for CLI-agent work.</h2>
+                    <blockquote data-i18n="story.quote">"The terminal stays open. Evidence stays attached. You stay in control."</blockquote>
+                    <p data-i18n="story.body">Pine is moving toward a workspace where terminal tools remain interchangeable, agent work carries durable context, and every change can be reviewed beside the code. The editor should become more capable without becoming heavier, more opaque, or dependent on one agent.</p>
                 </div>
             </section>
 
@@ -1336,7 +1323,7 @@
                     <div>
                         <span class="section-kicker" data-i18n="install.kicker">Get Started</span>
                         <h2 data-i18n="install.title">Install Pine in 10 seconds.</h2>
-                        <p data-i18n="install.desc">Use Homebrew, grab the latest DMG, or build from source in Xcode. Pine uses a focused native stack: SwiftUI, AppKit, SwiftTerm, swift-markdown, and Sparkle.</p>
+                        <p data-i18n="install.desc">Use Homebrew, grab the latest DMG, or build from source in Xcode. Pine stays a focused native Mac app with no browser runtime.</p>
                         <div class="install-actions">
                             <a class="btn btn-primary" href="https://github.com/batonogov/pine/releases/latest" data-i18n="install.download">Download the latest release</a>
                             <a class="btn btn-secondary" href="https://github.com/batonogov/pine" data-i18n="install.source">Read the source</a>
@@ -1370,17 +1357,17 @@
     <script>
         var T = {
             en: {
-                "nav.new": "Pine 2.0",
-                "nav.why": "Why Pine",
+                "nav.new": "Workflow",
+                "nav.why": "Workspace",
                 "nav.features": "Features",
                 "nav.install": "Install",
                 "nav.screenshots": "Screenshots",
                 "header.cta": "Download",
                 "hero.eyebrow": "Native · Agent-aware · No Electron",
-                "hero.title": "A native Mac editor built for the age of CLI agents.",
+                "hero.title": "Run any CLI agent in a real terminal. Review its changes without losing sight of the code.",
                 "hero.desc": "The agent stays in the terminal.\nThe code stays in view.\nPine brings them together.",
                 "hero.noElectron": "No Electron",
-                "hero.minimalDeps": "Agent-aware workflow",
+                "hero.minimalDeps": "Multi-project workspace",
                 "hero.terminal": "Editor + terminal panes",
                 "hero.gitAware": "LSP + Git context",
                 "hero.download": "Download Pine",
@@ -1402,32 +1389,32 @@
                 "mini.practicalKicker": "Practical",
                 "mini.practicalTitle": "Git where it matters",
                 "mini.practicalDesc": "Status in the tree, branch switching, and diff markers directly in the editor.",
-                "release.kicker": "New in Pine 2.0",
-                "release.title": "Agent work finally has a home.",
-                "release.desc": "Pine 2.0 turns scattered terminal sessions into a durable, recoverable workflow while keeping the terminal as the source of truth.",
-                "release.cta": "Read the 2.0 release notes",
-                "release.li1": "Cross-project Agent Inbox with exact routing back to live sessions",
-                "release.li2": "Isolated worktrees, safe task recovery, and evidence-based completion briefs",
-                "release.li3": "Actionable private notifications and first-party CLI-agent adapters",
-                "release.li4": "A polished branded DMG installer and a completely new Pine icon",
-                "why.kicker": "Why Pine",
-                "why.title": "Built for the gap between bloated editors and full IDEs.",
-                "why.desc": "Pine keeps the parts that matter in day-to-day coding and cuts the layers that usually slow editors down.",
-                "why.keepsTitle": "What Pine keeps",
-                "why.keepsLi1": "Native project tree and Mac window behavior",
-                "why.keepsLi2": "Syntax highlighting, line numbers, and find",
-                "why.keepsLi3": "Multiple terminal tabs powered by a real PTY",
-                "why.keepsLi4": "Git status, gutter diffs, and branch switching",
-                "why.cutsTitle": "What Pine cuts",
-                "why.cutsLi1": "Browser engine overhead",
-                "why.cutsLi2": "Plugin sprawl and extension dependency chains",
-                "why.cutsLi3": "Settings archaeology before real work starts",
-                "why.cutsLi4": "Chrome-heavy UI that competes with the code",
-                "why.feelsTitle": "What that feels like",
-                "why.feelsDesc": "You spend less time shaping the editor and more time writing, running, and reviewing code. Pine stays in the background and keeps the loop tight.",
-                "why.feelsChip1": "Open fast",
-                "why.feelsChip2": "Stay focused",
-                "why.feelsChip3": "Ship sooner",
+                "release.kicker": "The Pine loop",
+                "release.title": "One continuous loop. From agent command to code review.",
+                "release.desc": "Pine keeps the terminal, task context, and edited files in one native workspace, so you always know what the agent is doing and where to review it.",
+                "release.cta": "Explore the workspace",
+                "release.li1": "Run any CLI agent in a real terminal",
+                "release.li2": "See every task and return to its exact session",
+                "release.li3": "Review code, Git changes, and diagnostics beside the agent",
+                "release.li4": "You review and decide; Pine does not replace the tools in the loop",
+                "why.kicker": "One native workspace",
+                "why.title": "Keep the whole task together.",
+                "why.desc": "Open related projects in one window, switch without duplicates, and keep each editor and terminal exactly where the work belongs.",
+                "why.keepsTitle": "Projects stay connected",
+                "why.keepsLi1": "Add, switch, and close projects without multiplying windows",
+                "why.keepsLi2": "Tell same-named projects apart with concise path context",
+                "why.keepsLi3": "Route Agent Inbox tasks back to the window that owns them",
+                "why.keepsLi4": "Suspend background editor services until a project returns",
+                "why.cutsTitle": "Tools stay interoperable",
+                "why.cutsLi1": "Agents remain ordinary CLI processes in real PTYs",
+                "why.cutsLi2": "Files remain files; Git remains Git",
+                "why.cutsLi3": "LSP servers and formatters stay replaceable",
+                "why.cutsLi4": "No proprietary prompt or transcript lock-in",
+                "why.feelsTitle": "Context without clutter",
+                "why.feelsDesc": "Pine lets projects, terminals, and agent tasks share one native workspace while keeping the current decision in focus.",
+                "why.feelsChip1": "One window",
+                "why.feelsChip2": "Exact routing",
+                "why.feelsChip3": "Native focus",
                 "features.kicker": "Features",
                 "features.title": "Everything needed to edit beside an agent.",
                 "features.desc": "Pine stays a focused code editor while making terminal-driven, agent-assisted work visible.",
@@ -1435,16 +1422,16 @@
                 "features.01desc": "Tracks durable tasks across projects in Agent Inbox, routes to the exact live session, and sends private notifications for verified events or detected process exits.",
                 "features.02title": "Edit with native speed and real code intelligence.",
                 "features.02desc": "Bundled language grammars, LSP diagnostics, completion, hover, go-to-definition, code actions, rename, symbols, folding, minimap, and project search.",
-                "features.03title": "Shape a workspace around the task.",
-                "features.03desc": "Split editors and terminals horizontally or vertically, drag tabs between panes, resize them, and maximize the pane that needs focus.",
+                "features.03title": "Shape one workspace around multiple projects.",
+                "features.03desc": "Keep related projects in one window, switch from the toolbar, then split editors and terminals, drag tabs between panes, resize, and maximize.",
                 "features.04title": "Use a terminal built for real workflows.",
-                "features.04desc": "Full VT100/xterm emulation with tabs, themes, TUI support, clickable file and OSC 8 links, send-to-terminal, and a global quick-terminal hotkey.",
+                "features.04desc": "Full VT100/xterm emulation with tabs, themes, TUI support, clickable links, a global quick terminal, and display recovery that preserves the running shell.",
                 "features.05title": "Keep changes, git, and diagnostics in view.",
                 "features.05desc": "Live file reloads, sidebar status, gutter and inline diffs, blame, branch switching, config validation, and format-on-save.",
                 "features.06title": "Stay native, focused, and recoverable.",
                 "features.06desc": "Auto-save, session and cursor restoration, large-file handling, auto-updates, nine localizations, VoiceOver, reduced motion, and no Electron runtime.",
                 "screenshots.kicker": "Screenshots",
-                "screenshots.title": "See Pine in action.",
+                "screenshots.title": "See the whole task, not disconnected tools.",
                 "screenshots.alt0": "Pine Agent Inbox showing agent tasks across projects",
                 "screenshots.cap0": "Agent Inbox keeps work from every project in one place",
                 "screenshots.alt1": "Pine welcome window with recent projects",
@@ -1452,9 +1439,9 @@
                 "screenshots.alt2": "Pine code editor with syntax highlighting and file tree",
                 "screenshots.cap2": "Code editor with syntax highlighting and git gutter",
                 "screenshots.alt3": "Pine built-in terminal",
-                "screenshots.cap3": "Built-in terminal powered by SwiftTerm",
+                "screenshots.cap3": "A real terminal stays beside the code, with the shell and scrollback intact",
                 "screenshots.alt4": "Pine Markdown preview in split mode",
-                "screenshots.cap4": "Markdown preview in side-by-side mode",
+                "screenshots.cap4": "Review source and rendered output side by side",
                 "lightbox.label": "Screenshot preview",
                 "lightbox.close": "Close screenshot preview",
                 "manifesto.kicker": "Positioning",
@@ -1464,13 +1451,13 @@
                 "manifesto.chip2": "Agents stay in the terminal",
                 "manifesto.chip3": "Native LSP editor",
                 "manifesto.chip4": "Lightweight extensibility",
-                "story.kicker": "Origin",
-                "story.title": "Built in 12 days by a DevOps engineer who had never written a line of Swift.",
-                "story.quote": "\"I just wanted a fast native editor for my Ansible and Helm files. VS Code felt too heavy. So I built one.\"",
-                "story.body": "Pine started as a personal experiment. Working daily with Ansible, Helm, and Terraform meant editing YAML, not writing apps. VS Code felt too heavy for the task. Zed was promising but not native enough. No editor felt right. Over 12 days — with AI assistance and no prior Swift knowledge — Pine was built. That experiment became a real product. It is now open source and growing with its community.",
+                "story.kicker": "Direction",
+                "story.title": "A native control surface for CLI-agent work.",
+                "story.quote": "\"The terminal stays open. Evidence stays attached. You stay in control.\"",
+                "story.body": "Pine is moving toward a workspace where terminal tools remain interchangeable, agent work carries durable context, and every change can be reviewed beside the code. The editor should become more capable without becoming heavier, more opaque, or dependent on one agent.",
                 "install.kicker": "Get Started",
                 "install.title": "Install Pine in 10 seconds.",
-                "install.desc": "Use Homebrew, grab the latest DMG, or build from source in Xcode. Pine uses a focused native stack: SwiftUI, AppKit, SwiftTerm, swift-markdown, and Sparkle.",
+                "install.desc": "Use Homebrew, grab the latest DMG, or build from source in Xcode. Pine stays a focused native Mac app with no browser runtime.",
                 "install.download": "Download the latest release",
                 "install.source": "Read the source",
                 "install.shellNote": "Build from source with <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> if you want the full native stack on your machine.",
@@ -1483,17 +1470,17 @@
                 "meta.twitterDescription": "The agent stays in the terminal. The code stays in view. Pine brings them together in a native macOS editor for CLI-agent workflows."
             },
             ru: {
-                "nav.new": "Pine 2.0",
-                "nav.why": "Почему Pine",
+                "nav.new": "Процесс",
+                "nav.why": "Пространство",
                 "nav.features": "Возможности",
                 "nav.install": "Установка",
                 "nav.screenshots": "Скриншоты",
                 "header.cta": "Скачать",
                 "hero.eyebrow": "Нативный · Видит агентов · Без Electron",
-                "hero.title": "Нативный Mac-редактор для эпохи CLI-агентов.",
+                "hero.title": "Запускайте любого CLI-агента в настоящем терминале и проверяйте его изменения, не теряя код из виду.",
                 "hero.desc": "Агент остаётся в терминале.\nКод остаётся перед глазами.\nPine объединяет их.",
                 "hero.noElectron": "Без Electron",
-                "hero.minimalDeps": "Работа с учётом агентов",
+                "hero.minimalDeps": "Несколько проектов в одном окне",
                 "hero.terminal": "Редактор и терминал в панелях",
                 "hero.gitAware": "LSP и Git-контекст",
                 "hero.download": "Скачать Pine",
@@ -1515,32 +1502,32 @@
                 "mini.practicalKicker": "Практичный",
                 "mini.practicalTitle": "Git там, где он нужен",
                 "mini.practicalDesc": "Статусы файлов, переключение веток и маркеры изменений прямо рядом с кодом.",
-                "release.kicker": "Новое в Pine 2.0",
-                "release.title": "У работы агентов наконец появилось своё место.",
-                "release.desc": "Pine 2.0 превращает разрозненные терминальные сессии в надёжный восстанавливаемый процесс, сохраняя терминал источником правды.",
-                "release.cta": "Читать заметки о выпуске 2.0",
-                "release.li1": "Общие Входящие агентов для всех проектов с точным возвратом к активной сессии",
-                "release.li2": "Изолированные worktree, безопасное восстановление задач и подтверждённые фактами отчёты о завершении",
-                "release.li3": "Полезные приватные уведомления и встроенные адаптеры CLI-агентов",
-                "release.li4": "Отполированный фирменный DMG и совершенно новая иконка Pine",
-                "why.kicker": "Почему Pine",
-                "why.title": "Для тех, кому редакторы стали тяжеловаты, а IDE все еще перебор.",
-                "why.desc": "Pine оставляет все, что нужно в повседневной работе, и убирает слои, которые обычно только тормозят.",
-                "why.keepsTitle": "Что в Pine остается",
-                "why.keepsLi1": "Нативное дерево проекта и привычное поведение окон macOS",
-                "why.keepsLi2": "Подсветка синтаксиса, номера строк и поиск",
-                "why.keepsLi3": "Несколько вкладок терминала на настоящем PTY",
-                "why.keepsLi4": "Git-статусы, маркеры изменений и переключение веток",
-                "why.cutsTitle": "Чего в Pine нет",
-                "why.cutsLi1": "Накладных расходов браузерного движка",
-                "why.cutsLi2": "Разросшихся цепочек плагинов и зависимостей",
-                "why.cutsLi3": "Копания в настройках перед тем, как начать работу",
-                "why.cutsLi4": "Тяжелого интерфейса, который перетягивает внимание с кода",
-                "why.feelsTitle": "Как это ощущается",
-                "why.feelsDesc": "Меньше времени уходит на настройку редактора, больше — на код, команды и ревью. Pine не лезет вперед и держит рабочий ритм.",
-                "why.feelsChip1": "Быстро открыть",
-                "why.feelsChip2": "Фокус на коде",
-                "why.feelsChip3": "Быстрее к релизу",
+                "release.kicker": "Цикл Pine",
+                "release.title": "Один непрерывный цикл — от команды агенту до проверки кода.",
+                "release.desc": "Pine держит терминал, контекст задачи и изменённые файлы в одном нативном пространстве — всегда понятно, что делает агент и где проверять результат.",
+                "release.cta": "Изучить рабочее пространство",
+                "release.li1": "Запускайте любого CLI-агента в настоящем терминале",
+                "release.li2": "Видьте все задачи и возвращайтесь в нужную сессию",
+                "release.li3": "Проверяйте код, Git-изменения и диагностику рядом с агентом",
+                "release.li4": "Вы проверяете и решаете; Pine не подменяет инструменты рабочего цикла",
+                "why.kicker": "Одно нативное пространство",
+                "why.title": "Держите всю задачу вместе.",
+                "why.desc": "Открывайте связанные проекты в одном окне, переключайтесь без дубликатов и сохраняйте каждый редактор и терминал именно там, где идёт работа.",
+                "why.keepsTitle": "Проекты остаются связанными",
+                "why.keepsLi1": "Добавляйте, переключайте и закрывайте проекты без лишних окон",
+                "why.keepsLi2": "Различайте одноимённые проекты по краткому контексту пути",
+                "why.keepsLi3": "Возвращайтесь из Входящих агентов в окно, которому принадлежит проект",
+                "why.keepsLi4": "Приостанавливайте фоновые службы редактора до возвращения в проект",
+                "why.cutsTitle": "Инструменты остаются совместимыми",
+                "why.cutsLi1": "Агенты остаются обычными CLI-процессами в настоящих PTY",
+                "why.cutsLi2": "Файлы остаются файлами, Git остаётся Git",
+                "why.cutsLi3": "LSP-серверы и форматтеры можно заменять",
+                "why.cutsLi4": "Без привязки к закрытому формату промптов или истории",
+                "why.feelsTitle": "Контекст без перегруза",
+                "why.feelsDesc": "Pine объединяет проекты, терминалы и задачи агентов в одном нативном пространстве, оставляя текущее решение в центре внимания.",
+                "why.feelsChip1": "Одно окно",
+                "why.feelsChip2": "Точный маршрут",
+                "why.feelsChip3": "Нативный фокус",
                 "features.kicker": "Возможности",
                 "features.title": "Всё для работы рядом с агентом.",
                 "features.desc": "Pine остаётся сфокусированным редактором кода, но делает работу агентов из терминала видимой.",
@@ -1548,16 +1535,16 @@
                 "features.01desc": "Pine хранит задачи разных проектов во Входящих агентов, точно возвращает к активной сессии и отправляет приватные уведомления о проверенных событиях или завершении процесса.",
                 "features.02title": "Нативная скорость и полноценная работа с кодом.",
                 "features.02desc": "Встроенные грамматики языков, диагностика LSP, автодополнение, hover, переход к определению, code actions, переименование, символы, сворачивание, миникарта и поиск по проекту.",
-                "features.03title": "Рабочее пространство под конкретную задачу.",
-                "features.03desc": "Редакторы и терминалы можно делить по горизонтали и вертикали, переносить вкладки между панелями, менять размеры и разворачивать нужную панель.",
+                "features.03title": "Одно пространство для нескольких проектов.",
+                "features.03desc": "Держите связанные проекты в одном окне, переключайтесь с панели инструментов, делите редакторы и терминалы, переносите вкладки, меняйте размеры и разворачивайте панели.",
                 "features.04title": "Терминал для настоящей работы.",
-                "features.04desc": "Полная эмуляция VT100/xterm, вкладки, темы, TUI, кликабельные ссылки на файлы и OSC 8, отправка кода в терминал и глобальная горячая клавиша быстрого терминала.",
+                "features.04desc": "Полная эмуляция VT100/xterm, вкладки, темы, TUI, кликабельные ссылки, глобальный быстрый терминал и восстановление изображения без перезапуска командной оболочки.",
                 "features.05title": "Изменения, Git и диагностика всегда на виду.",
                 "features.05desc": "Живое обновление файлов, статусы в сайдбаре, маркеры и inline diff, blame, переключение веток, проверка конфигураций и форматирование при сохранении.",
                 "features.06title": "Нативный, сфокусированный и надёжный.",
                 "features.06desc": "Автосохранение, восстановление сессии и курсора, большие файлы, автообновления, девять языков интерфейса, VoiceOver, уменьшение движения и никакого Electron.",
                 "screenshots.kicker": "Скриншоты",
-                "screenshots.title": "Pine в действии.",
+                "screenshots.title": "Видите всю задачу, а не набор разрозненных инструментов.",
                 "screenshots.alt0": "Входящие агентов Pine с задачами из разных проектов",
                 "screenshots.cap0": "Входящие агентов собирают работу из всех проектов в одном месте",
                 "screenshots.alt1": "Окно приветствия Pine со списком недавних проектов",
@@ -1565,9 +1552,9 @@
                 "screenshots.alt2": "Редактор Pine с подсветкой синтаксиса и деревом файлов",
                 "screenshots.cap2": "Редактор кода с подсветкой синтаксиса и маркерами Git",
                 "screenshots.alt3": "Встроенный терминал Pine",
-                "screenshots.cap3": "Встроенный терминал на SwiftTerm",
+                "screenshots.cap3": "Настоящий терминал остаётся рядом с кодом, сохраняя shell и историю вывода",
                 "screenshots.alt4": "Превью Markdown в режиме разделённого экрана",
-                "screenshots.cap4": "Превью Markdown в режиме разделённого экрана",
+                "screenshots.cap4": "Проверяйте исходник и результат рядом",
                 "lightbox.label": "Просмотр скриншота",
                 "lightbox.close": "Закрыть просмотр скриншота",
                 "manifesto.kicker": "Позиция",
@@ -1577,13 +1564,13 @@
                 "manifesto.chip2": "Агенты остаются в терминале",
                 "manifesto.chip3": "Нативный редактор с LSP",
                 "manifesto.chip4": "Лёгкая расширяемость",
-                "story.kicker": "История",
-                "story.title": "Собран за 12 дней DevOps-инженером, который никогда не писал на Swift.",
-                "story.quote": "«Мне просто нужен был быстрый нативный редактор для файлов Ansible и Helm. VS Code казался слишком тяжёлым. Я решил сделать свой.»",
-                "story.body": "Pine начинался как личный эксперимент. Работа с Ansible, Helm и Terraform каждый день — это редактирование YAML, а не написание приложений. VS Code ощущался избыточным. Zed выглядел интересно, но не был достаточно нативным. Ни один редактор не подходил. За 12 дней — с помощью ИИ и без знания Swift — Pine был написан. Из эксперимента вырос настоящий продукт. Теперь он открыт и развивается вместе с сообществом.",
+                "story.kicker": "Направление",
+                "story.title": "Нативная панель управления работой CLI-агентов.",
+                "story.quote": "«Терминал остаётся открытым. Доказательства остаются с задачей. Контроль остаётся у вас.»",
+                "story.body": "Pine движется к рабочему пространству, где терминальные инструменты остаются взаимозаменяемыми, работа агентов сохраняет устойчивый контекст, а каждое изменение можно проверить рядом с кодом. Редактор должен становиться мощнее, не превращаясь в тяжёлую и непрозрачную систему, зависимую от одного агента.",
                 "install.kicker": "Начало работы",
                 "install.title": "Установить Pine можно за 10 секунд.",
-                "install.desc": "Можно поставить через Homebrew, скачать свежий DMG или собрать из исходников в Xcode. Pine использует сфокусированный нативный стек: SwiftUI, AppKit, SwiftTerm, swift-markdown и Sparkle.",
+                "install.desc": "Можно поставить через Homebrew, скачать свежий DMG или собрать из исходников в Xcode. Pine остаётся сфокусированным нативным Mac-приложением без браузерного рантайма.",
                 "install.download": "Скачать последний релиз",
                 "install.source": "Посмотреть исходный код",
                 "install.shellNote": "Если хочется полностью нативный стек на Mac, Pine можно собрать из исходников командой <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>.",
@@ -1596,17 +1583,17 @@
                 "meta.twitterDescription": "Агент остаётся в терминале. Код остаётся перед глазами. Pine объединяет их в нативном редакторе macOS для работы с CLI-агентами."
             },
             de: {
-                "nav.new": "Pine 2.0",
-                "nav.why": "Warum Pine",
+                "nav.new": "Ablauf",
+                "nav.why": "Arbeitsbereich",
                 "nav.features": "Funktionen",
                 "nav.install": "Installation",
                 "nav.screenshots": "Screenshots",
                 "header.cta": "Download",
                 "hero.eyebrow": "Nativ · Agentenbewusst · Kein Electron",
-                "hero.title": "Ein nativer Mac-Editor für das Zeitalter der CLI-Agenten.",
+                "hero.title": "Führe jeden CLI-Agenten in einem echten Terminal aus und prüfe seine Änderungen, ohne den Code aus den Augen zu verlieren.",
                 "hero.desc": "Der Agent bleibt im Terminal.\nDer Code bleibt im Blick.\nPine bringt beides zusammen.",
                 "hero.noElectron": "Kein Electron",
-                "hero.minimalDeps": "Agentenbewusster Workflow",
+                "hero.minimalDeps": "Multi-Projekt-Arbeitsbereich",
                 "hero.terminal": "Editor- und Terminal-Bereiche",
                 "hero.gitAware": "LSP + Git-Kontext",
                 "hero.download": "Pine herunterladen",
@@ -1628,32 +1615,32 @@
                 "mini.practicalKicker": "Praktisch",
                 "mini.practicalTitle": "Git dort, wo es zählt",
                 "mini.practicalDesc": "Status im Dateibaum, Branch-Wechsel und Diff-Markierungen direkt im Editor.",
-                "release.kicker": "Neu in Pine 2.0",
-                "release.title": "Agentenarbeit hat endlich ein Zuhause.",
-                "release.desc": "Pine 2.0 macht aus verstreuten Terminalsitzungen einen dauerhaften, wiederherstellbaren Workflow und lässt das Terminal die Quelle der Wahrheit bleiben.",
-                "release.cta": "Versionshinweise zu 2.0 lesen",
-                "release.li1": "Projektübergreifender Agenten-Posteingang mit exakter Rückkehr zu laufenden Sitzungen",
-                "release.li2": "Isolierte Worktrees, sichere Aufgabenwiederherstellung und evidenzbasierte Abschlussberichte",
-                "release.li3": "Nützliche private Hinweise und integrierte Adapter für CLI-Agenten",
-                "release.li4": "Ein polierter Marken-DMG-Installer und ein völlig neues Pine-Symbol",
-                "why.kicker": "Warum Pine",
-                "why.title": "Für die Lücke zwischen aufgeblähten Editoren und vollständigen IDEs.",
-                "why.desc": "Pine behält die Teile, die im täglichen Coding wichtig sind, und entfernt die Schichten, die Editoren normalerweise verlangsamen.",
-                "why.keepsTitle": "Was Pine behält",
-                "why.keepsLi1": "Nativer Projektbaum und Mac-Fensterverhalten",
-                "why.keepsLi2": "Syntaxhervorhebung, Zeilennummern und Suche",
-                "why.keepsLi3": "Mehrere Terminal-Tabs mit echtem PTY",
-                "why.keepsLi4": "Git-Status, Gutter-Diffs und Branch-Wechsel",
-                "why.cutsTitle": "Was Pine weglässt",
-                "why.cutsLi1": "Browser-Engine-Overhead",
-                "why.cutsLi2": "Plugin-Wildwuchs und Extension-Abhängigkeitsketten",
-                "why.cutsLi3": "Einstellungs-Archäologie vor dem Arbeiten",
-                "why.cutsLi4": "Chrome-lastiges UI, das mit dem Code konkurriert",
-                "why.feelsTitle": "Wie sich das anfühlt",
-                "why.feelsDesc": "Weniger Zeit für die Editor-Konfiguration, mehr Zeit für Code schreiben, ausführen und reviewen. Pine bleibt im Hintergrund und hält den Zyklus straff.",
-                "why.feelsChip1": "Schnell öffnen",
-                "why.feelsChip2": "Fokussiert bleiben",
-                "why.feelsChip3": "Schneller liefern",
+                "release.kicker": "Der Pine-Ablauf",
+                "release.title": "Ein durchgängiger Ablauf. Vom Agentenauftrag bis zum Code-Review.",
+                "release.desc": "Pine hält Terminal, Aufgabenkontext und bearbeitete Dateien in einem nativen Arbeitsbereich zusammen. So ist immer klar, was der Agent tut und wo das Ergebnis geprüft wird.",
+                "release.cta": "Arbeitsbereich entdecken",
+                "release.li1": "Jeden CLI-Agenten in einem echten Terminal ausführen",
+                "release.li2": "Alle Aufgaben sehen und zur exakten Sitzung zurückkehren",
+                "release.li3": "Code, Git-Änderungen und Diagnosen neben dem Agenten prüfen",
+                "release.li4": "Sie prüfen und entscheiden; Pine ersetzt keine Werkzeuge im Ablauf",
+                "why.kicker": "Ein nativer Arbeitsbereich",
+                "why.title": "Die ganze Aufgabe bleibt zusammen.",
+                "why.desc": "Zusammengehörige Projekte in einem Fenster öffnen, ohne Duplikate wechseln und jeden Editor und jedes Terminal genau dort behalten, wo die Arbeit stattfindet.",
+                "why.keepsTitle": "Projekte bleiben verbunden",
+                "why.keepsLi1": "Projekte hinzufügen, wechseln und schließen, ohne Fenster zu vermehren",
+                "why.keepsLi2": "Gleichnamige Projekte durch knappen Pfadkontext unterscheiden",
+                "why.keepsLi3": "Agent-Inbox-Aufgaben in das besitzende Fenster zurückführen",
+                "why.keepsLi4": "Editor-Dienste im Hintergrund bis zur Rückkehr pausieren",
+                "why.cutsTitle": "Werkzeuge bleiben kompatibel",
+                "why.cutsLi1": "Agenten bleiben normale CLI-Prozesse in echten PTYs",
+                "why.cutsLi2": "Dateien bleiben Dateien; Git bleibt Git",
+                "why.cutsLi3": "LSP-Server und Formatter bleiben austauschbar",
+                "why.cutsLi4": "Keine Bindung an proprietäre Prompts oder Transkripte",
+                "why.feelsTitle": "Kontext ohne Ballast",
+                "why.feelsDesc": "Pine vereint Projekte, Terminals und Agentenaufgaben in einem nativen Arbeitsbereich und hält die aktuelle Entscheidung im Fokus.",
+                "why.feelsChip1": "Ein Fenster",
+                "why.feelsChip2": "Exakte Route",
+                "why.feelsChip3": "Nativer Fokus",
                 "features.kicker": "Funktionen",
                 "features.title": "Alles für die Arbeit neben einem Agenten.",
                 "features.desc": "Pine bleibt ein fokussierter Code-Editor und macht zugleich terminalbasierte, agentengestützte Arbeit sichtbar.",
@@ -1661,16 +1648,16 @@
                 "features.01desc": "Verfolgt dauerhafte Aufgaben projektübergreifend im Agenten-Posteingang, führt zur exakten Live-Sitzung und sendet private Hinweise für verifizierte Ereignisse oder erkannte Prozessenden.",
                 "features.02title": "Native Geschwindigkeit und echte Code-Intelligenz.",
                 "features.02desc": "Mitgelieferte Sprachgrammatiken, LSP-Diagnosen, Vervollständigung, Hover, Definition, Code-Aktionen, Umbenennen, Symbole, Folding, Minimap und Projektsuche.",
-                "features.03title": "Arbeitsbereich passend zur Aufgabe.",
-                "features.03desc": "Editoren und Terminals horizontal oder vertikal teilen, Tabs zwischen Bereichen verschieben, Größen ändern und den wichtigen Bereich maximieren.",
+                "features.03title": "Ein Arbeitsbereich für mehrere Projekte.",
+                "features.03desc": "Zusammengehörige Projekte in einem Fenster halten, über die Symbolleiste wechseln, Editoren und Terminals teilen, Tabs verschieben, Größen ändern und Bereiche maximieren.",
                 "features.04title": "Ein Terminal für echte Workflows.",
-                "features.04desc": "Vollständige VT100/xterm-Emulation mit Tabs, Themes, TUI-Unterstützung, klickbaren Datei- und OSC-8-Links, Send-to-Terminal und globalem Quick-Terminal-Hotkey.",
+                "features.04desc": "Vollständige VT100/xterm-Emulation mit Tabs, Themes, TUI, klickbaren Links, globalem Quick Terminal und Anzeigewiederherstellung bei weiterlaufender Shell.",
                 "features.05title": "Änderungen, Git und Diagnosen im Blick behalten.",
                 "features.05desc": "Live-Neuladen von Dateien, Sidebar-Status, Gutter- und Inline-Diffs, Blame, Branch-Wechsel, Konfigurationsprüfung und Format-on-Save.",
                 "features.06title": "Nativ, fokussiert und wiederherstellbar.",
                 "features.06desc": "Auto-Save, Sitzungs- und Cursor-Wiederherstellung, große Dateien, Auto-Updates, neun Lokalisierungen, VoiceOver, reduzierte Bewegung und keine Electron-Runtime.",
                 "screenshots.kicker": "Screenshots",
-                "screenshots.title": "Pine in Aktion.",
+                "screenshots.title": "Die ganze Aufgabe sehen, nicht getrennte Werkzeuge.",
                 "screenshots.alt0": "Pine Agenten-Posteingang mit Aufgaben aus mehreren Projekten",
                 "screenshots.cap0": "Der Agenten-Posteingang bündelt Arbeit aus allen Projekten",
                 "screenshots.alt1": "Pine-Willkommensfenster mit letzten Projekten",
@@ -1678,9 +1665,9 @@
                 "screenshots.alt2": "Pine-Code-Editor mit Syntaxhervorhebung und Dateibaum",
                 "screenshots.cap2": "Code-Editor mit Syntaxhervorhebung und Git-Gutter",
                 "screenshots.alt3": "Eingebautes Pine-Terminal",
-                "screenshots.cap3": "Eingebautes Terminal mit SwiftTerm",
+                "screenshots.cap3": "Ein echtes Terminal bleibt neben dem Code – Shell und Scrollback bleiben erhalten",
                 "screenshots.alt4": "Pine Markdown-Vorschau im geteilten Modus",
-                "screenshots.cap4": "Markdown-Vorschau im Side-by-Side-Modus",
+                "screenshots.cap4": "Quelltext und Ergebnis direkt nebeneinander prüfen",
                 "lightbox.label": "Screenshot-Vorschau",
                 "lightbox.close": "Screenshot-Vorschau schließen",
                 "manifesto.kicker": "Positionierung",
@@ -1690,13 +1677,13 @@
                 "manifesto.chip2": "Agenten bleiben im Terminal",
                 "manifesto.chip3": "Nativer LSP-Editor",
                 "manifesto.chip4": "Leichtgewichtige Erweiterbarkeit",
-                "story.kicker": "Entstehungsgeschichte",
-                "story.title": "In 12 Tagen gebaut von einem DevOps-Ingenieur, der noch nie eine Zeile Swift geschrieben hatte.",
-                "story.quote": "\"Ich wollte einfach einen schnellen nativen Editor für meine Ansible- und Helm-Dateien. VS Code fühlte sich zu schwer an. Also baute ich einen.\"",
-                "story.body": "Pine begann als persönliches Experiment. Tägliche Arbeit mit Ansible, Helm und Terraform bedeutet YAML bearbeiten, keine Apps schreiben. VS Code fühlte sich für diese Aufgabe zu schwer an. Zed sah vielversprechend aus, war aber nicht nativ genug. Kein Editor fühlte sich richtig an. In 12 Tagen — mit KI-Unterstützung und ohne Swift-Kenntnisse — entstand Pine. Aus diesem Experiment wurde ein echtes Produkt. Es ist jetzt Open Source und wächst mit seiner Community.",
+                "story.kicker": "Richtung",
+                "story.title": "Eine native Steuerfläche für die Arbeit mit CLI-Agenten.",
+                "story.quote": "\"Das Terminal bleibt offen. Belege bleiben verknüpft. Sie behalten die Kontrolle.\"",
+                "story.body": "Pine entwickelt sich zu einem Arbeitsbereich, in dem Terminalwerkzeuge austauschbar bleiben, Agentenarbeit dauerhaften Kontext trägt und jede Änderung neben dem Code geprüft werden kann. Der Editor soll leistungsfähiger werden, ohne schwerer, undurchsichtiger oder von einem Agenten abhängig zu werden.",
                 "install.kicker": "Erste Schritte",
                 "install.title": "Pine in 10 Sekunden installieren.",
-                "install.desc": "Über Homebrew, das neueste DMG oder direkt aus den Quellen in Xcode bauen. Pine nutzt einen fokussierten nativen Stack: SwiftUI, AppKit, SwiftTerm, swift-markdown und Sparkle.",
+                "install.desc": "Über Homebrew installieren, das neueste DMG laden oder in Xcode aus den Quellen bauen. Pine bleibt eine fokussierte native Mac-App ohne Browser-Runtime.",
                 "install.download": "Neueste Version herunterladen",
                 "install.source": "Quellcode ansehen",
                 "install.shellNote": "Aus den Quellen bauen mit <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>, wenn Sie den vollen nativen Stack auf Ihrem Mac wollen.",
@@ -1709,17 +1696,17 @@
                 "meta.twitterDescription": "Der Agent bleibt im Terminal. Der Code bleibt im Blick. Pine bringt beides in einem nativen macOS-Editor für CLI-Agenten zusammen."
             },
             es: {
-                "nav.new": "Pine 2.0",
-                "nav.why": "Por qué Pine",
+                "nav.new": "Flujo",
+                "nav.why": "Espacio",
                 "nav.features": "Funciones",
                 "nav.install": "Instalar",
                 "nav.screenshots": "Capturas",
                 "header.cta": "Descargar",
                 "hero.eyebrow": "Nativo · Consciente de agentes · Sin Electron",
-                "hero.title": "Un editor nativo para Mac creado para la era de los agentes CLI.",
+                "hero.title": "Ejecuta cualquier agente CLI en una terminal real y revisa sus cambios sin perder de vista el código.",
                 "hero.desc": "El agente permanece en la terminal.\nEl código permanece a la vista.\nPine los reúne.",
                 "hero.noElectron": "Sin Electron",
-                "hero.minimalDeps": "Flujo consciente de agentes",
+                "hero.minimalDeps": "Espacio multiproyecto",
                 "hero.terminal": "Paneles de editor y terminal",
                 "hero.gitAware": "LSP + contexto de Git",
                 "hero.download": "Descargar Pine",
@@ -1741,32 +1728,32 @@
                 "mini.practicalKicker": "Práctico",
                 "mini.practicalTitle": "Git donde importa",
                 "mini.practicalDesc": "Estado en el árbol, cambio de rama y marcadores de diff directamente en el editor.",
-                "release.kicker": "Novedades de Pine 2.0",
-                "release.title": "El trabajo de los agentes por fin tiene un hogar.",
-                "release.desc": "Pine 2.0 convierte sesiones de terminal dispersas en un flujo duradero y recuperable, manteniendo la terminal como fuente de verdad.",
-                "release.cta": "Leer las notas de la versión 2.0",
-                "release.li1": "Agent Inbox entre proyectos con retorno exacto a las sesiones activas",
-                "release.li2": "Worktrees aislados, recuperación segura y resúmenes de finalización basados en evidencias",
-                "release.li3": "Notificaciones privadas útiles y adaptadores integrados para agentes CLI",
-                "release.li4": "Un instalador DMG de marca pulido y un icono de Pine completamente nuevo",
-                "why.kicker": "Por qué Pine",
-                "why.title": "Para el hueco entre editores inflados e IDEs completos.",
-                "why.desc": "Pine conserva lo que importa en el día a día y elimina las capas que suelen frenar a los editores.",
-                "why.keepsTitle": "Lo que Pine conserva",
-                "why.keepsLi1": "Árbol de proyecto nativo y comportamiento de ventanas Mac",
-                "why.keepsLi2": "Resaltado de sintaxis, números de línea y búsqueda",
-                "why.keepsLi3": "Múltiples pestañas de terminal con PTY real",
-                "why.keepsLi4": "Estado de Git, diffs en el margen y cambio de rama",
-                "why.cutsTitle": "Lo que Pine elimina",
-                "why.cutsLi1": "Sobrecarga del motor del navegador",
-                "why.cutsLi2": "Exceso de plugins y cadenas de dependencias",
-                "why.cutsLi3": "Arqueología de ajustes antes de empezar a trabajar",
-                "why.cutsLi4": "UI pesada que compite con el código",
-                "why.feelsTitle": "Cómo se siente",
-                "why.feelsDesc": "Menos tiempo configurando el editor, más tiempo escribiendo, ejecutando y revisando código. Pine se mantiene en segundo plano y mantiene el ciclo ágil.",
-                "why.feelsChip1": "Apertura rápida",
-                "why.feelsChip2": "Mantén el foco",
-                "why.feelsChip3": "Entrega antes",
+                "release.kicker": "El ciclo de Pine",
+                "release.title": "Un flujo continuo. De la orden al agente a la revisión del código.",
+                "release.desc": "Pine reúne la terminal, el contexto de la tarea y los archivos modificados en un espacio nativo, para que siempre sepas qué hace el agente y dónde revisar el resultado.",
+                "release.cta": "Explorar el espacio de trabajo",
+                "release.li1": "Ejecuta cualquier agente CLI en una terminal real",
+                "release.li2": "Consulta cada tarea y vuelve a su sesión exacta",
+                "release.li3": "Revisa código, cambios de Git y diagnósticos junto al agente",
+                "release.li4": "Tú revisas y decides; Pine no sustituye las herramientas del ciclo",
+                "why.kicker": "Un espacio nativo",
+                "why.title": "Mantén toda la tarea unida.",
+                "why.desc": "Abre proyectos relacionados en una ventana, cambia sin duplicados y conserva cada editor y terminal exactamente donde corresponde.",
+                "why.keepsTitle": "Los proyectos siguen conectados",
+                "why.keepsLi1": "Añade, cambia y cierra proyectos sin multiplicar ventanas",
+                "why.keepsLi2": "Distingue proyectos con el mismo nombre mediante contexto de ruta",
+                "why.keepsLi3": "Devuelve las tareas de Agent Inbox a la ventana propietaria",
+                "why.keepsLi4": "Pausa servicios del editor en segundo plano hasta volver al proyecto",
+                "why.cutsTitle": "Las herramientas siguen siendo compatibles",
+                "why.cutsLi1": "Los agentes siguen siendo procesos CLI normales en PTY reales",
+                "why.cutsLi2": "Los archivos siguen siendo archivos; Git sigue siendo Git",
+                "why.cutsLi3": "Los servidores LSP y formateadores se pueden sustituir",
+                "why.cutsLi4": "Sin dependencia de prompts o transcripciones propietarias",
+                "why.feelsTitle": "Contexto sin ruido",
+                "why.feelsDesc": "Pine reúne proyectos, terminales y tareas de agentes en un espacio nativo mientras mantiene la decisión actual en primer plano.",
+                "why.feelsChip1": "Una ventana",
+                "why.feelsChip2": "Ruta exacta",
+                "why.feelsChip3": "Foco nativo",
                 "features.kicker": "Funciones",
                 "features.title": "Todo lo necesario para editar junto a un agente.",
                 "features.desc": "Pine sigue siendo un editor de código enfocado y hace visible el trabajo con agentes desde la terminal.",
@@ -1774,16 +1761,16 @@
                 "features.01desc": "Mantiene tareas duraderas de varios proyectos en la Bandeja de agentes, vuelve a la sesión activa exacta y envía avisos privados de eventos verificados o cierres de proceso detectados.",
                 "features.02title": "Velocidad nativa e inteligencia de código real.",
                 "features.02desc": "Gramáticas de lenguaje incluidas, diagnósticos LSP, autocompletado, hover, definición, acciones de código, renombrado, símbolos, plegado, minimapa y búsqueda de proyecto.",
-                "features.03title": "Adapta el espacio de trabajo a la tarea.",
-                "features.03desc": "Divide editores y terminales horizontal o verticalmente, mueve pestañas entre paneles, cambia su tamaño y maximiza el panel que necesita atención.",
+                "features.03title": "Un espacio para varios proyectos.",
+                "features.03desc": "Mantén proyectos relacionados en una ventana, cambia desde la barra, divide editores y terminales, mueve pestañas, ajusta tamaños y maximiza paneles.",
                 "features.04title": "Una terminal hecha para flujos reales.",
-                "features.04desc": "Emulación VT100/xterm completa con pestañas, temas, TUI, enlaces de archivo y OSC 8, envío a terminal y atajo global de terminal rápida.",
+                "features.04desc": "Emulación VT100/xterm completa con pestañas, temas, TUI, enlaces, terminal rápida global y recuperación de pantalla sin reiniciar la shell.",
                 "features.05title": "Cambios, Git y diagnósticos siempre visibles.",
                 "features.05desc": "Recarga de archivos en vivo, estado lateral, diffs en margen e inline, blame, cambio de rama, validación de configuración y formato al guardar.",
                 "features.06title": "Nativo, enfocado y recuperable.",
                 "features.06desc": "Autoguardado, restauración de sesión y cursor, archivos grandes, actualizaciones, nueve idiomas, VoiceOver, movimiento reducido y sin runtime de Electron.",
                 "screenshots.kicker": "Capturas",
-                "screenshots.title": "Pine en acción.",
+                "screenshots.title": "Ve toda la tarea, no herramientas desconectadas.",
                 "screenshots.alt0": "Agent Inbox de Pine con tareas de varios proyectos",
                 "screenshots.cap0": "Agent Inbox reúne el trabajo de todos los proyectos",
                 "screenshots.alt1": "Ventana de bienvenida de Pine con proyectos recientes",
@@ -1791,9 +1778,9 @@
                 "screenshots.alt2": "Editor Pine con resaltado de sintaxis y árbol de archivos",
                 "screenshots.cap2": "Editor de código con resaltado de sintaxis y marcadores Git",
                 "screenshots.alt3": "Terminal integrado de Pine",
-                "screenshots.cap3": "Terminal integrado con SwiftTerm",
+                "screenshots.cap3": "Una terminal real permanece junto al código, conservando la shell y el historial",
                 "screenshots.alt4": "Vista previa de Markdown en modo dividido",
-                "screenshots.cap4": "Vista previa de Markdown en modo lado a lado",
+                "screenshots.cap4": "Revisa el código fuente y el resultado lado a lado",
                 "lightbox.label": "Vista previa de captura",
                 "lightbox.close": "Cerrar vista previa",
                 "manifesto.kicker": "Posicionamiento",
@@ -1803,13 +1790,13 @@
                 "manifesto.chip2": "Los agentes siguen en la terminal",
                 "manifesto.chip3": "Editor LSP nativo",
                 "manifesto.chip4": "Extensibilidad ligera",
-                "story.kicker": "Origen",
-                "story.title": "Construido en 12 días por un ingeniero DevOps que nunca había escrito una línea de Swift.",
-                "story.quote": "\"Solo quería un editor nativo rápido para mis archivos de Ansible y Helm. VS Code se sentía demasiado pesado. Así que construí uno.\"",
-                "story.body": "Pine comenzó como un experimento personal. Trabajar a diario con Ansible, Helm y Terraform significa editar YAML, no escribir aplicaciones. VS Code se sentía demasiado pesado para la tarea. Zed era prometedor, pero no lo suficientemente nativo. Ningún editor era el adecuado. En 12 días — con ayuda de IA y sin conocimiento previo de Swift — se construyó Pine. Ese experimento se convirtió en un producto real. Ahora es de código abierto y crece con su comunidad.",
+                "story.kicker": "Dirección",
+                "story.title": "Una superficie de control nativa para el trabajo con agentes CLI.",
+                "story.quote": "\"La terminal sigue abierta. La evidencia sigue vinculada. Tú mantienes el control.\"",
+                "story.body": "Pine avanza hacia un espacio donde las herramientas de terminal sigan siendo intercambiables, el trabajo de los agentes conserve contexto duradero y cada cambio pueda revisarse junto al código. El editor debe ganar capacidad sin volverse más pesado, opaco o dependiente de un único agente.",
                 "install.kicker": "Empezar",
                 "install.title": "Instalar Pine en 10 segundos.",
-                "install.desc": "Usa Homebrew, descarga el último DMG o compila desde el código fuente en Xcode. Pine usa un stack nativo enfocado: SwiftUI, AppKit, SwiftTerm, swift-markdown y Sparkle.",
+                "install.desc": "Instala con Homebrew, descarga el DMG más reciente o compila desde el código fuente en Xcode. Pine sigue siendo una app nativa de Mac, enfocada y sin runtime de navegador.",
                 "install.download": "Descargar la última versión",
                 "install.source": "Ver el código fuente",
                 "install.shellNote": "Compila desde el código fuente con <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> si quieres el stack nativo completo en tu Mac.",
@@ -1822,17 +1809,17 @@
                 "meta.twitterDescription": "El agente permanece en la terminal. El código permanece a la vista. Pine los reúne en un editor nativo de macOS para agentes CLI."
             },
             fr: {
-                "nav.new": "Pine 2.0",
-                "nav.why": "Pourquoi Pine",
+                "nav.new": "Flux",
+                "nav.why": "Espace",
                 "nav.features": "Fonctionnalités",
                 "nav.install": "Installation",
                 "nav.screenshots": "Captures",
                 "header.cta": "Télécharger",
                 "hero.eyebrow": "Natif · Conscient des agents · Sans Electron",
-                "hero.title": "Un éditeur Mac natif conçu pour l'ère des agents CLI.",
+                "hero.title": "Exécutez n’importe quel agent CLI dans un vrai terminal et examinez ses changements sans quitter le code des yeux.",
                 "hero.desc": "L’agent reste dans le terminal.\nLe code reste à l’écran.\nPine les réunit.",
                 "hero.noElectron": "Sans Electron",
-                "hero.minimalDeps": "Workflow conscient des agents",
+                "hero.minimalDeps": "Espace multi-projets",
                 "hero.terminal": "Volets éditeur et terminal",
                 "hero.gitAware": "LSP + contexte Git",
                 "hero.download": "Télécharger Pine",
@@ -1854,32 +1841,32 @@
                 "mini.practicalKicker": "Pratique",
                 "mini.practicalTitle": "Git là où ça compte",
                 "mini.practicalDesc": "Statut dans l'arborescence, changement de branche et marqueurs de diff directement dans l'éditeur.",
-                "release.kicker": "Nouveautés de Pine 2.0",
-                "release.title": "Le travail des agents a enfin sa place.",
-                "release.desc": "Pine 2.0 transforme des sessions de terminal dispersées en un workflow durable et récupérable, tout en gardant le terminal comme source de vérité.",
-                "release.cta": "Lire les notes de version 2.0",
-                "release.li1": "Agent Inbox multi-projets avec retour précis aux sessions actives",
-                "release.li2": "Worktrees isolés, récupération sûre des tâches et bilans fondés sur des preuves",
-                "release.li3": "Notifications privées utiles et adaptateurs intégrés pour agents CLI",
-                "release.li4": "Un installateur DMG soigné aux couleurs de Pine et une toute nouvelle icône",
-                "why.kicker": "Pourquoi Pine",
-                "why.title": "Pour l'espace entre les éditeurs bloated et les IDE complets.",
-                "why.desc": "Pine garde ce qui compte au quotidien et supprime les couches qui ralentissent habituellement les éditeurs.",
-                "why.keepsTitle": "Ce que Pine garde",
-                "why.keepsLi1": "Arborescence de projet native et comportement de fenêtres Mac",
-                "why.keepsLi2": "Coloration syntaxique, numéros de ligne et recherche",
-                "why.keepsLi3": "Plusieurs onglets de terminal avec vrai PTY",
-                "why.keepsLi4": "Statut Git, diffs dans la gouttière et changement de branche",
-                "why.cutsTitle": "Ce que Pine supprime",
-                "why.cutsLi1": "Surcharge du moteur navigateur",
-                "why.cutsLi2": "Prolifération de plugins et chaînes de dépendances",
-                "why.cutsLi3": "Archéologie des paramètres avant de commencer à travailler",
-                "why.cutsLi4": "UI lourde qui rivalise avec le code",
-                "why.feelsTitle": "Ce que ça fait",
-                "why.feelsDesc": "Moins de temps à configurer l'éditeur, plus de temps à écrire, exécuter et relire du code. Pine reste en arrière-plan et maintient le cycle fluide.",
-                "why.feelsChip1": "Ouverture rapide",
-                "why.feelsChip2": "Rester concentré",
-                "why.feelsChip3": "Livrer plus vite",
+                "release.kicker": "La boucle Pine",
+                "release.title": "Un seul flux continu. De la commande à l’agent jusqu’à la revue du code.",
+                "release.desc": "Pine réunit le terminal, le contexte de la tâche et les fichiers modifiés dans un espace natif, pour toujours savoir ce que fait l’agent et où vérifier le résultat.",
+                "release.cta": "Explorer l’espace de travail",
+                "release.li1": "Exécutez n’importe quel agent CLI dans un vrai terminal",
+                "release.li2": "Voyez chaque tâche et revenez à sa session exacte",
+                "release.li3": "Examinez code, changements Git et diagnostics à côté de l’agent",
+                "release.li4": "Vous examinez et décidez ; Pine ne remplace pas les outils de la boucle",
+                "why.kicker": "Un espace natif",
+                "why.title": "Gardez toute la tâche réunie.",
+                "why.desc": "Ouvrez les projets liés dans une fenêtre, changez sans doublons et gardez chaque éditeur et terminal exactement à sa place.",
+                "why.keepsTitle": "Les projets restent liés",
+                "why.keepsLi1": "Ajoutez, changez et fermez des projets sans multiplier les fenêtres",
+                "why.keepsLi2": "Distinguez les projets homonymes grâce au contexte de leur chemin",
+                "why.keepsLi3": "Renvoyez les tâches Agent Inbox vers leur fenêtre propriétaire",
+                "why.keepsLi4": "Suspendez les services d’édition en arrière-plan jusqu’au retour",
+                "why.cutsTitle": "Les outils restent interopérables",
+                "why.cutsLi1": "Les agents restent des processus CLI ordinaires dans de vrais PTY",
+                "why.cutsLi2": "Les fichiers restent des fichiers ; Git reste Git",
+                "why.cutsLi3": "Les serveurs LSP et formateurs restent remplaçables",
+                "why.cutsLi4": "Aucun verrouillage sur des prompts ou transcriptions propriétaires",
+                "why.feelsTitle": "Le contexte sans le bruit",
+                "why.feelsDesc": "Pine réunit projets, terminaux et tâches d’agents dans un espace natif tout en gardant la décision actuelle au premier plan.",
+                "why.feelsChip1": "Une fenêtre",
+                "why.feelsChip2": "Routage exact",
+                "why.feelsChip3": "Focus natif",
                 "features.kicker": "Fonctionnalités",
                 "features.title": "Tout le nécessaire pour éditer aux côtés d'un agent.",
                 "features.desc": "Pine reste un éditeur de code focalisé tout en rendant visible le travail assisté par agents depuis le terminal.",
@@ -1887,16 +1874,16 @@
                 "features.01desc": "Suit les tâches durables de plusieurs projets dans la boîte des agents, revient à la session active exacte et envoie des alertes privées pour les événements vérifiés ou les fins de processus détectées.",
                 "features.02title": "Vitesse native et véritable intelligence du code.",
                 "features.02desc": "Grammaires de langage intégrées, diagnostics LSP, complétion, hover, définition, actions de code, renommage, symboles, pliage, minimap et recherche de projet.",
-                "features.03title": "Adaptez l'espace de travail à la tâche.",
-                "features.03desc": "Divisez éditeurs et terminaux horizontalement ou verticalement, déplacez les onglets, redimensionnez les volets et maximisez celui qui compte.",
+                "features.03title": "Un espace pour plusieurs projets.",
+                "features.03desc": "Gardez les projets liés dans une fenêtre, changez depuis la barre d’outils, divisez éditeurs et terminaux, déplacez les onglets, redimensionnez et maximisez.",
                 "features.04title": "Un terminal conçu pour de vrais workflows.",
-                "features.04desc": "Émulation VT100/xterm complète avec onglets, thèmes, TUI, liens de fichiers et OSC 8, envoi vers le terminal et raccourci global de terminal rapide.",
+                "features.04desc": "Émulation VT100/xterm complète avec onglets, thèmes, TUI, liens cliquables, terminal rapide global et récupération de l’affichage sans redémarrer le shell.",
                 "features.05title": "Gardez changements, Git et diagnostics à l'écran.",
                 "features.05desc": "Rechargement en direct, statut latéral, diffs dans la gouttière et inline, blame, branches, validation de configuration et formatage à l'enregistrement.",
                 "features.06title": "Natif, focalisé et récupérable.",
                 "features.06desc": "Sauvegarde auto, restauration de session et du curseur, grands fichiers, mises à jour, neuf langues, VoiceOver, mouvements réduits et aucun runtime Electron.",
                 "screenshots.kicker": "Captures",
-                "screenshots.title": "Pine en action.",
+                "screenshots.title": "Voyez toute la tâche, pas des outils dispersés.",
                 "screenshots.alt0": "Agent Inbox de Pine avec des tâches de plusieurs projets",
                 "screenshots.cap0": "Agent Inbox rassemble le travail de tous les projets",
                 "screenshots.alt1": "Fenêtre d'accueil de Pine avec projets récents",
@@ -1904,9 +1891,9 @@
                 "screenshots.alt2": "Éditeur Pine avec coloration syntaxique et arborescence",
                 "screenshots.cap2": "Éditeur de code avec coloration syntaxique et gouttière Git",
                 "screenshots.alt3": "Terminal intégré de Pine",
-                "screenshots.cap3": "Terminal intégré avec SwiftTerm",
+                "screenshots.cap3": "Un vrai terminal reste à côté du code, avec le shell et l’historique préservés",
                 "screenshots.alt4": "Aperçu Markdown Pine en mode côte à côte",
-                "screenshots.cap4": "Aperçu Markdown en mode côte à côte",
+                "screenshots.cap4": "Examinez la source et le rendu côte à côte",
                 "lightbox.label": "Aperçu de la capture",
                 "lightbox.close": "Fermer l'aperçu",
                 "manifesto.kicker": "Positionnement",
@@ -1916,13 +1903,13 @@
                 "manifesto.chip2": "Les agents restent dans le terminal",
                 "manifesto.chip3": "Éditeur LSP natif",
                 "manifesto.chip4": "Extensibilité légère",
-                "story.kicker": "Origine",
-                "story.title": "Construit en 12 jours par un ingénieur DevOps qui n'avait jamais écrit une ligne de Swift.",
-                "story.quote": "\"Je voulais juste un éditeur natif rapide pour mes fichiers Ansible et Helm. VS Code me semblait trop lourd. Alors j'en ai construit un.\"",
-                "story.body": "Pine a commencé comme une expérience personnelle. Travailler quotidiennement avec Ansible, Helm et Terraform signifie modifier du YAML, pas écrire des applications. VS Code semblait trop lourd pour la tâche. Zed était prometteur mais pas assez natif. Aucun éditeur ne convenait. En 12 jours — avec l'aide de l'IA et sans connaissance préalable de Swift — Pine a été construit. Cette expérience est devenue un vrai produit. Il est maintenant open source et grandit avec sa communauté.",
+                "story.kicker": "Direction",
+                "story.title": "Une surface de contrôle native pour le travail des agents CLI.",
+                "story.quote": "\"Le terminal reste ouvert. Les preuves restent attachées. Vous gardez le contrôle.\"",
+                "story.body": "Pine avance vers un espace où les outils de terminal restent interchangeables, le travail des agents conserve un contexte durable et chaque changement peut être examiné à côté du code. L’éditeur doit gagner en capacité sans devenir plus lourd, opaque ou dépendant d’un seul agent.",
                 "install.kicker": "Démarrer",
                 "install.title": "Installer Pine en 10 secondes.",
-                "install.desc": "Utilisez Homebrew, téléchargez le dernier DMG ou compilez depuis les sources dans Xcode. Pine utilise un stack natif focalisé : SwiftUI, AppKit, SwiftTerm, swift-markdown et Sparkle.",
+                "install.desc": "Installez avec Homebrew, téléchargez le dernier DMG ou compilez depuis les sources dans Xcode. Pine reste une app Mac native et focalisée, sans runtime de navigateur.",
                 "install.download": "Télécharger la dernière version",
                 "install.source": "Voir le code source",
                 "install.shellNote": "Compilez depuis les sources avec <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> si vous voulez le stack natif complet sur votre Mac.",
@@ -1935,17 +1922,17 @@
                 "meta.twitterDescription": "L’agent reste dans le terminal. Le code reste à l’écran. Pine les réunit dans un éditeur macOS natif pour les agents CLI."
             },
             ja: {
-                "nav.new": "Pine 2.0",
-                "nav.why": "Pine とは",
+                "nav.new": "ワークフロー",
+                "nav.why": "ワークスペース",
                 "nav.features": "機能",
                 "nav.install": "インストール",
                 "nav.screenshots": "スクリーンショット",
                 "header.cta": "ダウンロード",
                 "hero.eyebrow": "ネイティブ · エージェント対応 · Electron 不要",
-                "hero.title": "CLI エージェント時代のためのネイティブ Mac エディタ。",
+                "hero.title": "あらゆる CLI エージェントを本物のターミナルで動かし、コードを見失わずに変更を確認できます。",
                 "hero.desc": "エージェントはターミナルに。\nコードは視界に。\nPine が両者をつなぎます。",
                 "hero.noElectron": "Electron 不要",
-                "hero.minimalDeps": "エージェント対応ワークフロー",
+                "hero.minimalDeps": "マルチプロジェクト",
                 "hero.terminal": "エディタ＋ターミナルペイン",
                 "hero.gitAware": "LSP + Git コンテキスト",
                 "hero.download": "Pine をダウンロード",
@@ -1967,32 +1954,32 @@
                 "mini.practicalKicker": "実用的",
                 "mini.practicalTitle": "必要な場所に Git",
                 "mini.practicalDesc": "ファイルツリーにステータス、ブランチ切替、エディタに直接 diff マーカー。",
-                "release.kicker": "Pine 2.0 の新機能",
-                "release.title": "エージェントの仕事に、ついに居場所ができました。",
-                "release.desc": "Pine 2.0 は、散在するターミナルセッションを永続的で復元可能なワークフローにまとめ、ターミナルを信頼できる情報源として保ちます。",
-                "release.cta": "2.0 リリースノートを読む",
-                "release.li1": "プロジェクト横断の Agent Inbox から実行中セッションへ正確に戻る",
-                "release.li2": "分離された worktree、安全なタスク復旧、根拠に基づく完了レポート",
-                "release.li3": "役立つプライベート通知と標準搭載の CLI エージェントアダプタ",
-                "release.li4": "洗練されたブランド DMG インストーラと完全に新しい Pine アイコン",
-                "why.kicker": "Pine とは",
-                "why.title": "肥大化したエディタとフル IDE の間のギャップに。",
-                "why.desc": "Pine は日々のコーディングで重要な部分を残し、通常エディタを遅くするレイヤーを削除します。",
-                "why.keepsTitle": "Pine が残すもの",
-                "why.keepsLi1": "ネイティブプロジェクトツリーと Mac のウィンドウ動作",
-                "why.keepsLi2": "シンタックスハイライト、行番号、検索",
-                "why.keepsLi3": "実 PTY による複数ターミナルタブ",
-                "why.keepsLi4": "Git ステータス、ガターの diff、ブランチ切替",
-                "why.cutsTitle": "Pine が削除するもの",
-                "why.cutsLi1": "ブラウザエンジンのオーバーヘッド",
-                "why.cutsLi2": "プラグインの肥大化と拡張機能の依存チェーン",
-                "why.cutsLi3": "作業開始前の設定の発掘作業",
-                "why.cutsLi4": "コードと競合する重厚な UI",
-                "why.feelsTitle": "その体験",
-                "why.feelsDesc": "エディタの設定に費やす時間が減り、コードの作成、実行、レビューに使える時間が増えます。Pine はバックグラウンドに留まり、ループを引き締めます。",
-                "why.feelsChip1": "素早く開く",
-                "why.feelsChip2": "集中を維持",
-                "why.feelsChip3": "早く出荷",
+                "release.kicker": "Pine のループ",
+                "release.title": "ひとつながりの流れ。エージェントへの指示からコードレビューまで。",
+                "release.desc": "Pine はターミナル、タスクの文脈、変更されたファイルをひとつのネイティブ空間にまとめます。エージェントが何をしていて、どこで結果を確認すべきかが常に分かります。",
+                "release.cta": "ワークスペースを見る",
+                "release.li1": "あらゆる CLI エージェントを本物のターミナルで実行",
+                "release.li2": "すべてのタスクを確認し、正確なセッションへ戻る",
+                "release.li3": "エージェントの隣でコード、Git の変更、診断を確認",
+                "release.li4": "確認と判断はあなたが行い、Pine は既存ツールを置き換えない",
+                "why.kicker": "ひとつのネイティブ空間",
+                "why.title": "タスク全体をひとつに。",
+                "why.desc": "関連プロジェクトをひとつのウィンドウで開き、重複なく切り替え、各エディタとターミナルを作業に合う場所へ保ちます。",
+                "why.keepsTitle": "プロジェクトはつながったまま",
+                "why.keepsLi1": "ウィンドウを増やさずにプロジェクトを追加、切替、終了",
+                "why.keepsLi2": "同名プロジェクトを簡潔なパス情報で区別",
+                "why.keepsLi3": "Agent Inbox のタスクを所有ウィンドウへ正確に戻す",
+                "why.keepsLi4": "戻るまでバックグラウンドのエディタサービスを休止",
+                "why.cutsTitle": "ツールは相互運用可能なまま",
+                "why.cutsLi1": "エージェントは実 PTY 上の通常の CLI プロセス",
+                "why.cutsLi2": "ファイルはファイル、Git は Git のまま",
+                "why.cutsLi3": "LSP サーバーとフォーマッタは交換可能",
+                "why.cutsLi4": "独自プロンプトや履歴形式へのロックインなし",
+                "why.feelsTitle": "雑音のないコンテキスト",
+                "why.feelsDesc": "Pine はプロジェクト、ターミナル、エージェントタスクをひとつのネイティブ空間にまとめ、現在の判断へ集中させます。",
+                "why.feelsChip1": "ひとつのウィンドウ",
+                "why.feelsChip2": "正確なルーティング",
+                "why.feelsChip3": "ネイティブな集中",
                 "features.kicker": "機能",
                 "features.title": "エージェントの隣で編集するためのすべて。",
                 "features.desc": "Pine は集中できるコードエディタのまま、ターミナルで動くエージェントの作業を見える形にします。",
@@ -2000,16 +1987,16 @@
                 "features.01desc": "複数プロジェクトの永続タスクをエージェント受信箱で追跡し、正確なライブセッションへ戻り、検証済みイベントまたは検出したプロセス終了を安全に通知します。",
                 "features.02title": "ネイティブの速度と本物のコードインテリジェンス。",
                 "features.02desc": "同梱の言語文法、LSP 診断、補完、hover、定義ジャンプ、コードアクション、名前変更、シンボル、折りたたみ、ミニマップ、プロジェクト検索。",
-                "features.03title": "タスクに合わせてワークスペースを構成。",
-                "features.03desc": "エディタとターミナルを水平・垂直に分割し、タブを移動し、サイズを変え、必要なペインを最大化できます。",
+                "features.03title": "複数プロジェクトをひとつの空間に。",
+                "features.03desc": "関連プロジェクトをひとつのウィンドウに保ち、ツールバーから切り替え、エディタとターミナルを分割し、タブ移動、サイズ変更、最大化ができます。",
                 "features.04title": "実際のワークフローのためのターミナル。",
-                "features.04desc": "完全な VT100/xterm、タブ、テーマ、TUI、ファイルと OSC 8 のリンク、ターミナル送信、グローバルなクイックターミナルキー。",
+                "features.04desc": "完全な VT100/xterm、タブ、テーマ、TUI、クリック可能なリンク、グローバルクイックターミナル、実行中のシェルを保つ表示復旧。",
                 "features.05title": "変更、Git、診断を常に視界に。",
                 "features.05desc": "ファイルのライブ更新、サイドバー状態、ガターと inline diff、blame、ブランチ切替、設定検証、保存時フォーマット。",
                 "features.06title": "ネイティブで集中でき、いつでも復元可能。",
                 "features.06desc": "自動保存、セッションとカーソルの復元、大容量ファイル、自動更新、9言語、VoiceOver、視差効果の軽減、Electron ランタイムなし。",
                 "screenshots.kicker": "スクリーンショット",
-                "screenshots.title": "Pine の動作画面。",
+                "screenshots.title": "ばらばらのツールではなく、タスク全体を見渡す。",
                 "screenshots.alt0": "複数プロジェクトのエージェントタスクを表示する Pine Agent Inbox",
                 "screenshots.cap0": "Agent Inbox がすべてのプロジェクトの仕事を一か所に集約",
                 "screenshots.alt1": "最近のプロジェクト付き Pine ウェルカムウィンドウ",
@@ -2017,9 +2004,9 @@
                 "screenshots.alt2": "シンタックスハイライトとファイルツリーを備えた Pine コードエディタ",
                 "screenshots.cap2": "シンタックスハイライトと Git ガター付きコードエディタ",
                 "screenshots.alt3": "Pine 内蔵ターミナル",
-                "screenshots.cap3": "SwiftTerm による内蔵ターミナル",
+                "screenshots.cap3": "本物のターミナルをコードの隣に。シェルとスクロールバックも維持",
                 "screenshots.alt4": "Pine Markdown プレビュー（分割モード）",
-                "screenshots.cap4": "Markdown プレビュー（サイドバイサイドモード）",
+                "screenshots.cap4": "ソースと表示結果を並べて確認",
                 "lightbox.label": "スクリーンショットのプレビュー",
                 "lightbox.close": "プレビューを閉じる",
                 "manifesto.kicker": "ポジショニング",
@@ -2029,13 +2016,13 @@
                 "manifesto.chip2": "エージェントはターミナルに",
                 "manifesto.chip3": "ネイティブ LSP エディタ",
                 "manifesto.chip4": "軽量な拡張性",
-                "story.kicker": "誕生の経緯",
-                "story.title": "Swift を一度も書いたことのない DevOps エンジニアが 12 日間で作り上げた。",
-                "story.quote": "「Ansible や Helm のファイルを編集するための高速なネイティブエディタが欲しかっただけです。VS Code は重すぎた。だから自分で作りました。」",
-                "story.body": "Pine は個人的な実験として始まりました。Ansible、Helm、Terraform を毎日使う仕事は、アプリを書くのではなく YAML を編集することを意味します。VS Code はこの用途には重すぎると感じました。Zed は有望でしたが、ネイティブさが十分ではありませんでした。どのエディタもしっくりきませんでした。AI の助けを借り、Swift の知識なしに、12 日間で Pine が作られました。その実験が本物のプロダクトになりました。今やオープンソースとなり、コミュニティとともに成長しています。",
+                "story.kicker": "これから",
+                "story.title": "CLI エージェント作業のためのネイティブな操作面。",
+                "story.quote": "「ターミナルは開いたまま。根拠は作業に結び付いたまま。主導権はあなたのまま。」",
+                "story.body": "Pine は、ターミナルツールが交換可能で、エージェントの作業が永続的なコンテキストを持ち、すべての変更をコードの隣で確認できるワークスペースを目指します。ひとつのエージェントに依存したり、重く不透明になったりせず、より高機能なエディタへ進みます。",
                 "install.kicker": "始めよう",
                 "install.title": "Pine を10秒でインストール。",
-                "install.desc": "Homebrew、最新の DMG、または Xcode でソースからビルド。Pine は SwiftUI、AppKit、SwiftTerm、swift-markdown、Sparkle の集中したネイティブスタックを使用します。",
+                "install.desc": "Homebrew でインストール、最新の DMG を入手、または Xcode でソースからビルド。Pine はブラウザランタイムのない、集中できるネイティブ Mac アプリです。",
                 "install.download": "最新リリースをダウンロード",
                 "install.source": "ソースコードを見る",
                 "install.shellNote": "Mac でフルネイティブスタックが必要なら、<code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> でソースからビルドできます。",
@@ -2048,17 +2035,17 @@
                 "meta.twitterDescription": "エージェントはターミナルに。コードは視界に。Pine が両者をつなぐ、CLI エージェント向けのネイティブ macOS エディタです。"
             },
             ko: {
-                "nav.new": "Pine 2.0",
-                "nav.why": "왜 Pine인가",
+                "nav.new": "워크플로",
+                "nav.why": "워크스페이스",
                 "nav.features": "기능",
                 "nav.install": "설치",
                 "nav.screenshots": "스크린샷",
                 "header.cta": "다운로드",
                 "hero.eyebrow": "네이티브 · 에이전트 인식 · Electron 없음",
-                "hero.title": "CLI 에이전트 시대를 위한 네이티브 Mac 편집기.",
+                "hero.title": "모든 CLI 에이전트를 실제 터미널에서 실행하고 코드를 놓치지 않은 채 변경 사항을 검토하세요.",
                 "hero.desc": "에이전트는 터미널에 남습니다.\n코드는 시야에 남습니다.\nPine이 둘을 하나로 연결합니다.",
                 "hero.noElectron": "Electron 없음",
-                "hero.minimalDeps": "에이전트 인식 워크플로",
+                "hero.minimalDeps": "멀티 프로젝트 워크스페이스",
                 "hero.terminal": "편집기 + 터미널 패널",
                 "hero.gitAware": "LSP + Git 컨텍스트",
                 "hero.download": "Pine 다운로드",
@@ -2080,32 +2067,32 @@
                 "mini.practicalKicker": "실용적",
                 "mini.practicalTitle": "필요한 곳에 Git",
                 "mini.practicalDesc": "파일 트리에 상태, 브랜치 전환, 편집기에 직접 diff 마커.",
-                "release.kicker": "Pine 2.0의 새로운 기능",
-                "release.title": "에이전트 작업에 드디어 하나의 공간이 생겼습니다.",
-                "release.desc": "Pine 2.0은 흩어진 터미널 세션을 지속 가능하고 복구 가능한 워크플로로 모으면서 터미널을 신뢰할 수 있는 정보원으로 유지합니다.",
-                "release.cta": "2.0 릴리스 노트 보기",
-                "release.li1": "프로젝트 전체 Agent Inbox에서 실행 중인 세션으로 정확히 돌아가기",
-                "release.li2": "격리된 worktree, 안전한 작업 복구, 근거 기반 완료 보고서",
-                "release.li3": "유용한 비공개 알림과 기본 제공 CLI 에이전트 어댑터",
-                "release.li4": "완성도 높은 브랜드 DMG 설치 프로그램과 완전히 새로운 Pine 아이콘",
-                "why.kicker": "왜 Pine인가",
-                "why.title": "비대한 편집기와 풀 IDE 사이의 빈 공간을 위해.",
-                "why.desc": "Pine은 일상적인 코딩에서 중요한 부분을 유지하고 편집기를 느리게 만드는 레이어를 제거합니다.",
-                "why.keepsTitle": "Pine이 유지하는 것",
-                "why.keepsLi1": "네이티브 프로젝트 트리와 Mac 윈도우 동작",
-                "why.keepsLi2": "구문 강조, 줄 번호, 검색",
-                "why.keepsLi3": "실제 PTY 기반 다중 터미널 탭",
-                "why.keepsLi4": "Git 상태, 거터 diff, 브랜치 전환",
-                "why.cutsTitle": "Pine이 제거하는 것",
-                "why.cutsLi1": "브라우저 엔진 오버헤드",
-                "why.cutsLi2": "플러그인 난잡함과 확장 의존성 체인",
-                "why.cutsLi3": "작업 전 설정 고고학",
-                "why.cutsLi4": "코드와 경쟁하는 무거운 UI",
-                "why.feelsTitle": "그 느낌",
-                "why.feelsDesc": "편집기 설정에 쓰는 시간은 줄이고 코드 작성, 실행, 리뷰에 쓰는 시간은 늘립니다. Pine은 배경에 머물며 루프를 단단하게 유지합니다.",
-                "why.feelsChip1": "빠른 시작",
-                "why.feelsChip2": "집중 유지",
-                "why.feelsChip3": "빠른 배포",
+                "release.kicker": "Pine 루프",
+                "release.title": "하나로 이어지는 흐름. 에이전트 명령부터 코드 검토까지.",
+                "release.desc": "Pine은 터미널, 작업 컨텍스트, 변경된 파일을 하나의 네이티브 공간에 모아 에이전트가 무엇을 하는지, 어디서 결과를 검토할지 항상 알 수 있게 합니다.",
+                "release.cta": "워크스페이스 살펴보기",
+                "release.li1": "모든 CLI 에이전트를 실제 터미널에서 실행",
+                "release.li2": "모든 작업을 보고 정확한 세션으로 복귀",
+                "release.li3": "에이전트 옆에서 코드, Git 변경, 진단을 검토",
+                "release.li4": "검토와 결정은 사용자가 하며 Pine은 기존 도구를 대체하지 않습니다",
+                "why.kicker": "하나의 네이티브 공간",
+                "why.title": "전체 작업을 한곳에 유지하세요.",
+                "why.desc": "관련 프로젝트를 한 창에서 열고 중복 없이 전환하며 각 편집기와 터미널을 작업이 속한 곳에 유지합니다.",
+                "why.keepsTitle": "프로젝트는 연결된 상태로",
+                "why.keepsLi1": "창을 늘리지 않고 프로젝트를 추가, 전환, 닫기",
+                "why.keepsLi2": "간결한 경로 컨텍스트로 같은 이름의 프로젝트 구분",
+                "why.keepsLi3": "Agent Inbox 작업을 소유한 창으로 정확히 라우팅",
+                "why.keepsLi4": "프로젝트로 돌아올 때까지 백그라운드 편집 서비스 일시 중지",
+                "why.cutsTitle": "도구는 상호 운용 가능한 상태로",
+                "why.cutsLi1": "에이전트는 실제 PTY의 일반 CLI 프로세스로 유지",
+                "why.cutsLi2": "파일은 파일로, Git은 Git으로 유지",
+                "why.cutsLi3": "LSP 서버와 포매터는 교체 가능",
+                "why.cutsLi4": "독점 프롬프트나 기록 형식에 종속되지 않음",
+                "why.feelsTitle": "혼잡함 없는 컨텍스트",
+                "why.feelsDesc": "Pine은 프로젝트, 터미널, 에이전트 작업을 하나의 네이티브 공간에 모으면서 현재 결정에 집중하게 합니다.",
+                "why.feelsChip1": "하나의 창",
+                "why.feelsChip2": "정확한 라우팅",
+                "why.feelsChip3": "네이티브 포커스",
                 "features.kicker": "기능",
                 "features.title": "에이전트와 함께 편집하는 데 필요한 모든 것.",
                 "features.desc": "Pine은 집중된 코드 편집기로 남으면서 터미널 기반 에이전트 작업을 보이게 합니다.",
@@ -2113,16 +2100,16 @@
                 "features.01desc": "여러 프로젝트의 지속 작업을 에이전트 받은편지함에서 추적하고 정확한 라이브 세션으로 돌아가며 검증된 이벤트나 감지된 프로세스 종료를 안전하게 알립니다.",
                 "features.02title": "네이티브 속도와 실제 코드 인텔리전스.",
                 "features.02desc": "번들 언어 문법, LSP 진단, 완성, hover, 정의 이동, 코드 액션, 이름 변경, 심볼, 폴딩, 미니맵, 프로젝트 검색.",
-                "features.03title": "작업에 맞게 워크스페이스 구성.",
-                "features.03desc": "편집기와 터미널을 가로 또는 세로로 나누고, 탭을 패널 사이로 옮기고, 크기를 조절하고, 필요한 패널을 최대화합니다.",
+                "features.03title": "여러 프로젝트를 하나의 공간에.",
+                "features.03desc": "관련 프로젝트를 한 창에 두고 도구 막대에서 전환하며 편집기와 터미널 분할, 탭 이동, 크기 조절, 최대화를 사용합니다.",
                 "features.04title": "실제 워크플로를 위한 터미널.",
-                "features.04desc": "완전한 VT100/xterm, 탭, 테마, TUI, 파일 및 OSC 8 링크, 터미널로 보내기, 전역 퀵 터미널 단축키.",
+                "features.04desc": "완전한 VT100/xterm, 탭, 테마, TUI, 클릭 가능한 링크, 전역 퀵 터미널, 실행 중인 셸을 보존하는 화면 복구.",
                 "features.05title": "변경, Git, 진단을 한눈에.",
                 "features.05desc": "실시간 파일 새로고침, 사이드바 상태, 거터와 inline diff, blame, 브랜치 전환, 설정 검증, 저장 시 포맷.",
                 "features.06title": "네이티브하고 집중되며 복구 가능.",
                 "features.06desc": "자동 저장, 세션과 커서 복원, 대용량 파일, 자동 업데이트, 9개 언어, VoiceOver, 동작 줄이기, Electron 런타임 없음.",
                 "screenshots.kicker": "스크린샷",
-                "screenshots.title": "Pine 실행 화면.",
+                "screenshots.title": "흩어진 도구가 아닌 전체 작업을 한눈에.",
                 "screenshots.alt0": "여러 프로젝트의 에이전트 작업을 보여 주는 Pine Agent Inbox",
                 "screenshots.cap0": "Agent Inbox가 모든 프로젝트의 작업을 한곳에 모읍니다",
                 "screenshots.alt1": "최근 프로젝트가 있는 Pine 환영 창",
@@ -2130,9 +2117,9 @@
                 "screenshots.alt2": "구문 강조와 파일 트리가 있는 Pine 코드 편집기",
                 "screenshots.cap2": "구문 강조와 Git 거터가 있는 코드 편집기",
                 "screenshots.alt3": "Pine 내장 터미널",
-                "screenshots.cap3": "SwiftTerm 기반 내장 터미널",
+                "screenshots.cap3": "실제 터미널을 코드 옆에 두고 셸과 스크롤백을 그대로 유지",
                 "screenshots.alt4": "Pine Markdown 미리보기 (분할 모드)",
-                "screenshots.cap4": "Markdown 미리보기 (나란히 모드)",
+                "screenshots.cap4": "소스와 렌더링 결과를 나란히 검토",
                 "lightbox.label": "스크린샷 미리보기",
                 "lightbox.close": "미리보기 닫기",
                 "manifesto.kicker": "포지셔닝",
@@ -2142,13 +2129,13 @@
                 "manifesto.chip2": "에이전트는 터미널에",
                 "manifesto.chip3": "네이티브 LSP 편집기",
                 "manifesto.chip4": "가벼운 확장성",
-                "story.kicker": "탄생 스토리",
-                "story.title": "Swift를 한 줄도 써본 적 없는 DevOps 엔지니어가 12일 만에 만들었습니다.",
-                "story.quote": "\"Ansible과 Helm 파일을 편집할 빠른 네이티브 에디터가 필요했을 뿐입니다. VS Code는 너무 무거웠습니다. 그래서 직접 만들었습니다.\"",
-                "story.body": "Pine은 개인적인 실험으로 시작되었습니다. Ansible, Helm, Terraform으로 매일 작업한다는 것은 앱을 작성하는 게 아니라 YAML을 편집하는 것을 의미합니다. VS Code는 이 작업에 너무 무거운 느낌이었습니다. Zed는 유망했지만 충분히 네이티브하지 않았습니다. 어떤 에디터도 맞지 않았습니다. AI의 도움을 받아 Swift 지식 없이 12일 만에 Pine이 만들어졌습니다. 그 실험이 진짜 제품이 되었습니다. 이제 오픈 소스로 커뮤니티와 함께 성장하고 있습니다.",
+                "story.kicker": "방향",
+                "story.title": "CLI 에이전트 작업을 위한 네이티브 제어 표면.",
+                "story.quote": "\"터미널은 열린 채로. 근거는 연결된 채로. 제어권은 사용자에게.\"",
+                "story.body": "Pine은 터미널 도구가 교체 가능하고 에이전트 작업이 지속적인 컨텍스트를 가지며 모든 변경을 코드 옆에서 검토할 수 있는 워크스페이스를 향합니다. 편집기는 더 무겁고 불투명해지거나 하나의 에이전트에 의존하지 않으면서 더 강력해져야 합니다.",
                 "install.kicker": "시작하기",
                 "install.title": "Pine을 10초 만에 설치.",
-                "install.desc": "Homebrew, 최신 DMG 또는 Xcode 소스 빌드를 사용하세요. Pine은 SwiftUI, AppKit, SwiftTerm, swift-markdown, Sparkle의 집중된 네이티브 스택을 사용합니다.",
+                "install.desc": "Homebrew로 설치하거나 최신 DMG를 받거나 Xcode에서 소스로 빌드하세요. Pine은 브라우저 런타임이 없는 집중된 네이티브 Mac 앱입니다.",
                 "install.download": "최신 릴리스 다운로드",
                 "install.source": "소스 코드 보기",
                 "install.shellNote": "Mac에서 풀 네이티브 스택을 원하면 <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>로 소스에서 빌드하세요.",
@@ -2161,17 +2148,17 @@
                 "meta.twitterDescription": "에이전트는 터미널에 남습니다. 코드는 시야에 남습니다. Pine은 둘을 연결하는 CLI 에이전트용 네이티브 macOS 편집기입니다."
             },
             "pt-BR": {
-                "nav.new": "Pine 2.0",
-                "nav.why": "Por que Pine",
+                "nav.new": "Fluxo",
+                "nav.why": "Espaço",
                 "nav.features": "Recursos",
                 "nav.install": "Instalação",
                 "nav.screenshots": "Capturas",
                 "header.cta": "Baixar",
                 "hero.eyebrow": "Nativo · Consciente de agentes · Sem Electron",
-                "hero.title": "Um editor nativo para Mac feito para a era dos agentes CLI.",
+                "hero.title": "Execute qualquer agente CLI em um terminal real e revise as mudanças sem perder o código de vista.",
                 "hero.desc": "O agente permanece no terminal.\nO código permanece à vista.\nO Pine une os dois.",
                 "hero.noElectron": "Sem Electron",
-                "hero.minimalDeps": "Fluxo consciente de agentes",
+                "hero.minimalDeps": "Espaço com vários projetos",
                 "hero.terminal": "Painéis de editor e terminal",
                 "hero.gitAware": "LSP + contexto Git",
                 "hero.download": "Baixar Pine",
@@ -2193,32 +2180,32 @@
                 "mini.practicalKicker": "Prático",
                 "mini.practicalTitle": "Git onde importa",
                 "mini.practicalDesc": "Status na árvore, troca de branch e marcadores de diff direto no editor.",
-                "release.kicker": "Novidades do Pine 2.0",
-                "release.title": "O trabalho dos agentes finalmente tem um lugar.",
-                "release.desc": "O Pine 2.0 transforma sessões de terminal dispersas em um fluxo durável e recuperável, mantendo o terminal como fonte da verdade.",
-                "release.cta": "Ler as notas da versão 2.0",
-                "release.li1": "Agent Inbox entre projetos com retorno exato às sessões ativas",
-                "release.li2": "Worktrees isolados, recuperação segura de tarefas e resumos de conclusão baseados em evidências",
-                "release.li3": "Notificações privadas úteis e adaptadores integrados para agentes CLI",
-                "release.li4": "Um instalador DMG de marca refinado e um ícone do Pine totalmente novo",
-                "why.kicker": "Por que Pine",
-                "why.title": "Para o espaço entre editores inchados e IDEs completas.",
-                "why.desc": "Pine mantém o que importa no dia a dia e remove as camadas que costumam deixar os editores lentos.",
-                "why.keepsTitle": "O que Pine mantém",
-                "why.keepsLi1": "Árvore de projeto nativa e comportamento de janelas Mac",
-                "why.keepsLi2": "Destaque de sintaxe, números de linha e busca",
-                "why.keepsLi3": "Múltiplas abas de terminal com PTY real",
-                "why.keepsLi4": "Status Git, diffs na margem e troca de branch",
-                "why.cutsTitle": "O que Pine remove",
-                "why.cutsLi1": "Sobrecarga do motor do navegador",
-                "why.cutsLi2": "Excesso de plugins e cadeias de dependências",
-                "why.cutsLi3": "Arqueologia de configurações antes de começar a trabalhar",
-                "why.cutsLi4": "UI pesada que compete com o código",
-                "why.feelsTitle": "Como isso se sente",
-                "why.feelsDesc": "Menos tempo configurando o editor, mais tempo escrevendo, rodando e revisando código. Pine fica em segundo plano e mantém o ciclo enxuto.",
-                "why.feelsChip1": "Abertura rápida",
-                "why.feelsChip2": "Mantenha o foco",
-                "why.feelsChip3": "Entregue antes",
+                "release.kicker": "O ciclo do Pine",
+                "release.title": "Um fluxo contínuo. Do comando ao agente à revisão do código.",
+                "release.desc": "O Pine reúne terminal, contexto da tarefa e arquivos alterados em um espaço nativo, para você sempre saber o que o agente faz e onde revisar o resultado.",
+                "release.cta": "Explorar o espaço de trabalho",
+                "release.li1": "Execute qualquer agente CLI em um terminal real",
+                "release.li2": "Veja cada tarefa e volte à sessão exata",
+                "release.li3": "Revise código, mudanças do Git e diagnósticos ao lado do agente",
+                "release.li4": "Você revisa e decide; o Pine não substitui as ferramentas do ciclo",
+                "why.kicker": "Um espaço nativo",
+                "why.title": "Mantenha toda a tarefa reunida.",
+                "why.desc": "Abra projetos relacionados em uma janela, alterne sem duplicatas e mantenha cada editor e terminal exatamente onde o trabalho pertence.",
+                "why.keepsTitle": "Os projetos ficam conectados",
+                "why.keepsLi1": "Adicione, alterne e feche projetos sem multiplicar janelas",
+                "why.keepsLi2": "Diferencie projetos de mesmo nome com contexto de caminho",
+                "why.keepsLi3": "Leve tarefas do Agent Inbox de volta à janela proprietária",
+                "why.keepsLi4": "Suspenda serviços do editor em segundo plano até voltar ao projeto",
+                "why.cutsTitle": "As ferramentas continuam interoperáveis",
+                "why.cutsLi1": "Os agentes seguem como processos CLI comuns em PTYs reais",
+                "why.cutsLi2": "Arquivos continuam arquivos; Git continua Git",
+                "why.cutsLi3": "Servidores LSP e formatadores continuam substituíveis",
+                "why.cutsLi4": "Sem dependência de prompts ou transcrições proprietárias",
+                "why.feelsTitle": "Contexto sem ruído",
+                "why.feelsDesc": "O Pine reúne projetos, terminais e tarefas de agentes em um espaço nativo, mantendo a decisão atual em foco.",
+                "why.feelsChip1": "Uma janela",
+                "why.feelsChip2": "Rota exata",
+                "why.feelsChip3": "Foco nativo",
                 "features.kicker": "Recursos",
                 "features.title": "Tudo para editar ao lado de um agente.",
                 "features.desc": "Pine continua sendo um editor de código focado e torna visível o trabalho com agentes pelo terminal.",
@@ -2226,16 +2213,16 @@
                 "features.01desc": "Mantém tarefas duráveis de vários projetos na Caixa de agentes, volta à sessão ativa exata e envia alertas privados de eventos verificados ou encerramentos de processo detectados.",
                 "features.02title": "Velocidade nativa e inteligência de código real.",
                 "features.02desc": "Gramáticas de linguagem incluídas, diagnósticos LSP, completions, hover, definição, code actions, renomear, símbolos, folding, minimapa e busca no projeto.",
-                "features.03title": "Monte o espaço de trabalho para a tarefa.",
-                "features.03desc": "Divida editores e terminais na horizontal ou vertical, mova abas entre painéis, redimensione e maximize o painel que precisa de foco.",
+                "features.03title": "Um espaço para vários projetos.",
+                "features.03desc": "Mantenha projetos relacionados em uma janela, alterne pela barra, divida editores e terminais, mova abas, redimensione e maximize painéis.",
                 "features.04title": "Um terminal feito para fluxos reais.",
-                "features.04desc": "Emulação VT100/xterm completa com abas, temas, TUI, links de arquivos e OSC 8, envio ao terminal e atalho global de terminal rápido.",
+                "features.04desc": "Emulação VT100/xterm completa com abas, temas, TUI, links clicáveis, terminal rápido global e recuperação da tela sem reiniciar o shell.",
                 "features.05title": "Mudanças, Git e diagnósticos sempre à vista.",
                 "features.05desc": "Recarga ao vivo, status lateral, diffs na margem e inline, blame, branches, validação de configuração e formatação ao salvar.",
                 "features.06title": "Nativo, focado e recuperável.",
                 "features.06desc": "Auto-save, restauração de sessão e cursor, arquivos grandes, atualizações, nove idiomas, VoiceOver, movimento reduzido e sem runtime Electron.",
                 "screenshots.kicker": "Capturas",
-                "screenshots.title": "Pine em ação.",
+                "screenshots.title": "Veja a tarefa inteira, não ferramentas desconectadas.",
                 "screenshots.alt0": "Agent Inbox do Pine com tarefas de vários projetos",
                 "screenshots.cap0": "O Agent Inbox reúne o trabalho de todos os projetos",
                 "screenshots.alt1": "Janela de boas-vindas do Pine com projetos recentes",
@@ -2243,9 +2230,9 @@
                 "screenshots.alt2": "Editor Pine com destaque de sintaxe e árvore de arquivos",
                 "screenshots.cap2": "Editor de código com destaque de sintaxe e margem Git",
                 "screenshots.alt3": "Terminal integrado do Pine",
-                "screenshots.cap3": "Terminal integrado com SwiftTerm",
+                "screenshots.cap3": "Um terminal real fica ao lado do código, preservando o shell e o histórico",
                 "screenshots.alt4": "Pré-visualização Markdown em modo dividido",
-                "screenshots.cap4": "Pré-visualização Markdown em modo lado a lado",
+                "screenshots.cap4": "Revise o código-fonte e o resultado lado a lado",
                 "lightbox.label": "Pré-visualização da captura",
                 "lightbox.close": "Fechar pré-visualização",
                 "manifesto.kicker": "Posicionamento",
@@ -2255,13 +2242,13 @@
                 "manifesto.chip2": "Os agentes ficam no terminal",
                 "manifesto.chip3": "Editor LSP nativo",
                 "manifesto.chip4": "Extensibilidade leve",
-                "story.kicker": "Origem",
-                "story.title": "Construído em 12 dias por um engenheiro DevOps que nunca tinha escrito uma linha de Swift.",
-                "story.quote": "\"Eu só queria um editor nativo rápido para meus arquivos Ansible e Helm. O VS Code parecia pesado demais. Então eu construí um.\"",
-                "story.body": "Pine começou como um experimento pessoal. Trabalhar diariamente com Ansible, Helm e Terraform significa editar YAML, não escrever aplicativos. O VS Code parecia pesado demais para a tarefa. O Zed era promissor, mas não nativo o suficiente. Nenhum editor parecia certo. Em 12 dias — com ajuda de IA e sem conhecimento prévio de Swift — Pine foi construído. Esse experimento se tornou um produto real. Agora é open source e cresce com sua comunidade.",
+                "story.kicker": "Direção",
+                "story.title": "Uma superfície de controle nativa para o trabalho com agentes CLI.",
+                "story.quote": "\"O terminal continua aberto. As evidências continuam ligadas. Você mantém o controle.\"",
+                "story.body": "O Pine avança para um espaço onde as ferramentas de terminal continuam intercambiáveis, o trabalho dos agentes mantém contexto durável e cada mudança pode ser revisada ao lado do código. O editor deve ganhar capacidade sem ficar mais pesado, opaco ou dependente de um único agente.",
                 "install.kicker": "Começar",
                 "install.title": "Instalar Pine em 10 segundos.",
-                "install.desc": "Use Homebrew, baixe o último DMG ou compile no Xcode. Pine usa um stack nativo focado: SwiftUI, AppKit, SwiftTerm, swift-markdown e Sparkle.",
+                "install.desc": "Instale com Homebrew, baixe o DMG mais recente ou compile no Xcode. O Pine continua sendo um app nativo de Mac, focado e sem runtime de navegador.",
                 "install.download": "Baixar a última versão",
                 "install.source": "Ver o código-fonte",
                 "install.shellNote": "Compile a partir do código-fonte com <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> se quiser o stack nativo completo no seu Mac.",
@@ -2274,17 +2261,17 @@
                 "meta.twitterDescription": "O agente permanece no terminal. O código permanece à vista. O Pine une os dois em um editor macOS nativo para agentes CLI."
             },
             "zh-Hans": {
-                "nav.new": "Pine 2.0",
-                "nav.why": "为什么选 Pine",
+                "nav.new": "工作流",
+                "nav.why": "工作区",
                 "nav.features": "功能",
                 "nav.install": "安装",
                 "nav.screenshots": "截图",
                 "header.cta": "下载",
                 "hero.eyebrow": "原生 · 感知代理 · 无 Electron",
-                "hero.title": "为 CLI 代理时代打造的原生 Mac 编辑器。",
+                "hero.title": "在真实终端中运行任意 CLI 智能体，并始终对照代码审查它的更改。",
                 "hero.desc": "智能体留在终端。\n代码始终在眼前。\nPine 将二者连接起来。",
                 "hero.noElectron": "无 Electron",
-                "hero.minimalDeps": "代理感知工作流",
+                "hero.minimalDeps": "多项目工作区",
                 "hero.terminal": "编辑器与终端窗格",
                 "hero.gitAware": "LSP + Git 上下文",
                 "hero.download": "下载 Pine",
@@ -2306,32 +2293,32 @@
                 "mini.practicalKicker": "实用",
                 "mini.practicalTitle": "Git 在需要的地方",
                 "mini.practicalDesc": "文件树中的状态、分支切换和编辑器中的 diff 标记。",
-                "release.kicker": "Pine 2.0 新功能",
-                "release.title": "智能体工作终于有了统一归处。",
-                "release.desc": "Pine 2.0 将分散的终端会话整合为持久且可恢复的工作流，同时让终端继续作为真实来源。",
-                "release.cta": "阅读 2.0 版本说明",
-                "release.li1": "跨项目 Agent Inbox，并可准确返回正在运行的会话",
-                "release.li2": "隔离的 worktree、安全的任务恢复和基于证据的完成报告",
-                "release.li3": "实用的私密通知和内置 CLI 智能体适配器",
-                "release.li4": "精心设计的品牌 DMG 安装程序和全新的 Pine 图标",
-                "why.kicker": "为什么选 Pine",
-                "why.title": "为臃肿编辑器和完整 IDE 之间的空白而生。",
-                "why.desc": "Pine 保留日常编码中重要的部分，去除通常拖慢编辑器的层层负担。",
-                "why.keepsTitle": "Pine 保留的",
-                "why.keepsLi1": "原生项目树和 Mac 窗口行为",
-                "why.keepsLi2": "语法高亮、行号和搜索",
-                "why.keepsLi3": "基于真实 PTY 的多终端标签页",
-                "why.keepsLi4": "Git 状态、行间 diff 和分支切换",
-                "why.cutsTitle": "Pine 去除的",
-                "why.cutsLi1": "浏览器引擎开销",
-                "why.cutsLi2": "插件泛滥和扩展依赖链",
-                "why.cutsLi3": "开始工作前的设置考古",
-                "why.cutsLi4": "与代码争抢注意力的厚重 UI",
-                "why.feelsTitle": "使用体验",
-                "why.feelsDesc": "花更少的时间配置编辑器，花更多的时间编写、运行和审查代码。Pine 安静地待在后台，保持循环紧凑。",
-                "why.feelsChip1": "快速打开",
-                "why.feelsChip2": "保持专注",
-                "why.feelsChip3": "更快交付",
+                "release.kicker": "Pine 工作循环",
+                "release.title": "一个连续工作流：从向智能体下达指令到审查代码。",
+                "release.desc": "Pine 将终端、任务上下文和已修改文件放在同一个原生工作区中，让你始终知道智能体在做什么、应该在哪里审查结果。",
+                "release.cta": "探索工作区",
+                "release.li1": "在真实终端中运行任意 CLI 智能体",
+                "release.li2": "查看所有任务并返回对应的准确会话",
+                "release.li3": "在智能体旁边审查代码、Git 更改和诊断",
+                "release.li4": "由你审查和决定；Pine 不替代工作循环中的工具",
+                "why.kicker": "一个原生工作区",
+                "why.title": "让整个任务保持在一起。",
+                "why.desc": "在一个窗口中打开相关项目，无重复地切换，并让每个编辑器和终端留在工作所属的位置。",
+                "why.keepsTitle": "项目保持连接",
+                "why.keepsLi1": "无需增加窗口即可添加、切换和关闭项目",
+                "why.keepsLi2": "用简洁的路径上下文区分同名项目",
+                "why.keepsLi3": "将 Agent Inbox 任务准确送回所属窗口",
+                "why.keepsLi4": "离开项目时暂停后台编辑器服务",
+                "why.cutsTitle": "工具保持可互操作",
+                "why.cutsLi1": "智能体仍是运行在真实 PTY 中的普通 CLI 进程",
+                "why.cutsLi2": "文件仍是文件；Git 仍是 Git",
+                "why.cutsLi3": "LSP 服务器和格式化工具可随时替换",
+                "why.cutsLi4": "不受专有提示词或会话记录格式锁定",
+                "why.feelsTitle": "有上下文，没有杂乱",
+                "why.feelsDesc": "Pine 将项目、终端和智能体任务汇集在一个原生工作区，同时让当前决策保持焦点。",
+                "why.feelsChip1": "一个窗口",
+                "why.feelsChip2": "准确路由",
+                "why.feelsChip3": "原生专注",
                 "features.kicker": "功能",
                 "features.title": "与代理并肩编辑所需的一切。",
                 "features.desc": "Pine 始终是专注的代码编辑器，同时让终端中的代理工作清晰可见。",
@@ -2339,16 +2326,16 @@
                 "features.01desc": "在智能体收件箱中跟踪跨项目的持久任务，准确返回实时会话，并对已验证事件或检测到的进程结束发送私密通知。",
                 "features.02title": "原生速度与真正的代码智能。",
                 "features.02desc": "内置语言语法、LSP 诊断、补全、悬停、跳转定义、代码操作、重命名、符号、折叠、迷你地图和项目搜索。",
-                "features.03title": "围绕任务组织工作区。",
-                "features.03desc": "水平或垂直拆分编辑器和终端，在窗格间拖动标签页，调整尺寸，并最大化当前需要的窗格。",
+                "features.03title": "一个工作区容纳多个项目。",
+                "features.03desc": "将相关项目放在一个窗口中，从工具栏切换，拆分编辑器和终端，移动标签页、调整大小并最大化窗格。",
                 "features.04title": "为真实工作流打造的终端。",
-                "features.04desc": "完整 VT100/xterm、标签页、主题、TUI、文件与 OSC 8 链接、发送到终端，以及全局快速终端快捷键。",
+                "features.04desc": "完整 VT100/xterm、标签页、主题、TUI、可点击链接、全局快速终端，以及保留运行中 shell 的显示恢复。",
                 "features.05title": "让变化、Git 和诊断始终可见。",
                 "features.05desc": "文件实时刷新、侧边栏状态、行间与内联 diff、blame、分支切换、配置验证和保存时格式化。",
                 "features.06title": "原生、专注且可恢复。",
                 "features.06desc": "自动保存、会话和光标恢复、大文件处理、自动更新、九种语言、VoiceOver、减少动态效果，无 Electron 运行时。",
                 "screenshots.kicker": "截图",
-                "screenshots.title": "Pine 实际效果。",
+                "screenshots.title": "看到完整任务，而不是彼此割裂的工具。",
                 "screenshots.alt0": "显示多个项目智能体任务的 Pine Agent Inbox",
                 "screenshots.cap0": "Agent Inbox 将所有项目的工作集中在一处",
                 "screenshots.alt1": "带最近项目的 Pine 欢迎窗口",
@@ -2356,9 +2343,9 @@
                 "screenshots.alt2": "带语法高亮和文件树的 Pine 代码编辑器",
                 "screenshots.cap2": "带语法高亮和 Git 行间标记的代码编辑器",
                 "screenshots.alt3": "Pine 内置终端",
-                "screenshots.cap3": "基于 SwiftTerm 的内置终端",
+                "screenshots.cap3": "真实终端始终位于代码旁边，并保留 shell 与滚动历史",
                 "screenshots.alt4": "Pine Markdown 预览（分屏模式）",
-                "screenshots.cap4": "Markdown 并排预览模式",
+                "screenshots.cap4": "并排审查源码与渲染结果",
                 "lightbox.label": "截图预览",
                 "lightbox.close": "关闭截图预览",
                 "manifesto.kicker": "定位",
@@ -2368,13 +2355,13 @@
                 "manifesto.chip2": "代理留在终端",
                 "manifesto.chip3": "原生 LSP 编辑器",
                 "manifesto.chip4": "轻量扩展能力",
-                "story.kicker": "起源",
-                "story.title": "由一位从未写过一行 Swift 的 DevOps 工程师在 12 天内构建完成。",
-                "story.quote": "「我只是想要一个快速的原生编辑器来处理 Ansible 和 Helm 文件。VS Code 感觉太重了。所以我自己构建了一个。」",
-                "story.body": "Pine 起源于一个个人实验。每天与 Ansible、Helm 和 Terraform 打交道意味着编辑 YAML，而不是编写应用程序。VS Code 对于这个任务来说感觉太重了。Zed 很有前途，但原生程度不够。没有哪个编辑器感觉是对的。在 AI 的帮助下，在没有任何 Swift 知识的情况下，Pine 在 12 天内被构建出来。这个实验成为了一个真正的产品。现在它是开源的，并与社区一起成长。",
+                "story.kicker": "方向",
+                "story.title": "面向 CLI 智能体工作的原生控制界面。",
+                "story.quote": "「终端保持打开。证据保持关联。控制权始终属于你。」",
+                "story.body": "Pine 正在走向这样的工作区：终端工具保持可替换，智能体工作携带持久上下文，每项变化都能在代码旁审查。编辑器应当变得更强，而不是更沉重、更不透明或依赖某一个智能体。",
                 "install.kicker": "开始使用",
                 "install.title": "10 秒安装 Pine。",
-                "install.desc": "通过 Homebrew、最新 DMG 或 Xcode 源码构建安装。Pine 使用专注的原生技术栈：SwiftUI、AppKit、SwiftTerm、swift-markdown 和 Sparkle。",
+                "install.desc": "通过 Homebrew 安装、下载最新 DMG，或在 Xcode 中从源码构建。Pine 始终是没有浏览器运行时的专注原生 Mac 应用。",
                 "install.download": "下载最新版本",
                 "install.source": "查看源代码",
                 "install.shellNote": "如果你想要完整的原生技术栈，可以用 <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> 从源码构建。",
@@ -2447,6 +2434,155 @@
             currentLang = this.value;
             applyLang(currentLang);
         });
+
+        function setupScrollMotion() {
+            var motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+            if (motionPreference.matches) return;
+
+            document.documentElement.classList.add("scroll-motion");
+
+            var progress = document.createElement("div");
+            progress.className = "scroll-progress";
+            progress.setAttribute("aria-hidden", "true");
+            document.body.appendChild(progress);
+
+            var revealGroups = [
+                ".section-head > *",
+                ".mini-card",
+                ".scroll-story-copy > .section-kicker, .scroll-story-copy > h2, .scroll-story-copy > p",
+                ".compare-card",
+                ".feature-card",
+                ".screenshot-gallery figure",
+                ".manifesto-card > *",
+                ".story-card > *",
+                ".install-panel > *",
+                "footer > *"
+            ];
+            var revealTargets = [];
+
+            revealGroups.forEach(function(selector, groupIndex) {
+                document.querySelectorAll(selector).forEach(function(element, index) {
+                    element.classList.add("scroll-reveal");
+                    element.style.setProperty("--reveal-delay", ((index % 4) * 85) + "ms");
+                    if ((groupIndex + index) % 3 === 1) element.classList.add("reveal-left");
+                    if ((groupIndex + index) % 3 === 2) element.classList.add("reveal-right");
+                    revealTargets.push(element);
+                });
+            });
+
+            var sceneTargets = Array.from(document.querySelectorAll(
+                ".manifesto-card, .story-card, .install-panel"
+            ));
+            sceneTargets.forEach(function(element) {
+                element.classList.add("scroll-scene");
+            });
+
+            var entranceObserver = new IntersectionObserver(function(entries, observer) {
+                entries.forEach(function(entry) {
+                    if (!entry.isIntersecting) return;
+                    entry.target.classList.add("is-visible");
+                    observer.unobserve(entry.target);
+                });
+            }, {
+                threshold: 0.13,
+                rootMargin: "0px 0px -7% 0px"
+            });
+
+            revealTargets.concat(sceneTargets).forEach(function(element) {
+                if (element.getBoundingClientRect().top < window.innerHeight * 0.94) {
+                    element.classList.add("is-visible");
+                } else {
+                    entranceObserver.observe(element);
+                }
+            });
+
+            var heroVisual = document.querySelector(".hero-visual");
+            var siteHeader = document.querySelector(".site-header");
+            var scrollStory = document.querySelector(".scroll-story");
+            var storySticky = document.querySelector(".scroll-story-sticky");
+            var storyFrames = Array.from(document.querySelectorAll(".story-frame"));
+            var storySteps = Array.from(document.querySelectorAll(".story-steps li"));
+            var storyCounter = document.getElementById("story-counter-current");
+            var manifestoCard = document.querySelector(".manifesto-card");
+            var framePending = false;
+
+            function clamp(value, min, max) {
+                return Math.min(max, Math.max(min, value));
+            }
+
+            function elementDrift(element, viewportHeight) {
+                var rect = element.getBoundingClientRect();
+                var centerOffset = viewportHeight * 0.5 - (rect.top + rect.height * 0.5);
+                return clamp(centerOffset / (viewportHeight + rect.height), -0.5, 0.5);
+            }
+
+            function updateScrollMotion() {
+                var viewportHeight = window.innerHeight;
+                var maxScroll = document.documentElement.scrollHeight - viewportHeight;
+                var pageProgress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+                progress.style.transform = "scaleX(" + clamp(pageProgress, 0, 1) + ")";
+
+                if (siteHeader) {
+                    siteHeader.style.setProperty("--glass-x", (18 + pageProgress * 64) + "%");
+                }
+
+                if (heroVisual) {
+                    var heroDrift = elementDrift(heroVisual, viewportHeight);
+                    heroVisual.style.setProperty("--frame-shift", (heroDrift * -54) + "px");
+                    heroVisual.style.setProperty("--product-shift", (heroDrift * -22) + "px");
+                }
+
+                if (manifestoCard) {
+                    var manifestoDrift = elementDrift(manifestoCard, viewportHeight);
+                    manifestoCard.style.setProperty("--watermark-shift", (manifestoDrift * -90) + "px");
+                }
+
+                if (scrollStory && storySticky && storyFrames.length) {
+                    var storyRect = scrollStory.getBoundingClientRect();
+                    var storyDistance = Math.max(1, scrollStory.offsetHeight - viewportHeight);
+                    var storyProgress = clamp(-storyRect.top / storyDistance, 0, 0.999);
+                    var currentStoryStep = Math.min(
+                        storyFrames.length - 1,
+                        Math.floor(storyProgress * storyFrames.length)
+                    );
+
+                    storyFrames.forEach(function(frame, index) {
+                        frame.classList.toggle("is-current", index === currentStoryStep);
+                    });
+
+                    storySteps.forEach(function(step, index) {
+                        step.classList.toggle("is-current", index === currentStoryStep);
+                        step.classList.toggle("is-passed", index < currentStoryStep);
+                    });
+
+                    if (storyCounter) {
+                        storyCounter.textContent = String(currentStoryStep + 1).padStart(2, "0");
+                    }
+                    storySticky.style.setProperty(
+                        "--story-glow-x",
+                        ((storyProgress - 0.5) * 18) + "%"
+                    );
+                    storySticky.style.setProperty(
+                        "--story-glow-shift",
+                        ((storyProgress - 0.5) * 90) + "px"
+                    );
+                }
+
+                framePending = false;
+            }
+
+            function requestScrollFrame() {
+                if (framePending) return;
+                framePending = true;
+                window.requestAnimationFrame(updateScrollMotion);
+            }
+
+            window.addEventListener("scroll", requestScrollFrame, {passive: true});
+            window.addEventListener("resize", requestScrollFrame);
+            updateScrollMotion();
+        }
+
+        setupScrollMotion();
 
         // Lightbox for screenshots
         var lightbox = document.getElementById("lightbox");
