@@ -12,6 +12,8 @@ import SwiftUI
 struct AgentInboxView: View {
     let registry: ProjectRegistry
     let onAccessibilityAnnouncement: (String) -> Void
+    let onDismiss: () -> Void
+    let explicitOpenProjectWindow: ((URL) -> Void)?
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -26,6 +28,8 @@ struct AgentInboxView: View {
 
     init(
         registry: ProjectRegistry,
+        onDismiss: @escaping () -> Void = {},
+        openProjectWindow: ((URL) -> Void)? = nil,
         onAccessibilityAnnouncement: @escaping (String) -> Void = { message in
             NSAccessibility.post(
                 element: NSApp.keyWindow
@@ -40,14 +44,34 @@ struct AgentInboxView: View {
         }
     ) {
         self.registry = registry
+        self.onDismiss = onDismiss
+        self.explicitOpenProjectWindow = openProjectWindow
         self.onAccessibilityAnnouncement = onAccessibilityAnnouncement
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // The window title bar already names the Agent Inbox; show a
-            // transient banner only when a navigation/recovery message is
-            // active (#1339 — removed the duplicate in-window header label).
+            HStack(spacing: 8) {
+                Label(
+                    Strings.agentInboxTitle,
+                    systemImage: MenuIcons.agentInbox
+                )
+                .font(.headline)
+
+                Spacer()
+
+                PineHelpButton(
+                    anchor: PineHelp.Anchor.agentInbox,
+                    book: PineHelp.bookName,
+                    accessibilityIdentifier:
+                        AccessibilityID.agentInboxHelpButton
+                )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
+
             if let navigationMessage {
                 HStack {
                     Spacer()
@@ -68,12 +92,13 @@ struct AgentInboxView: View {
                     Label(Strings.agentInboxEmpty, systemImage: MenuIcons.agentInbox)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier(AccessibilityID.agentInboxEmpty)
             } else {
                 inboxContents
             }
         }
-        .frame(minWidth: 420, idealWidth: 720, minHeight: 360, idealHeight: 560)
+        .frame(width: 520, height: 540)
         .focusable()
         .focused($hasKeyboardFocus)
         .focusEffectDisabled()
@@ -96,17 +121,7 @@ struct AgentInboxView: View {
             activateSelection()
             return .handled
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                HelpLink(
-                    anchor: PineHelp.Anchor.agentInbox,
-                    book: PineHelp.bookName
-                )
-                .accessibilityIdentifier(
-                    AccessibilityID.agentInboxHelpButton
-                )
-            }
-        }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.agentInbox)
     }
 
@@ -141,6 +156,7 @@ struct AgentInboxView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.agentInboxList)
     }
 
@@ -332,13 +348,13 @@ struct AgentInboxView: View {
             let result = await registry.recoverAgentTaskFromInbox(
                 taskID,
                 action: action,
-                openProjectWindow: { url in openWindow(value: url) }
+                openProjectWindow: openProject
             )
             switch result {
             case .openedNewSession:
-                navigationMessage = Strings.agentInboxOpenedNewSession
+                onDismiss()
             case .resumed:
-                navigationMessage = Strings.agentInboxResumedSession
+                onDismiss()
             case .taskMissing, .projectUnavailable, .unavailable,
                     .changedWhilePreparing, .launchRejected:
                 navigationMessage = Strings.agentInboxRecoveryUnavailable
@@ -351,11 +367,11 @@ struct AgentInboxView: View {
         Task { @MainActor in
             let result = await registry.navigateToAgentTaskFromInbox(
                 taskID,
-                openProjectWindow: { url in openWindow(value: url) }
+                openProjectWindow: openProject
             )
             switch result {
             case .focused:
-                navigationMessage = nil
+                onDismiss()
             case .taskMissing, .projectUnavailable, .routeStale:
                 navigationMessage = Strings.agentInboxRouteUnavailable
             }
@@ -369,6 +385,14 @@ struct AgentInboxView: View {
         case .completedUnread: Strings.agentInboxCompletedUnread
         case .working: Strings.agentInboxWorking
         case .history: Strings.agentInboxHistory
+        }
+    }
+
+    private func openProject(_ url: URL) {
+        if let explicitOpenProjectWindow {
+            explicitOpenProjectWindow(url)
+        } else {
+            openWindow(value: url)
         }
     }
 

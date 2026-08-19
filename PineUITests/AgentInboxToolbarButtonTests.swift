@@ -4,8 +4,8 @@
 //
 //  UI coverage for the project-window Agent Inbox toolbar button (#1337).
 //  Verifies the button is present in every project window and that clicking
-//  it opens the Agent Inbox window — additive to the existing ⌘⇧I chord
-//  and the Window menu item.
+//  it opens the Agent Inbox popover — additive to the existing ⌘⇧I chord
+//  and the View menu item.
 //
 
 import XCTest
@@ -44,10 +44,21 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         )
         toolbarButton.click()
 
-        let inboxWindow = app.windows["Agent Inbox"]
+        let inbox = app.descendants(matching: .any)["agentInbox"]
+            .firstMatch
         XCTAssertTrue(
-            waitForExistence(inboxWindow, timeout: 5),
-            "Clicking the toolbar button should open the Agent Inbox window"
+            waitForExistence(inbox, timeout: 5),
+            "Clicking the toolbar button should open the Agent Inbox popover"
+        )
+        XCTAssertFalse(
+            app.windows["Agent Inbox"].exists,
+            "Agent Inbox should not create a separate window"
+        )
+
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(
+            inbox.waitForNonExistence(timeout: 3),
+            "Escape should dismiss the Agent Inbox popover"
         )
     }
 

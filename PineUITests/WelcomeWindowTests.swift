@@ -45,16 +45,21 @@ final class WelcomeWindowTests: PineUITestCase {
 
         inboxButton.click()
 
-        let inboxWindow = app.windows["Agent Inbox"]
-        XCTAssertTrue(waitForExistence(inboxWindow), "Agent Inbox should open")
+        let inbox = app.descendants(matching: .any)["agentInbox"]
+            .firstMatch
+        XCTAssertTrue(waitForExistence(inbox), "Agent Inbox should open")
         // ContentUnavailableView doesn't reliably expose a modifier-applied
         // accessibilityIdentifier on macOS. The test locale is forced to English,
-        // so assert the rendered empty-state text within the Inbox window instead.
+        // so assert the rendered empty-state text within the popover instead.
         XCTAssertTrue(
             waitForExistence(
-                inboxWindow.staticTexts["No agent tasks"].firstMatch
+                inbox.staticTexts["No agent tasks"].firstMatch
             ),
             "A fresh Inbox should show its empty state"
+        )
+        XCTAssertFalse(
+            app.windows["Agent Inbox"].exists,
+            "Agent Inbox should not create a separate window"
         )
         XCTAssertTrue(
             welcomeWindow.exists,
@@ -74,7 +79,8 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(inboxItem))
         inboxItem.click()
 
-        let inbox = app.windows["Agent Inbox"]
+        let inbox = app.descendants(matching: .any)["agentInbox"]
+            .firstMatch
         XCTAssertTrue(
             waitForExistence(inbox),
             "Agent Inbox should be available from every project window"

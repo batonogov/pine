@@ -70,19 +70,17 @@ final class ScreenshotTests: PineUITestCase {
         )
         inboxButton.click()
 
-        let inboxWindow = app.windows["Agent Inbox"]
+        let inbox = app.descendants(matching: .any)["agentInbox"]
+            .firstMatch
         XCTAssertTrue(
-            waitForExistence(inboxWindow, timeout: 10),
-            "Agent Inbox window should appear"
+            waitForExistence(inbox, timeout: 10),
+            "Agent Inbox popover should appear"
         )
-        // The marketing launch path hides every SwiftUI/AppKit Welcome owner.
-        // This avoids closing only one of the duplicate fallback windows that
-        // macOS 26 can expose to XCUITest.
         XCTAssertTrue(
-            welcomeWindow.waitForNonExistence(timeout: 5),
-            "Welcome should hide before capturing Agent Inbox"
+            welcomeWindow.exists,
+            "Welcome should remain as the Agent Inbox popover host"
         )
-        let releaseTask = inboxWindow.buttons.matching(
+        let releaseTask = inbox.buttons.matching(
             NSPredicate(
                 format: "label CONTAINS %@",
                 "Draft the release announcement"
@@ -95,7 +93,7 @@ final class ScreenshotTests: PineUITestCase {
 
         Thread.sleep(forTimeInterval: 1.0)
 
-        let screenshot = inboxWindow.screenshot()
+        let screenshot = inbox.screenshot()
         attachScreenshot(screenshot, name: "screenshot-agent-inbox")
     }
 

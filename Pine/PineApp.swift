@@ -47,19 +47,6 @@ struct PineApp: App {
             )
         }
 
-        Window(Strings.agentInboxTitle, id: "agent-inbox") {
-            AgentInboxView(registry: registry)
-                .environment(registry)
-                .background {
-                    AppDelegateBridge(
-                        appDelegate: appDelegate,
-                        registry: registry
-                    )
-                }
-        }
-        .defaultSize(width: 720, height: 560)
-        .defaultLaunchBehavior(.suppressed)
-
         Window(Strings.welcomeTitle, id: "welcome") {
             WelcomeView(registry: registry, appDelegate: appDelegate)
                 .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
@@ -1023,6 +1010,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     #endif
     private var welcomeVisibilityGeneration = 0
     private var pendingWelcomeEnsureTask: Task<Void, Never>?
+    private var pendingAgentInboxPresentationTask: Task<Void, Never>?
 
     /// Closure to open a named SwiftUI window, set by PineApp on launch.
     var openNamedWindow: ((String) -> Void)?
@@ -1030,7 +1018,66 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     var openProjectWindow: ((URL) -> Void)?
 
     func showAgentInbox() {
-        openNamedWindow?("agent-inbox")
+        NSApp.activate()
+        pendingAgentInboxPresentationTask?.cancel()
+
+        if let hostWindow = agentInboxHostWindow() {
+            prepareAgentInboxHostWindow(hostWindow)
+            NativeCommandDelivery.deferToNextMainRunLoop {
+                AgentInboxPopoverRouter.shared.requestPresentation(
+                    in: hostWindow
+                )
+            }
+            return
+        }
+
+        // With no eligible project or Welcome owner, create Welcome first so
+        // the Inbox still has a stable, discoverable anchor (#1486).
+        showWelcome()
+        pendingAgentInboxPresentationTask = Task { @MainActor [weak self] in
+            guard let self,
+                  let window = await awaitVisibleWelcomeWindow(),
+                  !Task.isCancelled else { return }
+            prepareAgentInboxHostWindow(window)
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            AgentInboxPopoverRouter.shared.requestPresentation(
+                in: window
+            )
+            pendingAgentInboxPresentationTask = nil
+        }
+    }
+
+    /// Chooses an existing owner for the application-level Inbox. The key
+    /// project wins, followed by the key Welcome window. If Settings or
+    /// another auxiliary window is key, return the most recently active
+    /// project, then a visible Welcome owner.
+    private func agentInboxHostWindow() -> NSWindow? {
+        if let projectWindow = nativeCommandDestination(
+            requestedProject: nil
+        )?.window {
+            return projectWindow
+        }
+        if let welcome = visibleWelcomeWindow(), welcome.isKeyWindow {
+            return welcome
+        }
+        if let session = registry.keyWindowSession(),
+           let project = registry.openProjects[
+               registry.canonicalProjectURL(session.activeProjectURL)
+           ],
+           let projectWindow = nativeCommandDestination(
+               requestedProject: project
+           )?.window {
+            return projectWindow
+        }
+        return visibleWelcomeWindow()
+    }
+
+    private func prepareAgentInboxHostWindow(_ window: NSWindow) {
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
 
