@@ -823,6 +823,50 @@ struct AgentTaskRegistryTests {
         #expect(loaded.lifecycle == .paused)
     }
 
+    @Test("dismissing stale history remains durable across quit")
+    func staleDismissalRemainsDurable() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let writer = AgentTaskRegistry(persistence: store)
+        writer.registerProject(identity)
+        #expect(await writer.flushPersistence() == .saved)
+
+        let session = makeSession(pid: 805, generation: 1)
+        writer.bridge(
+            session,
+            replacing: nil,
+            context: context(project: identity, routeSeed: 74)
+        )
+        #expect(await writer.flushPersistence() == .saved)
+        let taskID = try #require(writer.task(forSessionID: session.id)?.id)
+
+        // Relaunch invalidates runtime-only process authority honestly: the
+        // run is stale and paused, not falsely reported as terminated.
+        let relaunched = AgentTaskRegistry(persistence: store)
+        relaunched.registerProject(identity)
+        #expect(await relaunched.flushPersistence() == .saved)
+        let stale = try #require(relaunched.task(for: taskID))
+        #expect(stale.lifecycle == .paused)
+        #expect(stale.route.availability == .missing)
+        #expect(stale.runs.last?.liveness == .stale)
+        #expect(stale.runs.last?.endedAt == nil)
+
+        #expect(relaunched.dismissTask(taskID))
+        #expect(await relaunched.flushPersistence() == .saved)
+
+        let persisted = try #require(
+            await store.load(project: identity).tasks.first(where: {
+                $0.id == taskID
+            })
+        )
+        #expect(persisted.lifecycle == .dismissed)
+        #expect(persisted.route.availability == .missing)
+        #expect(persisted.runs.last?.liveness == .stale)
+        #expect(persisted.runs.last?.endedAt == nil)
+    }
+
     @Test("route changes retain task identity")
     func canonicalRouteUpdate() throws {
         let registry = AgentTaskRegistry()

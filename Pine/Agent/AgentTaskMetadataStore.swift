@@ -2088,7 +2088,11 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                       task.route.availability == .missing else { return false }
             }
             if task.lifecycle == .dismissed {
-                guard last.liveness == .terminated,
+                // Dismissal is an Inbox/history decision, not evidence that
+                // an unreachable process exited. Preserve an honestly stale
+                // tail instead of manufacturing `terminated` solely to make
+                // the record durable.
+                guard last.liveness != .live,
                       task.route.availability == .missing else { return false }
             }
             let waitingIsAllowed = task.lifecycle == .active
