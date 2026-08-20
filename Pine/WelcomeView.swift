@@ -217,11 +217,18 @@ struct WelcomeView: View {
                         .id(url)
                         .contentShape(Rectangle())
                         .simultaneousGesture(
-                            TapGesture(count: 2).onEnded {
+                            TapGesture().onEnded {
                                 recentSelection.selectedURL = url
-                                openRecentProject(at: url)
+                                focusedControl = .recentProjects
                             }
                         )
+                        // A regular row gesture is required here: on macOS 26
+                        // a simultaneous double-tap attached to List content
+                        // is consumed by the native selection recognizer.
+                        .onTapGesture(count: 2) {
+                            recentSelection.selectedURL = url
+                            openRecentProject(at: url)
+                        }
                         .contextMenu {
                             recentProjectCommands(for: url)
                         }
@@ -231,6 +238,10 @@ struct WelcomeView: View {
                     }
                 }
                 .listStyle(.inset)
+                // Filtering removes and later reinserts rows with the same
+                // URL. Recreate the native list for a new result set so its
+                // macOS 26 accessibility rows cannot retain stale selection.
+                .id(filteredProjects)
                 .focused($focusedControl, equals: .recentProjects)
                 .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 .onKeyPress(.upArrow, phases: .down) { press in
