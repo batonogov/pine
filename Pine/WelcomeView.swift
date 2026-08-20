@@ -212,22 +212,25 @@ struct WelcomeView: View {
                         .tag(url)
                         .id(url)
                         .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard NSApp.currentEvent?.clickCount == 2 else {
-                                return
-                            }
+                        // A single click belongs to the list's own selection;
+                        // only the second one opens. Asking the gesture for a
+                        // count keeps that out of NSApp.currentEvent, whose
+                        // clickCount is not reliable underneath a List row.
+                        .onTapGesture(count: 2) {
                             recentSelection.selectedURL = url
                             openRecentProject(at: url)
                         }
                         .contextMenu {
                             recentProjectCommands(for: url)
                         }
-                        .accessibilityIdentifier(
-                            AccessibilityID.welcomeRecentProject(url.lastPathComponent)
-                        )
                     }
                 }
                 .listStyle(.inset)
+                // Without an explicit flexible height the list is sized by its
+                // content, so a long enough recent-projects list pushes the
+                // action bar past the bottom of the fixed-size window instead
+                // of scrolling within the space that is left.
+                .frame(maxHeight: .infinity)
                 .focused($focusedControl, equals: .recentProjects)
                 .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 .onKeyPress(.upArrow, phases: .down) { press in
@@ -519,5 +522,11 @@ private struct RecentProjectRow: View {
         // Collapsing the row hides the cell's own selected state from
         // assistive technology, so mirror it onto the leaf element.
         .accessibilityAddTraits(isSelected ? AccessibilityTraits.isSelected : [])
+        // The identifier belongs on this element rather than on the row in the
+        // list body: an identifier applied there resolves to the enclosing
+        // cell, which carries a label but neither the abbreviated path nor the
+        // selected state, so queries found an element missing half its
+        // accessibility payload.
+        .accessibilityIdentifier(AccessibilityID.welcomeRecentProject(url.lastPathComponent))
     }
 }
