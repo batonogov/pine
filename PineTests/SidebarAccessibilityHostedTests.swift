@@ -213,6 +213,42 @@ struct SidebarAccessibilityHostedTests {
         #expect(window.firstResponder === responder)
     }
 
+    @Test("Focus retry trusts AppKit over a stale cached focus callback")
+    func responderFocusRetryRepairsStaleCachedFocus() async throws {
+        let controller = SidebarKeyboardFocusController()
+        let responder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let accessibilityTarget = SidebarFocusAcceptingTestView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(responder)
+        window.contentView?.addSubview(accessibilityTarget)
+        controller.attach(responder)
+        defer { window.orderOut(nil) }
+
+        #expect(controller.requestFocus(retryOnNextRunLoop: true))
+        #expect(window.makeFirstResponder(accessibilityTarget))
+        #expect(!controller.isFocused)
+
+        // Model the macOS 26 AX press path: the semantic row becomes the real
+        // responder while the bridge's last callback still says it is focused.
+        responder.onFocusChange?(true)
+        #expect(controller.isFocused)
+        #expect(window.firstResponder === accessibilityTarget)
+
+        try await Task.sleep(for: .milliseconds(150))
+
+        #expect(controller.isFocused)
+        #expect(window.firstResponder === responder)
+    }
+
     @Test("Row focus claim survives expanded search toolbar activation")
     func responderFocusRetryAfterExpandedSearchActivation() async throws {
         let controller = SidebarKeyboardFocusController()
