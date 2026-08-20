@@ -30,6 +30,7 @@ final class SidebarAccessibilityRowView: NSView {
     private var onPress: (() -> Bool)?
     private var onCommand: ((SidebarKeyboardCommand) -> Bool)?
     private var isForwardingNavigationKey = false
+    private var semanticIsFocused = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -53,6 +54,15 @@ final class SidebarAccessibilityRowView: NSView {
     /// relying on a timed focus race before the user's next arrow key.
     override var acceptsFirstResponder: Bool { true }
 
+    /// AppKit derives this value from first-responder state once a view can
+    /// accept keyboard focus. Sidebar focus is instead owned by the shared
+    /// bridge and applies to the selected semantic row, so preserve the value
+    /// supplied by the tree rather than exposing this fallback responder's
+    /// incidental state to VoiceOver.
+    override func isAccessibilityFocused() -> Bool {
+        semanticIsFocused
+    }
+
     func configure(
         _ configuration: SidebarAccessibilityRowConfiguration,
         onPress: @escaping () -> Bool,
@@ -61,6 +71,7 @@ final class SidebarAccessibilityRowView: NSView {
     ) {
         self.onPress = onPress
         self.onCommand = onCommand
+        semanticIsFocused = configuration.isFocused
         setAccessibilityLabel(configuration.label)
         setAccessibilityIdentifier(configuration.identifier)
         setAccessibilityDisclosureLevel(configuration.level)

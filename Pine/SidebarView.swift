@@ -684,7 +684,20 @@ struct SidebarView: View {
                                 onKeyboardFocusRequested: {
                                     claimSidebarKeyboardFocus(retryOnNextRunLoop: true)
                                 },
-                                onKeyboardCommand: handleSidebarCommand
+                                onKeyboardCommand: { command in
+                                    let handled = handleSidebarCommand(command)
+                                    if handled {
+                                        // The semantic AX row is a fallback
+                                        // key target on macOS 26. Restore the
+                                        // canonical bridge after handling the
+                                        // first command so selection focus and
+                                        // subsequent keyboard input converge.
+                                        claimSidebarKeyboardFocus(
+                                            retryOnNextRunLoop: true
+                                        )
+                                    }
+                                    return handled
+                                }
                             )
                         }
                         .padding(.vertical, 4)
