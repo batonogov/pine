@@ -186,8 +186,14 @@ final class SidebarKeyboardFocusController {
                     deadline: .now() + delay
                 ) { [weak self] in
                     guard let self,
-                          self.focusRequestGeneration == generation,
-                          !self.isFocused else { return }
+                          self.focusRequestGeneration == generation else {
+                        return
+                    }
+                    // Accessibility activation can move AppKit's actual first
+                    // responder without delivering a matching focus callback
+                    // to this invisible bridge. Never let the cached visual
+                    // state suppress a required keyboard-focus repair.
+                    guard !self.hasResponderFocus else { return }
                     _ = self.attemptFocus()
                 }
             }
@@ -205,6 +211,11 @@ final class SidebarKeyboardFocusController {
         }
         return window.makeFirstResponder(responderView)
             && window.firstResponder === responderView
+    }
+
+    private var hasResponderFocus: Bool {
+        guard let responderView else { return false }
+        return responderView.window?.firstResponder === responderView
     }
 
     private func updateFocus(_ focused: Bool) {
