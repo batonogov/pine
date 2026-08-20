@@ -61,7 +61,6 @@ struct SidebarFileTree: View {
     let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
     let isKeyboardFocused: Bool
     let onKeyboardFocusRequested: () -> Void
-    let onKeyboardCommand: (SidebarKeyboardCommand) -> Bool
 
     var body: some View {
         ForEach(nodes) { node in
@@ -72,8 +71,7 @@ struct SidebarFileTree: View {
                 onFileOpen: onFileOpen,
                 isKeyboardFocused: isKeyboardFocused,
                 depth: 0,
-                onKeyboardFocusRequested: onKeyboardFocusRequested,
-                onKeyboardCommand: onKeyboardCommand
+                onKeyboardFocusRequested: onKeyboardFocusRequested
             )
         }
     }
@@ -88,7 +86,6 @@ private struct SidebarFileTreeNode: View {
     let isKeyboardFocused: Bool
     let depth: Int
     let onKeyboardFocusRequested: () -> Void
-    let onKeyboardCommand: (SidebarKeyboardCommand) -> Bool
     @Environment(SidebarExpansionState.self) private var expansion
     @Environment(SidebarEditState.self) private var editState
     @Environment(SidebarTreeNavigation.self) private var navigation
@@ -129,8 +126,7 @@ private struct SidebarFileTreeNode: View {
                                 onFileOpen: onFileOpen,
                                 isKeyboardFocused: isKeyboardFocused,
                                 depth: depth + 1,
-                                onKeyboardFocusRequested: onKeyboardFocusRequested,
-                                onKeyboardCommand: onKeyboardCommand
+                                onKeyboardFocusRequested: onKeyboardFocusRequested
                             )
                         }
                     }
@@ -243,7 +239,6 @@ private struct SidebarFileTreeNode: View {
                         )
                         return true
                     },
-                    onCommand: onKeyboardCommand,
                     onCustomAction: {
                         setFolderExpanded(!isExpanded)
                         return true
@@ -267,7 +262,6 @@ private struct SidebarFileTreeNode: View {
                             openFile(.permanent)
                             return true
                         },
-                        onCommand: onKeyboardCommand,
                         onCustomAction: {
                             openFile(
                                 .transientPreview,

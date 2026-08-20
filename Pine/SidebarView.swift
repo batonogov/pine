@@ -186,14 +186,8 @@ final class SidebarKeyboardFocusController {
                     deadline: .now() + delay
                 ) { [weak self] in
                     guard let self,
-                          self.focusRequestGeneration == generation else {
-                        return
-                    }
-                    // Accessibility activation can move AppKit's actual first
-                    // responder without delivering a matching focus callback
-                    // to this invisible bridge. Never let the cached visual
-                    // state suppress a required keyboard-focus repair.
-                    guard !self.hasResponderFocus else { return }
+                          self.focusRequestGeneration == generation,
+                          !self.isFocused else { return }
                     _ = self.attemptFocus()
                 }
             }
@@ -211,11 +205,6 @@ final class SidebarKeyboardFocusController {
         }
         return window.makeFirstResponder(responderView)
             && window.firstResponder === responderView
-    }
-
-    private var hasResponderFocus: Bool {
-        guard let responderView else { return false }
-        return responderView.window?.firstResponder === responderView
     }
 
     private func updateFocus(_ focused: Bool) {
@@ -594,7 +583,7 @@ extension View {
     }
 }
 
-extension SidebarKeyboardModifiers {
+private extension SidebarKeyboardModifiers {
     init(_ modifiers: EventModifiers) {
         var result: SidebarKeyboardModifiers = []
         if modifiers.contains(.command) { result.insert(.command) }
@@ -674,7 +663,6 @@ struct SidebarView: View {
                                 selection: $selectedFile,
                                 onFileOpen: { node, disposition in
                                     if disposition.requestsEditorFocus {
-                                        hasSwiftUIKeyboardFocus = false
                                         keyboardFocusController
                                             .cancelPendingFocusRetry()
                                     }
@@ -684,20 +672,6 @@ struct SidebarView: View {
                                     && controlActiveState == .key,
                                 onKeyboardFocusRequested: {
                                     claimSidebarKeyboardFocus(retryOnNextRunLoop: true)
-                                },
-                                onKeyboardCommand: { command in
-                                    let handled = handleSidebarCommand(command)
-                                    if handled {
-                                        // The semantic AX row is a fallback
-                                        // key target on macOS 26. Restore the
-                                        // canonical bridge after handling the
-                                        // first command so selection focus and
-                                        // subsequent keyboard input converge.
-                                        claimSidebarKeyboardFocus(
-                                            retryOnNextRunLoop: true
-                                        )
-                                    }
-                                    return handled
                                 }
                             )
                         }
@@ -721,8 +695,7 @@ struct SidebarView: View {
                             .onChange(of: geo.size.height) { _, h in navigation.viewportHeight = h }
                     })
                     .onChange(of: hasSwiftUIKeyboardFocus) { _, hasFocus in
-                        guard hasFocus,
-                              editState.renamingURL == nil else { return }
+                        guard hasFocus else { return }
                         // Full Keyboard Access focuses SwiftUI's host first.
                         // Normalize that path to the AppKit responder so a
                         // deferred editor-creation focus cannot displace it.
@@ -910,10 +883,6 @@ struct SidebarView: View {
     /// model is invalidated before AppKit changes first responder so a queued
     /// editor or terminal retry cannot reclaim focus on the next run loop.
     private func claimSidebarKeyboardFocus(retryOnNextRunLoop: Bool = false) {
-        // Keep SwiftUI's focus host and the AppKit bridge in sync. XCUITest
-        // accessibility key injection can target either path on macOS 26,
-        // especially after disclosure or preview-editor reconciliation.
-        hasSwiftUIKeyboardFocus = true
         paneManager.cancelPendingFocusForActivePane()
         keyboardFocusController.requestFocus(
             retryOnNextRunLoop: retryOnNextRunLoop
@@ -972,14 +941,10 @@ struct SidebarView: View {
         switch action {
         case .open:
             navigation.resetTypeAhead()
-            hasSwiftUIKeyboardFocus = false
-            keyboardFocusController.cancelPendingFocusRetry()
             onFileOpen(selected, .permanent)
             return true
         case .rename:
             navigation.resetTypeAhead()
-            hasSwiftUIKeyboardFocus = false
-            keyboardFocusController.cancelPendingFocusRetry()
             paneManager.cancelPendingFocusForActivePane()
             editState.startRename(for: selected)
             return true
