@@ -1,6 +1,6 @@
 # NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
 # To update an action: find the new version's commit SHA on GitHub (Tags → verify commit),
-# replace the SHA, and keep the "# vX" comment in sync.
+# replace the SHA, and keep the trailing "# vX.Y.Z" comment on the exact release tag.
 name: CI
 
 on:
@@ -41,7 +41,7 @@ jobs:
       SWIFTLINT_VERSION: "0.64.1"
       SWIFTLINT_SHA256: "d086685c2d0a6f6e19683250b132d0b1028de2936618152a358e4646ca065857"
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Install SwiftLint
         run: |
@@ -116,7 +116,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
@@ -191,7 +191,7 @@ jobs:
           sha256sum build-products.tar.zst > build-products.sha256
 
       - name: Upload Build Products
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-products
           path: |
@@ -210,7 +210,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       # Do not use the stable select-xcode helper here: xcode-27 runners
       # provide the preview Xcode/SDK pair as their active toolchain.
@@ -350,13 +350,13 @@ jobs:
       COVERAGE_THRESHOLD: 70
       PINE_LIFECYCLE_DIAGNOSTICS: ${{ github.workspace }}/LifecycleDiagnostics
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
 
       - name: Download Build Products
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: build-products
 
@@ -410,7 +410,7 @@ jobs:
 
       - name: Upload Unit Test Results
         if: success() || failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: unit-test-results
           path: |
@@ -426,7 +426,7 @@ jobs:
       # "re-record from CI" possible without a local render.
       - name: Upload Snapshot Renders
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: snapshot-actual-renders
           path: PineTests/SnapshotTests/__Snapshots__/*.actual.png
@@ -452,7 +452,7 @@ jobs:
 
       - name: Comment Coverage on PR
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           COVERAGE_STATUS: ${{ steps.coverage.outputs.status }}
           COVERAGE_VALUE: ${{ steps.coverage.outputs.coverage }}
@@ -546,7 +546,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Test UI shard validator
         working-directory: .github/scripts
@@ -634,13 +634,13 @@ jobs:
               -only-testing:PineUITests/HCLFormatOnSaveTests
               -only-testing:PineUITests/ToggleCommentTests
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
 
       - name: Download Build Products
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: build-products
 
@@ -684,7 +684,7 @@ jobs:
 
       - name: Upload Flaky Report
         if: success() || failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: flaky-ui-${{ strategy.job-index }}
           path: flaky-shard-${{ strategy.job-index }}.json
@@ -746,13 +746,13 @@ jobs:
       PINE_A11Y_PSEUDOLOCALIZED: ${{ matrix.pseudolocalized }}
       PINE_A11Y_DIAGNOSTICS: A11yDiagnostics
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
 
       - name: Download Build Products
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: build-products
 
@@ -810,7 +810,7 @@ jobs:
 
       - name: Upload Focused Accessibility Diagnostics
         if: failure() || matrix.capture_layout
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: a11y-localization-${{ matrix.name }}
           path: |
@@ -829,7 +829,7 @@ jobs:
     if: always() && needs.ui-tests.result != 'cancelled' && needs.ui-tests.result != 'skipped'
     steps:
       - name: Download Flaky Reports
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: flaky-ui-*
           merge-multiple: true
@@ -884,7 +884,7 @@ jobs:
 
       - name: Comment Flaky UI Tests on PR
         if: github.event_name == 'pull_request' && steps.aggregate.outputs.flaky-count != '0' && steps.aggregate.outputs.flaky-count != ''
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           FLAKY_COUNT: ${{ steps.aggregate.outputs.flaky-count }}
           FLAKY_TESTS: ${{ steps.aggregate.outputs.flaky-tests }}
@@ -956,7 +956,7 @@ jobs:
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'perf'))
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
@@ -1001,7 +1001,7 @@ jobs:
 
       - name: Upload Performance Results
         if: success() || failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: performance-results-xcresult
           path: PerformanceResults.xcresult
@@ -1030,7 +1030,7 @@ jobs:
       github.event_name == 'pull_request' &&
       contains(github.event.pull_request.labels.*.name, 'fuzz')
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
@@ -1082,7 +1082,7 @@ jobs:
 
       - name: Upload Fuzz Results
         if: success() || failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fuzz-results-xcresult
           path: FuzzResults.xcresult
