@@ -674,6 +674,7 @@ struct SidebarView: View {
                                 selection: $selectedFile,
                                 onFileOpen: { node, disposition in
                                     if disposition.requestsEditorFocus {
+                                        hasSwiftUIKeyboardFocus = false
                                         keyboardFocusController
                                             .cancelPendingFocusRetry()
                                     }
@@ -720,7 +721,8 @@ struct SidebarView: View {
                             .onChange(of: geo.size.height) { _, h in navigation.viewportHeight = h }
                     })
                     .onChange(of: hasSwiftUIKeyboardFocus) { _, hasFocus in
-                        guard hasFocus else { return }
+                        guard hasFocus,
+                              editState.renamingURL == nil else { return }
                         // Full Keyboard Access focuses SwiftUI's host first.
                         // Normalize that path to the AppKit responder so a
                         // deferred editor-creation focus cannot displace it.
@@ -908,6 +910,10 @@ struct SidebarView: View {
     /// model is invalidated before AppKit changes first responder so a queued
     /// editor or terminal retry cannot reclaim focus on the next run loop.
     private func claimSidebarKeyboardFocus(retryOnNextRunLoop: Bool = false) {
+        // Keep SwiftUI's focus host and the AppKit bridge in sync. XCUITest
+        // accessibility key injection can target either path on macOS 26,
+        // especially after disclosure or preview-editor reconciliation.
+        hasSwiftUIKeyboardFocus = true
         paneManager.cancelPendingFocusForActivePane()
         keyboardFocusController.requestFocus(
             retryOnNextRunLoop: retryOnNextRunLoop
@@ -966,10 +972,14 @@ struct SidebarView: View {
         switch action {
         case .open:
             navigation.resetTypeAhead()
+            hasSwiftUIKeyboardFocus = false
+            keyboardFocusController.cancelPendingFocusRetry()
             onFileOpen(selected, .permanent)
             return true
         case .rename:
             navigation.resetTypeAhead()
+            hasSwiftUIKeyboardFocus = false
+            keyboardFocusController.cancelPendingFocusRetry()
             paneManager.cancelPendingFocusForActivePane()
             editState.startRename(for: selected)
             return true
