@@ -128,6 +128,7 @@ struct SidebarAccessibilityHostedTests {
         defer { window.orderOut(nil) }
 
         #expect(window.makeFirstResponder(row))
+        #expect(row.isAccessibilityFocused())
         row.keyDown(with: try makeKeyEvent(
             characters: "\u{F702}",
             keyCode: 123,
