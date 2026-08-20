@@ -68,6 +68,8 @@ struct WelcomeView: View {
     @State private var isSearchVisible = false
     @State private var isDragTargeted = false
     @State private var isAgentInboxPresented = false
+    @State private var recentSelection = RecentProjectsSelection()
+    @FocusState private var isRecentProjectsFocused: Bool
 
     /// Recent projects filtered by the search query.
     private var filteredProjects: [URL] {
@@ -124,7 +126,7 @@ struct WelcomeView: View {
                     Text(Strings.welcomeRecentProjects)
                         .font(.headline)
                     Spacer()
-                    if registry.recentProjects.count > 8 {
+                    if !registry.recentProjects.isEmpty {
                         Button {
                             isSearchVisible.toggle()
                         } label: {
@@ -157,45 +159,7 @@ struct WelcomeView: View {
                         }
                         .frame(maxHeight: .infinity)
                     } else {
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(
-                                    Array(filteredProjects.enumerated()),
-                                    id: \.element
-                                ) { index, url in
-                                    if index > 0 {
-                                        Divider()
-                                            .padding(.leading)
-                                    }
-                                    RecentProjectRow(url: url) {
-                                        openRecentProject(at: url)
-                                    }
-                                    .contextMenu {
-                                        Button {
-                                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                                        } label: {
-                                            Label(
-                                                Strings.welcomeRevealInFinder,
-                                                systemImage: "folder"
-                                            )
-                                        }
-                                        Divider()
-                                        Button {
-                                            registry.removeFromRecent(url)
-                                        } label: {
-                                            Label(
-                                                Strings.welcomeRemoveFromRecent,
-                                                systemImage: "minus.circle"
-                                            )
-                                        }
-                                    }
-                                    .accessibilityIdentifier(
-                                        AccessibilityID.welcomeRecentProject(url.lastPathComponent)
-                                    )
-                                }
-                            }
-                        }
-                        .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
+                        recentProjectsList
                     }
                 }
             }
@@ -206,6 +170,9 @@ struct WelcomeView: View {
             if !visible {
                 searchText = ""
             }
+        }
+        .onChange(of: filteredProjects, initial: true) { _, projects in
+            recentSelection.normalize(for: projects)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
             guard controlActiveState == .key else { return }
@@ -230,6 +197,158 @@ struct WelcomeView: View {
             try? await Task.sleep(for: .seconds(UITimings.Delay.long))
             openProject(at: url)
         }
+    }
+
+    private var recentProjectsList: some View {
+        ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                List(selection: $recentSelection.selectedURL) {
+                    ForEach(filteredProjects, id: \.self) { url in
+                        RecentProjectRow(
+                            url: url,
+                            isSelected: recentSelection.selectedURL == url,
+                            action: {
+                                recentSelection.selectedURL = url
+                                openRecentProject(at: url)
+                            }
+                        )
+                        .tag(url)
+                        .id(url)
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(
+                            TapGesture(count: 2).onEnded {
+                                recentSelection.selectedURL = url
+                                openRecentProject(at: url)
+                            }
+                        )
+                        .contextMenu {
+                            recentProjectCommands(for: url)
+                        }
+                        .accessibilityIdentifier(
+                            AccessibilityID.welcomeRecentProject(url.lastPathComponent)
+                        )
+                    }
+                }
+                .listStyle(.inset)
+                .focused($isRecentProjectsFocused)
+                .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
+                .onKeyPress(.upArrow, phases: .down) { press in
+                    handleRecentProjectKey(press, command: .up)
+                }
+                .onKeyPress(.downArrow, phases: .down) { press in
+                    handleRecentProjectKey(press, command: .down)
+                }
+                .onKeyPress(.home, phases: .down) { press in
+                    handleRecentProjectKey(press, command: .home)
+                }
+                .onKeyPress(.end, phases: .down) { press in
+                    handleRecentProjectKey(press, command: .end)
+                }
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.isEmpty else { return .ignored }
+                    openSelectedRecentProject()
+                    return .handled
+                }
+                .onKeyPress(.escape, phases: .down) { press in
+                    guard press.modifiers.isEmpty else { return .ignored }
+                    isRecentProjectsFocused = false
+                    return .handled
+                }
+                .onChange(of: recentSelection.selectedURL) { _, selectedURL in
+                    guard let selectedURL else { return }
+                    proxy.scrollTo(selectedURL)
+                }
+
+                Divider()
+                recentProjectActionBar
+            }
+        }
+    }
+
+    private var recentProjectActionBar: some View {
+        HStack(spacing: 8) {
+            Button(Strings.welcomeOpenProject) {
+                openSelectedRecentProject()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectOpen)
+
+            Spacer()
+
+            Button {
+                guard let url = recentSelection.selectedURL else { return }
+                revealRecentProject(url)
+            } label: {
+                Label(Strings.welcomeRevealInFinder, systemImage: "folder")
+            }
+            .labelStyle(.iconOnly)
+            .help(Strings.welcomeRevealInFinder)
+            .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectReveal)
+
+            Button {
+                guard let url = recentSelection.selectedURL else { return }
+                removeRecentProject(url)
+            } label: {
+                Label(Strings.welcomeRemoveFromRecent, systemImage: "minus.circle")
+            }
+            .labelStyle(.iconOnly)
+            .help(Strings.welcomeRemoveFromRecent)
+            .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectRemove)
+        }
+        .buttonStyle(.borderless)
+        .disabled(recentSelection.selectedURL == nil)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private func recentProjectCommands(for url: URL) -> some View {
+        Button {
+            revealRecentProject(url)
+        } label: {
+            Label(Strings.welcomeRevealInFinder, systemImage: "folder")
+        }
+        Divider()
+        Button {
+            removeRecentProject(url)
+        } label: {
+            Label(Strings.welcomeRemoveFromRecent, systemImage: "minus.circle")
+        }
+    }
+
+    private func handleRecentProjectKey(
+        _ press: KeyPress,
+        command: RecentProjectsKeyboardCommand
+    ) -> KeyPress.Result {
+        guard press.modifiers.isEmpty else { return .ignored }
+        recentSelection.move(command, in: filteredProjects)
+        return .handled
+    }
+
+    private func openSelectedRecentProject() {
+        guard let url = recentSelection.selectedURL,
+              filteredProjects.contains(url) else { return }
+        openRecentProject(at: url)
+    }
+
+    private func revealRecentProject(_ url: URL) {
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func removeRecentProject(_ url: URL) {
+        let visibleProjects = filteredProjects
+        registry.removeFromRecent(url)
+        let remainingProjects = RecentProjectsFilter.filter(
+            registry.recentProjects,
+            query: searchText
+        )
+        recentSelection.normalizeAfterRemoving(
+            url,
+            from: visibleProjects,
+            remainingProjects: remainingProjects
+        )
     }
 
     /// Handles file URLs dropped onto the Welcome window.
@@ -346,36 +465,34 @@ struct WelcomeView: View {
     }
 }
 
-/// A single row in the recent projects list with hover highlight.
+/// A single native-list row in the recent projects collection.
 private struct RecentProjectRow: View {
     let url: URL
+    let isSelected: Bool
     let action: () -> Void
 
-    @State private var isHovered = false
-
     var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: "folder")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(url.lastPathComponent)
-                        .font(.system(size: 13))
-                    Text(url.abbreviatedPath)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer()
+        HStack {
+            Image(systemName: "folder")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(url.lastPathComponent)
+                    .font(.system(size: 13))
+                Text(url.abbreviatedPath)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
+            Spacer()
         }
-        .buttonStyle(.plain)
-        .background(isHovered ? Color.primary.opacity(0.06) : .clear)
-        .animation(PineAnimation.quick, value: isHovered)
-        .onHover { isHovered = $0 }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(url.lastPathComponent)
+        .accessibilityValue(url.abbreviatedPath)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityAction {
+            action()
+        }
     }
 }

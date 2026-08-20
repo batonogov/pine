@@ -213,9 +213,9 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(app.windows["welcome"].exists)
     }
 
-    // MARK: - P0: Recent project click → project opens
+    // MARK: - P0: Recent project selection → project opens
 
-    func testClickRecentProjectOpensProject() throws {
+    func testSingleClickSelectsAndDoubleClickOpensRecentProject() throws {
         // Step 1: Launch with a project to create a recent entry
         let url = try createTempProject(files: ["hello.swift": "// hi\n"])
         projectURLs.append(url)
@@ -245,8 +245,17 @@ final class WelcomeWindowTests: PineUITestCase {
             "Recent project '\(projectName)' should appear in Welcome"
         )
 
-        // Step 4: Click the recent project
+        // Step 4: Single click selects without opening.
         recentItem.click()
+        XCTAssertTrue(recentItem.isSelected)
+        XCTAssertTrue(welcomeWindow.exists)
+        XCTAssertFalse(
+            app.scrollViews["sidebar"].exists,
+            "Selection must not open a recent project"
+        )
+
+        // Double click performs the explicit open action.
+        recentItem.doubleClick()
 
         // Project window should open with sidebar
         let sidebarAfter = app.scrollViews["sidebar"]
@@ -276,13 +285,13 @@ final class WelcomeWindowTests: PineUITestCase {
         let welcomeWindow = app.windows["welcome"]
         XCTAssertTrue(waitForExistence(welcomeWindow, timeout: 10), "Welcome should appear on relaunch")
 
-        // Step 4: Click recent project
+        // Step 4: Double-click the selected recent project
         let projectName = url.lastPathComponent
         let recentItem = app.descendants(matching: .any)[
             "welcomeRecentProject_\(projectName)"
         ].firstMatch
         XCTAssertTrue(waitForExistence(recentItem, timeout: 5))
-        recentItem.click()
+        recentItem.doubleClick()
 
         // Step 5: Welcome window should disappear
         let welcomeGone = welcomeWindow.waitForNonExistence(timeout: 10)
@@ -328,6 +337,12 @@ final class WelcomeWindowTests: PineUITestCase {
             "welcomeRecentProject_\(projectName)"
         ].firstMatch
         XCTAssertTrue(waitForExistence(recentItem, timeout: 5), "Recent project should appear")
+        XCTAssertEqual(recentItem.label, projectName)
+        XCTAssertEqual(
+            recentItem.value as? String,
+            "~" + String(projectDir.path.dropFirst(homeDir.count)),
+            "VoiceOver should receive the project name and abbreviated path separately"
+        )
 
         // Check that the path is abbreviated: the full home directory should not appear
         // in any static text, but a ~/ prefixed version should
@@ -414,7 +429,7 @@ final class WelcomeWindowTests: PineUITestCase {
             "welcomeRecentProject_\(projectName)"
         ].firstMatch
         XCTAssertTrue(waitForExistence(recentItem, timeout: 5), "Project should be in recent list")
-        recentItem.click()
+        recentItem.doubleClick()
 
         XCTAssertTrue(
             waitForExistence(sidebar, timeout: 10),
@@ -487,6 +502,23 @@ final class WelcomeWindowTests: PineUITestCase {
             recentItem.isHittable,
             "Single recent project should be fully visible and clickable"
         )
+        recentItem.click()
+        XCTAssertTrue(recentItem.isSelected)
+
+        let openButton = app.buttons["welcomeRecentProjectOpen"]
+        let revealButton = app.buttons["welcomeRecentProjectReveal"]
+        let removeButton = app.buttons["welcomeRecentProjectRemove"]
+        for button in [openButton, revealButton, removeButton] {
+            XCTAssertTrue(button.exists, "Recent project actions should be visible")
+            XCTAssertTrue(button.isEnabled)
+            XCTAssertTrue(button.isHittable)
+        }
+
+        openButton.click()
+        XCTAssertTrue(
+            waitForExistence(app.scrollViews["sidebar"], timeout: 10),
+            "The visible Open action should open the selected project"
+        )
     }
 
     // MARK: - Multiple projects: all items accessible
@@ -525,21 +557,109 @@ final class WelcomeWindowTests: PineUITestCase {
         let welcomeWindow = app.windows["welcome"]
         XCTAssertTrue(waitForExistence(welcomeWindow, timeout: 10))
 
-        // Verify all 3 recent projects are present and hittable
-        for url in urls {
+        let displayedURLs = Array(urls.reversed())
+        let items = displayedURLs.map { url in
             let projectName = url.lastPathComponent
-            let item = app.descendants(matching: .any)[
+            return app.descendants(matching: .any)[
                 "welcomeRecentProject_\(projectName)"
             ].firstMatch
+        }
+
+        // Verify all 3 recent projects are present and hittable.
+        for (url, item) in zip(displayedURLs, items) {
             XCTAssertTrue(
                 waitForExistence(item, timeout: 5),
-                "Recent project '\(projectName)' should appear"
+                "Recent project '\(url.lastPathComponent)' should appear"
             )
             XCTAssertTrue(
                 item.isHittable,
-                "Recent project '\(projectName)' should be hittable"
+                "Recent project '\(url.lastPathComponent)' should be hittable"
             )
         }
+
+        // Native list focus owns one stable selection and supports boundaries.
+        items[0].click()
+        XCTAssertTrue(items[0].isSelected)
+        app.typeKey(.end, modifierFlags: [])
+        XCTAssertTrue(items[2].isSelected)
+        app.typeKey(.home, modifierFlags: [])
+        XCTAssertTrue(items[0].isSelected)
+        app.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertTrue(items[1].isSelected)
+
+        // Return opens exactly the keyboard-selected project.
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(
+            waitForExistence(app.scrollViews["sidebar"], timeout: 10),
+            "Return should open the keyboard-selected recent project"
+        )
+    }
+
+    func testFilteringAndRemovingRecentProjectKeepsNearestSelection() throws {
+        let alpha = try createTempProject(
+            files: ["alpha.swift": "// alpha\n"],
+            projectName: "Alpha Recent"
+        )
+        let beta = try createTempProject(
+            files: ["beta.swift": "// beta\n"],
+            projectName: "Beta Recent"
+        )
+        projectURLs.append(contentsOf: [alpha, beta])
+
+        for url in [alpha, beta] {
+            app = XCUIApplication()
+            app.launchArguments += [
+                "--reset-state",
+                "-ApplePersistenceIgnoreState", "YES",
+                "-AppleLanguages", "(en)",
+                "-AppleLocale", "en_US"
+            ]
+            launchWithProject(url)
+            XCTAssertTrue(
+                waitForExistence(app.scrollViews["sidebar"], timeout: 10)
+            )
+            app.terminate()
+        }
+
+        app = XCUIApplication()
+        app.launchArguments += ["--reset-state"]
+        app.launch()
+        app.activate()
+
+        let alphaRow = app.descendants(matching: .any)[
+            "welcomeRecentProject_Alpha Recent"
+        ].firstMatch
+        let betaRow = app.descendants(matching: .any)[
+            "welcomeRecentProject_Beta Recent"
+        ].firstMatch
+        XCTAssertTrue(betaRow.waitForExistence(timeout: 10))
+        XCTAssertTrue(alphaRow.exists)
+
+        app.buttons["welcomeSearchToggle"].click()
+        let search = app.searchFields["welcomeSearchField"]
+        XCTAssertTrue(search.waitForExistence(timeout: 3))
+        search.click()
+        search.typeText("Alpha")
+        XCTAssertTrue(alphaRow.waitForExistence(timeout: 3))
+        XCTAssertFalse(betaRow.exists)
+        XCTAssertTrue(alphaRow.isSelected)
+
+        search.typeKey("a", modifierFlags: .command)
+        search.typeKey(.delete, modifierFlags: [])
+        XCTAssertTrue(betaRow.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            alphaRow.isSelected,
+            "Clearing a filter should preserve the still-visible selection"
+        )
+
+        betaRow.click()
+        XCTAssertTrue(betaRow.isSelected)
+        app.buttons["welcomeRecentProjectRemove"].click()
+        XCTAssertTrue(betaRow.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(
+            alphaRow.isSelected,
+            "Removing the final row should select its nearest predecessor"
+        )
     }
 
     // MARK: - Duplicate project names show correct paths

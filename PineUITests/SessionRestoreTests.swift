@@ -50,12 +50,14 @@ final class SessionRestoreTests: PineUITestCase {
 
         // Reopen via recent projects
         let projectName = projectURL.lastPathComponent
-        let recentProject = app.buttons["welcomeRecentProject_\(projectName)"]
+        let recentProject = app.descendants(matching: .any)[
+            "welcomeRecentProject_\(projectName)"
+        ].firstMatch
         XCTAssertTrue(
             waitForExistence(recentProject, timeout: 5),
             "Project should be in recent projects list"
         )
-        recentProject.click()
+        recentProject.doubleClick()
 
         // Wait for project to load
         let sidebar = app.scrollViews["sidebar"]
