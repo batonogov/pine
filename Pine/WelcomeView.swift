@@ -206,7 +206,8 @@ struct WelcomeView: View {
                 List(selection: $recentSelection.selectedURL) {
                     ForEach(filteredProjects, id: \.self) { url in
                         RecentProjectRow(
-                            url: url
+                            url: url,
+                            isSelected: recentSelection.selectedURL == url
                         )
                         .tag(url)
                         .id(url)
@@ -485,6 +486,7 @@ private enum WelcomeFocusTarget: Hashable {
 /// A single native-list row in the recent projects collection.
 private struct RecentProjectRow: View {
     let url: URL
+    let isSelected: Bool
 
     var body: some View {
         HStack {
@@ -502,7 +504,20 @@ private struct RecentProjectRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        // A List row draws into the table's shared layer, so an unmodified
+        // stack never becomes an accessibility element of its own: hit-testing
+        // the row centre lands on the enclosing cell rather than on the view
+        // carrying the identifier, and XCUITest reports the row as not
+        // hittable. Spanning the full width and collapsing the row into one
+        // leaf element restores the hittable, full-row target the previous
+        // button-backed rows provided.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(url.lastPathComponent)
         .accessibilityValue(url.abbreviatedPath)
+        // Collapsing the row hides the cell's own selected state from
+        // assistive technology, so mirror it onto the leaf element.
+        .accessibilityAddTraits(isSelected ? AccessibilityTraits.isSelected : [])
     }
 }
