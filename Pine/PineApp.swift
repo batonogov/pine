@@ -947,7 +947,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             self?.registry.isAgentTaskPresented(taskID) ?? false
         },
         openTask: { [weak self] identity in
-            self?.openAgentTaskFromNotification(identity)
+            self?.openAgentTaskRoute(identity)
         }
     )
 
@@ -1081,7 +1081,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         NSApp.activate()
     }
 
-    private func openAgentTaskFromNotification(
+    /// Focuses one exact agent route on behalf of an explicit user action —
+    /// a notification response, or a Dock live-task entry (#1492). This is the
+    /// single navigation authority for both: every failure mode degrades to
+    /// the Agent Inbox rather than to a different session.
+    private func openAgentTaskRoute(
         _ identity: AgentNotificationRouteIdentity
     ) {
         guard registry.agentTasks.matchesNotificationRoute(identity) else {
@@ -2009,21 +2013,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         let menu = NSMenu()
 
         // Live agent runs are reachable with no window open (#1355). Each
-        // entry opens the Agent Inbox, the single surface that resumes,
-        // navigates, and dismisses a backgrounded task. Per-task terminal
-        // focus from the Dock is a follow-up.
-        let liveTasks = AgentPresenceController.liveTasks(for: registry.agentTasks.tasks)
-        for task in liveTasks {
+        // entry carries the exact task, run, and process generation it was
+        // rendered for (#1492), so selecting one focuses that session's own
+        // terminal instead of the general Inbox.
+        let agentItems = AgentDockMenuRouting.items(
+            for: registry.agentTasks.tasks
+        )
+        for entry in agentItems {
             let item = NSMenuItem(
-                title: AgentPresenceController.dockMenuAgentTitle(for: task),
+                title: entry.title,
                 action: #selector(dockMenuOpenAgentTask(_:)),
                 keyEquivalent: ""
             )
             item.target = self
-            item.representedObject = task.id
+            item.representedObject = entry.identity
             menu.addItem(item)
         }
-        if !liveTasks.isEmpty {
+        if !agentItems.isEmpty {
             menu.addItem(.separator())
         }
 
@@ -2044,10 +2050,43 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     }
 
     @objc func dockMenuOpenAgentTask(_ sender: NSMenuItem) {
-        // The represented taskID is captured for a future per-task focus
-        // path; today every entry routes to the Inbox so a background agent
-        // is reachable the instant Pine has no open window.
-        showAgentInbox()
+        routeDockMenuAgentTask(
+            representedObject: sender.representedObject,
+            presentInbox: { self.showAgentInbox() },
+            routeExactTask: { self.openAgentTaskRoute($0) }
+        )
+    }
+
+    /// Shared body of the Dock agent action (#1492).
+    ///
+    /// AppKit rebuilds the Dock menu on every open, but a run can still end
+    /// between rendering an entry and selecting it. The captured identity is
+    /// therefore rebuilt from the current registry snapshot and compared
+    /// before anything is activated; ``openAgentTaskRoute(_:)`` then applies
+    /// the shared notification-route authority again after every suspension.
+    /// A stale, replaced, or unreadable entry never focuses a different
+    /// session — it lands on the Inbox's truthful durable history.
+    ///
+    /// The two effects are parameters rather than direct calls so the
+    /// fail-closed decision stays deterministic in tests without presenting
+    /// AppKit windows.
+    @discardableResult
+    func routeDockMenuAgentTask(
+        representedObject: Any?,
+        presentInbox: @MainActor () -> Void,
+        routeExactTask: @MainActor (AgentNotificationRouteIdentity) -> Void
+    ) -> AgentDockMenuRoute {
+        guard let identity = AgentDockMenuRouting.routeIdentity(
+            fromRepresentedObject: representedObject
+        ), AgentDockMenuRouting.matchesCurrentRoute(
+            identity,
+            task: registry.agentTasks.task(for: identity.taskID)
+        ) else {
+            presentInbox()
+            return .inbox
+        }
+        routeExactTask(identity)
+        return .task(identity)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

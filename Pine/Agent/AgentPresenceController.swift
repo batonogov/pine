@@ -14,8 +14,10 @@
 //    1. `NSApp.dockTile.badgeLabel` — the live agent-run count.
 //    2. The sudden-termination guard — balanced across run start/stop cycles.
 //
-//  The Dock menu entries are built by `AppDelegate.applicationDockMenu`,
-//  which reads the same registry through ``liveTasks(for:)`` below.
+//  The Dock menu entries are built by `AppDelegate.applicationDockMenu`
+//  through ``AgentDockMenuRouting``, which projects this same registry with
+//  ``liveTasks(for:limit:)`` below and pairs each row with the exact route
+//  identity it may focus (#1492).
 //
 
 import AppKit
