@@ -273,6 +273,25 @@ struct CommandOverlayRouterTests {
         #expect(secondOwner.announcements == ["Second"])
     }
 
+    @Test("Announcements cannot cross an A-B-A replacement boundary")
+    func staleReplacementAnnouncementIsRejectedAfterSameFlowReturns() {
+        let owner = CommandOverlayResponderHostSpy(firstResponder: nil)
+        let router = makeRouterWithoutResponderHost()
+
+        router.present(.quickOpen)
+        router.preparePresentation(in: owner)
+        let firstQuickOpen = router.announcementSink(for: .quickOpen)
+        #expect(firstQuickOpen("First"))
+
+        router.present(.symbolNavigator)
+        router.present(.quickOpen)
+        let replacementQuickOpen = router.announcementSink(for: .quickOpen)
+
+        #expect(!firstQuickOpen("Stale"))
+        #expect(replacementQuickOpen("Replacement"))
+        #expect(owner.announcements == ["First", "Replacement"])
+    }
+
     @Test("Replacement restores an arbitrary original AppKit responder")
     func replacementPreservesOriginalResponder() async throws {
         let original = NSResponder()

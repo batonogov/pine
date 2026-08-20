@@ -98,7 +98,13 @@ enum CommandOverlayFocusRestorationPolicy {
 final class CommandOverlayRouter {
 
     /// The presentation currently shown, or `nil` when no overlay is active.
-    private(set) var activePresentation: CommandOverlayPresentation?
+    private(set) var activePresentation: CommandOverlayPresentation? {
+        didSet {
+            if oldValue != activePresentation {
+                announcementGeneration &+= 1
+            }
+        }
+    }
 
     /// The AppKit first responder captured before the overlay took focus.
     /// Restored when the overlay is dismissed via cancel/backdrop.
@@ -114,6 +120,13 @@ final class CommandOverlayRouter {
     /// any responder restoration queued by an earlier dismissal.
     @ObservationIgnored
     private var sessionGeneration = 0
+
+    /// Identifies the exact mounted presentation, including replacements
+    /// within one focus-restoration session. Unlike `sessionGeneration`, this
+    /// deliberately changes for A → B → A so an old sink cannot become valid
+    /// again when its enum case reappears.
+    @ObservationIgnored
+    private var announcementGeneration = 0
 
     /// Resolves the active document host only when a new overlay session starts.
     @ObservationIgnored
@@ -245,10 +258,10 @@ final class CommandOverlayRouter {
     func announcementSink(
         for presentation: CommandOverlayPresentation
     ) -> CommandOverlayAnnouncementSink {
-        let capturedGeneration = sessionGeneration
+        let capturedGeneration = announcementGeneration
         return { [weak self] announcement in
             guard let self,
-                  self.sessionGeneration == capturedGeneration else {
+                  self.announcementGeneration == capturedGeneration else {
                 return false
             }
             return self.announce(
