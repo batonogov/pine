@@ -33723,6 +33723,20 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复操作" } }
       }
     },
+    "agentInbox.recoveryActionsShown": {
+      "comment": "VoiceOver announcement after recovery choices become visible. The value is the visible default action.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wiederherstellungsaktionen eingeblendet. Standardaktion: %@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Recovery actions shown. Default action: %@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Acciones de recuperación mostradas. Acción predeterminada: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Actions de récupération affichées. Action par défaut : %@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元操作を表示しました。デフォルトの操作：%@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구 작업이 표시되었습니다. 기본 작업: %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ações de recuperação exibidas. Ação padrão: %@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Действия восстановления показаны. Действие по умолчанию: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示了恢复操作。默认操作：%@" } }
+      }
+    },
     "agentInbox.showRecoveryActions": {
       "comment": "VoiceOver hint for a recoverable Inbox row before its explicit actions are visible.",
       "localizations": {

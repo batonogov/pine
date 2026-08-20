@@ -113,7 +113,9 @@ struct AgentInboxView: View {
             synchronizeSelection()
             hasKeyboardFocus = true
         }
-        .onChange(of: snapshot.rows.map(\.id)) { _, _ in
+        .onChange(
+            of: snapshot.rows.map(AgentInboxRecoveryState.init(row:))
+        ) { _, _ in
             synchronizeSelection()
         }
         .onKeyPress(.upArrow) {
@@ -420,11 +422,13 @@ struct AgentInboxView: View {
             selectedTaskID,
             ids: snapshot.rows.map(\.id)
         )
-        if !snapshot.rows.contains(where: {
-            $0.id == recoveryActionsTaskID && $0.canRecover
-        }) {
-            recoveryActionsTaskID = nil
-        }
+        recoveryActionsTaskID = AgentInboxActivation
+            .normalizedPresentedTaskID(
+                recoveryActionsTaskID,
+                states: snapshot.rows.map(
+                    AgentInboxRecoveryState.init(row:)
+                )
+            )
     }
 
     private func moveSelection(by delta: Int) {
@@ -480,7 +484,12 @@ struct AgentInboxView: View {
             canResumeVendorSession:
                 registry.canOfferAgentTaskVendorResume(row.id)
         )
-        onAccessibilityAnnouncement(actionTitle(primaryAction))
+        onAccessibilityAnnouncement(
+            Strings.agentInboxRecoveryActionsShown(
+                defaultAction: actionTitle(primaryAction),
+                locale: locale
+            )
+        )
     }
 
     private func toggleReviewed(_ row: AgentInboxRow) {

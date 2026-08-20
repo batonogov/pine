@@ -330,6 +330,30 @@ struct AgentInboxTests {
         ) == .resumeVendorSession)
     }
 
+    @Test("recovery presentation clears when the same task becomes live")
+    func recoveryPresentationTracksRecoverabilityNotOnlyIdentity() {
+        let id = UUID()
+
+        #expect(AgentInboxActivation.normalizedPresentedTaskID(
+            id,
+            states: [AgentInboxRecoveryState(id: id, canRecover: true)]
+        ) == id)
+        #expect(AgentInboxActivation.normalizedPresentedTaskID(
+            id,
+            states: [AgentInboxRecoveryState(id: id, canRecover: false)]
+        ) == nil)
+    }
+
+    @Test("recovery announcement distinguishes presentation from activation")
+    func recoveryAnnouncementDescribesVisibleDefault() {
+        #expect(
+            Strings.agentInboxRecoveryActionsShown(
+                defaultAction: "Resume Session",
+                locale: Locale(identifier: "en")
+            ) == "Recovery actions shown. Default action: Resume Session"
+        )
+    }
+
     @Test("identical startedAt ignores polling timestamp and uses id tiebreak")
     func identicalStartedAtUsesIdTiebreak() throws {
         let started = Date(timeIntervalSince1970: 10_000)
