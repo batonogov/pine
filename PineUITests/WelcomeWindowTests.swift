@@ -102,11 +102,40 @@ final class WelcomeWindowTests: PineUITestCase {
             firstLaunchRow.waitForExistence(timeout: 8),
             "The first launch should create the durable recovery fixture"
         )
-        firstLaunchRow.rightClick()
-        XCTAssertFalse(app.menuItems["Resume Session"].exists)
-        XCTAssertTrue(app.menuItems["New Session"].exists)
-        XCTAssertTrue(app.menuItems["Copy Objective"].exists)
+        let recoveryActions = app.descendants(matching: .any)[
+            "agentInboxRecoveryActions"
+        ].firstMatch
+        let newSessionButton = app.buttons[
+            "agentInboxNewSession"
+        ].firstMatch
+        let terminal = app.buttons["terminalTab_Terminal 1"].firstMatch
+        XCTAssertFalse(recoveryActions.exists)
+        XCTAssertFalse(terminal.exists)
+
+        app.typeKey(.return, modifierFlags: [])
+
+        XCTAssertTrue(
+            recoveryActions.waitForExistence(timeout: 3),
+            "The first Return must reveal recovery choices"
+        )
+        XCTAssertTrue(newSessionButton.exists)
+        XCTAssertFalse(app.buttons["agentInboxResumeSession"].exists)
+        XCTAssertTrue(app.buttons["agentInboxMarkReviewed"].exists)
+        XCTAssertTrue(app.buttons["agentInboxCopyObjective"].exists)
+        XCTAssertTrue(app.buttons["agentInboxDismissTask"].exists)
+        XCTAssertFalse(
+            terminal.exists,
+            "Revealing recovery choices must not create a terminal"
+        )
+
         app.typeKey(.escape, modifierFlags: [])
+
+        XCTAssertFalse(
+            recoveryActions.waitForExistence(timeout: 1),
+            "Escape must close the recovery choice without closing Inbox"
+        )
+        XCTAssertTrue(app.descendants(matching: .any)["agentInbox"].exists)
+        XCTAssertFalse(terminal.exists)
 
         app.terminate()
         app.launch()
@@ -119,15 +148,19 @@ final class WelcomeWindowTests: PineUITestCase {
             restoredRow.waitForExistence(timeout: 8),
             "The second launch should load the persisted recovery card"
         )
-        restoredRow.rightClick()
-        let newSession = app.menuItems["New Session"]
-        XCTAssertTrue(newSession.waitForExistence(timeout: 3))
-        let terminal = app.buttons["terminalTab_Terminal 1"].firstMatch
+        restoredRow.click()
+        let restoredNewSession = app.buttons[
+            "agentInboxNewSession"
+        ].firstMatch
+        XCTAssertTrue(
+            restoredNewSession.waitForExistence(timeout: 3),
+            "A pointer selection must expose the same explicit actions"
+        )
         XCTAssertFalse(
             terminal.exists,
             "Restoring task metadata must not launch a terminal automatically"
         )
-        newSession.click()
+        restoredNewSession.click()
 
         XCTAssertTrue(terminal.waitForExistence(timeout: 5))
         XCTAssertEqual(
@@ -135,6 +168,47 @@ final class WelcomeWindowTests: PineUITestCase {
             1,
             "One explicit recovery action must create one exact terminal"
         )
+    }
+
+    func testVendorResumeIsVisibleAndIsTheKeyboardDefault() throws {
+        let url = try createTempProject(
+            files: ["release.md": "# Pine 2.0\n"]
+        )
+        projectURLs.append(url)
+        app.launchArguments.append("--ui-test-agent-recovery")
+        app.launchArguments.append("--ui-test-agent-vendor-recovery")
+        launchWithProject(url)
+
+        openAgentInbox()
+        XCTAssertTrue(recoveryRow.waitForExistence(timeout: 8))
+        let terminal = app.buttons["terminalTab_Terminal 1"].firstMatch
+        XCTAssertFalse(terminal.exists)
+
+        app.typeKey(.return, modifierFlags: [])
+
+        let resumeSession = app.buttons[
+            "agentInboxResumeSession"
+        ].firstMatch
+        XCTAssertTrue(
+            resumeSession.waitForExistence(timeout: 3),
+            "A validated vendor identity must expose Resume Session"
+        )
+        XCTAssertTrue(app.buttons["agentInboxNewSession"].exists)
+        XCTAssertFalse(terminal.exists)
+
+        app.typeKey(.return, modifierFlags: [])
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)[
+                "agentInboxNavigationStatus"
+            ].firstMatch.waitForExistence(timeout: 5),
+            "Return must attempt the visible Resume default, not a new shell"
+        )
+        XCTAssertFalse(
+            terminal.exists,
+            "A failed vendor resume must not fall back to New Session"
+        )
+        XCTAssertTrue(resumeSession.exists)
     }
 
     func testWelcomeWindowShowsPineTitle() throws {

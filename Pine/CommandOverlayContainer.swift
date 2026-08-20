@@ -77,7 +77,8 @@ struct CommandOverlayContainer: ViewModifier {
                     set: { newValue in
                         if !newValue { router.dismiss(ifMatching: .quickOpen) }
                     }
-                )
+                ),
+                onAnnounce: router.announcementSink(for: .quickOpen)
             )
         case .symbolNavigator:
             SymbolNavigatorView(
@@ -90,6 +91,9 @@ struct CommandOverlayContainer: ViewModifier {
                             router.dismiss(ifMatching: .symbolNavigator)
                         }
                     }
+                ),
+                onAnnounce: router.announcementSink(
+                    for: .symbolNavigator
                 )
             )
         case .goToLine:
@@ -138,6 +142,7 @@ struct CommandOverlayContainer: ViewModifier {
                         for: projectManager
                     )
                 ),
+                onAnnounce: router.announcementSink(for: .commandPalette),
                 onInvoke: { item in
                     CommandPaletteInvocationRouter.invoke(
                         item,

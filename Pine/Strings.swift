@@ -667,6 +667,21 @@ enum Strings {
         "agentInbox.resumedSession"
     static let agentInboxRecoveryUnavailable: LocalizedStringKey =
         "agentInbox.recoveryUnavailable"
+    static let agentInboxRecoveryActions: LocalizedStringKey =
+        "agentInbox.recoveryActions"
+    static let agentInboxShowRecoveryActions: LocalizedStringKey =
+        "agentInbox.showRecoveryActions"
+    static func agentInboxRecoveryActionsShown(
+        defaultAction: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentInbox.recoveryActionsShown",
+            fallback: "Recovery actions shown. Default action: %@",
+            locale: locale
+        )
+        return String(format: format, locale: locale, defaultAction)
+    }
 
     // MARK: - Agent Inbox toolbar button (#1337)
     static let agentInboxToolbarTooltip: LocalizedStringKey =
@@ -2560,5 +2575,80 @@ enum Strings {
             position,
             total
         )
+    }
+
+    // MARK: - Searchable command overlay announcements (#1497)
+
+    static func commandOverlayNoResults(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "commandOverlay.announcement.noResults",
+            fallback: "No results",
+            locale: locale
+        )
+    }
+
+    static func commandOverlayOneResult(
+        selectedRow: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "commandOverlay.announcement.oneResult",
+            fallback: "1 result. Selected: %@",
+            locale: locale
+        )
+        return String(format: format, locale: locale, selectedRow)
+    }
+
+    static func commandOverlayManyResults(
+        count: Int,
+        selectedRow: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "commandOverlay.announcement.manyResults",
+            fallback: "%1$lld results. Selected: %2$@",
+            locale: locale
+        )
+        return String(format: format, locale: locale, count, selectedRow)
+    }
+
+    static func commandOverlayShortcut(
+        _ shortcut: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "commandOverlay.announcement.shortcut",
+            fallback: "Shortcut: %@",
+            locale: locale
+        )
+        return String(format: format, locale: locale, shortcut)
+    }
+
+    static func commandOverlayUnavailable(
+        _ reason: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "commandOverlay.announcement.unavailable",
+            fallback: "Unavailable: %@",
+            locale: locale
+        )
+        return String(format: format, locale: locale, reason)
+    }
+
+    static func commandOverlaySymbol(
+        kind: String,
+        name: String,
+        line: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "commandOverlay.announcement.symbol",
+            fallback: "%1$@, %2$@, line %3$lld",
+            locale: locale
+        )
+        return String(format: format, locale: locale, kind, name, line)
     }
 }

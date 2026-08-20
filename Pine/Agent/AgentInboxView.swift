@@ -19,6 +19,7 @@ struct AgentInboxView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @State private var selectedTaskID: UUID?
+    @State private var recoveryActionsTaskID: UUID?
     @State private var navigationMessage: LocalizedStringKey?
     @FocusState private var hasKeyboardFocus: Bool
 
@@ -95,7 +96,13 @@ struct AgentInboxView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier(AccessibilityID.agentInboxEmpty)
             } else {
-                inboxContents
+                VStack(spacing: 0) {
+                    inboxContents
+                    if let row = presentedRecoveryRow {
+                        Divider()
+                        recoveryActions(for: row)
+                    }
+                }
             }
         }
         .frame(width: 520, height: 540)
@@ -106,19 +113,33 @@ struct AgentInboxView: View {
             synchronizeSelection()
             hasKeyboardFocus = true
         }
-        .onChange(of: snapshot.rows.map(\.id)) { _, _ in
+        .onChange(
+            of: snapshot.rows.map(AgentInboxRecoveryState.init(row:))
+        ) { _, _ in
             synchronizeSelection()
         }
         .onKeyPress(.upArrow) {
+            guard hasKeyboardFocus else { return .ignored }
             moveSelection(by: -1)
             return .handled
         }
         .onKeyPress(.downArrow) {
+            guard hasKeyboardFocus else { return .ignored }
             moveSelection(by: 1)
             return .handled
         }
         .onKeyPress(.return) {
+            // Let a focused action button own Return. The root-level
+            // two-step activation policy applies only while the Inbox list
+            // itself is the keyboard focus target.
+            guard hasKeyboardFocus else { return .ignored }
             activateSelection()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            guard recoveryActionsTaskID != nil else { return .ignored }
+            recoveryActionsTaskID = nil
+            hasKeyboardFocus = true
             return .handled
         }
         .accessibilityElement(children: .contain)
@@ -164,7 +185,12 @@ struct AgentInboxView: View {
         Button {
             selectedTaskID = row.id
             if row.canNavigateToLiveRun {
+                recoveryActionsTaskID = nil
                 navigate(to: row.id)
+            } else if row.canRecover {
+                presentRecoveryActions(for: row)
+            } else {
+                recoveryActionsTaskID = nil
             }
         } label: {
             HStack(alignment: .top, spacing: 10) {
@@ -210,10 +236,7 @@ struct AgentInboxView: View {
             Button(row.isUnread
                    ? Strings.agentInboxMarkRead
                    : Strings.agentInboxMarkUnread) {
-                _ = registry.agentTasks.setReviewed(
-                    row.isUnread,
-                    taskID: row.id
-                )
+                toggleReviewed(row)
             }
             if row.lifecycle != .active, row.liveness != .live {
                 if row.canRecover {
@@ -230,17 +253,13 @@ struct AgentInboxView: View {
                         for: row.id
                     )?.objective {
                         Button(Strings.agentInboxCopyObjective) {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(
-                                objective,
-                                forType: .string
-                            )
+                            copyObjective(objective)
                         }
                     }
                 }
                 Divider()
                 Button(Strings.agentInboxDismiss, role: .destructive) {
-                    _ = registry.agentTasks.dismissTask(row.id)
+                    dismiss(row.id)
                 }
             }
         }
@@ -250,8 +269,109 @@ struct AgentInboxView: View {
         )
         .accessibilityAddTraits(selectedTaskID == row.id ? .isSelected : [])
         .accessibilityHint(
-            row.canNavigateToLiveRun ? Strings.agentInboxOpen : ""
+            accessibilityHint(for: row)
         )
+    }
+
+    private var presentedRecoveryRow: AgentInboxRow? {
+        guard let recoveryActionsTaskID else { return nil }
+        return snapshot.rows.first {
+            $0.id == recoveryActionsTaskID && $0.canRecover
+        }
+    }
+
+    private func recoveryActions(for row: AgentInboxRow) -> some View {
+        let canResume = registry.canOfferAgentTaskVendorResume(row.id)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label(
+                    Strings.agentInboxRecoveryActions,
+                    systemImage: "arrow.clockwise"
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button {
+                    toggleReviewed(row)
+                } label: {
+                    Image(systemName: row.isUnread
+                          ? "envelope.open"
+                          : "envelope.badge")
+                }
+                .help(Text(row.isUnread
+                           ? Strings.agentInboxMarkRead
+                           : Strings.agentInboxMarkUnread))
+                .accessibilityLabel(row.isUnread
+                                    ? Strings.agentInboxMarkRead
+                                    : Strings.agentInboxMarkUnread)
+                .accessibilityIdentifier(
+                    AccessibilityID.agentInboxMarkReviewed
+                )
+
+                if let objective = registry.agentTasks.task(
+                    for: row.id
+                )?.objective {
+                    Button {
+                        copyObjective(objective)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .help(Text(Strings.agentInboxCopyObjective))
+                    .accessibilityLabel(Strings.agentInboxCopyObjective)
+                    .accessibilityIdentifier(
+                        AccessibilityID.agentInboxCopyObjective
+                    )
+                }
+
+                Button(role: .destructive) {
+                    dismiss(row.id)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .help(Text(Strings.agentInboxDismiss))
+                .accessibilityLabel(Strings.agentInboxDismiss)
+                .accessibilityIdentifier(
+                    AccessibilityID.agentInboxDismissTask
+                )
+            }
+            .buttonStyle(.bordered)
+
+            HStack(spacing: 8) {
+                Spacer()
+
+                if canResume {
+                    newSessionButton(for: row)
+                        .buttonStyle(.bordered)
+                } else {
+                    newSessionButton(for: row)
+                        .buttonStyle(.borderedProminent)
+                }
+
+                if canResume {
+                    Button(Strings.agentInboxResumeSession) {
+                        recover(row.id, action: .resumeVendorSession)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier(
+                        AccessibilityID.agentInboxResumeSession
+                    )
+                }
+            }
+        }
+        .padding(10)
+        .background(.bar)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Strings.agentInboxRecoveryActions)
+        .accessibilityIdentifier(AccessibilityID.agentInboxRecoveryActions)
+    }
+
+    private func newSessionButton(for row: AgentInboxRow) -> some View {
+        Button(Strings.agentInboxNewSession) {
+            recover(row.id, action: .startNewSession)
+        }
+        .accessibilityIdentifier(AccessibilityID.agentInboxNewSession)
     }
 
     private func primaryDetails(_ row: AgentInboxRow) -> some View {
@@ -302,6 +422,13 @@ struct AgentInboxView: View {
             selectedTaskID,
             ids: snapshot.rows.map(\.id)
         )
+        recoveryActionsTaskID = AgentInboxActivation
+            .normalizedPresentedTaskID(
+                recoveryActionsTaskID,
+                states: snapshot.rows.map(
+                    AgentInboxRecoveryState.init(row:)
+                )
+            )
     }
 
     private func moveSelection(by delta: Int) {
@@ -313,6 +440,7 @@ struct AgentInboxView: View {
         )
         guard nextID != previousID else { return }
         selectedTaskID = nextID
+        recoveryActionsTaskID = nil
         announceSelectionChange(from: previousID, to: nextID)
     }
 
@@ -330,12 +458,97 @@ struct AgentInboxView: View {
     }
 
     private func activateSelection() {
-        guard let selectedTaskID else { return }
-        if snapshot.rows.first(where: { $0.id == selectedTaskID })?
-            .canRecover == true {
-            recover(selectedTaskID, action: .startNewSession)
-        } else {
+        guard let selectedTaskID,
+              let row = snapshot.rows.first(where: { $0.id == selectedTaskID })
+        else { return }
+        let canResume = registry.canOfferAgentTaskVendorResume(selectedTaskID)
+        switch AgentInboxActivation.resolve(
+            row: row,
+            recoveryActionsArePresented:
+                recoveryActionsTaskID == selectedTaskID,
+            canResumeVendorSession: canResume
+        ) {
+        case .navigate:
             navigate(to: selectedTaskID)
+        case .presentRecoveryActions:
+            presentRecoveryActions(for: row)
+        case .recover(let action):
+            recover(selectedTaskID, action: action)
+        }
+    }
+
+    private func presentRecoveryActions(for row: AgentInboxRow) {
+        guard row.canRecover else { return }
+        recoveryActionsTaskID = row.id
+        let primaryAction = AgentInboxActivation.primaryRecoveryAction(
+            canResumeVendorSession:
+                registry.canOfferAgentTaskVendorResume(row.id)
+        )
+        onAccessibilityAnnouncement(
+            Strings.agentInboxRecoveryActionsShown(
+                defaultAction: actionTitle(primaryAction),
+                locale: locale
+            )
+        )
+    }
+
+    private func toggleReviewed(_ row: AgentInboxRow) {
+        _ = registry.agentTasks.setReviewed(row.isUnread, taskID: row.id)
+    }
+
+    private func copyObjective(_ objective: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(objective, forType: .string)
+    }
+
+    private func dismiss(_ taskID: UUID) {
+        recoveryActionsTaskID = nil
+        _ = registry.agentTasks.dismissTask(taskID)
+    }
+
+    private func accessibilityHint(
+        for row: AgentInboxRow
+    ) -> LocalizedStringKey {
+        if row.canNavigateToLiveRun {
+            return Strings.agentInboxOpen
+        }
+        if row.canRecover {
+            guard recoveryActionsTaskID == row.id else {
+                return Strings.agentInboxShowRecoveryActions
+            }
+            return actionTitleKey(
+                AgentInboxActivation.primaryRecoveryAction(
+                    canResumeVendorSession:
+                        registry.canOfferAgentTaskVendorResume(row.id)
+                )
+            )
+        }
+        return ""
+    }
+
+    private func actionTitleKey(
+        _ action: AgentTaskRecoveryAction
+    ) -> LocalizedStringKey {
+        switch action {
+        case .resumeVendorSession: Strings.agentInboxResumeSession
+        case .startNewSession: Strings.agentInboxNewSession
+        }
+    }
+
+    private func actionTitle(_ action: AgentTaskRecoveryAction) -> String {
+        switch action {
+        case .resumeVendorSession:
+            String(
+                localized: "agentInbox.resumeSession",
+                bundle: .main,
+                locale: locale
+            )
+        case .startNewSession:
+            String(
+                localized: "agentInbox.newSession",
+                bundle: .main,
+                locale: locale
+            )
         }
     }
 

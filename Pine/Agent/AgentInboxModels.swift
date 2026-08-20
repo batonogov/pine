@@ -48,6 +48,67 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Minimal state that controls whether an already-presented recovery surface
+/// may remain visible. The task ID alone is insufficient because liveness and
+/// lifecycle can change in place while the same durable task remains listed.
+nonisolated struct AgentInboxRecoveryState: Equatable, Sendable {
+    let id: UUID
+    let canRecover: Bool
+
+    init(row: AgentInboxRow) {
+        id = row.id
+        canRecover = row.canRecover
+    }
+
+    init(id: UUID, canRecover: Bool) {
+        self.id = id
+        self.canRecover = canRecover
+    }
+}
+
+/// Pure presentation policy for activating an Inbox row with Return.
+///
+/// Recovery deliberately has two keyboard steps: the first Return exposes the
+/// available actions, and only a later Return can invoke the visible primary
+/// action. This prevents a restored task from silently opening a fresh session
+/// when a vendor resume path is available.
+nonisolated enum AgentInboxActivation: Equatable, Sendable {
+    case navigate
+    case presentRecoveryActions
+    case recover(AgentTaskRecoveryAction)
+
+    static func resolve(
+        row: AgentInboxRow,
+        recoveryActionsArePresented: Bool,
+        canResumeVendorSession: Bool
+    ) -> AgentInboxActivation {
+        guard row.canRecover else { return .navigate }
+        guard recoveryActionsArePresented else {
+            return .presentRecoveryActions
+        }
+        return .recover(primaryRecoveryAction(
+            canResumeVendorSession: canResumeVendorSession
+        ))
+    }
+
+    static func primaryRecoveryAction(
+        canResumeVendorSession: Bool
+    ) -> AgentTaskRecoveryAction {
+        canResumeVendorSession ? .resumeVendorSession : .startNewSession
+    }
+
+    static func normalizedPresentedTaskID(
+        _ taskID: UUID?,
+        states: [AgentInboxRecoveryState]
+    ) -> UUID? {
+        guard let taskID,
+              states.contains(where: {
+                  $0.id == taskID && $0.canRecover
+              }) else { return nil }
+        return taskID
+    }
+}
+
 nonisolated struct AgentInboxSection: Identifiable, Equatable, Sendable {
     let id: AgentInboxSectionID
     let rows: [AgentInboxRow]

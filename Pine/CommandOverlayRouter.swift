@@ -98,7 +98,13 @@ enum CommandOverlayFocusRestorationPolicy {
 final class CommandOverlayRouter {
 
     /// The presentation currently shown, or `nil` when no overlay is active.
-    private(set) var activePresentation: CommandOverlayPresentation?
+    private(set) var activePresentation: CommandOverlayPresentation? {
+        didSet {
+            if oldValue != activePresentation {
+                announcementGeneration &+= 1
+            }
+        }
+    }
 
     /// The AppKit first responder captured before the overlay took focus.
     /// Restored when the overlay is dismissed via cancel/backdrop.
@@ -114,6 +120,13 @@ final class CommandOverlayRouter {
     /// any responder restoration queued by an earlier dismissal.
     @ObservationIgnored
     private var sessionGeneration = 0
+
+    /// Identifies the exact mounted presentation, including replacements
+    /// within one focus-restoration session. Unlike `sessionGeneration`, this
+    /// deliberately changes for A → B → A so an old sink cannot become valid
+    /// again when its enum case reappears.
+    @ObservationIgnored
+    private var announcementGeneration = 0
 
     /// Resolves the active document host only when a new overlay session starts.
     @ObservationIgnored
@@ -225,6 +238,37 @@ final class CommandOverlayRouter {
         }
         capturedHost.postCommandOverlayAnnouncement(announcement)
         return true
+    }
+
+    /// Posts only while the originating flow is still active. Search-result
+    /// announcements are intentionally delayed, so a replaced overlay must not
+    /// speak through the replacement's still-captured document owner.
+    @discardableResult
+    func announce(
+        _ announcement: String,
+        ifMatching presentation: CommandOverlayPresentation
+    ) -> Bool {
+        guard activePresentation == presentation else { return false }
+        return announce(announcement)
+    }
+
+    /// Captures both the flow and its exact presentation generation. Two
+    /// consecutive Quick Open sessions have the same enum value, but delayed
+    /// results from the dismissed owner must still fail closed after reopen.
+    func announcementSink(
+        for presentation: CommandOverlayPresentation
+    ) -> CommandOverlayAnnouncementSink {
+        let capturedGeneration = announcementGeneration
+        return { [weak self] announcement in
+            guard let self,
+                  self.announcementGeneration == capturedGeneration else {
+                return false
+            }
+            return self.announce(
+                announcement,
+                ifMatching: presentation
+            )
+        }
     }
 
     /// Dismisses the matching presentation, restores its document window, and
