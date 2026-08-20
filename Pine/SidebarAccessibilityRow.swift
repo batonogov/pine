@@ -28,6 +28,8 @@ struct SidebarAccessibilityRowConfiguration: Equatable {
 @MainActor
 final class SidebarAccessibilityRowView: NSView {
     private var onPress: (() -> Bool)?
+    private var onCommand: ((SidebarKeyboardCommand) -> Bool)?
+    private var isForwardingNavigationKey = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -45,12 +47,20 @@ final class SidebarAccessibilityRowView: NSView {
         nil
     }
 
+    /// macOS 26 can keep an accessibility-pressed outline row in the key-event
+    /// path after disclosure reconciliation outlives the focus bridge's
+    /// bounded retries. Keep that native AX path command-capable instead of
+    /// relying on a timed focus race before the user's next arrow key.
+    override var acceptsFirstResponder: Bool { true }
+
     func configure(
         _ configuration: SidebarAccessibilityRowConfiguration,
         onPress: @escaping () -> Bool,
+        onCommand: @escaping (SidebarKeyboardCommand) -> Bool,
         onCustomAction: (() -> Bool)?
     ) {
         self.onPress = onPress
+        self.onCommand = onCommand
         setAccessibilityLabel(configuration.label)
         setAccessibilityIdentifier(configuration.identifier)
         setAccessibilityDisclosureLevel(configuration.level)
@@ -79,6 +89,29 @@ final class SidebarAccessibilityRowView: NSView {
     override func accessibilityPerformPress() -> Bool {
         onPress?() ?? false
     }
+
+    override func keyDown(with event: NSEvent) {
+        guard let command = SidebarKeyboardCommand(keyCode: event.keyCode) else {
+            super.keyDown(with: event)
+            return
+        }
+        let modifiers = SidebarKeyboardModifiers(event.modifierFlags)
+        if modifiers.isEmpty, onCommand?(command) == true {
+            return
+        }
+        isForwardingNavigationKey = true
+        defer { isForwardingNavigationKey = false }
+        super.keyDown(with: event)
+    }
+
+    override func doCommand(by selector: Selector) {
+        if !isForwardingNavigationKey,
+           let command = SidebarKeyboardCommand(selector: selector),
+           onCommand?(command) == true {
+            return
+        }
+        super.doCommand(by: selector)
+    }
 }
 
 /// Embeds ``SidebarAccessibilityRowView`` without changing layout or pointer
@@ -87,6 +120,7 @@ final class SidebarAccessibilityRowView: NSView {
 struct SidebarAccessibilityRow: NSViewRepresentable {
     let configuration: SidebarAccessibilityRowConfiguration
     let onPress: () -> Bool
+    let onCommand: (SidebarKeyboardCommand) -> Bool
     let onCustomAction: (() -> Bool)?
 
     func makeNSView(context: Context) -> SidebarAccessibilityRowView {
@@ -100,6 +134,7 @@ struct SidebarAccessibilityRow: NSViewRepresentable {
         nsView.configure(
             configuration,
             onPress: onPress,
+            onCommand: onCommand,
             onCustomAction: onCustomAction
         )
     }

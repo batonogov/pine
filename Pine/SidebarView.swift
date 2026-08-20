@@ -594,7 +594,7 @@ extension View {
     }
 }
 
-private extension SidebarKeyboardModifiers {
+extension SidebarKeyboardModifiers {
     init(_ modifiers: EventModifiers) {
         var result: SidebarKeyboardModifiers = []
         if modifiers.contains(.command) { result.insert(.command) }
@@ -683,7 +683,8 @@ struct SidebarView: View {
                                     && controlActiveState == .key,
                                 onKeyboardFocusRequested: {
                                     claimSidebarKeyboardFocus(retryOnNextRunLoop: true)
-                                }
+                                },
+                                onKeyboardCommand: handleSidebarCommand
                             )
                         }
                         .padding(.vertical, 4)
