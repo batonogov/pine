@@ -225,23 +225,24 @@ struct WelcomeView: View {
                         .tag(url)
                         .id(url)
                         .contentShape(Rectangle())
-                        // A single click belongs to the list's own selection;
-                        // only the second one opens. The gesture has to run
-                        // alongside the list's own click handling — a plain
-                        // onTapGesture(count: 2) consumes the first click too,
-                        // leaving selection stuck on the previous row.
-                        .simultaneousGesture(
-                            TapGesture(count: 2).onEnded {
-                                recentSelection.selectedURL = url
-                                openRecentProject(at: url)
-                            }
-                        )
-                        .contextMenu {
-                            recentProjectCommands(for: url)
-                        }
                     }
                 }
                 .listStyle(.inset)
+                // Opening belongs to the list's primary action rather than to
+                // a tap gesture of our own: the table reports a double click
+                // through AppKit, so it does not depend on two synthetic
+                // clicks landing inside the double-click interval. A gesture
+                // here degraded into two single clicks on slower machines,
+                // selecting the row without ever opening it.
+                .contextMenu(forSelectionType: URL.self) { urls in
+                    if let url = urls.first {
+                        recentProjectCommands(for: url)
+                    }
+                } primaryAction: { urls in
+                    guard let url = urls.first else { return }
+                    recentSelection.selectedURL = url
+                    openRecentProject(at: url)
+                }
                 // Without an explicit flexible height the list is sized by its
                 // content, so a long enough recent-projects list pushes the
                 // action bar past the bottom of the fixed-size window instead
@@ -398,11 +399,19 @@ struct WelcomeView: View {
             from: visibleProjects,
             remainingProjects: remainingProjects
         )
+        let intendedSelection = recentSelection.selectedURL
         // The action button owns focus while it performs removal. Return focus
         // to the native List after SwiftUI has reconciled the replacement row
         // so subsequent arrows and Return continue from the new selection.
         Task { @MainActor in
             await Task.yield()
+            // Dropping the removed row makes the list clear its own selection
+            // binding, and that write can land after the policy above decided
+            // which row replaces it, leaving nothing selected. Re-apply the
+            // intended row once the list has reconciled.
+            if recentSelection.selectedURL != intendedSelection {
+                recentSelection.selectedURL = intendedSelection
+            }
             focusedControl = recentSelection.selectedURL == nil
                 ? .openFolder
                 : .recentProjects
