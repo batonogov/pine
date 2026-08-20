@@ -69,7 +69,7 @@ struct WelcomeView: View {
     @State private var isDragTargeted = false
     @State private var isAgentInboxPresented = false
     @State private var recentSelection = RecentProjectsSelection()
-    @FocusState private var isRecentProjectsFocused: Bool
+    @FocusState private var focusedControl: WelcomeFocusTarget?
 
     /// Recent projects filtered by the search query.
     private var filteredProjects: [URL] {
@@ -98,6 +98,7 @@ struct WelcomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .focused($focusedControl, equals: .openFolder)
                 .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
 
                 Button {
@@ -230,7 +231,7 @@ struct WelcomeView: View {
                     }
                 }
                 .listStyle(.inset)
-                .focused($isRecentProjectsFocused)
+                .focused($focusedControl, equals: .recentProjects)
                 .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 .onKeyPress(.upArrow, phases: .down) { press in
                     handleRecentProjectKey(press, command: .up)
@@ -251,12 +252,18 @@ struct WelcomeView: View {
                 }
                 .onKeyPress(.escape, phases: .down) { press in
                     guard press.modifiers.isEmpty else { return .ignored }
-                    isRecentProjectsFocused = false
+                    focusedControl = nil
                     return .handled
                 }
                 .onChange(of: recentSelection.selectedURL) { _, selectedURL in
                     guard let selectedURL else { return }
                     proxy.scrollTo(selectedURL)
+                }
+                .onChange(of: filteredProjects) { _, projects in
+                    guard let target = recentSelection.revealTarget(
+                        in: projects
+                    ) else { return }
+                    proxy.scrollTo(target)
                 }
 
                 Divider()
@@ -349,6 +356,15 @@ struct WelcomeView: View {
             from: visibleProjects,
             remainingProjects: remainingProjects
         )
+        // The action button owns focus while it performs removal. Return focus
+        // to the native List after SwiftUI has reconciled the replacement row
+        // so subsequent arrows and Return continue from the new selection.
+        Task { @MainActor in
+            await Task.yield()
+            focusedControl = recentSelection.selectedURL == nil
+                ? .openFolder
+                : .recentProjects
+        }
     }
 
     /// Handles file URLs dropped onto the Welcome window.
@@ -463,6 +479,11 @@ struct WelcomeView: View {
             window.close()
         }
     }
+}
+
+private enum WelcomeFocusTarget: Hashable {
+    case openFolder
+    case recentProjects
 }
 
 /// A single native-list row in the recent projects collection.

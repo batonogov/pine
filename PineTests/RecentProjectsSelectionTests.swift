@@ -31,6 +31,17 @@ struct RecentProjectsSelectionTests {
         #expect(selection.selectedURL == projects[1])
     }
 
+    @Test("An unchanged selection still requests reveal after results expand")
+    func expandedResultsRevealPreservedSelection() {
+        var selection = RecentProjectsSelection(selectedURL: projects[2])
+
+        selection.normalize(for: [projects[2]])
+        selection.normalize(for: projects)
+
+        #expect(selection.selectedURL == projects[2])
+        #expect(selection.revealTarget(in: projects) == projects[2])
+    }
+
     @Test("Filtering selects the first result when selection disappears")
     func filteringNormalizesHiddenSelection() {
         var selection = RecentProjectsSelection(selectedURL: projects[0])

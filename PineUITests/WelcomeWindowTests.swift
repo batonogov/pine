@@ -660,6 +660,12 @@ final class WelcomeWindowTests: PineUITestCase {
             alphaRow.isSelected,
             "Removing the final row should select its nearest predecessor"
         )
+
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(
+            waitForExistence(app.scrollViews["sidebar"], timeout: 10),
+            "Removal must restore List focus so Return opens the replacement selection"
+        )
     }
 
     // MARK: - Duplicate project names show correct paths

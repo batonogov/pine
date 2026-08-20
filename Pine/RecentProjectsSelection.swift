@@ -32,6 +32,15 @@ struct RecentProjectsSelection: Equatable {
         selectedURL = visibleProjects.first
     }
 
+    /// Returns the selected row that should be minimally revealed after the
+    /// visible collection changes, even when normalization preserves the same
+    /// selection and therefore does not emit a selection change.
+    func revealTarget(in visibleProjects: [URL]) -> URL? {
+        guard let selectedURL,
+              visibleProjects.contains(selectedURL) else { return nil }
+        return selectedURL
+    }
+
     mutating func move(
         _ command: RecentProjectsKeyboardCommand,
         in visibleProjects: [URL]
