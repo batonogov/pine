@@ -17,7 +17,7 @@ jobs:
   screenshots:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           # Checkout main (not the release tag) so screenshots are generated
           # from the current main tree, and the Commit screenshots step can
@@ -32,7 +32,7 @@ jobs:
 
       - name: Upload xcresult on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: screenshots-xcresult
           path: build/screenshots.xcresult

@@ -25,7 +25,7 @@ jobs:
       group: nightly-lifecycle-soak
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
 
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
@@ -111,7 +111,7 @@ jobs:
 
       - name: Upload Lifecycle Evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: LifecycleSoak-${{ github.run_id }}
           path: |
