@@ -641,7 +641,9 @@ final class WelcomeWindowTests: PineUITestCase {
         search.click()
         search.typeText("Alpha")
         XCTAssertTrue(alphaRow.waitForExistence(timeout: 3))
-        XCTAssertFalse(betaRow.exists)
+        // The filter is debounced, so the non-matching row leaves a moment
+        // after the matching one is confirmed.
+        XCTAssertTrue(betaRow.waitForNonExistence(timeout: 3))
         XCTAssertTrue(alphaRow.isSelected)
 
         search.typeKey("a", modifierFlags: .command)

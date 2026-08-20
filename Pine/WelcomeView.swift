@@ -25,6 +25,16 @@ struct WelcomeSearchField: NSViewRepresentable {
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
+        // The field is revealed by a deliberate action, so typing should start
+        // in it straight away. Claiming focus here also closes the gap between
+        // the field appearing and becoming first responder, during which early
+        // keystrokes were delivered to the list instead of the query.
+        guard !context.coordinator.hasClaimedFocus else { return }
+        context.coordinator.hasClaimedFocus = true
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            window.makeFirstResponder(nsView)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -33,6 +43,9 @@ struct WelcomeSearchField: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSSearchFieldDelegate {
         var text: Binding<String>
+        /// Focus is claimed once, when the field appears — never again, so a
+        /// later state update cannot pull focus back out from under the user.
+        var hasClaimedFocus = false
 
         init(text: Binding<String>) {
             self.text = text
@@ -213,13 +226,16 @@ struct WelcomeView: View {
                         .id(url)
                         .contentShape(Rectangle())
                         // A single click belongs to the list's own selection;
-                        // only the second one opens. Asking the gesture for a
-                        // count keeps that out of NSApp.currentEvent, whose
-                        // clickCount is not reliable underneath a List row.
-                        .onTapGesture(count: 2) {
-                            recentSelection.selectedURL = url
-                            openRecentProject(at: url)
-                        }
+                        // only the second one opens. The gesture has to run
+                        // alongside the list's own click handling — a plain
+                        // onTapGesture(count: 2) consumes the first click too,
+                        // leaving selection stuck on the previous row.
+                        .simultaneousGesture(
+                            TapGesture(count: 2).onEnded {
+                                recentSelection.selectedURL = url
+                                openRecentProject(at: url)
+                            }
+                        )
                         .contextMenu {
                             recentProjectCommands(for: url)
                         }
@@ -233,6 +249,7 @@ struct WelcomeView: View {
                 .frame(maxHeight: .infinity)
                 .focused($focusedControl, equals: .recentProjects)
                 .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
+                .background(recentProjectBoundaryShortcuts)
                 .onKeyPress(.upArrow, phases: .down) { press in
                     handleRecentProjectKey(press, command: .up)
                 }
@@ -270,6 +287,31 @@ struct WelcomeView: View {
                 recentProjectActionBar
             }
         }
+    }
+
+    /// Home and End never reach the list's own key handlers: the table behind
+    /// `List` treats them as scroll-to-edge and consumes them before SwiftUI
+    /// sees a key press. Keyboard shortcuts are resolved earlier, through the
+    /// responder chain, so the selection can still move to either boundary.
+    /// They stand down while the search field is open, where the same keys
+    /// belong to the text being typed.
+    @ViewBuilder
+    private var recentProjectBoundaryShortcuts: some View {
+        Group {
+            Button("") {
+                recentSelection.move(.home, in: filteredProjects)
+            }
+            .keyboardShortcut(.home, modifiers: [])
+
+            Button("") {
+                recentSelection.move(.end, in: filteredProjects)
+            }
+            .keyboardShortcut(.end, modifiers: [])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+        .disabled(isSearchVisible)
     }
 
     private var recentProjectActionBar: some View {
@@ -517,6 +559,10 @@ private struct RecentProjectRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
+        // A row that stays a plain group does not publish its value, so the
+        // abbreviated path never reaches VoiceOver. Giving it the button trait
+        // makes the row a control, which does.
+        .accessibilityAddTraits(.isButton)
         .accessibilityLabel(url.lastPathComponent)
         .accessibilityValue(url.abbreviatedPath)
         // Collapsing the row hides the cell's own selected state from
