@@ -206,26 +206,15 @@ struct WelcomeView: View {
                 List(selection: $recentSelection.selectedURL) {
                     ForEach(filteredProjects, id: \.self) { url in
                         RecentProjectRow(
-                            url: url,
-                            isSelected: recentSelection.selectedURL == url,
-                            action: {
-                                recentSelection.selectedURL = url
-                                openRecentProject(at: url)
-                            }
+                            url: url
                         )
                         .tag(url)
                         .id(url)
                         .contentShape(Rectangle())
-                        .simultaneousGesture(
-                            TapGesture().onEnded {
-                                recentSelection.selectedURL = url
-                                focusedControl = .recentProjects
+                        .onTapGesture {
+                            guard NSApp.currentEvent?.clickCount == 2 else {
+                                return
                             }
-                        )
-                        // A regular row gesture is required here: on macOS 26
-                        // a simultaneous double-tap attached to List content
-                        // is consumed by the native selection recognizer.
-                        .onTapGesture(count: 2) {
                             recentSelection.selectedURL = url
                             openRecentProject(at: url)
                         }
@@ -238,10 +227,6 @@ struct WelcomeView: View {
                     }
                 }
                 .listStyle(.inset)
-                // Filtering removes and later reinserts rows with the same
-                // URL. Recreate the native list for a new result set so its
-                // macOS 26 accessibility rows cannot retain stale selection.
-                .id(filteredProjects)
                 .focused($focusedControl, equals: .recentProjects)
                 .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 .onKeyPress(.upArrow, phases: .down) { press in
@@ -500,8 +485,6 @@ private enum WelcomeFocusTarget: Hashable {
 /// A single native-list row in the recent projects collection.
 private struct RecentProjectRow: View {
     let url: URL
-    let isSelected: Bool
-    let action: () -> Void
 
     var body: some View {
         HStack {
@@ -519,12 +502,7 @@ private struct RecentProjectRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(url.lastPathComponent)
         .accessibilityValue(url.abbreviatedPath)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityAction {
-            action()
-        }
     }
 }
