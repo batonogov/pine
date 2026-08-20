@@ -63,6 +63,27 @@ struct CommandPaletteHostedInteractionTests {
         #expect(state.isPresented == false)
     }
 
+    @Test("Arrow navigation immediately announces the selected command")
+    func arrowAnnouncesSelection() throws {
+        let state = HostedState()
+        let hosted = hostPalette(state: state, items: makeItems())
+        let field = try #require(findTextField(in: hosted))
+        let coordinator = try #require(
+            field.delegate as? QuickOpenSearchField.Coordinator
+        )
+
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+
+        #expect(state.announcements.count == 1)
+        #expect(state.announcements[0].contains("Second Task"))
+        #expect(state.isPresented)
+        _ = hosted
+    }
+
     @Test("Invocation can replace Command Palette without stale dismissal")
     func replacementSurvivesInvocation() throws {
         let state = HostedState()
@@ -282,6 +303,7 @@ private final class HostedState {
     var replacementOnInvoke: CommandOverlayPresentation?
     var invoked: [CommandPaletteItemID] = []
     var presentationAtInvocation: [CommandOverlayPresentation?] = []
+    var announcements: [String] = []
 
     var isPresented: Bool {
         get { activePresentation == .commandPalette }
@@ -306,6 +328,10 @@ private struct HostedHarness: View {
                 set: { state.isPresented = $0 }
             ),
             items: items,
+            onAnnounce: {
+                state.announcements.append($0)
+                return true
+            },
             onInvoke: {
                 state.presentationAtInvocation.append(
                     state.activePresentation

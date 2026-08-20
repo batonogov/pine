@@ -103,12 +103,23 @@ struct SymbolNavigatorView: View {
     @Environment(ProjectManager.self) var projectManager
     @Environment(\.locale) private var locale
     @Binding var isPresented: Bool
+    let onAnnounce: CommandOverlayAnnouncementSink
     @State private var searchText = ""
     @State private var selectedIndex = 0
     @State private var allSymbols: [SymbolNavigatorEntry] = []
     @State private var filteredSymbols: [SymbolNavigatorEntry] = []
     @State private var symbolTask: Task<Void, Never>?
     @State private var symbolCoordinator = SymbolCoordinator()
+    @State private var selectionAnnouncer =
+        CommandOverlaySelectionAnnouncer()
+
+    init(
+        isPresented: Binding<Bool>,
+        onAnnounce: @escaping CommandOverlayAnnouncementSink = { _ in false }
+    ) {
+        _isPresented = isPresented
+        self.onAnnounce = onAnnounce
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -149,6 +160,7 @@ struct SymbolNavigatorView: View {
         .onDisappear {
             symbolTask?.cancel()
             symbolCoordinator.invalidate()
+            selectionAnnouncer.invalidate()
         }
         .onChange(of: searchText) { _, _ in
             updateFilteredSymbols()
@@ -429,18 +441,25 @@ struct SymbolNavigatorView: View {
             }
         }
         selectedIndex = 0
+        scheduleResultsAnnouncement()
     }
 
     // MARK: - Actions
 
     private func moveSelection(by delta: Int) {
         guard !filteredSymbols.isEmpty else { return }
-        selectedIndex = max(
+        let newIndex = max(
             0,
             min(
                 filteredSymbols.count - 1,
                 selectedIndex + delta
             )
+        )
+        guard newIndex != selectedIndex else { return }
+        selectedIndex = newIndex
+        selectionAnnouncer.announceImmediately(
+            announcement(for: filteredSymbols[newIndex]),
+            using: onAnnounce
         )
     }
 
@@ -469,6 +488,34 @@ struct SymbolNavigatorView: View {
             userInfo: ["offset": offset]
         )
         isPresented = false
+    }
+
+    private func scheduleResultsAnnouncement() {
+        let selected = filteredSymbols.indices.contains(selectedIndex)
+            ? announcement(for: filteredSymbols[selectedIndex])
+            : nil
+        selectionAnnouncer.schedule(
+            CommandOverlaySelectionAnnouncement.resultSummary(
+                count: filteredSymbols.count,
+                selectedRow: selected,
+                locale: locale
+            ),
+            using: onAnnounce
+        )
+    }
+
+    private func announcement(
+        for entry: SymbolNavigatorEntry
+    ) -> String {
+        CommandOverlaySelectionAnnouncement.symbolRow(
+            kind: Strings.symbolKindName(
+                entry.symbol.kind,
+                locale: locale
+            ),
+            name: entry.symbol.name,
+            line: entry.line,
+            locale: locale
+        )
     }
 
     // MARK: - Helpers

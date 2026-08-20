@@ -8,12 +8,28 @@
 import SwiftUI
 
 struct CommandPaletteView: View {
+    @Environment(\.locale) private var locale
     @Binding var isPresented: Bool
     let items: [CommandPaletteItem]
+    let onAnnounce: CommandOverlayAnnouncementSink
     let onInvoke: (CommandPaletteItem) -> Void
 
     @State private var searchText = ""
     @State private var selectedIndex = 0
+    @State private var selectionAnnouncer =
+        CommandOverlaySelectionAnnouncer()
+
+    init(
+        isPresented: Binding<Bool>,
+        items: [CommandPaletteItem],
+        onAnnounce: @escaping CommandOverlayAnnouncementSink = { _ in false },
+        onInvoke: @escaping (CommandPaletteItem) -> Void
+    ) {
+        _isPresented = isPresented
+        self.items = items
+        self.onAnnounce = onAnnounce
+        self.onInvoke = onInvoke
+    }
 
     private var filteredItems: [CommandPaletteItem] {
         CommandPaletteSearch.filter(items, query: searchText)
@@ -50,6 +66,7 @@ struct CommandPaletteView: View {
             selectedIndex = CommandPaletteNavigation.preferredIndex(
                 in: filteredItems
             )
+            scheduleResultsAnnouncement()
         }
         .onChange(of: filteredItems.map(\.id)) { _, newIDs in
             if newIDs.isEmpty {
@@ -64,11 +81,16 @@ struct CommandPaletteView: View {
                     )
                 }
             }
+            scheduleResultsAnnouncement()
         }
         .onAppear {
             selectedIndex = CommandPaletteNavigation.preferredIndex(
                 in: filteredItems
             )
+            scheduleResultsAnnouncement()
+        }
+        .onDisappear {
+            selectionAnnouncer.invalidate()
         }
         .accessibilityIdentifier(AccessibilityID.commandPaletteOverlay)
     }
@@ -215,10 +237,19 @@ struct CommandPaletteView: View {
     }
 
     private func moveSelection(by delta: Int) {
-        selectedIndex = CommandPaletteNavigation.movedIndex(
+        let newIndex = CommandPaletteNavigation.movedIndex(
             from: selectedIndex,
             by: delta,
             items: filteredItems
+        )
+        guard newIndex != selectedIndex,
+              filteredItems.indices.contains(newIndex) else {
+            return
+        }
+        selectedIndex = newIndex
+        selectionAnnouncer.announceImmediately(
+            announcement(for: filteredItems[newIndex]),
+            using: onAnnounce
         )
     }
 
@@ -237,6 +268,27 @@ struct CommandPaletteView: View {
         if isPresented {
             isPresented = false
         }
+    }
+
+    private func scheduleResultsAnnouncement() {
+        let selected = filteredItems.indices.contains(selectedIndex)
+            ? announcement(for: filteredItems[selectedIndex])
+            : nil
+        selectionAnnouncer.schedule(
+            CommandOverlaySelectionAnnouncement.resultSummary(
+                count: filteredItems.count,
+                selectedRow: selected,
+                locale: locale
+            ),
+            using: onAnnounce
+        )
+    }
+
+    private func announcement(for item: CommandPaletteItem) -> String {
+        CommandOverlaySelectionAnnouncement.commandPaletteRow(
+            item: item,
+            locale: locale
+        )
     }
 }
 
