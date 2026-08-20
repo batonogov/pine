@@ -1869,7 +1869,10 @@ final class ProjectRegistry: LSPSettingsObserver {
                 objective: "Finish the Pine 2.0 release",
                 boundary: AgentTaskLaunchBoundary(
                     generationFloor: 0,
-                    capturedAt: startedAt
+                    // Production captures the launch boundary before the
+                    // authoritative process observation. Preserve that strict
+                    // chronology so the reservation can consume this run.
+                    capturedAt: startedAt.addingTimeInterval(-1)
                 )
             )
             guard case .reserved(let reservation) = launch,
