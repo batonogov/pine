@@ -667,6 +667,10 @@ enum Strings {
         "agentInbox.resumedSession"
     static let agentInboxRecoveryUnavailable: LocalizedStringKey =
         "agentInbox.recoveryUnavailable"
+    static let agentInboxRecoveryActions: LocalizedStringKey =
+        "agentInbox.recoveryActions"
+    static let agentInboxShowRecoveryActions: LocalizedStringKey =
+        "agentInbox.showRecoveryActions"
 
     // MARK: - Agent Inbox toolbar button (#1337)
     static let agentInboxToolbarTooltip: LocalizedStringKey =

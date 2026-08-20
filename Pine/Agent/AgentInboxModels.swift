@@ -48,6 +48,38 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Pure presentation policy for activating an Inbox row with Return.
+///
+/// Recovery deliberately has two keyboard steps: the first Return exposes the
+/// available actions, and only a later Return can invoke the visible primary
+/// action. This prevents a restored task from silently opening a fresh session
+/// when a vendor resume path is available.
+nonisolated enum AgentInboxActivation: Equatable, Sendable {
+    case navigate
+    case presentRecoveryActions
+    case recover(AgentTaskRecoveryAction)
+
+    static func resolve(
+        row: AgentInboxRow,
+        recoveryActionsArePresented: Bool,
+        canResumeVendorSession: Bool
+    ) -> AgentInboxActivation {
+        guard row.canRecover else { return .navigate }
+        guard recoveryActionsArePresented else {
+            return .presentRecoveryActions
+        }
+        return .recover(primaryRecoveryAction(
+            canResumeVendorSession: canResumeVendorSession
+        ))
+    }
+
+    static func primaryRecoveryAction(
+        canResumeVendorSession: Bool
+    ) -> AgentTaskRecoveryAction {
+        canResumeVendorSession ? .resumeVendorSession : .startNewSession
+    }
+}
+
 nonisolated struct AgentInboxSection: Identifiable, Equatable, Sendable {
     let id: AgentInboxSectionID
     let rows: [AgentInboxRow]

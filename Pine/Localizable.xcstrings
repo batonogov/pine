@@ -33709,6 +33709,34 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "安全恢复不可用" } }
       }
     },
+    "agentInbox.recoveryActions": {
+      "comment": "Labels the visible action surface for recovering a selected agent task.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wiederherstellungsaktionen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Recovery Actions" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Acciones de recuperación" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Actions de récupération" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元操作" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구 작업" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ações de recuperação" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Действия восстановления" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复操作" } }
+      }
+    },
+    "agentInbox.showRecoveryActions": {
+      "comment": "VoiceOver hint for a recoverable Inbox row before its explicit actions are visible.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wiederherstellungsaktionen anzeigen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Show Recovery Actions" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Mostrar acciones de recuperación" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher les actions de récupération" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元操作を表示" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구 작업 보기" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mostrar ações de recuperação" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Показать действия восстановления" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示恢复操作" } }
+      }
+    },
     "agentInbox.resumeSession": {
       "comment": "Explicitly resumes a vendor conversation when a documented adapter validates it.",
       "localizations": {

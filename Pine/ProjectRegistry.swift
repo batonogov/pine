@@ -1258,7 +1258,30 @@ final class ProjectRegistry: LSPSettingsObserver {
         self.agentTasks = agentTasks ?? Self.makeDefaultAgentTaskRegistry()
         self.defaults = defaults
         self.fileManager = fileManager
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(
+            "--ui-test-agent-vendor-recovery"
+        ) {
+            let descriptor = AgentDescriptor(
+                agentType: .codex,
+                launchExecutable: "codex"
+            )
+            self.agentRecoveryInspector = AgentTaskRecoveryInspector(
+                recipes: [AgentTaskResumeRecipe(
+                    provider: "pine-ui-test",
+                    agentTypeIdentifier: descriptor.typeIdentifier,
+                    executableAliases: ["codex"],
+                    supportedVersions: ["pine-ui-test-version"],
+                    identifierArgumentPrefix: ["resume"],
+                    identifierArgumentSuffix: []
+                )]
+            )
+        } else {
+            self.agentRecoveryInspector = agentRecoveryInspector
+        }
+        #else
         self.agentRecoveryInspector = agentRecoveryInspector
+        #endif
         self.agentInboxProjectCanonicalizer = agentInboxProjectCanonicalizer
         self.agentTaskFilesystemValidationCommitSeam =
             agentTaskFilesystemValidationCommitSeam
@@ -1874,6 +1897,24 @@ final class ProjectRegistry: LSPSettingsObserver {
             )
             session.applyLiveness(.terminated)
             agentTasks.bridge(session, replacing: session, context: context)
+            if ProcessInfo.processInfo.arguments.contains(
+                "--ui-test-agent-vendor-recovery"
+            ), let taskID = agentTasks.tasks.first(where: {
+                $0.runs.last?.id == session.id
+            })?.id,
+               var task = agentTasks.task(for: taskID),
+               !task.runs.isEmpty {
+                task.lifecycle = .paused
+                task.runs[task.runs.count - 1].vendorIdentity =
+                    AgentVendorSessionIdentity(
+                        provider: "pine-ui-test",
+                        opaqueIdentifier: "ui-test-session",
+                        executableVersion: "pine-ui-test-version"
+                    )
+                agentTasks.setTasksForTesting(agentTasks.tasks.map {
+                    $0.id == taskID ? task : $0
+                })
+            }
             _ = await agentTasks.flushPersistence(
                 maximumDuration: .seconds(2)
             )
