@@ -161,8 +161,17 @@ final class SidebarKeyboardFocusController {
     private weak var responderView: SidebarKeyboardResponderView?
     private(set) var isFocused = false
     private var focusRequestGeneration = 0
+#if DEBUG
+    private var diagnosticAttachCount = 0
+    private var diagnosticAttemptCount = 0
+    private var diagnosticFocusChangeCount = 0
+    private var diagnosticSwiftUIFocused = false
+#endif
 
     func attach(_ responderView: SidebarKeyboardResponderView) {
+#if DEBUG
+        diagnosticAttachCount += 1
+#endif
         self.responderView = responderView
         responderView.onFocusChange = { [weak self] focused in
             self?.updateFocus(focused)
@@ -206,6 +215,9 @@ final class SidebarKeyboardFocusController {
     }
 
     private func attemptFocus() -> Bool {
+#if DEBUG
+        diagnosticAttemptCount += 1
+#endif
         guard let responderView, let window = responderView.window else {
             return false
         }
@@ -219,9 +231,35 @@ final class SidebarKeyboardFocusController {
     }
 
     private func updateFocus(_ focused: Bool) {
+#if DEBUG
+        diagnosticFocusChangeCount += 1
+#endif
         guard isFocused != focused else { return }
         isFocused = focused
     }
+
+#if DEBUG
+    func updateDiagnosticSwiftUIFocus(_ focused: Bool) {
+        diagnosticSwiftUIFocused = focused
+    }
+
+    var diagnosticSummary: String {
+        let firstResponder = responderView?.window?.firstResponder
+        let firstResponderName = firstResponder.map {
+            String(describing: type(of: $0))
+        } ?? "nil"
+        return [
+            "swiftUI=\(diagnosticSwiftUIFocused)",
+            "controller=\(isFocused)",
+            "bridge=\(hasResponderFocus)",
+            "first=\(firstResponderName)",
+            "attach=\(diagnosticAttachCount)",
+            "attempt=\(diagnosticAttemptCount)",
+            "changes=\(diagnosticFocusChangeCount)",
+            "generation=\(focusRequestGeneration)",
+        ].joined(separator: ";")
+    }
+#endif
 }
 
 /// Prevents a newly-created preview editor from displacing the sidebar while
@@ -518,6 +556,51 @@ struct SidebarKeyboardFocusBridge: NSViewRepresentable {
     }
 }
 
+#if DEBUG
+@MainActor
+private final class SidebarFocusDiagnosticView: NSView {
+    weak var controller: SidebarKeyboardFocusController?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel("Sidebar focus diagnostic")
+        setAccessibilityIdentifier("sidebarFocusDiagnostic")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func accessibilityValue() -> Any? {
+        controller?.diagnosticSummary
+    }
+}
+
+private struct SidebarFocusDiagnosticBridge: NSViewRepresentable {
+    let controller: SidebarKeyboardFocusController
+    let swiftUIFocused: Bool
+
+    func makeNSView(context: Context) -> SidebarFocusDiagnosticView {
+        SidebarFocusDiagnosticView(frame: .zero)
+    }
+
+    func updateNSView(
+        _ nsView: SidebarFocusDiagnosticView,
+        context: Context
+    ) {
+        controller.updateDiagnosticSwiftUIFocus(swiftUIFocused)
+        nsView.controller = controller
+    }
+}
+#endif
+
 // MARK: - Sidebar
 
 private struct SidebarKeyboardNavigationModifier: ViewModifier {
@@ -705,14 +788,27 @@ struct SidebarView: View {
                     }
                     .accessibilityIdentifier("sidebar")
                     .background(alignment: .topLeading) {
-                        SidebarKeyboardFocusBridge(
-                            controller: keyboardFocusController,
-                            onCommand: handleSidebarCommand,
-                            onPrintableText: handleSidebarPrintableText,
-                            onReturn: handleSidebarReturn,
-                            onSpace: handleSidebarSpace
-                        )
-                        .frame(width: 1, height: 1)
+                        ZStack(alignment: .topLeading) {
+                            SidebarKeyboardFocusBridge(
+                                controller: keyboardFocusController,
+                                onCommand: handleSidebarCommand,
+                                onPrintableText: handleSidebarPrintableText,
+                                onReturn: handleSidebarReturn,
+                                onSpace: handleSidebarSpace
+                            )
+                            .frame(width: 1, height: 1)
+#if DEBUG
+                            if CommandLine.arguments.contains(
+                                "--sidebar-focus-diagnostics"
+                            ) {
+                                SidebarFocusDiagnosticBridge(
+                                    controller: keyboardFocusController,
+                                    swiftUIFocused: hasSwiftUIKeyboardFocus
+                                )
+                                .frame(width: 1, height: 1)
+                            }
+#endif
+                        }
                     }
                     .focusable()
                     .focused($hasSwiftUIKeyboardFocus)
