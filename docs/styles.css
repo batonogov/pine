@@ -1089,6 +1089,18 @@ img {
     transition: opacity 220ms ease;
 }
 
+/* Agent Inbox is captured as a popover, so its PNG is nearly square. The
+   gallery's 16/10 crop would slice a task row in half, so fit the whole
+   panel and let the card background fill the sides. */
+.screenshot-trigger.is-panel {
+    background: var(--paper-muted);
+}
+
+.screenshot-trigger.is-panel img {
+    object-fit: contain;
+    object-position: center;
+}
+
 .screenshot-trigger:hover img {
     opacity: 0.94;
     transform: none;
