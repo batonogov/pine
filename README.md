@@ -25,7 +25,7 @@ Pine reflects agent activity, file changes, diagnostics, and Git context across 
 ## One workspace for code and CLI agents
 
 <p align="center">
-  <img src="assets/screenshot-agent-inbox.png" width="760" alt="Pine Agent Inbox showing agent tasks across projects">
+  <img src="assets/screenshot-agent-inbox.png" width="520" alt="Pine Agent Inbox showing agent tasks across projects">
 </p>
 
 - **Agents stay in real terminal sessions** while Pine keeps activity, files, diagnostics, and Git context visible beside them
