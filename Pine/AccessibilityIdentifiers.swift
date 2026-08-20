@@ -223,6 +223,12 @@ nonisolated enum AccessibilityID {
     static let agentInboxEmpty = "agentInboxEmpty"
     static let agentInboxNavigationStatus = "agentInboxNavigationStatus"
     static let agentInboxHelpButton = "agentInboxHelpButton"
+    static let agentInboxRecoveryActions = "agentInboxRecoveryActions"
+    static let agentInboxResumeSession = "agentInboxResumeSession"
+    static let agentInboxNewSession = "agentInboxNewSession"
+    static let agentInboxMarkReviewed = "agentInboxMarkReviewed"
+    static let agentInboxCopyObjective = "agentInboxCopyObjective"
+    static let agentInboxDismissTask = "agentInboxDismissTask"
     static func agentInboxRow(_ id: UUID) -> String {
         "agentInboxRow_\(id.uuidString)"
     }

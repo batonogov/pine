@@ -268,6 +268,92 @@ struct AgentInboxTests {
         ) == nil)
     }
 
+    @Test("recovery Return reveals actions before invoking a visible default")
+    func recoveryKeyboardActivationRequiresVisibleActions() throws {
+        let task = makePersistedRecoveryTask(
+            projectURL: URL(fileURLWithPath: "/tmp/inbox-keyboard-recovery")
+        )
+        let row = try #require(AgentInboxSnapshot(tasks: [task]).rows.first)
+
+        #expect(AgentInboxActivation.resolve(
+            row: row,
+            recoveryActionsArePresented: false,
+            canResumeVendorSession: false
+        ) == .presentRecoveryActions)
+        #expect(AgentInboxActivation.resolve(
+            row: row,
+            recoveryActionsArePresented: true,
+            canResumeVendorSession: false
+        ) == .recover(.startNewSession))
+
+        let liveTask = makeTask(
+            seed: 19,
+            project: "/tmp/inbox-keyboard-live",
+            state: .executing,
+            liveness: .live,
+            observedAt: Date(timeIntervalSince1970: 10_000)
+        )
+        let liveRow = try #require(
+            AgentInboxSnapshot(tasks: [liveTask]).rows.first
+        )
+        #expect(AgentInboxActivation.resolve(
+            row: liveRow,
+            recoveryActionsArePresented: false,
+            canResumeVendorSession: false
+        ) == .navigate)
+    }
+
+    @Test("visible vendor resume is the recovery Return default")
+    func vendorResumeIsVisibleKeyboardDefault() throws {
+        let task = makePersistedRecoveryTask(
+            projectURL: URL(fileURLWithPath: "/tmp/inbox-vendor-recovery"),
+            vendorIdentity: AgentVendorSessionIdentity(
+                provider: "example",
+                opaqueIdentifier: "inbox-visible-resume",
+                executableVersion: "1.2.3"
+            )
+        )
+        let row = try #require(AgentInboxSnapshot(tasks: [task]).rows.first)
+
+        #expect(AgentInboxActivation.resolve(
+            row: row,
+            recoveryActionsArePresented: false,
+            canResumeVendorSession: true
+        ) == .presentRecoveryActions)
+        #expect(AgentInboxActivation.resolve(
+            row: row,
+            recoveryActionsArePresented: true,
+            canResumeVendorSession: true
+        ) == .recover(.resumeVendorSession))
+        #expect(AgentInboxActivation.primaryRecoveryAction(
+            canResumeVendorSession: true
+        ) == .resumeVendorSession)
+    }
+
+    @Test("recovery presentation clears when the same task becomes live")
+    func recoveryPresentationTracksRecoverabilityNotOnlyIdentity() {
+        let id = UUID()
+
+        #expect(AgentInboxActivation.normalizedPresentedTaskID(
+            id,
+            states: [AgentInboxRecoveryState(id: id, canRecover: true)]
+        ) == id)
+        #expect(AgentInboxActivation.normalizedPresentedTaskID(
+            id,
+            states: [AgentInboxRecoveryState(id: id, canRecover: false)]
+        ) == nil)
+    }
+
+    @Test("recovery announcement distinguishes presentation from activation")
+    func recoveryAnnouncementDescribesVisibleDefault() {
+        #expect(
+            Strings.agentInboxRecoveryActionsShown(
+                defaultAction: "Resume Session",
+                locale: Locale(identifier: "en")
+            ) == "Recovery actions shown. Default action: Resume Session"
+        )
+    }
+
     @Test("identical startedAt ignores polling timestamp and uses id tiebreak")
     func identicalStartedAtUsesIdTiebreak() throws {
         let started = Date(timeIntervalSince1970: 10_000)
