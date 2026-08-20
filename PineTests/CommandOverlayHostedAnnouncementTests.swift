@@ -50,7 +50,7 @@ struct CommandOverlayHostedAnnouncementTests {
             doCommandBy: #selector(NSResponder.moveDown(_:))
         ))
         #expect(recorder.messages.count == 1)
-        #expect(recorder.messages[0].contains(".swift"))
+        #expect(recorder.messages[0].contains("Second.swift"))
         withExtendedLifetime(hosted) {}
     }
 
