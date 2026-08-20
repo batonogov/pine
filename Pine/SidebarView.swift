@@ -161,17 +161,8 @@ final class SidebarKeyboardFocusController {
     private weak var responderView: SidebarKeyboardResponderView?
     private(set) var isFocused = false
     private var focusRequestGeneration = 0
-#if DEBUG
-    private var diagnosticAttachCount = 0
-    private var diagnosticAttemptCount = 0
-    private var diagnosticFocusChangeCount = 0
-    private var diagnosticSwiftUIFocused = false
-#endif
 
     func attach(_ responderView: SidebarKeyboardResponderView) {
-#if DEBUG
-        diagnosticAttachCount += 1
-#endif
         self.responderView = responderView
         responderView.onFocusChange = { [weak self] focused in
             self?.updateFocus(focused)
@@ -195,14 +186,8 @@ final class SidebarKeyboardFocusController {
                     deadline: .now() + delay
                 ) { [weak self] in
                     guard let self,
-                          self.focusRequestGeneration == generation else {
-                        return
-                    }
-                    // Accessibility activation can move AppKit's actual first
-                    // responder without delivering a matching focus callback
-                    // to this invisible bridge. Never let the cached visual
-                    // state suppress a required keyboard-focus repair.
-                    guard !self.hasResponderFocus else { return }
+                          self.focusRequestGeneration == generation,
+                          !self.isFocused else { return }
                     _ = self.attemptFocus()
                 }
             }
@@ -215,9 +200,6 @@ final class SidebarKeyboardFocusController {
     }
 
     private func attemptFocus() -> Bool {
-#if DEBUG
-        diagnosticAttemptCount += 1
-#endif
         guard let responderView, let window = responderView.window else {
             return false
         }
@@ -225,41 +207,10 @@ final class SidebarKeyboardFocusController {
             && window.firstResponder === responderView
     }
 
-    private var hasResponderFocus: Bool {
-        guard let responderView else { return false }
-        return responderView.window?.firstResponder === responderView
-    }
-
     private func updateFocus(_ focused: Bool) {
-#if DEBUG
-        diagnosticFocusChangeCount += 1
-#endif
         guard isFocused != focused else { return }
         isFocused = focused
     }
-
-#if DEBUG
-    func updateDiagnosticSwiftUIFocus(_ focused: Bool) {
-        diagnosticSwiftUIFocused = focused
-    }
-
-    var diagnosticSummary: String {
-        let firstResponder = responderView?.window?.firstResponder
-        let firstResponderName = firstResponder.map {
-            String(describing: type(of: $0))
-        } ?? "nil"
-        return [
-            "swiftUI=\(diagnosticSwiftUIFocused)",
-            "controller=\(isFocused)",
-            "bridge=\(hasResponderFocus)",
-            "first=\(firstResponderName)",
-            "attach=\(diagnosticAttachCount)",
-            "attempt=\(diagnosticAttemptCount)",
-            "changes=\(diagnosticFocusChangeCount)",
-            "generation=\(focusRequestGeneration)",
-        ].joined(separator: ";")
-    }
-#endif
 }
 
 /// Prevents a newly-created preview editor from displacing the sidebar while
@@ -556,51 +507,6 @@ struct SidebarKeyboardFocusBridge: NSViewRepresentable {
     }
 }
 
-#if DEBUG
-@MainActor
-private final class SidebarFocusDiagnosticView: NSView {
-    weak var controller: SidebarKeyboardFocusController?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.staticText)
-        setAccessibilityLabel("Sidebar focus diagnostic")
-        setAccessibilityIdentifier("sidebarFocusDiagnostic")
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-
-    override func accessibilityValue() -> Any? {
-        controller?.diagnosticSummary
-    }
-}
-
-private struct SidebarFocusDiagnosticBridge: NSViewRepresentable {
-    let controller: SidebarKeyboardFocusController
-    let swiftUIFocused: Bool
-
-    func makeNSView(context: Context) -> SidebarFocusDiagnosticView {
-        SidebarFocusDiagnosticView(frame: .zero)
-    }
-
-    func updateNSView(
-        _ nsView: SidebarFocusDiagnosticView,
-        context: Context
-    ) {
-        controller.updateDiagnosticSwiftUIFocus(swiftUIFocused)
-        nsView.controller = controller
-    }
-}
-#endif
-
 // MARK: - Sidebar
 
 private struct SidebarKeyboardNavigationModifier: ViewModifier {
@@ -677,7 +583,7 @@ extension View {
     }
 }
 
-extension SidebarKeyboardModifiers {
+private extension SidebarKeyboardModifiers {
     init(_ modifiers: EventModifiers) {
         var result: SidebarKeyboardModifiers = []
         if modifiers.contains(.command) { result.insert(.command) }
@@ -757,7 +663,6 @@ struct SidebarView: View {
                                 selection: $selectedFile,
                                 onFileOpen: { node, disposition in
                                     if disposition.requestsEditorFocus {
-                                        hasSwiftUIKeyboardFocus = false
                                         keyboardFocusController
                                             .cancelPendingFocusRetry()
                                     }
@@ -767,20 +672,6 @@ struct SidebarView: View {
                                     && controlActiveState == .key,
                                 onKeyboardFocusRequested: {
                                     claimSidebarKeyboardFocus(retryOnNextRunLoop: true)
-                                },
-                                onKeyboardCommand: { command in
-                                    let handled = handleSidebarCommand(command)
-                                    if handled {
-                                        // The semantic AX row is a fallback
-                                        // key target on macOS 26. Restore the
-                                        // canonical bridge after handling the
-                                        // first command so selection focus and
-                                        // subsequent keyboard input converge.
-                                        claimSidebarKeyboardFocus(
-                                            retryOnNextRunLoop: true
-                                        )
-                                    }
-                                    return handled
                                 }
                             )
                         }
@@ -788,27 +679,14 @@ struct SidebarView: View {
                     }
                     .accessibilityIdentifier("sidebar")
                     .background(alignment: .topLeading) {
-                        ZStack(alignment: .topLeading) {
-                            SidebarKeyboardFocusBridge(
-                                controller: keyboardFocusController,
-                                onCommand: handleSidebarCommand,
-                                onPrintableText: handleSidebarPrintableText,
-                                onReturn: handleSidebarReturn,
-                                onSpace: handleSidebarSpace
-                            )
-                            .frame(width: 1, height: 1)
-#if DEBUG
-                            if CommandLine.arguments.contains(
-                                "--sidebar-focus-diagnostics"
-                            ) {
-                                SidebarFocusDiagnosticBridge(
-                                    controller: keyboardFocusController,
-                                    swiftUIFocused: hasSwiftUIKeyboardFocus
-                                )
-                                .frame(width: 1, height: 1)
-                            }
-#endif
-                        }
+                        SidebarKeyboardFocusBridge(
+                            controller: keyboardFocusController,
+                            onCommand: handleSidebarCommand,
+                            onPrintableText: handleSidebarPrintableText,
+                            onReturn: handleSidebarReturn,
+                            onSpace: handleSidebarSpace
+                        )
+                        .frame(width: 1, height: 1)
                     }
                     .focusable()
                     .focused($hasSwiftUIKeyboardFocus)
@@ -817,8 +695,7 @@ struct SidebarView: View {
                             .onChange(of: geo.size.height) { _, h in navigation.viewportHeight = h }
                     })
                     .onChange(of: hasSwiftUIKeyboardFocus) { _, hasFocus in
-                        guard hasFocus,
-                              editState.renamingURL == nil else { return }
+                        guard hasFocus else { return }
                         // Full Keyboard Access focuses SwiftUI's host first.
                         // Normalize that path to the AppKit responder so a
                         // deferred editor-creation focus cannot displace it.
@@ -1006,10 +883,6 @@ struct SidebarView: View {
     /// model is invalidated before AppKit changes first responder so a queued
     /// editor or terminal retry cannot reclaim focus on the next run loop.
     private func claimSidebarKeyboardFocus(retryOnNextRunLoop: Bool = false) {
-        // Keep SwiftUI's focus host and the AppKit bridge in sync. XCUITest
-        // accessibility key injection can target either path on macOS 26,
-        // especially after disclosure or preview-editor reconciliation.
-        hasSwiftUIKeyboardFocus = true
         paneManager.cancelPendingFocusForActivePane()
         keyboardFocusController.requestFocus(
             retryOnNextRunLoop: retryOnNextRunLoop
@@ -1068,14 +941,10 @@ struct SidebarView: View {
         switch action {
         case .open:
             navigation.resetTypeAhead()
-            hasSwiftUIKeyboardFocus = false
-            keyboardFocusController.cancelPendingFocusRetry()
             onFileOpen(selected, .permanent)
             return true
         case .rename:
             navigation.resetTypeAhead()
-            hasSwiftUIKeyboardFocus = false
-            keyboardFocusController.cancelPendingFocusRetry()
             paneManager.cancelPendingFocusForActivePane()
             editState.startRename(for: selected)
             return true

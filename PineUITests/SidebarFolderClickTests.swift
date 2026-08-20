@@ -151,7 +151,6 @@ final class SidebarFolderClickTests: PineUITestCase {
     // MARK: - Finder-style keyboard and VoiceOver matrix (#1238)
 
     func testKeyboardNavigationTypeSelectAndOutlineSemantics() throws {
-        app.launchArguments.append("--sidebar-focus-diagnostics")
         launchWithProject(projectURL)
 
         let sidebar = app.scrollViews["sidebar"]
@@ -168,9 +167,7 @@ final class SidebarFolderClickTests: PineUITestCase {
         XCTAssertTrue(child.waitForExistence(timeout: 3))
         XCTAssertTrue(alpha.isSelected)
         XCTAssertEqual(alpha.value as? String, "expanded")
-        printSidebarFocusDiagnostic("before-left")
         app.typeKey(.leftArrow, modifierFlags: [])
-        printSidebarFocusDiagnostic("after-left")
         XCTAssertTrue(child.waitForNonExistence(timeout: 3))
         XCTAssertTrue(alpha.isSelected)
 
@@ -230,9 +227,7 @@ final class SidebarFolderClickTests: PineUITestCase {
         XCTAssertFalse(configTab.exists)
         app.typeKey(.space, modifierFlags: [])
         XCTAssertTrue(configTab.waitForExistence(timeout: 5))
-        printSidebarFocusDiagnostic("after-preview-before-period")
         app.typeText(".")
-        printSidebarFocusDiagnostic("after-period")
         XCTAssertTrue(
             waitForSelection(app.sidebarNodes["fileNode_.env"])
         )
@@ -262,16 +257,6 @@ final class SidebarFolderClickTests: PineUITestCase {
         XCTAssertTrue(
             child.waitForExistence(timeout: 3),
             "Right should expand the still-selected row after rename cancel"
-        )
-    }
-
-    private func printSidebarFocusDiagnostic(_ stage: String) {
-        let probe = app.descendants(matching: .any)[
-            "sidebarFocusDiagnostic"
-        ].firstMatch
-        print(
-            "SIDEBAR_FOCUS[\(stage)] exists=\(probe.exists) "
-                + "value=\(String(describing: probe.value))"
         )
     }
 }

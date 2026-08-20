@@ -99,46 +99,6 @@ struct SidebarAccessibilityHostedTests {
         #expect(row.hitTest(NSPoint(x: 10, y: 10)) == nil)
     }
 
-    @Test("Accessibility row routes physical and standard navigation")
-    func accessibilityRowNavigationRouting() throws {
-        var commands: [SidebarKeyboardCommand] = []
-        let hosted = hostRow(
-            configuration: configuration(
-                isFolder: true,
-                isExpanded: true,
-                isSelected: true,
-                isFocused: true,
-                level: 0
-            ),
-            onPress: { true },
-            onCommand: {
-                commands.append($0)
-                return true
-            },
-            onCustomAction: { true }
-        )
-        let row = try #require(findRow(in: hosted))
-        let window = NSWindow(
-            contentRect: hosted.frame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = hosted
-        defer { window.orderOut(nil) }
-
-        #expect(window.makeFirstResponder(row))
-        #expect(row.isAccessibilityFocused())
-        row.keyDown(with: try makeKeyEvent(
-            characters: "\u{F702}",
-            keyCode: 123,
-            flags: []
-        ))
-        row.doCommand(by: NSSelectorFromString("moveRight:"))
-
-        #expect(commands == [.left, .right])
-    }
-
     @Test("Focused responder reports focus lifecycle to shared controller")
     func responderFocusLifecycle() throws {
         let controller = SidebarKeyboardFocusController()
@@ -248,42 +208,6 @@ struct SidebarAccessibilityHostedTests {
         #expect(!controller.isFocused)
 
         try await Task.sleep(for: .milliseconds(350))
-
-        #expect(controller.isFocused)
-        #expect(window.firstResponder === responder)
-    }
-
-    @Test("Focus retry trusts AppKit over a stale cached focus callback")
-    func responderFocusRetryRepairsStaleCachedFocus() async throws {
-        let controller = SidebarKeyboardFocusController()
-        let responder = SidebarKeyboardResponderView(
-            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
-        )
-        let accessibilityTarget = SidebarFocusAcceptingTestView(
-            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
-        )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView?.addSubview(responder)
-        window.contentView?.addSubview(accessibilityTarget)
-        controller.attach(responder)
-        defer { window.orderOut(nil) }
-
-        #expect(controller.requestFocus(retryOnNextRunLoop: true))
-        #expect(window.makeFirstResponder(accessibilityTarget))
-        #expect(!controller.isFocused)
-
-        // Model the macOS 26 AX press path: the semantic row becomes the real
-        // responder while the bridge's last callback still says it is focused.
-        responder.onFocusChange?(true)
-        #expect(controller.isFocused)
-        #expect(window.firstResponder === accessibilityTarget)
-
-        try await Task.sleep(for: .milliseconds(150))
 
         #expect(controller.isFocused)
         #expect(window.firstResponder === responder)
@@ -585,14 +509,12 @@ struct SidebarAccessibilityHostedTests {
     private func hostRow(
         configuration: SidebarAccessibilityRowConfiguration,
         onPress: @escaping () -> Bool,
-        onCommand: @escaping (SidebarKeyboardCommand) -> Bool = { _ in false },
         onCustomAction: @escaping () -> Bool
     ) -> NSHostingView<SidebarAccessibilityHostedHarness> {
         let hosted = NSHostingView(
             rootView: SidebarAccessibilityHostedHarness(
                 configuration: configuration,
                 onPress: onPress,
-                onCommand: onCommand,
                 onCustomAction: onCustomAction
             )
         )
@@ -657,14 +579,12 @@ struct SidebarAccessibilityHostedTests {
 private struct SidebarAccessibilityHostedHarness: View {
     let configuration: SidebarAccessibilityRowConfiguration
     let onPress: () -> Bool
-    let onCommand: (SidebarKeyboardCommand) -> Bool
     let onCustomAction: () -> Bool
 
     var body: some View {
         SidebarAccessibilityRow(
             configuration: configuration,
             onPress: onPress,
-            onCommand: onCommand,
             onCustomAction: onCustomAction
         )
         .frame(width: 220, height: 24)
