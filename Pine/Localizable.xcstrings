@@ -32381,6 +32381,96 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1个警告" } }
       }
     },
+    "commandOverlay.announcement.noResults" : {
+      "comment" : "VoiceOver announcement when a searchable command overlay has no matching rows.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Ergebnisse" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No results" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Sin resultados" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucun résultat" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "結果なし" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "결과 없음" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum resultado" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет результатов" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无结果" } }
+      }
+    },
+    "commandOverlay.announcement.oneResult" : {
+      "comment" : "VoiceOver result summary for exactly one searchable command overlay row. The value is the selected-row description.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "1 Ergebnis. Ausgewählt: %@" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 result. Selected: %@" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "1 resultado. Seleccionado: %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "1 résultat. Sélectionné : %@" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "1件の結果。選択中：%@" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "결과 1개. 선택됨: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "1 resultado. Selecionado: %@" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "1 результат. Выбрано: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1 个结果。已选择：%@" } }
+      }
+    },
+    "commandOverlay.announcement.manyResults" : {
+      "comment" : "VoiceOver result summary for multiple searchable command overlay rows. Values are result count and selected-row description.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld Ergebnisse. Ausgewählt: %2$@" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld results. Selected: %2$@" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld resultados. Seleccionado: %2$@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld résultats. Sélectionné : %2$@" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld件の結果。選択中：%2$@" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "결과 %1$lld개. 선택됨: %2$@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld resultados. Selecionado: %2$@" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Результатов: %1$lld. Выбрано: %2$@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld 个结果。已选择：%2$@" } }
+      }
+    },
+    "commandOverlay.announcement.shortcut" : {
+      "comment" : "VoiceOver detail that precedes a command palette keyboard shortcut.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Tastaturkurzbefehl: %@" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Shortcut: %@" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Atajo: %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Raccourci : %@" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ショートカット：%@" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "단축키: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atalho: %@" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сочетание клавиш: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "快捷键：%@" } }
+      }
+    },
+    "commandOverlay.announcement.unavailable" : {
+      "comment" : "VoiceOver detail that precedes a disabled command palette item's reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Nicht verfügbar: %@" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable: %@" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No disponible: %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Indisponible : %@" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "利用不可：%@" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "사용할 수 없음: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Indisponível: %@" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Недоступно: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不可用：%@" } }
+      }
+    },
+    "commandOverlay.announcement.symbol" : {
+      "comment" : "VoiceOver description of a Symbol Navigator row. Values are symbol kind, name, and one-based line number.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, Zeile %3$lld" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, line %3$lld" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, línea %3$lld" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, ligne %3$lld" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "%1$@、%2$@、%3$lld行" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, %3$lld행" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, linha %3$lld" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "%1$@, %2$@, строка %3$lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%1$@，%2$@，第 %3$lld 行" } }
+      }
+    },
     "globalTabSwitcher.announcement" : {
       "comment" : "VoiceOver announcement for the selected global tab switcher row. Values are tab title, pane label, selected position, and total row count.",
       "extractionState" : "manual",

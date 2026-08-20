@@ -236,6 +236,43 @@ struct CommandOverlayRouterTests {
         #expect(unrelated.announcements.isEmpty)
     }
 
+    @Test("Delayed announcements cannot cross a replacement boundary")
+    func stalePresentationAnnouncementIsRejected() {
+        let owner = CommandOverlayResponderHostSpy(firstResponder: nil)
+        let router = makeRouterWithoutResponderHost()
+
+        router.present(.quickOpen)
+        router.preparePresentation(in: owner)
+        #expect(router.announce("Quick", ifMatching: .quickOpen))
+
+        router.present(.symbolNavigator)
+        #expect(!router.announce("Stale", ifMatching: .quickOpen))
+        #expect(router.announce("Symbol", ifMatching: .symbolNavigator))
+        #expect(owner.announcements == ["Quick", "Symbol"])
+    }
+
+    @Test("Announcements cannot cross two sessions of the same flow")
+    func staleSessionAnnouncementIsRejected() {
+        let firstOwner = CommandOverlayResponderHostSpy(firstResponder: nil)
+        let secondOwner = CommandOverlayResponderHostSpy(firstResponder: nil)
+        let router = makeRouterWithoutResponderHost()
+
+        router.present(.quickOpen)
+        router.preparePresentation(in: firstOwner)
+        let firstSession = router.announcementSink(for: .quickOpen)
+        #expect(firstSession("First"))
+        router.dismiss()
+
+        router.present(.quickOpen)
+        router.preparePresentation(in: secondOwner)
+        let secondSession = router.announcementSink(for: .quickOpen)
+
+        #expect(!firstSession("Stale"))
+        #expect(secondSession("Second"))
+        #expect(firstOwner.announcements == ["First"])
+        #expect(secondOwner.announcements == ["Second"])
+    }
+
     @Test("Replacement restores an arbitrary original AppKit responder")
     func replacementPreservesOriginalResponder() async throws {
         let original = NSResponder()

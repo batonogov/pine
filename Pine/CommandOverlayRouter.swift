@@ -227,6 +227,37 @@ final class CommandOverlayRouter {
         return true
     }
 
+    /// Posts only while the originating flow is still active. Search-result
+    /// announcements are intentionally delayed, so a replaced overlay must not
+    /// speak through the replacement's still-captured document owner.
+    @discardableResult
+    func announce(
+        _ announcement: String,
+        ifMatching presentation: CommandOverlayPresentation
+    ) -> Bool {
+        guard activePresentation == presentation else { return false }
+        return announce(announcement)
+    }
+
+    /// Captures both the flow and its exact presentation generation. Two
+    /// consecutive Quick Open sessions have the same enum value, but delayed
+    /// results from the dismissed owner must still fail closed after reopen.
+    func announcementSink(
+        for presentation: CommandOverlayPresentation
+    ) -> CommandOverlayAnnouncementSink {
+        let capturedGeneration = sessionGeneration
+        return { [weak self] announcement in
+            guard let self,
+                  self.sessionGeneration == capturedGeneration else {
+                return false
+            }
+            return self.announce(
+                announcement,
+                ifMatching: presentation
+            )
+        }
+    }
+
     /// Dismisses the matching presentation, restores its document window, and
     /// invokes `action` only after AppKit has had a runloop turn to retire the
     /// panel. Commands selected from Command Palette use this path so

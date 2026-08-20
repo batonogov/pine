@@ -9,11 +9,23 @@ import SwiftUI
 
 struct QuickOpenView: View {
     @Environment(ProjectManager.self) var projectManager
+    @Environment(\.locale) private var locale
     @Binding var isPresented: Bool
+    let onAnnounce: CommandOverlayAnnouncementSink
     @State private var searchText = ""
     @State private var selectedIndex = 0
     @State private var results: [QuickOpenProvider.Result] = []
     @State private var searchTask: Task<Void, Never>?
+    @State private var selectionAnnouncer =
+        CommandOverlaySelectionAnnouncer()
+
+    init(
+        isPresented: Binding<Bool>,
+        onAnnounce: @escaping CommandOverlayAnnouncementSink = { _ in false }
+    ) {
+        _isPresented = isPresented
+        self.onAnnounce = onAnnounce
+    }
 
     private var provider: QuickOpenProvider { projectManager.quickOpenProvider }
 
@@ -52,6 +64,10 @@ struct QuickOpenView: View {
         }
         .onChange(of: searchText) { _, _ in
             scheduleSearch()
+        }
+        .onDisappear {
+            searchTask?.cancel()
+            selectionAnnouncer.invalidate()
         }
         .accessibilityIdentifier(AccessibilityID.quickOpenOverlay)
     }
@@ -166,11 +182,21 @@ struct QuickOpenView: View {
     private func updateResults() {
         results = provider.search(query: searchText)
         selectedIndex = 0
+        scheduleResultsAnnouncement()
     }
 
     private func moveSelection(by delta: Int) {
         guard !results.isEmpty else { return }
-        selectedIndex = max(0, min(results.count - 1, selectedIndex + delta))
+        let newIndex = max(
+            0,
+            min(results.count - 1, selectedIndex + delta)
+        )
+        guard newIndex != selectedIndex else { return }
+        selectedIndex = newIndex
+        selectionAnnouncer.announceImmediately(
+            announcement(for: results[newIndex]),
+            using: onAnnounce
+        )
     }
 
     private func openSelected() {
@@ -182,6 +208,29 @@ struct QuickOpenView: View {
         provider.recordOpened(url: url)
         projectManager.paneManager.openFileInActiveEditor(url: url)
         isPresented = false
+    }
+
+    private func scheduleResultsAnnouncement() {
+        let selected = results.indices.contains(selectedIndex)
+            ? announcement(for: results[selectedIndex])
+            : nil
+        selectionAnnouncer.schedule(
+            CommandOverlaySelectionAnnouncement.resultSummary(
+                count: results.count,
+                selectedRow: selected,
+                locale: locale
+            ),
+            using: onAnnounce
+        )
+    }
+
+    private func announcement(
+        for result: QuickOpenProvider.Result
+    ) -> String {
+        CommandOverlaySelectionAnnouncement.quickOpenRow(
+            fileName: result.fileName,
+            relativePath: result.relativePath
+        )
     }
 }
 
