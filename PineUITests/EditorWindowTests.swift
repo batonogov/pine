@@ -269,9 +269,11 @@ final class EditorWindowTests: PineUITestCase {
 
         // Reopen the same project from recent projects list
         let projectName = projectURL.lastPathComponent
-        let recentProject = app.buttons["welcomeRecentProject_\(projectName)"]
+        let recentProject = app.descendants(matching: .any)[
+            "welcomeRecentProject_\(projectName)"
+        ].firstMatch
         XCTAssertTrue(waitForExistence(recentProject, timeout: 5), "Project should be in recents")
-        recentProject.click()
+        recentProject.doubleClick()
 
         // Wait for project window to appear
         let sidebarAfterRestore = app.scrollViews["sidebar"]

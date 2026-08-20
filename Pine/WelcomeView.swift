@@ -25,6 +25,16 @@ struct WelcomeSearchField: NSViewRepresentable {
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
+        // The field is revealed by a deliberate action, so typing should start
+        // in it straight away. Claiming focus here also closes the gap between
+        // the field appearing and becoming first responder, during which early
+        // keystrokes were delivered to the list instead of the query.
+        guard !context.coordinator.hasClaimedFocus else { return }
+        context.coordinator.hasClaimedFocus = true
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            window.makeFirstResponder(nsView)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -33,6 +43,9 @@ struct WelcomeSearchField: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSSearchFieldDelegate {
         var text: Binding<String>
+        /// Focus is claimed once, when the field appears — never again, so a
+        /// later state update cannot pull focus back out from under the user.
+        var hasClaimedFocus = false
 
         init(text: Binding<String>) {
             self.text = text
@@ -68,6 +81,8 @@ struct WelcomeView: View {
     @State private var isSearchVisible = false
     @State private var isDragTargeted = false
     @State private var isAgentInboxPresented = false
+    @State private var recentSelection = RecentProjectsSelection()
+    @FocusState private var focusedControl: WelcomeFocusTarget?
 
     /// Recent projects filtered by the search query.
     private var filteredProjects: [URL] {
@@ -96,6 +111,7 @@ struct WelcomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .focused($focusedControl, equals: .openFolder)
                 .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
 
                 Button {
@@ -124,7 +140,7 @@ struct WelcomeView: View {
                     Text(Strings.welcomeRecentProjects)
                         .font(.headline)
                     Spacer()
-                    if registry.recentProjects.count > 8 {
+                    if !registry.recentProjects.isEmpty {
                         Button {
                             isSearchVisible.toggle()
                         } label: {
@@ -157,45 +173,7 @@ struct WelcomeView: View {
                         }
                         .frame(maxHeight: .infinity)
                     } else {
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(
-                                    Array(filteredProjects.enumerated()),
-                                    id: \.element
-                                ) { index, url in
-                                    if index > 0 {
-                                        Divider()
-                                            .padding(.leading)
-                                    }
-                                    RecentProjectRow(url: url) {
-                                        openRecentProject(at: url)
-                                    }
-                                    .contextMenu {
-                                        Button {
-                                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                                        } label: {
-                                            Label(
-                                                Strings.welcomeRevealInFinder,
-                                                systemImage: "folder"
-                                            )
-                                        }
-                                        Divider()
-                                        Button {
-                                            registry.removeFromRecent(url)
-                                        } label: {
-                                            Label(
-                                                Strings.welcomeRemoveFromRecent,
-                                                systemImage: "minus.circle"
-                                            )
-                                        }
-                                    }
-                                    .accessibilityIdentifier(
-                                        AccessibilityID.welcomeRecentProject(url.lastPathComponent)
-                                    )
-                                }
-                            }
-                        }
-                        .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
+                        recentProjectsList
                     }
                 }
             }
@@ -206,6 +184,9 @@ struct WelcomeView: View {
             if !visible {
                 searchText = ""
             }
+        }
+        .onChange(of: filteredProjects, initial: true) { _, projects in
+            recentSelection.normalize(for: projects)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
             guard controlActiveState == .key else { return }
@@ -229,6 +210,211 @@ struct WelcomeView: View {
             // Wait for initial SwiftUI layout to complete.
             try? await Task.sleep(for: .seconds(UITimings.Delay.long))
             openProject(at: url)
+        }
+    }
+
+    private var recentProjectsList: some View {
+        ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                List(selection: $recentSelection.selectedURL) {
+                    ForEach(filteredProjects, id: \.self) { url in
+                        RecentProjectRow(
+                            url: url,
+                            isSelected: recentSelection.selectedURL == url
+                        )
+                        .tag(url)
+                        .id(url)
+                        .contentShape(Rectangle())
+                    }
+                }
+                .listStyle(.inset)
+                // Opening belongs to the list's primary action rather than to
+                // a tap gesture of our own: the table reports a double click
+                // through AppKit, so it does not depend on two synthetic
+                // clicks landing inside the double-click interval. A gesture
+                // here degraded into two single clicks on slower machines,
+                // selecting the row without ever opening it.
+                .contextMenu(forSelectionType: URL.self) { urls in
+                    if let url = urls.first {
+                        recentProjectCommands(for: url)
+                    }
+                } primaryAction: { urls in
+                    guard let url = urls.first else { return }
+                    recentSelection.selectedURL = url
+                    openRecentProject(at: url)
+                }
+                // Without an explicit flexible height the list is sized by its
+                // content, so a long enough recent-projects list pushes the
+                // action bar past the bottom of the fixed-size window instead
+                // of scrolling within the space that is left.
+                .frame(maxHeight: .infinity)
+                .focused($focusedControl, equals: .recentProjects)
+                .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
+                .background(recentProjectBoundaryShortcuts)
+                .onKeyPress(.upArrow, phases: .down) { press in
+                    handleRecentProjectKey(press, command: .up)
+                }
+                .onKeyPress(.downArrow, phases: .down) { press in
+                    handleRecentProjectKey(press, command: .down)
+                }
+                .onKeyPress(.home, phases: .down) { press in
+                    handleRecentProjectKey(press, command: .home)
+                }
+                .onKeyPress(.end, phases: .down) { press in
+                    handleRecentProjectKey(press, command: .end)
+                }
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.isEmpty else { return .ignored }
+                    openSelectedRecentProject()
+                    return .handled
+                }
+                .onKeyPress(.escape, phases: .down) { press in
+                    guard press.modifiers.isEmpty else { return .ignored }
+                    focusedControl = nil
+                    return .handled
+                }
+                .onChange(of: recentSelection.selectedURL) { _, selectedURL in
+                    guard let selectedURL else { return }
+                    proxy.scrollTo(selectedURL)
+                }
+                .onChange(of: filteredProjects) { _, projects in
+                    guard let target = recentSelection.revealTarget(
+                        in: projects
+                    ) else { return }
+                    proxy.scrollTo(target)
+                }
+
+                Divider()
+                recentProjectActionBar
+            }
+        }
+    }
+
+    /// Home and End never reach the list's own key handlers: the table behind
+    /// `List` treats them as scroll-to-edge and consumes them before SwiftUI
+    /// sees a key press. Keyboard shortcuts are resolved earlier, through the
+    /// responder chain, so the selection can still move to either boundary.
+    /// They stand down while the search field is open, where the same keys
+    /// belong to the text being typed.
+    @ViewBuilder
+    private var recentProjectBoundaryShortcuts: some View {
+        Group {
+            Button("") {
+                recentSelection.move(.home, in: filteredProjects)
+            }
+            .keyboardShortcut(.home, modifiers: [])
+
+            Button("") {
+                recentSelection.move(.end, in: filteredProjects)
+            }
+            .keyboardShortcut(.end, modifiers: [])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+        .disabled(isSearchVisible)
+    }
+
+    private var recentProjectActionBar: some View {
+        HStack(spacing: 8) {
+            Button(Strings.welcomeOpenProject) {
+                openSelectedRecentProject()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectOpen)
+
+            Spacer()
+
+            Button {
+                guard let url = recentSelection.selectedURL else { return }
+                revealRecentProject(url)
+            } label: {
+                Label(Strings.welcomeRevealInFinder, systemImage: "folder")
+            }
+            .labelStyle(.iconOnly)
+            .help(Strings.welcomeRevealInFinder)
+            .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectReveal)
+
+            Button {
+                guard let url = recentSelection.selectedURL else { return }
+                removeRecentProject(url)
+            } label: {
+                Label(Strings.welcomeRemoveFromRecent, systemImage: "minus.circle")
+            }
+            .labelStyle(.iconOnly)
+            .help(Strings.welcomeRemoveFromRecent)
+            .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectRemove)
+        }
+        .buttonStyle(.borderless)
+        .disabled(recentSelection.selectedURL == nil)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private func recentProjectCommands(for url: URL) -> some View {
+        Button {
+            revealRecentProject(url)
+        } label: {
+            Label(Strings.welcomeRevealInFinder, systemImage: "folder")
+        }
+        Divider()
+        Button {
+            removeRecentProject(url)
+        } label: {
+            Label(Strings.welcomeRemoveFromRecent, systemImage: "minus.circle")
+        }
+    }
+
+    private func handleRecentProjectKey(
+        _ press: KeyPress,
+        command: RecentProjectsKeyboardCommand
+    ) -> KeyPress.Result {
+        guard press.modifiers.isEmpty else { return .ignored }
+        recentSelection.move(command, in: filteredProjects)
+        return .handled
+    }
+
+    private func openSelectedRecentProject() {
+        guard let url = recentSelection.selectedURL,
+              filteredProjects.contains(url) else { return }
+        openRecentProject(at: url)
+    }
+
+    private func revealRecentProject(_ url: URL) {
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func removeRecentProject(_ url: URL) {
+        let visibleProjects = filteredProjects
+        registry.removeFromRecent(url)
+        let remainingProjects = RecentProjectsFilter.filter(
+            registry.recentProjects,
+            query: searchText
+        )
+        recentSelection.normalizeAfterRemoving(
+            url,
+            from: visibleProjects,
+            remainingProjects: remainingProjects
+        )
+        let intendedSelection = recentSelection.selectedURL
+        // The action button owns focus while it performs removal. Return focus
+        // to the native List after SwiftUI has reconciled the replacement row
+        // so subsequent arrows and Return continue from the new selection.
+        Task { @MainActor in
+            await Task.yield()
+            // Dropping the removed row makes the list clear its own selection
+            // binding, and that write can land after the policy above decided
+            // which row replaces it, leaving nothing selected. Re-apply the
+            // intended row once the list has reconciled.
+            if recentSelection.selectedURL != intendedSelection {
+                recentSelection.selectedURL = intendedSelection
+            }
+            focusedControl = recentSelection.selectedURL == nil
+                ? .openFolder
+                : .recentProjects
         }
     }
 
@@ -346,36 +532,56 @@ struct WelcomeView: View {
     }
 }
 
-/// A single row in the recent projects list with hover highlight.
+private enum WelcomeFocusTarget: Hashable {
+    case openFolder
+    case recentProjects
+}
+
+/// A single native-list row in the recent projects collection.
 private struct RecentProjectRow: View {
     let url: URL
-    let action: () -> Void
-
-    @State private var isHovered = false
+    let isSelected: Bool
 
     var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: "folder")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(url.lastPathComponent)
-                        .font(.system(size: 13))
-                    Text(url.abbreviatedPath)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer()
+        HStack {
+            Image(systemName: "folder")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(url.lastPathComponent)
+                    .font(.system(size: 13))
+                Text(url.abbreviatedPath)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
+            Spacer()
         }
-        .buttonStyle(.plain)
-        .background(isHovered ? Color.primary.opacity(0.06) : .clear)
-        .animation(PineAnimation.quick, value: isHovered)
-        .onHover { isHovered = $0 }
+        .padding(.vertical, 4)
+        // A List row draws into the table's shared layer, so an unmodified
+        // stack never becomes an accessibility element of its own: hit-testing
+        // the row centre lands on the enclosing cell rather than on the view
+        // carrying the identifier, and XCUITest reports the row as not
+        // hittable. Spanning the full width and collapsing the row into one
+        // leaf element restores the hittable, full-row target the previous
+        // button-backed rows provided.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        // A row that stays a plain group does not publish its value, so the
+        // abbreviated path never reaches VoiceOver. Giving it the button trait
+        // makes the row a control, which does.
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(url.lastPathComponent)
+        .accessibilityValue(url.abbreviatedPath)
+        // Collapsing the row hides the cell's own selected state from
+        // assistive technology, so mirror it onto the leaf element.
+        .accessibilityAddTraits(isSelected ? AccessibilityTraits.isSelected : [])
+        // The identifier belongs on this element rather than on the row in the
+        // list body: an identifier applied there resolves to the enclosing
+        // cell, which carries a label but neither the abbreviated path nor the
+        // selected state, so queries found an element missing half its
+        // accessibility payload.
+        .accessibilityIdentifier(AccessibilityID.welcomeRecentProject(url.lastPathComponent))
     }
 }

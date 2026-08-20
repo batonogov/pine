@@ -28,6 +28,9 @@ struct AccessibilityLocalizationMatrixTests {
         "welcome.title",
         "welcome.subtitle",
         "welcome.recentProjects",
+        "openPanel.prompt",
+        "welcome.revealInFinder",
+        "welcome.removeFromRecent",
         "sidebar.openFolderButton",
         // Settings.
         "settings.tab.general",

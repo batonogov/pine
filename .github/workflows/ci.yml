@@ -578,11 +578,10 @@ jobs:
               -only-testing:PineUITests/TerminalMenuTests
               -only-testing:PineUITests/SessionRestoreTests
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
-          # Shard 2 — Welcome & Session (34 tests)
+          # Shard 2 — Welcome & Session (33 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
-              -only-testing:PineUITests/AgentInboxToolbarButtonTests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
           # Shard 3 — Navigation (34 tests; accessibility matrix skips here)
@@ -621,9 +620,10 @@ jobs:
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
               -only-testing:PineUITests/MinimapTests
-          # Shard 7 — Security & Layout (32 tests)
+          # Shard 7 — Security & Layout (35 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
+              -only-testing:PineUITests/AgentInboxToolbarButtonTests
               -only-testing:PineUITests/GitignoreFilterTests
               -only-testing:PineUITests/SymlinkSecurityUITests
               -only-testing:PineUITests/MultiWindowTests

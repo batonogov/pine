@@ -49,6 +49,9 @@ nonisolated enum AccessibilityID {
     // MARK: - Welcome window
     static let welcomeOpenFolderButton = "welcomeOpenFolderButton"
     static let welcomeRecentProjectsList = "welcomeRecentProjectsList"
+    static let welcomeRecentProjectOpen = "welcomeRecentProjectOpen"
+    static let welcomeRecentProjectReveal = "welcomeRecentProjectReveal"
+    static let welcomeRecentProjectRemove = "welcomeRecentProjectRemove"
     static let welcomeSearchField = "welcomeSearchField"
     static let welcomeSearchToggle = "welcomeSearchToggle"
     static let welcomeAgentInboxButton = "welcomeAgentInboxButton"
