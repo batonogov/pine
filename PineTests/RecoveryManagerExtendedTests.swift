@@ -52,15 +52,16 @@ struct RecoveryManagerExtendedTests {
         #expect(manager.hasPendingRecovery == true)
     }
 
-    @Test func hasPendingRecovery_falseAfterDeleteAll() throws {
+    @Test func hasPendingRecovery_falseAfterSweepingTheOpenTab() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
 
-        manager.snapshotDirtyTabs([makeDirtyTab()])
+        let tab = makeDirtyTab()
+        manager.snapshotDirtyTabs([tab])
         #expect(manager.hasPendingRecovery == true)
 
-        manager.deleteAllRecoveryFiles()
+        manager.deleteSnapshotsOfOpenTabs([tab.id])
         #expect(manager.hasPendingRecovery == false)
     }
 
@@ -166,19 +167,29 @@ struct RecoveryManagerExtendedTests {
         try FileManager.default.createDirectory(at: projA, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: projB, withIntermediateDirectories: true)
 
-        // Write old recovery entries in both
+        // Write old recovery entries in both. The modification date matches
+        // the timestamp because a single write sets both in production, and
+        // the sweep now settles fresh files by that date instead of decoding
+        // every snapshot on the main thread at launch (#1503).
+        let writtenAt = Date().addingTimeInterval(-10 * 24 * 3600) // 10 days ago
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let oldEntry = RecoveryEntry(
             originalPath: "/tmp/old.swift",
             content: "old",
-            timestamp: Date().addingTimeInterval(-10 * 24 * 3600), // 10 days ago
+            timestamp: writtenAt,
             encoding: .utf8
         )
         let data = try encoder.encode(oldEntry)
 
-        try data.write(to: projA.appendingPathComponent("\(UUID().uuidString).json"))
-        try data.write(to: projB.appendingPathComponent("\(UUID().uuidString).json"))
+        for dir in [projA, projB] {
+            let url = dir.appendingPathComponent("\(UUID().uuidString).json")
+            try data.write(to: url)
+            try FileManager.default.setAttributes(
+                [.modificationDate: writtenAt],
+                ofItemAtPath: url.path
+            )
+        }
 
         // Verify both have entries
         let mgrA = RecoveryManager(recoveryDirectory: projA)
@@ -202,15 +213,22 @@ struct RecoveryManagerExtendedTests {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
 
-        // Old entry (10 days ago)
+        // Old entry (10 days ago), with the matching modification date a real
+        // write would have left behind (#1503).
+        let writtenAt = Date().addingTimeInterval(-10 * 24 * 3600)
         let oldEntry = RecoveryEntry(
             originalPath: "/tmp/old.swift",
             content: "old",
-            timestamp: Date().addingTimeInterval(-10 * 24 * 3600),
+            timestamp: writtenAt,
             encoding: .utf8
         )
         let oldID = UUID()
-        try encoder.encode(oldEntry).write(to: dir.appendingPathComponent("\(oldID.uuidString).json"))
+        let oldURL = dir.appendingPathComponent("\(oldID.uuidString).json")
+        try encoder.encode(oldEntry).write(to: oldURL)
+        try FileManager.default.setAttributes(
+            [.modificationDate: writtenAt],
+            ofItemAtPath: oldURL.path
+        )
 
         // New entry (just now)
         let manager = RecoveryManager(recoveryDirectory: dir)
@@ -228,17 +246,17 @@ struct RecoveryManagerExtendedTests {
 
     // MARK: - Edge cases
 
-    @Test func deleteAllRecoveryFiles_noOpOnEmptyDirectory() throws {
+    @Test func terminationSweep_noOpOnEmptyDirectory() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
-        manager.deleteAllRecoveryFiles() // Should not crash
+        manager.deleteSnapshotsOfOpenTabs([UUID()]) // Should not crash
     }
 
-    @Test func deleteAllRecoveryFiles_noOpOnNonExistentDirectory() {
+    @Test func terminationSweep_noOpOnNonExistentDirectory() {
         let dir = URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
         let manager = RecoveryManager(recoveryDirectory: dir)
-        manager.deleteAllRecoveryFiles() // Should not crash
+        manager.deleteSnapshotsOfOpenTabs([UUID()]) // Should not crash
     }
 
     @Test func cleanupStaleEntries_noOpOnNonExistentDirectory() {

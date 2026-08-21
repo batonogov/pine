@@ -46,11 +46,11 @@ struct ErrorHandlingTests {
         // No crash = success
     }
 
-    @Test func deleteAllRecoveryFilesHandlesNonexistentDirectory() {
+    @Test func terminationSweepHandlesNonexistentDirectory() {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PineErrorTests-nonexistent-\(UUID().uuidString)")
         let manager = RecoveryManager(recoveryDirectory: dir)
-        manager.deleteAllRecoveryFiles()
+        manager.deleteSnapshotsOfOpenTabs([UUID()])
         // No crash = success
     }
 

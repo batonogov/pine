@@ -90,7 +90,20 @@ struct RecoveryManagerTests {
         #expect(entry.schemaVersion == RecoveryEntry.currentSchemaVersion)
     }
 
-    @Test func futureSchemaFailsClosedWithoutOverwrite() throws {
+    /// A newer schema stamp on a snapshot that still decodes is offered, and
+    /// the file is never rewritten (#1503).
+    ///
+    /// It used to be refused. That combination was the trap: this build can
+    /// read the buffer — `schemaVersion: 2` from a beta with nothing but
+    /// added fields decodes into today's `RecoveryEntry` with real content, a
+    /// real path and a real timestamp — but refused to show it, while the
+    /// launch sweep deleted it after
+    /// `unsupportedSchemaRetentionMultiplier` × the retention window. Work
+    /// the user was never allowed to decide about was destroyed on a schedule
+    /// nobody told them about, in exactly the downgrade scenario that
+    /// constant exists for. Reading it and hiding it are now the same
+    /// decision: if it decodes, it is offered.
+    @Test func futureSchemaIsOfferedWithoutOverwrite() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
@@ -106,8 +119,38 @@ struct RecoveryManagerTests {
         let data = try encoder.encode(entry)
         try data.write(to: file)
 
-        #expect(manager.pendingRecoveryEntries().isEmpty)
+        let offered = manager.pendingRecoveryEntries()
+
+        #expect(offered.count == 1)
+        #expect(offered.first?.0 == id)
+        #expect(offered.first?.1.content == "future contents")
+        #expect(
+            offered.first?.1.hasSupportedSchema == false,
+            """
+            The stamp is still reported — it is what buys the longer \
+            retention horizon in the sweep — it just no longer suppresses \
+            the offer
+            """
+        )
+        // Still never written back: reading a newer build's snapshot must not
+        // downgrade it in place.
         #expect(try Data(contentsOf: file) == data)
+    }
+
+    @Test func unreadableSchemaIsNotOffered() throws {
+        // The other half of the same rule, and the reason it is not simply
+        // "offer everything": a file this build cannot turn into content is
+        // not content it could have shown, so leaving it out of the offer
+        // takes no decision away from anyone.
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        let file = dir.appendingPathComponent("\(UUID().uuidString).json")
+        try Data(#"{"schemaVersion": 2, "renamedField": "x"}"#.utf8)
+            .write(to: file)
+
+        #expect(manager.pendingRecoveryEntries().isEmpty)
+        #expect(FileManager.default.fileExists(atPath: file.path))
     }
 
     @Test func legacySnapshotWithoutSchemaRemainsReadable() throws {
@@ -341,7 +384,7 @@ struct RecoveryManagerTests {
                 Set([cancelledCrashTab.id, recoveredTab.id])
         )
 
-        manager.deleteRecoveryFiles(for: retained.map(\.0))
+        manager.deleteSnapshots(withRecoveryIDs: retained.map(\.0))
 
         #expect(
             manager.pendingRecoveryEntries().map(\.0) ==
@@ -668,21 +711,22 @@ struct RecoveryManagerTests {
         #expect(manager.pendingRecoveryEntries().isEmpty)
     }
 
-    // MARK: - Delete all
+    // MARK: - Clean-quit sweep
 
-    @Test func deleteAllRecoveryFilesRemovesEverything() throws {
+    @Test func terminationSweepRemovesEveryOpenTabSnapshot() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
 
-        manager.snapshotDirtyTabs([
+        let tabs = [
             makeDirtyTab(content: "a"),
             makeDirtyTab(content: "b"),
             makeDirtyTab(content: "c")
-        ])
+        ]
+        manager.snapshotDirtyTabs(tabs)
         #expect(manager.pendingRecoveryEntries().count == 3)
 
-        manager.deleteAllRecoveryFiles()
+        manager.deleteSnapshotsOfOpenTabs(tabs.map(\.id))
         #expect(manager.pendingRecoveryEntries().isEmpty)
     }
 
@@ -723,11 +767,16 @@ struct RecoveryManagerTests {
         defer { cleanup(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
 
-        // Create a recovery file manually with old timestamp
+        // Create a recovery file manually with an old timestamp. The
+        // modification date is set to match: one write sets both in
+        // production, and since #1503 the sweep uses the modification date as
+        // a fast path so it does not have to decode a megabyte of unsaved
+        // buffer on the main thread at launch just to read one date.
+        let writtenAt = Date().addingTimeInterval(-8 * 24 * 3600) // 8 days ago
         let oldEntry = RecoveryEntry(
             originalPath: "/tmp/old.swift",
             content: "old content",
-            timestamp: Date().addingTimeInterval(-8 * 24 * 3600), // 8 days ago
+            timestamp: writtenAt,
             encoding: .utf8
         )
         let oldID = UUID()
@@ -736,6 +785,10 @@ struct RecoveryManagerTests {
         let data = try encoder.encode(oldEntry)
         let filePath = dir.appendingPathComponent("\(oldID.uuidString).json")
         try data.write(to: filePath, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.modificationDate: writtenAt],
+            ofItemAtPath: filePath.path
+        )
 
         #expect(manager.pendingRecoveryEntries().count == 1)
 
@@ -919,7 +972,7 @@ struct RecoveryManagerTests {
         #expect(managerA.pendingRecoveryEntries()[0].1.content == "from project A")
         #expect(managerB.pendingRecoveryEntries()[0].1.content == "from project B")
 
-        managerA.deleteAllRecoveryFiles()
+        managerA.deleteSnapshotsOfOpenTabs([tabA.id])
         #expect(managerA.pendingRecoveryEntries().isEmpty)
         #expect(managerB.pendingRecoveryEntries().count == 1)
     }

@@ -292,6 +292,12 @@ extension AlertTemplate {
     /// `.cancel`     — Escape / ⌘-. target (Cancel, Keep). A single-button
     ///                 OK alert uses `.default` since there is nothing to cancel.
     /// `.destructive`— Don't Save / Discard / Quit — confirmed data loss.
+    ///
+    /// No template ever gives one button both `.destructive` and `.cancel`:
+    /// Escape is how people dismiss dialogs without reading them. The
+    /// crash-recovery sheet is the one dialog in Pine built in SwiftUI rather
+    /// than from these templates, and it restates the same policy in
+    /// `RecoveryDialogChoice` (#1503). Change either and check the other.
     private var buttonRoles: [AlertButtonRole] {
         switch self {
         case .unsavedChangesSingle, .unsavedChangesBulk:

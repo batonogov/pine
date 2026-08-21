@@ -73,9 +73,26 @@ extension ContentView {
         return .restored(result)
     }
 
-    func checkForRecovery() {
-        guard let entries = projectManager.recoveryManager?.pendingRecoveryEntries(),
-              !entries.isEmpty else { return }
+    /// Discovers the crash-recovery offer for this project and presents it.
+    ///
+    /// `async` and awaited by the caller rather than launched into a detached
+    /// `Task`: `seedInitialTerminalIfNeeded(disposition:)` runs straight after
+    /// it and its guard reads exactly the two properties this sets. Ordered
+    /// explicitly so a pending offer can never lose the race and have a
+    /// terminal seeded over the empty editor leaf the user is about to recover
+    /// into — `theTaskAwaitsRecoveryDiscoveryBeforeSeeding` pins the sequence
+    /// in `ContentView`'s `.task`.
+    func checkForRecovery() async {
+        // `pendingRecoveryOffer()` and not `pendingRecoveryEntries()`: SwiftUI
+        // re-runs this `.task` on scene restoration and when the window is
+        // closed and reopened, and the snapshots are deliberately still on
+        // disk after "Later". Asking the project, which outlives the window,
+        // is what keeps "not now" from meaning "again in ten seconds" (#1503).
+        // It suspends: the directory listing reads and decodes every snapshot,
+        // and those are whole unsaved buffers with no size limit, so it must
+        // not happen on the main thread before the window draws.
+        let entries = await projectManager.pendingRecoveryOffer()
+        guard !entries.isEmpty else { return }
         recoveryEntries = entries
         showRecoveryDialog = true
     }
@@ -95,7 +112,9 @@ extension ContentView {
     ///   - Only seeds on `.noSavedSession`. `restored`, `skipped`, and
     ///     `deferred` never inject a terminal.
     ///   - A pending recovery dialog means the user may restore real editor
-    ///     content — do not replace the empty leaf until they decide.
+    ///     content — do not replace the empty leaf until they decide. Since
+    ///     ``checkForRecovery()`` suspends, this guard is only meaningful
+    ///     because the caller `await`s it first; see the note there.
     ///   - Defends against the empty editor leaf having been touched between
     ///     the restore attempt and this call (e.g. a rapid sidebar click).
     func seedInitialTerminalIfNeeded(disposition: SessionStartupDisposition) {
@@ -144,24 +163,84 @@ extension ContentView {
         showRecoveryDialog = false
         recoveryEntries = []
 
+        // The restore is in flight from here until the `defer` below, and
+        // `pendingRecoveryOffer()` is empty for as long as it is.
+        //
+        // Without that, `restorePendingEntries` parking on a large-file sheet
+        // is a window in which a second sheet can be built from the same crash
+        // entries: SwiftUI re-runs the scene's `.task` on restoration and on
+        // close/reopen, `didAnswerRecoveryOffer` is deliberately still false
+        // (a restore that never finishes must not silence the offer for good),
+        // and both snapshots are still on disk under IDs no open tab owns. A
+        // second Recover All then migrates them again — writing a snapshot
+        // under a runtime ID no window owns, which comes back on the next
+        // launch as a phantom "recovered file" — and leaves the parked restore
+        // to resume against a detached `TabManager`.
+        //
+        // The flag and not `markRecoveryOfferAnswered()`, because they are
+        // different claims: this says "being handled", that says "decided".
+        // The two come apart exactly when the restorer hands entries back.
+        //
+        // No `Task.isCancelled` check: this is an unstructured task, which
+        // inherits no cancellation, and its handle is discarded — nothing in
+        // the app can cancel it, so the guard that used to sit after the
+        // `await` could never fire and only made it look as though ⌘W were
+        // being handled here. (It is not reachable in the first place: with
+        // the sheet up, `documentWindow(for: NSApp.keyWindow)` resolves to the
+        // sheet, whose delegate is not a `CloseDelegate`.)
+        projectManager.beginRecoveryRestore()
         Task { @MainActor in
+            defer { projectManager.endRecoveryRestore() }
             let retained = await recoveryManager.restorePendingEntries(
                 entries,
                 in: target,
                 context: context
             )
-            guard !Task.isCancelled else { return }
+            // Answered once the restore has actually finished, not before the
+            // `await`. A successful restore leaves live snapshots under the
+            // recovered tabs' runtime IDs, and re-running `checkForRecovery()`
+            // after a scene restart would otherwise offer the user their own
+            // open buffers back as "recovered" (#1503). Anything the restorer
+            // hands back stays on disk for the next launch either way.
+            projectManager.markRecoveryOfferAnswered()
             recoveryEntries = retained
             showRecoveryDialog = !retained.isEmpty
         }
     }
 
-    func discardRecovery() {
-        projectManager.recoveryManager?.deleteRecoveryFiles(
-            for: recoveryEntries.map(\.0)
-        )
-        showRecoveryDialog = false
-        recoveryEntries = []
+    /// Applies the user's answer to the crash-recovery offer.
+    ///
+    /// The single place in the app that can delete a displayed snapshot, and
+    /// it holds no opinion about which answers delete: it asks the chosen
+    /// option what it is allowed to unlink and passes that through.
+    /// ``RecoveryDialogChoice/snapshotsToDelete(from:)`` answers with the
+    /// empty list for everything but Discard, and it is the same value that
+    /// decides the button's role and denies it a keyboard equivalent, so the
+    /// three cannot drift apart. Written as an `if` here it would be one
+    /// plausible "the guard above already handled the other case" edit away
+    /// from #1503 — in a file the coverage gate excludes and no unit test
+    /// loads.
+    ///
+    /// Escape and ⌘-. resolve to ``RecoveryDialogChoice/later``, which unlinks
+    /// nothing: the clean-quit sweep only removes snapshots belonging to open
+    /// tabs (``RecoveryManager/deleteSnapshotsOfOpenTabs(_:)``), and these
+    /// belong to none, so they stay on disk and the offer returns on the next
+    /// launch (#1503).
+    ///
+    /// Exhaustive and without a `default`, so a fourth choice is a compile
+    /// error here rather than a silent "close the sheet and delete nothing".
+    func resolveRecoveryOffer(_ choice: RecoveryDialogChoice) {
+        switch choice {
+        case .recoverAll:
+            recoverTabs()
+        case .discard, .later:
+            projectManager.recoveryManager?.deleteSnapshots(
+                withRecoveryIDs: choice.snapshotsToDelete(from: recoveryEntries)
+            )
+            projectManager.markRecoveryOfferAnswered()
+            showRecoveryDialog = false
+            recoveryEntries = []
+        }
     }
 
     /// Reads `PINE_SEARCH_QUERY` from the environment (used by UI tests) and

@@ -165,6 +165,12 @@ nonisolated enum AccessibilityID {
     static let paneDropOverlay = "paneDropOverlay"
     static func paneLeaf(_ id: String) -> String { "paneLeaf_\(id)" }
 
+    // MARK: - Crash recovery sheet (#1503)
+    static let recoverySheet = "recoverySheet"
+    static let recoveryDiscardButton = "recoveryDiscardButton"
+    static let recoveryLaterButton = "recoveryLaterButton"
+    static let recoveryRecoverAllButton = "recoveryRecoverAllButton"
+
     // MARK: - Toast notifications
     static let toastNotification = "toastNotification"
 

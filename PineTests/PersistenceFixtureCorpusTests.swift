@@ -176,11 +176,24 @@ struct PersistenceFixtureCorpusTests {
             manager.deleteRecoveryFile(for: tab.id)
         }
 
+        // A snapshot from a newer build. `schemaVersion: 999` with an extra
+        // field this build has never heard of still decodes into a
+        // `RecoveryEntry` with real content, so it is offered — refusing to
+        // show it while the launch sweep collected it on a schedule was the
+        // one path that could destroy a readable buffer the user was never
+        // asked about (#1503). What must not happen is a rewrite: the
+        // `futureOnlyState` this build cannot represent has to survive
+        // byte-for-byte until the newer build reads it again.
         let id = UUID()
         let url = recovery.appendingPathComponent("\(id.uuidString).json")
         let future = try fixtureData("recovery-future.json", project: project)
         try future.write(to: url)
-        #expect(manager.pendingRecoveryEntries().isEmpty)
+        let offered = try #require(
+            manager.pendingRecoveryEntries().first { $0.0 == id }?.1
+        )
+        #expect(offered.schemaVersion == 999)
+        #expect(offered.hasSupportedSchema == false)
+        #expect(offered.content == "future unsaved buffer\n")
         #expect(try Data(contentsOf: url) == future)
     }
 

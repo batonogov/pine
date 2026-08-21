@@ -1534,6 +1534,37 @@ final class ProjectManager {
     let taskRunStore = UserTaskRunStore()
     /// Recovery snapshots and their lifecycle are owned by the main actor.
     private(set) var recoveryManager: RecoveryManager?
+    /// Whether the user has already answered this project's crash-recovery
+    /// offer — by recovering, discarding, or closing the sheet without
+    /// choosing (the "Later" button, which is where Escape and ⌘-. land).
+    /// Read through ``pendingRecoveryOffer()``, set by
+    /// ``markRecoveryOfferAnswered()``.
+    ///
+    /// Session-scoped and never persisted: "not now" has to mean the offer
+    /// comes back on the *next launch*, not that it reappears every time
+    /// SwiftUI re-runs the project scene's `.task` — which happens on scene
+    /// restoration and on closing and reopening the window. It lives here
+    /// rather than in `ContentView`'s `@State` precisely because that state
+    /// dies with the window while this project manager outlives it (#1503).
+    @ObservationIgnored
+    private var didAnswerRecoveryOffer = false
+    /// Whether a Recover All is running right now.
+    ///
+    /// Restoring is not instantaneous: a snapshot past the large-file
+    /// threshold parks the whole restore on a native sheet until the user
+    /// answers it. While that sheet is up the offer has been made and taken —
+    /// it has just not finished — and `pendingRecoveryOffer()` must not hand
+    /// the same crash entries to a second sheet, which would migrate them a
+    /// second time, write a snapshot under a runtime ID no window owns, and
+    /// leave the parked restore to resume against a `TabManager` that is no
+    /// longer attached to anything (#1503).
+    ///
+    /// Deliberately *not* ``markRecoveryOfferAnswered()``: nobody has answered
+    /// anything yet, and the two claims come apart when the restore hands
+    /// entries back. Read through ``pendingRecoveryOffer()``, set and cleared
+    /// by ``beginRecoveryRestore()`` / ``endRecoveryRestore()``.
+    @ObservationIgnored
+    private(set) var isRestoringRecoveryOffer = false
     /// Project-scoped session persistence. Production uses `.standard`;
     /// process-level lifecycle tests inject a namespaced suite so launching a
     /// second real Pine process cannot read or overwrite developer state.
@@ -1552,6 +1583,75 @@ final class ProjectManager {
     private var agentTaskFilesystemAdmissionGeneration = UUID()
     @ObservationIgnored
     private var agentTaskFilesystemIdentity: AgentTaskProjectIdentity?
+
+    /// The crash-recovery entries still worth putting in front of the user.
+    ///
+    /// Empty once ``markRecoveryOfferAnswered()`` has been called, even though
+    /// the snapshots are still on disk: "Later" means the offer waits for the
+    /// next launch, not that it reappears the moment the scene re-runs its
+    /// `.task` (#1503). Empty as well while a Recover All is still running —
+    /// see ``isRestoringRecoveryOffer``.
+    ///
+    /// Snapshots belonging to tabs that are open right now are filtered out,
+    /// and no crash is needed to produce one. Open a project, edit a file,
+    /// close the window: the project is held alive because it has dirty tabs,
+    /// and `suspendEditorServices` deliberately snapshots them. Reopen it and
+    /// `pendingRecoveryEntries()` — which only knows "there is a JSON file
+    /// named after a UUID" — hands back the buffers the user is looking at.
+    /// Offering those is worse than noise: Discard would delete the crash
+    /// protection of live unsaved work, and Recover All would clone the tab
+    /// and then have `migrateRecoverySnapshot` unlink the original's live
+    /// snapshot. A snapshot whose ID is an open tab's ID is by definition not
+    /// a crash leftover, so it is not an offer.
+    ///
+    /// "Open right now" is `allTabs`, i.e. every `TabManager` still in
+    /// `paneManager.tabManagers`. A manager detached by `removePane` is not in
+    /// there, so its tabs' snapshots stay offerable — which is the safe
+    /// direction (a closed pane's unsaved buffer is exactly what the sheet is
+    /// for) but worth naming, because it means the filter is "attached to a
+    /// pane", not "alive somewhere".
+    ///
+    /// `async` because the listing is not: reading and decoding every snapshot
+    /// in the directory is unbounded file I/O — a snapshot is a whole unsaved
+    /// buffer — and this runs from the project scene's `.task` before the
+    /// window draws. Only the read leaves the main actor
+    /// (``RecoveryManager/pendingRecoveryEntriesOffMainActor()``); the two
+    /// suppression flags and the live-tab filter are main-actor state and stay
+    /// here. Both flags are re-read *after* the suspension as well as before
+    /// it: the window they are protecting is exactly the one the `await` opens,
+    /// and a Recover All or an answered offer that lands during the read must
+    /// not be overwritten by a listing taken before it.
+    func pendingRecoveryOffer() async -> [(UUID, RecoveryEntry)] {
+        guard !didAnswerRecoveryOffer, !isRestoringRecoveryOffer,
+              let recoveryManager else {
+            return []
+        }
+        let entries = await recoveryManager.pendingRecoveryEntriesOffMainActor()
+        guard !didAnswerRecoveryOffer, !isRestoringRecoveryOffer else {
+            return []
+        }
+        let live = Set(allTabs.map(\.id))
+        return entries.filter { !live.contains($0.0) }
+    }
+
+    /// Records that the user has answered this project's recovery offer, by
+    /// recovering, discarding, or closing the sheet without choosing.
+    func markRecoveryOfferAnswered() {
+        didAnswerRecoveryOffer = true
+    }
+
+    /// Marks a Recover All as being in flight. Paired with
+    /// ``endRecoveryRestore()`` from a `defer`, so an early return or a thrown
+    /// error cannot leave the offer suppressed. See
+    /// ``isRestoringRecoveryOffer``.
+    func beginRecoveryRestore() {
+        isRestoringRecoveryOffer = true
+    }
+
+    /// Marks the in-flight Recover All as finished, whatever it finished with.
+    func endRecoveryRestore() {
+        isRestoringRecoveryOffer = false
+    }
 
     #if DEBUG
     func removeRecoveryManagerForTesting() {
