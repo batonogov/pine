@@ -667,6 +667,31 @@ enum Strings {
         "agentInbox.resumedSession"
     static let agentInboxRecoveryUnavailable: LocalizedStringKey =
         "agentInbox.recoveryUnavailable"
+
+    /// Resolved `String` forms of the two Inbox action failures, for the
+    /// VoiceOver announcement that accompanies the on-screen status. An
+    /// 11-point caption at the bottom of a 540-point popover is not feedback
+    /// a screen-reader user receives on its own.
+    static func agentInboxRouteUnavailableText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentInbox.routeUnavailable",
+            fallback: "Exact session is no longer available",
+            locale: locale
+        )
+    }
+
+    static func agentInboxRecoveryUnavailableText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentInbox.recoveryUnavailable",
+            fallback: "Safe recovery is unavailable",
+            locale: locale
+        )
+    }
+
     static let agentInboxRecoveryActions: LocalizedStringKey =
         "agentInbox.recoveryActions"
     static let agentInboxShowRecoveryActions: LocalizedStringKey =

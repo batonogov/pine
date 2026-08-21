@@ -8,6 +8,25 @@
 import AppKit
 import SwiftUI
 
+/// The caption the Inbox shows after a failed action, held in a reference the
+/// view's `@State` owns.
+///
+/// A box rather than a plain `@State` value because the last step of an action
+/// — which of the view's own hooks each effect actually reaches — is otherwise
+/// unobservable: SwiftUI discards a `@State` write on a view that is not
+/// installed, so nothing could tell `{ actionStatus.message = $0 }` from
+/// `{ _ in }`. Writing through the box keeps that wiring assertable while
+/// `@Observable` still drives the redraw.
+@MainActor
+@Observable
+final class AgentInboxActionStatusStore {
+    var message: LocalizedStringKey?
+
+    init(message: LocalizedStringKey? = nil) {
+        self.message = message
+    }
+}
+
 @MainActor
 struct AgentInboxView: View {
     let registry: ProjectRegistry
@@ -20,7 +39,9 @@ struct AgentInboxView: View {
     @Environment(\.locale) private var locale
     @State private var selectedTaskID: UUID?
     @State private var recoveryActionsTaskID: UUID?
-    @State private var navigationMessage: LocalizedStringKey?
+    /// Not `private`: this is the Inbox's own status storage, and the only
+    /// way a test can see that a failed action really captioned the popover.
+    @State var actionStatus = AgentInboxActionStatusStore()
     @FocusState private var hasKeyboardFocus: Bool
 
     private var snapshot: AgentInboxSnapshot {
@@ -73,10 +94,10 @@ struct AgentInboxView: View {
 
             Divider()
 
-            if let navigationMessage {
+            if let statusMessage = actionStatus.message {
                 HStack {
                     Spacer()
-                    Label(navigationMessage, systemImage: "exclamationmark.triangle")
+                    Label(statusMessage, systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.orange)
                         .accessibilityIdentifier(
@@ -556,38 +577,122 @@ struct AgentInboxView: View {
         _ taskID: UUID,
         action: AgentTaskRecoveryAction
     ) {
-        navigationMessage = nil
+        actionStatus.message = nil
         Task { @MainActor in
             let result = await registry.recoverAgentTaskFromInbox(
                 taskID,
                 action: action,
                 openProjectWindow: openProject
             )
-            switch result {
-            case .openedNewSession:
-                onDismiss()
-            case .resumed:
-                onDismiss()
-            case .taskMissing, .projectUnavailable, .unavailable,
-                    .changedWhilePreparing, .launchRejected:
-                navigationMessage = Strings.agentInboxRecoveryUnavailable
-            }
+            apply(AgentInboxActionOutcome.forRecovery(result))
+        }
+    }
+
+    /// Everything one action verdict changes, as data: whether the popover
+    /// closes, the caption it shows, and what VoiceOver says.
+    ///
+    /// Split out because every part of it is silently droppable. Swapping the
+    /// two branches, closing on a failure, or deleting the announcement all
+    /// compile and render a popover that looks correct in a screenshot.
+    struct ActionEffects: Equatable {
+        let dismisses: Bool
+        let statusMessage: LocalizedStringKey?
+        let announcement: String?
+    }
+
+    /// Maps one action's verdict onto what the popover does about it.
+    ///
+    /// A failure has to be spoken, not just shown: focus stays inside the
+    /// popover and the only visible change is a caption at its bottom edge, so
+    /// a VoiceOver user who hit a dead route would otherwise get no feedback
+    /// at all.
+    static func effects(
+        of outcome: AgentInboxActionOutcome,
+        locale: Locale = .current
+    ) -> ActionEffects {
+        switch outcome {
+        case .dismiss:
+            ActionEffects(
+                dismisses: true,
+                statusMessage: nil,
+                announcement: nil
+            )
+        case .keepVisible(let status):
+            ActionEffects(
+                dismisses: false,
+                statusMessage: statusMessage(status),
+                announcement: statusAnnouncement(status, locale: locale)
+            )
+        }
+    }
+
+    /// Runs one verdict's effects against the hooks that own them. Static and
+    /// closure-driven so the order and the conditions — not only the mapping
+    /// they read — can be exercised without a window server.
+    static func applyEffects(
+        _ effects: ActionEffects,
+        setStatusMessage: (LocalizedStringKey) -> Void,
+        announce: (String) -> Void,
+        dismiss: () -> Void
+    ) {
+        if let message = effects.statusMessage {
+            setStatusMessage(message)
+        }
+        if let announcement = effects.announcement {
+            announce(announcement)
+        }
+        if effects.dismisses {
+            dismiss()
+        }
+    }
+
+    /// Not `private`: this is the last step nothing else observes — which of
+    /// this view's own hooks each effect reaches. Wiring the announcement to
+    /// a no-op, or the caption to nothing, keeps every mapping above green
+    /// while removing the feedback the user actually gets.
+    func apply(_ outcome: AgentInboxActionOutcome) {
+        Self.applyEffects(
+            Self.effects(of: outcome, locale: locale),
+            setStatusMessage: { actionStatus.message = $0 },
+            announce: onAccessibilityAnnouncement,
+            dismiss: onDismiss
+        )
+    }
+
+    /// Not `private`: the enum-to-string edge is the whole user-visible
+    /// difference between the two failures, and swapping the two keys
+    /// compiles. Tests assert both mappings directly.
+    static func statusMessage(
+        _ status: AgentInboxActionStatus
+    ) -> LocalizedStringKey {
+        switch status {
+        case .routeUnavailable: Strings.agentInboxRouteUnavailable
+        case .recoveryUnavailable: Strings.agentInboxRecoveryUnavailable
+        }
+    }
+
+    /// The spoken form of ``statusMessage(_:)``. Kept beside it so the two can
+    /// only drift together.
+    static func statusAnnouncement(
+        _ status: AgentInboxActionStatus,
+        locale: Locale = .current
+    ) -> String {
+        switch status {
+        case .routeUnavailable:
+            Strings.agentInboxRouteUnavailableText(locale: locale)
+        case .recoveryUnavailable:
+            Strings.agentInboxRecoveryUnavailableText(locale: locale)
         }
     }
 
     private func navigate(to taskID: UUID) {
-        navigationMessage = nil
+        actionStatus.message = nil
         Task { @MainActor in
             let result = await registry.navigateToAgentTaskFromInbox(
                 taskID,
                 openProjectWindow: openProject
             )
-            switch result {
-            case .focused:
-                onDismiss()
-            case .taskMissing, .projectUnavailable, .routeStale:
-                navigationMessage = Strings.agentInboxRouteUnavailable
-            }
+            apply(AgentInboxActionOutcome.forNavigation(result))
         }
     }
 

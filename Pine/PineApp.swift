@@ -890,6 +890,28 @@ nonisolated private enum TerminationDeadlineTimer {
     )
 }
 
+/// The three AppKit reads behind `AppDelegate.agentInboxHostOptions()`.
+///
+/// Grouped and injectable because the wrapper that composes them is otherwise
+/// invisible to tests: the unit test host is a background application, so its
+/// live windows cannot reproduce key status, Dock state, or on-screen order.
+struct AgentInboxWindowSources {
+    var windows: () -> [NSWindow]
+    var keyWindow: () -> NSWindow?
+    var welcomeWindow: () -> NSWindow?
+}
+
+/// One Agent Inbox host candidate paired with the window a winning decision
+/// routes to.
+///
+/// The pair is produced in a single pass so the pure rule in
+/// ``AgentInboxHostRouting`` and the window it selects can never disagree
+/// about the window list they were derived from.
+struct AgentInboxHostOption {
+    let candidate: AgentInboxHostCandidate
+    let host: NSWindow
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                    GlobalTabSwitcherKeyControllerDelegate {
     typealias TerminationAlertPresenter = @MainActor (
@@ -1008,6 +1030,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     var terminationSaveAllForProcessTest: TerminationSaveAll?
     var terminationDeadlineForProcessTest: DispatchTime?
     #endif
+    /// The AppKit facts ``agentInboxHostOptions()`` reads, as replaceable
+    /// closures.
+    ///
+    /// Production always runs the defaults below; tests substitute them, which
+    /// is the only way to see that each fact reaches the parameter it names.
+    /// The unit test host is a background application: it has no key window,
+    /// `orderedWindows` does not match what is on screen, and a window never
+    /// reaches the Dock, so none of those three reads can be established from
+    /// live windows.
+    lazy var agentInboxWindowSources = AgentInboxWindowSources(
+        // Not `orderedWindows`: it omits windows that eligibility must see and
+        // refuse itself, which would make the refusal unfalsifiable.
+        windows: { NSApp.windows },
+        // Not `mainWindow`: main stays on the last project window while an
+        // auxiliary panel holds key, which would send ⇧⌘I into a window the
+        // user is not typing in. The two agree in every single-window state,
+        // so nothing on screen would look wrong.
+        keyWindow: { NSApp.keyWindow },
+        welcomeWindow: { [weak self] in self?.visibleWelcomeWindow() }
+    )
+
     private var welcomeVisibilityGeneration = 0
     private var pendingWelcomeEnsureTask: Task<Void, Never>?
     private var pendingAgentInboxPresentationTask: Task<Void, Never>?
@@ -1048,29 +1091,113 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
     }
 
-    /// Chooses an existing owner for the application-level Inbox. The key
-    /// project wins, followed by the key Welcome window. If Settings or
-    /// another auxiliary window is key, return the most recently active
-    /// project, then a visible Welcome owner.
+    /// Chooses an existing owner for the application-level Inbox: project
+    /// every window that could host the popover, then apply the single
+    /// ordering rule in ``AgentInboxHostRouting``. `nil` means no existing
+    /// window may host it, and the caller creates Welcome instead.
+    ///
+    /// The rule reads candidates produced by one projection pass, and the
+    /// winning index is resolved against that same pass, so the decision and
+    /// the window it names can never disagree about the list they came from.
     private func agentInboxHostWindow() -> NSWindow? {
-        if let projectWindow = nativeCommandDestination(
-            requestedProject: nil
-        )?.window {
-            return projectWindow
+        let options = agentInboxHostOptions()
+        guard case .existingHost(let index) = AgentInboxHostRouting.decision(
+            among: options.map(\.candidate)
+        ), options.indices.contains(index) else {
+            return nil
         }
-        if let welcome = visibleWelcomeWindow(), welcome.isKeyWindow {
-            return welcome
+        return options[index].host
+    }
+
+    /// Every window that could own the Inbox popover, read through
+    /// ``agentInboxWindowSources`` so which fact reaches which parameter is
+    /// observable: the unit test host runs as a background application, where
+    /// AppKit reports no key window at all.
+    func agentInboxHostOptions() -> [AgentInboxHostOption] {
+        agentInboxHostOptions(
+            windows: agentInboxWindowSources.windows(),
+            keyWindow: agentInboxWindowSources.keyWindow(),
+            welcomeWindow: agentInboxWindowSources.welcomeWindow()
+        )
+    }
+
+    /// Every AppKit fact enters as a parameter so the projection itself is
+    /// testable: the `CloseDelegate` cast that decides what is a candidate at
+    /// all, the eligibility conjunction, and Welcome's fixed last position.
+    /// The pure ordering rule cannot catch a mistake made here.
+    ///
+    /// - Note: `window.isVisible` reads `false` for a miniaturized window, so
+    ///   a project window in the Dock never becomes an eligible candidate and
+    ///   the request falls through to Welcome. That is current behavior, not
+    ///   an oversight of this projection; changing it changes where ⇧⌘I lands
+    ///   and belongs in its own change (#1507).
+    func agentInboxHostOptions(
+        windows: [NSWindow],
+        keyWindow: NSWindow?,
+        welcomeWindow: NSWindow?
+    ) -> [AgentInboxHostOption] {
+        let mostRecentProject = mostRecentlyActiveProjectManager()
+        var options: [AgentInboxHostOption] = windows.compactMap { window in
+            guard let delegate = window.delegate as? CloseDelegate else {
+                return nil
+            }
+            let project = delegate.projectManager
+            return AgentInboxHostOption(
+                candidate: AgentInboxHostCandidate(
+                    kind: .project,
+                    isKeyWindow: window === keyWindow,
+                    isEligibleWindow: isEligibleRoutingWindow(
+                        window,
+                        delegate: delegate
+                    ),
+                    showsMostRecentlyActiveProject: mostRecentProject != nil
+                        && project === mostRecentProject
+                ),
+                host: window
+            )
         }
-        if let session = registry.keyWindowSession(),
-           let project = registry.openProjects[
-               registry.canonicalProjectURL(session.activeProjectURL)
-           ],
-           let projectWindow = nativeCommandDestination(
-               requestedProject: project
-           )?.window {
-            return projectWindow
+        if let welcomeWindow {
+            options.append(AgentInboxHostOption(
+                candidate: AgentInboxHostCandidate(
+                    kind: .welcome,
+                    isKeyWindow: welcomeWindow === keyWindow
+                ),
+                host: welcomeWindow
+            ))
         }
-        return visibleWelcomeWindow()
+        return options
+    }
+
+    /// The project shown by the window that most recently became key. It is
+    /// the Inbox destination while an auxiliary window — Settings, About —
+    /// holds key and therefore cannot host the popover itself.
+    private func mostRecentlyActiveProjectManager() -> ProjectManager? {
+        guard let session = registry.keyWindowSession() else { return nil }
+        return registry.openProjects[
+            registry.canonicalProjectURL(session.activeProjectURL)
+        ]
+    }
+
+    /// The one definition of "this window may receive a routed command".
+    ///
+    /// Native command delivery and Agent Inbox host selection both depend on
+    /// it. A closing, hidden, or unregistered window can still sit in
+    /// `NSApp.windows`; keeping a single copy of the rule is what stops ⇧⌘I
+    /// and a delivered notification from disagreeing about which windows are
+    /// still alive.
+    private func isEligibleRoutingWindow(
+        _ window: NSWindow,
+        delegate: CloseDelegate
+    ) -> Bool {
+        !delegate.didCompleteWindowLifecycle
+            && window.isVisible
+            && registry.isWindowOpen(delegate.projectURL)
+            && isRegisteredProject(delegate.projectManager)
+    }
+
+    /// True while the registry still holds this exact project model.
+    private func isRegisteredProject(_ project: ProjectManager) -> Bool {
+        registry.openProjects.values.contains { $0 === project }
     }
 
     private func prepareAgentInboxHostWindow(_ window: NSWindow) {
@@ -1837,18 +1964,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
         let routingCandidates = candidates.map { candidate in
             let (project, window, delegate) = candidate
-            let isRegisteredProject =
-                registry.openProjects.values.contains(where: {
-                    $0 === project
-                })
             return NativeCommandRoutingCandidate(
                 projectManager: project,
                 isKeyWindow: window === NSApp.keyWindow,
-                isEligibleWindow:
-                    !delegate.didCompleteWindowLifecycle
-                    && window.isVisible
-                    && registry.isWindowOpen(delegate.projectURL)
-                    && isRegisteredProject
+                isEligibleWindow: isEligibleRoutingWindow(
+                    window,
+                    delegate: delegate
+                )
             )
         }
         guard let destinationIndex = NativeCommandRouting.destinationIndex(
@@ -1859,10 +1981,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return nil
         }
         let match = candidates[destinationIndex]
-        guard
-              registry.openProjects.values.contains(where: {
-                  $0 === match.0
-              }) else {
+        guard isRegisteredProject(match.0) else {
             return nil
         }
         return (
