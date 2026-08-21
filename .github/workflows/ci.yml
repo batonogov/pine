@@ -592,7 +592,7 @@ jobs:
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
-          # Shard 4 — Editor Chrome (32 tests)
+          # Shard 4 — Editor Chrome (35 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
@@ -600,6 +600,8 @@ jobs:
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/CheckForUpdatesTests
               -only-testing:PineUITests/SplitPaneRoutingUITests
+              -only-testing:PineUITests/BlameViewTests
+              -only-testing:PineUITests/ToggleCommentTests
           # Shard 5 — Files & Save (34 tests, release smoke skips outside release CI)
           - shard-name: "Files & Save"
             test-classes: >-
@@ -630,9 +632,7 @@ jobs:
               -only-testing:PineUITests/InlineRenameAlignmentTests
               -only-testing:PineUITests/LineNumberGutterUITests
               -only-testing:PineUITests/SettingsUITests
-              -only-testing:PineUITests/BlameViewTests
               -only-testing:PineUITests/HCLFormatOnSaveTests
-              -only-testing:PineUITests/ToggleCommentTests
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 

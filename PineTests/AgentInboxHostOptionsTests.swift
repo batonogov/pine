@@ -451,7 +451,14 @@ struct AgentInboxHostOptionsTests {
             .project, .project, .welcome,
         ])
         #expect(options.map(\.candidate.isKeyWindow) == [false, true, false])
-        #expect(options.map(\.host) == [alpha, beta, welcome])
+        // By identity: `host` is `any AgentInboxHosting` so the workflow can
+        // substitute a double for the restore-then-focus ordering, and an
+        // existential is not `Equatable`. `ObjectIdentifier` still pins order,
+        // count and the exact object, which is the whole claim here.
+        #expect(
+            options.map { ObjectIdentifier($0.host) }
+                == [alpha, beta, welcome].map(ObjectIdentifier.init)
+        )
     }
 
     @Test("a wrapper with no Welcome source builds no Welcome candidate")
