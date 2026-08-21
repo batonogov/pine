@@ -530,12 +530,26 @@ struct LSPSettingsLifecycleTests {
 
         manager.didOpen(url: swiftURL, text: "let value = 1")
         manager.didOpen(url: pythonURL, text: "value = 1")
-        await waitUntil {
-            manager.servers.count == 2
-                && manager.servers.values.allSatisfy {
-                    $0.state == .initialized
-                }
-        }
+        // `#expect`, not `#require`: collect the whole picture instead of
+        // stopping at the first symptom. Nothing between here and the reads
+        // below can trap on an unsatisfied wait — every read is a `#require`
+        // or an `Optional` chain — so continuing costs nothing and a failure
+        // here reports the startup timeout *and* whatever the restart
+        // actually produced. (Note this is not a double-report question:
+        // `waitUntil` records its own issue and returns `false`, so a timeout
+        // is reported twice either way.)
+        #expect(
+            await waitUntil {
+                manager.servers.count == 2
+                    && manager.servers.values.allSatisfy {
+                        $0.state == .initialized
+                    }
+            },
+            """
+            Both language servers must be initialized before the restart; \
+            everything below measures the restart, not the startup.
+            """
+        )
 
         try settings.setServerOverride(
             language: "swift",
@@ -549,15 +563,41 @@ struct LSPSettingsLifecycleTests {
         let swiftClients = try #require(clientsByLanguage["swift"])
         let pythonClients = try #require(clientsByLanguage["python"])
         #expect(swiftClients.count == 2)
-        #expect(swiftClients[0].gracefulShutdownCount == 1)
-        #expect(
-            swiftClients[1].starts.first?.arguments
-                == ["$(literal)", "--stdio"]
-        )
-        #expect(swiftClients[1].opens.count == 1)
-        #expect(swiftClients[1].opens.first?.text == "let value = 2")
         #expect(pythonClients.count == 1)
+        // `[0]` is safe by construction — the only writer is
+        // `clientsByLanguage[language, default: []].append(client)`, so a key
+        // exists only once it holds at least one element.
+        #expect(swiftClients[0].gracefulShutdownCount == 1)
         #expect(pythonClients[0].gracefulShutdownCount == 0)
+
+        // `[1]` is not. The replacement client exists only if
+        // `applySettingsChange(.language("swift"))` carries the restart all
+        // the way through, and there are six ways for it not to. Two are
+        // `guard`s in `replayDocuments` (`LSPManager.swift:977-986`):
+        // disabled / epoch-superseded / no registry entry, and no open
+        // documents. The other four are the early exits in `ensureServer`
+        // (`:822-857`), which `replayDocuments` delegates its third `guard`
+        // to and which all return before `clientFactory` runs: the
+        // lifecycle/cancellation gate, an in-flight restart for the language,
+        // an entry already present for the language, and an unresolved launch
+        // configuration. (A seventh path — `replayDocuments`' final
+        // `canContinue(epoch:)` at `:988` — does create the client but skips
+        // the replay, so it fails the `opens` assertions instead of the
+        // count.) Any of the six leaves the count at 1, and a bare
+        // `swiftClients[1]` after a *soft* `#expect(count == 2)` raises
+        // `EXC_BREAKPOINT` — killing the whole `PineTests` process along with
+        // every unrelated suite sharing it (#1506). `#require` throws
+        // instead.
+        let restarted = try #require(
+            swiftClients.dropFirst().first,
+            """
+            The swift language server never came back after \
+            `applySettingsChange(.language("swift"))`.
+            """
+        )
+        #expect(restarted.starts.first?.arguments == ["$(literal)", "--stdio"])
+        #expect(restarted.opens.count == 1)
+        #expect(restarted.opens.first?.text == "let value = 2")
     }
 
     @Test("Disable stops clients, blocks lazy launch, and enable restores them")
@@ -1384,13 +1424,22 @@ struct LSPSettingsLifecycleTests {
         #expect(client.documentSymbolRequests.count == 2)
     }
 
+    /// Polls `condition`, returning whether it ever became true.
+    ///
+    /// The result is `@discardableResult` because most call sites here only
+    /// need the recorded issue. Any call site that goes on to index into
+    /// something the wait was supposed to populate must *not* discard it — a
+    /// soft timeout followed by a hard subscript is how a single flaky wait
+    /// takes down the whole `PineTests` process (#1506).
+    @discardableResult
     private func waitUntil(
         _ condition: @escaping @MainActor () -> Bool
-    ) async {
+    ) async -> Bool {
         for _ in 0..<100 {
-            if condition() { return }
+            if condition() { return true }
             await Task.yield()
         }
         Issue.record("Timed out waiting for LSP test state")
+        return false
     }
 }

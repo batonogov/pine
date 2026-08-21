@@ -78,9 +78,16 @@ struct CommandPaletteHostedInteractionTests {
             doCommandBy: #selector(NSResponder.moveDown(_:))
         ))
 
+        // Soft expectations first: a `#require` throws out of the test, so
+        // anything ordered after it is missing from the failure report exactly
+        // when the report matters most.
         #expect(state.announcements.count == 1)
-        #expect(state.announcements[0].contains("Second Task"))
         #expect(state.isPresented)
+        // `#require`, never a bare subscript: a hosted view that has not
+        // settled announces nothing, and a subscript on the empty result traps
+        // the whole `PineTests` process instead of failing this test (#1506).
+        let announced = try #require(state.announcements.first)
+        #expect(announced.contains("Second Task"))
         _ = hosted
     }
 
