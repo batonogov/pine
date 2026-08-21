@@ -1431,8 +1431,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         tabSwitcherKeyController.delegate = self
         tabSwitcherKeyController.install()
 
-        // Clean up stale recovery files older than 7 days across all projects
-        RecoveryManager.cleanupAllStaleEntries(olderThan: 7)
+        // Clean up stale recovery files across all projects. The recovery
+        // sheet states this same window, so a snapshot the user keeps putting
+        // off has a published lifetime rather than a silent one (#1503).
+        RecoveryManager.cleanupAllStaleEntries(
+            olderThan: RecoveryManager.staleEntryRetentionDays
+        )
 
         // Arm the global quick-terminal hotkey (#1113). Carbon hotkeys work
         // in the App Sandbox without Accessibility permission; disabled by
@@ -2103,9 +2107,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             pm.cleanupEditorContext()
             // Shut down language servers so no orphan process survives (#1010).
             pm.shutdownLanguageServers()
-            // Clean up recovery files if all tabs are saved
+            // Clean up the recovery snapshots this session is answerable for:
+            // the ones belonging to its open tabs. Emptying the whole
+            // directory would also take the crash snapshots nobody has decided
+            // about yet — including the ones the recovery sheet is showing on
+            // screen at this very moment, which `hasUnsavedChanges` cannot
+            // see because recovery snapshots are not tabs (#1503).
             if !pm.hasUnsavedChanges {
-                pm.recoveryManager?.deleteAllRecoveryFiles()
+                pm.recoveryManager?.deleteSnapshotsOfOpenTabs(
+                    pm.allTabs.map(\.id)
+                )
             }
             pm.recoveryManager?.stopPeriodicSnapshots()
         }

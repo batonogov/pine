@@ -164,7 +164,14 @@ struct ContentView: View {
             if case .restored(let result) = disposition, result.didRestoreEditorTabs {
                 refreshLineDiffs()
             }
-            checkForRecovery()
+            // Awaited, not fired off: recovery discovery reads the snapshot
+            // directory off the main actor (#1503), so it suspends, and the
+            // seeding call below guards on `showRecoveryDialog` and
+            // `recoveryEntries` — the two properties this sets. Running them
+            // concurrently would let a terminal be seeded over the empty
+            // editor leaf a pending offer is about to recover into.
+            // `theTaskAwaitsRecoveryDiscoveryBeforeSeeding` pins this order.
+            await checkForRecovery()
             // #1251: a project with no saved session and no pending recovery
             // opens directly into a focused terminal rooted in the project,
             // instead of an empty editor canvas. This runs only after session
@@ -194,8 +201,7 @@ struct ContentView: View {
         .sheet(isPresented: $showRecoveryDialog) {
             RecoveryDialogView(
                 entries: recoveryEntries,
-                onRecover: { recoverTabs() },
-                onDiscard: { discardRecovery() }
+                onChoose: { resolveRecoveryOffer($0) }
             )
         }
         .overlay {

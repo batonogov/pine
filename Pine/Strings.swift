@@ -2152,6 +2152,18 @@ enum Strings {
     static let recoveryMessage: LocalizedStringKey = "recovery.message"
     static let recoveryRecoverAll: LocalizedStringKey = "recovery.recoverAll"
     static let recoveryDiscard: LocalizedStringKey = "recovery.discard"
+    static let recoveryLater: LocalizedStringKey = "recovery.later"
+    static let recoveryDiscardHint: LocalizedStringKey = "recovery.discardHint"
+
+    /// How long snapshots nobody decided about are kept.
+    ///
+    /// Returns a `LocalizedStringKey` rather than a resolved `String` because
+    /// it is rendered inside the recovery sheet: only the key form follows the
+    /// SwiftUI environment locale, which is what lets the sheet be measured in
+    /// every supported locale.
+    static func recoveryRetentionNotice(days: Int) -> LocalizedStringKey {
+        "recovery.retentionNotice \(days)"
+    }
 
     static var recoveryUntitled: String {
         String(localized: "recovery.untitled")

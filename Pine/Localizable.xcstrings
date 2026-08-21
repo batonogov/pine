@@ -11850,7 +11850,7 @@
       }
     },
     "recovery.discard": {
-      "comment": "Button to discard recovered files after a crash.",
+      "comment": "Destructive button that permanently deletes the recovered unsaved changes. The user's saved files on disk are never affected. Must read as deletion, not as dismissing the dialog.",
       "extractionState": "manual",
       "localizations": {
         "de": {
@@ -11874,7 +11874,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ignorer"
+            "value": "Supprimer"
           }
         },
         "ja": {
@@ -11898,13 +11898,133 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Отклонить"
+            "value": "Удалить"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "放弃"
+          }
+        }
+      }
+    },
+    "recovery.discardHint": {
+      "comment": "VoiceOver hint for the destructive Discard button in the crash recovery dialog. Must say that only the recovered unsaved changes go, never the user's files on disk.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löscht die wiederhergestellten ungesicherten Änderungen endgültig. Ihre gespeicherten Dateien sind nicht betroffen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permanently deletes the recovered unsaved changes. Your saved files are not affected."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elimina definitivamente los cambios sin guardar recuperados. Los archivos guardados no se ven afectados."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprime définitivement les modifications non enregistrées récupérées. Vos fichiers enregistrés ne sont pas affectés."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復元された未保存の変更を完全に削除します。保存済みのファイルには影響しません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복구된 저장되지 않은 변경 사항을 영구적으로 삭제합니다. 저장된 파일은 영향을 받지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exclui permanentemente as alterações não salvas recuperadas. Seus arquivos salvos não são afetados."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Безвозвратно удаляет восстановленные несохранённые изменения. Сохранённые файлы не затрагиваются."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "永久删除已恢复的未保存更改。已保存的文件不受影响。"
+          }
+        }
+      }
+    },
+    "recovery.later": {
+      "comment": "Button that closes the crash recovery dialog without deleting the recovered unsaved changes. The offer returns on the next launch.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Später"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Later"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más tarde"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus tard"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "後で"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "나중에"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mais tarde"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Позже"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍后"
           }
         }
       }
@@ -12025,6 +12145,258 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部恢复"
+          }
+        }
+      }
+    },
+    "recovery.retentionNotice %lld": {
+      "comment": "Footnote in the crash recovery dialog. States what choosing Later means and when the retention clock starts (the crash), because it sits directly above the destructive Discard button. %lld is RecoveryManager.staleEntryRetentionDays.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "substitutions": {
+            "days": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Wenn Sie „Später“ wählen, bleiben diese ungesicherten Änderungen %lld Tag nach dem Absturz verfügbar."
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Wenn Sie „Später“ wählen, bleiben diese ungesicherten Änderungen %lld Tage nach dem Absturz verfügbar."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@days@"
+          }
+        },
+        "en": {
+          "substitutions": {
+            "days": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "If you choose Later, these unsaved changes stay available for %lld day after the crash."
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "If you choose Later, these unsaved changes stay available for %lld days after the crash."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@days@"
+          }
+        },
+        "es": {
+          "substitutions": {
+            "days": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Si elige «Más tarde», estos cambios sin guardar seguirán disponibles %lld día después del fallo."
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Si elige «Más tarde», estos cambios sin guardar seguirán disponibles %lld días después del fallo."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@days@"
+          }
+        },
+        "fr": {
+          "substitutions": {
+            "days": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Si vous choisissez « Plus tard », ces modifications non enregistrées restent disponibles %lld jour après le plantage."
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Si vous choisissez « Plus tard », ces modifications non enregistrées restent disponibles %lld jours après le plantage."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@days@"
+          }
+        },
+        "ja": {
+          "substitutions": {
+            "days": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "「後で」を選択すると、これらの未保存の変更はクラッシュから%lld日間利用できます。"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@days@"
+          }
+        },
+        "ko": {
+          "substitutions": {
+            "days": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "‘나중에’를 선택하면 저장되지 않은 이 변경 사항은 충돌 후 %lld일 동안 사용할 수 있습니다."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@days@"
+          }
+        },
+        "pt-BR": {
+          "substitutions": {
+            "days": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Se você escolher “Mais tarde”, estas alterações não salvas continuarão disponíveis por %lld dia após a falha."
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Se você escolher “Mais tarde”, estas alterações não salvas continuarão disponíveis por %lld dias após a falha."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@days@"
+          }
+        },
+        "ru": {
+          "substitutions": {
+            "days": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "few": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Если выбрать «Позже», эти несохранённые изменения останутся доступны в течение %lld дней после сбоя."
+                    }
+                  },
+                  "many": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Если выбрать «Позже», эти несохранённые изменения останутся доступны в течение %lld дней после сбоя."
+                    }
+                  },
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Если выбрать «Позже», эти несохранённые изменения останутся доступны в течение %lld дня после сбоя."
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Если выбрать «Позже», эти несохранённые изменения останутся доступны в течение %lld дней после сбоя."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@days@"
+          }
+        },
+        "zh-Hans": {
+          "substitutions": {
+            "days": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "如果选择“稍后”，这些未保存的更改将在崩溃后保留 %lld 天。"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@days@"
           }
         }
       }
