@@ -24,28 +24,77 @@ final class AgentInboxPopoverRouter {
         case queued
     }
 
+    /// How a request queued for a not-yet-mounted anchor reaches that anchor
+    /// once it registers.
+    typealias QueuedDelivery =
+        @MainActor (@escaping @MainActor () -> Void) -> Void
+
     static let shared = AgentInboxPopoverRouter()
 
-    private final class WeakPresenter {
-        weak var value: AgentInboxPopoverPresenting?
+    /// Both sides are held weakly. `ObjectIdentifier` is unique only among
+    /// live objects, so a released window's address can be handed to a new
+    /// one; the host is re-checked by identity before its anchor is used.
+    private final class Registration {
+        weak var host: AnyObject?
+        weak var presenter: AgentInboxPopoverPresenting?
 
-        init(_ value: AgentInboxPopoverPresenting) {
-            self.value = value
+        init(host: AnyObject, presenter: AgentInboxPopoverPresenting) {
+            self.host = host
+            self.presenter = presenter
         }
     }
 
-    private var presenters: [ObjectIdentifier: WeakPresenter] = [:]
+    private var registrations: [ObjectIdentifier: Registration] = [:]
     private weak var pendingHost: AnyObject?
+    /// Retires a hand-off that has already been scheduled.
+    ///
+    /// `register` turns a queued request into a closure on the next runloop
+    /// turn and clears `pendingHost` in the same breath, so for a whole turn
+    /// the request is in flight and no longer reachable through `pendingHost`.
+    /// A workflow that retires the old request and starts a new one inside
+    /// that turn would otherwise open the Inbox in two windows at once.
+    private var deliveryGeneration = 0
+    private let deliverQueuedRequest: QueuedDelivery
+
+    /// - Parameter deliverQueuedRequest: escape hatch used by tests to make
+    ///   the hand-off observable in one turn. Production always defers.
+    init(
+        deliverQueuedRequest: @escaping QueuedDelivery = { operation in
+            NativeCommandDelivery.deferToNextMainRunLoop(operation)
+        }
+    ) {
+        self.deliverQueuedRequest = deliverQueuedRequest
+    }
 
     func register(
         _ presenter: AgentInboxPopoverPresenting,
         for host: AnyObject
     ) {
-        removeReleasedPresenters()
-        presenters[ObjectIdentifier(host)] = WeakPresenter(presenter)
+        removeReleasedRegistrations()
+        registrations[ObjectIdentifier(host)] = Registration(
+            host: host,
+            presenter: presenter
+        )
         guard pendingHost === host else { return }
         pendingHost = nil
-        presenter.presentAgentInbox()
+        let generation = deliveryGeneration
+        // Anchors register from `viewDidMoveToWindow` and `updateNSView`.
+        // Presenting synchronously there writes SwiftUI state inside a live
+        // update pass — the mutation AGENTS.md requires observers to defer —
+        // and shows the popover before layout has given the anchor a non-zero
+        // `bounds`, which would pin it to the window's origin.
+        deliverQueuedRequest { [weak self, weak host] in
+            guard let self,
+                  let host,
+                  self.deliveryGeneration == generation else { return }
+            // The hand-off is bound to the *window*, not to the coordinator
+            // that owned its anchor when it was scheduled. SwiftUI may rebuild
+            // that coordinator inside the deferral, and a request captured
+            // against the demounted one has nobody left to re-send it: this
+            // resolves the window's current anchor instead, and re-queues the
+            // request when there is none.
+            self.requestPresentation(in: host)
+        }
     }
 
     func unregister(
@@ -53,15 +102,50 @@ final class AgentInboxPopoverRouter {
         from host: AnyObject
     ) {
         let key = ObjectIdentifier(host)
-        guard presenters[key]?.value === presenter else { return }
-        presenters.removeValue(forKey: key)
+        guard let registration = registrations[key],
+              registration.host === host,
+              registration.presenter === presenter else { return }
+        registrations.removeValue(forKey: key)
+    }
+
+    /// Retires a request that is still waiting for its window's anchor.
+    ///
+    /// A queued request has no expiry of its own. Nothing else ever clears it,
+    /// so a request left over for the singleton Welcome window stays armed on
+    /// this shared object until that window next mounts an anchor — which can
+    /// be minutes later and reads to the user as the Inbox opening by itself.
+    /// The presentation workflow retires the previous request before starting
+    /// a new one, which is what keeps exactly one in flight.
+    func cancelQueuedRequest() {
+        pendingHost = nil
+        // A request that `register` already scheduled is past `pendingHost`.
+        // Retiring only the queue would let it land a turn later, in a second
+        // window, on behalf of a request the caller has just superseded.
+        deliveryGeneration &+= 1
+    }
+
+    /// True while a request addressed to `host` is still waiting for that
+    /// host's anchor to register.
+    ///
+    /// A queued request has no expiry of its own, so the presentation workflow
+    /// polls this to bound how long it waits for a host whose anchor may never
+    /// mount at all. `false` covers both endings that retire a wait: the anchor
+    /// registered and the hand-off is under way, or a newer request superseded
+    /// this one.
+    func hasQueuedRequest(for host: AnyObject) -> Bool {
+        pendingHost === host
     }
 
     @discardableResult
     func requestPresentation(in host: AnyObject) -> RequestResult {
-        removeReleasedPresenters()
+        removeReleasedRegistrations()
+        // A newer request supersedes any hand-off still in flight for the one
+        // before it, whichever window that one was addressed to.
+        deliveryGeneration &+= 1
         let key = ObjectIdentifier(host)
-        guard let presenter = presenters[key]?.value else {
+        guard let registration = registrations[key],
+              registration.host === host,
+              let presenter = registration.presenter else {
             pendingHost = host
             return .queued
         }
@@ -70,8 +154,10 @@ final class AgentInboxPopoverRouter {
         return .presented
     }
 
-    private func removeReleasedPresenters() {
-        presenters = presenters.filter { $0.value.value != nil }
+    private func removeReleasedRegistrations() {
+        registrations = registrations.filter {
+            $0.value.host != nil && $0.value.presenter != nil
+        }
     }
 }
 
@@ -79,7 +165,7 @@ final class AgentInboxPopoverRouter {
 /// `NSPopover` a stable attachment point in both regular content and a
 /// Liquid Glass toolbar on macOS 26.
 @MainActor
-private final class AgentInboxPopoverAnchorView: NSView {
+final class AgentInboxPopoverAnchorView: NSView {
     var onWindowChange: ((AgentInboxPopoverAnchorView) -> Void)?
 
     override func viewDidMoveToWindow() {
@@ -97,8 +183,8 @@ private struct AgentInboxPopoverAnchor: NSViewRepresentable {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(router: .shared)
+    func makeCoordinator() -> AgentInboxPopoverCoordinator {
+        AgentInboxPopoverCoordinator(router: .shared)
     }
 
     func makeNSView(context: Context) -> AgentInboxPopoverAnchorView {
@@ -129,152 +215,10 @@ private struct AgentInboxPopoverAnchor: NSViewRepresentable {
 
     static func dismantleNSView(
         _ nsView: AgentInboxPopoverAnchorView,
-        coordinator: Coordinator
+        coordinator: AgentInboxPopoverCoordinator
     ) {
         nsView.onWindowChange = nil
         coordinator.detach()
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSPopoverDelegate,
-            AgentInboxPopoverPresenting {
-        private let router: AgentInboxPopoverRouter
-        private weak var anchor: AgentInboxPopoverAnchorView?
-        private weak var registeredWindow: NSWindow?
-        private var isPresented: Binding<Bool>?
-        private var registry: ProjectRegistry?
-        private var openProjectWindow: ((URL) -> Void)?
-        private var reduceMotion = false
-        private var routerRequestedPresentation = false
-        private var popover: NSPopover?
-
-        init(router: AgentInboxPopoverRouter) {
-            self.router = router
-        }
-
-        func attach(to anchor: AgentInboxPopoverAnchorView) {
-            self.anchor = anchor
-            updateRegistration(for: anchor.window)
-        }
-
-        func update(
-            anchor: AgentInboxPopoverAnchorView,
-            isPresented: Binding<Bool>,
-            registry: ProjectRegistry,
-            openProjectWindow: @escaping (URL) -> Void,
-            reduceMotion: Bool
-        ) {
-            self.anchor = anchor
-            self.isPresented = isPresented
-            self.registry = registry
-            self.openProjectWindow = openProjectWindow
-            self.reduceMotion = reduceMotion
-            updateRegistration(for: anchor.window)
-
-            if isPresented.wrappedValue || routerRequestedPresentation {
-                if routerRequestedPresentation && !isPresented.wrappedValue {
-                    isPresented.wrappedValue = true
-                }
-                presentIfReady()
-            } else {
-                closePopover()
-            }
-        }
-
-        func anchorWindowDidChange(_ anchor: AgentInboxPopoverAnchorView) {
-            self.anchor = anchor
-            updateRegistration(for: anchor.window)
-            if isPresented?.wrappedValue == true
-                || routerRequestedPresentation {
-                presentIfReady()
-            }
-        }
-
-        func presentAgentInbox() {
-            routerRequestedPresentation = true
-            if let isPresented, !isPresented.wrappedValue {
-                isPresented.wrappedValue = true
-            }
-            presentIfReady()
-        }
-
-        func detach() {
-            if let registeredWindow {
-                router.unregister(self, from: registeredWindow)
-            }
-            registeredWindow = nil
-            routerRequestedPresentation = false
-            closePopover()
-            anchor = nil
-        }
-
-        private func updateRegistration(for window: NSWindow?) {
-            guard registeredWindow !== window else { return }
-            if let registeredWindow {
-                router.unregister(self, from: registeredWindow)
-            }
-            registeredWindow = window
-            if let window {
-                router.register(self, for: window)
-            }
-        }
-
-        private func presentIfReady() {
-            guard popover?.isShown != true,
-                  let anchor,
-                  anchor.window != nil,
-                  let registry,
-                  let openProjectWindow else { return }
-
-            let contentSize = NSSize(width: 520, height: 540)
-            let rootView = AgentInboxView(
-                registry: registry,
-                onDismiss: { [weak self] in self?.dismiss() },
-                openProjectWindow: openProjectWindow
-            )
-            let hostingController = NSHostingController(rootView: rootView)
-            hostingController.preferredContentSize = contentSize
-
-            let popover = NSPopover()
-            popover.behavior = .transient
-            popover.animates = !reduceMotion
-            popover.contentSize = contentSize
-            popover.contentViewController = hostingController
-            popover.delegate = self
-            self.popover = popover
-            routerRequestedPresentation = false
-            popover.show(
-                relativeTo: anchor.bounds,
-                of: anchor,
-                preferredEdge: .minY
-            )
-        }
-
-        private func dismiss() {
-            routerRequestedPresentation = false
-            if isPresented?.wrappedValue == true {
-                isPresented?.wrappedValue = false
-            }
-            closePopover()
-        }
-
-        private func closePopover() {
-            guard let popover else { return }
-            if popover.isShown {
-                popover.performClose(nil)
-            } else {
-                self.popover = nil
-            }
-        }
-
-        func popoverDidClose(_ notification: Notification) {
-            popover = nil
-            routerRequestedPresentation = false
-            guard isPresented?.wrappedValue == true else { return }
-            DispatchQueue.main.async { [weak self] in
-                self?.isPresented?.wrappedValue = false
-            }
-        }
     }
 }
 

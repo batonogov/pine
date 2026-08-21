@@ -901,19 +901,9 @@ struct AgentInboxWindowSources {
     var welcomeWindow: () -> NSWindow?
 }
 
-/// One Agent Inbox host candidate paired with the window a winning decision
-/// routes to.
-///
-/// The pair is produced in a single pass so the pure rule in
-/// ``AgentInboxHostRouting`` and the window it selects can never disagree
-/// about the window list they were derived from.
-struct AgentInboxHostOption {
-    let candidate: AgentInboxHostCandidate
-    let host: NSWindow
-}
-
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
-                   GlobalTabSwitcherKeyControllerDelegate {
+                   GlobalTabSwitcherKeyControllerDelegate,
+                   AgentInboxHostEnvironment {
     typealias TerminationAlertPresenter = @MainActor (
         AlertTemplate,
         DialogPresentationContext,
@@ -1053,7 +1043,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
     private var welcomeVisibilityGeneration = 0
     private var pendingWelcomeEnsureTask: Task<Void, Never>?
-    private var pendingAgentInboxPresentationTask: Task<Void, Never>?
+
+    /// Owns the application-level Agent Inbox presentation workflow: host
+    /// selection, restore-and-focus, and the single-request rule (#1491).
+    /// `AppDelegate` supplies only the AppKit facts, through
+    /// `AgentInboxHostEnvironment`.
+    private(set) lazy var agentInboxPresentation =
+        AgentInboxPresentationCoordinator(
+            router: .shared,
+            environment: self
+        )
 
     /// Closure to open a named SwiftUI window, set by PineApp on launch.
     var openNamedWindow: ((String) -> Void)?
@@ -1061,53 +1060,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     var openProjectWindow: ((URL) -> Void)?
 
     func showAgentInbox() {
-        NSApp.activate()
-        pendingAgentInboxPresentationTask?.cancel()
-
-        if let hostWindow = agentInboxHostWindow() {
-            prepareAgentInboxHostWindow(hostWindow)
-            NativeCommandDelivery.deferToNextMainRunLoop {
-                AgentInboxPopoverRouter.shared.requestPresentation(
-                    in: hostWindow
-                )
-            }
-            return
-        }
-
-        // With no eligible project or Welcome owner, create Welcome first so
-        // the Inbox still has a stable, discoverable anchor (#1486).
-        showWelcome()
-        pendingAgentInboxPresentationTask = Task { @MainActor [weak self] in
-            guard let self,
-                  let window = await awaitVisibleWelcomeWindow(),
-                  !Task.isCancelled else { return }
-            prepareAgentInboxHostWindow(window)
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            AgentInboxPopoverRouter.shared.requestPresentation(
-                in: window
-            )
-            pendingAgentInboxPresentationTask = nil
-        }
+        agentInboxPresentation.present()
     }
 
-    /// Chooses an existing owner for the application-level Inbox: project
-    /// every window that could host the popover, then apply the single
-    /// ordering rule in ``AgentInboxHostRouting``. `nil` means no existing
-    /// window may host it, and the caller creates Welcome instead.
-    ///
-    /// The rule reads candidates produced by one projection pass, and the
-    /// winning index is resolved against that same pass, so the decision and
-    /// the window it names can never disagree about the list they came from.
-    private func agentInboxHostWindow() -> NSWindow? {
-        let options = agentInboxHostOptions()
-        guard case .existingHost(let index) = AgentInboxHostRouting.decision(
-            among: options.map(\.candidate)
-        ), options.indices.contains(index) else {
-            return nil
-        }
-        return options[index].host
-    }
+    // MARK: - AgentInboxHostEnvironment
 
     /// Every window that could own the Inbox popover, read through
     /// ``agentInboxWindowSources`` so which fact reaches which parameter is
@@ -1168,6 +1124,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         return options
     }
 
+    func activateApplicationForAgentInbox() {
+        NSApp.activate()
+    }
+
+    func createAgentInboxWelcomeHost() {
+        showWelcome()
+    }
+
+    func awaitAgentInboxWelcomeHost() async -> (any AgentInboxHosting)? {
+        await awaitVisibleWelcomeWindow()
+    }
+
+    func deliverAgentInboxRequest(
+        _ operation: @escaping @MainActor () -> Void
+    ) {
+        NativeCommandDelivery.deferToNextMainRunLoop(operation)
+    }
+
+    /// The same 25 ms interval `awaitVisibleWelcomeWindow()` polls on, so the
+    /// two waits this workflow can perform are bounded on the same scale.
+    func waitForAgentInboxAnchor() async {
+        try? await Task.sleep(for: .milliseconds(25))
+    }
+
     /// The project shown by the window that most recently became key. It is
     /// the Inbox destination while an auxiliary window — Settings, About —
     /// holds key and therefore cannot host the popover itself.
@@ -1198,14 +1178,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     /// True while the registry still holds this exact project model.
     private func isRegisteredProject(_ project: ProjectManager) -> Bool {
         registry.openProjects.values.contains { $0 === project }
-    }
-
-    private func prepareAgentInboxHostWindow(_ window: NSWindow) {
-        if window.isMiniaturized {
-            window.deminiaturize(nil)
-        }
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate()
     }
 
     /// Focuses one exact agent route on behalf of an explicit user action —
