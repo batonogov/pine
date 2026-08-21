@@ -9,12 +9,39 @@ import Testing
 
 @testable import Pine
 
-@Suite("Command overlay selection announcements")
+/// Unit coverage for `CommandOverlaySelectionAnnouncer` and the localization
+/// catalog behind the overlay announcements (#1497).
+///
+/// Time-limited deliberately: `settle` is budgeted in polls, not wall-clock
+/// time, so a broken announcer does not fail fast — it spends its whole budget
+/// waiting. Without a ceiling that reads as a hung run rather than a red test,
+/// which is exactly the unreadable failure mode #1506 was filed about. The
+/// limit is per test, not per suite, and it tightens rather than loosens the
+/// status quo — the bundle runs with `-test-timeouts-enabled YES` and no
+/// `-default-test-execution-time-allowance`, so the alternative is Xcode's
+/// 600-second default.
+///
+/// Three minutes, not one — see the same note on
+/// `CommandOverlayHostedAnnouncementTests`. The headroom is sized from a
+/// *local* measurement: on macOS 27.0 (26A5416b) / Xcode 27.0 (27A5237l) /
+/// macosx SDK 27.0 (26A5406c), a full parallel `PineTests` run records
+/// 59.7–61.8 seconds of elapsed time for tests that do no I/O whatsoever, so
+/// a one-minute ceiling fires there on runs that are otherwise healthy. CI
+/// does not show this: the macos-26 runner completes 6744 tests in 396.658 s
+/// with zero retries.
+@Suite("Command overlay selection announcements", .timeLimit(.minutes(3)))
 @MainActor
 struct CommandOverlaySelectionAnnouncementTests {
     private static let languages = [
         "de", "en", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans",
     ]
+
+    /// Settle budget in polls — see `settle(pollBudget:condition:)`.
+    private static let settlePollBudget = 200
+
+    /// Wait between polls so the announcer's debounced task can run. Sleeping
+    /// leaves the main actor free; spinning on `Task.yield()` did not.
+    private static let settlePollInterval = Duration.milliseconds(5)
 
     private static let localizationKeys = [
         "commandOverlay.announcement.noResults",
@@ -34,11 +61,14 @@ struct CommandOverlaySelectionAnnouncementTests {
 
         announcer.schedule("Old results", using: recorder.record)
         announcer.schedule("Current results", using: recorder.record)
-        let delivered = await waitUntil {
+        let delivered = await settle {
             recorder.messages == ["Current results"]
         }
 
-        #expect(delivered)
+        #expect(
+            delivered,
+            "Announcer never delivered; recorded \(recorder.messages)."
+        )
         #expect(recorder.messages == ["Current results"])
     }
 
@@ -67,6 +97,14 @@ struct CommandOverlaySelectionAnnouncementTests {
         announcer.announceImmediately("Stale row") { _ in false }
 
         #expect(recorder.messages == ["Same row"])
+
+        // The rejected delivery must not have moved the duplicate-suppression
+        // boundary. `deliverIfNeeded` only advances `lastDeliveredMessage`
+        // once the sink accepts; drop that guard (`_ = sink(message)`) and
+        // every assertion above still passes, while "Stale row" is recorded
+        // as spoken and this line goes permanently silent for VoiceOver.
+        announcer.announceImmediately("Stale row", using: recorder.record)
+        #expect(recorder.messages == ["Same row", "Stale row"])
     }
 
     @Test("Quick Open includes useful path context without duplication")
@@ -197,17 +235,50 @@ struct CommandOverlaySelectionAnnouncementTests {
         return try #require(root["strings"] as? [String: Any])
     }
 
-    private func waitUntil(
-        timeout: Duration = .seconds(1),
+    /// Polls `condition`, budgeted in scheduling opportunities rather than
+    /// wall-clock time.
+    ///
+    /// The previous shape — a one-second deadline spun with `Task.yield()` —
+    /// failed for reasons that had nothing to do with the announcer. In a
+    /// local Xcode run `PineTests` executes its suites in parallel inside one
+    /// process (the default there; CI passes `-parallel-testing-enabled NO`
+    /// at `.github/workflows/ci.yml:324` and `:396`, so on CI the suites are
+    /// sequential and this budget degrades to an ordinary 1-second deadline),
+    /// and unrelated `@MainActor` suites block the main thread for seconds at
+    /// a time: `GitStatusProviderTests` runs `/bin/sh` through
+    /// `process.waitUntilExit()`, and `AgentHistoryCheckedUndoEngineTests`
+    /// blocks on `DispatchSemaphore.wait(timeout:)` for up to two seconds. The
+    /// deadline expired while the announcer's debounced delivery never got a
+    /// turn, and the busy `Task.yield()` loop burned the main actor it was
+    /// waiting on.
+    ///
+    /// Counting polls instead makes starvation delay the gate rather than fail
+    /// it, and sleeping between polls leaves the main actor free. It is not
+    /// determinism, though: it is still a budget, just one denominated in
+    /// something the test controls. A real announcer regression that needs
+    /// between roughly 30 and roughly 200 scheduling opportunities now passes
+    /// here where it used to fail; the suite-level `.timeLimit` is what keeps
+    /// an unsatisfiable budget from reading as a hung run (#1506).
+    ///
+    /// A cancelled sleep ends the wait after one more check rather than being
+    /// swallowed. When the suite `.timeLimit` fires, `Task.sleep` throws; a
+    /// `try?` here would let the loop grind through its remaining budget and
+    /// return `false`, stacking a second issue on top of `timeLimitExceeded`
+    /// — two failures for one cause.
+    private func settle(
+        pollBudget: Int = CommandOverlaySelectionAnnouncementTests
+            .settlePollBudget,
         condition: @MainActor () -> Bool
     ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while !condition() {
-            guard clock.now < deadline else { return false }
-            await Task.yield()
+        for _ in 0..<pollBudget {
+            if condition() { return true }
+            do {
+                try await Task.sleep(for: Self.settlePollInterval)
+            } catch {
+                return condition()
+            }
         }
-        return true
+        return condition()
     }
 }
 

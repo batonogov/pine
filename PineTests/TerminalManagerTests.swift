@@ -202,7 +202,7 @@ struct TerminalManagerTests {
 
     @Test("search finds matches in terminal buffer")
     @MainActor
-    func searchFindsMatches() async {
+    func searchFindsMatches() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "hello world\r\nhello pine\r\ngoodbye\r\n")
@@ -211,10 +211,12 @@ struct TerminalManagerTests {
 
         #expect(tab.searchMatches.count == 2)
         #expect(tab.currentMatchIndex == 0)
-        #expect(tab.searchMatches[0].row == 0)
-        #expect(tab.searchMatches[0].col == 0)
-        #expect(tab.searchMatches[0].length == 5)
-        #expect(tab.searchMatches[1].row == 1)
+        let first = try #require(tab.searchMatches.first)
+        let second = try #require(tab.searchMatches.dropFirst().first)
+        #expect(first.row == 0)
+        #expect(first.col == 0)
+        #expect(first.length == 5)
+        #expect(second.row == 1)
     }
 
     @Test("search finds multiple matches on same line")
@@ -227,9 +229,7 @@ struct TerminalManagerTests {
         await tab.search(for: "abc")
 
         #expect(tab.searchMatches.count == 3)
-        #expect(tab.searchMatches[0].col == 0)
-        #expect(tab.searchMatches[1].col == 4)
-        #expect(tab.searchMatches[2].col == 8)
+        #expect(tab.searchMatches.map(\.col) == [0, 4, 8])
     }
 
     @Test("search is case-insensitive by default")
@@ -246,7 +246,7 @@ struct TerminalManagerTests {
 
     @Test("search respects case sensitivity flag")
     @MainActor
-    func searchCaseSensitive() async {
+    func searchCaseSensitive() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "Hello HELLO hello\r\n")
@@ -254,7 +254,8 @@ struct TerminalManagerTests {
         await tab.search(for: "hello", caseSensitive: true)
 
         #expect(tab.searchMatches.count == 1)
-        #expect(tab.searchMatches[0].col == 12)
+        let match = try #require(tab.searchMatches.first)
+        #expect(match.col == 12)
     }
 
     @Test("nextMatch wraps around to first match")
@@ -307,7 +308,7 @@ struct TerminalManagerTests {
 
     @Test("new search replaces previous results")
     @MainActor
-    func newSearchReplacesOld() async {
+    func newSearchReplacesOld() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "foo bar baz\r\n")
@@ -317,7 +318,8 @@ struct TerminalManagerTests {
 
         await tab.search(for: "bar")
         #expect(tab.searchMatches.count == 1)
-        #expect(tab.searchMatches[0].col == 4)
+        let match = try #require(tab.searchMatches.first)
+        #expect(match.col == 4)
     }
 
     @Test("search for nonexistent text returns empty")
@@ -345,7 +347,7 @@ struct TerminalManagerTests {
 
     @Test("single character search")
     @MainActor
-    func singleCharSearch() async {
+    func singleCharSearch() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "abcabc\r\n")
@@ -353,9 +355,11 @@ struct TerminalManagerTests {
         await tab.search(for: "a")
 
         #expect(tab.searchMatches.count == 2)
-        #expect(tab.searchMatches[0].col == 0)
-        #expect(tab.searchMatches[0].length == 1)
-        #expect(tab.searchMatches[1].col == 3)
+        let first = try #require(tab.searchMatches.first)
+        #expect(first.col == 0)
+        #expect(first.length == 1)
+        let second = try #require(tab.searchMatches.dropFirst().first)
+        #expect(second.col == 3)
     }
 
     @Test("navigation with single match stays at index 0")
@@ -384,8 +388,7 @@ struct TerminalManagerTests {
         await tab.search(for: "aa")
 
         #expect(tab.searchMatches.count == 2)
-        #expect(tab.searchMatches[0].col == 0)
-        #expect(tab.searchMatches[1].col == 2)
+        #expect(tab.searchMatches.map(\.col) == [0, 2])
     }
 
     @Test("search with unicode characters")
@@ -414,7 +417,7 @@ struct TerminalManagerTests {
 
     @Test("search across empty lines in buffer")
     @MainActor
-    func searchWithEmptyLines() async {
+    func searchWithEmptyLines() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "match\r\n\r\n\r\nmatch\r\n")
@@ -423,12 +426,14 @@ struct TerminalManagerTests {
 
         #expect(tab.searchMatches.count == 2)
         // Rows should not be adjacent due to empty lines
-        #expect(tab.searchMatches[0].row != tab.searchMatches[1].row)
+        let first = try #require(tab.searchMatches.first)
+        let second = try #require(tab.searchMatches.dropFirst().first)
+        #expect(first.row != second.row)
     }
 
     @Test("search after clearSearch then new search works")
     @MainActor
-    func searchAfterClear() async {
+    func searchAfterClear() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "foo bar\r\n")
@@ -441,12 +446,13 @@ struct TerminalManagerTests {
 
         await tab.search(for: "bar")
         #expect(tab.searchMatches.count == 1)
-        #expect(tab.searchMatches[0].col == 4)
+        let match = try #require(tab.searchMatches.first)
+        #expect(match.col == 4)
     }
 
     @Test("case sensitive search finds exact match only")
     @MainActor
-    func caseSensitiveExact() async {
+    func caseSensitiveExact() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "Error error ERROR\r\n")
@@ -454,7 +460,8 @@ struct TerminalManagerTests {
         await tab.search(for: "Error", caseSensitive: true)
 
         #expect(tab.searchMatches.count == 1)
-        #expect(tab.searchMatches[0].col == 0)
+        let match = try #require(tab.searchMatches.first)
+        #expect(match.col == 0)
     }
 
     @Test("switching case sensitivity changes results")
@@ -568,7 +575,7 @@ struct TerminalManagerTests {
 
     @Test("rapid sequential searches replace previous results")
     @MainActor
-    func rapidSequentialSearches() async {
+    func rapidSequentialSearches() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "alpha beta gamma\r\n")
@@ -578,21 +585,34 @@ struct TerminalManagerTests {
 
         await tab.search(for: "beta")
         #expect(tab.searchMatches.count == 1)
-        #expect(tab.searchMatches[0].col == 6, "Should find 'beta' at col 6")
+        let betaMatch = try #require(tab.searchMatches.first)
+        #expect(betaMatch.col == 6, "Should find 'beta' at col 6")
 
         await tab.search(for: "gamma")
         #expect(tab.searchMatches.count == 1)
-        #expect(tab.searchMatches[0].col == 11)
+        let gammaMatch = try #require(tab.searchMatches.first)
+        #expect(gammaMatch.col == 11)
     }
 
     @Test("navigation through many matches visits all of them")
     @MainActor
-    func navigationThroughAllMatches() async {
+    func navigationThroughAllMatches() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "a a a a a\r\n")
 
         await tab.search(for: "a")
+        // Hard gate, not a soft `#expect`: `1..<count` traps with "Range
+        // requires lowerBound <= upperBound" on an empty result, and a trap
+        // takes the whole `PineTests` process down rather than this test
+        // (#1506). Same failure class as a bare subscript, different
+        // construct — found by mutating `TerminalTab.search` to yield no
+        // matches, which is reachable in production via the post-`await`
+        // `guard !Task.isCancelled` and a failed buffer decode.
+        try #require(
+            !tab.searchMatches.isEmpty,
+            "Search returned no matches, so there is nothing to navigate."
+        )
         let count = tab.searchMatches.count
         #expect(count == 5)
 
@@ -622,14 +642,15 @@ struct TerminalManagerTests {
 
     @Test("search match position is correct with leading spaces")
     @MainActor
-    func searchWithLeadingSpaces() async {
+    func searchWithLeadingSpaces() async throws {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
         terminal.feed(text: "    indented\r\n")
 
         await tab.search(for: "indented")
         #expect(tab.searchMatches.count == 1)
-        #expect(tab.searchMatches[0].col == 4, "Match should account for leading spaces")
+        let match = try #require(tab.searchMatches.first)
+        #expect(match.col == 4, "Match should account for leading spaces")
     }
 
     // MARK: - Environment construction tests (#551)
@@ -680,7 +701,7 @@ struct TerminalManagerTests {
     }
 
     @Test("buildEnvironment produces valid KEY=VALUE strings")
-    func buildEnvironmentMapFormat() {
+    func buildEnvironmentMapFormat() throws {
         let tab = TerminalTab(name: "test")
         let env = tab.buildEnvironment()
         let envStrings = env.map { "\($0.key)=\($0.value)" }
@@ -688,7 +709,11 @@ struct TerminalManagerTests {
         for entry in envStrings {
             #expect(entry.contains("="), "Each env entry must contain '='")
             let parts = entry.split(separator: "=", maxSplits: 1)
-            #expect(!parts[0].isEmpty, "Key must not be empty in: \(entry)")
+            // `split` omits empty subsequences, so an entry of exactly "="
+            // yields an empty array and `parts[0]` would trap the whole
+            // process instead of failing this test (#1506).
+            let key = try #require(parts.first, "Empty env entry: \(entry)")
+            #expect(!key.isEmpty, "Key must not be empty in: \(entry)")
         }
 
         #expect(envStrings.contains("PINE_TERMINAL=1"))
