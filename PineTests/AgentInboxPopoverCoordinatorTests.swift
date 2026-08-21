@@ -409,6 +409,137 @@ struct AgentInboxPopoverCoordinatorTests {
         #expect(!fixture.isPresented)
     }
 
+    // MARK: - The turn a retired close owes SwiftUI its write
+
+    /// The regression #1514's UI coverage caught.
+    ///
+    /// `popoverDidClose` retires the close synchronously — dropping the
+    /// popover and clearing `isClosing` is what frees the window for the next
+    /// request — but the `@State` write it implies cannot be made inside
+    /// AppKit's notification and lands a runloop turn later. For that one turn
+    /// the anchor holds no popover, no in-flight close, and a binding SwiftUI
+    /// still reads as `true`: `viewDidUpdate` answers `.present` and rebuilds
+    /// the Inbox the user has just dismissed.
+    ///
+    /// What makes it worse than a blink is `settledClose`. It re-derives, sees
+    /// a visible popover, and declines to write — so the binding is never
+    /// lowered, the rebuilt popover is exactly what every later pass wants, and
+    /// nothing is left that can take it down. The Inbox is latched open:
+    /// Escape and the outside click go dead in that window.
+    ///
+    /// Replaying it unconditionally instead is not the fix — that is the
+    /// regression ``settledCloseLeavesANewerPopoverAlone()`` pins.
+    @Test("an update pass inside a settling close cannot relatch the Inbox")
+    func updateInsideASettlingCloseCannotRelatchTheInbox() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        fixture.mount()
+
+        // The toolbar button raises the binding; the anchor opens the Inbox.
+        fixture.isPresented = true
+        fixture.update()
+        let popover = try #require(fixture.popovers.last)
+
+        // Escape. AppKit closes the popover behind SwiftUI's back and reports
+        // both halves of the close before the binding has been touched.
+        fixture.coordinator.popoverWillClose(sender: popover)
+        popover.isPopoverVisible = false
+        fixture.coordinator.popoverDidClose(sender: popover)
+
+        // Anything at all re-renders the window inside that turn — a toolbar
+        // item redisplayed as the popover gives key focus back is enough.
+        fixture.update()
+        #expect(
+            fixture.popovers.count == 1,
+            """
+            A dismissed Inbox must not be rebuilt by the pass that still reads \
+            the binding the close is on its way to lower
+            """
+        )
+
+        await fixture.nextRunLoopTurn()
+        #expect(
+            !fixture.isPresented,
+            "The close still owes SwiftUI its write once the turn is over"
+        )
+
+        // And it stays down: the next pass has nothing left to present.
+        fixture.update()
+        await fixture.nextRunLoopTurn()
+        #expect(fixture.popovers.count == 1)
+        #expect(!fixture.isPresented)
+    }
+
+    /// The guard above must not swallow a real request that lands in the same
+    /// turn. ⇧⌘I, the View menu and the Dock all arrive through the router,
+    /// and a turn is easily long enough to hold one.
+    @Test("a router request inside a settling close still opens the Inbox")
+    func routerRequestInsideASettlingCloseIsServed() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        fixture.mount()
+
+        fixture.isPresented = true
+        fixture.update()
+        let first = try #require(fixture.popovers.last)
+
+        fixture.coordinator.popoverWillClose(sender: first)
+        first.isPopoverVisible = false
+        fixture.coordinator.popoverDidClose(sender: first)
+
+        fixture.coordinator.presentAgentInbox()
+        let second = try #require(fixture.popovers.last)
+        #expect(fixture.popovers.count == 2)
+        #expect(fixture.isPresented)
+
+        // A pass in the same turn must leave the newer popover alone: the
+        // close stopped speaking for this anchor the moment it was replaced.
+        fixture.update()
+        #expect(
+            second.closeCount == 0,
+            "The settling close must not close the Inbox that replaced it"
+        )
+
+        await fixture.nextRunLoopTurn()
+        #expect(fixture.isPresented)
+        #expect(second.isPopoverVisible)
+        #expect(fixture.popovers.count == 2)
+    }
+
+    /// The exact end-to-end shape #1514's UI test walks: open, dismiss by
+    /// clicking outside, reopen from the toolbar, dismiss with Escape. The
+    /// second dismissal is the one that latched.
+    @Test("two dismissal cycles leave the window with no Inbox and no binding")
+    func twoDismissalCyclesConverge() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        fixture.mount()
+
+        for cycle in 0..<2 {
+            fixture.isPresented = true
+            fixture.update()
+            let popover = try #require(fixture.popovers.last)
+            #expect(fixture.popovers.count == cycle + 1)
+
+            fixture.coordinator.popoverWillClose(sender: popover)
+            popover.isPopoverVisible = false
+            fixture.coordinator.popoverDidClose(sender: popover)
+            // The window re-renders while the close still owes its write.
+            fixture.update()
+            await fixture.nextRunLoopTurn()
+
+            #expect(
+                !fixture.isPresented,
+                "Cycle \(cycle) left the binding raised"
+            )
+            #expect(
+                fixture.popovers.count == cycle + 1,
+                "Cycle \(cycle) rebuilt the popover it had just dismissed"
+            )
+            fixture.update()
+        }
+    }
+
     // MARK: - Fixture
 
     @MainActor

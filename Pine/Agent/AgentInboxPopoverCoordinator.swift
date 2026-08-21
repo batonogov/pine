@@ -81,6 +81,25 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// The last value this anchor wrote into the binding, held only until the
     /// next update pass makes SwiftUI's own value authoritative again.
     private var lastWrittenIsPresented: Bool?
+    /// True from the moment a finished close is retired until the SwiftUI
+    /// write that close implies has actually been delivered.
+    ///
+    /// ``retireClosedPopover()`` frees the window synchronously — it drops the
+    /// popover and clears the in-flight close, which is what lets the next
+    /// request through — but the `@State` write cannot be made inside AppKit's
+    /// own notification and lands a runloop turn later. For that one turn the
+    /// anchor holds no popover, no close, and a binding SwiftUI still reads as
+    /// `true`. An update pass landing there resolves to `.present` and rebuilds
+    /// the popover the user has just dismissed; ``settledClose`` then finds a
+    /// visible popover, declines to write, and the Inbox is latched open with
+    /// nothing left able to lower it. Escape and the outside click stop
+    /// working in that window for good.
+    ///
+    /// Ranking the undelivered write above the stale snapshot for that one
+    /// turn is what closes the gap. It is not the same thing as
+    /// ``lastWrittenIsPresented``: that one remembers a write SwiftUI has
+    /// already been given, this one a write still on its way.
+    private var isCloseSettling = false
 
     /// How many may land before the anchor stops waiting for a close
     /// notification that is not coming.
@@ -117,7 +136,11 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// nothing needs writing, and let the next pass reopen the popover the user
     /// dismissed. Escape would read as opening the Inbox again.
     private var bindingIsPresented: Bool {
-        lastWrittenIsPresented ?? (isPresented?.wrappedValue == true)
+        // A close that has been retired but whose SwiftUI write has not landed
+        // yet has already decided this; every snapshot until it arrives
+        // predates it.
+        if isCloseSettling { return false }
+        return lastWrittenIsPresented ?? (isPresented?.wrappedValue == true)
     }
 
     init(
@@ -180,7 +203,11 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         updateRegistration(for: anchor.window)
 
         let resolution = state.viewDidUpdate(
-            bindingIsPresented: isPresented.wrappedValue,
+            // `lastWrittenIsPresented` was just cleared, so this is SwiftUI's
+            // own snapshot — except across the turn a retired close still owes
+            // SwiftUI its write, where the snapshot is the value that close is
+            // on its way to replace.
+            bindingIsPresented: bindingIsPresented,
             isPopoverShown: isPopoverShown
         )
         // The AppKit half is safe here: it touches no SwiftUI state, and
@@ -315,12 +342,14 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         popover = nil
         unreportedCloseCount = 0
         state.popoverDidClose()
+        isCloseSettling = true
         // `@State` written inside AppKit's own notification re-enters the live
         // view update, so the SwiftUI half lands a turn later — and is derived
         // there, because by then a newer request may have opened a new popover
         // that this verdict would lower the binding on.
         NativeCommandDelivery.deferToNextMainRunLoop { [weak self] in
             guard let self else { return }
+            self.isCloseSettling = false
             self.apply(self.state.settledClose(
                 bindingIsPresented: self.bindingIsPresented,
                 isPopoverShown: self.isPopoverShown
@@ -379,6 +408,9 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
               )) else { return }
         popover = handle
         unreportedCloseCount = 0
+        // Something newer is on screen, so the close no longer speaks for this
+        // anchor: the binding the popover was built against is the live one.
+        isCloseSettling = false
         state.popoverWillShow()
         handle.showPopover(from: anchor)
     }
