@@ -39,23 +39,17 @@ struct AgentInboxPresentationCoordinatorTests {
     }
 
     /// `AgentInboxHosting` promises restore-then-focus, and this pins that
-    /// ordering — but it is a **protocol contract test, not evidence of a
-    /// user-visible behavior**. `AppDelegate.agentInboxHostOptions` derives
-    /// eligibility from `NSWindow.isVisible`, which reads `false` while a
-    /// window is in the Dock, and `visibleWelcomeWindow()` rejects
-    /// miniaturized windows outright — so this workflow never selects a
-    /// miniaturized host and cannot reach `restoreHostFromMiniaturized()`.
+    /// ordering for a host the workflow can now really be handed: since #1507
+    /// `agentInboxHostOptions` admits a project window in the Dock through
+    /// ``WindowRoutingReach/onScreenOrDock``, and the Inbox Welcome lookup
+    /// admits a minimized Welcome window, so `restoreHostFromMiniaturized()`
+    /// is reachable from the shipped selection path rather than only from a
+    /// staged double.
     ///
-    /// The gap is narrower than "minimized hosts are not restored": a
-    /// minimized Welcome window *is* brought back, because selection skips it,
-    /// the decision falls through to `.createWelcomeHost`, and
-    /// `ensureWelcomeVisible()` deminiaturizes it. What no code does is return
-    /// the user to a minimized **project** window: that window is silently
-    /// bypassed in favour of Welcome. #1491's "minimized hosts are restored
-    /// before presentation" is therefore **not covered** for project windows;
-    /// widening eligibility changes where ⇧⌘I lands and belongs in its own
-    /// change (#1507). This test exists so that change inherits a specified
-    /// workflow rather than an unspecified one.
+    /// Which windows arrive here is asserted in `AgentInboxHostOptionsTests`
+    /// ("Windows in the Dock"); this test owns the other half — that whatever
+    /// arrives minimized is deminiaturized *before* it is focused, so the
+    /// popover never anchors to a window still on its way out of the Dock.
     @Test("the hosting contract restores a host before it focuses it")
     func hostingContractRestoresBeforeFocusing() {
         let fixture = Fixture()
