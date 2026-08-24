@@ -47,3 +47,7 @@ LifecycleDiagnostics/
 .pi/
 .pi-subagents/
 .pine/
+
+# Python bytecode from the .github/scripts test suites
+__pycache__/
+*.pyc

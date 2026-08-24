@@ -19,6 +19,16 @@ import sys
 from dataclasses import dataclass
 
 
+# The `xcresulttool` schema spells the retry node "Repetition". This script
+# matched "Test Repetition" from the day it was written — a value that appears
+# in no schema version — so it reported nothing for as long as it existed
+# (#1510). The spelling is a named constant now, checked against the live
+# schema by `describe_schema_mismatch`, so a future rename fails a check
+# instead of silently emptying the report.
+REPETITION_NODE_TYPE = "Repetition"
+TEST_CASE_NODE_TYPE = "Test Case"
+
+
 @dataclass
 class FlakyTest:
     suite: str
@@ -43,6 +53,72 @@ def get_test_results(xcresult_path: str) -> dict:
     return json.loads(result.stdout)
 
 
+def get_schema_node_types(xcresult_path: str) -> list[str] | None:
+    """The `nodeType` values this `xcresulttool` documents.
+
+    Returns `None` when the schema cannot be read — an older toolchain, a
+    changed CLI, a non-JSON answer. Being unable to check is not itself a
+    reason to fail a test lane; being able to check and finding the value
+    gone is.
+    """
+    result = subprocess.run(
+        [
+            "xcrun", "xcresulttool", "get", "test-results", "tests",
+            "--schema", "--path", xcresult_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        schema = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    node_types = schema.get("schemas", {}).get("TestNodeType", {}).get("enum")
+    if not isinstance(node_types, list):
+        return None
+    return [value for value in node_types if isinstance(value, str)]
+
+
+def describe_schema_mismatch(node_types: list[str] | None) -> str | None:
+    """An error message when the schema no longer spells what we match on.
+
+    This is the specific guard #1510 asks for. "Zero repetition nodes found"
+    cannot be the signal: a run where nothing was retried contains no
+    `Repetition` node at all, so failing on that would fail every healthy
+    run. What is always true is that the value this script matches on has to
+    exist in the schema of the tool that produced the report.
+    """
+    if node_types is None:
+        return None
+    missing = [
+        name for name in (REPETITION_NODE_TYPE, TEST_CASE_NODE_TYPE)
+        if name not in node_types
+    ]
+    if not missing:
+        return None
+    return (
+        "Error: xcresulttool's schema no longer defines "
+        f"{', '.join(repr(name) for name in missing)}. This detector matches "
+        "test nodes by those names, so it would report no flaky tests no "
+        "matter what the run did. Update detect_flaky_tests.py against the "
+        f"current schema, which defines: {', '.join(sorted(node_types))}."
+    )
+
+
+def count_test_cases(node) -> int:
+    """How many `Test Case` nodes the report contains, at any depth."""
+    if isinstance(node, list):
+        return sum(count_test_cases(item) for item in node)
+    if not isinstance(node, dict):
+        return 0
+    total = int(node.get("nodeType") == TEST_CASE_NODE_TYPE)
+    for key in ("children", "testNodes"):
+        total += count_test_cases(node.get(key, []))
+    return total
+
+
 def find_flaky_tests(node: dict, suite_path: str = "") -> list[FlakyTest]:
     """Recursively walk test nodes to find flaky tests.
 
@@ -52,14 +128,23 @@ def find_flaky_tests(node: dict, suite_path: str = "") -> list[FlakyTest]:
     flaky = []
     node_type = node.get("nodeType", "")
     name = node.get("name", "")
-    children = node.get("children", [])
+    # `xcresulttool` names the top level `testNodes` and every level below it
+    # `children`. Reading only `children` never leaves the root object, which
+    # is the second half of why this detector reported nothing (#1510):
+    # fixing the node-type spelling alone still walked into an empty list.
+    children = [
+        child
+        for key in ("children", "testNodes")
+        for child in node.get(key, [])
+        if isinstance(child, dict)
+    ]
 
-    if node_type == "Test Case":
+    if node_type == TEST_CASE_NODE_TYPE:
         result = node.get("result", "")
         # A retried test has repetition children
         repetitions = [
             c for c in children
-            if c.get("nodeType", "") == "Test Repetition"
+            if c.get("nodeType", "") == REPETITION_NODE_TYPE
         ]
         if result == "Passed" and repetitions:
             failed_runs = sum(
@@ -139,7 +224,27 @@ def main():
         print(f"Error: xcresult not found: {xcresult_path}", file=sys.stderr)
         sys.exit(2)
 
+    schema_mismatch = describe_schema_mismatch(
+        get_schema_node_types(xcresult_path)
+    )
+    if schema_mismatch:
+        print(schema_mismatch, file=sys.stderr)
+        sys.exit(2)
+
     data = get_test_results(xcresult_path)
+
+    # A report with no test cases in it cannot support "no flaky tests
+    # detected": either nothing ran, or the node names moved again. Both are
+    # worth a red step rather than a reassuring line of output.
+    if count_test_cases(data) == 0:
+        print(
+            "Error: no 'Test Case' nodes in "
+            f"{xcresult_path}. Nothing was analysed, so this run says nothing "
+            "about flakiness.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
     flaky_tests = find_flaky_tests(data)
 
     # Always write output file (empty array when no flaky tests)

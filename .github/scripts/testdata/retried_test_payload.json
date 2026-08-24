@@ -1,0 +1,82 @@
+{
+  "devices": [
+    {
+      "architecture": "arm64",
+      "deviceId": "00000000-0000000000000000",
+      "deviceName": "My Mac",
+      "modelName": "MacBook Pro",
+      "osBuildNumber": "26A5416b",
+      "osVersion": "27.0",
+      "platform": "macOS"
+    }
+  ],
+  "testNodes": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "name": "Issue recorded: deliberate first-attempt failure for #1510",
+                          "nodeType": "Failure Message",
+                          "sourceLocation": {
+                            "filePath": "/Users/runner/work/pine/pine/PineTests/FlakyProbeTests.swift",
+                            "lineNumber": 22
+                          }
+                        }
+                      ],
+                      "duration": "0,00058s",
+                      "durationInSeconds": 0.0005829334259033203,
+                      "name": "First Run",
+                      "nodeIdentifier": "1",
+                      "nodeType": "Repetition",
+                      "result": "Failed"
+                    },
+                    {
+                      "duration": "0,00014s",
+                      "durationInSeconds": 0.000141143798828125,
+                      "name": "Retry 1",
+                      "nodeIdentifier": "2",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    }
+                  ],
+                  "details": "⚠️ Passed after 1 retry",
+                  "duration": "0,00036s",
+                  "durationInSeconds": 0.00036203861236572266,
+                  "name": "fails once, then passes on retry",
+                  "nodeIdentifier": "ZZTemporaryFlakyProbeTests/failsOnceThenPasses()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Pine/PineTests/ZZTemporaryFlakyProbeTests/failsOnceThenPasses()",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "Temporary flaky probe",
+              "nodeIdentifierURL": "test://com.apple.xcode/Pine/PineTests/ZZTemporaryFlakyProbeTests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            }
+          ],
+          "name": "PineTests",
+          "nodeIdentifierURL": "test://com.apple.xcode/Pine/PineTests",
+          "nodeType": "Unit test bundle",
+          "result": "Passed"
+        }
+      ],
+      "name": "Pine",
+      "nodeType": "Test Plan",
+      "result": "Passed"
+    }
+  ],
+  "testPlanConfigurations": [
+    {
+      "configurationId": "1",
+      "configurationName": "Test Scheme Action"
+    }
+  ]
+}
