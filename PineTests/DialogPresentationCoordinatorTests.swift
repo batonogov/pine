@@ -1023,12 +1023,10 @@ struct DialogFlowRegressionTests {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let sourceRoot = repositoryRoot.appendingPathComponent("Pine")
-        let enumerator = try #require(
-            FileManager.default.enumerator(
-                at: sourceRoot,
-                includingPropertiesForKeys: nil
-            )
+        // Never a bare enumeration: a guard that scans the tree has to fail,
+        // not pass, when the scan comes back empty (#1508).
+        let sourceURLs = try ProductionSourceScan.swiftFileURLs(
+            under: repositoryRoot.appendingPathComponent("Pine")
         )
         let forbiddenAPIs = [
             "runModal(",
@@ -1040,8 +1038,7 @@ struct DialogFlowRegressionTests {
             "panel.begin(completionHandler:",
         ]
         var offenders: [String] = []
-        for case let fileURL as URL in enumerator
-        where fileURL.pathExtension == "swift" {
+        for fileURL in sourceURLs {
             let source = try String(contentsOf: fileURL, encoding: .utf8)
             for forbiddenAPI in forbiddenAPIs where source.contains(forbiddenAPI) {
                 offenders.append(
