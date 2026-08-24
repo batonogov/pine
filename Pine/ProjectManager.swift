@@ -2242,6 +2242,12 @@ final class ProjectManager {
             filesystemValidator: workspaceValidator
         )
         terminal.configureAgentTaskProject(projectIdentity)
+        // Synchronous on purpose (#1512): the caller publishes this manager
+        // into `ProjectRegistry.openProjects` as soon as this returns, and the
+        // project window's `.task` asks for the crash-recovery offer as soon
+        // as it mounts. Deferring this call to a `Task` reopens the window
+        // where the offer is silently skipped — the user's unsaved work stays
+        // on disk with nothing to reveal it.
         setupRecovery(projectURL: url)
         agentHistory.updateProjectRoot(url)
         synchronizeAgentHandoff(projectRoot: url)

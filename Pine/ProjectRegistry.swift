@@ -1778,6 +1778,14 @@ final class ProjectRegistry: LSPSettingsObserver {
         if isAutoSaveFrozenForTermination {
             pm.freezeAutoSaveForTermination()
         }
+        // Load before publishing, and load *synchronously*: `loadDirectory`
+        // is what calls `setupRecovery`, and `ProjectWindowView` mounts
+        // `ContentView` — whose `.task` asks for the crash-recovery offer —
+        // for whatever `openProjects` holds. A manager published before its
+        // recovery manager exists answers "nothing pending" and never
+        // retries, which is #1512. `RecoveryAdmissionOrderingTests` fails if
+        // this ordering is broken, including by moving `setupRecovery` behind
+        // an `await`.
         pm.loadDirectory(
             url: canonical,
             agentTaskProject: identity,
