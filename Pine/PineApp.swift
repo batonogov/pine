@@ -1038,7 +1038,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // user is not typing in. The two agree in every single-window state,
         // so nothing on screen would look wrong.
         keyWindow: { NSApp.keyWindow },
-        welcomeWindow: { [weak self] in self?.visibleWelcomeWindow() }
+        // `onScreenOrDock`: the presentation workflow deminiaturizes its
+        // host before presenting, so a minimized Welcome window is reused
+        // rather than bypassed in favour of creating a second one (#1507).
+        welcomeWindow: { [weak self] in
+            self?.welcomeHostWindow(reach: .onScreenOrDock)
+        }
     )
 
     private var welcomeVisibilityGeneration = 0
@@ -1082,11 +1087,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     /// all, the eligibility conjunction, and Welcome's fixed last position.
     /// The pure ordering rule cannot catch a mistake made here.
     ///
-    /// - Note: `window.isVisible` reads `false` for a miniaturized window, so
-    ///   a project window in the Dock never becomes an eligible candidate and
-    ///   the request falls through to Welcome. That is current behavior, not
-    ///   an oversight of this projection; changing it changes where ⇧⌘I lands
-    ///   and belongs in its own change (#1507).
+    /// - Note: a project window in the Dock **is** a candidate (#1507). The
+    ///   Inbox workflow restores and focuses its host before presenting, so
+    ///   ``WindowRoutingReach/onScreenOrDock`` is the honest reach for it —
+    ///   `window.isVisible` alone reads `false` for a miniaturized window and
+    ///   would send ⇧⌘I to a new Welcome window while the user's project
+    ///   stayed in the Dock. The in-place command paths keep the narrower
+    ///   reach; see ``isEligibleRoutingWindow(_:delegate:reach:)``.
     func agentInboxHostOptions(
         windows: [NSWindow],
         keyWindow: NSWindow?,
@@ -1104,7 +1111,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     isKeyWindow: window === keyWindow,
                     isEligibleWindow: isEligibleRoutingWindow(
                         window,
-                        delegate: delegate
+                        delegate: delegate,
+                        reach: .onScreenOrDock
                     ),
                     showsMostRecentlyActiveProject: mostRecentProject != nil
                         && project === mostRecentProject
@@ -1165,12 +1173,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     /// `NSApp.windows`; keeping a single copy of the rule is what stops ⇧⌘I
     /// and a delivered notification from disagreeing about which windows are
     /// still alive.
+    /// - Parameter reach: whether a window sitting in the Dock counts as
+    ///   present. Only callers that restore and focus the host before acting
+    ///   pass ``WindowRoutingReach/onScreenOrDock`` (#1507); the in-place
+    ///   command paths keep the on-screen requirement so a menu command can
+    ///   never mutate a window the user cannot see.
     private func isEligibleRoutingWindow(
         _ window: NSWindow,
-        delegate: CloseDelegate
+        delegate: CloseDelegate,
+        reach: WindowRoutingReach = .onScreenOnly
     ) -> Bool {
         !delegate.didCompleteWindowLifecycle
-            && window.isVisible
+            && reach.admitsWindow(
+                isVisible: window.isVisible,
+                isMiniaturized: window.isMiniaturized
+            )
             && registry.isWindowOpen(delegate.projectURL)
             && isRegisteredProject(delegate.projectManager)
     }
@@ -1364,16 +1381,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     }
 
     private func visibleWelcomeWindow() -> NSWindow? {
+        welcomeHostWindow(reach: .onScreenOnly)
+    }
+
+    /// The Welcome window a caller with this reach may route to, cached on
+    /// ``welcomeWindow`` when a live one is found by identifier.
+    ///
+    /// The Inbox passes ``WindowRoutingReach/onScreenOrDock`` so a Welcome
+    /// window the user minimized is restored and reused instead of a second
+    /// one being created behind it (#1507). Every other caller wants a window
+    /// that can show UI right now and keeps ``WindowRoutingReach/onScreenOnly``.
+    /// - Parameter windows: the window list to scan, defaulting to
+    ///   `NSApp.windows`. Injectable because the unit test host accumulates
+    ///   windows from every suite that ran before, so identity assertions
+    ///   against the live list would answer for someone else's window.
+    func welcomeHostWindow(
+        reach: WindowRoutingReach,
+        windows: [NSWindow]? = nil
+    ) -> NSWindow? {
         if let welcomeWindow,
-           welcomeWindow.isVisible,
-           !welcomeWindow.isMiniaturized {
+           reach.admitsWindow(
+               isVisible: welcomeWindow.isVisible,
+               isMiniaturized: welcomeWindow.isMiniaturized
+           ) {
             return welcomeWindow
         }
-        guard let liveWindow = NSApp.windows.first(where: {
+        guard let liveWindow = (windows ?? NSApp.windows).first(where: {
             $0.identifier?.rawValue == "welcome"
                 && $0.contentView != nil
-                && $0.isVisible
-                && !$0.isMiniaturized
+                && reach.admitsWindow(
+                    isVisible: $0.isVisible,
+                    isMiniaturized: $0.isMiniaturized
+                )
         }) else {
             return nil
         }

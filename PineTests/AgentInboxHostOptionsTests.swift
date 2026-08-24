@@ -143,16 +143,13 @@ struct AgentInboxHostOptionsTests {
 
     // MARK: - Eligibility
 
-    /// Leaving the screen is what costs a window its eligibility, and the same
-    /// `isVisible` conjunct decides it. A window ordered out is the one form
-    /// of "not on screen" this suite can produce: the unit test host is a
-    /// background application, where `miniaturize(nil)` never reaches the
-    /// Dock, so *minimized* is asserted nowhere here.
+    /// Leaving the screen is what costs a window its eligibility. A window
+    /// ordered out is the one form of "not on screen" that survives the
+    /// widened reach of #1507: the Inbox now admits a window in the Dock,
+    /// because it restores that host before presenting, but a window that was
+    /// ordered out shows nothing and can host nothing.
     ///
-    /// On a real desktop AppKit reports `isVisible == false` for a window in
-    /// the Dock too, which is why a minimized project window silently loses
-    /// the Inbox to Welcome instead of being restored (#1507). That behavior
-    /// is documented in `agentInboxHostOptions`, not claimed as covered.
+    /// See `dockedProjectWindowIsACandidate` for the other side of that line.
     @Test("leaving the screen costs a window its eligibility")
     func orderedOutWindowLosesEligibility() throws {
         let fixture = try Fixture()
@@ -521,6 +518,259 @@ struct AgentInboxHostOptionsTests {
         #expect(!found.isMiniaturized)
     }
 
+    // MARK: - Windows in the Dock (#1507)
+
+    /// The regression: `NSWindow.isVisible` reads `false` for a window in the
+    /// Dock, so an eligibility test written as `isVisible` alone bypassed the
+    /// user's minimized project and opened the Inbox in a freshly created
+    /// Welcome window instead. The Inbox reach admits it; the presentation
+    /// workflow deminiaturizes it before presenting.
+    @Test("a project window in the Dock is still a candidate")
+    func dockedProjectWindowIsACandidate() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let window = try fixture.makeProjectWindow(named: "alpha", inDock: true)
+
+        // The precondition the fix rests on, asserted rather than assumed.
+        #expect(window.isMiniaturized)
+        #expect(!window.isVisible)
+
+        let options = fixture.appDelegate.agentInboxHostOptions(
+            windows: [window],
+            keyWindow: nil,
+            welcomeWindow: nil
+        )
+
+        #expect(options.count == 1)
+        #expect(options.first?.candidate.isEligibleWindow == true)
+        #expect(options.first?.host === window)
+    }
+
+    /// Widening the reach must not widen anything else. This window is in the
+    /// Dock *and* its project has been closed into the registry's background
+    /// set, so exactly one of the other conjuncts is false — and that alone
+    /// is enough to refuse it.
+    @Test("a Dock window whose project closed is still refused")
+    func dockedWindowStillObeysTheOtherConjuncts() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let url = try fixture.makeProjectDirectory(named: "alpha")
+        let manager = try #require(fixture.registry.projectManager(for: url))
+        let window = fixture.makeWindow(inDock: true)
+        fixture.attachCloseDelegate(
+            to: window,
+            projectURL: url,
+            projectManager: manager
+        )
+
+        fixture.registry.closeProjectWindow(
+            url,
+            expectedManager: manager,
+            expectedWindowGeneration: nil
+        )
+
+        let options = fixture.appDelegate.agentInboxHostOptions(
+            windows: [window],
+            keyWindow: nil,
+            welcomeWindow: nil
+        )
+
+        #expect(window.isMiniaturized)
+        #expect(options.first?.candidate.isEligibleWindow == false)
+    }
+
+    /// #1507's headline shape: one project, minimized, no Welcome window in
+    /// sight. Before the fix this produced `.createWelcomeHost` and left the
+    /// project sitting in the Dock.
+    @Test("a lone minimized project hosts the Inbox instead of a new Welcome")
+    func loneMinimizedProjectWinsOverCreatingWelcome() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let window = try fixture.makeProjectWindow(named: "alpha", inDock: true)
+        fixture.noteKeyWindowSession(showing: "alpha")
+
+        let options = fixture.appDelegate.agentInboxHostOptions(
+            windows: [window],
+            keyWindow: nil,
+            welcomeWindow: nil
+        )
+        let decision = AgentInboxHostRouting.decision(
+            among: options.map(\.candidate)
+        )
+
+        guard case .existingHost(let index) = decision else {
+            Issue.record("Expected the minimized project, got \(decision)")
+            return
+        }
+        #expect(options[index].host === window)
+    }
+
+    /// A minimized project the user was last working in outranks a Welcome
+    /// window that happens to be on screen: Welcome is the fallback for when
+    /// no project can host the Inbox, not a reason to abandon one.
+    @Test("a minimized most-recent project outranks a visible Welcome")
+    func minimizedMostRecentProjectOutranksVisibleWelcome() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let project = try fixture.makeProjectWindow(
+            named: "alpha",
+            inDock: true
+        )
+        let welcome = fixture.makeWelcomeWindow()
+        fixture.noteKeyWindowSession(showing: "alpha")
+
+        let options = fixture.appDelegate.agentInboxHostOptions(
+            windows: [project],
+            keyWindow: nil,
+            welcomeWindow: welcome
+        )
+        let decision = AgentInboxHostRouting.decision(
+            among: options.map(\.candidate)
+        )
+
+        guard case .existingHost(let index) = decision else {
+            Issue.record("Expected the minimized project, got \(decision)")
+            return
+        }
+        #expect(options[index].host === project)
+    }
+
+    /// Two projects, one in the Dock: the window the user can already see and
+    /// is typing in keeps the Inbox. Restoring a window from the Dock is only
+    /// right when there is nothing better on screen.
+    @Test("a key on-screen project still beats a minimized one")
+    func keyOnScreenProjectBeatsMinimizedProject() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let minimized = try fixture.makeProjectWindow(
+            named: "alpha",
+            inDock: true
+        )
+        let onScreen = try fixture.makeProjectWindow(named: "beta")
+        // The minimized one is also the most recently active project, so the
+        // key window has to win on its own merits.
+        fixture.noteKeyWindowSession(showing: "alpha")
+
+        let options = fixture.appDelegate.agentInboxHostOptions(
+            windows: [minimized, onScreen],
+            keyWindow: onScreen,
+            welcomeWindow: nil
+        )
+        let decision = AgentInboxHostRouting.decision(
+            among: options.map(\.candidate)
+        )
+
+        #expect(options.allSatisfy { $0.candidate.isEligibleWindow })
+        guard case .existingHost(let index) = decision else {
+            Issue.record("Expected the key window, got \(decision)")
+            return
+        }
+        #expect(options[index].host === onScreen)
+    }
+
+    /// The Welcome half of the same fix. The Inbox source accepts a Welcome
+    /// window in the Dock, so the workflow restores the one that exists
+    /// instead of reaching `.createWelcomeHost` for a window the user already
+    /// has.
+    @Test("the Inbox Welcome source finds a Welcome window in the Dock")
+    func inboxWelcomeSourceFindsDockedWelcome() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let welcome = fixture.makeWelcomeWindow(inDock: true)
+
+        let found = try #require(
+            fixture.withOnlyOwnWelcomeWindow(welcome) {
+                fixture.appDelegate.agentInboxWindowSources.welcomeWindow()
+            },
+            "a minimized Welcome window is a host the Inbox can restore"
+        )
+
+        #expect(found === welcome)
+        #expect(found.isMiniaturized)
+    }
+
+    /// Every other caller wants a window that can show UI right now, and a
+    /// window in the Dock cannot. The narrower lookup is what `showWelcome()`
+    /// and the application dialog owner still read.
+    @Test("the on-screen Welcome lookup refuses a Welcome window in the Dock")
+    func onScreenWelcomeLookupRefusesDockedWelcome() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let welcome = fixture.makeWelcomeWindow(inDock: true)
+
+        // Prime the `welcomeWindow` cache through the wider reach first: a
+        // cached window must be re-checked against the caller's reach, not
+        // handed back because it was once found.
+        #expect(
+            fixture.appDelegate.welcomeHostWindow(
+                reach: .onScreenOrDock,
+                windows: [welcome]
+            ) === welcome
+        )
+
+        #expect(
+            fixture.appDelegate.welcomeHostWindow(
+                reach: .onScreenOnly,
+                windows: [welcome]
+            ) == nil
+        )
+    }
+
+    /// Both windows in the Dock: the project the user was last in still wins,
+    /// and the Inbox restores it rather than a Welcome window they minimized
+    /// and stopped caring about.
+    @Test("a minimized project outranks a minimized Welcome")
+    func minimizedProjectOutranksMinimizedWelcome() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let project = try fixture.makeProjectWindow(
+            named: "alpha",
+            inDock: true
+        )
+        let welcome = fixture.makeWelcomeWindow(inDock: true)
+        fixture.noteKeyWindowSession(showing: "alpha")
+
+        let options = fixture.appDelegate.agentInboxHostOptions(
+            windows: [project],
+            keyWindow: nil,
+            welcomeWindow: welcome
+        )
+        let decision = AgentInboxHostRouting.decision(
+            among: options.map(\.candidate)
+        )
+
+        guard case .existingHost(let index) = decision else {
+            Issue.record("Expected the minimized project, got \(decision)")
+            return
+        }
+        #expect(options[index].host === project)
+    }
+
+    /// No project at all and the only Welcome window is in the Dock. The
+    /// decision must reuse it — creating a second Welcome window behind a
+    /// minimized one is the duplicate-window shape #1507 reported.
+    @Test("a minimized Welcome is reused instead of creating a second one")
+    func minimizedWelcomeIsReusedNotDuplicated() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let welcome = fixture.makeWelcomeWindow(inDock: true)
+
+        let options = fixture.appDelegate.agentInboxHostOptions(
+            windows: [],
+            keyWindow: nil,
+            welcomeWindow: welcome
+        )
+        let decision = AgentInboxHostRouting.decision(
+            among: options.map(\.candidate)
+        )
+
+        guard case .existingHost(let index) = decision else {
+            Issue.record("Expected the minimized Welcome, got \(decision)")
+            return
+        }
+        #expect(options[index].host === welcome)
+    }
+
     // MARK: - Fixture
 
     @MainActor
@@ -578,10 +828,13 @@ struct AgentInboxHostOptionsTests {
             return url
         }
 
-        func makeWindow(onScreen: Bool = true) -> NSWindow {
-            let window = NSWindow(
+        func makeWindow(
+            onScreen: Bool = true,
+            inDock: Bool = false
+        ) -> NSWindow {
+            let window = DockableWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
-                styleMask: [.titled, .closable],
+                styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false
             )
@@ -591,6 +844,7 @@ struct AgentInboxHostOptionsTests {
             if onScreen {
                 window.orderFront(nil)
             }
+            window.isInDock = inDock
             windows.append(window)
             return window
         }
@@ -599,11 +853,12 @@ struct AgentInboxHostOptionsTests {
         /// the only shape that satisfies every eligibility conjunct.
         func makeProjectWindow(
             named name: String,
-            onScreen: Bool = true
+            onScreen: Bool = true,
+            inDock: Bool = false
         ) throws -> NSWindow {
             let url = try makeProjectDirectory(named: name)
             let manager = try #require(registry.projectManager(for: url))
-            let window = makeWindow(onScreen: onScreen)
+            let window = makeWindow(onScreen: onScreen, inDock: inDock)
             attachCloseDelegate(
                 to: window,
                 projectURL: url,
@@ -632,10 +887,38 @@ struct AgentInboxHostOptionsTests {
         /// A window shaped like Welcome for `visibleWelcomeWindow()`: the
         /// identifier it scans for, a mounted content view, and on screen.
         @discardableResult
-        func makeWelcomeWindow() -> NSWindow {
-            let window = makeWindow()
+        func makeWelcomeWindow(inDock: Bool = false) -> NSWindow {
+            let window = makeWindow(inDock: inDock)
             window.identifier = NSUserInterfaceItemIdentifier("welcome")
             return window
+        }
+
+        /// Runs `body` with every *other* Welcome-identified window in
+        /// `NSApp.windows` temporarily anonymised, so a source that scans the
+        /// live list answers about this fixture's window.
+        ///
+        /// The unit test host is one long-lived application: windows other
+        /// suites ordered out still sit in `NSApp.windows` with their
+        /// identifiers attached, and `first(where:)` finds the oldest one.
+        /// The identifiers are restored before `body` returns, and the whole
+        /// helper is synchronous, so no other main-actor test can observe the
+        /// windows while they are anonymous.
+        func withOnlyOwnWelcomeWindow<T>(
+            _ window: NSWindow,
+            _ body: () -> T
+        ) -> T {
+            let foreign = NSApp.windows.filter {
+                $0 !== window && $0.identifier?.rawValue == "welcome"
+            }
+            for other in foreign {
+                other.identifier = nil
+            }
+            defer {
+                for other in foreign {
+                    other.identifier = NSUserInterfaceItemIdentifier("welcome")
+                }
+            }
+            return body()
         }
 
         func makeForeignDelegate() -> any NSWindowDelegate {
@@ -657,7 +940,9 @@ struct AgentInboxHostOptionsTests {
         func cleanup() {
             for window in windows {
                 window.delegate = nil
+                (window as? DockableWindow)?.isInDock = false
                 window.orderOut(nil)
+                window.identifier = nil
             }
             windows.removeAll()
             delegates.removeAll()
@@ -671,4 +956,21 @@ struct AgentInboxHostOptionsTests {
     }
 
     private final class ForeignWindowDelegate: NSObject, NSWindowDelegate {}
+
+    /// A window that can report the AppKit facts of a window sitting in the
+    /// Dock without a window server.
+    ///
+    /// The unit test host is a background application: `miniaturize(nil)`
+    /// never reaches the Dock there, and it is animated and asynchronous even
+    /// when it does, so a real minimize cannot be asserted deterministically.
+    /// The staged facts are the ones measured on macOS 27.0 (26A5416b) — a
+    /// miniaturized window reports `isMiniaturized == true` and `isVisible ==
+    /// false` while staying in `NSApp.windows`.
+    private final class DockableWindow: NSWindow {
+        var isInDock = false
+
+        override var isMiniaturized: Bool { isInDock }
+
+        override var isVisible: Bool { isInDock ? false : super.isVisible }
+    }
 }
