@@ -801,10 +801,12 @@ struct LSPSettingsLifecycleTests {
         #expect(manager.servers["swift"]?.state == .initialized)
 
         suspended.resumeStart(true)
-        await Task.yield()
+        // The stale client's start resumes on its own executor and only then
+        // discovers it has been replaced. Waiting for the shutdown it performs
+        // is the signal; a bare `Task.yield()` is a coin flip.
+        #expect(await waitUntil { suspended.shutdownCount == 1 })
 
         #expect(suspended.opens.isEmpty)
-        #expect(suspended.shutdownCount == 1)
         #expect(manager.servers["swift"]?.state == .initialized)
         #expect(replacements.count == 1)
     }
@@ -1432,12 +1434,23 @@ struct LSPSettingsLifecycleTests {
     /// soft timeout followed by a hard subscript is how a single flaky wait
     /// takes down the whole `PineTests` process (#1506).
     @discardableResult
+    /// Waits for a condition on a wall-clock deadline.
+    ///
+    /// `Task.yield()` alone is not a wait: it re-enters the scheduler, but a
+    /// continuation parked on another executor still needs time to run, and
+    /// on a loaded machine a hundred yields can all pass before it does. That
+    /// is what made "A stale initialize cannot replace a reconfigured client"
+    /// fail one run in three on CI while passing every local run (#1518).
     private func waitUntil(
-        _ condition: @escaping @MainActor () -> Bool
+        _ condition: @escaping @MainActor () -> Bool,
+        within duration: Duration = .seconds(5)
     ) async -> Bool {
-        for _ in 0..<100 {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: duration)
+        while clock.now < deadline {
             if condition() { return true }
             await Task.yield()
+            try? await clock.sleep(for: .milliseconds(1))
         }
         Issue.record("Timed out waiting for LSP test state")
         return false

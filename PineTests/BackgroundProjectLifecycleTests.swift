@@ -243,13 +243,17 @@ struct BackgroundProjectLifecycleTests {
         try #require(tab.isProcessRunning)
         let sentinel = "pine-scrollback-\(UUID().uuidString)"
         try #require(tab.sendText("\(sentinel)\n"))
-        for _ in 0..<100 {
-            await tab.search(for: sentinel)
-            if !tab.searchMatches.isEmpty { break }
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        try #require(!tab.searchMatches.isEmpty)
-        let matchCount = tab.searchMatches.count
+        // The sentinel reaches the scrollback twice — the PTY echoes the line,
+        // then `cat` writes it back — and the two arrive independently. Taking
+        // the count at the first non-empty search recorded 1 on a slow runner
+        // and 2 by the time the assertion below re-searched, which is how this
+        // test failed with `2 == 1` one run in three (#1518). Wait for the
+        // scrollback to settle instead of racing it: what this test is about
+        // is that reclamation does not change the count, not what the count is.
+        let matchCount = try #require(
+            await settledMatchCount(for: sentinel, in: tab),
+            "The sentinel never reached the terminal scrollback"
+        )
 
         registry.closeProjectWindow(directory)
         registry.runBackgroundReclamationPassForTesting()
@@ -269,6 +273,37 @@ struct BackgroundProjectLifecycleTests {
         #expect(tab.isProcessRunning)
         await tab.search(for: sentinel)
         #expect(tab.searchMatches.count == matchCount)
+    }
+
+    /// The number of scrollback matches for `sentinel` once it stops
+    /// changing, or `nil` if nothing ever arrived.
+    ///
+    /// "Settled" is a value that survives `stableChecks` consecutive searches.
+    /// A terminal writes asynchronously through a PTY, so any single search is
+    /// a sample of an animation, not a measurement.
+    private func settledMatchCount(
+        for sentinel: String,
+        in tab: TerminalTab,
+        within duration: Duration = .seconds(10),
+        stableChecks: Int = 5
+    ) async -> Int? {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: duration)
+        var lastCount = 0
+        var stable = 0
+        while clock.now < deadline {
+            await tab.search(for: sentinel)
+            let count = tab.searchMatches.count
+            if count > 0, count == lastCount {
+                stable += 1
+                if stable >= stableChecks { return count }
+            } else {
+                stable = 0
+            }
+            lastCount = count
+            try? await clock.sleep(for: .milliseconds(10))
+        }
+        return lastCount > 0 ? lastCount : nil
     }
 
     @Test("dirty project is retained when recovery is unavailable")
