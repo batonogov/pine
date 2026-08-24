@@ -96,6 +96,20 @@ jobs:
         working-directory: .github/scripts
         run: python3 -m unittest test_select_previous_release.py -v
 
+      # These three suites existed but were never run by any lane, which is
+      # how the flaky detector kept a defect its own tests encoded (#1510).
+      - name: Unit tests for flaky-test detection
+        working-directory: .github/scripts
+        run: python3 -m unittest test_detect_flaky_tests.py -v
+
+      - name: Unit tests for changelog HTML conversion
+        working-directory: .github/scripts
+        run: python3 -m unittest test_changelog_to_html.py -v
+
+      - name: Unit tests for performance regression checks
+        working-directory: .github/scripts
+        run: python3 -m unittest test_check_perf_regression.py -v
+
       - name: Tests for lifecycle soak workflow
         run: bash scripts/tests/test-lifecycle-soak-workflow.sh
 
