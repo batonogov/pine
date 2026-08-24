@@ -1161,26 +1161,12 @@ struct DestructiveShortcutPolicyTests {
     }
 
     private static func productionSources() throws -> [Source] {
-        let root = repositoryRoot().appendingPathComponent("Pine")
-        // Deliberately no `.skipsHiddenFiles`: that option treats every file
-        // as hidden when any ancestor directory is (agents run this repo from
-        // `.claude/worktrees/…`), which would silently reduce the whole scan
-        // to zero files and turn this guard into a test that always passes.
-        let enumerator = try #require(
-            FileManager.default.enumerator(
-                at: root,
-                includingPropertiesForKeys: [.isRegularFileKey]
-            )
+        // The enumeration this suite introduced now lives in
+        // `ProductionSourceScan`, so the hidden-ancestor trap and the
+        // non-empty guard are written once rather than per suite (#1508).
+        let urls = try ProductionSourceScan.swiftFileURLs(
+            under: repositoryRoot().appendingPathComponent("Pine")
         )
-        let urls = enumerator.compactMap { $0 as? URL }
-            .filter { $0.pathExtension == "swift" }
-            .filter { url in
-                !url.pathComponents
-                    .dropFirst(root.pathComponents.count)
-                    .contains { $0.hasPrefix(".") }
-            }
-            .sorted { $0.path < $1.path }
-        #expect(!urls.isEmpty, "Production sources must be discoverable")
 
         return try urls.map {
             Source(

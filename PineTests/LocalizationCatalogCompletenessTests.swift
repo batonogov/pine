@@ -151,16 +151,15 @@ struct LocalizationCatalogCompletenessTests {
     private func sourceReferences(
         projectRoot: URL
     ) throws -> [SourceReference] {
-        let sourceRoot = projectRoot.appendingPathComponent("Pine")
-        let fileManager = FileManager.default
-        let enumerator = try #require(fileManager.enumerator(
-            at: sourceRoot,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ))
-        let sourceURLs = enumerator.compactMap { $0 as? URL }
-            .filter { $0.pathExtension == "swift" }
-            .sorted { $0.path < $1.path }
+        // Not a local enumeration: `.skipsHiddenFiles` used to live here, and
+        // every file in an agent worktree under `.claude/worktrees/…` carries
+        // the `UF_HIDDEN` flag, so this guard scanned zero files and passed
+        // vacuously wherever it was actually run (#1508).
+        // `ProductionSourceScan` also refuses to return an empty list, so a
+        // completeness test can never again pass by scanning nothing.
+        let sourceURLs = try ProductionSourceScan.swiftFileURLs(
+            under: projectRoot.appendingPathComponent("Pine")
+        )
 
         let localizedKeyExpression = try NSRegularExpression(
             pattern:

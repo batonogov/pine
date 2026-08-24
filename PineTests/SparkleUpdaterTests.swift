@@ -150,17 +150,14 @@ struct SparkleUpdaterTests {
         in sourceRoot: URL,
         excluding excludedFile: URL? = nil
     ) throws -> String {
-        guard let enumerator = FileManager.default.enumerator(
-            at: sourceRoot,
-            includingPropertiesForKeys: nil,
-            options: []
-        ) else {
-            throw CocoaError(.fileReadUnknown)
-        }
+        // An empty scan would make every "the source does not contain X"
+        // assertion below trivially true, so the scan throws instead (#1508).
+        let sourceURLs = try ProductionSourceScan.swiftFileURLs(
+            under: sourceRoot
+        )
 
         var source = ""
-        for case let fileURL as URL in enumerator
-        where fileURL.pathExtension == "swift" {
+        for fileURL in sourceURLs {
             guard fileURL.standardizedFileURL
                 != excludedFile?.standardizedFileURL else {
                 continue
