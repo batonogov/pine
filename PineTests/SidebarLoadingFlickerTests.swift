@@ -49,8 +49,18 @@ struct SidebarLoadingFlickerTests {
         manager.loadDirectory(url: dir)
         #expect(tracker.isLoading, "Initial loadDirectory should activate progress tracker")
 
+        // Waiting on `WorkspaceManager.isLoading` is not the same signal as
+        // the tracker: the load ends on one main-actor hop and the progress
+        // operation is ended on another, so the tracker can still be lit when
+        // the load reports done. This test used to read the tracker straight
+        // after `waitForLoadingComplete()` and blame the *refresh* below for
+        // progress the initial load had not yet put down — one failed run in
+        // three on CI, at both assertions (#1518).
         await manager.waitForLoadingComplete()
-        #expect(!tracker.isLoading, "Progress tracker should be idle after initial load")
+        #expect(
+            await waitUntilIdle(tracker),
+            "Progress tracker should be idle after initial load"
+        )
 
         // Simulate watcher-triggered refresh (what happens on file save, git status, etc.)
         manager.refreshFileTreeAsync()
@@ -61,14 +71,30 @@ struct SidebarLoadingFlickerTests {
             "refreshFileTreeAsync must not activate progress tracker (causes flicker)"
         )
 
-        // Wait for async load to complete and re-verify
-        for _ in 0..<30 {
-            try await Task.sleep(for: .milliseconds(50))
-        }
+        // …and it must stay down while the refresh actually runs, not merely
+        // in the instant after it was asked for.
+        await manager.waitForLoadingComplete()
         #expect(
             !tracker.isLoading,
             "Progress tracker must remain idle after incremental refresh completes"
         )
+    }
+
+    /// Waits for the progress tracker to go idle on a wall-clock deadline.
+    ///
+    /// Returns `false` on timeout so the caller reports a real failure rather
+    /// than hanging the suite.
+    private func waitUntilIdle(
+        _ tracker: ProgressTracker,
+        within duration: Duration = .seconds(5)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: duration)
+        while clock.now < deadline {
+            if !tracker.isLoading { return true }
+            try? await clock.sleep(for: .milliseconds(5))
+        }
+        return !tracker.isLoading
     }
 
     @Test("refreshFileTree (sync) does not activate progress tracker")
@@ -162,7 +188,7 @@ struct SidebarLoadingFlickerTests {
 
         manager.loadDirectory(url: dir)
         await manager.waitForLoadingComplete()
-        #expect(!tracker.isLoading)
+        #expect(await waitUntilIdle(tracker))
 
         // Simulate rapid watcher events (e.g., npm install creating many files)
         for _ in 0..<10 {
@@ -188,7 +214,7 @@ struct SidebarLoadingFlickerTests {
         // Initial load of dir1
         manager.loadDirectory(url: dir1)
         await manager.waitForLoadingComplete()
-        #expect(!tracker.isLoading)
+        #expect(await waitUntilIdle(tracker))
 
         // Incremental refresh — no progress
         manager.refreshFileTreeAsync()

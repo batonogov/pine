@@ -170,11 +170,21 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
             openPanel.waitForExistence(timeout: 5),
             "File > Open… should present a project-window-owned sheet"
         )
+        // `waitForExistence`, not `exists`: the sheet answers before its own
+        // contents are laid out, so a bare `exists` asks the panel about a
+        // control it has not built yet. This is what made the test flaky —
+        // one failed run in the first honest flaky-detector report (#1518).
         let viewOptions = openPanel.menuButtons["View Options"].firstMatch
-        XCTAssertTrue(viewOptions.exists)
+        XCTAssertTrue(
+            viewOptions.waitForExistence(timeout: 5),
+            "The open panel should offer its View Options menu"
+        )
         viewOptions.click()
         let listView = app.menuItems["List"].firstMatch
-        XCTAssertTrue(listView.exists)
+        XCTAssertTrue(
+            listView.waitForExistence(timeout: 5),
+            "View Options should open a menu containing List"
+        )
         listView.click()
 
         let mainFilePredicate = NSPredicate(

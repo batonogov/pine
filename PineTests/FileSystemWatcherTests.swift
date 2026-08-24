@@ -92,51 +92,112 @@ struct FileSystemWatcherTests {
 
     // MARK: - Stale generation is discarded
 
-    @Test("Restarting watch increments generation and cancels pending debounce")
+    /// Restarting the watch must cancel the old directory's pending debounce
+    /// and stop delivering its events, while the new directory still works.
+    ///
+    /// This used to assert "at most one callback in the 800 ms after the
+    /// switch", which is not a property FSEvents offers: one write can surface
+    /// as several events far enough apart to survive a 300 ms debounce, and it
+    /// did — `callbackCount - countAfterSwitch → 2` on CI, one run in three
+    /// (#1518). Counting callbacks in a time box measures the filesystem's
+    /// mood, so each half is now asserted on its own and waited for by
+    /// condition rather than by clock.
+    ///
+    /// **What this covers, and what it does not.** `stopOnQueue()` defends
+    /// delivery twice: `debounceWorkItem?.cancel()` drops a work item that has
+    /// not run, and the `activeGeneration` check drops one that was already
+    /// dequeued and is running. Only the first is observable from here —
+    /// deleting the generation check leaves this test green, which is worth
+    /// knowing rather than implying otherwise. Reaching the second would mean
+    /// stopping the watcher in the instant between `asyncAfter` firing the
+    /// work item and its body reading the generation, which no test can hit
+    /// deliberately without a seam in `FileSystemWatcher`. The name says
+    /// "cancels the pending debounce" because that is what is proved.
+    @Test("Restarting watch cancels the old directory's pending debounce")
     @MainActor
     func staleGenerationDiscarded() async throws {
         let dir1 = try makeTempDirectory()
         let dir2 = try makeTempDirectory()
         defer { cleanup(dir1); cleanup(dir2) }
 
-        // Use two separate counters to distinguish dir1 vs dir2 callbacks.
-        // We verify that after switching to dir2, any callback that fires
-        // is from the new generation (dir2), not the old one (dir1).
         var callbackCount = 0
         let watcher = FileSystemWatcher(debounceInterval: 0.3) {
             callbackCount += 1
         }
+        defer { watcher.stop() }
 
-        // Watch dir1, create event — starts a debounce timer
+        // Phase A — prove the stream on dir1 is live. Without this the rest
+        // of the test could pass by watching nothing at all.
         watcher.watch(directory: dir1)
-        try "old".write(
-            to: dir1.appendingPathComponent("old.txt"),
+        try "first".write(
+            to: dir1.appendingPathComponent("first.txt"),
             atomically: true,
             encoding: .utf8
         )
+        #expect(
+            await waitForCallback(atLeast: 1, count: { callbackCount }),
+            "The watcher must deliver events for the directory it watches"
+        )
 
-        // Switch to dir2 — this calls stopOnQueue (cancels debounce,
-        // increments generation) then starts a new stream on dir2.
+        // Phase B — an event on dir1 immediately followed by a switch. The
+        // pending debounce belongs to the old generation and must never fire,
+        // however long we wait.
+        let countBeforeSwitch = callbackCount
+        try "stale".write(
+            to: dir1.appendingPathComponent("stale.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
         watcher.watch(directory: dir2)
 
-        // Record count after switching — any dir1 debounce should be cancelled
-        let countAfterSwitch = callbackCount
+        // Comfortably past the 300 ms debounce: if the old generation were
+        // still armed, this is when it would fire.
+        try await Task.sleep(for: .milliseconds(900))
+        #expect(
+            callbackCount == countBeforeSwitch,
+            "A debounce pending on the old directory fired after the switch"
+        )
 
-        // Create event in dir2 to get a reliable callback from the new generation
+        // Phase C — the watcher is not merely dead: the new directory still
+        // delivers. (Phase B alone would also pass on a broken watcher.)
         try "new".write(
             to: dir2.appendingPathComponent("new.txt"),
             atomically: true,
             encoding: .utf8
         )
+        #expect(
+            await waitForCallback(
+                atLeast: countBeforeSwitch + 1,
+                count: { callbackCount }
+            ),
+            "Events in the newly watched directory must still be delivered"
+        )
+    }
 
-        try await Task.sleep(for: .milliseconds(800))
-
-        watcher.stop()
-
-        // We should see at most one callback from dir2.
-        // The dir1 event should have been cancelled by the generation bump.
-        // (Without generation protection, we'd see 2+ callbacks)
-        #expect(callbackCount - countAfterSwitch <= 1)
+    /// Waits until the callback counter reaches `atLeast`, on a wall-clock
+    /// deadline. Returns `false` on timeout so the caller records the failure.
+    ///
+    /// The deadline is generous on purpose. FSEvents delivery is not prompt
+    /// under load — the stream carries its own latency (the debounce interval
+    /// passed to `FSEventStreamCreate`) on top of a daemon shared with every
+    /// other suite in the run. A 5-second deadline failed once during a full
+    /// local `PineTests` run while passing every isolated run, which is the
+    /// same trap this file's tests were in to begin with. Waiting on a
+    /// condition costs nothing when the event arrives on time; only a genuine
+    /// regression pays the full deadline.
+    @MainActor
+    private func waitForCallback(
+        atLeast target: Int,
+        within duration: Duration = .seconds(20),
+        count: @MainActor () -> Int
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: duration)
+        while clock.now < deadline {
+            if count() >= target { return true }
+            try? await clock.sleep(for: .milliseconds(10))
+        }
+        return count() >= target
     }
 
     // MARK: - Retained self lifecycle

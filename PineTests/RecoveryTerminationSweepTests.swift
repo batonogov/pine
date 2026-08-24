@@ -1053,13 +1053,22 @@ struct RecoveryTerminationSweepTests {
         project.recoveryManager?.snapshotDirtyTabs([Self.crashedTab(in: dir)])
         #expect(await project.pendingRecoveryOffer().count == 1)
 
+        // A gate, not a `Task.yield()`. Yielding only asks the scheduler to
+        // run the task; it does not stop the task from running *past* the
+        // listing, and on a loaded machine it regularly did — the listing
+        // finished, the offer was delivered, and the answer below arrived too
+        // late to suppress anything. That is how this test failed one run in
+        // three on CI (#1518). The seam parks the task exactly where the race
+        // it describes lives: after the listing, before the flags are re-read.
+        let gate = RecoveryListingGate()
+        project.recoveryOfferListingSeam = { await gate.pause() }
+
         let inFlight = Task { @MainActor in
             await project.pendingRecoveryOffer()
         }
-        // Hands the main actor to the task above, which runs as far as its own
-        // suspension — the off-actor listing — and stops there.
-        await Task.yield()
+        await gate.waitUntilPaused()
         project.markRecoveryOfferAnswered()
+        await gate.release()
 
         #expect(
             await inFlight.value.isEmpty,
@@ -1223,5 +1232,38 @@ struct RecoveryTerminationSweepTests {
                 .filter { $0.hasSuffix(".json") }
                 .compactMap { UUID(uuidString: String($0.dropLast(5))) }
         )
+    }
+}
+
+/// Parks whoever calls ``pause()`` until ``release()``, and lets the test wait
+/// for that to have happened. Modelled on `FoldingDecodeGate` in
+/// `LSPFoldingRangeTests`.
+private actor RecoveryListingGate {
+    private var isPaused = false
+    private var pausedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func pause() async {
+        isPaused = true
+        let waiters = pausedWaiters
+        pausedWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func waitUntilPaused() async {
+        guard !isPaused else { return }
+        await withCheckedContinuation { continuation in
+            pausedWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
     }
 }

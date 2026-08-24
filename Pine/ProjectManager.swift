@@ -1627,12 +1627,25 @@ final class ProjectManager {
             return []
         }
         let entries = await recoveryManager.pendingRecoveryEntriesOffMainActor()
+        await recoveryOfferListingSeam()
         guard !didAnswerRecoveryOffer, !isRestoringRecoveryOffer else {
             return []
         }
         let live = Set(allTabs.map(\.id))
         return entries.filter { !live.contains($0.0) }
     }
+
+    /// Injected suspension inside ``pendingRecoveryOffer()``, between the
+    /// listing and the re-read of the suppression flags. No-op in production.
+    ///
+    /// The re-read exists because the listing suspends and the flags can
+    /// change while it runs — a Recover All starting, or the user answering
+    /// the sheet. Testing that without a seam means racing the scheduler with
+    /// `Task.yield()` and hoping the listing has not already finished, which
+    /// is exactly how the test covering it failed one run in three (#1518).
+    /// Same shape as `workspaceFilesystemValidationSeam`.
+    @ObservationIgnored
+    var recoveryOfferListingSeam: @Sendable () async -> Void = {}
 
     /// Records that the user has answered this project's recovery offer, by
     /// recovering, discarding, or closing the sheet without choosing.
