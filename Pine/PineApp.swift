@@ -43,6 +43,12 @@ struct PineApp: App {
                 },
                 showAgentInbox: { [weak appDelegate] in
                     appDelegate?.showAgentInbox()
+                },
+                windowSession: { [weak appDelegate] in
+                    appDelegate?.registry.keyWindowSession()
+                },
+                projectRegistry: { [weak appDelegate] in
+                    appDelegate?.registry
                 }
             )
         }
@@ -1624,7 +1630,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 dispatchUserCommand: { command in
                     UserCommandInvocationRouter.dispatch(
                         command,
-                        projectManager: self?.activeProjectManager()
+                        projectManager: self?.activeProjectManager(),
+                        windowAvailability: ProjectWindowCommandAvailability(
+                            session: self?.registry.keyWindowSession(),
+                            projectManager: self?.activeProjectManager()
+                        )
                     )
                 },
                 dispatchBuiltIn: { [weak self] event in

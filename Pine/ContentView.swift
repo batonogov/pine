@@ -354,6 +354,11 @@ struct ContentView: View {
             ) else { return }
             handleToggleWordWrap()
         }
+        .modifier(ProjectWindowCommandObserver(
+            projectManager: projectManager,
+            session: projectWindowSession,
+            registry: registry
+        ))
         .onReceive(NotificationCenter.default.publisher(for: .revealInSidebar)) { notification in
             handleRevealInSidebar(notification)
         }

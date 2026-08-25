@@ -118,4 +118,8 @@ nonisolated enum MenuIcons {
     static let projectSwitcherOpenFolder = "folder.badge.plus"
     static let projectSwitcherActive = "checkmark"
     static let projectSwitcherProject = "folder"
+    /// Menu-bar route to the switcher rows (#1525).
+    static let switchProjectInWindow = "rectangle.stack"
+    static let nextProjectInWindow = "chevron.forward"
+    static let previousProjectInWindow = "chevron.backward"
 }
