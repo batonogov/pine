@@ -182,9 +182,8 @@ struct AgentNotificationTests {
         first.applyLiveness(.terminated)
         second.applyLiveness(.terminated)
         registry.refresh(sessions: [first, second])
-        await settle()
+        #expect(await waitUntil { delivery.requests.count == 1 })
 
-        #expect(delivery.requests.count == 1)
         let deliveredTaskID = try #require(
             delivery.requests.first?.userInfo["taskID"]
         )
@@ -192,6 +191,9 @@ struct AgentNotificationTests {
         #expect(secondTaskID == expectedSecondTaskID)
 
         registry.refresh(sessions: [first, second])
+        // Deliberately a settle and not a wait: the point is that *no second*
+        // request appears, and there is no positive signal for "the duplicate
+        // was considered and dropped" to wait on.
         await settle()
         #expect(delivery.requests.count == 1)
 
@@ -230,16 +232,18 @@ struct AgentNotificationTests {
         update(&ended, state: .done, liveness: .terminated, offset: 1)
         registry.setTasksForTesting([working])
         registry.setTasksForTesting([ended])
-        await settle()
 
+        // The signal is the suspended authorization request arriving, not a
+        // handful of yields. `requests.isEmpty` is then a real statement about
+        // ordering: the delivery is blocked behind that status call.
+        #expect(await waitUntil { delivery.hasPendingAuthorizationStatusRequest })
         #expect(delivery.requests.isEmpty)
-        #expect(delivery.hasPendingAuthorizationStatusRequest)
 
         delivery.resumeAuthorizationStatus()
-        await settle()
-
+        // Resuming only makes the controller's continuation *ready*; it still
+        // has to run. Waiting for the request it then makes is the signal.
+        #expect(await waitUntil { delivery.requests.count == 1 })
         #expect(controller.authorizationStatus == .authorized)
-        #expect(delivery.requests.count == 1)
         controller.stop()
     }
 
@@ -271,9 +275,8 @@ struct AgentNotificationTests {
         )
         session.applyLiveness(.terminated)
         registry.refresh(sessions: [session])
-        await settle()
+        #expect(await waitUntil { delivery.deliveryAttemptCount == 2 })
 
-        #expect(delivery.deliveryAttemptCount == 2)
         let request = try #require(delivery.requests.first)
         #expect(settings.hasDelivered(request.identifier))
         controller.stop()
@@ -305,17 +308,15 @@ struct AgentNotificationTests {
         update(&ended, state: .done, liveness: .terminated, offset: 1)
         registry.setTasksForTesting([working])
         registry.setTasksForTesting([ended])
-        await settle()
+        #expect(await waitUntil { delivery.deliveryAttemptCount == 2 })
 
-        #expect(delivery.deliveryAttemptCount == 2)
         #expect(delivery.requests.isEmpty)
         #expect(settings.deliveredEventIDs.isEmpty)
 
         registry.setTasksForTesting([working])
         registry.setTasksForTesting([ended])
-        await settle()
+        #expect(await waitUntil { delivery.deliveryAttemptCount == 3 })
 
-        #expect(delivery.deliveryAttemptCount == 3)
         let request = try #require(delivery.requests.first)
         #expect(settings.hasDelivered(request.identifier))
         controller.stop()
@@ -446,8 +447,39 @@ struct AgentNotificationTests {
         return UUID(uuidString: "00000000-0000-0000-0000-\(suffix)") ?? UUID()
     }
 
+    /// Gives already-runnable work a chance to run, for assertions that
+    /// something did **not** happen.
+    ///
+    /// This is the only job `Task.yield()` can do honestly. It is not a wait:
+    /// yielding hands the actor to whatever is already runnable, and a
+    /// continuation parked on another executor is not made ready by it. Using
+    /// it to wait for something to *arrive* is a coin flip that lands wrong
+    /// under load — which is how "startup authorization refresh preserves
+    /// transitions observed in flight" failed on CI with
+    /// `(delivery.requests.count → 0) == 1` in run 32733740918. Every site
+    /// here that waits for an event now uses ``waitUntil(_:within:)``; the
+    /// remaining `settle()` calls precede assertions that a count stayed put,
+    /// where a short settle can only make the test weaker, never flaky.
     private func settle() async {
         for _ in 0..<5 { await Task.yield() }
+    }
+
+    /// Waits for a condition on a wall-clock deadline, recording a failure
+    /// rather than hanging if it never becomes true.
+    @discardableResult
+    private func waitUntil(
+        _ condition: @escaping @MainActor () -> Bool,
+        within duration: Duration = .seconds(5)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: duration)
+        while clock.now < deadline {
+            if condition() { return true }
+            await Task.yield()
+            try? await clock.sleep(for: .milliseconds(1))
+        }
+        Issue.record("Timed out waiting for agent-notification test state")
+        return false
     }
 }
 

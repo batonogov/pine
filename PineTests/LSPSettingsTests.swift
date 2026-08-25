@@ -756,10 +756,19 @@ struct LSPSettingsLifecycleTests {
         }
 
         suspended.resumeStart(true)
-        await Task.yield()
+        // The sibling of the wait added to `reconfigureDuringInitialize` in
+        // #1521, which this call site was missed by. The resumed start runs on
+        // its own executor and only then discovers it has been superseded;
+        // `Task.yield()` does not make that continuation ready, it just asks
+        // the scheduler nicely. Waiting for the work it performs is the
+        // signal — and it matters more here than there, because the
+        // `try #require` below turns a lost coin flip into a process-level
+        // failure rather than a test failure (#1506, #1518).
+        #expect(await waitUntil {
+            suspended.shutdownCount == 2 && !replacements.isEmpty
+        })
 
         let replacement = try #require(replacements.first)
-        #expect(suspended.shutdownCount == 2)
         #expect(suspended.opens.isEmpty)
         #expect(replacement.opens.map(\.text) == ["after"])
         #expect(manager.servers["swift"]?.state == .initialized)

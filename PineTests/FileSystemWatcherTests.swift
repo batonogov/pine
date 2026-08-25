@@ -200,6 +200,72 @@ struct FileSystemWatcherTests {
         return count() >= target
     }
 
+    // MARK: - Stale generation is discarded mid-delivery
+
+    /// A `stop()` that lands *after* the debounce work item has started
+    /// running must still suppress the callback.
+    ///
+    /// This is the half of `stopOnQueue()` the test above cannot reach.
+    /// `debounceWorkItem?.cancel()` drops an item that has not started; the
+    /// `activeGeneration` check drops one that is already in flight. Deleting
+    /// the generation check left this suite green both before and after
+    /// #1521, because the window is a few instructions wide and no amount of
+    /// sleeping lands inside it. `debounceDeliverySeam` holds the work item
+    /// open there, which is what #1518 asked for.
+    ///
+    /// The `stop()` comes from a background queue on purpose, and that is not
+    /// a convenience: it is the only shape this race has. Every generation
+    /// bump happens inside `queue.sync`, so a `stop()` issued from the main
+    /// thread cannot interleave with a work item that is already running on
+    /// the main queue — it would wait its turn. The guard exists for the
+    /// off-main callers `FileSystemWatcher` advertises by being a
+    /// `nonisolated` type with a `queue.sync`-based `stop()`. Pinning that
+    /// here means a later change cannot quietly drop the guard on the grounds
+    /// that "nothing calls stop() off main today".
+    @Test("A stop() landing mid-delivery drops the stale callback")
+    func stopDuringDeliveryDropsCallback() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let counter = WatcherCallbackCounter()
+        let handle = WatcherHandle()
+        let gate = DebounceDeliveryGate { handle.stop() }
+
+        let watcher = FileSystemWatcher(debounceInterval: 0.1) {
+            counter.increment()
+        }
+        defer { watcher.stop() }
+        handle.adopt(watcher)
+        watcher.debounceDeliverySeam = { gate.park() }
+        watcher.watch(directory: dir)
+
+        try "poke".write(
+            to: dir.appendingPathComponent("poke.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // Awaiting frees the main queue, which is what lets the work item run
+        // and park. The gate then stops the watcher from its own queue and
+        // releases the item, all without needing the main thread back.
+        try #require(
+            await gate.waitUntilParked(),
+            "The debounce work item never reached the delivery seam"
+        )
+        #expect(
+            gate.didStopWhileParked,
+            "The gate must stop the watcher while the work item is parked"
+        )
+
+        // Well past the 100 ms debounce: a delivery that survived the stop
+        // would have landed by now.
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(
+            counter.value == 0,
+            "A work item delivered its callback after stop() made it stale"
+        )
+    }
+
     // MARK: - Retained self lifecycle
 
     @Test("FileSystemWatcher can be deallocated after stop()")
@@ -350,5 +416,97 @@ struct FileSystemWatcherTests {
         watcher.stop()
 
         #expect(callbackCount >= 1, "Watcher should deliver callbacks after restart")
+    }
+}
+
+// MARK: - Delivery-seam helpers
+
+/// Holds the debounce work item on the main queue at the seam, runs
+/// `whileParked` on a background queue, and only then lets the item go.
+///
+/// Blocking is the point: the work item has to still be sitting between its
+/// dequeue and its `activeGeneration` read while the watcher is stopped, and
+/// a `DispatchWorkItem` body is a synchronous context that cannot `await`.
+/// The wait is bounded — an unbounded one here would hang the whole
+/// `PineTests` process rather than fail a test (#1506).
+///
+/// Only the first delivery parks. A later work item that was enqueued before
+/// the stop passes straight through, so a regression that lets it deliver
+/// shows up in the callback count instead of deadlocking the suite.
+nonisolated private final class DebounceDeliveryGate: @unchecked Sendable {
+    private let released = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var didPark = false
+    private var didStop = false
+    private let whileParked: @Sendable () -> Void
+
+    init(whileParked: @escaping @Sendable () -> Void) {
+        self.whileParked = whileParked
+    }
+
+    /// Called from the work item body, on the main queue.
+    func park() {
+        let isFirstDelivery = lock.withLock {
+            guard !didPark else { return false }
+            didPark = true
+            return true
+        }
+        guard isFirstDelivery else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            whileParked()
+            lock.withLock { didStop = true }
+            released.signal()
+        }
+        _ = released.wait(timeout: .now() + 20)
+    }
+
+    /// Whether a delivery ever reached the seam. Polled rather than blocking:
+    /// the caller is on the main actor, and the main queue is exactly what
+    /// `park()` is holding.
+    func waitUntilParked(within duration: Duration = .seconds(20)) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: duration)
+        while clock.now < deadline {
+            if lock.withLock({ didPark }) { return true }
+            try? await clock.sleep(for: .milliseconds(10))
+        }
+        return lock.withLock { didPark }
+    }
+
+    var didStopWhileParked: Bool { lock.withLock { didStop } }
+}
+
+/// Lets a background queue call `stop()` on a watcher that does not exist yet
+/// when the gate is built.
+///
+/// `@unchecked` because `FileSystemWatcher` is not `Sendable`, while the one
+/// method used here is explicitly thread-safe: `stop()` does all of its work
+/// inside `queue.sync`.
+nonisolated private final class WatcherHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var watcher: FileSystemWatcher?
+
+    func adopt(_ watcher: FileSystemWatcher) {
+        lock.withLock { self.watcher = watcher }
+    }
+
+    func stop() {
+        lock.withLock { watcher }?.stop()
+    }
+}
+
+/// Callback tally readable from any thread, because the test that reads it is
+/// not the main actor hop that writes it.
+nonisolated private final class WatcherCallbackCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func increment() {
+        lock.withLock { count += 1 }
+    }
+
+    var value: Int {
+        lock.withLock { count }
     }
 }
