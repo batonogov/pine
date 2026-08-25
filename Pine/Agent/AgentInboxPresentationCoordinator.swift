@@ -266,16 +266,20 @@ final class AgentInboxPresentationCoordinator {
     /// Restores a miniaturized host before raising it: an `NSPopover` shown
     /// relative to an anchor inside a miniaturized window has nowhere to draw.
     ///
-    /// The restore branch is a protocol guarantee, not a reachable production
-    /// path today. `AppDelegate` projects project-window eligibility through
-    /// `NSWindow.isVisible`, which reads `false` while a window is in the
-    /// Dock, so a miniaturized *project* window is never selected: the request
-    /// silently falls through to Welcome instead of returning the user to the
-    /// project they minimized. A minimized *Welcome* window is restored today,
-    /// but by `ensureWelcomeVisible()` on the create path rather than here.
-    /// #1491's "minimized hosts are restored before presentation" is therefore
-    /// unmet for project windows, and no test here claims otherwise; widening
-    /// eligibility changes where ⇧⌘I lands and belongs in its own change (#1507).
+    /// The restore branch is reachable since #1516. `AppDelegate` projects
+    /// Inbox host eligibility through ``WindowRoutingReach/onScreenOrDock`` for
+    /// both project and Welcome windows, so a window sitting in the Dock is a
+    /// candidate and arrives here miniaturized — this is what returns the user
+    /// to the project they minimized instead of opening a second Welcome
+    /// window. Before that widening the branch was a protocol guarantee only,
+    /// and #1491's "minimized hosts are restored before presentation" described
+    /// behavior no code could perform (#1507).
+    ///
+    /// Focus is only sent *into* the host here. Where it goes when the popover
+    /// closes again is the anchor's decision, in
+    /// ``AgentInboxFocusRestoration`` — this workflow is over by then, and the
+    /// window that hosted the popover is the only object that still knows what
+    /// owned keyboard focus before it appeared.
     private func prepare(
         _ host: any AgentInboxHosting,
         in environment: any AgentInboxHostEnvironment
