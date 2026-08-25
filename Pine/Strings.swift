@@ -2698,4 +2698,39 @@ enum Strings {
         )
         return String(format: format, locale: locale, kind, name, line)
     }
+
+    // MARK: - Command Line Tool (#1530)
+
+    static var cliInstallFailedTitle: String {
+        String(localized: "cli.install.failedTitle")
+    }
+
+    static var cliInstallMissingScript: String {
+        String(localized: "cli.install.missingScript")
+    }
+
+    static var cliInstallSuccessTitle: String {
+        String(localized: "cli.install.successTitle")
+    }
+
+    static var cliInstallSuccessMessage: String {
+        String(localized: "cli.install.successMessage")
+    }
+
+    static var cliUninstallFailedTitle: String {
+        String(localized: "cli.uninstall.failedTitle")
+    }
+
+    static var cliUninstallSuccessTitle: String {
+        String(localized: "cli.uninstall.successTitle")
+    }
+
+    static var cliUninstallSuccessMessage: String {
+        String(localized: "cli.uninstall.successMessage")
+    }
+
+    /// Fallback body when AppleScript reports an error with no message.
+    static var cliErrorUnknown: String {
+        String(localized: "cli.error.unknown")
+    }
 }
