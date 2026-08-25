@@ -303,6 +303,13 @@ struct TerminalSearchBarContainer: View {
                 caseSensitive: Bindable(terminalState).isSearchCaseSensitive,
                 matchCount: terminalState.activeTab?.searchMatches.count ?? 0,
                 currentMatch: terminalState.activeTab?.currentMatchIndex ?? -1,
+                focusRequestID: terminalState.searchFocusRequestID,
+                onFocusResult: { requestID, succeeded in
+                    terminalState.acknowledgeSearchFocusRequest(
+                        requestID,
+                        succeeded: succeeded
+                    )
+                },
                 onNext: {
                     terminalState.activeTab?.nextMatch()
                 },
@@ -310,9 +317,7 @@ struct TerminalSearchBarContainer: View {
                     terminalState.activeTab?.previousMatch()
                 },
                 onDismiss: {
-                    terminalState.isSearchVisible = false
-                    terminalState.terminalSearchQuery = ""
-                    terminalState.activeTab?.clearSearch()
+                    terminalState.dismissSearch()
                 }
             )
         }
@@ -348,7 +353,9 @@ struct TerminalSearchObserver: ViewModifier {
                 // storage and trigger the exclusivity abort — same class of
                 // bug fixed across the other .onReceive handlers in this PR.
                 DispatchQueue.main.async {
-                    terminalState.isSearchVisible = true
+                    // Reveals the bar AND claims first responder for its
+                    // field; the two must move together (#1523).
+                    terminalState.presentSearch()
                 }
             }
             .onChange(of: terminalState.terminalSearchQuery) { _, newQuery in

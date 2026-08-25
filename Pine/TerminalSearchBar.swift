@@ -15,6 +15,10 @@ struct TerminalSearchBar: View {
     @Binding var caseSensitive: Bool
     var matchCount: Int
     var currentMatch: Int
+    /// Non-nil while ⌘F is asking AppKit for first responder in the query
+    /// field. See ``TerminalPaneState/searchFocusRequestID``.
+    var focusRequestID: UUID?
+    var onFocusResult: (UUID, Bool) -> Void
     var onNext: () -> Void
     var onPrevious: () -> Void
     var onDismiss: () -> Void
@@ -25,19 +29,22 @@ struct TerminalSearchBar: View {
                 .foregroundStyle(.secondary)
                 .imageScale(.small)
 
-            TextField(Strings.terminalSearchPlaceholder, text: $query)
-                .textFieldStyle(.plain)
-                .onSubmit { onNext() }
-                // Shift+Enter navigates to the previous match
-                .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) {
-                        onPrevious()
-                        return .handled
+            // AppKit-backed: SwiftUI focus does not take first responder
+            // away from SwiftTerm's sibling NSView, and Return / Shift+Return
+            // / Escape have to reach the field editor to work at all (#1523).
+            TerminalSearchField(
+                text: $query,
+                focusRequestID: focusRequestID,
+                onCommand: { command in
+                    switch command {
+                    case .findNext: onNext()
+                    case .findPrevious: onPrevious()
+                    case .dismiss: onDismiss()
                     }
-                    return .ignored
-                }
-                .accessibilityIdentifier(AccessibilityID.terminalSearchField)
-                .frame(minWidth: 120)
+                },
+                onFocusResult: onFocusResult
+            )
+            .frame(minWidth: 120)
 
             if !query.isEmpty {
                 matchLabel
