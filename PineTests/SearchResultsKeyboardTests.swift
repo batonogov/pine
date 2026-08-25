@@ -15,26 +15,26 @@ import Testing
 @Suite("Search Results Keyboard Navigation Tests")
 struct SearchResultsKeyboardTests {
 
-    // MARK: - Selection wrapping
+    // MARK: - Selection clamping (#1526 — wrapping hid the selection off-screen)
 
-    @Test("next index wraps forward at bounds")
-    func nextIndexWrapsForward() {
-        // Wrapping: at last index, next wraps to 0
-        #expect(SearchSelectionLogic.nextIndex(current: 4, delta: 1, total: 5) == 0)
+    @Test("next index clamps at the last row instead of wrapping")
+    func nextIndexClampsForward() {
+        // At the last index, Down stays put — it must not jump back to the top.
+        #expect(SearchSelectionLogic.nextIndex(current: 4, delta: 1, total: 5) == 4)
         // Normal forward
         #expect(SearchSelectionLogic.nextIndex(current: 2, delta: 1, total: 5) == 3)
-        // Large delta wraps
-        #expect(SearchSelectionLogic.nextIndex(current: 3, delta: 2, total: 5) == 0)
+        // Overshoot clamps to the last row
+        #expect(SearchSelectionLogic.nextIndex(current: 3, delta: 2, total: 5) == 4)
     }
 
-    @Test("previous index wraps backward at bounds")
-    func previousIndexWrapsBackward() {
-        // Wrapping: at index 0, previous wraps to last
-        #expect(SearchSelectionLogic.nextIndex(current: 0, delta: -1, total: 5) == 4)
+    @Test("previous index clamps at the first row instead of wrapping")
+    func previousIndexClampsBackward() {
+        // At index 0, Up stays put — it must not jump to the last row.
+        #expect(SearchSelectionLogic.nextIndex(current: 0, delta: -1, total: 5) == 0)
         // Normal backward
         #expect(SearchSelectionLogic.nextIndex(current: 3, delta: -1, total: 5) == 2)
-        // Large negative delta wraps
-        #expect(SearchSelectionLogic.nextIndex(current: 1, delta: -3, total: 5) == 3)
+        // Overshoot clamps to the first row
+        #expect(SearchSelectionLogic.nextIndex(current: 1, delta: -3, total: 5) == 0)
     }
 
     @Test("next index handles single element")
@@ -51,16 +51,22 @@ struct SearchResultsKeyboardTests {
 
     @Test("next index starts at 0 when current is nil")
     func nextIndexStartsAtZero() {
-        #expect(SearchSelectionLogic.nextIndex(current: nil, delta: 1, total: 5) == 0)
+        #expect(SearchSelectionLogic.nextIndex(current: nil, delta: 5, total: 5) == 0)
         #expect(SearchSelectionLogic.nextIndex(current: nil, delta: -1, total: 5) == 0)
     }
 
-    @Test("next index with delta larger than total wraps correctly")
+    @Test("next index with delta larger than total clamps to the bounds")
     func nextIndexLargeDelta() {
-        // delta=7, total=5, current=2 => (2+7)%5 = 9%5 = 4
         #expect(SearchSelectionLogic.nextIndex(current: 2, delta: 7, total: 5) == 4)
-        // delta=-7, total=5, current=1 => ((1-7)%5 + 5) % 5 = ((-6)%5 + 5) % 5 = (-1+5)%5 = 4
-        #expect(SearchSelectionLogic.nextIndex(current: 1, delta: -7, total: 5) == 4)
+        #expect(SearchSelectionLogic.nextIndex(current: 1, delta: -7, total: 5) == 0)
+    }
+
+    @Test("a selection past the end of a shrunken list clamps into range")
+    func nextIndexClampsIntoShrunkenList() {
+        // The result set can shrink under the selection while the user holds
+        // an arrow key; the index must land inside the new list, not past it.
+        #expect(SearchSelectionLogic.nextIndex(current: 9, delta: 1, total: 3) == 2)
+        #expect(SearchSelectionLogic.nextIndex(current: 9, delta: -1, total: 3) == 2)
     }
 }
 

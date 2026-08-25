@@ -168,4 +168,65 @@ final class SidebarSearchTests: PineUITestCase {
             "Sidebar should return to file tree after clearing search"
         )
     }
+    // MARK: - Keyboard hand-off from field to results (#1526)
+
+    /// Down arrow in the search field must move selection into the results
+    /// list. Scroll geometry is not observable here — the minimal-reveal
+    /// policy is locked by `SearchResultsScrollPolicyTests` instead.
+    func testDownArrowFromSearchFieldSelectsFirstResult() throws {
+        launchWithProjectAndSearch(projectURL, query: "greeting")
+
+        let sidebar = app.scrollViews["sidebar"].firstMatch
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        let firstResult = sidebar.buttons.firstMatch
+        XCTAssertTrue(
+            waitForExistence(firstResult, timeout: 10),
+            "Search results should appear before the hand-off"
+        )
+
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(waitForExistence(searchField, timeout: 10))
+        searchField.click()
+
+        searchField.typeKey(.downArrow, modifierFlags: [])
+
+        let selected = sidebar.buttons.matching(
+            NSPredicate(format: "isSelected == true")
+        ).firstMatch
+        XCTAssertTrue(
+            waitForExistence(selected, timeout: 5),
+            "Down arrow in the search field should select a result row"
+        )
+    }
+
+    /// Escape in the results list returns focus to the search field rather
+    /// than closing search outright.
+    func testEscapeFromResultsReturnsFocusToSearchField() throws {
+        launchWithProjectAndSearch(projectURL, query: "greeting")
+
+        let sidebar = app.scrollViews["sidebar"].firstMatch
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+        XCTAssertTrue(waitForExistence(sidebar.buttons.firstMatch, timeout: 10))
+
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(waitForExistence(searchField, timeout: 10))
+        searchField.click()
+        searchField.typeKey(.downArrow, modifierFlags: [])
+
+        let selected = sidebar.buttons.matching(
+            NSPredicate(format: "isSelected == true")
+        ).firstMatch
+        XCTAssertTrue(waitForExistence(selected, timeout: 5))
+
+        app.typeKey(.escape, modifierFlags: [])
+
+        // The query survives: the first Escape steps back to the field, it
+        // does not clear the search.
+        XCTAssertTrue(
+            waitForExistence(sidebar.buttons.firstMatch, timeout: 5),
+            "First Escape should return focus to the field, not close search"
+        )
+    }
+
 }
