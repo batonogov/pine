@@ -136,6 +136,125 @@ final class BranchSwitcherTests: PineUITestCase {
         )
     }
 
+    // MARK: - Keyboard escape hatches (#1522)
+
+    /// Opens the switcher through the Git menu (Cmd+Shift+B goes through a
+    /// local event monitor that XCUITest's typeKey bypasses).
+    private func openBranchSwitcher() {
+        let gitMenu = app.menuBars.menuBarItems["Git"]
+        XCTAssertTrue(gitMenu.waitForExistence(timeout: 5))
+        gitMenu.click()
+        let switchBranch = app.menuItems["Switch Branch…"]
+        XCTAssertTrue(switchBranch.waitForExistence(timeout: 5))
+        switchBranch.click()
+        XCTAssertTrue(
+            app.textFields["branchSearchField"].waitForExistence(timeout: 5),
+            "Branch switcher should open"
+        )
+    }
+
+    /// The branch the working tree is actually on, read from git itself.
+    private func checkedOutBranch() throws -> String {
+        try git("rev-parse", "--abbrev-ref", "HEAD", at: projectURL)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Identifiers of the rows currently carrying the selected trait.
+    private func selectedBranchRows() -> [String] {
+        ["main", "test-branch", "feature-xyz"].filter {
+            app.buttons["branchItem_\($0)"].firstMatch.isSelected
+        }
+    }
+
+    func testEscapeDismissesSwitcherWithoutSwitchingBranch() throws {
+        launchWithProject(projectURL)
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(try checkedOutBranch(), "main")
+
+        openBranchSwitcher()
+        app.typeKey(.escape, modifierFlags: [])
+
+        XCTAssertTrue(
+            app.textFields["branchSearchField"].waitForNonExistence(timeout: 5),
+            "Escape should dismiss the branch switcher"
+        )
+        XCTAssertEqual(
+            try checkedOutBranch(),
+            "main",
+            "Escape must never check out a branch"
+        )
+    }
+
+    func testCancelButtonDismissesWithoutSwitchingBranch() throws {
+        launchWithProject(projectURL)
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(try checkedOutBranch(), "main")
+
+        openBranchSwitcher()
+        let cancel = app.buttons["branchCancelButton"].firstMatch
+        XCTAssertTrue(
+            cancel.waitForExistence(timeout: 5),
+            "The switcher must offer a visible Cancel button"
+        )
+        cancel.click()
+
+        XCTAssertTrue(
+            app.textFields["branchSearchField"].waitForNonExistence(timeout: 5),
+            "Cancel should dismiss the branch switcher"
+        )
+        XCTAssertEqual(
+            try checkedOutBranch(),
+            "main",
+            "Cancel must never check out a branch"
+        )
+    }
+
+    func testArrowKeysMoveBranchSelection() throws {
+        launchWithProject(projectURL)
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+
+        openBranchSwitcher()
+
+        let initial = selectedBranchRows()
+        XCTAssertEqual(
+            initial.count,
+            1,
+            "Exactly one branch row should start selected"
+        )
+
+        // Being the checked-out branch must not read as the keyboard
+        // selection: VoiceOver would otherwise announce two selected rows.
+        let current = app.buttons["branchItem_main"].firstMatch
+        XCTAssertEqual(
+            current.value as? String,
+            "Current branch",
+            "The checked-out branch should expose itself as a value, not a trait"
+        )
+
+        app.typeKey(.downArrow, modifierFlags: [])
+        let afterDown = selectedBranchRows()
+        XCTAssertEqual(afterDown.count, 1, "Down should leave one row selected")
+        XCTAssertNotEqual(
+            afterDown,
+            initial,
+            "Down should move the selection to the next branch"
+        )
+
+        app.typeKey(.upArrow, modifierFlags: [])
+        XCTAssertEqual(
+            selectedBranchRows(),
+            initial,
+            "Up should move the selection back"
+        )
+
+        // Escape still cancels after the selection moved off the current branch.
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(
+            app.textFields["branchSearchField"].waitForNonExistence(timeout: 5)
+        )
+        XCTAssertEqual(try checkedOutBranch(), "main")
+    }
+
     // MARK: - External branch switch updates subtitle
 
     func testExternalBranchSwitchUpdatesSubtitle() throws {

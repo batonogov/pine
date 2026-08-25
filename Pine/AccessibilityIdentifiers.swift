@@ -132,6 +132,8 @@ nonisolated enum AccessibilityID {
 
     // MARK: - Branch switcher
     static let branchSearchField = "branchSearchField"
+    static let branchList = "branchList"
+    static let branchCancelButton = "branchCancelButton"
     static func branchItem(_ name: String) -> String { "branchItem_\(name)" }
 
     // MARK: - Project Search
