@@ -2537,6 +2537,70 @@ enum Strings {
     static let a11yGitStatusUntracked: String =
         String(localized: "a11y.gitStatus.untracked", defaultValue: "Untracked")
 
+    // MARK: - Status bar indicator names (#1533)
+    //
+    // The count belongs in the *name*, not in a separate value: macOS drops
+    // `.accessibilityValue` on the `AXUnknown` element a collapsed `Label`
+    // becomes, so a split announcement loses the number entirely. The kind
+    // reads as a category ("Modified: 3"), which needs no plural agreement
+    // in any supported locale.
+
+    static func a11yStatusBarModifiedCount(_ count: Int) -> String {
+        String(localized: "a11y.statusBar.git.modified \(count)")
+    }
+
+    static func a11yStatusBarAddedCount(_ count: Int) -> String {
+        String(localized: "a11y.statusBar.git.added \(count)")
+    }
+
+    static func a11yStatusBarUntrackedCount(_ count: Int) -> String {
+        String(localized: "a11y.statusBar.git.untracked \(count)")
+    }
+
+    static let a11yStatusBarGitSummary: String =
+        String(
+            localized: "a11y.statusBar.git.summary",
+            defaultValue: "Git changes"
+        )
+
+    static let a11yStatusBarCursorPosition: String =
+        String(
+            localized: "a11y.statusBar.cursorPosition",
+            defaultValue: "Cursor position"
+        )
+
+    static func a11yStatusBarCursorPositionValue(
+        line: Int,
+        column: Int
+    ) -> String {
+        String(localized: "a11y.statusBar.cursorPosition.value \(line) \(column)")
+    }
+
+    static let a11yStatusBarIndentation: String =
+        String(
+            localized: "a11y.statusBar.indentation",
+            defaultValue: "Indentation"
+        )
+
+    static let a11yStatusBarFileSize: String =
+        String(
+            localized: "a11y.statusBar.fileSize",
+            defaultValue: "File size"
+        )
+
+    // MARK: - Go-to-Definition quick pick (#1533)
+
+    static let a11yDefinitionQuickPickLabel: String =
+        String(
+            localized: "a11y.definitionQuickPick.label",
+            defaultValue: "Definitions"
+        )
+    static let a11yDefinitionQuickPickHint: String =
+        String(
+            localized: "a11y.definitionQuickPick.item.hint",
+            defaultValue: "Opens this definition"
+        )
+
     // MARK: - Global Tab Switcher overlay (#1239)
 
     /// Title shown at the top of the Control-Tab overlay.
