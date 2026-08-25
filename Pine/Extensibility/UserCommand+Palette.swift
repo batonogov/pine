@@ -110,6 +110,12 @@ nonisolated extension UserCommand {
             String(localized: "menu.agentHistory")
         case .showAgentInbox:
             String(localized: "menu.agentInbox")
+        case .newAgent:
+            String(localized: "projectSwitcher.newAgent")
+        case .nextProjectInWindow:
+            String(localized: "menu.nextProjectInWindow")
+        case .previousProjectInWindow:
+            String(localized: "menu.previousProjectInWindow")
         case .toggleTerminal:
             String(localized: "terminal.toggle")
         case .newTerminalTab:
@@ -154,8 +160,10 @@ nonisolated extension UserCommand {
              .toggleWordWrap, .toggleMinimap, .toggleBlame, .togglePreview,
              .revealFileInFinder, .revealProjectInFinder,
              .showAgentActivity, .showAgentHistory, .showAgentInbox,
-             .showProblems:
+             .showProblems, .newAgent:
             .view
+        case .nextProjectInWindow, .previousProjectInWindow:
+            .file
         case .nextDiagnostic, .previousDiagnostic:
             .edit
         case .showBranchSwitcher:
@@ -262,6 +270,12 @@ nonisolated extension UserCommand {
             MenuIcons.agentHistory
         case .showAgentInbox:
             MenuIcons.agentInbox
+        case .newAgent:
+            MenuIcons.projectSwitcherNewAgent
+        case .nextProjectInWindow:
+            MenuIcons.nextProjectInWindow
+        case .previousProjectInWindow:
+            MenuIcons.previousProjectInWindow
         case .toggleTerminal:
             MenuIcons.toggleTerminal
         case .newTerminalTab:
@@ -303,6 +317,10 @@ nonisolated extension UserCommand {
              .revealProjectInFinder, .showAgentActivity, .showAgentHistory,
              .showProblems, .nextDiagnostic, .previousDiagnostic:
             .project
+        case .newAgent:
+            .agentWorktree
+        case .nextProjectInWindow, .previousProjectInWindow:
+            .projectSwitching
         case .showBranchSwitcher:
             .gitRepository
         case .findInTerminal, .toggleTerminalZoom:
@@ -402,6 +420,16 @@ nonisolated extension UserCommand {
             value = nil
         case .showAgentInbox:
             value = "cmd+shift+i"
+        case .newAgent:
+            // "A" for agent, beside the Agent Inbox's cmd+shift+i. Free in
+            // Pine and not claimed by a standard macOS menu equivalent.
+            value = "cmd+shift+a"
+        case .nextProjectInWindow, .previousProjectInWindow:
+            // Which project to switch *to* is not expressible as a chord, and
+            // every remaining free chord is meaningful to someone. The menu
+            // bar and the palette carry the discovery; a user who wants a
+            // chord binds one in `keybindings.json`.
+            value = nil
         case .toggleTerminal:
             value = "cmd+`"
         case .newTerminalTab:

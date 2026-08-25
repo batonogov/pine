@@ -40,6 +40,16 @@ struct PineAppMenuCommands: Commands {
     /// observation of `ProjectRegistry.recentProjects` in the menu body.
     let recentProjects: () -> [URL]
     let showAgentInbox: () -> Void
+    /// The window session behind the focused project scene (#1525). Starting
+    /// an agent in a worktree, and moving between the projects one window
+    /// holds, are session-scoped commands that used to exist only inside the
+    /// toolbar's switcher menu; the menu bar needs the same session to offer
+    /// them. `nil` while no project window is key.
+    let windowSession: () -> ProjectWindowSession?
+    /// Reads the app-scoped registry for the switcher rows, which resolve each
+    /// worktree's agent task to a status glyph. Same rationale as
+    /// `recentProjects`: a closure keeps Commands off the AppDelegate.
+    let projectRegistry: () -> ProjectRegistry?
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage("minimapVisible") private var minimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var blameVisible = true
@@ -49,6 +59,16 @@ struct PineAppMenuCommands: Commands {
     }
     private var nativeState: NativeMenuCommandState {
         NativeMenuCommandState(projectManager: focusedProject)
+    }
+    /// What the focused window can do with its projects and agents (#1525).
+    private var windowAvailability: ProjectWindowCommandAvailability {
+        ProjectWindowCommandAvailability(
+            session: windowSession(),
+            projectManager: focusedProject
+        )
+    }
+    private var agentLaunchOptions: [ProjectAgentLaunchOption] {
+        windowSession()?.availableAgentOptions ?? []
     }
 
     var body: some Commands {
@@ -339,6 +359,68 @@ struct PineAppMenuCommands: Commands {
                 (focusedProject?.paneManager
                     .validGlobalTabSwitchOrder().count ?? 0) < 2
             )
+
+            Divider()
+
+            // The window's projects and agent worktrees, listed where macOS
+            // keeps "what this window is showing" (#1525).
+            Menu {
+                if let session = windowSession(),
+                   let registry = projectRegistry() {
+                    ProjectSwitcherRows(
+                        session: session,
+                        registry: registry,
+                        carriesIdentifiers: false,
+                        onSelect: { url in
+                            NotificationCenter.default.post(
+                                name: .switchProjectInWindow,
+                                object: focusedProject,
+                                userInfo: ["url": url]
+                            )
+                        }
+                    )
+                }
+            } label: {
+                Label(
+                    Strings.menuSwitchProjectInWindow,
+                    systemImage: MenuIcons.switchProjectInWindow
+                )
+            }
+            .disabled(!windowAvailability.canSwitchProject)
+
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .nextProjectInWindow,
+                    projectManager: focusedProject,
+                    windowAvailability: windowAvailability
+                )
+            } label: {
+                Label(
+                    Strings.menuNextProjectInWindow,
+                    systemImage: MenuIcons.nextProjectInWindow
+                )
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .nextProjectInWindow)
+            )
+            .disabled(!windowAvailability.canSwitchProject)
+
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .previousProjectInWindow,
+                    projectManager: focusedProject,
+                    windowAvailability: windowAvailability
+                )
+            } label: {
+                Label(
+                    Strings.menuPreviousProjectInWindow,
+                    systemImage: MenuIcons.previousProjectInWindow
+                )
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .previousProjectInWindow)
+            )
+            .disabled(!windowAvailability.canSwitchProject)
         }
 
         // MARK: - Edit menu
@@ -707,6 +789,42 @@ struct PineAppMenuCommands: Commands {
             .disabled(focusedProject?.workspace.rootURL == nil)
 
             Divider()
+
+            // The switcher's New Agent submenu, in the menu bar where it
+            // belongs (#1525). Hiding the toolbar used to delete the feature
+            // outright: a toolbar is a convenience layer over commands that
+            // live in the menu bar, never their only route.
+            Menu {
+                let options = agentLaunchOptions
+                if options.isEmpty {
+                    Text(Strings.projectSwitcherNoAgents)
+                } else {
+                    ForEach(options) { option in
+                        Button(option.displayName) {
+                            ProjectAgentLaunchSelection.post(
+                                identifier: option.id,
+                                projectManager: focusedProject
+                            )
+                        }
+                        // The preferred (last-used) agent carries the
+                        // command's chord, because that is exactly what the
+                        // palette and a user keybinding launch. Attaching it
+                        // to the submenu's own item instead would give the
+                        // chord nothing to fire.
+                        .effectiveKeyboardShortcut(
+                            option.id == options.first?.id
+                                ? keybindings.effectiveChord(for: .newAgent)
+                                : nil
+                        )
+                    }
+                }
+            } label: {
+                Label(
+                    Strings.projectSwitcherNewAgent,
+                    systemImage: MenuIcons.projectSwitcherNewAgent
+                )
+            }
+            .disabled(!windowAvailability.canLaunchAgent)
 
             Button {
                 showAgentInbox()

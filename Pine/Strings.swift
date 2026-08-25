@@ -774,6 +774,15 @@ enum Strings {
     static let projectSwitcherNoAgents: LocalizedStringKey =
         "projectSwitcher.noAgents"
 
+    /// Menu-bar route to the switcher rows (#1525). The toolbar is a
+    /// convenience layer over these commands, never their only home.
+    static let menuSwitchProjectInWindow: LocalizedStringKey =
+        "menu.switchProjectInWindow"
+    static let menuNextProjectInWindow: LocalizedStringKey =
+        "menu.nextProjectInWindow"
+    static let menuPreviousProjectInWindow: LocalizedStringKey =
+        "menu.previousProjectInWindow"
+
     /// Names the project being closed, so the menu item is unambiguous in a
     /// window holding several.
     static func projectSwitcherCloseProjectTitle(
@@ -1574,6 +1583,12 @@ enum Strings {
     }
     static var commandPaletteRequiresTerminal: String {
         String(localized: "commandPalette.unavailable.terminal")
+    }
+    static var commandPaletteRequiresAgentWorktree: String {
+        String(localized: "commandPalette.unavailable.agentWorktree")
+    }
+    static var commandPaletteRequiresProjectSwitching: String {
+        String(localized: "commandPalette.unavailable.projectSwitching")
     }
     static var commandPaletteNeedsFileAndTerminal: String {
         String(localized: "commandPalette.unavailable.activeFileAndTerminal")

@@ -31,6 +31,48 @@ nonisolated struct ProjectWindowGroup: Identifiable, Equatable, Sendable {
     var id: URL { projectURL }
 }
 
+/// The switcher's rows as a flat, walkable list (#1525).
+///
+/// The toolbar menu is not the only way to move between the projects and
+/// agent worktrees a window holds — the menu bar offers the same rows, and
+/// Next/Previous Project step through them. Keeping the order in one pure
+/// place is what stops the two surfaces from disagreeing about which row
+/// comes after which.
+nonisolated enum ProjectWindowSwitchOrder {
+    enum Direction: String, Sendable, Equatable {
+        case next
+        case previous
+    }
+
+    /// Reading order of the switcher: every project immediately followed by
+    /// the agent worktrees hanging off it.
+    static func targets(in groups: [ProjectWindowGroup]) -> [URL] {
+        groups.flatMap { group in
+            [group.projectURL.standardizedFileURL]
+                + group.worktrees.map(\.worktreeRoot.standardizedFileURL)
+        }
+    }
+
+    /// The row `direction` away from `active`, wrapping at either end.
+    ///
+    /// `nil` when there is nowhere to go — a window showing a single row, or
+    /// an origin this window no longer holds. Both cases must not guess: a
+    /// guess would switch the window somewhere the user never pointed at.
+    static func neighbour(
+        of active: URL,
+        in targets: [URL],
+        direction: Direction
+    ) -> URL? {
+        guard targets.count > 1,
+              let index = targets.firstIndex(of: active.standardizedFileURL)
+        else {
+            return nil
+        }
+        let offset = direction == .next ? 1 : targets.count - 1
+        return targets[(index + offset) % targets.count]
+    }
+}
+
 enum ProjectWindowRestorationResult: Equatable {
     case restored
     case unavailable
@@ -238,6 +280,24 @@ final class ProjectWindowSession {
             return lhs.displayName.localizedStandardCompare(rhs.displayName)
                 == .orderedAscending
         }
+    }
+
+    /// Every project and agent worktree this window holds, in switcher order.
+    var switchTargets: [URL] {
+        ProjectWindowSwitchOrder.targets(in: groups)
+    }
+
+    /// The row a Next/Previous Project command should activate, or `nil` when
+    /// this window has nowhere to step to.
+    func neighbourTarget(
+        _ direction: ProjectWindowSwitchOrder.Direction
+    ) -> URL? {
+        guard !isLaunchingAgent else { return nil }
+        return ProjectWindowSwitchOrder.neighbour(
+            of: activeProjectURL,
+            in: switchTargets,
+            direction: direction
+        )
     }
 
     func restoreIfNeeded(

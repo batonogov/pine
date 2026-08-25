@@ -8970,6 +8970,66 @@
         }
       }
     },
+    "menu.nextProjectInWindow": {
+      "comment": "Menu command that activates the next project or agent worktree open in the current window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nächstes Projekt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next Project"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proyecto siguiente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projet suivant"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のプロジェクト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 프로젝트"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Próximo projeto"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Следующий проект"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一个项目"
+          }
+        }
+      }
+    },
     "menu.openFolder": {
       "comment": "Menu command: open a folder picker dialog (⌘⇧O).",
       "extractionState": "manual",
@@ -9086,6 +9146,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "跳转到上一处更改"
+          }
+        }
+      }
+    },
+    "menu.previousProjectInWindow": {
+      "comment": "Menu command that activates the previous project or agent worktree open in the current window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorheriges Projekt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous Project"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proyecto anterior"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projet précédent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前のプロジェクト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 프로젝트"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projeto anterior"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущий проект"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一个项目"
           }
         }
       }
@@ -9986,6 +10106,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "切换分支…"
+          }
+        }
+      }
+    },
+    "menu.switchProjectInWindow": {
+      "comment": "Menu-bar submenu listing the projects and agent worktrees open in the current window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projekt wechseln"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch Project"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambiar de proyecto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changer de projet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトを切り替え"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트 전환"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alternar projeto"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переключить проект"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换项目"
           }
         }
       }
@@ -25504,6 +25684,66 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要活动文件。" } }
       }
     },
+    "commandPalette.unavailable.agentWorktree": {
+      "comment": "Command palette explanation for a disabled command that requires a Git repository and an installed agent.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erfordert ein Git-Repository und einen installierten Agenten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires a Git repository and an installed agent."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requiere un repositorio Git y un agente instalado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nécessite un dépôt Git et un agent installé."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git リポジトリとインストール済みのエージェントが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git 저장소와 설치된 에이전트가 필요합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requer um repositório Git e um agente instalado."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Требуется репозиторий Git и установленный агент."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 Git 仓库和已安装的智能体。"
+          }
+        }
+      }
+    },
     "commandPalette.unavailable.gitRepository": {
       "comment": "Command palette explanation for a disabled command that requires a Git repository.",
       "extractionState": "manual",
@@ -25517,6 +25757,66 @@
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Requer um repositório Git." } },
         "ru": { "stringUnit": { "state": "translated", "value": "Требуется репозиторий Git." } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要 Git 仓库。" } }
+      }
+    },
+    "commandPalette.unavailable.projectSwitching": {
+      "comment": "Command palette explanation for a disabled command that requires a second project or agent worktree in the same window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erfordert ein weiteres Projekt oder Worktree in diesem Fenster."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires another project or worktree in this window."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requiere otro proyecto o árbol de trabajo en esta ventana."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nécessite un autre projet ou arbre de travail dans cette fenêtre."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このウインドウに別のプロジェクトまたはワークツリーが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 윈도우에 다른 프로젝트나 워크트리가 필요합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requer outro projeto ou worktree nesta janela."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Требуется другой проект или рабочее дерево в этом окне."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要此窗口中的另一个项目或工作树。"
+          }
+        }
       }
     },
     "commandPalette.unavailable.terminal": {

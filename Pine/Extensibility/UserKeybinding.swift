@@ -87,6 +87,10 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case showAgentActivity
     case showAgentHistory
     case showAgentInbox
+    // Agent worktrees (#1525) — reachable without the toolbar
+    case newAgent
+    case nextProjectInWindow
+    case previousProjectInWindow
     case toggleTerminal
     case newTerminalTab
     case findInTerminal
@@ -147,6 +151,9 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
         case .showAgentActivity: "showAgentActivity"
         case .showAgentHistory: "showAgentHistory"
         case .showAgentInbox: "showAgentInbox"
+        case .newAgent: "newAgent"
+        case .nextProjectInWindow, .previousProjectInWindow:
+            "switchProjectInWindow"
         case .toggleTerminal: "user.toggleTerminal"
         case .newTerminalTab: "user.newTerminalTab"
         case .findInTerminal: "findInTerminal"

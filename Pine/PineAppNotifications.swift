@@ -93,6 +93,20 @@ extension Notification.Name {
     /// Shows the persistent agent-history timeline sheet.
     static let showAgentHistory = Notification.Name("showAgentHistory")
 
+    // MARK: - Agent worktrees (#1525)
+    /// Starts an agent in a fresh worktree off the target window's active
+    /// repository.
+    /// userInfo: ["agentIdentifier": String] — absent means the preferred
+    /// (last-used) agent.
+    static let newAgent = Notification.Name("newAgent")
+
+    /// Changes which project or agent worktree the target window shows.
+    /// userInfo: ["url": URL] for a named row, or ["direction": "next" |
+    /// "previous"] to step through the switcher order.
+    static let switchProjectInWindow = Notification.Name(
+        "switchProjectInWindow"
+    )
+
     // MARK: - Agent handoff (#933)
     /// Posted after the user changes the read-only editor-context permission.
     static let agentHandoffSettingsChanged = Notification.Name(
