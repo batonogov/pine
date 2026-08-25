@@ -216,6 +216,35 @@ final class SearchResultsNavigation {
 /// hierarchy — `onKeyPress` never sees its key events. A local key monitor,
 /// live only while results are on screen, gives Down arrow the hand-off the
 /// HIG expects without taking over the field's delegate.
+///
+/// ## Why not the SwiftUI path
+///
+/// This is deliberately AppKit, and the SwiftUI alternatives were considered
+/// and rejected — do not "modernize" it without re-checking the following:
+///
+/// - `.searchFocused(_:)` only *moves* focus into or out of the search field.
+///   It reports and sets focus; it does not deliver key events, so it cannot
+///   tell us that Down was pressed **while the caret is in the field**. It
+///   solves the wrong half of the problem.
+/// - `.onKeyPress` on any view in `SearchResultsView` or its ancestors never
+///   fires for the field, because `NSSearchToolbarItem` is hosted by the
+///   window's `NSToolbar`, outside this view tree. Attaching it to the
+///   `.searchable` modifier in `ProjectSearchModifier` does not help either:
+///   the modifier annotates the content view, not the toolbar item AppKit
+///   creates from it.
+/// - Giving the field an `NSTextFieldDelegate` (the `QuickOpenSearchField`
+///   approach, which does work for the Cmd+P overlay) would mean owning a
+///   field that SwiftUI created and still drives through its `text` binding.
+///   Quick Open owns its `NSTextField` outright; here we do not.
+///
+/// ## When this can be replaced
+///
+/// Drop this class the moment SwiftUI exposes key handling for the search
+/// field itself — an `onKeyPress`-style hook on `.searchable`, or a
+/// `searchable` variant that vends the underlying field. At that point the
+/// replacement must still route through ``SearchKeyboardPolicy``, which is
+/// where the hand-off rule actually lives and is unit-tested; only the event
+/// *plumbing* below is AppKit-specific.
 @MainActor
 final class SearchFieldHandoffMonitor {
     private var monitor: Any?
