@@ -180,11 +180,57 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     }
 }
 
+/// The function keys a chord can name, and the characters AppKit reports for
+/// them.
+///
+/// `NSF1FunctionKey` … `NSF20FunctionKey` are contiguous private-use scalars
+/// starting at `U+F704`, which no keyboard layout can type and no
+/// configuration file can readably contain. So the chord grammar spells them
+/// `"f1"` … `"f20"` and this table is the single place the two spellings meet
+/// — used by `UserKeybindingRegistry.parse` and `keyToken` on the dispatch
+/// side and by `MenuKeyboardShortcut` on the menu side, so a function-key
+/// chord survives the whole round trip instead of being dropped by whichever
+/// layer forgot about it (#1539).
+nonisolated enum FunctionKeyToken {
+    private static let firstScalar: UInt32 = 0xF704
+    private static let count = 20
+
+    private static let charactersByToken: [String: Character] = {
+        var table: [String: Character] = [:]
+        for index in 0..<count {
+            guard let scalar = UnicodeScalar(firstScalar + UInt32(index)) else {
+                continue
+            }
+            table["f\(index + 1)"] = Character(scalar)
+        }
+        return table
+    }()
+
+    private static let tokensByCharacter: [Character: String] = {
+        var table: [Character: String] = [:]
+        for (token, character) in charactersByToken {
+            table[character] = token
+        }
+        return table
+    }()
+
+    /// `"f8"` → the `U+F70B` character AppKit and SwiftUI both use for F8.
+    static func character(for token: String) -> Character? {
+        charactersByToken[token]
+    }
+
+    /// The reverse: `U+F70B` → `"f8"`.
+    static func token(for character: Character) -> String? {
+        tokensByCharacter[character]
+    }
+}
+
 /// Parsed key chord: modifiers + a single character or special key.
 nonisolated struct ParsedKeyChord: Equatable, Hashable, Sendable {
     let modifiers: NSEvent.ModifierFlags
     /// Lowercased character (e.g. "f", "b"), or a special token ("return",
-    /// "up", "down", "left", "right", "tab", "delete", "esc", "space").
+    /// "up", "down", "left", "right", "tab", "delete", "esc", "space",
+    /// "f1" … "f20").
     let key: String
 
     static func == (lhs: ParsedKeyChord, rhs: ParsedKeyChord) -> Bool {
@@ -517,7 +563,7 @@ final class UserKeybindingRegistry {
             charactersIgnoringModifiers?
                 .lowercased()
                 .first
-                .map(String.init)
+                .map { FunctionKeyToken.token(for: $0) ?? String($0) }
         }
     }
 
@@ -538,7 +584,8 @@ final class UserKeybindingRegistry {
     ///
     /// Recognized modifier tokens (case-insensitive): `cmd`/`command`,
     /// `shift`, `alt`/`option`/`opt`, `ctrl`/`control`. The final token is
-    /// the key — a single character (lowercased) or a named special key.
+    /// the key — a single character (lowercased), a named special key, or a
+    /// function key `"f1"` … `"f20"`.
     nonisolated static func parse(_ chord: String) -> ParsedKeyChord? {
         let tokens = chord.split(separator: "+", omittingEmptySubsequences: false).map {
             $0.trimmingCharacters(in: .whitespaces).lowercased()
@@ -569,7 +616,10 @@ final class UserKeybindingRegistry {
         case "up", "down", "left", "right":
             return ParsedKeyChord(modifiers: flags, key: last)
         default:
-            // Single printable character.
+            // Function keys, then a single printable character.
+            if FunctionKeyToken.character(for: last) != nil {
+                return ParsedKeyChord(modifiers: flags, key: last)
+            }
             guard last.count == 1 else { return nil }
             return ParsedKeyChord(modifiers: flags, key: last)
         }
