@@ -14,6 +14,21 @@ enum Strings {
     static let settingsTabKeyBindings: LocalizedStringKey =
         "settings.tab.keyBindings"
 
+    /// The five Settings tab titles, in the order the tab strip draws them.
+    /// `SettingsWindowMetrics` measures these to size the window, so they have
+    /// to resolve to `String` rather than stay `LocalizedStringKey` (#1531).
+    static func settingsTabTitles(locale: Locale = .current) -> [String] {
+        [
+            ("settings.tab.general", "General"),
+            ("settings.tab.terminal", "Terminal"),
+            ("settings.tab.languageServers", "Language Servers"),
+            ("settings.tab.agentHandoff", "Agent Handoff"),
+            ("settings.tab.keyBindings", "Key Bindings & Tasks"),
+        ].map { key, fallback in
+            localizedString(forKey: key, fallback: fallback, locale: locale)
+        }
+    }
+
     static let settingsGeneralTitle: LocalizedStringKey =
         "settings.general.title"
     static let settingsGeneralFormatting: LocalizedStringKey =

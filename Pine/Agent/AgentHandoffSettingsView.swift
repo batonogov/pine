@@ -48,6 +48,10 @@ struct PineSettingsView: View {
     /// Persists the last-selected pane across sessions (issue #337).
     @AppStorage(Self.selectedPaneKey) private var selectedPane: SettingsPane.SettingsPaneID = .general
 
+    /// The tab strip is sized from the titles it is about to draw, so the
+    /// window follows the locale instead of a fixed 720 pt (#1531).
+    @Environment(\.locale) private var locale
+
     init(
         lspSettings: LSPSettings,
         handoffSettings: AgentHandoffSettings,
@@ -123,7 +127,9 @@ struct PineSettingsView: View {
                 }
                 .tag(SettingsPane.SettingsPaneID.keyBindings)
         }
-        .frame(width: 720, height: 540)
+        .settingsWindowSize(
+            tabTitles: Strings.settingsTabTitles(locale: locale)
+        )
         .overlay(alignment: .bottomTrailing) {
             HelpLink(
                 anchor: selectedPane.helpAnchor,
@@ -152,11 +158,14 @@ private struct AgentSettingsView: View {
                 )
                 Divider()
                 AgentHandoffSettingsView(settings: handoffSettings)
-                    .frame(height: 380)
+                    .frame(
+                        minHeight: SettingsWindowMetrics
+                            .handoffSectionMinimumHeight
+                    )
             }
             .padding(20)
         }
-        .frame(width: 720, height: 500)
+        .settingsPaneSize()
     }
 }
 
