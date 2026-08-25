@@ -316,7 +316,10 @@ struct GlobalTabSwitcherOverlay: View {
         let usesAnimation = animated && !reduceMotion
         observeScroll(entries[selectedIndex].id, usesAnimation)
         if usesAnimation {
-            withAnimation(PineAnimation.quick) {
+            // Pass the resolved preference rather than reading the ambient one,
+            // so a hosted test that forces `reduceMotionOverride` gets the
+            // animation that override implies (#1534).
+            withAnimation(PineAnimation.quick(reduceMotion: reduceMotion)) {
                 proxy.scrollTo(selectedIndex, anchor: .center)
             }
         } else {

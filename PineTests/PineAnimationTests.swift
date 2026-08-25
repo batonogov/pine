@@ -4,6 +4,9 @@
 //
 //  Tests for PineAnimation motion system constants.
 //
+//  The Reduce Motion policy these constants are resolved through lives in
+//  `PineAnimationReduceMotionTests` (#1534).
+//
 
 import Foundation
 import SwiftUI
@@ -15,24 +18,31 @@ import Testing
 @MainActor
 struct PineAnimationTests {
 
-    // MARK: - Constants existence and values
+    // MARK: - Base curves
 
-    @Test("Quick animation is defined")
-    func quickAnimationExists() {
-        let animation = PineAnimation.quick
-        #expect(type(of: animation) == Animation.self)
+    // These are the design tokens: what Pine plays when the user has not asked
+    // for less motion. They are distinct from each other, so a call site that
+    // picks the wrong one is observable.
+
+    @Test("The base curves are three distinct animations")
+    func baseCurvesAreDistinct() {
+        let curves = [
+            PineAnimation.quickCurve,
+            PineAnimation.overlayCurve,
+            PineAnimation.contentCurve,
+            PineAnimation.reducedCrossFade,
+        ]
+        #expect(Set(curves).count == curves.count)
     }
 
-    @Test("Overlay animation is defined")
-    func overlayAnimationExists() {
-        let animation = PineAnimation.overlay
-        #expect(type(of: animation) == Animation.self)
-    }
-
-    @Test("Content animation is defined")
-    func contentAnimationExists() {
-        let animation = PineAnimation.content
-        #expect(type(of: animation) == Animation.self)
+    @Test("The overlay curve is the only spring")
+    func overlayCurveIsTheSpring() {
+        // A spring overshoots, which is why the Reduce Motion policy may never
+        // fall back to this curve.
+        #expect(PineAnimation.overlayCurve == .spring(response: 0.3, dampingFraction: 0.9))
+        #expect(PineAnimation.quickCurve == .easeInOut(duration: 0.2))
+        #expect(PineAnimation.contentCurve == .easeInOut(duration: 0.25))
+        #expect(PineAnimation.reducedCrossFade == .easeInOut(duration: 0.15))
     }
 
     @Test("Fade transition is defined")
