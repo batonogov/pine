@@ -31,6 +31,25 @@ nonisolated final class FileSystemWatcher {
     /// thread-safe isActive(generation:) check.
     private var activeGeneration: Int = 0
 
+    /// Injected hook inside the debounce work item, run after the item has
+    /// been dequeued on the main queue and before its body reads
+    /// `activeGeneration`. No-op in production.
+    ///
+    /// `stopOnQueue()` defends delivery twice. `debounceWorkItem?.cancel()`
+    /// drops a work item that has not started; the `activeGeneration` check
+    /// drops one that is already running, which is what a `stop()` arriving
+    /// from another thread mid-delivery produces. That second window is a few
+    /// instructions wide, so no amount of sleeping reaches it — deleting the
+    /// generation check left `FileSystemWatcherTests` green both before and
+    /// after the fixes in #1521, which is the gap #1518 asked to close. This
+    /// hook holds the work item open inside the window so the guard is
+    /// actually observable.
+    ///
+    /// Assign it before `watch(directory:)`. `watch` enters the queue with
+    /// `queue.sync`, which publishes the write to the queue that reads it.
+    /// Same shape as `ProjectManager.recoveryOfferListingSeam`.
+    var debounceDeliverySeam: @Sendable () -> Void = {}
+
     init(debounceInterval: TimeInterval = 0.5, callback: @escaping @MainActor () -> Void) {
         self.debounceInterval = debounceInterval
         self.callback = callback
@@ -101,8 +120,14 @@ nonisolated final class FileSystemWatcher {
         debounceWorkItem?.cancel()
         let cb = callback
         let generation = activeGeneration
+        // Captured by value on the queue, like `generation` above, so the
+        // work item never reads mutable state from the main queue.
+        let seam = debounceDeliverySeam
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            // No-op in production. See `debounceDeliverySeam`: this is the
+            // only point from which the generation check below is observable.
+            seam()
             // If stop() was called between enqueue and delivery,
             // the generation will have changed — skip the callback.
             guard self.isActive(generation: generation) else { return }

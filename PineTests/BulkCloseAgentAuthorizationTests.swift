@@ -50,8 +50,39 @@ struct BulkCloseAgentAuthorizationTests {
         try? FileManager.default.removeItem(at: url)
     }
 
-    private func settle() async {
-        for _ in 0..<8 { await Task.yield() }
+    /// Waits for a condition on a wall-clock deadline, recording a failure
+    /// rather than hanging if it never becomes true.
+    ///
+    /// This replaced `for _ in 0..<8 { await Task.yield() }`, which is not a
+    /// wait. Yielding hands the main actor to whatever is already runnable; a
+    /// continuation parked on another executor is not made ready by it, and
+    /// under load all eight yields can pass before the close path lands. That
+    /// is how "Saving a dirty window backgrounds its live agent without
+    /// terminal alert" failed on CI with four issues at once — every counter
+    /// still at its initial value, because nothing had run yet (run
+    /// 32733740918, #1518).
+    @discardableResult
+    private func waitUntil(
+        _ condition: @escaping @MainActor () -> Bool,
+        within duration: Duration = .seconds(5)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: duration)
+        while clock.now < deadline {
+            if condition() { return true }
+            await Task.yield()
+            try? await clock.sleep(for: .milliseconds(1))
+        }
+        Issue.record("Timed out waiting for bulk-close test state")
+        return false
+    }
+
+    /// The window's close bookkeeping is the end of the asynchronous close
+    /// path: `performClose` bumps `performCloseCount` and then, synchronously,
+    /// `approvedCloseCount`. Waiting for it means every assertion after it is
+    /// reading a settled state rather than sampling one.
+    private func waitForClose(_ window: BulkCloseTrackingWindow) async -> Bool {
+        await waitUntil { window.performCloseCount == 1 }
     }
 
     private func detectedSession(
@@ -592,7 +623,7 @@ struct BulkCloseAgentAuthorizationTests {
         defer { DialogPresenter.ownerDidClose(window) }
 
         #expect(!delegate.windowShouldClose(window))
-        await settle()
+        #expect(await waitForClose(window))
 
         #expect(presentedTemplates.isEmpty)
         #expect(window.performCloseCount == 1)
@@ -650,7 +681,7 @@ struct BulkCloseAgentAuthorizationTests {
         defer { DialogPresenter.ownerDidClose(window) }
 
         #expect(!delegate.windowShouldClose(window))
-        await settle()
+        #expect(await waitForClose(window))
 
         #expect(presentedTemplates.isEmpty)
         #expect(window.performCloseCount == 1)
@@ -705,7 +736,7 @@ struct BulkCloseAgentAuthorizationTests {
         defer { DialogPresenter.ownerDidClose(window) }
 
         #expect(!delegate.windowShouldClose(window))
-        await settle()
+        #expect(await waitForClose(window))
 
         #expect(presentedTemplates == [.unsavedChangesBulk])
         #expect(window.performCloseCount == 1)
@@ -745,7 +776,7 @@ struct BulkCloseAgentAuthorizationTests {
         defer { DialogPresenter.ownerDidClose(window) }
 
         #expect(!delegate.windowShouldClose(window))
-        await settle()
+        #expect(await waitForClose(window))
 
         #expect(presentedTemplates == [.unsavedChangesBulk])
         #expect(window.performCloseCount == 1)
