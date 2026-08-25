@@ -429,7 +429,7 @@ struct AgentHistoryRecoveryNoticeList: View {
         _ record: AgentHistoryRecoveryRecord
     ) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(statusText(for: record.state))
+            Text(Self.statusText(for: record.state))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.orange)
             recoveryPathRow(
@@ -517,7 +517,12 @@ struct AgentHistoryRecoveryNoticeList: View {
         ])
     }
 
-    private func statusText(
+    /// Not `private`: the discovery state is the only thing this row says
+    /// about *why* a recovery record is being shown, and all seven corruption
+    /// reasons used to arrive here as one sentence (#1541). Static and
+    /// internal so every reason can be enumerated by a test rather than
+    /// inspected on screen.
+    static func statusText(
         for state: AgentHistoryRecoveryDiscoveryState
     ) -> LocalizedStringKey {
         switch state {
@@ -527,8 +532,8 @@ struct AgentHistoryRecoveryNoticeList: View {
             Strings.agentHistoryRecoveryAuthorityConsumed
         case .finalized:
             Strings.agentHistoryRecoveryNoticeFinalized
-        case .corrupt:
-            Strings.agentHistoryRecoveryNoticeCorrupt
+        case .corrupt(let corruption):
+            Strings.agentHistoryRecoveryCorruption(corruption)
         }
     }
 }

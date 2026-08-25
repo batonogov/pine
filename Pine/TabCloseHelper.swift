@@ -309,6 +309,53 @@ struct TerminalTabCloseAuthorization {
 @MainActor
 enum TabCloseHelper {
 
+    /// The two strings a close confirmation is built from.
+    ///
+    /// Alerts state the situation in the message text and the consequence in
+    /// the informative text. Pine used to do the reverse — a noun-phrase
+    /// title ("Unsaved Changes") with the question demoted into the body —
+    /// and the single-tab case never said *which* file was about to be lost,
+    /// though the tab is known at every call site (#1541).
+    ///
+    /// A value rather than two arguments spelled out at each of the four call
+    /// sites, so the structure is asserted once and cannot drift between the
+    /// tab bar, the window close, the project close and Quit.
+    nonisolated struct UnsavedChangesPrompt: Equatable, Sendable {
+        let messageText: String
+        let informativeText: String
+    }
+
+    /// The close question for one named file.
+    static func unsavedChangesPrompt(
+        fileName: String
+    ) -> UnsavedChangesPrompt {
+        UnsavedChangesPrompt(
+            messageText: Strings.unsavedChangesQuestion(fileName),
+            informativeText: Strings.unsavedChangesConsequence
+        )
+    }
+
+    /// The close question for a group of files, with the list of names as the
+    /// informative text under it.
+    ///
+    /// One dirty file falls through to the named single-file question: a
+    /// window close, a project close and a Quit review all reach this with
+    /// any count, and "these files" over a one-line list is both wrong and
+    /// less informative than the name Pine already has.
+    static func unsavedChangesPrompt(
+        fileNames: [String]
+    ) -> UnsavedChangesPrompt {
+        if fileNames.count == 1, let only = fileNames.first {
+            return unsavedChangesPrompt(fileName: only)
+        }
+        return UnsavedChangesPrompt(
+            messageText: Strings.unsavedChangesBulkQuestion,
+            informativeText: Strings.unsavedChangesListMessage(
+                fileNames.map { "  \u{2022} \($0)" }.joined(separator: "\n")
+            )
+        )
+    }
+
     /// Closes a single tab with unsaved-changes protection.
     ///
     /// When `context` resolves a window, the unsaved-changes alert is
@@ -341,6 +388,7 @@ enum TabCloseHelper {
             return tabManager.closeTab(id: tabID) == .closed
         }
 
+        let prompt = unsavedChangesPrompt(fileName: entryTab.fileName)
         let response: NSApplication.ModalResponse
         if let presentAlert {
             response = await presentAlert()
@@ -351,8 +399,8 @@ enum TabCloseHelper {
                     tabManager: ObjectIdentifier(tabManager),
                     tabIDs: [tabID]
                 ),
-                messageText: Strings.unsavedChangesTitle,
-                informativeText: Strings.unsavedChangesMessage
+                messageText: prompt.messageText,
+                informativeText: prompt.informativeText
             )
         }
         switch response {
@@ -421,7 +469,9 @@ enum TabCloseHelper {
             uniquingKeysWith: { _, latest in latest }
         )
         let targetTabIDs = targetTabIDs ?? Set(dirtyTabs.map(\.id))
-        let fileList = dirtyTabs.map { "  \u{2022} \($0.fileName)" }.joined(separator: "\n")
+        let prompt = unsavedChangesPrompt(
+            fileNames: dirtyTabs.map(\.fileName)
+        )
         let response: NSApplication.ModalResponse
         if let presentAlert {
             response = await presentAlert()
@@ -432,8 +482,8 @@ enum TabCloseHelper {
                     tabManager: ObjectIdentifier(tabManager),
                     tabIDs: targetTabIDs
                 ),
-                messageText: Strings.unsavedChangesTitle,
-                informativeText: Strings.unsavedChangesListMessage(fileList)
+                messageText: prompt.messageText,
+                informativeText: prompt.informativeText
             )
         }
         switch response {

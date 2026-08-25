@@ -494,11 +494,24 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
         let alert = app.sheets.firstMatch
         XCTAssertTrue(alert.waitForExistence(timeout: 5))
 
-        let title = try catalog.value(
-            for: "dialog.unsavedChanges.title",
+        // The message text is the question, and it names the file — the HIG
+        // order, and the wording #1541 replaced "Unsaved Changes" with.
+        let question = String(
+            format: try catalog.value(
+                for: "dialog.unsavedChanges.question %@",
+                locale: locale.language
+            ),
+            "main.swift"
+        )
+        XCTAssertTrue(alert.staticTexts[question].firstMatch.exists)
+        let consequence = try catalog.value(
+            for: "dialog.unsavedChanges.consequence",
             locale: locale.language
         )
-        XCTAssertTrue(alert.staticTexts[title].firstMatch.exists)
+        XCTAssertTrue(
+            alert.staticTexts[consequence].firstMatch.exists,
+            "The save alert should carry the consequence as informative text"
+        )
         for key in [
             "dialog.unsavedChanges.save",
             "dialog.unsavedChanges.dontSave",

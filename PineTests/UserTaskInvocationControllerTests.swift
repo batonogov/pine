@@ -377,8 +377,27 @@ struct UserTaskInvocationControllerTests {
         }
         var copiedOutput: String?
 
+        // The first button is OK — the default, and what Escape and ⌘-.
+        // resolve to. It must do nothing at all: Return used to land on Copy
+        // Output and write the pasteboard as a side effect of dismissing a
+        // sheet, and Escape was bound to no button whatsoever (#1541).
+        project.taskRunStore.isOutputVisible = false
         UserTaskInvocationController.applyReplacementConflictResponse(
             .alertFirstButtonReturn,
+            run: run,
+            projectManager: project,
+            context: context,
+            copyOutput: { copiedOutput = $0 }
+        )
+        #expect(
+            copiedOutput == nil,
+            "Dismissing the conflict sheet must not touch the pasteboard"
+        )
+        #expect(!project.taskRunStore.isOutputVisible)
+        #expect(project.primaryTabManager.activeTab?.content == "human edits")
+
+        UserTaskInvocationController.applyReplacementConflictResponse(
+            .alertSecondButtonReturn,
             run: run,
             projectManager: project,
             context: context,
@@ -389,7 +408,7 @@ struct UserTaskInvocationControllerTests {
 
         project.taskRunStore.isOutputVisible = false
         UserTaskInvocationController.applyReplacementConflictResponse(
-            .alertSecondButtonReturn,
+            .alertThirdButtonReturn,
             run: run,
             projectManager: project,
             context: context

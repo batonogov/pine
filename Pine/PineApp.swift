@@ -2819,13 +2819,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 let dirty = projectManager.allDirtyTabs
                 guard !dirty.isEmpty else { continue }
 
-                let fileList = dirty.map { "  • \($0.fileName)" }
-                    .joined(separator: "\n")
+                let prompt = TabCloseHelper.unsavedChangesPrompt(
+                    fileNames: dirty.map(\.fileName)
+                )
                 guard let response = await presentTerminationDecision(
                     .unsavedChangesBulk,
                     preferredProject: projectManager,
-                    title: Strings.unsavedChangesTitle,
-                    message: Strings.unsavedChangesListMessage(fileList)
+                    title: prompt.messageText,
+                    message: prompt.informativeText
                 ) else { return false }
                 switch response {
                 case .alertFirstButtonReturn:

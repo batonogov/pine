@@ -94,6 +94,7 @@ extension ContentView {
         let entries = await projectManager.pendingRecoveryOffer()
         guard !entries.isEmpty else { return }
         recoveryEntries = entries
+        recoveryRestoreFailed = false
         showRecoveryDialog = true
     }
 
@@ -204,6 +205,10 @@ extension ContentView {
             // hands back stays on disk for the next launch either way.
             projectManager.markRecoveryOfferAnswered()
             recoveryEntries = retained
+            // These are the entries the restorer refused, so the sheet that
+            // comes back must say so rather than repeat "Pine found unsaved
+            // changes from a previous session" (#1541).
+            recoveryRestoreFailed = !retained.isEmpty
             showRecoveryDialog = !retained.isEmpty
         }
     }
@@ -240,6 +245,7 @@ extension ContentView {
             projectManager.markRecoveryOfferAnswered()
             showRecoveryDialog = false
             recoveryEntries = []
+            recoveryRestoreFailed = false
         }
     }
 

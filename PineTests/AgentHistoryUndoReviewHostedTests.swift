@@ -12,7 +12,13 @@ import Testing
 @Suite("Agent History Undo Review hosted controls", .serialized)
 @MainActor
 struct AgentHistoryUndoReviewHostedTests {
-    @Test("Ready review exposes enabled default Apply and dismiss controls")
+    /// Return used to apply a bulk file rewrite (#1541). Apply carried
+    /// `.keyboardShortcut(.defaultAction)` while the button beside it carried
+    /// `.cancelAction`, so the sheet answered the most reflexive key on the
+    /// keyboard by overwriting files in the workspace — the exact shape
+    /// `AlertTemplate` forbids for every `NSAlert` in the app, and that
+    /// `RecoveryDialogChoice` restates for the crash-recovery sheet.
+    @Test("Ready review answers Return by closing, never by applying")
     func readyControls() throws {
         let activation = ActivationRecorder()
         let presented = PresentedState()
@@ -26,26 +32,32 @@ struct AgentHistoryUndoReviewHostedTests {
         )
         defer { hosted.window.close() }
 
-        // Return must activate the default Apply action. The deterministic
-        // fixture has no store, so activation remains visibly in-progress
-        // without starting a workspace task.
-        sendReturn(to: hosted.window, drainRunLoop: false)
-        sendEscape(to: hosted.window, drainRunLoop: false)
         sendReturn(to: hosted.window)
-        #expect(activation.count == 1)
-        #expect(presented.value)
+        #expect(
+            activation.isEmpty,
+            "Return must never start a bulk file rewrite"
+        )
+        #expect(
+            !presented.value,
+            "Return must answer this sheet by closing it safely"
+        )
 
+        // Escape keeps doing what it always did, on its own instance so the
+        // Return path above cannot be what closed it.
         let dismissState = PresentedState()
+        let dismissActivation = ActivationRecorder()
         let dismissHost = host(
             result: .available(
                 AgentHistoryUndoReviewTestFixtures.mixedContentModel()
             ),
             phase: .ready,
-            isPresented: dismissState.binding
+            isPresented: dismissState.binding,
+            onApplyActivation: dismissActivation.record
         )
         defer { dismissHost.window.close() }
         sendEscape(to: dismissHost.window)
         #expect(!dismissState.value)
+        #expect(dismissActivation.isEmpty)
     }
 
     @Test("Applying review disables Apply and every dismiss path")
@@ -84,8 +96,19 @@ struct AgentHistoryUndoReviewHostedTests {
 
         sendReturn(to: hosted.window)
         #expect(activation.isEmpty)
-        sendEscape(to: hosted.window)
-        #expect(!presented.value)
+        #expect(!presented.value, "Return dismisses a sheet with no Apply")
+
+        let escapeState = PresentedState()
+        let escapeHost = host(
+            result: .unavailable(failure),
+            phase: .blocked(failure),
+            isPresented: escapeState.binding,
+            onApplyActivation: activation.record
+        )
+        defer { escapeHost.window.close() }
+        sendEscape(to: escapeHost.window)
+        #expect(!escapeState.value)
+        #expect(activation.isEmpty)
     }
 
     @Test("Review accessibility identifiers are stable and distinct")

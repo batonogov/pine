@@ -184,14 +184,11 @@ enum UserTaskInvocationController {
         for task: UserTask,
         context: DialogPresentationContext
     ) async -> Bool {
-        let alert = NSAlert()
-        alert.messageText = Strings.userTaskConfirmationTitle(task.label)
-        alert.informativeText = Strings.userTaskConfirmationMessage(task.command)
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: Strings.userTaskRun)
-        let cancelButton = alert.addButton(withTitle: Strings.dialogCancel)
-        cancelButton.keyEquivalent = "\u{1b}"
-        let response = await alert.runSheet(on: context)
+        let response = await AlertTemplate.userTaskRunConfirmation.runSheet(
+            on: context,
+            messageText: Strings.userTaskConfirmationTitle(task.label),
+            informativeText: Strings.userTaskConfirmationMessage(task.command)
+        )
         return response == .alertFirstButtonReturn
     }
 
@@ -333,16 +330,14 @@ enum UserTaskInvocationController {
         context: DialogPresentationContext
     ) {
         Task { @MainActor in
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = Strings.userTaskOutputConflictTitle
-            alert.informativeText = Strings.userTaskOutputConflictMessage
-            // Offer safe recovery actions: Copy the captured stdout to the
-            // pasteboard, and reveal the output surface for inspection.
-            alert.addButton(withTitle: Strings.userTaskCopyOutput)
-            alert.addButton(withTitle: Strings.userTaskOpenOutput)
-            alert.addButton(withTitle: Strings.dialogOK)
-            let response = await alert.runSheet(on: context)
+            // Copy the captured stdout to the pasteboard, or reveal the
+            // output surface — both offered behind the OK that Return and
+            // Escape resolve to, so neither happens by reflex.
+            let response = await AlertTemplate.userTaskOutputConflict.runSheet(
+                on: context,
+                messageText: Strings.userTaskOutputConflictTitle,
+                informativeText: Strings.userTaskOutputConflictMessage
+            )
             applyReplacementConflictResponse(
                 response,
                 run: run,
@@ -353,6 +348,10 @@ enum UserTaskInvocationController {
     }
 
     /// Applies a recovery choice from the replacement-conflict sheet.
+    ///
+    /// Button order follows ``AlertTemplate/userTaskOutputConflict``: OK
+    /// first (and therefore the rightmost, default, Escape-answering
+    /// button), then Copy Output, then Open Output.
     ///
     /// Kept as an internal seam so the safe Copy/Open actions can be hosted
     /// against a real owner window without automating an `NSAlert`.
@@ -371,9 +370,9 @@ enum UserTaskInvocationController {
             return
         }
         switch response {
-        case .alertFirstButtonReturn:
-            copyOutput(run.stdout)
         case .alertSecondButtonReturn:
+            copyOutput(run.stdout)
+        case .alertThirdButtonReturn:
             projectManager.taskRunStore.isOutputVisible = true
         default:
             break
@@ -383,22 +382,20 @@ enum UserTaskInvocationController {
     private static func presentMissingActiveFile(
         context: DialogPresentationContext
     ) async {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = Strings.userTaskMissingFileTitle
-        alert.informativeText = Strings.userTaskMissingFileMessage
-        alert.addButton(withTitle: Strings.dialogOK)
-        _ = await alert.runSheet(on: context)
+        _ = await AlertTemplate.userTaskNotice.runSheet(
+            on: context,
+            messageText: Strings.userTaskMissingFileTitle,
+            informativeText: Strings.userTaskMissingFileMessage
+        )
     }
 
     private static func presentIneligibleReplacement(
         context: DialogPresentationContext
     ) async {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = Strings.userTaskReplacementUnavailableTitle
-        alert.informativeText = Strings.userTaskReplacementUnavailableMessage
-        alert.addButton(withTitle: Strings.dialogOK)
-        _ = await alert.runSheet(on: context)
+        _ = await AlertTemplate.userTaskNotice.runSheet(
+            on: context,
+            messageText: Strings.userTaskReplacementUnavailableTitle,
+            informativeText: Strings.userTaskReplacementUnavailableMessage
+        )
     }
 }

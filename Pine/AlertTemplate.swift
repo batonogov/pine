@@ -19,12 +19,15 @@ import AppKit
 /// ```swift
 /// let response = await AlertTemplate.unsavedChangesSingle.runSheet(
 ///     on: context,
-///     messageText: Strings.unsavedChangesTitle,
-///     informativeText: Strings.unsavedChangesMessage
+///     messageText: Strings.unsavedChangesQuestion(tab.fileName),
+///     informativeText: Strings.unsavedChangesConsequence
 /// )
 /// ```
 ///
-enum AlertTemplate: Sendable, Equatable {
+/// `CaseIterable` so the role table in `AlertTemplateTests` can be checked for
+/// completeness: a template added without an entry there would otherwise ship
+/// with whatever default, cancel and destructive layout it happened to get.
+enum AlertTemplate: Sendable, Equatable, CaseIterable {
     // MARK: - Unsaved changes
 
     /// Save / Don't Save / Cancel  — single file close confirmation.
@@ -78,6 +81,28 @@ enum AlertTemplate: Sendable, Equatable {
 
     /// Revert All / Cancel  — confirm reverting all changes in a file.
     case revertAllConfirmation
+
+    // MARK: - User tasks
+
+    /// Run / Cancel  — confirm running a task's shell command.
+    ///
+    /// Run carries `.destructive`: this sheet is shown either because the
+    /// validator matched a destructive command (`rm`, `dd`, `chmod`, …) or
+    /// because the task's author asked for a confirmation, and both mean the
+    /// same thing — the command should not fire on a reflex Return.
+    case userTaskRunConfirmation
+
+    /// OK / Copy Output / Open Output  — a replacement task finished but the
+    /// buffer moved under it, so its stdout was not applied.
+    ///
+    /// OK leads so it is the rightmost, default, Escape-answering button.
+    /// Before this template, Return copied the output to the clipboard —
+    /// a side effect nobody asked for — and Escape was bound to nothing at
+    /// all, leaving the sheet with no keyboard dismissal (#1541).
+    case userTaskOutputConflict
+
+    /// OK — a task could not start, with the reason in the informative text.
+    case userTaskNotice
 
 }
 
@@ -241,7 +266,9 @@ extension AlertTemplate {
              .applicationQuitFailure,
              .externalModifyConflict, .fileDeletedSaveAs,
              .fileOperationErrorWarning, .largeFileWarning,
-             .branchUncommittedChanges, .revertAllConfirmation:
+             .branchUncommittedChanges, .revertAllConfirmation,
+             .userTaskRunConfirmation, .userTaskOutputConflict,
+             .userTaskNotice:
             return .warning
         }
     }
@@ -283,6 +310,16 @@ extension AlertTemplate {
             return [Strings.branchUncommittedChangesSwitch, Strings.dialogCancel]
         case .revertAllConfirmation:
             return [Strings.revertAllButton, Strings.dialogCancel]
+        case .userTaskRunConfirmation:
+            return [Strings.userTaskRun, Strings.dialogCancel]
+        case .userTaskOutputConflict:
+            return [
+                Strings.dialogOK,
+                Strings.userTaskCopyOutput,
+                Strings.userTaskOpenOutput,
+            ]
+        case .userTaskNotice:
+            return [Strings.dialogOK]
         }
     }
 
@@ -325,6 +362,16 @@ extension AlertTemplate {
             return [.destructive, [.default, .cancel]]
         case .revertAllConfirmation:
             return [.destructive, [.default, .cancel]]
+        case .userTaskRunConfirmation:
+            return [.destructive, [.default, .cancel]]
+        case .userTaskOutputConflict:
+            // Copy and Open are recovery offers, not the expected answer:
+            // dismissing is. Neither is destructive — the buffer is already
+            // safe, which is why this sheet exists — but neither should
+            // happen because someone pressed Return to make a sheet go away.
+            return [[.default, .cancel], [], []]
+        case .userTaskNotice:
+            return [.default]
         }
     }
 }

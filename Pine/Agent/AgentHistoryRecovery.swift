@@ -69,7 +69,11 @@ nonisolated struct AgentHistoryRecoveryPathsManifest: Codable, Equatable, Sendab
     let recoveryPaths: [String]
 }
 
-nonisolated enum AgentHistoryRecoveryCorruption: String, Equatable, Sendable {
+nonisolated enum AgentHistoryRecoveryCorruption:
+    String,
+    CaseIterable,
+    Equatable,
+    Sendable {
     case invalidRecoveryRoot
     case enumerationLimitExceeded
     case untrustedDirectory
@@ -77,6 +81,13 @@ nonisolated enum AgentHistoryRecoveryCorruption: String, Equatable, Sendable {
     case invalidPhaseMarkers
     case invalidRecoveryMetadata
     case invalidWorkspaceArtifacts
+
+    /// Catalog key for the notice line this reason renders as.
+    ///
+    /// Built here rather than in `Strings` because the localization
+    /// completeness test reads `Strings.swift` as text and treats an
+    /// interpolated literal there as a key it must find in the catalog.
+    var noticeKey: String { "agentHistory.recoveryNoticeCorrupt.\(rawValue)" }
 }
 
 nonisolated enum AgentHistoryRecoveryDiscoveryState: Equatable, Sendable {

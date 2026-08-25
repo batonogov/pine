@@ -665,8 +665,8 @@ enum Strings {
         "agentInbox.openedNewSession"
     static let agentInboxResumedSession: LocalizedStringKey =
         "agentInbox.resumedSession"
-    static let agentInboxRecoveryUnavailable: LocalizedStringKey =
-        "agentInbox.recoveryUnavailable"
+    static let agentInboxRouteUnavailableNextStep: LocalizedStringKey =
+        "agentInbox.routeUnavailable.nextStep"
 
     /// Resolved `String` forms of the two Inbox action failures, for the
     /// VoiceOver announcement that accompanies the on-screen status. An
@@ -682,14 +682,116 @@ enum Strings {
         )
     }
 
-    static func agentInboxRecoveryUnavailableText(
+    static func agentInboxRouteUnavailableNextStepText(
         locale: Locale = .current
     ) -> String {
         localizedString(
-            forKey: "agentInbox.recoveryUnavailable",
-            fallback: "Safe recovery is unavailable",
+            forKey: "agentInbox.routeUnavailable.nextStep",
+            fallback:
+                "Recover the task to start a new session in the same worktree",
             locale: locale
         )
+    }
+
+    // MARK: - Agent recovery failures (#1541)
+
+    /// The sentence naming what stopped one recovery attempt.
+    ///
+    /// Keyed off ``AgentRecoveryFailure`` instead of written out as thirteen
+    /// stored properties, so a case added to that enum reaches the catalog
+    /// through one place and the enum's own test can walk every case.
+    static func agentRecoveryCause(
+        _ failure: AgentRecoveryFailure
+    ) -> LocalizedStringKey {
+        LocalizedStringKey(failure.causeKey)
+    }
+
+    /// Resolved form of ``agentRecoveryCause(_:)``, for the VoiceOver
+    /// announcement that accompanies the on-screen caption.
+    static func agentRecoveryCauseText(
+        _ failure: AgentRecoveryFailure,
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: failure.causeKey,
+            fallback: agentRecoveryCauseFallback(failure),
+            locale: locale
+        )
+    }
+
+    /// The sentence telling the user what to do about that failure.
+    static func agentRecoveryNextStep(
+        _ failure: AgentRecoveryFailure
+    ) -> LocalizedStringKey {
+        LocalizedStringKey(failure.nextStepKey)
+    }
+
+    /// Resolved form of ``agentRecoveryNextStep(_:)``.
+    static func agentRecoveryNextStepText(
+        _ failure: AgentRecoveryFailure,
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: failure.nextStepKey,
+            fallback: agentRecoveryNextStepFallback(failure),
+            locale: locale
+        )
+    }
+
+    private static func agentRecoveryCauseFallback(
+        _ failure: AgentRecoveryFailure
+    ) -> String {
+        switch failure {
+        case .taskGone:
+            "This task is no longer in the Inbox"
+        case .projectWindowUnavailable:
+            "Pine could not open this task\u{2019}s project window"
+        case .changedWhilePreparing:
+            "The task changed while Pine was preparing to recover it"
+        case .launchRejected:
+            "The terminal refused to start the recovery session"
+        case .notRecoverable:
+            "This task is not in a state Pine can recover"
+        case .projectFolderMissing:
+            "The project folder recorded for this task no longer exists"
+        case .worktreeMissing:
+            "The worktree recorded for this task no longer exists"
+        case .agentExecutableMissing:
+            "The agent\u{2019}s command line tool is no longer installed"
+        case .adapterUnavailable:
+            "Pine has no reviewed way to resume this agent\u{2019}s session"
+        case .sessionIdentityMissing:
+            "This run recorded no session to resume"
+        case .sessionIdentityInvalid:
+            "The recorded session identifier failed validation"
+        case .versionProbeFailed:
+            "Pine could not read the agent\u{2019}s version"
+        case .versionChanged:
+            "The agent\u{2019}s version changed since this task ran"
+        }
+    }
+
+    private static func agentRecoveryNextStepFallback(
+        _ failure: AgentRecoveryFailure
+    ) -> String {
+        switch failure {
+        case .taskGone:
+            "It was dismissed or removed, so nothing is left to recover"
+        case .projectWindowUnavailable, .projectFolderMissing:
+            "Open the project folder again, then retry from the Inbox"
+        case .changedWhilePreparing:
+            "Try the same action again from the Inbox"
+        case .launchRejected:
+            "Open a terminal in the project and start the agent yourself"
+        case .notRecoverable:
+            "Use Open to go to the session that is still running"
+        case .worktreeMissing:
+            "Restore the worktree, or start the agent in the project folder"
+        case .agentExecutableMissing, .adapterUnavailable,
+             .sessionIdentityMissing, .sessionIdentityInvalid,
+             .versionProbeFailed, .versionChanged:
+            "Start a new session in the same worktree instead"
+        }
     }
 
     static let agentInboxRecoveryActions: LocalizedStringKey =
@@ -1049,8 +1151,55 @@ enum Strings {
         "agentHistory.recoveryNoticeAuthorityConsumed"
     static let agentHistoryRecoveryNoticeFinalized: LocalizedStringKey =
         "agentHistory.recoveryNoticeFinalized"
-    static let agentHistoryRecoveryNoticeCorrupt: LocalizedStringKey =
-        "agentHistory.recoveryNoticeCorrupt"
+    /// The status line for a recovery record that failed validation.
+    ///
+    /// One key per corruption reason. All seven used to render as a single
+    /// "Corrupt or untrusted recovery data", which told the user nothing
+    /// about whether the folder had moved, failed its ownership checks, or
+    /// simply carried a manifest this build cannot read (#1541).
+    static func agentHistoryRecoveryCorruption(
+        _ corruption: AgentHistoryRecoveryCorruption
+    ) -> LocalizedStringKey {
+        // Through a `String` binding on purpose: writing the interpolation
+        // inside `LocalizedStringKey(...)` picks the interpolation
+        // initializer, which builds the key "…Corrupt.%@" plus an argument
+        // and looks up a key the catalog does not contain.
+        let key = corruption.noticeKey
+        return LocalizedStringKey(key)
+    }
+
+    /// Resolved form of ``agentHistoryRecoveryCorruption(_:)``.
+    static func agentHistoryRecoveryCorruptionText(
+        _ corruption: AgentHistoryRecoveryCorruption,
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: corruption.noticeKey,
+            fallback: agentHistoryRecoveryCorruptionFallback(corruption),
+            locale: locale
+        )
+    }
+
+    private static func agentHistoryRecoveryCorruptionFallback(
+        _ corruption: AgentHistoryRecoveryCorruption
+    ) -> String {
+        switch corruption {
+        case .invalidRecoveryRoot:
+            "Recovery folder is not in its expected location"
+        case .enumerationLimitExceeded:
+            "Recovery folder exceeds the safe scan limit"
+        case .untrustedDirectory:
+            "Recovery folder failed its ownership checks"
+        case .invalidManifest:
+            "Recovery manifest could not be read"
+        case .invalidPhaseMarkers:
+            "Recovery phase markers are inconsistent"
+        case .invalidRecoveryMetadata:
+            "Recovery metadata could not be read"
+        case .invalidWorkspaceArtifacts:
+            "Retained workspace files could not be verified"
+        }
+    }
     static func agentHistoryRecoveryBackup(
         _ path: String,
         locale: Locale = .current
@@ -1085,6 +1234,12 @@ enum Strings {
         "agentHistory.undoReview.technicalDetails"
     static let agentHistoryUndoReviewApply: LocalizedStringKey =
         "agentHistory.undoReview.apply"
+    /// VoiceOver hint for Apply. `ButtonRole.destructive` only recolors a
+    /// SwiftUI button; it does not set AppKit's `hasDestructiveAction`, which
+    /// is the trait a screen reader announces — the same gap
+    /// ``recoveryDiscardHint`` covers on the crash-recovery sheet.
+    static let agentHistoryUndoReviewApplyHint: LocalizedStringKey =
+        "agentHistory.undoReview.applyHint"
     static let agentHistoryUndoReviewRevalidated: LocalizedStringKey =
         "agentHistory.undoReview.revalidated"
     static let agentHistoryUndoReviewStaleTitle: LocalizedStringKey =
@@ -1962,12 +2117,45 @@ enum Strings {
 
     // MARK: - Unsaved Changes Dialog (AppKit)
 
-    static var unsavedChangesTitle: String {
-        String(localized: "dialog.unsavedChanges.title")
+    /// The close question for one named file.
+    ///
+    /// The question is the alert's *message* text and the consequence is the
+    /// informative text, which is the order the HIG asks for and the reverse
+    /// of what Pine used to do: a noun-phrase title ("Unsaved Changes") with
+    /// the question demoted into the body. Naming the file is the other half
+    /// — the tab is known at the call site, and "unsaved changes" without a
+    /// filename does not tell the user what they are about to lose (#1541).
+    static func unsavedChangesQuestion(_ fileName: String) -> String {
+        String(localized: "dialog.unsavedChanges.question \(fileName)")
     }
 
-    static var unsavedChangesMessage: String {
-        String(localized: "dialog.unsavedChanges.message")
+    static func unsavedChangesQuestion(
+        _ fileName: String,
+        locale: Locale
+    ) -> String {
+        let format = localizedString(
+            forKey: "dialog.unsavedChanges.question %@",
+            fallback: "Do you want to save the changes you made to \u{201C}%@\u{201D}?",
+            locale: locale
+        )
+        return String(format: format, locale: locale, fileName)
+    }
+
+    /// The informative half of every close question: what is lost, said once.
+    static var unsavedChangesConsequence: String {
+        String(localized: "dialog.unsavedChanges.consequence")
+    }
+
+    /// The close question for two or more files.
+    ///
+    /// Count-free, and only ever asked about two or more: the list of names
+    /// sits directly underneath it, and a window close or Quit review with a
+    /// single dirty tab asks ``unsavedChangesQuestion(_:)`` about that file by
+    /// name instead. That keeps "these files" always grammatical without a
+    /// plural entry, and names the file in the one case where there is a name
+    /// to give.
+    static var unsavedChangesBulkQuestion: String {
+        String(localized: "dialog.unsavedChanges.bulkQuestion")
     }
 
     static var dialogSave: String {
@@ -2175,6 +2363,12 @@ enum Strings {
 
     static let recoveryTitle: LocalizedStringKey = "recovery.title"
     static let recoveryMessage: LocalizedStringKey = "recovery.message"
+    /// Shown when the sheet returns carrying the snapshots a restore attempt
+    /// handed back. Without it the second appearance is indistinguishable
+    /// from the first, and the user is asked the same question with no word
+    /// about the attempt that just failed (#1541).
+    static let recoveryPartialFailureMessage: LocalizedStringKey =
+        "recovery.partialFailureMessage"
     static let recoveryRecoverAll: LocalizedStringKey = "recovery.recoverAll"
     static let recoveryDiscard: LocalizedStringKey = "recovery.discard"
     static let recoveryLater: LocalizedStringKey = "recovery.later"

@@ -2366,66 +2366,6 @@
         }
       }
     },
-    "agentHistory.recoveryNoticeCorrupt": {
-      "comment": "Agent History recovery notice: recovery data failed descriptor-safe validation and must not be trusted.",
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Beschädigte oder nicht vertrauenswürdige Wiederherstellungsdaten"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Corrupt or untrusted recovery data"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Datos de recuperación dañados o no fiables"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Données de récupération endommagées ou non fiables"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "破損または信頼できない復旧データ"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "손상되었거나 신뢰할 수 없는 복구 데이터"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dados de recuperação corrompidos ou não confiáveis"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Повреждённые или недоверенные данные восстановления"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "损坏或不可信的恢复数据"
-          }
-        }
-      }
-    },
     "agentHistory.recoveryNoticeFinalized": {
       "comment": "Agent History recovery notice: the checked undo finalized but durable recovery data remains.",
       "extractionState": "manual",
@@ -6459,115 +6399,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Die folgenden Dateien haben ungesicherte Änderungen:\n\n%@"
+            "value": "Ihre Änderungen gehen verloren, wenn Sie sie nicht sichern.\n\n%@"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The following files have unsaved changes:\n\n%@"
+            "value": "Your changes will be lost if you don’t save them.\n\n%@"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Los siguientes archivos tienen cambios sin guardar:\n\n%@"
+            "value": "Los cambios se perderán si no los guarda.\n\n%@"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les fichiers suivants ont des modifications non enregistrées :\n\n%@"
+            "value": "Vos modifications seront perdues si vous ne les enregistrez pas.\n\n%@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "以下のファイルに未保存の変更があります：\n\n%@"
+            "value": "保存しない場合、変更内容は失われます。\n\n%@"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다음 파일에 저장되지 않은 변경 사항이 있습니다:\n\n%@"
+            "value": "저장하지 않으면 변경사항이 사라집니다.\n\n%@"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Os seguintes arquivos têm alterações não salvas:\n\n%@"
+            "value": "Suas alterações serão perdidas se você não salvá-las.\n\n%@"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Следующие файлы имеют несохранённые изменения:\n\n%@"
+            "value": "Если не сохранить изменения, они будут потеряны.\n\n%@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "以下文件有未保存的更改：\n\n%@"
-          }
-        }
-      }
-    },
-    "dialog.unsavedChanges.message": {
-      "comment": "Alert body text asking whether to save before closing a tab with edits.",
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Möchten Sie die Änderungen vor dem Schließen sichern?"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Do you want to save changes before closing?"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "¿Desea guardar los cambios antes de cerrar?"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Voulez-vous enregistrer les modifications avant de fermer ?"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "閉じる前に変更を保存しますか？"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "닫기 전에 변경사항을 저장하시겠습니까?"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Deseja salvar as alterações antes de fechar?"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Сохранить изменения перед закрытием?"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭前是否保存更改？"
+            "value": "如果不存储，您的更改将会丢失。\n\n%@"
           }
         }
       }
@@ -6688,66 +6568,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部保存"
-          }
-        }
-      }
-    },
-    "dialog.unsavedChanges.title": {
-      "comment": "Alert title shown when closing a tab that has unsaved edits.",
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ungesicherte Änderungen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unsaved Changes"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cambios sin guardar"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Modifications non enregistrées"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未保存の変更"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "저장되지 않은 변경사항"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alterações não salvas"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Несохранённые изменения"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未保存的更改"
           }
         }
       }
@@ -34157,20 +33977,6 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "已打开新会话" } }
       }
     },
-    "agentInbox.recoveryUnavailable": {
-      "comment": "Shown when task recovery fails validation without exposing sensitive details.",
-      "localizations": {
-        "de": { "stringUnit": { "state": "translated", "value": "Sichere Wiederherstellung nicht verfügbar" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Safe recovery is unavailable" } },
-        "es": { "stringUnit": { "state": "translated", "value": "La recuperación segura no está disponible" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "La récupération sécurisée est indisponible" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "安全な復元は利用できません" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "안전한 복구를 사용할 수 없습니다" } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "A recuperação segura não está disponível" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Безопасное восстановление недоступно" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "安全恢复不可用" } }
-      }
-    },
     "agentInbox.recoveryActions": {
       "comment": "Labels the visible action surface for recovering a selected agent task.",
       "localizations": {
@@ -34466,6 +34272,468 @@
           },
           "stringUnit": { "state": "translated", "value": "%#@count@" }
         }
+      }
+    },
+    "agentInbox.routeUnavailable.nextStep": {
+      "comment": "Next step offered when the exact agent session can no longer be reached.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Stellen Sie die Aufgabe wieder her, um eine neue Sitzung im selben Worktree zu starten" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Recover the task to start a new session in the same worktree" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Recupere la tarea para iniciar una sesión nueva en el mismo worktree" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Récupérez la tâche pour démarrer une nouvelle session dans le même worktree" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスクを復元すると、同じワークツリーで新しいセッションを開始できます" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업을 복구하면 같은 워크트리에서 새 세션을 시작할 수 있습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Recupere a tarefa para iniciar uma nova sessão no mesmo worktree" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Восстановите задачу, чтобы начать новую сессию в том же worktree" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复该任务即可在同一工作树中开始新会话" } }
+      }
+    },
+    "agentRecovery.cause.taskGone": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the task left the Inbox before the attempt.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Diese Aufgabe ist nicht mehr im Posteingang" } },
+        "en": { "stringUnit": { "state": "translated", "value": "This task is no longer in the Inbox" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Esta tarea ya no está en la bandeja de entrada" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette tâche ne figure plus dans la boîte de réception" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このタスクはインボックスにありません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 작업은 더 이상 수신함에 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Esta tarefa não está mais na caixa de entrada" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Этой задачи больше нет во входящих" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "该任务已不在收件箱中" } }
+      }
+    },
+    "agentRecovery.cause.projectWindowUnavailable": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the project window could not be presented.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine konnte das Projektfenster dieser Aufgabe nicht öffnen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine could not open this task’s project window" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine no pudo abrir la ventana del proyecto de esta tarea" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine n’a pas pu ouvrir la fenêtre de projet de cette tâche" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このタスクのプロジェクトウインドウを開けませんでした" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 작업의 프로젝트 윈도우를 열 수 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine não conseguiu abrir a janela de projeto desta tarefa" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine не смог открыть окно проекта этой задачи" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 无法打开该任务的项目窗口" } }
+      }
+    },
+    "agentRecovery.cause.changedWhilePreparing": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the task changed while the launch was being prepared.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Die Aufgabe hat sich geändert, während Pine die Wiederherstellung vorbereitet hat" } },
+        "en": { "stringUnit": { "state": "translated", "value": "The task changed while Pine was preparing to recover it" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La tarea cambió mientras Pine preparaba su recuperación" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La tâche a changé pendant que Pine préparait sa récupération" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元の準備中にタスクが変更されました" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구를 준비하는 동안 작업이 변경되었습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A tarefa mudou enquanto o Pine preparava a recuperação" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Задача изменилась, пока Pine готовил восстановление" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 准备恢复时该任务发生了变化" } }
+      }
+    },
+    "agentRecovery.cause.launchRejected": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the terminal refused to host the session.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Das Terminal hat den Start der Wiederherstellungssitzung abgelehnt" } },
+        "en": { "stringUnit": { "state": "translated", "value": "The terminal refused to start the recovery session" } },
+        "es": { "stringUnit": { "state": "translated", "value": "El terminal rechazó iniciar la sesión de recuperación" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le terminal a refusé de démarrer la session de récupération" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ターミナルが復元セッションの開始を拒否しました" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "터미널이 복구 세션 시작을 거부했습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O terminal recusou iniciar a sessão de recuperação" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Терминал отклонил запуск сессии восстановления" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "终端拒绝启动恢复会话" } }
+      }
+    },
+    "agentRecovery.cause.notRecoverable": {
+      "comment": "Agent Inbox recovery failure cause (#1541): lifecycle or liveness does not admit recovery.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Diese Aufgabe befindet sich in keinem wiederherstellbaren Zustand" } },
+        "en": { "stringUnit": { "state": "translated", "value": "This task is not in a state Pine can recover" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Esta tarea no está en un estado que Pine pueda recuperar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette tâche n’est pas dans un état que Pine peut récupérer" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このタスクは復元できる状態ではありません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 작업은 복구할 수 있는 상태가 아닙니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Esta tarefa não está em um estado que o Pine possa recuperar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Эта задача не в том состоянии, которое Pine может восстановить" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "该任务当前状态无法恢复" } }
+      }
+    },
+    "agentRecovery.cause.projectFolderMissing": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the recorded project directory is gone.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Der für diese Aufgabe erfasste Projektordner existiert nicht mehr" } },
+        "en": { "stringUnit": { "state": "translated", "value": "The project folder recorded for this task no longer exists" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La carpeta de proyecto registrada para esta tarea ya no existe" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le dossier de projet enregistré pour cette tâche n’existe plus" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このタスクに記録されたプロジェクトフォルダは存在しません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 작업에 기록된 프로젝트 폴더가 존재하지 않습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A pasta de projeto registrada para esta tarefa não existe mais" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Папка проекта, записанная для этой задачи, больше не существует" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "该任务记录的项目文件夹已不存在" } }
+      }
+    },
+    "agentRecovery.cause.worktreeMissing": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the recorded worktree directory is gone.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Der für diese Aufgabe erfasste Worktree existiert nicht mehr" } },
+        "en": { "stringUnit": { "state": "translated", "value": "The worktree recorded for this task no longer exists" } },
+        "es": { "stringUnit": { "state": "translated", "value": "El worktree registrado para esta tarea ya no existe" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le worktree enregistré pour cette tâche n’existe plus" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このタスクに記録されたワークツリーは存在しません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 작업에 기록된 워크트리가 존재하지 않습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O worktree registrado para esta tarefa não existe mais" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Worktree, записанный для этой задачи, больше не существует" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "该任务记录的工作树已不存在" } }
+      }
+    },
+    "agentRecovery.cause.agentExecutableMissing": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the agent's executable is no longer on PATH.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Das Befehlszeilenprogramm des Agenten ist nicht mehr installiert" } },
+        "en": { "stringUnit": { "state": "translated", "value": "The agent’s command line tool is no longer installed" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La herramienta de línea de comandos del agente ya no está instalada" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L’outil en ligne de commande de l’agent n’est plus installé" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェントのコマンドラインツールがインストールされていません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트의 명령줄 도구가 더 이상 설치되어 있지 않습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A ferramenta de linha de comando do agente não está mais instalada" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Программа командной строки агента больше не установлена" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "代理的命令行工具已不再安装" } }
+      }
+    },
+    "agentRecovery.cause.adapterUnavailable": {
+      "comment": "Agent Inbox recovery failure cause (#1541): no reviewed adapter covers this agent.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine hat keinen geprüften Weg, die Sitzung dieses Agenten fortzusetzen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine has no reviewed way to resume this agent’s session" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine no tiene una forma revisada de reanudar la sesión de este agente" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine ne dispose d’aucun moyen validé de reprendre la session de cet agent" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このエージェントのセッションを再開する検証済みの方法がありません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 에이전트의 세션을 재개할 검증된 방법이 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine não tem uma forma revisada de retomar a sessão deste agente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "У Pine нет проверенного способа продолжить сессию этого агента" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 没有经过审核的方式来恢复该代理的会话" } }
+      }
+    },
+    "agentRecovery.cause.sessionIdentityMissing": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the run recorded no vendor session identity.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Dieser Lauf hat keine fortsetzbare Sitzung erfasst" } },
+        "en": { "stringUnit": { "state": "translated", "value": "This run recorded no session to resume" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Esta ejecución no registró ninguna sesión que reanudar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette exécution n’a enregistré aucune session à reprendre" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "この実行には再開できるセッションが記録されていません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 실행에는 재개할 세션이 기록되지 않았습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Esta execução não registrou nenhuma sessão para retomar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "В этом запуске не записана сессия для продолжения" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本次运行未记录可恢复的会话" } }
+      }
+    },
+    "agentRecovery.cause.sessionIdentityInvalid": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the recorded session identity failed validation.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Die erfasste Sitzungskennung hat die Validierung nicht bestanden" } },
+        "en": { "stringUnit": { "state": "translated", "value": "The recorded session identifier failed validation" } },
+        "es": { "stringUnit": { "state": "translated", "value": "El identificador de sesión registrado no superó la validación" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L’identifiant de session enregistré n’a pas passé la validation" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "記録されたセッション識別子の検証に失敗しました" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "기록된 세션 식별자가 검증을 통과하지 못했습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O identificador de sessão registrado não passou na validação" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Записанный идентификатор сессии не прошёл проверку" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "记录的会话标识符未通过验证" } }
+      }
+    },
+    "agentRecovery.cause.versionProbeFailed": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the executable did not answer the version probe.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine konnte die Version des Agenten nicht auslesen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine could not read the agent’s version" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine no pudo leer la versión del agente" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine n’a pas pu lire la version de l’agent" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェントのバージョンを読み取れませんでした" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트의 버전을 읽을 수 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine não conseguiu ler a versão do agente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine не смог определить версию агента" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 无法读取代理的版本" } }
+      }
+    },
+    "agentRecovery.cause.versionChanged": {
+      "comment": "Agent Inbox recovery failure cause (#1541): the executable's version no longer matches the record.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Die Version des Agenten hat sich seit dem Lauf dieser Aufgabe geändert" } },
+        "en": { "stringUnit": { "state": "translated", "value": "The agent’s version changed since this task ran" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La versión del agente cambió desde que se ejecutó esta tarea" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La version de l’agent a changé depuis l’exécution de cette tâche" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このタスクの実行後にエージェントのバージョンが変わりました" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 작업이 실행된 이후 에이전트의 버전이 변경되었습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A versão do agente mudou desde que esta tarefa foi executada" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Версия агента изменилась с момента выполнения этой задачи" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自该任务运行以来，代理的版本已更改" } }
+      }
+    },
+    "agentRecovery.nextStep.nothingToRecover": {
+      "comment": "Agent Inbox recovery next step (#1541): the task itself is gone.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sie wurde ausgeblendet oder entfernt, es gibt nichts wiederherzustellen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "It was dismissed or removed, so nothing is left to recover" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Se descartó o se eliminó, así que no queda nada por recuperar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Elle a été ignorée ou supprimée : il n’y a plus rien à récupérer" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "破棄または削除されたため、復元できるものはありません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "무시하거나 제거되어 복구할 것이 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ela foi dispensada ou removida, portanto não há nada a recuperar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Она скрыта или удалена — восстанавливать нечего" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "它已被忽略或移除，没有可恢复的内容" } }
+      }
+    },
+    "agentRecovery.nextStep.reopenProject": {
+      "comment": "Agent Inbox recovery next step (#1541): the project window or folder has to come back first.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Öffnen Sie den Projektordner erneut und versuchen Sie es im Posteingang noch einmal" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Open the project folder again, then retry from the Inbox" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Vuelva a abrir la carpeta del proyecto y reinténtelo desde la bandeja de entrada" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rouvrez le dossier du projet, puis réessayez depuis la boîte de réception" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロジェクトフォルダを開き直してから、インボックスで再試行してください" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "프로젝트 폴더를 다시 연 다음 수신함에서 재시도하십시오" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abra a pasta do projeto novamente e tente de novo pela caixa de entrada" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Откройте папку проекта заново и повторите попытку во входящих" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请重新打开项目文件夹，然后在收件箱中重试" } }
+      }
+    },
+    "agentRecovery.nextStep.retry": {
+      "comment": "Agent Inbox recovery next step (#1541): a transient race; the same action can simply be repeated.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Versuchen Sie dieselbe Aktion im Posteingang erneut" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Try the same action again from the Inbox" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Vuelva a intentar la misma acción desde la bandeja de entrada" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Réessayez la même action depuis la boîte de réception" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "インボックスで同じ操作をもう一度実行してください" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "수신함에서 같은 동작을 다시 시도하십시오" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Tente a mesma ação novamente pela caixa de entrada" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Повторите то же действие во входящих" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请在收件箱中重试相同操作" } }
+      }
+    },
+    "agentRecovery.nextStep.startManually": {
+      "comment": "Agent Inbox recovery next step (#1541): Pine cannot launch it, but the user can.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Öffnen Sie ein Terminal im Projekt und starten Sie den Agenten selbst" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Open a terminal in the project and start the agent yourself" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Abra un terminal en el proyecto e inicie el agente usted mismo" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrez un terminal dans le projet et démarrez l’agent vous-même" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロジェクトでターミナルを開き、エージェントを手動で起動してください" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "프로젝트에서 터미널을 열고 에이전트를 직접 시작하십시오" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abra um terminal no projeto e inicie o agente manualmente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Откройте терминал в проекте и запустите агента вручную" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请在项目中打开终端并手动启动代理" } }
+      }
+    },
+    "agentRecovery.nextStep.openInstead": {
+      "comment": "Agent Inbox recovery next step (#1541): the session is still live and should be opened, not recovered.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Verwenden Sie „Öffnen“, um zur noch laufenden Sitzung zu wechseln" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Use Open to go to the session that is still running" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Use «Abrir» para ir a la sesión que sigue en ejecución" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Utilisez « Ouvrir » pour rejoindre la session toujours en cours" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "実行中のセッションへは「開く」で移動してください" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실행 중인 세션으로 이동하려면 ‘열기’를 사용하십시오" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Use “Abrir” para ir até a sessão que ainda está em execução" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Нажмите «Открыть», чтобы перейти к ещё работающей сессии" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请使用“打开”前往仍在运行的会话" } }
+      }
+    },
+    "agentRecovery.nextStep.restoreWorktree": {
+      "comment": "Agent Inbox recovery next step (#1541): the worktree directory has to exist again.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Stellen Sie den Worktree wieder her oder starten Sie den Agenten im Projektordner" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Restore the worktree, or start the agent in the project folder" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Restaure el worktree o inicie el agente en la carpeta del proyecto" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Restaurez le worktree, ou démarrez l’agent dans le dossier du projet" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ワークツリーを復元するか、プロジェクトフォルダでエージェントを起動してください" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "워크트리를 복원하거나 프로젝트 폴더에서 에이전트를 시작하십시오" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Restaure o worktree ou inicie o agente na pasta do projeto" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Восстановите worktree или запустите агента в папке проекта" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请恢复该工作树，或在项目文件夹中启动代理" } }
+      }
+    },
+    "agentRecovery.nextStep.newSession": {
+      "comment": "Agent Inbox recovery next step (#1541): the vendor conversation cannot be resumed, but a fresh shell can.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Starten Sie stattdessen eine neue Sitzung im selben Worktree" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Start a new session in the same worktree instead" } },
+        "es": { "stringUnit": { "state": "translated", "value": "En su lugar, inicie una sesión nueva en el mismo worktree" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Démarrez plutôt une nouvelle session dans le même worktree" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "代わりに同じワークツリーで新しいセッションを開始してください" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "대신 같은 워크트리에서 새 세션을 시작하십시오" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Em vez disso, inicie uma nova sessão no mesmo worktree" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Вместо этого начните новую сессию в том же worktree" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请改为在同一工作树中开始新会话" } }
+      }
+    },
+    "agentHistory.recoveryNoticeCorrupt.invalidRecoveryRoot": {
+      "comment": "Agent History recovery notice, corrupt record (#1541): the recovery root failed descriptor validation.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wiederherstellungsordner liegt nicht am erwarteten Ort" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Recovery folder is not in its expected location" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La carpeta de recuperación no está en su ubicación esperada" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le dossier de récupération n’est pas à l’emplacement attendu" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元フォルダが想定の場所にありません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구 폴더가 예상 위치에 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A pasta de recuperação não está no local esperado" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Папка восстановления не там, где ожидалось" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复文件夹不在预期位置" } }
+      }
+    },
+    "agentHistory.recoveryNoticeCorrupt.enumerationLimitExceeded": {
+      "comment": "Agent History recovery notice, corrupt record (#1541): the directory holds more entries than discovery will scan.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wiederherstellungsordner überschreitet das sichere Prüflimit" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Recovery folder exceeds the safe scan limit" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La carpeta de recuperación supera el límite de análisis seguro" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le dossier de récupération dépasse la limite d’analyse sûre" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元フォルダが安全なスキャン上限を超えています" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구 폴더가 안전한 검사 한도를 초과했습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A pasta de recuperação excede o limite de varredura segura" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Папка восстановления превышает безопасный предел сканирования" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复文件夹超出安全扫描上限" } }
+      }
+    },
+    "agentHistory.recoveryNoticeCorrupt.untrustedDirectory": {
+      "comment": "Agent History recovery notice, corrupt record (#1541): ownership or permissions did not check out.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wiederherstellungsordner hat die Eigentümerprüfung nicht bestanden" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Recovery folder failed its ownership checks" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La carpeta de recuperación no superó las comprobaciones de propiedad" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le dossier de récupération a échoué aux contrôles de propriété" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元フォルダの所有権チェックに失敗しました" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구 폴더의 소유권 검사에 실패했습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A pasta de recuperação não passou nas verificações de propriedade" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Папка восстановления не прошла проверку владельца" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复文件夹未通过归属权检查" } }
+      }
+    },
+    "agentHistory.recoveryNoticeCorrupt.invalidManifest": {
+      "comment": "Agent History recovery notice, corrupt record (#1541): the manifest is missing, unreadable, or a version this build does not know.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wiederherstellungsmanifest konnte nicht gelesen werden" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Recovery manifest could not be read" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudo leer el manifiesto de recuperación" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le manifeste de récupération n’a pas pu être lu" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元マニフェストを読み取れませんでした" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구 매니페스트를 읽을 수 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Não foi possível ler o manifesto de recuperação" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Не удалось прочитать манифест восстановления" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法读取恢复清单" } }
+      }
+    },
+    "agentHistory.recoveryNoticeCorrupt.invalidPhaseMarkers": {
+      "comment": "Agent History recovery notice, corrupt record (#1541): the phase markers contradict each other.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wiederherstellungsphasen-Marker sind widersprüchlich" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Recovery phase markers are inconsistent" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Los marcadores de fase de recuperación son inconsistentes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les marqueurs de phase de récupération sont incohérents" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元フェーズのマーカーが一致しません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구 단계 표시가 일관되지 않습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Os marcadores de fase da recuperação estão inconsistentes" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Метки фаз восстановления противоречивы" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复阶段标记不一致" } }
+      }
+    },
+    "agentHistory.recoveryNoticeCorrupt.invalidRecoveryMetadata": {
+      "comment": "Agent History recovery notice, corrupt record (#1541): the recovery-paths metadata could not be read.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wiederherstellungsmetadaten konnten nicht gelesen werden" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Recovery metadata could not be read" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudieron leer los metadatos de recuperación" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les métadonnées de récupération n’ont pas pu être lues" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "復元メタデータを読み取れませんでした" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "복구 메타데이터를 읽을 수 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Não foi possível ler os metadados de recuperação" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Не удалось прочитать метаданные восстановления" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法读取恢复元数据" } }
+      }
+    },
+    "agentHistory.recoveryNoticeCorrupt.invalidWorkspaceArtifacts": {
+      "comment": "Agent History recovery notice, corrupt record (#1541): the retained workspace artifacts could not be validated.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufbewahrte Arbeitsbereichsdateien konnten nicht überprüft werden" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Retained workspace files could not be verified" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudieron verificar los archivos del espacio de trabajo conservados" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les fichiers d’espace de travail conservés n’ont pas pu être vérifiés" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "保持されたワークスペースファイルを検証できませんでした" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "보관된 작업 공간 파일을 확인할 수 없습니다" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Não foi possível verificar os arquivos de espaço de trabalho retidos" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Не удалось проверить сохранённые файлы рабочей области" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法验证保留的工作区文件" } }
+      }
+    },
+    "recovery.partialFailureMessage": {
+      "comment": "Crash-recovery sheet subtitle when it returns holding the snapshots a restore attempt could not install (#1541).",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine konnte diese Dateien nicht erneut öffnen; ihre ungesicherten Änderungen warten weiterhin. Möchten Sie es erneut versuchen?" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine could not reopen these files, so their unsaved changes are still waiting. Would you like to try again?" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine no pudo volver a abrir estos archivos, así que sus cambios sin guardar siguen a la espera. ¿Desea intentarlo de nuevo?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine n’a pas pu rouvrir ces fichiers ; leurs modifications non enregistrées sont toujours en attente. Voulez-vous réessayer ?" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "これらのファイルを開き直せなかったため、未保存の変更はそのまま残っています。もう一度試しますか？" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 파일들을 다시 열지 못해 저장되지 않은 변경사항이 그대로 남아 있습니다. 다시 시도하시겠습니까?" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine não conseguiu reabrir estes arquivos, então suas alterações não salvas continuam pendentes. Deseja tentar novamente?" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine не смог снова открыть эти файлы, поэтому несохранённые изменения остались. Попробовать ещё раз?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 无法重新打开这些文件，其未存储的更改仍在等待。要再试一次吗？" } }
+      }
+    },
+    "dialog.unsavedChanges.question %@": {
+      "comment": "Alert message text asking whether to save one named file before closing it. %@ is the file name.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Möchten Sie die an „%@“ vorgenommenen Änderungen sichern?" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Do you want to save the changes you made to “%@”?" } },
+        "es": { "stringUnit": { "state": "translated", "value": "¿Desea guardar los cambios realizados en «%@»?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Voulez-vous enregistrer les modifications apportées à « %@ » ?" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "“%@”に加えた変更を保存しますか？" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "“%@”에 대한 변경사항을 저장하시겠습니까?" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Deseja salvar as alterações feitas em “%@”?" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сохранить изменения, внесённые в «%@»?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "要存储您对“%@”所做的更改吗？" } }
+      }
+    },
+    "dialog.unsavedChanges.consequence": {
+      "comment": "Informative text under the single-file close question: what is lost by not saving.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Ihre Änderungen gehen verloren, wenn Sie sie nicht sichern." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Your changes will be lost if you don’t save them." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Los cambios se perderán si no los guarda." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vos modifications seront perdues si vous ne les enregistrez pas." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "保存しない場合、変更内容は失われます。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "저장하지 않으면 변경사항이 사라집니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Suas alterações serão perdidas se você não salvá-las." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Если не сохранить изменения, они будут потеряны." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "如果不存储，您的更改将会丢失。" } }
+      }
+    },
+    "agentHistory.undoReview.applyHint": {
+      "comment": "VoiceOver hint for the destructive Apply Undo button in the checked-undo review sheet.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Überschreibt die aufgeführten Dateien in Ihrem Arbeitsbereich. Das lässt sich hier nicht rückgängig machen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Rewrites the listed files in your workspace. This cannot be undone from here." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Reescribe los archivos indicados en su espacio de trabajo. Esto no se puede deshacer desde aquí." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Réécrit les fichiers listés dans votre espace de travail. Cette action est irréversible ici." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "一覧のファイルをワークスペース内で書き換えます。ここからは取り消せません。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "목록의 파일을 작업 공간에서 다시 씁니다. 여기서는 실행 취소할 수 없습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Reescreve os arquivos listados no seu espaço de trabalho. Isso não pode ser desfeito aqui." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Перезаписывает перечисленные файлы в рабочей области. Отменить это отсюда нельзя." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "将重写工作区中列出的文件。此操作无法在此撤销。" } }
+      }
+    },
+    "dialog.unsavedChanges.bulkQuestion": {
+      "comment": "Alert message text asking whether to save the changes in two or more files before closing them. A single dirty file uses dialog.unsavedChanges.question instead, so this is never asked about one.",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Möchten Sie die an diesen Dateien vorgenommenen Änderungen sichern?" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Do you want to save the changes you made to these files?" } },
+        "es": { "stringUnit": { "state": "translated", "value": "¿Desea guardar los cambios realizados en estos archivos?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Voulez-vous enregistrer les modifications apportées à ces fichiers ?" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "これらのファイルに加えた変更を保存しますか？" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 파일들에 대한 변경사항을 저장하시겠습니까?" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Deseja salvar as alterações feitas nestes arquivos?" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сохранить изменения, внесённые в эти файлы?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "要存储您对这些文件所做的更改吗？" } }
       }
     }
   },

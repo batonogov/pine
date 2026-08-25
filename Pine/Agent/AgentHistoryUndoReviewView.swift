@@ -656,16 +656,34 @@ struct AgentHistoryUndoReviewView: View {
             .accessibilityIdentifier(
                 AccessibilityID.agentHistoryUndoReviewFooterDismiss
             )
+            // Return has to answer this sheet, and the only answer it may
+            // give is the safe one. A control can carry one key equivalent,
+            // so the second rides an invisible proxy — the same shape
+            // `RecoveryDialogFooter` uses, and `AlertTemplate` before it.
+            .background {
+                Button { dismissIfAllowed() } label: { Color.clear }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!actionGate.canDismiss)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+                    .focusable(false)
+            }
 
             if applyResult == nil && previewModel != nil {
-                Button {
+                // Destructive and therefore keyboard-unreachable: Apply
+                // rewrites files in the workspace, and Return is a reflex.
+                // The policy is `AlertTemplate.buttonRoles` and
+                // `RecoveryDialogChoice.keyboardShortcuts`; this is the third
+                // surface that has to state it (#1541).
+                Button(role: .destructive) {
                     beginApply()
                 } label: {
                     Text(Strings.agentHistoryUndoReviewApply)
                 }
                 .controlSize(.regular)
-                .keyboardShortcut(.defaultAction)
                 .disabled(!canApply)
+                .accessibilityHint(Strings.agentHistoryUndoReviewApplyHint)
                 .accessibilityIdentifier(
                     AccessibilityID.agentHistoryUndoReviewApply
                 )

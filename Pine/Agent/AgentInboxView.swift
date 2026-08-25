@@ -21,9 +21,18 @@ import SwiftUI
 @Observable
 final class AgentInboxActionStatusStore {
     var message: LocalizedStringKey?
+    /// The next step that goes with ``message``. Held beside it rather than
+    /// folded into one string so the caption can render the cause and the
+    /// remedy with different emphasis, and so a test can see that a failure
+    /// really produced both (#1541).
+    var detail: LocalizedStringKey?
 
-    init(message: LocalizedStringKey? = nil) {
+    init(
+        message: LocalizedStringKey? = nil,
+        detail: LocalizedStringKey? = nil
+    ) {
         self.message = message
+        self.detail = detail
     }
 }
 
@@ -95,14 +104,30 @@ struct AgentInboxView: View {
             Divider()
 
             if let statusMessage = actionStatus.message {
-                HStack {
-                    Spacer()
-                    Label(statusMessage, systemImage: "exclamationmark.triangle")
+                HStack(alignment: .firstTextBaseline) {
+                    Spacer(minLength: 0)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Label(
+                            statusMessage,
+                            systemImage: "exclamationmark.triangle"
+                        )
                         .font(.caption)
                         .foregroundStyle(.orange)
-                        .accessibilityIdentifier(
-                            AccessibilityID.agentInboxNavigationStatus
-                        )
+                        // The next step is the half that tells the user what
+                        // to do; without it the caption is the dead end
+                        // #1541 was filed about.
+                        if let detail = actionStatus.detail {
+                            Text(detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.trailing)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier(
+                        AccessibilityID.agentInboxNavigationStatus
+                    )
                 }
                 .padding()
 
@@ -578,6 +603,7 @@ struct AgentInboxView: View {
         action: AgentTaskRecoveryAction
     ) {
         actionStatus.message = nil
+        actionStatus.detail = nil
         Task { @MainActor in
             let result = await registry.recoverAgentTaskFromInbox(
                 taskID,
@@ -597,6 +623,10 @@ struct AgentInboxView: View {
     struct ActionEffects: Equatable {
         let dismisses: Bool
         let statusMessage: LocalizedStringKey?
+        /// The next step shown under ``statusMessage``. Separate from it so
+        /// dropping the remedy — the thing #1541 is about — changes this
+        /// value rather than hiding inside one concatenated string.
+        let statusDetail: LocalizedStringKey?
         let announcement: String?
     }
 
@@ -615,12 +645,14 @@ struct AgentInboxView: View {
             ActionEffects(
                 dismisses: true,
                 statusMessage: nil,
+                statusDetail: nil,
                 announcement: nil
             )
         case .keepVisible(let status):
             ActionEffects(
                 dismisses: false,
                 statusMessage: statusMessage(status),
+                statusDetail: statusDetail(status),
                 announcement: statusAnnouncement(status, locale: locale)
             )
         }
@@ -631,12 +663,12 @@ struct AgentInboxView: View {
     /// they read — can be exercised without a window server.
     static func applyEffects(
         _ effects: ActionEffects,
-        setStatusMessage: (LocalizedStringKey) -> Void,
+        setStatusMessage: (LocalizedStringKey, LocalizedStringKey?) -> Void,
         announce: (String) -> Void,
         dismiss: () -> Void
     ) {
         if let message = effects.statusMessage {
-            setStatusMessage(message)
+            setStatusMessage(message, effects.statusDetail)
         }
         if let announcement = effects.announcement {
             announce(announcement)
@@ -653,40 +685,65 @@ struct AgentInboxView: View {
     func apply(_ outcome: AgentInboxActionOutcome) {
         Self.applyEffects(
             Self.effects(of: outcome, locale: locale),
-            setStatusMessage: { actionStatus.message = $0 },
+            setStatusMessage: { message, detail in
+                actionStatus.message = message
+                actionStatus.detail = detail
+            },
             announce: onAccessibilityAnnouncement,
             dismiss: onDismiss
         )
     }
 
     /// Not `private`: the enum-to-string edge is the whole user-visible
-    /// difference between the two failures, and swapping the two keys
-    /// compiles. Tests assert both mappings directly.
+    /// difference between the failures, and swapping two keys compiles.
+    /// Tests assert every mapping directly.
     static func statusMessage(
         _ status: AgentInboxActionStatus
     ) -> LocalizedStringKey {
         switch status {
-        case .routeUnavailable: Strings.agentInboxRouteUnavailable
-        case .recoveryUnavailable: Strings.agentInboxRecoveryUnavailable
+        case .routeUnavailable:
+            Strings.agentInboxRouteUnavailable
+        case .recoveryUnavailable(let failure):
+            Strings.agentRecoveryCause(failure)
         }
     }
 
-    /// The spoken form of ``statusMessage(_:)``. Kept beside it so the two can
-    /// only drift together.
+    /// What to do about ``statusMessage(_:)``. A failure with no way forward
+    /// is a dead end, so every status has one (#1541).
+    static func statusDetail(
+        _ status: AgentInboxActionStatus
+    ) -> LocalizedStringKey {
+        switch status {
+        case .routeUnavailable:
+            Strings.agentInboxRouteUnavailableNextStep
+        case .recoveryUnavailable(let failure):
+            Strings.agentRecoveryNextStep(failure)
+        }
+    }
+
+    /// The spoken form of ``statusMessage(_:)`` and ``statusDetail(_:)``.
+    /// Kept beside them so the three can only drift together, and carrying
+    /// both halves because focus never leaves the popover: what VoiceOver
+    /// says here is the entire feedback a screen-reader user gets.
     static func statusAnnouncement(
         _ status: AgentInboxActionStatus,
         locale: Locale = .current
     ) -> String {
         switch status {
         case .routeUnavailable:
-            Strings.agentInboxRouteUnavailableText(locale: locale)
-        case .recoveryUnavailable:
-            Strings.agentInboxRecoveryUnavailableText(locale: locale)
+            "\(Strings.agentInboxRouteUnavailableText(locale: locale)). "
+                + Strings.agentInboxRouteUnavailableNextStepText(
+                    locale: locale
+                )
+        case .recoveryUnavailable(let failure):
+            "\(Strings.agentRecoveryCauseText(failure, locale: locale)). "
+                + Strings.agentRecoveryNextStepText(failure, locale: locale)
         }
     }
 
     private func navigate(to taskID: UUID) {
         actionStatus.message = nil
+        actionStatus.detail = nil
         Task { @MainActor in
             let result = await registry.navigateToAgentTaskFromInbox(
                 taskID,
