@@ -29,6 +29,58 @@ enum CLIInstaller {
         return dest == bundled
     }
 
+    // MARK: - AppleScript outcome classification
+
+    /// What a privileged AppleScript invocation actually did.
+    ///
+    /// Derived from the error dictionary's *number*, never its message:
+    /// `NSAppleScript.errorMessage` is localized by the system, so matching it
+    /// against English prose reports a cancellation as a failure in all eight
+    /// non-English locales Pine ships (#1530).
+    enum PrivilegedScriptOutcome: Equatable {
+        case succeeded
+        case cancelled
+        case failed(message: String)
+
+        /// Only a genuine failure earns an alert. Dismissing the authorization
+        /// prompt is a normal user action and must stay silent.
+        var presentsErrorAlert: Bool {
+            if case .failed = self { return true }
+            return false
+        }
+    }
+
+    /// AppleScript error numbers that mean "the user dismissed the prompt".
+    ///
+    /// `do shell script … with administrator privileges` reports a cancelled
+    /// authorization dialog as `userCanceledErr` (-128). The Apple Event and
+    /// Authorization Services spellings of the same user action are accepted
+    /// too, so the classification never depends on which layer surfaced it.
+    static let cancellationErrorNumbers: Set<Int> = [
+        Int(userCanceledErr),          // -128
+        Int(errAEWaitCanceled),        // -1711
+        Int(errAuthorizationCanceled), // -60006
+    ]
+
+    /// Locale-invariant test for "the user cancelled the authorization prompt".
+    static func isUserCancellation(errorNumber: Int?) -> Bool {
+        guard let errorNumber else { return false }
+        return cancellationErrorNumbers.contains(errorNumber)
+    }
+
+    /// Classifies the error dictionary produced by
+    /// `NSAppleScript.executeAndReturnError`. A `nil` dictionary means the
+    /// script ran to completion.
+    static func outcome(
+        forScriptError error: NSDictionary?
+    ) -> PrivilegedScriptOutcome {
+        guard let error else { return .succeeded }
+        let number = (error[NSAppleScript.errorNumber] as? NSNumber)?.intValue
+        guard !isUserCancellation(errorNumber: number) else { return .cancelled }
+        let message = error[NSAppleScript.errorMessage] as? String
+        return .failed(message: message ?? Strings.cliErrorUnknown)
+    }
+
     // MARK: - Install / Uninstall
 
     /// Installs the CLI tool by creating a symlink.
@@ -42,8 +94,8 @@ enum CLIInstaller {
         }
         guard let scriptPath = bundledScriptPath else {
             showError(
-                title: "Installation Failed",
-                message: "Could not find the pine CLI script in the app bundle.",
+                title: Strings.cliInstallFailedTitle,
+                message: Strings.cliInstallMissingScript,
                 context: context
             )
             return
@@ -62,9 +114,7 @@ enum CLIInstaller {
                     atPath: defaultInstallPath,
                     withDestinationPath: scriptPath
                 )
-                presentSuccess(
-                    title: "Command Line Tool Installed",
-                    message: "The 'pine' command is now available.\n\nUsage: pine . or pine file.swift",
+                presentInstallSuccess(
                     projectManager: projectManager,
                     context: context
                 )
@@ -84,20 +134,19 @@ enum CLIInstaller {
         var error: NSDictionary?
         if let appleScript = NSAppleScript(source: script) {
             appleScript.executeAndReturnError(&error)
-            if let error {
-                let message = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
-                if !message.contains("User canceled") {
-                    showError(
-                        title: "Installation Failed",
-                        message: message,
-                        context: context
-                    )
-                }
-            } else {
-                presentSuccess(
-                    title: "Command Line Tool Installed",
-                    message: "The 'pine' command is now available.\n\nUsage: pine . or pine file.swift",
+            switch outcome(forScriptError: error) {
+            case .succeeded:
+                presentInstallSuccess(
                     projectManager: projectManager,
+                    context: context
+                )
+            case .cancelled:
+                // The user declined the authorization prompt — not a failure.
+                break
+            case .failed(let message):
+                showError(
+                    title: Strings.cliInstallFailedTitle,
+                    message: message,
                     context: context
                 )
             }
@@ -117,9 +166,7 @@ enum CLIInstaller {
         if FileManager.default.isDeletableFile(atPath: defaultInstallPath) {
             do {
                 try FileManager.default.removeItem(atPath: defaultInstallPath)
-                presentSuccess(
-                    title: "Command Line Tool Removed",
-                    message: "The 'pine' command has been removed from /usr/local/bin.",
+                presentUninstallSuccess(
                     projectManager: projectManager,
                     context: context
                 )
@@ -137,20 +184,19 @@ enum CLIInstaller {
         var error: NSDictionary?
         if let appleScript = NSAppleScript(source: script) {
             appleScript.executeAndReturnError(&error)
-            if let error {
-                let message = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
-                if !message.contains("User canceled") {
-                    showError(
-                        title: "Uninstall Failed",
-                        message: message,
-                        context: context
-                    )
-                }
-            } else {
-                presentSuccess(
-                    title: "Command Line Tool Removed",
-                    message: "The 'pine' command has been removed from /usr/local/bin.",
+            switch outcome(forScriptError: error) {
+            case .succeeded:
+                presentUninstallSuccess(
                     projectManager: projectManager,
+                    context: context
+                )
+            case .cancelled:
+                // The user declined the authorization prompt — not a failure.
+                break
+            case .failed(let message):
+                showError(
+                    title: Strings.cliUninstallFailedTitle,
+                    message: message,
                     context: context
                 )
             }
@@ -158,6 +204,32 @@ enum CLIInstaller {
     }
 
     // MARK: - Presentation
+
+    @MainActor
+    private static func presentInstallSuccess(
+        projectManager: ProjectManager?,
+        context: DialogPresentationContext
+    ) {
+        presentSuccess(
+            title: Strings.cliInstallSuccessTitle,
+            message: Strings.cliInstallSuccessMessage,
+            projectManager: projectManager,
+            context: context
+        )
+    }
+
+    @MainActor
+    private static func presentUninstallSuccess(
+        projectManager: ProjectManager?,
+        context: DialogPresentationContext
+    ) {
+        presentSuccess(
+            title: Strings.cliUninstallSuccessTitle,
+            message: Strings.cliUninstallSuccessMessage,
+            projectManager: projectManager,
+            context: context
+        )
+    }
 
     /// Reports success without taking focus or blocking any project window.
     /// Internal visibility keeps the no-sheet contract directly testable.
