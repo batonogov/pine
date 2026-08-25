@@ -63,10 +63,17 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         Context
     ) -> (any AgentInboxPopoverHandle)?
 
+    /// How the anchor's window is reached for focus work. `NSWindow` conforms
+    /// to ``AgentInboxFocusHost``, so production hands back the window itself.
+    typealias FocusHostResolver =
+        @MainActor (NSWindow) -> any AgentInboxFocusHost
+
     private typealias State = AgentInboxPopoverPresentationState
 
     private let router: AgentInboxPopoverRouter
     private let makePopover: PopoverFactory
+    private let resolveFocusHost: FocusHostResolver
+    private let isApplicationActive: @MainActor () -> Bool
     private weak var anchor: AgentInboxPopoverAnchorView?
     private weak var registeredWindow: NSWindow?
     private var isPresented: Binding<Bool>?
@@ -100,6 +107,24 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// ``lastWrittenIsPresented``: that one remembers a write SwiftUI has
     /// already been given, this one a write still on its way.
     private var isCloseSettling = false
+    /// Why the popover on screen is going away, recorded as the dismissal
+    /// happens rather than inferred once it is over.
+    ///
+    /// By the time a close settles the popover has been key and is gone, so
+    /// nothing left on screen distinguishes "the user pressed Escape" from
+    /// "a successful navigation moved them into another window". The default
+    /// is the in-place dismissal because that is what every path AppKit
+    /// handles by itself — Escape, an outside click — arrives as.
+    private var dismissalCause = AgentInboxDismissalCause.userDismissedInPlace
+    /// The window the popover on screen was anchored in.
+    ///
+    /// Held weakly and read back at close time rather than resolved then: by
+    /// then the anchor may have moved, and keeping a closing `NSWindow` alive
+    /// for the runloop turn a close takes is precisely the lifetime this type
+    /// must not extend.
+    private weak var focusHostWindow: NSWindow?
+    /// What owned keyboard focus in that window before the popover appeared.
+    private weak var focusedResponderBeforePresentation: NSResponder?
 
     /// How many may land before the anchor stops waiting for a close
     /// notification that is not coming.
@@ -146,10 +171,16 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     init(
         router: AgentInboxPopoverRouter = .shared,
         makePopover: @escaping PopoverFactory = AgentInboxPopoverCoordinator
-            .makeSystemPopover
+            .makeSystemPopover,
+        resolveFocusHost: @escaping FocusHostResolver = { $0 },
+        isApplicationActive: @escaping @MainActor () -> Bool = {
+            NSApp.isActive
+        }
     ) {
         self.router = router
         self.makePopover = makePopover
+        self.resolveFocusHost = resolveFocusHost
+        self.isApplicationActive = isApplicationActive
     }
 
     /// The production popover: a transient, Liquid-Glass-friendly `NSPopover`
@@ -296,6 +327,9 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
             router.unregister(self, from: registeredWindow)
         }
         registeredWindow = nil
+        // The window is closing, or SwiftUI has rebuilt the toolbar out from
+        // under this anchor. Either way there is no host left worth raising.
+        dismissalCause = .anchorDetached
         apply(state.anchorDidDetach())
         anchor = nil
     }
@@ -354,6 +388,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
                 bindingIsPresented: self.bindingIsPresented,
                 isPopoverShown: self.isPopoverShown
             ))
+            self.returnFocusToHost()
         }
     }
 
@@ -411,11 +446,64 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         // Something newer is on screen, so the close no longer speaks for this
         // anchor: the binding the popover was built against is the live one.
         isCloseSettling = false
+        recordFocusToReturnTo(in: anchor.window)
         state.popoverWillShow()
         handle.showPopover(from: anchor)
     }
 
+    /// Records where keyboard focus has to come back to, *before* the popover
+    /// is shown.
+    ///
+    /// An `NSPopover` takes key away from its host as it appears, so the same
+    /// read taken afterwards answers about the popover rather than about the
+    /// user. This is also where a new presentation supersedes the record of
+    /// the one before it — the cause resets to the in-place dismissal, which
+    /// is what Escape and an outside click arrive as.
+    private func recordFocusToReturnTo(in window: NSWindow?) {
+        dismissalCause = .userDismissedInPlace
+        focusHostWindow = window
+        focusedResponderBeforePresentation = window
+            .map(resolveFocusHost)?
+            .captureFocusedResponder()
+    }
+
+    /// Hands keyboard focus back to the window the popover was anchored in,
+    /// one runloop turn after AppKit reported the close.
+    ///
+    /// Deferred with the SwiftUI half rather than performed inside the close
+    /// notification: raising a window from inside AppKit's own close is the
+    /// same re-entrancy the binding write avoids, and the turn is what lets a
+    /// newer request overtake this one — a popover that is on screen again by
+    /// then owns focus, and this dismissal no longer speaks for the window.
+    private func returnFocusToHost() {
+        guard !isPopoverShown else { return }
+        let cause = dismissalCause
+        let responder = focusedResponderBeforePresentation
+        let host = focusHostWindow.map(resolveFocusHost)
+        // Defence in depth, and knowingly uncovered: no path calls this twice
+        // for one presentation — `retireClosedPopover()` is the only caller,
+        // it drops the popover reference synchronously, and only
+        // `presentIfReady()`, which re-records, can set that reference again.
+        // Keeping the record retired means a future second caller finds
+        // nothing to replay rather than raising a window twice.
+        dismissalCause = .userDismissedInPlace
+        focusHostWindow = nil
+        focusedResponderBeforePresentation = nil
+        guard let host,
+              AgentInboxFocusRestoration.decision(
+                  cause: cause,
+                  hostCanTakeFocus: host.canTakeFocus,
+                  isApplicationActive: isApplicationActive()
+              ) == .restoreHostFocus else { return }
+        host.returnFocus(to: responder)
+    }
+
+    /// The content's own dismissal, which the Inbox performs for exactly one
+    /// reason: ``AgentInboxActionOutcome/dismiss`` — the user reached the
+    /// session they asked for. That window is key now, so this close must not
+    /// pull focus back to the one the popover was anchored in.
     private func dismiss() {
+        dismissalCause = .navigatedAway
         apply(state.contentRequestedDismiss(
             bindingIsPresented: bindingIsPresented
         ))
