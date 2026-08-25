@@ -27,7 +27,7 @@ struct TerminalSettingsView: View {
         theme: TerminalThemeSettings = .shared,
         cursor: TerminalCursorSettings = .shared,
         quickTerminal: QuickTerminalSettings = .shared,
-        viewportHeight: CGFloat = SettingsWindowMetrics.paneMinimumHeight
+        viewportHeight: CGFloat = SettingsWindowMetrics.paneHeight
     ) {
         self.shell = shell
         self.theme = theme
@@ -60,7 +60,7 @@ struct TerminalSettingsView: View {
             .padding(20)
         }
         .accessibilityIdentifier(AccessibilityID.terminalSettingsScrollView)
-        .settingsPaneSize(minimumHeight: viewportHeight)
+        .settingsPaneSize(height: viewportHeight)
     }
 
     private var shellSettings: some View {

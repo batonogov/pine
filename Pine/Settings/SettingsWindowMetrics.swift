@@ -8,60 +8,77 @@
 import AppKit
 import SwiftUI
 
-/// Size floors for the consolidated Settings scene.
+/// Sizing for the consolidated Settings scene.
 ///
-/// Settings used to declare `720 × 540` in five separate files. Five localized
-/// `.tabItem` titles have to share that width, and nothing reports when they
-/// do not fit: SwiftUI's macOS `TabView` does not fold the tab strip into its
-/// intrinsic size, so an overlong strip is simply truncated. German and
-/// Russian titles need more than 720 pt, which cost eight of the nine shipped
-/// locales part of their Settings navigation (#1531).
+/// Settings declared `720 × 540` in six separate files. This type owns those
+/// numbers once and lets the window widen when — and only when — the five
+/// localized `.tabItem` titles genuinely need more room.
 ///
-/// The window therefore derives its width floor from the titles it is about to
-/// draw, and every surface declares floors instead of fixed dimensions so the
-/// panes grow with the window. English still resolves to exactly 720 pt, so
-/// locales that already fit are unchanged.
+/// ## What the tab strip actually does
+///
+/// Measured on macOS 26 against a live Settings window (`XCUIElement.frame`
+/// of each tab button), not estimated:
+///
+/// - Tab items stack the SF Symbol **above** the title, so an item's width is
+///   driven by its text alone. The symbol costs height, not width.
+/// - Item widths are identical whether the window is 720 pt or 900 pt wide:
+///   `68, 66.5, 117, 123.5, 165` for Russian in both. Nothing is compressed
+///   and nothing is ellipsised.
+/// - The strip is centred, and the widest shipped locale (Russian) spans
+///   540 pt inside the 720 pt window — 88 pt of slack on each side.
+///
+/// So no shipped locale overflows, and `windowWidth` resolves to exactly
+/// `baselineWidth` for all nine of them: shipped geometry is unchanged.
+///
+/// ## The overflow that is real
+///
+/// Under `-NSDoubleLocalizedStrings` the strip needs roughly 815 pt, and at
+/// 720 pt AppKit does not truncate — it drops the fifth tab out of the window
+/// entirely, removing "Key Bindings & Tasks" from the accessibility tree. That
+/// is the failure mode worth guarding: silent, total, and reachable by any
+/// future translation longer than today's.
 @MainActor
 enum SettingsWindowMetrics {
-    /// The historical Settings width, kept as the floor for short locales.
+    /// The Settings width every shipped locale resolves to.
     static let baselineWidth: CGFloat = 720
-    /// The historical Settings height, now a floor rather than a pin.
+    /// The Settings content height.
     static let baselineHeight: CGFloat = 540
-    /// Height a single pane keeps before it starts scrolling.
-    static let paneMinimumHeight: CGFloat = 500
+    /// Height of a single pane's viewport.
+    static let paneHeight: CGFloat = 500
     /// Height reserved for the agent-handoff section inside the Agents pane.
-    static let handoffSectionMinimumHeight: CGFloat = 380
+    static let handoffSectionHeight: CGFloat = 380
 
-    /// Width a tab item spends on its SF Symbol and the symbol-to-title gap.
-    /// `SettingsWindowMetricsTests.symbolAllowanceCoversRenderedLabels` pins
-    /// this against SwiftUI's own `Label` measurement so it cannot drift into
-    /// an underestimate.
-    static let tabItemSymbolAllowance: CGFloat = 28
-    /// Horizontal padding a tab item keeps around its label, both edges.
-    static let tabItemPadding: CGFloat = 24
-    /// Inset the strip keeps between the outermost tabs and the window edge.
-    static let tabStripInset: CGFloat = 24
+    /// Tab titles render a little tighter than the 13 pt system font; 12 pt
+    /// matches the measured item widths across en/de/ru to within a few points.
+    static let tabTitleFontSize: CGFloat = 12
+    /// Floor an individual tab item keeps regardless of how short its title is
+    /// ("General" measures 55 pt for 47 pt of text).
+    static let tabItemMinimumWidth: CGFloat = 56
+    /// Padding a tab item adds around its title.
+    static let tabItemPadding: CGFloat = 8
+    /// Margin the strip keeps between its outermost tabs and the window edge.
+    static let tabStripInset: CGFloat = 16
 
     /// The font the tab strip renders its titles in.
-    static var tabStripFont: NSFont {
-        .systemFont(ofSize: NSFont.systemFontSize)
+    static var tabTitleFont: NSFont {
+        .systemFont(ofSize: tabTitleFontSize)
     }
 
-    /// Width one tab item needs to render `title` without truncating.
+    /// Width one tab item needs to render `title` in full.
     static func tabItemWidth(
         for title: String,
-        font: NSFont = tabStripFont
+        font: NSFont = tabTitleFont
     ) -> CGFloat {
         let text = (title as NSString)
             .size(withAttributes: [.font: font])
             .width
-        return text.rounded(.up) + tabItemSymbolAllowance + tabItemPadding
+        return max(tabItemMinimumWidth, text.rounded(.up) + tabItemPadding)
     }
 
     /// Width the whole tab strip needs for `titles`.
     static func tabStripWidth(
         forTabTitles titles: [String],
-        font: NSFont = tabStripFont
+        font: NSFont = tabTitleFont
     ) -> CGFloat {
         guard !titles.isEmpty else { return 0 }
         return titles.reduce(tabStripInset) {
@@ -69,40 +86,33 @@ enum SettingsWindowMetrics {
         }
     }
 
-    /// The Settings window's width floor for `titles` — never below the
-    /// historical 720 pt, and never below what the strip actually needs.
-    static func minimumWidth(
+    /// The Settings window's width: the historical 720 pt for every shipped
+    /// locale, and wider only when the strip would otherwise lose a tab.
+    static func windowWidth(
         forTabTitles titles: [String],
-        font: NSFont = tabStripFont
+        font: NSFont = tabTitleFont
     ) -> CGFloat {
         max(baselineWidth, tabStripWidth(forTabTitles: titles, font: font))
     }
 }
 
 extension View {
-    /// Applies the Settings window's locale-derived size floors (#1531).
+    /// Sizes the Settings window to its localized tab strip (#1531).
     @MainActor
     func settingsWindowSize(tabTitles: [String]) -> some View {
-        let width = SettingsWindowMetrics.minimumWidth(forTabTitles: tabTitles)
-        return frame(
-            minWidth: width,
-            idealWidth: width,
-            minHeight: SettingsWindowMetrics.baselineHeight,
-            idealHeight: SettingsWindowMetrics.baselineHeight
+        frame(
+            width: SettingsWindowMetrics.windowWidth(forTabTitles: tabTitles),
+            height: SettingsWindowMetrics.baselineHeight
         )
     }
 
-    /// Applies the size floors shared by every Settings pane (#1531). Panes
-    /// fill whatever the window hands them instead of pinning their own size.
+    /// Sizes a Settings pane. Deliberately rigid, exactly as before #1531:
+    /// the panes were never the problem, and making them flexible let a greedy
+    /// `ScrollView` drive the English window from 720 pt to 900 pt.
     @MainActor
     func settingsPaneSize(
-        minimumHeight: CGFloat = SettingsWindowMetrics.paneMinimumHeight
+        height: CGFloat = SettingsWindowMetrics.paneHeight
     ) -> some View {
-        frame(
-            minWidth: SettingsWindowMetrics.baselineWidth,
-            maxWidth: .infinity,
-            minHeight: minimumHeight,
-            maxHeight: .infinity
-        )
+        frame(width: SettingsWindowMetrics.baselineWidth, height: height)
     }
 }

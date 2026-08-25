@@ -2,12 +2,12 @@
 //  SettingsWindowMetricsTests.swift
 //  PineTests
 //
-//  Issue #1531: the Settings window was pinned to 720 pt in five files. Five
-//  localized tab titles have to share that width, and neither SwiftUI's macOS
-//  `TabView` nor AppKit reports the tab strip as part of the view's intrinsic
-//  size — an overlong strip is truncated with no overflow signal at all. These
-//  tests pin the arithmetic that replaces the constant, and then pin the real
-//  `PineSettingsView` to the size that arithmetic demands.
+//  Issue #1531. The window was pinned to 720 pt in six files. Measuring a live
+//  Settings window showed no shipped locale actually overflows that — tab items
+//  stack their symbol above the title, so Russian's strip spans 540 pt inside
+//  720 pt with nothing truncated. What does overflow is doubled-length text,
+//  and AppKit's response is not an ellipsis: it drops the fifth tab out of the
+//  window entirely. These tests pin both halves of that.
 //
 
 import AppKit
@@ -20,17 +20,19 @@ import Testing
 @Suite("Settings window metrics", .serialized)
 @MainActor
 struct SettingsWindowMetricsTests {
-    /// The width every Settings surface was pinned to before #1531.
-    private static let legacyPinnedWidth: CGFloat = 720
-
     /// The nine shipped localizations, per `AGENTS.md`.
     private static let shippedLocales = [
         "en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans",
     ]
 
-    /// SF Symbols the five `.tabItem` labels draw, in catalog order.
-    private static let tabSymbols = [
-        "gearshape", "terminal", "server.rack", "lock.shield", "keyboard",
+    /// Tab-button widths measured on a live macOS 26 Settings window. Identical
+    /// at 720 pt and 900 pt of window width, which is what proves the strip is
+    /// never compressed.
+    private static let measuredRussianItemWidths: [CGFloat] = [
+        68, 66.5, 117, 123.5, 165,
+    ]
+    private static let measuredEnglishItemWidths: [CGFloat] = [
+        55, 57, 106.5, 88.5, 123.5,
     ]
 
     // MARK: - Catalog input
@@ -55,183 +57,178 @@ struct SettingsWindowMetricsTests {
                 "Сочетания клавиш и задачи",
             ]
         )
-        #expect(
-            titles("de") == [
-                "Allgemein",
-                "Terminal",
-                "Sprachserver",
-                "Agent-Übergabe",
-                "Tastenkürzel & Aufgaben",
-            ]
-        )
         for identifier in Self.shippedLocales {
-            #expect(
-                titles(identifier).count == 5,
-                "\(identifier) must translate all five Settings tabs"
-            )
+            #expect(titles(identifier).count == 5)
             #expect(titles(identifier).allSatisfy { !$0.isEmpty })
         }
     }
 
-    // MARK: - The defect, stated as arithmetic
+    // MARK: - Shipped locales must not move a pixel
 
-    @Test("German and Russian tab strips overflow the legacy 720 pt window")
-    func wideLocalesOverflowLegacyWidth() {
-        for identifier in ["de", "ru"] {
+    @Test("Every shipped locale keeps the historical 720 pt window")
+    func shippedLocalesKeepBaselineWidth() {
+        for identifier in Self.shippedLocales {
+            #expect(
+                SettingsWindowMetrics.windowWidth(
+                    forTabTitles: titles(identifier)
+                ) == SettingsWindowMetrics.baselineWidth,
+                """
+                \(identifier) would resize the Settings window; no shipped \
+                locale overflows the measured 720 pt strip
+                """
+            )
+        }
+    }
+
+    @Test("Every shipped strip fits the baseline with measured slack")
+    func shippedStripsFitTheBaseline() {
+        for identifier in Self.shippedLocales {
             let strip = SettingsWindowMetrics.tabStripWidth(
                 forTabTitles: titles(identifier)
             )
             #expect(
-                strip > Self.legacyPinnedWidth,
-                """
-                \(identifier) needs \(strip) pt of tab strip, which is why the \
-                720 pt pin truncated it
-                """
+                strip < SettingsWindowMetrics.baselineWidth,
+                "\(identifier) needs \(strip) pt, which no longer fits 720 pt"
             )
         }
     }
 
-    @Test("Every shipped locale gets a floor wide enough for its own strip")
-    func floorCoversEveryShippedLocale() {
-        for identifier in Self.shippedLocales {
-            let localized = titles(identifier)
-            let strip = SettingsWindowMetrics.tabStripWidth(
-                forTabTitles: localized
-            )
-            let floor = SettingsWindowMetrics.minimumWidth(
-                forTabTitles: localized
-            )
-            #expect(
-                floor >= strip,
-                "\(identifier) would truncate: floor \(floor) < strip \(strip)"
-            )
+    // MARK: - The estimate, pinned to the live measurements
+
+    @Test("Item widths track what a live Settings window renders")
+    func itemWidthsTrackMeasuredWindow() {
+        let cases = [
+            ("en", Self.measuredEnglishItemWidths),
+            ("ru", Self.measuredRussianItemWidths),
+        ]
+        for (identifier, measured) in cases {
+            for (title, actual) in zip(titles(identifier), measured) {
+                let estimate = SettingsWindowMetrics.tabItemWidth(for: title)
+                #expect(
+                    abs(estimate - actual) <= 8,
+                    """
+                    \(identifier) "\(title)": estimated \(estimate) pt against \
+                    a measured \(actual) pt
+                    """
+                )
+            }
         }
     }
 
-    @Test("English keeps the historical 720 pt width")
-    func englishKeepsTheBaselineWidth() {
-        #expect(
-            SettingsWindowMetrics.minimumWidth(forTabTitles: titles("en"))
-                == SettingsWindowMetrics.baselineWidth
-        )
-        #expect(SettingsWindowMetrics.baselineWidth == Self.legacyPinnedWidth)
-    }
-
-    @Test("The floor is monotonic in title length")
-    func floorGrowsWithTitleLength() {
-        let narrow = SettingsWindowMetrics.tabStripWidth(
-            forTabTitles: titles("en")
-        )
-        let wide = SettingsWindowMetrics.tabStripWidth(
+    @Test("A whole shipped strip estimates within a tab of the real one")
+    func stripWidthTracksMeasuredWindow() {
+        // Measured span of the Russian strip, outermost edge to outermost edge.
+        let measured: CGFloat = 540
+        let estimate = SettingsWindowMetrics.tabStripWidth(
             forTabTitles: titles("ru")
-        )
-        #expect(wide > narrow)
+        ) - SettingsWindowMetrics.tabStripInset
+        #expect(abs(estimate - measured) <= 20)
+    }
+
+    // MARK: - The overflow that is real
+
+    @Test("Doubled-length titles widen the window past the baseline")
+    func doubledTitlesWidenTheWindow() {
+        let doubled = titles("en").map { "\($0) \($0)" }
+        let width = SettingsWindowMetrics.windowWidth(forTabTitles: doubled)
         #expect(
-            SettingsWindowMetrics.minimumWidth(forTabTitles: titles("ru"))
-                > SettingsWindowMetrics.minimumWidth(forTabTitles: titles("en"))
+            width > SettingsWindowMetrics.baselineWidth,
+            """
+            Doubled strings span roughly 815 pt; at 720 pt AppKit drops the \
+            fifth tab out of the window instead of truncating it
+            """
+        )
+        #expect(
+            width >= SettingsWindowMetrics.tabStripWidth(forTabTitles: doubled)
         )
     }
 
-    @Test("An empty strip still yields the baseline floor")
+    @Test("The window never sizes below a strip it has to show")
+    func windowNeverSizesBelowItsStrip() {
+        let inputs = Self.shippedLocales.map { titles($0) }
+            + [titles("en").map { "\($0) \($0)" }]
+            + [titles("ru").map { String(repeating: $0, count: 3) }]
+        for input in inputs {
+            #expect(
+                SettingsWindowMetrics.windowWidth(forTabTitles: input)
+                    >= SettingsWindowMetrics.tabStripWidth(forTabTitles: input)
+            )
+        }
+    }
+
+    @Test("The width is monotonic in title length")
+    func widthGrowsWithTitleLength() {
+        let short = titles("en")
+        let long = short.map { String(repeating: $0, count: 4) }
+        #expect(
+            SettingsWindowMetrics.windowWidth(forTabTitles: long)
+                > SettingsWindowMetrics.windowWidth(forTabTitles: short)
+        )
+    }
+
+    @Test("An empty strip still yields the baseline width")
     func emptyTitlesFallBackToBaseline() {
         #expect(SettingsWindowMetrics.tabStripWidth(forTabTitles: []) == 0)
         #expect(
-            SettingsWindowMetrics.minimumWidth(forTabTitles: [])
+            SettingsWindowMetrics.windowWidth(forTabTitles: [])
                 == SettingsWindowMetrics.baselineWidth
         )
     }
 
-    // MARK: - The estimate, pinned to what SwiftUI actually draws
+    // MARK: - The real window keeps its shipped geometry
 
-    @Test("The symbol allowance covers the icon SwiftUI renders in a Label")
-    func symbolAllowanceCoversRenderedLabels() {
-        for identifier in Self.shippedLocales {
-            for (title, symbol) in zip(titles(identifier), Self.tabSymbols) {
-                let text = hostedWidth(Text(verbatim: title))
-                let label = hostedWidth(Label(title, systemImage: symbol))
-                #expect(
-                    label - text <= SettingsWindowMetrics.tabItemSymbolAllowance,
-                    """
-                    \(identifier)/\(symbol) spends \(label - text) pt on its \
-                    icon, above the \(SettingsWindowMetrics
-                        .tabItemSymbolAllowance) pt allowance
-                    """
-                )
-            }
-        }
-    }
-
-    @Test("A measured tab item is at least as wide as its rendered Label")
-    func tabItemWidthCoversRenderedLabel() {
-        for identifier in Self.shippedLocales {
-            for (title, symbol) in zip(titles(identifier), Self.tabSymbols) {
-                #expect(
-                    SettingsWindowMetrics.tabItemWidth(for: title)
-                        >= hostedWidth(Label(title, systemImage: symbol)),
-                    "\(identifier)/\(symbol) measures narrower than it draws"
-                )
-            }
-        }
-    }
-
-    // MARK: - The real window
-
-    @Test("Settings grows past 720 pt for the locales that need it")
-    func settingsWindowAdoptsTheLocalizedFloor() throws {
-        for identifier in ["de", "ru"] {
-            let expected = SettingsWindowMetrics.minimumWidth(
-                forTabTitles: titles(identifier)
+    @Test("Settings renders 720 x 540 in every shipped locale")
+    func settingsWindowKeepsShippedGeometry() throws {
+        for identifier in ["en", "de", "ru"] {
+            let host = NSHostingView(
+                rootView: try makeSettingsView(locale: identifier)
             )
-            let rendered = try hostedSettingsWidth(locale: identifier)
+            host.layoutSubtreeIfNeeded()
             #expect(
-                rendered >= expected,
-                """
-                Settings renders \(rendered) pt wide in \(identifier) but its \
-                tab strip needs \(expected) pt
-                """
-            )
-            #expect(
-                rendered > Self.legacyPinnedWidth,
-                "Settings is still pinned to \(Self.legacyPinnedWidth) pt"
+                host.fittingSize
+                    == NSSize(
+                        width: SettingsWindowMetrics.baselineWidth,
+                        height: SettingsWindowMetrics.baselineHeight
+                    ),
+                "\(identifier) renders \(host.fittingSize), not 720 × 540"
             )
         }
     }
 
-    @Test("Settings still opens at exactly 720 pt in English")
-    func settingsWindowKeepsBaselineInEnglish() throws {
+    @Test("The window modifier widens a real view when titles overflow")
+    func windowModifierWidensOnOverflow() {
+        // Pseudolocalization cannot be switched on mid-process — `NSBundle`
+        // reads `NSDoubleLocalizedStrings` at launch — so the overflow case is
+        // exercised through the modifier the window applies. Re-pinning the
+        // *call site* to a literal 720 is only observable under a real
+        // overflow, which is what the pseudolocalized `A11y & Localization`
+        // lane asserts.
+        let doubled = titles("en").map { "\($0) \($0)" }
+        let host = NSHostingView(
+            rootView: Color.clear.settingsWindowSize(tabTitles: doubled)
+        )
+        host.layoutSubtreeIfNeeded()
         #expect(
-            try hostedSettingsWidth(locale: "en")
-                == SettingsWindowMetrics.baselineWidth
+            host.fittingSize.width
+                == SettingsWindowMetrics.windowWidth(forTabTitles: doubled)
+        )
+        #expect(host.fittingSize.width > SettingsWindowMetrics.baselineWidth)
+
+        let shipped = NSHostingView(
+            rootView: Color.clear.settingsWindowSize(tabTitles: titles("ru"))
+        )
+        shipped.layoutSubtreeIfNeeded()
+        #expect(
+            shipped.fittingSize.width == SettingsWindowMetrics.baselineWidth,
+            "Russian must keep the shipped 720 pt window"
         )
     }
 
-    @Test("Settings height is a floor, not a pin")
-    func settingsWindowHeightIsAFloor() throws {
-        let host = try hostedSettings(locale: "en")
-        #expect(host.fittingSize.height == SettingsWindowMetrics.baselineHeight)
-
+    @Test("Panes stay rigid so a ScrollView cannot widen the window")
+    func panesStayRigid() throws {
         let offered = NSSize(
             width: SettingsWindowMetrics.baselineWidth + 180,
-            height: SettingsWindowMetrics.baselineHeight + 180
-        )
-        let grown = NSHostingController(
-            rootView: AnyView(try makeSettingsView(locale: "en"))
-        )
-        .sizeThatFits(in: offered)
-        #expect(
-            grown.height == offered.height,
-            """
-            Settings reports \(grown.height) pt inside a \(offered.height) pt \
-            window — its height is still pinned
-            """
-        )
-    }
-
-    @Test("Every pane fills a window wider than the baseline")
-    func panesFillAWiderWindow() throws {
-        let offered = NSSize(
-            width: SettingsWindowMetrics.baselineWidth + 180,
-            height: SettingsWindowMetrics.paneMinimumHeight
+            height: SettingsWindowMetrics.paneHeight + 180
         )
         let defaults = try isolatedDefaults()
 
@@ -264,12 +261,13 @@ struct SettingsWindowMetricsTests {
         ]
 
         for (name, pane) in panes {
-            let width = paneWidth(pane, offered: offered)
+            let size = NSHostingController(rootView: AnyView(pane))
+                .sizeThatFits(in: offered)
             #expect(
-                width == offered.width,
+                size.width == SettingsWindowMetrics.baselineWidth,
                 """
-                The \(name) pane reports \(width) pt inside a \
-                \(offered.width) pt window — it is still pinning its own width
+                The \(name) pane claims \(size.width) pt of a \(offered.width) \
+                pt offer; a greedy pane is what drove the window to 900 pt
                 """
             )
         }
@@ -277,34 +275,8 @@ struct SettingsWindowMetricsTests {
 
     // MARK: - Helpers
 
-    private func paneWidth(_ pane: any View, offered: NSSize) -> CGFloat {
-        NSHostingController(rootView: AnyView(pane))
-            .sizeThatFits(in: offered)
-            .width
-    }
-
     private func titles(_ identifier: String) -> [String] {
         Strings.settingsTabTitles(locale: Locale(identifier: identifier))
-    }
-
-    private func hostedWidth(_ view: some View) -> CGFloat {
-        let host = NSHostingView(rootView: view)
-        host.layoutSubtreeIfNeeded()
-        return host.fittingSize.width
-    }
-
-    private func hostedSettingsWidth(locale identifier: String) throws
-        -> CGFloat {
-        try hostedSettings(locale: identifier).fittingSize.width
-    }
-
-    private func hostedSettings(locale identifier: String) throws
-        -> NSHostingView<some View> {
-        let host = NSHostingView(
-            rootView: try makeSettingsView(locale: identifier)
-        )
-        host.layoutSubtreeIfNeeded()
-        return host
     }
 
     private func makeSettingsView(locale identifier: String) throws

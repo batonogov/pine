@@ -159,8 +159,7 @@ private struct AgentSettingsView: View {
                 Divider()
                 AgentHandoffSettingsView(settings: handoffSettings)
                     .frame(
-                        minHeight: SettingsWindowMetrics
-                            .handoffSectionMinimumHeight
+                        height: SettingsWindowMetrics.handoffSectionHeight
                     )
             }
             .padding(20)
