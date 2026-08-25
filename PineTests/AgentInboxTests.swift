@@ -53,8 +53,17 @@ private actor BlockingInboxProjectCanonicalizer {
         return ProjectRegistry.canonicalProjectURL(url)
     }
 
+    /// Waits for the recovery path to reach canonicalization.
+    ///
+    /// The budget is generous on purpose. `recoverAgentTaskFromInbox` runs on
+    /// the main actor, and Swift Testing runs suites in parallel, so the 200 ms
+    /// this used to allow was really a race against however busy the main
+    /// actor happened to be — any `@MainActor` neighbour that hosts a view for
+    /// a fifth of a second turned this into a failure with nothing wrong in
+    /// either test. Still bounded, so a genuinely stuck recovery still fails
+    /// rather than hanging the suite (#1533).
     func waitUntilEntered() async -> Bool {
-        for _ in 0..<200 {
+        for _ in 0..<5_000 {
             if entered { return true }
             try? await Task.sleep(for: .milliseconds(1))
         }

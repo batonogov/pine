@@ -132,6 +132,21 @@ struct TerminalAgentResumeAction: Identifiable {
 struct TerminalTabIdentityLabel: View {
     let tab: TerminalTab
 
+    /// The one spoken identity for a terminal, shared by the project tab bar,
+    /// Quick Terminal and the terminal surface itself.
+    ///
+    /// The agent badge is drawn state — an amber dot that says an agent is
+    /// blocked waiting for input. Announcing only `tab.name` drops it, which
+    /// is exactly what the project tab bar used to do while Quick Terminal
+    /// got it right; the two surfaces are not allowed to disagree about what
+    /// a terminal is called.
+    static func accessibilityLabel(for tab: TerminalTab) -> String {
+        guard let session = tab.agentSession else { return tab.name }
+        let agent = session.agentType.displayName
+        let state = AgentTabBadge.userFacingState(for: session).displayName
+        return "\(tab.name), \(agent), \(state)"
+    }
+
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "terminal")
@@ -257,7 +272,10 @@ struct TerminalNativeTabItem: View {
         }
         .accessibilityRepresentation {
             HStack {
-                Button(tab.name, action: onSelect)
+                Button(
+                    TerminalTabIdentityLabel.accessibilityLabel(for: tab),
+                    action: onSelect
+                )
                     .accessibilityIdentifier(AccessibilityID.terminalTab(tab.stableLabel))
                     .accessibilityAddTraits(isActive ? .isSelected : [])
                     .accessibilityActions {

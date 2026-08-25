@@ -87,6 +87,7 @@ struct PaneSplitView: View {
 
                     PaneDividerView(
                         axis: axis,
+                        ratio: ratio,
                         onDrag: { offset in
                             dragOffset = offset
                         },
@@ -94,7 +95,8 @@ struct PaneSplitView: View {
                             let newRatio = clampedFirstSize / usableSize
                             applyRatio(newRatio)
                             dragOffset = 0
-                        }
+                        },
+                        onAdjustRatio: applyRatio
                     )
 
                     PaneTreeView(node: second, isRoot: false)
@@ -107,6 +109,7 @@ struct PaneSplitView: View {
 
                     PaneDividerView(
                         axis: axis,
+                        ratio: ratio,
                         onDrag: { offset in
                             dragOffset = offset
                         },
@@ -114,7 +117,8 @@ struct PaneSplitView: View {
                             let newRatio = clampedFirstSize / usableSize
                             applyRatio(newRatio)
                             dragOffset = 0
-                        }
+                        },
+                        onAdjustRatio: applyRatio
                     )
 
                     PaneTreeView(node: second, isRoot: false)
