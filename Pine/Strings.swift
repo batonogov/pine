@@ -2131,6 +2131,11 @@ enum Strings {
     // MARK: - Terminal Search
 
     static let terminalSearchPlaceholder: LocalizedStringKey = "terminal.search.placeholder"
+    /// Same catalog key as ``terminalSearchPlaceholder``, resolved eagerly for
+    /// the AppKit query field, which takes a `String` placeholder.
+    static var terminalSearchPlaceholderString: String {
+        String(localized: "terminal.search.placeholder")
+    }
     static let menuFindInTerminal: LocalizedStringKey = "menu.findInTerminal"
     static let menuSendToTerminal: LocalizedStringKey = "menu.sendToTerminal"
     static let menuToggleTerminalZoom: LocalizedStringKey = "menu.toggleTerminalZoom"
