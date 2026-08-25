@@ -963,3 +963,42 @@ struct AgentHistoryPresenter: ViewModifier {
             }
     }
 }
+
+// MARK: - Agent worktree manager presenter (#1524)
+
+/// Presents the Agent Worktrees sheet in response to `showAgentWorktrees`.
+/// Same shape as ``AgentHistoryPresenter``: the `.sheet` + `.onReceive` pair
+/// lives in a `ViewModifier` to keep `ContentView.body` inside the compiler's
+/// type-checking budget, and the handler defers its state mutation by one
+/// runloop to avoid the `.onReceive` reentrancy class from #1051.
+struct AgentWorktreesPresenter: ViewModifier {
+    @Binding var isPresented: Bool
+    let projectManager: ProjectManager
+    let session: ProjectWindowSession
+    let registry: ProjectRegistry
+    @Environment(\.controlActiveState) private var controlActiveState
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $isPresented) {
+                AgentWorktreesView(
+                    session: session,
+                    registry: registry,
+                    isPresented: $isPresented
+                )
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(for: .showAgentWorktrees)
+            ) { notification in
+                guard ContentView.shouldHandleTargetedCommand(
+                    notificationObject: notification.object,
+                    currentProject: projectManager,
+                    isKeyWindow: controlActiveState == .key
+                ) else { return }
+                // Defer to break reentrancy (#1051).
+                DispatchQueue.main.async {
+                    isPresented = true
+                }
+            }
+    }
+}

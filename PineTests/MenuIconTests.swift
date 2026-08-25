@@ -73,6 +73,7 @@ struct MenuIconTests {
         (MenuIcons.projectSwitcherOpenFolder, "Open Folder (switcher menu)"),
         (MenuIcons.projectSwitcherActive, "Active project checkmark"),
         (MenuIcons.projectSwitcherProject, "Inactive project"),
+        (MenuIcons.agentWorktrees, "Manage Agent Worktrees (#1524)"),
     ])
     func projectSwitcherIconExists(_ symbol: String, _ element: String) {
         #expect(

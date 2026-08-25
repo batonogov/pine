@@ -219,6 +219,33 @@ private struct ProjectWindowView: View {
         } message: {
             Text(windowSession.alertMessage ?? "")
         }
+        // Closing a project does not remove the git worktrees it spawned, and
+        // before #1524 it did not say so either. Not an error, so it gets its
+        // own neutral alert rather than sharing the one above.
+        .alert(
+            Strings.projectSwitcherWorktreesKeptTitle,
+            isPresented: Binding(
+                get: { windowSession.retainedWorktreeReport != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        windowSession.acknowledgeRetainedWorktrees()
+                    }
+                }
+            ),
+            presenting: windowSession.retainedWorktreeReport
+        ) { report in
+            Button(Strings.dialogOK, role: .cancel) {}
+            Button(Strings.contextRevealInFinder) {
+                NSWorkspace.shared.activateFileViewerSelecting(
+                    Array(report.worktreeRoots)
+                )
+            }
+        } message: { report in
+            Text(verbatim: Strings.projectSwitcherWorktreesKeptText(
+                report.branchNames.joined(separator: ", "),
+                report.managedRoot.path
+            ))
+        }
         .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
         // Note: project cleanup (session save, Welcome restore) is handled by
         // CloseDelegate.windowWillClose — not onDisappear, which doesn't fire

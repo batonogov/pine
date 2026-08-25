@@ -93,6 +93,11 @@ extension Notification.Name {
     /// Shows the persistent agent-history timeline sheet.
     static let showAgentHistory = Notification.Name("showAgentHistory")
 
+    // MARK: - Agent worktrees (#1524)
+    /// Shows the sheet that lists, merges, and removes the git worktrees Pine
+    /// created for agent tasks.
+    static let showAgentWorktrees = Notification.Name("showAgentWorktrees")
+
     // MARK: - Agent handoff (#933)
     /// Posted after the user changes the read-only editor-context permission.
     static let agentHandoffSettingsChanged = Notification.Name(
