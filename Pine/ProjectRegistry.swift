@@ -1143,6 +1143,13 @@ final class ProjectRegistry: LSPSettingsObserver {
         weak var session: ProjectWindowSession?
     }
 
+    /// Projects the user named in an open request that has not yet been
+    /// claimed by the scene it opened. In-memory and per-run on purpose: this
+    /// is intent, not state, and it must never outlive the process that
+    /// recorded it.
+    @ObservationIgnored
+    private var explicitProjectOpenRequests: Set<URL> = []
+
     private static let recentProjectsKey = "recentProjectPaths"
     private static let recentProjectAgentIdentitiesKey =
         "recentProjectAgentTaskIdentities"
@@ -3345,6 +3352,33 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     private func compactWindowSessions() {
         windowSessionRefs.removeAll { $0.session == nil }
+    }
+
+    // MARK: - Explicit open requests
+
+    /// Records that the user asked for `url` by name — Open Folder, Open
+    /// Recent, the Dock menu, a drop, or `PINE_OPEN_PROJECT` — immediately
+    /// before the window for it is opened.
+    ///
+    /// A window remembers which of its projects was last on screen, and a
+    /// scene reopening for the same URL cannot tell "macOS is restoring this
+    /// window" from "the user just picked this project". Without this record
+    /// the remembered project won every time, so a window that had once been
+    /// switched to project B answered every later request for project A with
+    /// B, forever (#1543).
+    func noteExplicitProjectOpenRequest(_ url: URL) {
+        explicitProjectOpenRequests.insert(
+            canonicalProjectURL(url).standardizedFileURL
+        )
+    }
+
+    /// Claims the pending request for `url`, if the user made one. Returns
+    /// true at most once per request: the scene that opens for a request
+    /// spends it, and a genuine restoration afterwards finds nothing.
+    func consumeExplicitProjectOpenRequest(for url: URL) -> Bool {
+        explicitProjectOpenRequests.remove(
+            canonicalProjectURL(url).standardizedFileURL
+        ) != nil
     }
 
     /// Repairs a retained manager when AppKit makes its SwiftUI project scene

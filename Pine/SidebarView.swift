@@ -875,6 +875,9 @@ struct SidebarView: View {
     private func openNewProject() {
         Task { @MainActor in
             guard let url = await registry.openProjectViaPanel(for: projectManager) else { return }
+            // The picked folder is what the new window must show, whatever a
+            // window anchored there last had on screen (#1543).
+            registry.noteExplicitProjectOpenRequest(url)
             openWindow(value: url)
         }
     }
