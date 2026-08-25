@@ -626,7 +626,7 @@ jobs:
               -only-testing:PineUITests/UserTaskExecutionUITests
               -only-testing:PineUITests/UnsavedChangesUITests
               -only-testing:PineUITests/ReleaseArtifactSmokeTests
-          # Shard 6 — Search & Panes (34 tests)
+          # Shard 6 — Search & Panes (35 tests)
           - shard-name: "Search & Panes"
             test-classes: >-
               -only-testing:PineUITests/CloseProjectMenuTests
@@ -636,6 +636,7 @@ jobs:
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
               -only-testing:PineUITests/MinimapTests
+              -only-testing:PineUITests/AgentMenuBarCommandsUITests
           # Shard 7 — Security & Layout (35 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
