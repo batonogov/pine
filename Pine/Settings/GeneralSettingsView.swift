@@ -127,7 +127,7 @@ struct GeneralSettingsView: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .frame(width: 720, height: 500)
+        .settingsPaneSize()
         .accessibilityIdentifier(AccessibilityID.generalSettingsPane)
     }
 }
