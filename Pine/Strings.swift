@@ -1895,7 +1895,17 @@ enum Strings {
 
     // MARK: - Branch Switcher
 
-    static let branchFilterPlaceholder: LocalizedStringKey = "branch.filterPlaceholder"
+    static var branchFilterPlaceholder: String {
+        String(localized: "branch.filterPlaceholder")
+    }
+
+    static var branchSwitcherCancel: String {
+        String(localized: "branch.cancel")
+    }
+
+    static var branchCurrentAccessibilityValue: String {
+        String(localized: "branch.current")
+    }
 
     static var branchSwitchErrorTitle: String {
         String(localized: "branch.switchError.title")
