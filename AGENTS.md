@@ -130,6 +130,7 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - CPU-intensive work dispatched to background: syntax highlighting (`com.pine.syntax-highlight` serial queue), git operations (`DispatchQueue.global` with `DispatchGroup` for parallel branch/status/branches), project search (`TaskGroup` with sliding-window concurrency), file tree loading (`DispatchQueue.global`)
 - **Never block main thread** with file I/O, regex computation, or git process execution
 - Generation tokens (`HighlightGeneration`, `WorkspaceManager.loadGeneration`, `FileSystemWatcher.activeGeneration`) prevent stale async results from overwriting newer ones — always check generation before applying results
+- **Background work owns its autorelease pool** (#1509). A `DispatchQueue.global()` work item runs with no pool in place, so every autoreleased Foundation/AppKit temporary it produces is parked in libobjc's thread-wide fallback pool and stays alive until the worker thread is destroyed. `runOnBackground` (`Pine/Concurrency/BackgroundDispatch.swift`) wraps its body in `autoreleasepool` on both the success and the error path — prefer it over a raw `DispatchQueue.global().async`, and wrap the body yourself where a raw dispatch is unavoidable. Verify with `OBJC_DEBUG_MISSING_POOLS=YES`: "autoreleased with no pool in place" lines are the regression signal
 
 **Debounce values** (centralised in `UITimings.Debounce` / `UITimings.Render`):
 - Syntax highlight on edit: 100ms (`Debounce.edit`)
@@ -239,6 +240,14 @@ How the maintainer works day-to-day. Documents intent and handoff conventions fo
 - A full `xcodebuild build` is run **before opening a PR**.
 - Run locally: `swiftlint` + the unit tests in `PineTests` that cover the touched area.
 - **UI tests (`PineUITests`, 7 shards) run only on CI** — almost never locally.
+
+**Local runs on the macOS 27 beta are not a pass/fail signal** — CI is (#1509). Two known standing differences on that runtime, both unrelated to whatever diff is in the tree: `AgentInboxToolbarButtonSnapshotTests` fails all four cases because the baselines are recorded on the macOS 26 CI runner and the beta renders that view ~3% differently; and `ApplicationLifecycleProcessTests.quitCrashAndRelaunchJourney()` fails with `terminal-child-unavailable` when several agents run `xcodebuild` at once, because its wait for the spawned terminal child is bounded at 5s. Confirm a local failure on an idle machine before blaming a diff for it.
+
+**Diagnosing a test-host crash on the macOS 27 beta** (#1509):
+- Trust `~/Library/Logs/DiagnosticReports/`, not the console log — the beta drops log lines badly. Reports rotate into `Retired/` and only about twenty are kept there, so **copy a report out the moment you see the crash**; the two incidents #1509 was opened on were already gone by the time it was triaged.
+- Record the OS **build**, not the marketing version: `sw_vers` → `BuildVersion`, matched against `osVersion.build` in the `.ips`. `/var/log/install.log` (`Previous System Version … Current System Version …`) says when the machine changed builds, which is the first thing to check before calling a crash reproducible or fixed.
+- Inject `objc`/malloc diagnostics by copying the generated `.xctestrun` and editing `TestConfigurations → TestTargets → EnvironmentVariables`, then `xcodebuild test-without-building -xctestrun <copy>`. Keep the copy **in the same directory as the original** — the file's `__TESTROOT__` placeholders resolve relative to it. Useful keys: `OBJC_DEBUG_POOL_ALLOCATION=YES` (halts on an out-of-order pool pop), `OBJC_DEBUG_MISSING_POOLS=YES`, `OBJC_DISABLE_AUTORELEASE_COALESCING=YES`, `MallocScribble=1`, `NSZombieEnabled=YES`.
+- For a crash in `objc_autoreleasePoolPop` → `AutoreleasePoolPage::releaseUntil` → `objc_release`, the registers `x22 = 0xa1a1a1a1`, `x23 = 0xf00ffffffffffff` and `x24 = 0xa3a3a3a3a3a3a3a3` are **not** evidence of anything — they are loop-invariant constants (pool-page magic, pointer mask, SCRIBBLE byte) materialised in `releaseUntil`'s prologue on every single pool pop. Read `x0`/`x21` (the object being released), the word at `[x0]` (its `isa`), and confirm `far == (isa & 0x7ffffffffff8) + 0x20`. Reaching `releaseUntil` at all means libobjc already validated the page magic, so the pool page itself was intact.
 
 ### Working with AI agents
 - Typical handoff: **"реши issue #N"** (solve issue #N) — the agent reads the issue **and all its comments** in full, then plans, implements, writes tests, and opens a PR.

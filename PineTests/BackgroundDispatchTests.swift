@@ -227,6 +227,68 @@ struct BackgroundDispatchTests {
         }
         #expect(counter.value == 1)
     }
+
+    // MARK: - Autorelease pool hygiene (#1509)
+
+    // `DispatchQueue.global()` work items run with **no** autorelease pool in
+    // place. Anything the body autoreleases — every Foundation/AppKit bridge
+    // that returns an autoreleased instance — is then parked in libobjc's
+    // thread-wide fallback pool and stays alive until the dispatch worker
+    // thread itself is torn down. A full `PineTests` run under
+    // `OBJC_DEBUG_MISSING_POOLS=YES` logs thousands of
+    // "autoreleased with no pool in place - just leaking" warnings because of
+    // this. `runOnBackground` is Pine's single background-work choke point, so
+    // it owns the pool.
+    //
+    // The probe below makes that observable: `Unmanaged.autorelease()` hands
+    // the object to the current pool, so the object is deallocated when — and
+    // only when — a pool drains.
+
+    @Test("Non-throwing variant drains autoreleased objects before returning")
+    func nonThrowingDrainsAutoreleasePool() async {
+        let deallocations = AtomicCounter()
+        _ = await runOnBackground {
+            let probe = AutoreleaseProbe(deallocations: deallocations)
+            _ = Unmanaged.passRetained(probe).autorelease()
+        }
+        #expect(deallocations.value == 1)
+    }
+
+    @Test("Throwing variant drains autoreleased objects before returning")
+    func throwingDrainsAutoreleasePool() async throws {
+        let deallocations = AtomicCounter()
+        _ = try await runOnBackground { () -> Int in
+            let probe = AutoreleaseProbe(deallocations: deallocations)
+            _ = Unmanaged.passRetained(probe).autorelease()
+            return 1
+        }
+        #expect(deallocations.value == 1)
+    }
+
+    @Test("Throwing variant drains the pool even when the body throws")
+    func throwingDrainsAutoreleasePoolOnError() async {
+        let deallocations = AtomicCounter()
+        await #expect(throws: SentinelError.self) {
+            try await runOnBackground { () -> Int in
+                let probe = AutoreleaseProbe(deallocations: deallocations)
+                _ = Unmanaged.passRetained(probe).autorelease()
+                throw SentinelError(code: 1509)
+            }
+        }
+        #expect(deallocations.value == 1)
+    }
+
+    @Test("Every closure gets its own drain, not one shared at thread death")
+    func repeatedCallsEachDrainTheirOwnPool() async {
+        let deallocations = AtomicCounter()
+        for _ in 0..<8 {
+            _ = await runOnBackground {
+                let probe = AutoreleaseProbe(deallocations: deallocations)
+                _ = Unmanaged.passRetained(probe).autorelease()
+            }
+        }
+        #expect(deallocations.value == 8)
+    }
 }
 
 // MARK: - Test helpers
@@ -251,4 +313,19 @@ nonisolated final class AtomicCounter: @unchecked Sendable {
         defer { lock.unlock() }
         return storedValue
     }
+}
+
+/// Object whose `deinit` records into an ``AtomicCounter``. Handed to
+/// `Unmanaged.autorelease()` so its deallocation observes exactly one thing:
+/// whether an autorelease pool drained while the closure body was on the
+/// stack. `NSObject` because `objc_autorelease` is the mechanism under test.
+nonisolated final class AutoreleaseProbe: NSObject, @unchecked Sendable {
+    private let deallocations: AtomicCounter
+
+    init(deallocations: AtomicCounter) {
+        self.deallocations = deallocations
+        super.init()
+    }
+
+    deinit { deallocations.increment() }
 }
