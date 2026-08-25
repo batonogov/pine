@@ -78,7 +78,22 @@ extension NSWindow: AgentInboxFocusHost {
             responder,
             in: self
         ) else { return }
-        makeFirstResponder(target)
+        // `makeFirstResponder` answers `false` when the target — or the
+        // responder currently holding focus — refuses the change, and that
+        // answer is deliberately not acted on. There is no better second
+        // choice: the window is already front and key, the recorded responder
+        // is the only place the user was, and forcing focus somewhere else
+        // would invent a destination they never asked for. AppKit's own
+        // fallback is the right one — focus stays with whoever refused to give
+        // it up, or with the window itself, which reads as "nothing focused"
+        // and is exactly what the popover's parent window would have shown
+        // anyway. The refusal is a no-op, not a failure to recover from.
+        //
+        // If that ever needs to become visible, the honest fix is for
+        // ``AgentInboxFocusHost/returnFocus(to:)`` to return the result and
+        // for the coordinator to log it — not to retry, and not to pick a
+        // different responder.
+        _ = makeFirstResponder(target)
     }
 }
 
