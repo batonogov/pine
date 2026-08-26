@@ -37,7 +37,7 @@ final class XCTMetricPerformanceTests: XCTestCase {
 
     /// Highlights a large file while tracking peak memory, which `measure {}`
     /// cannot capture on its own. Memory is the dimension that matters for the
-    /// huge-file path (see AGENTS.md → Performance thresholds).
+    /// huge-file path (see .claude/rules/concurrency.md → Performance thresholds).
     func testHighlightMemoryMetric() {
         let highlighter = SyntaxHighlighter.shared
         registerSwiftGrammar(on: highlighter)

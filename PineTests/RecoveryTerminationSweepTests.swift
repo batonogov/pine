@@ -501,7 +501,7 @@ struct RecoveryTerminationSweepTests {
         // The launch sweep runs on the main actor and a snapshot carries a
         // whole unsaved buffer, so it now settles a file by its modification
         // date whenever it can and only decodes what that leaves undecided —
-        // in steady state, nothing (AGENTS.md: never block the main thread
+        // in steady state, nothing (CLAUDE.md: never block the main thread
         // with file I/O). The fast path is observable exactly here: an entry
         // dated outside the window in a file written moments ago is kept.
         //
@@ -1009,7 +1009,7 @@ struct RecoveryTerminationSweepTests {
         // `staleEntryRetentionDays` after a "Later" and the scene `.task`
         // re-runs on restoration and on close/reopen, which would put three
         // 40 MB buffers in front of the window on every launch and every
-        // reopen for a week. AGENTS.md: never block the main thread with file
+        // reopen for a week. CLAUDE.md: never block the main thread with file
         // I/O.
         //
         // This test does not compile at all unless the listing is

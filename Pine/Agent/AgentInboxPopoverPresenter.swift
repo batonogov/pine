@@ -80,7 +80,7 @@ final class AgentInboxPopoverRouter {
         let generation = deliveryGeneration
         // Anchors register from `viewDidMoveToWindow` and `updateNSView`.
         // Presenting synchronously there writes SwiftUI state inside a live
-        // update pass — the mutation AGENTS.md requires observers to defer —
+        // update pass — the mutation CLAUDE.md requires observers to defer —
         // and shows the popover before layout has given the anchor a non-zero
         // `bounds`, which would pin it to the window's origin.
         deliverQueuedRequest { [weak self, weak host] in

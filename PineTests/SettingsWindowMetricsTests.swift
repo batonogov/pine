@@ -20,7 +20,7 @@ import Testing
 @Suite("Settings window metrics", .serialized)
 @MainActor
 struct SettingsWindowMetricsTests {
-    /// The nine shipped localizations, per `AGENTS.md`.
+    /// The nine shipped localizations, per `.claude/rules/localization.md`.
     private static let shippedLocales = [
         "en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans",
     ]
