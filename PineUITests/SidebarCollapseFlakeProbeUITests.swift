@@ -75,8 +75,8 @@ final class SidebarCollapseFlakeProbeUITests: PineUITestCase {
     func testCollapseProbe() throws {
         var lines: [String] = []
 
-        for iteration in 0..<10 {
-            let waitsForFocus = iteration >= 5
+        for iteration in 0..<15 {
+            let waitsForFocus = false
             app = XCUIApplication()
             try setUpLaunchArguments()
             launchWithProject(projectURL)

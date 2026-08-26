@@ -187,7 +187,7 @@ final class SidebarKeyboardFocusController {
                 ) { [weak self] in
                     guard let self,
                           self.focusRequestGeneration == generation,
-                          !self.isFocused else { return }
+                          !self.holdsFirstResponder else { return }
                     _ = self.attemptFocus()
                 }
             }
@@ -197,6 +197,20 @@ final class SidebarKeyboardFocusController {
 
     func cancelPendingFocusRetry() {
         focusRequestGeneration &+= 1
+    }
+
+    /// Whether the responder view is first responder *right now*.
+    ///
+    /// ``isFocused`` is a cache fed by `becomeFirstResponder` /
+    /// `resignFirstResponder`, and a rebuilt SwiftUI host can leave it
+    /// claiming focus the view no longer has — at which point every queued
+    /// retry declines to act and the sidebar silently stops receiving keys
+    /// (#1544). The window is the authority; ask it.
+    private var holdsFirstResponder: Bool {
+        guard let responderView, let window = responderView.window else {
+            return false
+        }
+        return window.firstResponder === responderView
     }
 
     private func attemptFocus() -> Bool {
