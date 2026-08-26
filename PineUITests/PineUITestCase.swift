@@ -159,14 +159,28 @@ class PineUITestCase: XCTestCase {
     /// a predicate rather than one literal string keeps the assertion about
     /// the dialog's meaning — it asks about saving, and it names this file —
     /// so a later wording pass does not silently turn three suites red.
+    /// The opening words of the close question, shared by every locale-neutral
+    /// call site so the wording lives in exactly one place.
+    private static let closeQuestionPrefix =
+        "Do you want to save the changes you made to"
+
     func unsavedChangesQuestion(
         in alert: XCUIElement,
         fileName: String
     ) -> XCUIElement {
+        // `NSAlert` publishes its message text as the element's *value* and
+        // leaves `label` empty, so a predicate over `label` alone matches
+        // nothing at all. Both attributes are checked because the subscript
+        // form these assertions replaced searched more than one of them —
+        // narrowing to `label` is what made this look like a wording bug.
         alert.staticTexts.matching(
             NSPredicate(
-                format: "label BEGINSWITH %@ AND label CONTAINS %@",
-                "Do you want to save the changes you made to",
+                format: """
+                (label BEGINSWITH %@ OR value BEGINSWITH %@)                 AND (label CONTAINS %@ OR value CONTAINS %@)
+                """,
+                Self.closeQuestionPrefix,
+                Self.closeQuestionPrefix,
+                fileName,
                 fileName
             )
         ).firstMatch
