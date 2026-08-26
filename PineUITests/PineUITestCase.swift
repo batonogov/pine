@@ -149,6 +149,29 @@ class PineUITestCase: XCTestCase {
         app.launchArguments[index + 1] = value
     }
 
+    // MARK: - Unsaved-Changes Alert Helpers
+
+    /// The close question inside an unsaved-changes alert, located by what it
+    /// says and the file it names.
+    ///
+    /// #1541 replaced the noun-phrase title ("Unsaved Changes") with the
+    /// question macOS itself asks, which states the file at risk. Matching on
+    /// a predicate rather than one literal string keeps the assertion about
+    /// the dialog's meaning — it asks about saving, and it names this file —
+    /// so a later wording pass does not silently turn three suites red.
+    func unsavedChangesQuestion(
+        in alert: XCUIElement,
+        fileName: String
+    ) -> XCUIElement {
+        alert.staticTexts.matching(
+            NSPredicate(
+                format: "label BEGINSWITH %@ AND label CONTAINS %@",
+                "Do you want to save the changes you made to",
+                fileName
+            )
+        ).firstMatch
+    }
+
     // MARK: - Editor Tab Helpers
 
     /// Finds an editor tab button by file name.

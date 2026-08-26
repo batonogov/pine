@@ -369,7 +369,11 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         let closeConfirmation = app.sheets.firstMatch
         XCTAssertTrue(closeConfirmation.waitForExistence(timeout: 5))
         XCTAssertTrue(
-            closeConfirmation.staticTexts["Unsaved Changes"].firstMatch.exists
+            unsavedChangesQuestion(
+                in: closeConfirmation,
+                fileName: "Untitled"
+            ).exists,
+            "Closing the window should name the file with unsaved changes"
         )
         closeConfirmation.buttons["Cancel"].firstMatch.click()
         XCTAssertTrue(closeConfirmation.waitForNonExistence(timeout: 5))
