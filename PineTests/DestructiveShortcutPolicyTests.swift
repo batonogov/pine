@@ -433,19 +433,24 @@ struct DestructiveShortcutPolicyTests {
             needle: """
                 projectManager.markRecoveryOfferAnswered() \
                 recoveryEntries = retained \
+                recoveryRestoreFailed = !retained.isEmpty \
                 showRecoveryDialog = !retained.isEmpty
                 """,
             mustBePresent: true,
             reason: """
-                The same three-statement tail as the safe branch of the \
-                resolver, and free for the same reason: nothing else pinned \
-                it. It has to run *after* the `await`, because a restore that \
-                never finishes must not silence the offer, and it has to run \
-                in full — `showRecoveryDialog = !retained.isEmpty` is what \
-                puts anything the restorer handed back in front of the user \
-                again instead of dropping it silently. Milder than the \
-                resolver's copy (a migrated snapshot carries a live tab's ID \
-                and the offer filters it out) but the same shape (#1503)
+                The same tail as the safe branch of the resolver, and free \
+                for the same reason: nothing else pinned it. It has to run \
+                *after* the `await`, because a restore that never finishes \
+                must not silence the offer, and it has to run in full — \
+                `showRecoveryDialog = !retained.isEmpty` is what puts \
+                anything the restorer handed back in front of the user again \
+                instead of dropping it silently (#1503), and \
+                `recoveryRestoreFailed = !retained.isEmpty` is what makes the \
+                returning sheet say a restore failed rather than repeat the \
+                launch-time question about files it just refused (#1541). \
+                Milder than the resolver's copy (a migrated snapshot carries \
+                a live tab's ID and the offer filters it out) but the same \
+                shape
                 """
         ),
         SourceRule(
@@ -686,6 +691,18 @@ struct DestructiveShortcutPolicyTests {
             A Recover All that swallows the entries the restorer could not \
             restore passed the scan: the user cancelled a large-file prompt \
             and is never told the buffer is still waiting
+            """
+        )
+        #expect(
+            !Self.violations(
+                of: Self.restoreRules,
+                in: Self.silentRestoreFailureFixture
+            ).isEmpty,
+            """
+            A Recover All that brings the sheet back without recording that \
+            the restore failed passed the scan: the second appearance is \
+            then indistinguishable from the first and repeats the \
+            launch-time question about files Pine just refused (#1541)
             """
         )
     }
@@ -952,6 +969,7 @@ struct DestructiveShortcutPolicyTests {
                 // before the `await`.
                 projectManager.markRecoveryOfferAnswered()
                 recoveryEntries = retained
+                recoveryRestoreFailed = !retained.isEmpty
                 showRecoveryDialog = !retained.isEmpty
             }
         }
@@ -988,6 +1006,27 @@ struct DestructiveShortcutPolicyTests {
                 projectManager.markRecoveryOfferAnswered()
                 recoveryEntries = []
                 showRecoveryDialog = false
+            }
+        }
+        """
+
+    /// A restore that re-presents the sheet without saying a restore failed.
+    /// Everything #1503 pinned is still here; what is gone is the one line
+    /// that stops the returning sheet from repeating "Pine found unsaved
+    /// changes from a previous session" about files it just refused (#1541).
+    private static let silentRestoreFailureFixture = """
+        func recoverTabs() {
+            projectManager.beginRecoveryRestore()
+            Task { @MainActor in
+                defer { projectManager.endRecoveryRestore() }
+                let retained = await recoveryManager.restorePendingEntries(
+                    entries,
+                    in: target,
+                    context: context
+                )
+                projectManager.markRecoveryOfferAnswered()
+                recoveryEntries = retained
+                showRecoveryDialog = !retained.isEmpty
             }
         }
         """

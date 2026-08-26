@@ -66,10 +66,10 @@ final class UnsavedChangesUITests: PineUITestCase {
         let tab = try createDirtyUntitledTab()
 
         let alert = closeActiveTab()
-        let alertTitle = alert.staticTexts["Unsaved Changes"].firstMatch
+        let question = unsavedChangesQuestion(in: alert, fileName: "Untitled")
         alert.buttons["Save"].firstMatch.click()
         XCTAssertTrue(
-            alertTitle.waitForNonExistence(timeout: 5),
+            question.waitForNonExistence(timeout: 5),
             "Save should advance beyond the unsaved-changes alert"
         )
 
@@ -148,9 +148,10 @@ final class UnsavedChangesUITests: PineUITestCase {
             alert.waitForExistence(timeout: 5),
             "Closing a dirty untitled tab should show an owned alert"
         )
-        XCTAssertTrue(
-            alert.staticTexts["Unsaved Changes"].firstMatch.exists,
-            "The close decision should explain the unsaved state"
+        assertUnsavedChangesQuestion(
+            in: alert,
+            fileName: "Untitled",
+            "The close decision should name the file it is about to discard"
         )
         return alert
     }

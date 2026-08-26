@@ -39,6 +39,10 @@ struct ContentView: View {
     @State var isSearchPresented = false
     @State var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State var showRecoveryDialog = false
+    /// Set when the sheet is being re-presented with the snapshots a restore
+    /// attempt handed back, so it can say so instead of repeating the
+    /// launch-time question (#1541).
+    @State var recoveryRestoreFailed = false
     @State var isDragTargeted = false
     @State var isBranchSwitcherPresented = false
     @State var isAgentActivityPresented = false
@@ -202,6 +206,7 @@ struct ContentView: View {
         .sheet(isPresented: $showRecoveryDialog) {
             RecoveryDialogView(
                 entries: recoveryEntries,
+                didFailToRestore: recoveryRestoreFailed,
                 onChoose: { resolveRecoveryOffer($0) }
             )
         }

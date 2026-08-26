@@ -149,6 +149,77 @@ class PineUITestCase: XCTestCase {
         app.launchArguments[index + 1] = value
     }
 
+    // MARK: - Unsaved-Changes Alert Helpers
+
+    /// The close question inside an unsaved-changes alert, located by what it
+    /// says and the file it names.
+    ///
+    /// #1541 replaced the noun-phrase title ("Unsaved Changes") with the
+    /// question macOS itself asks, which states the file at risk. Matching on
+    /// a predicate rather than one literal string keeps the assertion about
+    /// the dialog's meaning — it asks about saving, and it names this file —
+    /// so a later wording pass does not silently turn three suites red.
+    /// The opening words of the close question, shared by every locale-neutral
+    /// call site so the wording lives in exactly one place.
+    private static let closeQuestionPrefix =
+        "Do you want to save the changes you made to"
+
+    func unsavedChangesQuestion(
+        in alert: XCUIElement,
+        fileName: String
+    ) -> XCUIElement {
+        // `NSAlert` publishes its message text as the element's *value* and
+        // leaves `label` empty, so a predicate over `label` alone matches
+        // nothing at all. Both attributes are checked because the subscript
+        // form these assertions replaced searched more than one of them —
+        // narrowing to `label` is what made this look like a wording bug.
+        alert.staticTexts.matching(
+            NSPredicate(
+                format: """
+                (label BEGINSWITH %@ OR value BEGINSWITH %@)                 AND (label CONTAINS %@ OR value CONTAINS %@)
+                """,
+                Self.closeQuestionPrefix,
+                Self.closeQuestionPrefix,
+                fileName,
+                fileName
+            )
+        ).firstMatch
+    }
+
+    /// Waits for the close question and fails with the alert's actual text.
+    ///
+    /// A bare `exists` on a missing element reports only that it is missing,
+    /// which says nothing about what the alert did say — and UI shards
+    /// publish no result bundle, so that difference is the whole
+    /// investigation.
+    @discardableResult
+    func assertUnsavedChangesQuestion(
+        in alert: XCUIElement,
+        fileName: String,
+        _ message: String,
+        timeout: TimeInterval = 5,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        let question = unsavedChangesQuestion(in: alert, fileName: fileName)
+        if !question.waitForExistence(timeout: timeout) {
+            let texts = alert.staticTexts.allElementsBoundByIndex
+                .map { "label=\($0.label.debugDescription)" }
+                .joined(separator: "\n    ")
+            XCTFail(
+                """
+                \(message)
+                  alert static texts:
+                    \(texts.isEmpty ? "(none)" : texts)
+                  alert: \(alert.debugDescription)
+                """,
+                file: file,
+                line: line
+            )
+        }
+        return question
+    }
+
     // MARK: - Editor Tab Helpers
 
     /// Finds an editor tab button by file name.

@@ -28,19 +28,22 @@ nonisolated enum AgentInboxActionOutcome: Equatable, Sendable {
         }
     }
 
+    /// Every failed recovery keeps the popover open *and* carries the reason
+    /// it failed. The reason is not decoration: thirteen distinguishable
+    /// failures used to arrive here as one `.recoveryUnavailable` token and
+    /// leave as one sentence that named no cause and offered no next step
+    /// (#1541). Carrying ``AgentRecoveryFailure`` as a payload is what makes
+    /// dropping the distinction a compile error rather than a wording choice.
     static func forRecovery(_ result: AgentInboxRecoveryResult) -> Self {
-        switch result {
-        case .openedNewSession, .resumed:
-            .dismiss
-        case .taskMissing, .projectUnavailable, .unavailable,
-                .changedWhilePreparing, .launchRejected:
-            .keepVisible(.recoveryUnavailable)
+        guard let failure = AgentRecoveryFailure.forResult(result) else {
+            return .dismiss
         }
+        return .keepVisible(.recoveryUnavailable(failure))
     }
 }
 
 /// The status the Inbox shows while it stays open after a failed action.
 nonisolated enum AgentInboxActionStatus: Equatable, Sendable {
     case routeUnavailable
-    case recoveryUnavailable
+    case recoveryUnavailable(AgentRecoveryFailure)
 }

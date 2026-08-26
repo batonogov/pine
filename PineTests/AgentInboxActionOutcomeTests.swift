@@ -3,7 +3,8 @@
 //  PineTests
 //
 //  Which Inbox action results close the popover and which keep it open with
-//  an actionable status (#1491).
+//  an actionable status (#1491), and — for every distinguishable failure —
+//  what the popover then says happened and what to do about it (#1541).
 //
 
 import Foundation
@@ -14,6 +15,29 @@ import Testing
 
 @Suite("Agent Inbox action outcome")
 struct AgentInboxActionOutcomeTests {
+    /// Every failure the Inbox can report, paired with the result that
+    /// produces it. Kept as one table because the whole point of #1541 is
+    /// that these do not collapse into each other: an entry lost here is a
+    /// cause that silently starts sharing another one's sentence.
+    private static let failuresByResult:
+        [(result: AgentInboxRecoveryResult, failure: AgentRecoveryFailure)] = [
+            (.taskMissing, .taskGone),
+            (.projectUnavailable, .projectWindowUnavailable),
+            (.changedWhilePreparing, .changedWhilePreparing),
+            (.launchRejected, .launchRejected),
+            (.unavailable(.taskNotRecoverable), .notRecoverable),
+            (.unavailable(.projectMissing), .projectFolderMissing),
+            (.unavailable(.worktreeMissing), .worktreeMissing),
+            (.unavailable(.executableMissing), .agentExecutableMissing),
+            (.unavailable(.adapterUnavailable), .adapterUnavailable),
+            (.unavailable(.vendorIdentityMissing), .sessionIdentityMissing),
+            (.unavailable(.vendorIdentityInvalid), .sessionIdentityInvalid),
+            (.unavailable(.versionProbeFailed), .versionProbeFailed),
+            (.unavailable(.versionChanged), .versionChanged),
+        ]
+
+    private static let english = Locale(identifier: "en_US")
+
     // MARK: - Navigation
 
     @Test("a focused route dismisses the popover")
@@ -46,78 +70,127 @@ struct AgentInboxActionOutcomeTests {
         }
     }
 
-    // MARK: - Status to text
+    // MARK: - Result to cause
 
-    /// The enum carries the distinction; only this edge makes it visible.
-    /// Swapping the two keys inside `AgentInboxView.statusMessage` compiles
-    /// and leaves every enum-level assertion above green, so both mappings
-    /// are pinned against the exact strings the user reads and hears.
-    @MainActor
-    @Test("each status maps to its own visible and spoken text")
-    func statusesMapToTheirOwnText() {
-        #expect(
-            AgentInboxView.statusMessage(.routeUnavailable)
-                == Strings.agentInboxRouteUnavailable
-        )
-        #expect(
-            AgentInboxView.statusMessage(.recoveryUnavailable)
-                == Strings.agentInboxRecoveryUnavailable
-        )
-        #expect(
-            AgentInboxView.statusAnnouncement(
-                .routeUnavailable,
-                locale: Locale(identifier: "en_US")
-            ) == "Exact session is no longer available"
-        )
-        #expect(
-            AgentInboxView.statusAnnouncement(
-                .recoveryUnavailable,
-                locale: Locale(identifier: "en_US")
-            ) == "Safe recovery is unavailable"
-        )
-    }
-
-    @MainActor
-    @Test("the two statuses are never rendered as the same text")
-    func statusesAreNotInterchangeable() {
-        let locale = Locale(identifier: "en_US")
-        #expect(
-            AgentInboxView.statusMessage(.routeUnavailable)
-                != AgentInboxView.statusMessage(.recoveryUnavailable)
-        )
-        #expect(
-            AgentInboxView.statusAnnouncement(.routeUnavailable, locale: locale)
-                != AgentInboxView.statusAnnouncement(
-                    .recoveryUnavailable,
-                    locale: locale
-                )
-        )
-    }
-
-    @MainActor
-    @Test("every status resolves to real spoken text, not a catalog key")
-    func everyStatusHasResolvedSpokenText() {
-        let locale = Locale(identifier: "en_US")
-        for status: AgentInboxActionStatus in [
-            .routeUnavailable,
-            .recoveryUnavailable,
-        ] {
-            let spoken = AgentInboxView.statusAnnouncement(
-                status,
-                locale: locale
-            )
-            // A screen-reader user gets no other signal: focus stays in the
-            // popover and only an 11-point caption changes. An unresolved
-            // key would be announced verbatim.
-            #expect(!spoken.isEmpty, "\(status) must have a spoken form")
+    /// The seam #1541 is about. Every one of these results used to arrive at
+    /// the same `.recoveryUnavailable` token; nothing downstream could tell a
+    /// missing worktree from a changed agent version, because the difference
+    /// had already been thrown away here.
+    @Test("every recovery result carries its own cause")
+    func everyRecoveryResultCarriesItsOwnCause() {
+        for (result, expected) in Self.failuresByResult {
             #expect(
-                !spoken.hasPrefix("agentInbox."),
-                "\(status) announced its catalog key instead of its text"
+                AgentRecoveryFailure.forResult(result) == expected,
+                "\(result) must report \(expected)"
             )
         }
     }
 
-    // MARK: - Recovery
+    @Test("a started or resumed session reports no failure at all")
+    func successfulRecoveryHasNoCause() {
+        #expect(
+            AgentRecoveryFailure.forResult(
+                .openedNewSession(terminalID: UUID())
+            ) == nil
+        )
+        #expect(
+            AgentRecoveryFailure.forResult(.resumed(terminalID: UUID())) == nil
+        )
+    }
+
+    /// The table above is only as good as its coverage: a fourteenth failure
+    /// added to the enum and never mapped would leave every assertion green
+    /// while being unreachable from any result.
+    @Test("every failure case is reachable from some result")
+    func everyFailureIsReachable() {
+        let reached = Set(Self.failuresByResult.map(\.failure))
+        let unreachable = Set(AgentRecoveryFailure.allCases)
+            .subtracting(reached)
+        #expect(
+            reached == Set(AgentRecoveryFailure.allCases),
+            "unreachable failures: \(unreachable)"
+        )
+    }
+
+    /// The planner's nine refusal reasons must stay nine causes. Folding two
+    /// of them onto one case compiles and reads plausibly.
+    @Test("each planner reason maps to a distinct cause")
+    func plannerReasonsAreNotInterchangeable() {
+        let reasons: [AgentTaskRecoveryUnavailableReason] = [
+            .taskNotRecoverable,
+            .projectMissing,
+            .worktreeMissing,
+            .executableMissing,
+            .adapterUnavailable,
+            .vendorIdentityMissing,
+            .vendorIdentityInvalid,
+            .versionProbeFailed,
+            .versionChanged,
+        ]
+        let mapped = reasons.map(AgentRecoveryFailure.forReason)
+
+        #expect(
+            Set(mapped).count == reasons.count,
+            "two planner reasons share one cause: \(mapped)"
+        )
+    }
+
+    // MARK: - Cause and next step to text
+
+    @Test("every failure has its own cause sentence")
+    func causesAreDistinct() {
+        let causes = AgentRecoveryFailure.allCases.map {
+            Strings.agentRecoveryCauseText($0, locale: Self.english)
+        }
+
+        #expect(
+            Set(causes).count == AgentRecoveryFailure.allCases.count,
+            "two failures render the same cause: \(causes)"
+        )
+    }
+
+    /// A cause with no way forward is the dead end #1494 asked us not to
+    /// ship: the user is told something went wrong and left there.
+    @Test("every failure offers a next step, resolved and non-empty")
+    func everyFailureOffersANextStep() {
+        for failure in AgentRecoveryFailure.allCases {
+            let cause = Strings.agentRecoveryCauseText(
+                failure,
+                locale: Self.english
+            )
+            let step = Strings.agentRecoveryNextStepText(
+                failure,
+                locale: Self.english
+            )
+
+            #expect(!cause.isEmpty, "\(failure) has no cause text")
+            #expect(!step.isEmpty, "\(failure) has no next step")
+            #expect(
+                cause != step,
+                "\(failure) repeats its cause as its next step"
+            )
+            // An unresolved key is announced verbatim by VoiceOver.
+            #expect(
+                !cause.hasPrefix("agentRecovery."),
+                "\(failure) exposes its cause key: \(cause)"
+            )
+            #expect(
+                !step.hasPrefix("agentRecovery."),
+                "\(failure) exposes its next-step key: \(step)"
+            )
+        }
+    }
+
+    @Test("a failed recovery keeps the popover open with its own cause")
+    func failedRecoveryKeepsPopoverVisibleWithItsCause() {
+        for (result, failure) in Self.failuresByResult {
+            #expect(
+                AgentInboxActionOutcome.forRecovery(result)
+                    == .keepVisible(.recoveryUnavailable(failure)),
+                "\(result) must keep the Inbox open and report \(failure)"
+            )
+        }
+    }
 
     @Test("a started or resumed session dismisses the popover")
     func successfulRecoveryDismisses() {
@@ -134,29 +207,137 @@ struct AgentInboxActionOutcomeTests {
         }
     }
 
-    @Test("every failed recovery keeps the popover visible")
-    func failedRecoveryKeepsPopoverVisible() {
-        let failures: [AgentInboxRecoveryResult] = [
-            .taskMissing,
-            .projectUnavailable,
-            .unavailable(.taskNotRecoverable),
-            .unavailable(.projectMissing),
-            .unavailable(.worktreeMissing),
-            .unavailable(.executableMissing),
-            .unavailable(.adapterUnavailable),
-            .unavailable(.vendorIdentityMissing),
-            .unavailable(.vendorIdentityInvalid),
-            .unavailable(.versionProbeFailed),
-            .unavailable(.versionChanged),
-            .changedWhilePreparing,
-            .launchRejected,
-        ]
+    // MARK: - Status to text
 
-        for failure in failures {
+    /// The enum carries the distinction; only this edge makes it visible.
+    /// Swapping the keys inside `AgentInboxView.statusMessage` compiles and
+    /// leaves every enum-level assertion above green, so both mappings are
+    /// pinned against the exact strings the user reads and hears.
+    @MainActor
+    @Test("each status maps to its own visible and spoken text")
+    func statusesMapToTheirOwnText() {
+        #expect(
+            AgentInboxView.statusMessage(.routeUnavailable)
+                == Strings.agentInboxRouteUnavailable
+        )
+        #expect(
+            AgentInboxView.statusDetail(.routeUnavailable)
+                == Strings.agentInboxRouteUnavailableNextStep
+        )
+        for failure in AgentRecoveryFailure.allCases {
             #expect(
-                AgentInboxActionOutcome.forRecovery(failure)
-                    == .keepVisible(.recoveryUnavailable),
-                "\(failure) must not close the Inbox"
+                AgentInboxView.statusMessage(.recoveryUnavailable(failure))
+                    == Strings.agentRecoveryCause(failure)
+            )
+            #expect(
+                AgentInboxView.statusDetail(.recoveryUnavailable(failure))
+                    == Strings.agentRecoveryNextStep(failure)
+            )
+        }
+    }
+
+    @MainActor
+    @Test("no two statuses are rendered as the same text")
+    func statusesAreNotInterchangeable() {
+        let statuses: [AgentInboxActionStatus] =
+            [.routeUnavailable]
+            + AgentRecoveryFailure.allCases.map {
+                .recoveryUnavailable($0)
+            }
+
+        // `LocalizedStringKey` is `Equatable` but not `Hashable`, so the
+        // caption keys are compared pairwise rather than through a `Set`.
+        let messages = statuses.map(AgentInboxView.statusMessage)
+        for (left, right) in pairs(of: messages.indices) {
+            #expect(
+                messages[left] != messages[right],
+                "\(statuses[left]) and \(statuses[right]) share one caption"
+            )
+        }
+
+        let announcements = statuses.map {
+            AgentInboxView.statusAnnouncement($0, locale: Self.english)
+        }
+        #expect(Set(announcements).count == statuses.count)
+    }
+
+    private func pairs(
+        of indices: Range<Int>
+    ) -> [(Int, Int)] {
+        indices.flatMap { left in
+            indices.filter { $0 > left }.map { (left, $0) }
+        }
+    }
+
+    /// Focus never leaves the popover and the only visible change is a
+    /// caption at its bottom edge, so the announcement is the entire feedback
+    /// a screen-reader user gets. Dropping the next step from it — easy, and
+    /// invisible on screen — puts that user back at the dead end.
+    @MainActor
+    @Test("every status is spoken as its cause and its next step")
+    func announcementsCarryBothHalves() {
+        for failure in AgentRecoveryFailure.allCases {
+            let spoken = AgentInboxView.statusAnnouncement(
+                .recoveryUnavailable(failure),
+                locale: Self.english
+            )
+
+            #expect(
+                spoken.contains(
+                    Strings.agentRecoveryCauseText(
+                        failure,
+                        locale: Self.english
+                    )
+                ),
+                "\(failure) is not announced with its cause"
+            )
+            #expect(
+                spoken.contains(
+                    Strings.agentRecoveryNextStepText(
+                        failure,
+                        locale: Self.english
+                    )
+                ),
+                "\(failure) is not announced with its next step"
+            )
+        }
+
+        let routeSpoken = AgentInboxView.statusAnnouncement(
+            .routeUnavailable,
+            locale: Self.english
+        )
+        #expect(
+            routeSpoken.contains(
+                Strings.agentInboxRouteUnavailableText(locale: Self.english)
+            )
+        )
+        #expect(
+            routeSpoken.contains(
+                Strings.agentInboxRouteUnavailableNextStepText(
+                    locale: Self.english
+                )
+            )
+        )
+    }
+
+    @MainActor
+    @Test("every status resolves to real spoken text, not a catalog key")
+    func everyStatusHasResolvedSpokenText() {
+        let statuses: [AgentInboxActionStatus] =
+            [.routeUnavailable]
+            + AgentRecoveryFailure.allCases.map {
+                .recoveryUnavailable($0)
+            }
+
+        for status in statuses {
+            let spoken = AgentInboxView.statusAnnouncement(
+                status,
+                locale: Self.english
+            )
+            #expect(!spoken.isEmpty, "\(status) must have a spoken form")
+            #expect(
+                !spoken.hasPrefix("agentInbox."),
+                "\(status) announced its catalog key instead of its text"
             )
         }
     }
@@ -175,23 +356,25 @@ struct AgentInboxActionOutcomeTests {
                 .ActionEffects(
                     dismisses: true,
                     statusMessage: nil,
+                    statusDetail: nil,
                     announcement: nil
                 )
         )
     }
 
     @MainActor
-    @Test("a failure keeps the popover open, captioned and spoken")
+    @Test("a failure keeps the popover open, captioned, advised and spoken")
     func keepVisibleEffectsStayOpenAndSpeak() {
-        let locale = Locale(identifier: "en_US")
+        let statuses: [AgentInboxActionStatus] =
+            [.routeUnavailable]
+            + AgentRecoveryFailure.allCases.map {
+                .recoveryUnavailable($0)
+            }
 
-        for status: AgentInboxActionStatus in [
-            .routeUnavailable,
-            .recoveryUnavailable,
-        ] {
+        for status in statuses {
             let effects = AgentInboxView.effects(
                 of: .keepVisible(status),
-                locale: locale
+                locale: Self.english
             )
 
             #expect(
@@ -203,9 +386,14 @@ struct AgentInboxActionOutcomeTests {
                     == AgentInboxView.statusMessage(status)
             )
             #expect(
+                effects.statusDetail
+                    == AgentInboxView.statusDetail(status),
+                "\(status) must carry its next step, not only its cause"
+            )
+            #expect(
                 effects.announcement == AgentInboxView.statusAnnouncement(
                     status,
-                    locale: locale
+                    locale: Self.english
                 ),
                 "\(status) must be spoken, not only shown"
             )
@@ -216,21 +404,37 @@ struct AgentInboxActionOutcomeTests {
     @Test("a failure runs the caption and the announcement, and no dismiss")
     func failureEffectsAreAppliedWithoutDismissing() {
         var messages: [LocalizedStringKey] = []
+        var details: [LocalizedStringKey?] = []
         var announcements: [String] = []
         var dismissals = 0
 
         AgentInboxView.applyEffects(
             AgentInboxView.effects(
-                of: .keepVisible(.routeUnavailable),
-                locale: Locale(identifier: "en_US")
+                of: .keepVisible(.recoveryUnavailable(.worktreeMissing)),
+                locale: Self.english
             ),
-            setStatusMessage: { messages.append($0) },
+            setStatusMessage: { message, detail in
+                messages.append(message)
+                details.append(detail)
+            },
             announce: { announcements.append($0) },
             dismiss: { dismissals += 1 }
         )
 
-        #expect(messages == [Strings.agentInboxRouteUnavailable])
-        #expect(announcements == ["Exact session is no longer available"])
+        #expect(
+            messages == [Strings.agentRecoveryCause(.worktreeMissing)]
+        )
+        #expect(
+            details == [Strings.agentRecoveryNextStep(.worktreeMissing)]
+        )
+        #expect(
+            announcements == [
+                AgentInboxView.statusAnnouncement(
+                    .recoveryUnavailable(.worktreeMissing),
+                    locale: Self.english
+                )
+            ]
+        )
         #expect(dismissals == 0)
     }
 
@@ -243,7 +447,7 @@ struct AgentInboxActionOutcomeTests {
 
         AgentInboxView.applyEffects(
             AgentInboxView.effects(of: .dismiss),
-            setStatusMessage: { messages.append($0) },
+            setStatusMessage: { message, _ in messages.append(message) },
             announce: { announcements.append($0) },
             dismiss: { dismissals += 1 }
         )
@@ -290,6 +494,11 @@ struct AgentInboxActionOutcomeTests {
             "a dead route must caption the popover it leaves open"
         )
         #expect(
+            view.actionStatus.detail
+                == Strings.agentInboxRouteUnavailableNextStep,
+            "a dead route must also say what to do about it"
+        )
+        #expect(
             announcements.count == 1,
             "a dead route must be spoken exactly once"
         )
@@ -300,19 +509,25 @@ struct AgentInboxActionOutcomeTests {
         #expect(dismissals == 0, "a failure must never close the Inbox")
     }
 
-    /// The two failures are not interchangeable at this seam either: the view
-    /// must caption itself with the status it was handed, not with a constant.
+    /// The failures are not interchangeable at this seam either: the view
+    /// must caption itself with the status it was handed, not with a
+    /// constant, and it must carry the next step through as well.
     @MainActor
-    @Test("the view captions a failed recovery with the recovery status")
+    @Test("the view captions a failed recovery with that failure's cause")
     func viewWiresRecoveryFailureToItsOwnCaption() throws {
         let fixture = try RegistryFixture()
         defer { fixture.cleanup() }
         let view = AgentInboxView(registry: fixture.registry)
 
-        view.apply(.keepVisible(.recoveryUnavailable))
+        view.apply(.keepVisible(.recoveryUnavailable(.versionChanged)))
 
         #expect(
-            view.actionStatus.message == Strings.agentInboxRecoveryUnavailable
+            view.actionStatus.message
+                == Strings.agentRecoveryCause(.versionChanged)
+        )
+        #expect(
+            view.actionStatus.detail
+                == Strings.agentRecoveryNextStep(.versionChanged)
         )
     }
 
@@ -340,6 +555,7 @@ struct AgentInboxActionOutcomeTests {
             view.actionStatus.message == nil,
             "success must leave no failure caption behind"
         )
+        #expect(view.actionStatus.detail == nil)
     }
 
     // MARK: - Fixture

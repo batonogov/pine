@@ -52,22 +52,21 @@ enum ProjectCloseConfirmation {
         var discardAuthorization: DirtyEditorContentAuthorization?
         let dirty = projectManager.allDirtyTabs
         if !dirty.isEmpty {
-            let fileList = dirty
-                .map { "  • \($0.fileName)" }
-                .joined(separator: "\n")
-            let message = Strings.unsavedChangesListMessage(fileList)
+            let prompt = TabCloseHelper.unsavedChangesPrompt(
+                fileNames: dirty.map(\.fileName)
+            )
             let response = if let presentAlert {
                 await presentAlert(
                     .unsavedChangesBulk,
                     context,
-                    Strings.unsavedChangesTitle,
-                    message
+                    prompt.messageText,
+                    prompt.informativeText
                 )
             } else {
                 await AlertTemplate.unsavedChangesBulk.runSheet(
                     on: context,
-                    messageText: Strings.unsavedChangesTitle,
-                    informativeText: message
+                    messageText: prompt.messageText,
+                    informativeText: prompt.informativeText
                 )
             }
             switch response {

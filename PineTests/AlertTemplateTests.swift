@@ -161,6 +161,39 @@ struct AlertTemplateTests {
         #expect(buttons[1].title == Strings.dialogCancel)
     }
 
+    @Test("userTaskRunConfirmation has Run / Cancel")
+    func userTaskRunConfirmationButtons() {
+        let template = AlertTemplate.userTaskRunConfirmation
+        let alert = template.makeAlert(messageText: "Run?")
+        let buttons = alert.buttons
+        #expect(buttons.count == 2)
+        #expect(buttons[0].title == Strings.userTaskRun)
+        #expect(buttons[1].title == Strings.dialogCancel)
+    }
+
+    /// OK leads so it is the rightmost, default, Escape-answering button.
+    /// Before this template, Return copied the task's stdout to the clipboard
+    /// and Escape was bound to nothing at all (#1541).
+    @Test("userTaskOutputConflict has OK / Copy Output / Open Output")
+    func userTaskOutputConflictButtons() {
+        let template = AlertTemplate.userTaskOutputConflict
+        let alert = template.makeAlert(messageText: "Conflict")
+        let buttons = alert.buttons
+        #expect(buttons.count == 3)
+        #expect(buttons[0].title == Strings.dialogOK)
+        #expect(buttons[1].title == Strings.userTaskCopyOutput)
+        #expect(buttons[2].title == Strings.userTaskOpenOutput)
+    }
+
+    @Test("userTaskNotice has one safe OK button")
+    func userTaskNoticeButtons() {
+        let template = AlertTemplate.userTaskNotice
+        let alert = template.makeAlert(messageText: "Cannot run")
+        let buttons = alert.buttons
+        #expect(buttons.count == 1)
+        #expect(buttons[0].title == Strings.dialogOK)
+    }
+
     // MARK: - Alert style defaults
 
     @Test("most templates default to warning style")
@@ -179,7 +212,15 @@ struct AlertTemplateTests {
             .branchUncommittedChanges,
             .revertAllConfirmation,
             .fileOperationErrorWarning,
+            .userTaskRunConfirmation,
+            .userTaskOutputConflict,
+            .userTaskNotice,
         ]
+        #expect(
+            Set(warningTemplates + [.fileOperationErrorCritical])
+                == Set(AlertTemplate.allCases),
+            "a template is missing from the style contract"
+        )
         for template in warningTemplates {
             let alert = template.makeAlert(messageText: "Test")
             #expect(alert.alertStyle == .warning, "Expected .warning for \(template)")
@@ -297,7 +338,32 @@ struct AlertTemplateTests {
                 cancelIndex: 1,
                 destructiveIndices: [0]
             ),
+            .init(
+                template: .userTaskRunConfirmation,
+                defaultIndex: 1,
+                cancelIndex: 1,
+                destructiveIndices: [0]
+            ),
+            .init(
+                template: .userTaskOutputConflict,
+                defaultIndex: 0,
+                cancelIndex: 0,
+                destructiveIndices: []
+            ),
+            .init(
+                template: .userTaskNotice,
+                defaultIndex: 0,
+                cancelIndex: nil,
+                destructiveIndices: []
+            ),
         ]
+
+        // A template added without a row here would ship with whatever
+        // default/cancel/destructive layout it happened to get, and every
+        // assertion below would still pass.
+        let untested = Set(AlertTemplate.allCases)
+            .subtracting(expectations.map(\.template))
+        #expect(untested.isEmpty, "untested templates: \(untested)")
 
         for expected in expectations {
             let alert = expected.template.makeAlert(messageText: "Test")

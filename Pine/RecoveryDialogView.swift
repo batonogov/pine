@@ -261,6 +261,15 @@ struct RecoveryEntryRow: View {
 /// Shows a dialog listing recovered unsaved files after a crash.
 struct RecoveryDialogView: View {
     let entries: [(UUID, RecoveryEntry)]
+    /// Whether these entries are what a restore attempt handed back rather
+    /// than what was found at launch.
+    ///
+    /// The restorer keeps every snapshot it could not install and the sheet
+    /// simply comes back holding them. Read without this flag, the second
+    /// appearance says "Pine found unsaved changes" — describing a launch
+    /// that already happened and saying nothing about the attempt that just
+    /// failed on these exact files (#1541).
+    var didFailToRestore: Bool = false
     /// Reports which of the three choices the user made. See
     /// ``RecoveryDialogFooter/onChoose`` for why this is one callback.
     let onChoose: (RecoveryDialogChoice) -> Void
@@ -269,6 +278,17 @@ struct RecoveryDialogView: View {
     /// padding on each edge is added back. Shared with ``RecoveryEntryRow``,
     /// which caps itself to the same column.
     static let contentWidth: CGFloat = 352
+
+    /// What the sheet says about why it is on screen.
+    ///
+    /// Static so the one edge that distinguishes a first offer from a failed
+    /// restore can be asserted without hosting the sheet: inlining it as an
+    /// `if` in the body would put it in the one place a unit test cannot see.
+    static func explanation(didFailToRestore: Bool) -> LocalizedStringKey {
+        didFailToRestore
+            ? Strings.recoveryPartialFailureMessage
+            : Strings.recoveryMessage
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -281,7 +301,7 @@ struct RecoveryDialogView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: Self.contentWidth)
 
-            Text(Strings.recoveryMessage)
+            Text(Self.explanation(didFailToRestore: didFailToRestore))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
