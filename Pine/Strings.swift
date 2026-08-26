@@ -888,6 +888,307 @@ enum Strings {
         )
     }
 
+    // MARK: - Agent worktrees (#1524)
+    static let menuAgentWorktrees: LocalizedStringKey =
+        "menu.agentWorktrees"
+    static let agentWorktreesTitle: LocalizedStringKey =
+        "agentWorktrees.title"
+    static let agentWorktreesEmptyTitle: LocalizedStringKey =
+        "agentWorktrees.emptyTitle"
+    static let agentWorktreesEmptyMessage: LocalizedStringKey =
+        "agentWorktrees.emptyMessage"
+    static let agentWorktreesStatusChecking: LocalizedStringKey =
+        "agentWorktrees.status.checking"
+    static let agentWorktreesStatusClean: LocalizedStringKey =
+        "agentWorktrees.status.clean"
+    static let agentWorktreesStatusUnavailable: LocalizedStringKey =
+        "agentWorktrees.status.unavailable"
+    static let agentWorktreesRemove: LocalizedStringKey =
+        "agentWorktrees.remove"
+    static let agentWorktreesIntegrate: LocalizedStringKey =
+        "agentWorktrees.integrate"
+    static let agentWorktreesRemoveTitle: LocalizedStringKey =
+        "agentWorktrees.remove.title"
+    static let agentWorktreesIntegrateTitle: LocalizedStringKey =
+        "agentWorktrees.integrate.title"
+    static let agentWorktreesRemoveConfirm: LocalizedStringKey =
+        "agentWorktrees.remove.confirm"
+    static let agentWorktreesIntegrateConfirm: LocalizedStringKey =
+        "agentWorktrees.integrate.confirm"
+    static let projectSwitcherWorktreesKeptTitle: LocalizedStringKey =
+        "projectSwitcher.worktreesKept.title"
+
+    /// Count of uncommitted paths in one worktree, for the list row.
+    static func agentWorktreesDirtyCountText(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.status.dirty %lld",
+            fallback: "%lld uncommitted",
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: [count])
+    }
+
+    /// Trailing line when a disclosed path list is truncated.
+    static func agentWorktreesMoreChangesText(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.moreChanges %lld",
+            fallback: "…and %lld more",
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: [count])
+    }
+
+    static func agentWorktreesRemoveCleanText(
+        _ path: String,
+        _ branch: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.remove.clean %@ %@",
+            fallback: """
+                Pine will delete %1$@.
+
+                The branch “%2$@” and its commits stay in the repository.
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [path, branch]
+        )
+    }
+
+    static func agentWorktreesRemoveDirtyText(
+        _ path: String,
+        _ listing: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.remove.dirty %@ %@",
+            fallback: """
+                Pine will delete %1$@, including uncommitted work that cannot \
+                be recovered:
+
+                %2$@
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [path, listing]
+        )
+    }
+
+    static func agentWorktreesIntegrateText(
+        _ commit: String,
+        _ targetBranch: String,
+        _ listing: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.integrate.body %@ %@ %@",
+            fallback: """
+                Pine will merge %1$@ into “%2$@” and stage it without \
+                committing:
+
+                %3$@
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [commit, targetBranch, listing]
+        )
+    }
+
+    static func agentWorktreesIntegrateConflictText(
+        _ targetBranch: String,
+        _ listing: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.integrate.conflict %@ %@",
+            fallback: """
+                Merging into “%1$@” would conflict. Resolve these in the \
+                worktree first:
+
+                %2$@
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [targetBranch, listing]
+        )
+    }
+
+    static func agentWorktreesIntegratedText(
+        _ targetBranch: String,
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.integrated %@ %lld",
+            fallback: "Staged %2$lld change(s) on “%1$@”. Nothing was committed.",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [targetBranch, count]
+        )
+    }
+
+    static func agentWorktreesRemovedText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.removed",
+            fallback: "Worktree removed. Its branch is still in the repository.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesUnsafeText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.unsafe",
+            fallback: "This worktree is no longer in the folder Pine manages.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesInspectFailedText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.inspect",
+            fallback: "Pine couldn’t read the state of this worktree.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesChangedText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.changed",
+            fallback: "The repository changed while Pine was asking. Try again.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesSourceDirtyText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.sourceDirty",
+            fallback: "Commit or discard the worktree’s changes before merging.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesTargetDirtyText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.targetDirty",
+            fallback: "Commit or stash the project’s own changes before merging.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesTargetDetachedText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.targetDetached",
+            fallback: "The project isn’t on a branch, so Pine can’t merge into it.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesNoChangesText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.noChanges",
+            fallback: "This worktree has no commits the project doesn’t have.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesConflictsText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.conflicts",
+            fallback: "Merging would conflict. Resolve it in the worktree first.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesManualRecoveryText(
+        _ reason: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.error.manualRecovery %@",
+            fallback: """
+                The merge stopped part-way and needs to be finished in a \
+                terminal. %@
+                """,
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: [reason])
+    }
+
+    static func agentWorktreesGenericText(
+        _ reason: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.error.generic %@",
+            fallback: "Pine couldn’t finish. %@",
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: [reason])
+    }
+
+    /// Told at close: the worktrees are still on disk, and this is where.
+    static func projectSwitcherWorktreesKeptText(
+        _ branches: String,
+        _ folderPath: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "projectSwitcher.worktreesKept %@ %@",
+            fallback: """
+                Pine kept these agent worktrees on disk: %1$@.
+
+                They are in %2$@. Reopen the project to merge or remove them \
+                from Pine.
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [branches, folderPath]
+        )
+    }
+
     // MARK: - Agent notifications (#1306)
     static let agentNotificationsSettingsTitle: LocalizedStringKey =
         "agentNotifications.settings.title"

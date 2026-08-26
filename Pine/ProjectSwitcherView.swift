@@ -83,6 +83,26 @@ struct ProjectSwitcherView: View {
             )
             .accessibilityIdentifier(AccessibilityID.projectSwitcherNewAgent)
 
+            // Mirrors Agent ▸ Manage Agent Worktrees. The menu bar is the
+            // canonical home (#1524 lists that as a requirement, and #1525
+            // tracks the switcher being hard to reach at all); this is the
+            // second door, next to the New Agent item that opens the first.
+            Button {
+                NotificationCenter.default.post(
+                    name: .showAgentWorktrees,
+                    object: nil
+                )
+            } label: {
+                Label(
+                    Strings.menuAgentWorktrees,
+                    systemImage: MenuIcons.agentWorktrees
+                )
+            }
+            .disabled(session.isLaunchingAgent)
+            .accessibilityIdentifier(
+                AccessibilityID.projectSwitcherManageWorktrees
+            )
+
             Button(action: onOpenProject) {
                 Label(
                     Strings.menuOpenFolder,

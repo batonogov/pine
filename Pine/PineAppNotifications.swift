@@ -93,7 +93,7 @@ extension Notification.Name {
     /// Shows the persistent agent-history timeline sheet.
     static let showAgentHistory = Notification.Name("showAgentHistory")
 
-    // MARK: - Agent worktrees (#1525)
+    // MARK: - Agent worktrees (#1524, #1525)
     /// Starts an agent in a fresh worktree off the target window's active
     /// repository.
     /// userInfo: ["agentIdentifier": String] — absent means the preferred
@@ -106,6 +106,10 @@ extension Notification.Name {
     static let switchProjectInWindow = Notification.Name(
         "switchProjectInWindow"
     )
+
+    /// Shows the sheet that lists, merges, and removes the git worktrees Pine
+    /// created for agent tasks.
+    static let showAgentWorktrees = Notification.Name("showAgentWorktrees")
 
     // MARK: - Agent handoff (#933)
     /// Posted after the user changes the read-only editor-context permission.

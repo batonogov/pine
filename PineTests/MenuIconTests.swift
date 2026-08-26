@@ -76,6 +76,7 @@ struct MenuIconTests {
         (MenuIcons.switchProjectInWindow, "Switch Project (menu bar)"),
         (MenuIcons.nextProjectInWindow, "Next Project"),
         (MenuIcons.previousProjectInWindow, "Previous Project"),
+        (MenuIcons.agentWorktrees, "Manage Agent Worktrees (#1524)"),
     ])
     func projectSwitcherIconExists(_ symbol: String, _ element: String) {
         #expect(

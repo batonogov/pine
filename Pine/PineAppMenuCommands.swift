@@ -903,6 +903,17 @@ struct PineAppMenuCommands: Commands {
                 Label(Strings.menuAgentHistory, systemImage: MenuIcons.agentHistory)
             }
             .disabled(focusedProject?.workspace.rootURL == nil)
+
+            // Lives in the menu bar, not only in the toolbar switcher: the
+            // switcher is a project-navigation control that a user with a
+            // single project may never open, and #1524's whole complaint is
+            // that Pine-created git state had no discoverable way out.
+            Button {
+                NotificationCenter.default.post(name: .showAgentWorktrees, object: nil)
+            } label: {
+                Label(Strings.menuAgentWorktrees, systemImage: MenuIcons.agentWorktrees)
+            }
+            .disabled(focusedProject == nil)
         }
 
         // Xcode 26's CommandsBuilder supports at most ten direct children.

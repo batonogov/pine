@@ -31,6 +31,30 @@ nonisolated struct ProjectWindowGroup: Identifiable, Equatable, Sendable {
     var id: URL { projectURL }
 }
 
+/// What closing a project left behind on disk.
+///
+/// Closing takes a project's agent worktrees out of the window's record, but
+/// `git worktree remove` is never implied by it — the checkouts and their
+/// branches survive. Before #1524 that record simply vanished and the
+/// directories accumulated unmentioned; this value is the app saying what it
+/// kept and where, so the user can still find it.
+nonisolated struct RetainedAgentWorktreeReport: Equatable, Sendable {
+    let projectName: String
+    let managedRoot: URL
+    let worktrees: [AgentManagedWorktree]
+
+    /// Branch names in the order shown, deduplicated by worktree.
+    var branchNames: [String] {
+        worktrees.map(\.branchName)
+    }
+
+    /// Every directory this report accounts for. A worktree dropped from the
+    /// window's record and missing from here is an orphan.
+    var worktreeRoots: Set<URL> {
+        Set(worktrees.map { $0.worktreeRoot.standardizedFileURL })
+    }
+}
+
 /// The switcher's rows as a flat, walkable list (#1525).
 ///
 /// The toolbar menu is not the only way to move between the projects and
@@ -106,6 +130,9 @@ final class ProjectWindowSession {
     private(set) var activeProjectURL: URL
     private(set) var isLaunchingAgent = false
     var alertMessage: String?
+    /// Set by ``closeProject(_:registry:)`` when it drops agent worktrees that
+    /// remain on disk. Not an error, so it does not share ``alertMessage``.
+    private(set) var retainedWorktreeReport: RetainedAgentWorktreeReport?
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let worktreeService: AgentWorktreeService
@@ -203,6 +230,48 @@ final class ProjectWindowSession {
                     }
             )
         }
+    }
+
+    /// Every agent worktree this window holds, grouped under its project and
+    /// ordered the same way the switcher orders them. This is what the
+    /// worktree manager lists.
+    var allManagedWorktrees: [AgentManagedWorktree] {
+        groups.flatMap(\.worktrees)
+    }
+
+    /// The git-facing service, narrowed to what a management surface may do
+    /// with it. `create` stays off this protocol on purpose: launching an
+    /// agent is the session's job, not the manager sheet's.
+    var agentWorktreeManager: any AgentWorktreeManaging {
+        worktreeService
+    }
+
+    /// Drops a worktree the user removed from disk. Not a destructive call —
+    /// by the time this runs `git worktree remove` has already succeeded, and
+    /// this is the in-memory record catching up.
+    func forgetWorktree(
+        _ worktree: AgentManagedWorktree,
+        registry: ProjectRegistry
+    ) async {
+        let root = worktree.worktreeRoot.standardizedFileURL
+        guard managedWorktrees[root] != nil else { return }
+
+        // Showing a directory that no longer exists is worse than switching:
+        // move back to the repository the worktree hung off first.
+        if activeProjectURL == root {
+            await activate(
+                worktree.repositoryRoot.standardizedFileURL,
+                registry: registry
+            )
+        }
+        managedWorktrees[root] = nil
+        releaseBackgroundLease(for: root, registry: registry)
+        registry.closeProject(root)
+        saveState()
+    }
+
+    func acknowledgeRetainedWorktrees() {
+        retainedWorktreeReport = nil
     }
 
     /// Whether this window holds `url` — as one of its projects, or as an
@@ -458,11 +527,19 @@ final class ProjectWindowSession {
             guard activeProjectURL == successor else { return false }
         }
 
+        // Built before the record is emptied, and from the same dictionary the
+        // loop below consumes, so the report cannot describe fewer worktrees
+        // than closing actually dropped.
+        let report = Self.retainedReport(
+            for: departingWorktrees,
+            projectName: displayName(for: target)
+        )
         for worktreeRoot in departingWorktrees.keys {
             managedWorktrees[worktreeRoot] = nil
             releaseBackgroundLease(for: worktreeRoot, registry: registry)
             registry.closeProject(worktreeRoot)
         }
+        retainedWorktreeReport = report
         projectURLs.removeAll { $0 == target }
         // A presentation lease outlives the window that took it, and a leased
         // project is never reclaimed. Hand it back, or the project leaks for
@@ -474,6 +551,26 @@ final class ProjectWindowSession {
         }
         saveState()
         return true
+    }
+
+    /// Report for the worktrees a close is about to drop, or `nil` when there
+    /// were none. Ordered by branch so the message reads the same twice.
+    private static func retainedReport(
+        for departing: [URL: AgentManagedWorktree],
+        projectName: String
+    ) -> RetainedAgentWorktreeReport? {
+        let worktrees = departing.values.sorted { lhs, rhs in
+            if lhs.branchName != rhs.branchName {
+                return lhs.branchName < rhs.branchName
+            }
+            return lhs.taskID.uuidString < rhs.taskID.uuidString
+        }
+        guard let first = worktrees.first else { return nil }
+        return RetainedAgentWorktreeReport(
+            projectName: projectName,
+            managedRoot: first.managedRoot,
+            worktrees: worktrees
+        )
     }
 
     /// The project to show once `target` leaves: the one after it, or the one

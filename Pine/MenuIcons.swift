@@ -122,4 +122,9 @@ nonisolated enum MenuIcons {
     static let switchProjectInWindow = "rectangle.stack"
     static let nextProjectInWindow = "chevron.forward"
     static let previousProjectInWindow = "chevron.backward"
+
+    // MARK: - Agent worktrees (#1524)
+    /// Manage Agent Worktrees. A branching symbol, so the item reads as "the
+    /// side branches this app made" rather than as another folder action.
+    static let agentWorktrees = "arrow.triangle.branch"
 }
