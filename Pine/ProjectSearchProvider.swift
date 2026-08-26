@@ -42,14 +42,18 @@ struct FlatSearchMatch: Hashable, Sendable {
 
 /// Pure functions for search result keyboard selection, extracted for testability.
 enum SearchSelectionLogic {
-    /// Computes the next selection index with wrapping at bounds.
+    /// Computes the next selection index, clamped at the bounds.
     /// Returns nil if total is 0. When nothing is selected (current is nil),
     /// returns 0 to select the first item regardless of delta direction.
+    ///
+    /// Clamping rather than wrapping is deliberate (#1526): wrapping moved the
+    /// selection across the whole list in one keypress, which reads as the
+    /// selection vanishing off-screen. Matches Quick Open and the Symbol
+    /// Navigator.
     static func nextIndex(current: Int?, delta: Int, total: Int) -> Int? {
         guard total > 0 else { return nil }
         guard let start = current else { return 0 }
-        // Double-modulo to handle negative results from Swift's % operator
-        return ((start + delta) % total + total) % total
+        return max(0, min(total - 1, start + delta))
     }
 }
 
