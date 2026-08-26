@@ -41,6 +41,12 @@ struct MenuShortcutOverrideTests {
     /// cannot render: `MenuKeyboardShortcut` returns `nil`, the item loses
     /// its key equivalent, and nothing else in the app notices. This table is
     /// the independent record of what each item is supposed to show.
+    ///
+    /// Commands added *after* #1539 have no "before" to transcribe — they are
+    /// born reading `effectiveChord(for:)`. They still belong here: the table
+    /// is asserted to cover every command with a built-in chord, so a new
+    /// rebindable command cannot arrive without a record of what its menu
+    /// item shows. `.newAgent` (#1566) is the first of those.
     static var advertisedShortcuts: [UserCommand: AdvertisedShortcut] {
         [
             // File
@@ -94,6 +100,7 @@ struct MenuShortcutOverrideTests {
             ),
             .revealFileInFinder: AdvertisedShortcut("r", [.command, .shift]),
             .showAgentInbox: AdvertisedShortcut("i", [.command, .shift]),
+            .newAgent: AdvertisedShortcut("a", [.command, .shift]),
             // Git
             .showBranchSwitcher: AdvertisedShortcut("b", [.command, .shift]),
             // Terminal
