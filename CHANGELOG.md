@@ -1,5 +1,43 @@
 # Changelog
 
+## [2.6.0](https://github.com/batonogov/pine/compare/v2.5.2...v2.6.0) (2026-08-26)
+
+
+### Features
+
+* **agent:** let users list, merge back, and remove agent worktrees ([#1562](https://github.com/batonogov/pine/issues/1562)) ([ee3fb8f](https://github.com/batonogov/pine/commit/ee3fb8fcf2f6b112c28754c91ca9dfcbcf4d87f2))
+* **agent:** present Agent Inbox as a popover ([#1487](https://github.com/batonogov/pine/issues/1487)) ([7e0bbd4](https://github.com/batonogov/pine/commit/7e0bbd4b39b17d7493d06c4e904326ac0919317c))
+* **agent:** route Dock task items to their exact live task ([#1505](https://github.com/batonogov/pine/issues/1505)) ([47adc4f](https://github.com/batonogov/pine/commit/47adc4f8dd5f3441975384fa9e90fb7abe975346))
+
+
+### Bug Fixes
+
+* **a11y:** make PineAnimation consult Reduce Motion centrally ([#1559](https://github.com/batonogov/pine/issues/1559)) ([6dd7d95](https://github.com/batonogov/pine/commit/6dd7d950a1a8043c3be25d6545a8e47d0b480b8e)), closes [#1534](https://github.com/batonogov/pine/issues/1534)
+* **accessibility:** announce selection changes in command overlays ([#1500](https://github.com/batonogov/pine/issues/1500)) ([e99dc99](https://github.com/batonogov/pine/commit/e99dc9933da2be0b18dbe99448a060708b08b199))
+* **accessibility:** give custom controls a role, a value, and a way in ([#1569](https://github.com/batonogov/pine/issues/1569)) ([4b248fb](https://github.com/batonogov/pine/commit/4b248fbbebbd440b0b2eb133f8fe340754f81b1c))
+* **agent:** make Inbox recovery choices visible and unambiguous ([#1498](https://github.com/batonogov/pine/issues/1498)) ([580e52f](https://github.com/batonogov/pine/commit/580e52f46d61b211e61893853ca1d43e92c01ecb))
+* **agent:** reach New Agent and project switching from the menu bar and palette ([#1566](https://github.com/batonogov/pine/issues/1566)) ([5a4c1ea](https://github.com/batonogov/pine/commit/5a4c1ea40ce21e8d2731892806cb93eaaad5c9e2))
+* **agent:** restore a minimized project window instead of creating a new Welcome window ([#1516](https://github.com/batonogov/pine/issues/1516)) ([23a0da4](https://github.com/batonogov/pine/commit/23a0da47972bb2f99f88bdbaa31fc74f5149308e)), closes [#1507](https://github.com/batonogov/pine/issues/1507)
+* **ci:** make the flaky-test detector actually report retried tests ([#1517](https://github.com/batonogov/pine/issues/1517)) ([1237bdb](https://github.com/batonogov/pine/commit/1237bdb1ad2e4b0877a24e7a82a9c00d196a285d)), closes [#1510](https://github.com/batonogov/pine/issues/1510)
+* **concurrency:** give background work its own autorelease pool ([#1545](https://github.com/batonogov/pine/issues/1545)) ([c121d4e](https://github.com/batonogov/pine/commit/c121d4ec4652ce3f34f94b0176f5f777ad85b6f5)), closes [#1509](https://github.com/batonogov/pine/issues/1509)
+* **git:** give the Branch Switcher a keyboard exit ([#1555](https://github.com/batonogov/pine/issues/1555)) ([ef3a1f0](https://github.com/batonogov/pine/commit/ef3a1f033540863dd291c60da6cf1b2501c53156)), closes [#1522](https://github.com/batonogov/pine/issues/1522)
+* **i18n:** classify CLI installer cancellation by error code, not localized text ([#1557](https://github.com/batonogov/pine/issues/1557)) ([627cd12](https://github.com/batonogov/pine/commit/627cd1227b5c7aad11164e77b73c8a9445466052)), closes [#1530](https://github.com/batonogov/pine/issues/1530)
+* **i18n:** size the Settings window to its localized tab strip ([#1531](https://github.com/batonogov/pine/issues/1531)) ([#1550](https://github.com/batonogov/pine/issues/1550)) ([218d5c9](https://github.com/batonogov/pine/commit/218d5c95eee323d601a01a1285188091b168d691))
+* **marketing:** republish Agent Inbox screenshot as a popover ([#1504](https://github.com/batonogov/pine/issues/1504)) ([a952c23](https://github.com/batonogov/pine/commit/a952c2326240d2adf822410c81f23740da3ff266))
+* **menu:** route every rebindable menu item through the override system ([#1539](https://github.com/batonogov/pine/issues/1539)) ([#1565](https://github.com/batonogov/pine/issues/1565)) ([ca0bdcf](https://github.com/batonogov/pine/commit/ca0bdcfa04f88fb9b80103f8ae051d460875db3c))
+* **recovery:** stop Escape from destroying recovered work ([#1515](https://github.com/batonogov/pine/issues/1515)) ([7283d31](https://github.com/batonogov/pine/commit/7283d31f2260a5deeb64f01280da5992eabb76b5)), closes [#1503](https://github.com/batonogov/pine/issues/1503)
+* **terminal:** move focus into the search bar on Cmd+F ([#1556](https://github.com/batonogov/pine/issues/1556)) ([f642e30](https://github.com/batonogov/pine/commit/f642e3072540e387ff4c9854f7a51d4990b258f7))
+* **tests:** record .newAgent in the advertised-shortcut table ([#1571](https://github.com/batonogov/pine/issues/1571)) ([04bf949](https://github.com/batonogov/pine/commit/04bf949c84ebd4e48c926e517e08eb2432eb8e9b)), closes [#1570](https://github.com/batonogov/pine/issues/1570)
+* **tests:** stop a failed count assertion from killing the test process ([#1511](https://github.com/batonogov/pine/issues/1511)) ([fe7fc09](https://github.com/batonogov/pine/commit/fe7fc092ccc5fe3ddb58b041d5c3843e8dcf51d6)), closes [#1506](https://github.com/batonogov/pine/issues/1506)
+* **tests:** stop repository-scanning guards from passing on an empty scan ([#1519](https://github.com/batonogov/pine/issues/1519)) ([a2432a5](https://github.com/batonogov/pine/commit/a2432a540ff72e34d8c505bdc11eccd536fd7614)), closes [#1508](https://github.com/batonogov/pine/issues/1508)
+* **welcome:** make Recent Projects a native keyboard-first list ([#1499](https://github.com/batonogov/pine/issues/1499)) ([6acaa6a](https://github.com/batonogov/pine/commit/6acaa6a98fcf6a5abfe8f5cbb87205ec54d63e5c))
+* **window:** honour the project the user named over the one a window remembers ([#1558](https://github.com/batonogov/pine/issues/1558)) ([26c9097](https://github.com/batonogov/pine/commit/26c9097e6d3851e648fbb1e55fd0c8c74ab3f0cf))
+
+
+### Documentation
+
+* **claude:** rename AGENTS.md to CLAUDE.md and scope it into rules and skills ([#1572](https://github.com/batonogov/pine/issues/1572)) ([71834f9](https://github.com/batonogov/pine/commit/71834f9263e5b0db1110b1dcb3952546da2fec9a))
+
 ## [2.5.2](https://github.com/batonogov/pine/compare/v2.5.1...v2.5.2) (2026-08-19)
 
 
