@@ -57,6 +57,12 @@ final class TerminalPaneState {
     var terminalSearchQuery = ""
     var isSearchCaseSensitive = false
 
+    /// Identity of the live request for first responder inside the search
+    /// field, or `nil` when nothing is waiting on AppKit. A fresh identity per
+    /// ⌘F lets a repeat press re-focus a bar that is already open, and stops a
+    /// stale AppKit completion from consuming a later request (#1523).
+    private(set) var searchFocusRequestID: UUID?
+
     var activeTab: TerminalTab? {
         guard let id = activeTerminalID else { return nil }
         return terminalTabs.first { $0.id == id }
@@ -70,6 +76,48 @@ final class TerminalPaneState {
     ) {
         self.themeSettings = themeSettings
         self.cursorSettings = cursorSettings
+    }
+
+    /// Opens the terminal search bar and directs first responder into its
+    /// query field.
+    ///
+    /// The terminal's own pending focus request is cancelled first: ⌘F is
+    /// frequently pressed right after the pane is created or a tab switched,
+    /// and leaving that request live would let SwiftTerm reclaim first
+    /// responder immediately after the field took it — the exact symptom
+    /// reported in #1523, where the bar appeared but typing went to the shell.
+    func presentSearch() {
+        isSearchVisible = true
+        pendingFocusTabID = nil
+        searchFocusRequestID = UUID()
+    }
+
+    /// Consumes the AppKit result of the live search-field focus request.
+    ///
+    /// - Returns: `true` only when this was the live request and AppKit
+    ///   confirmed first responder.
+    @discardableResult
+    func acknowledgeSearchFocusRequest(
+        _ requestID: UUID,
+        succeeded: Bool
+    ) -> Bool {
+        guard searchFocusRequestID == requestID else { return false }
+        searchFocusRequestID = nil
+        return succeeded
+    }
+
+    /// Closes the search bar, clears the query and its highlights, and hands
+    /// first responder back to the terminal that owned it before ⌘F.
+    ///
+    /// A no-op when the bar is already closed, so an Escape aimed at anything
+    /// else cannot yank focus into the terminal.
+    func dismissSearch() {
+        guard isSearchVisible else { return }
+        isSearchVisible = false
+        terminalSearchQuery = ""
+        searchFocusRequestID = nil
+        activeTab?.clearSearch()
+        pendingFocusTabID = activeTerminalID
     }
 
     /// Consumes the terminal result of a bounded AppKit focus request.

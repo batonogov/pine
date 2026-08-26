@@ -55,6 +55,48 @@ nonisolated struct RetainedAgentWorktreeReport: Equatable, Sendable {
     }
 }
 
+/// The switcher's rows as a flat, walkable list (#1525).
+///
+/// The toolbar menu is not the only way to move between the projects and
+/// agent worktrees a window holds — the menu bar offers the same rows, and
+/// Next/Previous Project step through them. Keeping the order in one pure
+/// place is what stops the two surfaces from disagreeing about which row
+/// comes after which.
+nonisolated enum ProjectWindowSwitchOrder {
+    enum Direction: String, Sendable, Equatable {
+        case next
+        case previous
+    }
+
+    /// Reading order of the switcher: every project immediately followed by
+    /// the agent worktrees hanging off it.
+    static func targets(in groups: [ProjectWindowGroup]) -> [URL] {
+        groups.flatMap { group in
+            [group.projectURL.standardizedFileURL]
+                + group.worktrees.map(\.worktreeRoot.standardizedFileURL)
+        }
+    }
+
+    /// The row `direction` away from `active`, wrapping at either end.
+    ///
+    /// `nil` when there is nowhere to go — a window showing a single row, or
+    /// an origin this window no longer holds. Both cases must not guess: a
+    /// guess would switch the window somewhere the user never pointed at.
+    static func neighbour(
+        of active: URL,
+        in targets: [URL],
+        direction: Direction
+    ) -> URL? {
+        guard targets.count > 1,
+              let index = targets.firstIndex(of: active.standardizedFileURL)
+        else {
+            return nil
+        }
+        let offset = direction == .next ? 1 : targets.count - 1
+        return targets[(index + offset) % targets.count]
+    }
+}
+
 enum ProjectWindowRestorationResult: Equatable {
     case restored
     case unavailable
@@ -78,6 +120,11 @@ final class ProjectWindowSession {
     let id = UUID()
     let sceneProjectURL: URL
 
+    /// The project this scene was created for, before any persisted state had
+    /// a say. An explicit open request is matched against this — not against
+    /// ``sceneProjectURL``, which is the anchor of whatever window adopts it.
+    let requestedProjectURL: URL
+
     private(set) var projectURLs: [URL]
     private(set) var managedWorktrees: [URL: AgentManagedWorktree]
     private(set) var activeProjectURL: URL
@@ -93,6 +140,10 @@ final class ProjectWindowSession {
     @ObservationIgnored private var backgroundLeases: [URL: UUID] = [:]
     @ObservationIgnored private var pendingRestoredActiveURL: URL?
     @ObservationIgnored private var didRestore = false
+    /// Whether anything has moved this window off the project its scene was
+    /// created with. Distinguishes a fresh scene from one routing has already
+    /// placed, which decides whether a pending open request still applies.
+    @ObservationIgnored private var didTransition = false
     /// Whether the user closed the project this scene is keyed by. Persisted,
     /// because the reopening scene would otherwise hand that project straight
     /// back on the next launch.
@@ -105,6 +156,7 @@ final class ProjectWindowSession {
         toolResolver: ExternalToolResolver = .fromEnvironment()
     ) {
         let initial = initialProjectURL.standardizedFileURL
+        requestedProjectURL = initial
         self.defaults = defaults
         self.worktreeService = worktreeService
         self.toolResolver = toolResolver
@@ -309,19 +361,73 @@ final class ProjectWindowSession {
         }
     }
 
+    /// Every project and agent worktree this window holds, in switcher order.
+    var switchTargets: [URL] {
+        ProjectWindowSwitchOrder.targets(in: groups)
+    }
+
+    /// The row a Next/Previous Project command should activate, or `nil` when
+    /// this window has nowhere to step to.
+    func neighbourTarget(
+        _ direction: ProjectWindowSwitchOrder.Direction
+    ) -> URL? {
+        guard !isLaunchingAgent else { return nil }
+        return ProjectWindowSwitchOrder.neighbour(
+            of: activeProjectURL,
+            in: switchTargets,
+            direction: direction
+        )
+    }
+
     func restoreIfNeeded(
         registry: ProjectRegistry
     ) async -> ProjectWindowRestorationResult {
         guard !didRestore else { return .alreadyRestored }
         didRestore = true
-        guard let target = pendingRestoredActiveURL else {
+        var pendingTarget = pendingRestoredActiveURL
+        pendingRestoredActiveURL = nil
+        // A named request outranks a remembered one. Restoring the project
+        // this window last showed is right when macOS is putting the window
+        // back, and wrong when the user just picked a project by name — those
+        // two arrive as the same scene, so the request has to say which it is
+        // (#1543).
+        //
+        // Spend the request either way, but only act on it while this window
+        // is still where its scene left it: routing (the Agent Inbox, a
+        // notification) can reach a scene before its restore task runs, and a
+        // request must not undo a placement the window has already made.
+        let hasExplicitRequest = registry.consumeExplicitProjectOpenRequest(
+            for: requestedProjectURL
+        )
+        if hasExplicitRequest, !didTransition {
+            readmitRequestedProject()
+            pendingTarget = requestedProjectURL
+        }
+        guard let target = pendingTarget else {
             return .unavailable
         }
-        pendingRestoredActiveURL = nil
         await activate(target, registry: registry, reportFailure: false)
-        return registry.projectManagerIfAdmitted(for: activeProjectURL) == nil
-            ? .unavailable
-            : .restored
+        guard registry.projectManagerIfAdmitted(for: activeProjectURL) != nil
+        else { return .unavailable }
+        // `activate` only persists when it actually switches, and the common
+        // case here is that it did not have to. Write the honoured request
+        // through anyway so the window stops remembering a project the user
+        // has moved off.
+        saveState()
+        return .restored
+    }
+
+    /// Puts the requested project back into this window's membership when the
+    /// user closed it out of the window earlier. Reopening a project by name
+    /// asks for it to be here again; without this the scene would restore with
+    /// the project absent from `projectURLs` and nothing to show.
+    private func readmitRequestedProject() {
+        guard managedWorktrees[requestedProjectURL] == nil,
+              !projectURLs.contains(requestedProjectURL) else { return }
+        projectURLs.insert(requestedProjectURL, at: 0)
+        if requestedProjectURL == sceneProjectURL {
+            didCloseAnchor = false
+        }
     }
 
     func openProject(
@@ -624,6 +730,7 @@ final class ProjectWindowSession {
         }
         _ = registry.reconcileKeyProjectPresentation(manager)
         activeProjectURL = target
+        didTransition = true
         saveState()
     }
 

@@ -43,7 +43,12 @@ PineTests/SnapshotTests/__Snapshots__/*.actual.png
 LifecycleDiagnostics/
 
 # Agents
-.claude/
+# Ignore the whole directory except the instruction files, which are part of
+# the repository: rules load by path when Claude reads a matching file, skills
+# are invoked by name. Personal settings and worktrees stay ignored.
+.claude/*
+!.claude/rules/
+!.claude/skills/
 .pi/
 .pi-subagents/
 .pine/

@@ -43,6 +43,12 @@ struct PineApp: App {
                 },
                 showAgentInbox: { [weak appDelegate] in
                     appDelegate?.showAgentInbox()
+                },
+                windowSession: { [weak appDelegate] in
+                    appDelegate?.registry.keyWindowSession()
+                },
+                projectRegistry: { [weak appDelegate] in
+                    appDelegate?.registry
                 }
             )
         }
@@ -119,7 +125,13 @@ private struct AppDelegateBridge: View {
     var body: some View {
         Color.clear.onAppear {
             appDelegate.openNamedWindow = { id in openWindow(id: id) }
-            appDelegate.openProjectWindow = { url in openWindow(value: url) }
+            appDelegate.openProjectWindow = { [registry] url in
+                // Every open that names a project funnels through here, so
+                // this is the one place the intent can be recorded before the
+                // scene reads its persisted "last active project" (#1543).
+                registry.noteExplicitProjectOpenRequest(url)
+                openWindow(value: url)
+            }
 
         }
     }
@@ -129,7 +141,16 @@ private struct AppDelegateBridge: View {
 
 /// Resolves a ProjectManager from the registry and injects it into ContentView.
 /// Also ensures AppDelegate is wired up even when Welcome window is never shown.
-private struct ProjectWindowView: View {
+///
+/// Deliberately **not** `private`. AppKit derives autosave names for the
+/// window's `NSSplitView` from `_typeName` of the scene's content type, and a
+/// `private` type mangles to `Pine.(unknown context at $<address>).ProjectWindowView`
+/// — an address that moves with ASLR on every launch. That made the autosave
+/// key unique per launch, so the sidebar width was never restored and the
+/// preference domain grew by one dead `NSSplitView Subview Frames …` key per
+/// run (#1543). Internal visibility gives the stable name `Pine.ProjectWindowView`.
+/// Covered by `WindowSceneAutosaveIdentityTests`.
+struct ProjectWindowView: View {
     let projectURL: URL
     let registry: ProjectRegistry
     let appDelegate: AppDelegate
@@ -1636,7 +1657,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 dispatchUserCommand: { command in
                     UserCommandInvocationRouter.dispatch(
                         command,
-                        projectManager: self?.activeProjectManager()
+                        projectManager: self?.activeProjectManager(),
+                        windowAvailability: ProjectWindowCommandAvailability(
+                            session: self?.registry.keyWindowSession(),
+                            projectManager: self?.activeProjectManager()
+                        )
                     )
                 },
                 dispatchBuiltIn: { [weak self] event in

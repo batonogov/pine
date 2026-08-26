@@ -25,7 +25,7 @@
 //    2. The Go-to-Line overlay appears whenever any tab is active, so its
 //       presence does not prove routing — and cursor movement (the actual
 //       routing effect) is unverifiable via XCUITest due to the
-//       GutterTextView keyboard-input limitation (see AGENTS.md).
+//       GutterTextView keyboard-input limitation (see .claude/rules/ui-tests.md).
 //
 //  XCUITest cannot create editor-pane splits via drag-and-drop (SwiftUI's
 //  onDrag/onDrop relies on the macOS pasteboard system, which synthetic
@@ -265,7 +265,7 @@ final class SplitPaneRoutingUITests: PineUITestCase {
         // Ensure the secondary pane is focused by clicking its tab.
         editorTab("utils.swift").click()
 
-        // Trigger Go to Line via Edit menu (typeKey is unreliable per AGENTS.md).
+        // Trigger Go to Line via Edit menu (typeKey is unreliable, see ui-tests.md).
         clickMenuBarItem("Edit")
         let goToLineItem = app.menuItems["Go to Line"]
         XCTAssertTrue(

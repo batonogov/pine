@@ -37,13 +37,18 @@ nonisolated enum CommandPaletteCategory: String, Sendable, CaseIterable {
     }
 }
 
-nonisolated enum CommandAvailabilityRequirement: Sendable {
+nonisolated enum CommandAvailabilityRequirement: Sendable, Equatable {
     case always
     case project
     case activeFile
     case activeFileAndTerminal
     case gitRepository
     case terminal
+    /// A git project in a window whose session can still start an agent
+    /// (#1525): an agent CLI on `PATH`, and no launch already in flight.
+    case agentWorktree
+    /// A window holding more than one project or agent worktree (#1525).
+    case projectSwitching
 }
 
 nonisolated struct CommandPaletteContext: Sendable, Equatable {
@@ -51,6 +56,27 @@ nonisolated struct CommandPaletteContext: Sendable, Equatable {
     let hasActiveFile: Bool
     let isGitRepository: Bool
     let hasTerminal: Bool
+    /// Window-scoped facts (#1525). Defaulted so the many call sites that
+    /// only describe the focused project keep compiling and keep meaning
+    /// "no window session, therefore nothing on offer".
+    let canLaunchAgent: Bool
+    let canSwitchProjectInWindow: Bool
+
+    init(
+        hasProject: Bool,
+        hasActiveFile: Bool,
+        isGitRepository: Bool,
+        hasTerminal: Bool,
+        canLaunchAgent: Bool = false,
+        canSwitchProjectInWindow: Bool = false
+    ) {
+        self.hasProject = hasProject
+        self.hasActiveFile = hasActiveFile
+        self.isGitRepository = isGitRepository
+        self.hasTerminal = hasTerminal
+        self.canLaunchAgent = canLaunchAgent
+        self.canSwitchProjectInWindow = canSwitchProjectInWindow
+    }
 
     static let unavailable = CommandPaletteContext(
         hasProject: false,
@@ -73,6 +99,10 @@ nonisolated struct CommandPaletteContext: Sendable, Equatable {
             isGitRepository
         case .terminal:
             hasTerminal
+        case .agentWorktree:
+            canLaunchAgent
+        case .projectSwitching:
+            canSwitchProjectInWindow
         }
     }
 }
@@ -227,6 +257,10 @@ enum CommandPaletteCatalog {
             Strings.commandPaletteRequiresGitRepository
         case .terminal:
             Strings.commandPaletteRequiresTerminal
+        case .agentWorktree:
+            Strings.commandPaletteRequiresAgentWorktree
+        case .projectSwitching:
+            Strings.commandPaletteRequiresProjectSwitching
         }
     }
 

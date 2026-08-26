@@ -144,6 +144,8 @@ nonisolated enum AccessibilityID {
 
     // MARK: - Branch switcher
     static let branchSearchField = "branchSearchField"
+    static let branchList = "branchList"
+    static let branchCancelButton = "branchCancelButton"
     static func branchItem(_ name: String) -> String { "branchItem_\(name)" }
 
     // MARK: - Project Search
@@ -229,6 +231,10 @@ nonisolated enum AccessibilityID {
     static let lineEndingIndicator = "lineEndingIndicator"
     static let fileSizeIndicator = "fileSizeIndicator"
     static let progressIndicator = "progressIndicator"
+    static let gitStatusSummary = "gitStatusSummary"
+    static let gitStatusModifiedCount = "gitStatusModifiedCount"
+    static let gitStatusAddedCount = "gitStatusAddedCount"
+    static let gitStatusUntrackedCount = "gitStatusUntrackedCount"
     static let agentStatusBar = "agentStatusBar"
     static let agentStatusBarItem = "agentStatusBarItem"
     static let agentAttentionBell = "agentAttentionBell"
@@ -264,6 +270,12 @@ nonisolated enum AccessibilityID {
             identity.paneID.id.uuidString,
             identity.tabID.uuidString,
         ].joined(separator: "_")
+    }
+
+    // MARK: - Go-to-Definition quick pick (#1533)
+    static let definitionQuickPickList = "definitionQuickPickList"
+    static func definitionQuickPickRow(_ index: Int) -> String {
+        "definitionQuickPickRow_\(index)"
     }
 
     // MARK: - LSP / Problems panel (#1010)

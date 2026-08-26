@@ -40,12 +40,11 @@ struct QuickTerminalContentView: View {
         .accessibilityIdentifier(AccessibilityID.quickTerminalContent)
     }
 
+    /// Kept as Quick Terminal's own entry point, delegating to the shared
+    /// identity so the two terminal surfaces cannot drift apart again.
     static func agentIdentityAccessibilityLabel(
         for tab: TerminalTab
     ) -> String {
-        guard let session = tab.agentSession else { return tab.name }
-        let agent = session.agentType.displayName
-        let state = AgentTabBadge.userFacingState(for: session).displayName
-        return "\(tab.name), \(agent), \(state)"
+        TerminalTabIdentityLabel.accessibilityLabel(for: tab)
     }
 }

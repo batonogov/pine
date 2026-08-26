@@ -292,6 +292,17 @@ struct AgentInboxView: View {
         .accessibilityHint(
             accessibilityHint(for: row)
         )
+        // Marking read was reachable by right-click alone. The context menu
+        // is not in the accessibility tree, and the envelope button lives in
+        // the recovery panel, which only appears for a recoverable task — so
+        // for every other row this rotor action is the only way in.
+        .accessibilityActions {
+            Button(row.isUnread
+                   ? Strings.agentInboxMarkRead
+                   : Strings.agentInboxMarkUnread) {
+                toggleReviewed(row)
+            }
+        }
     }
 
     private var presentedRecoveryRow: AgentInboxRow? {

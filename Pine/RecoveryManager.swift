@@ -193,7 +193,7 @@ final class RecoveryManager {
     /// re-runs on scene restoration and on closing and reopening the window:
     /// three 40 MB buffers left for later would otherwise block the main
     /// thread on ~120 MB of reading and decoding before the window draws,
-    /// every launch and every reopen, for a week (AGENTS.md: never block the
+    /// every launch and every reopen, for a week (CLAUDE.md: never block the
     /// main thread with file I/O).
     ///
     /// Only the listing moves. The decision about what is worth offering stays
@@ -496,7 +496,7 @@ final class RecoveryManager {
     /// to read one `Date` now scales with how much unrecovered work the user
     /// is holding, and a snapshot carries a whole unsaved buffer (Pine's own
     /// large-file threshold is 1MB, and nothing caps a snapshot at it).
-    /// `AGENTS.md` forbids blocking the main thread with file I/O. A file
+    /// `CLAUDE.md` forbids blocking the main thread with file I/O. A file
     /// whose modification date is inside the window can only be kept, so one
     /// `stat` settles it, and in steady state — where everything on disk is
     /// younger than the window — nothing is read at all. The date is read

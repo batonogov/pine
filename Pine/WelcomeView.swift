@@ -513,6 +513,10 @@ struct WelcomeView: View {
         if let open = appDelegate?.openProjectWindow {
             open(url)
         } else {
+            // Same record the AppDelegate closure makes: without it the
+            // fallback path lets a window's remembered project override the
+            // one the user picked (#1543).
+            registry.noteExplicitProjectOpenRequest(url)
             openWindow(value: url)
         }
     }

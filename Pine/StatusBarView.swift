@@ -45,6 +45,9 @@ struct StatusBarView: View {
                     HStack(spacing: 4) {
                         Image(systemName: summary.errorCount > 0 ? "xmark.octagon.fill" : "exclamationmark.bubble.fill")
                             .font(.system(size: LayoutMetrics.captionFontSize))
+                            // The severity is already in `description`; the
+                            // glyph would only add an unnamed image stop.
+                            .accessibilityHidden(true)
                         Text(verbatim: summary.description)
                             .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     }
@@ -113,6 +116,13 @@ struct StatusBarView: View {
                                 Image(systemName: "pencil")
                             }
                             .foregroundStyle(.orange)
+                            .gitCountAccessibility(
+                                label: Strings.a11yStatusBarModifiedCount(
+                                    counts.modified
+                                ),
+                                identifier: AccessibilityID
+                                    .gitStatusModifiedCount
+                            )
                         }
                         if counts.added > 0 {
                             Label {
@@ -121,6 +131,12 @@ struct StatusBarView: View {
                                 Image(systemName: "plus")
                             }
                             .foregroundStyle(.green)
+                            .gitCountAccessibility(
+                                label: Strings.a11yStatusBarAddedCount(
+                                    counts.added
+                                ),
+                                identifier: AccessibilityID.gitStatusAddedCount
+                            )
                         }
                         if counts.untracked > 0 {
                             Label {
@@ -129,9 +145,22 @@ struct StatusBarView: View {
                                 Image(systemName: "questionmark")
                             }
                             .foregroundStyle(.teal)
+                            .gitCountAccessibility(
+                                label: Strings.a11yStatusBarUntrackedCount(
+                                    counts.untracked
+                                ),
+                                identifier: AccessibilityID
+                                    .gitStatusUntrackedCount
+                            )
                         }
                     }
                     .font(.system(size: LayoutMetrics.captionFontSize))
+                    // `children: .contain` keeps the three counts as separate
+                    // stops. Combining them would read one run-on phrase and
+                    // lose the per-kind identifiers UI tests navigate by.
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(Strings.a11yStatusBarGitSummary)
+                    .accessibilityIdentifier(AccessibilityID.gitStatusSummary)
                 }
             }
 
@@ -142,6 +171,16 @@ struct StatusBarView: View {
                 Text(verbatim: "Ln \(activeTab.cursorLine), Col \(activeTab.cursorColumn)")
                     .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
+                    // "Ln" and "Col" are drawn abbreviations; VoiceOver
+                    // pronounces them as words. The name stays constant so a
+                    // moving cursor announces as a value change.
+                    .accessibilityLabel(Strings.a11yStatusBarCursorPosition)
+                    .accessibilityValue(
+                        Strings.a11yStatusBarCursorPositionValue(
+                            line: activeTab.cursorLine,
+                            column: activeTab.cursorColumn
+                        )
+                    )
                     .accessibilityIdentifier(AccessibilityID.cursorPosition)
 
                 statusDivider
@@ -150,6 +189,8 @@ struct StatusBarView: View {
                 Text(verbatim: activeTab.cachedIndentation.displayName)
                     .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel(Strings.a11yStatusBarIndentation)
+                    .accessibilityValue(activeTab.cachedIndentation.displayName)
                     .accessibilityIdentifier(AccessibilityID.indentationIndicator)
 
                 statusDivider
@@ -211,6 +252,8 @@ struct StatusBarView: View {
                     Text(verbatim: FileSizeFormatter.format(size))
                         .font(.system(size: LayoutMetrics.bodySmallFontSize))
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel(Strings.a11yStatusBarFileSize)
+                        .accessibilityValue(FileSizeFormatter.format(size))
                         .accessibilityIdentifier(AccessibilityID.fileSizeIndicator)
                 }
             }
@@ -241,6 +284,9 @@ struct StatusBarView: View {
         Text(verbatim: "·")
             .font(.system(size: LayoutMetrics.bodySmallFontSize))
             .foregroundStyle(.quaternary)
+            // A drawn gap, not content. Published, it lands between every
+            // pair of indicators as an "interpunct" VoiceOver reads aloud.
+            .accessibilityHidden(true)
     }
 
     private var gitStatusCounts: (modified: Int, added: Int, untracked: Int) {
@@ -254,5 +300,25 @@ struct StatusBarView: View {
             }
         }
         return (m, a, u)
+    }
+}
+
+// MARK: - Git count accessibility
+
+private extension View {
+    /// Replaces a git count's contents with one named announcement.
+    ///
+    /// The count has to live in the *label*: macOS drops
+    /// `.accessibilityValue` on an element whose bridged role is
+    /// `AXUnknown`, which is what a `Label` collapsed with
+    /// `children: .ignore` becomes. Split across label and value, VoiceOver
+    /// would announce the kind and silently swallow the number.
+    func gitCountAccessibility(
+        label: String,
+        identifier: String
+    ) -> some View {
+        accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+            .accessibilityIdentifier(identifier)
     }
 }
