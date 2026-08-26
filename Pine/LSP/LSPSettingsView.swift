@@ -68,7 +68,7 @@ struct LSPSettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 720, height: 500)
+        .settingsPaneSize()
         .environment(\.locale, locale)
         .onAppear {
             loadDraft(for: selectedLanguage)

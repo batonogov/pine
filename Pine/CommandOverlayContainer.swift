@@ -19,6 +19,12 @@ struct CommandOverlayContainer: ViewModifier {
 
     let router: CommandOverlayRouter
     let projectManager: ProjectManager
+    /// The window session behind this project scene. Optional because the
+    /// modifier is also reachable from hosted tests and previews, where no
+    /// session is installed; a missing one simply reports that this window can
+    /// neither start an agent nor switch project (#1525).
+    @Environment(ProjectWindowSession.self) private var windowSession:
+        ProjectWindowSession?
 
     func body(content: Content) -> some View {
         content
@@ -139,7 +145,11 @@ struct CommandOverlayContainer: ViewModifier {
                     tasks: ExtensibilityManager.shared.tasks.tasks,
                     keybindings: ExtensibilityManager.shared.keybindings,
                     context: UserCommandInvocationRouter.context(
-                        for: projectManager
+                        for: projectManager,
+                        windowAvailability: ProjectWindowCommandAvailability(
+                            session: windowSession,
+                            projectManager: projectManager
+                        )
                     )
                 ),
                 onAnnounce: router.announcementSink(for: .commandPalette),
@@ -147,7 +157,11 @@ struct CommandOverlayContainer: ViewModifier {
                     CommandPaletteInvocationRouter.invoke(
                         item,
                         projectManager: projectManager,
-                        overlayRouter: router
+                        overlayRouter: router,
+                        windowAvailability: ProjectWindowCommandAvailability(
+                            session: windowSession,
+                            projectManager: projectManager
+                        )
                     )
                 }
             )
@@ -329,6 +343,7 @@ enum CommandPaletteInvocationRouter {
         _ item: CommandPaletteItem,
         projectManager: ProjectManager,
         overlayRouter: CommandOverlayRouter,
+        windowAvailability: ProjectWindowCommandAvailability = .none,
         notificationCenter: NotificationCenter = .default
     ) {
         switch item.id {
@@ -343,6 +358,7 @@ enum CommandPaletteInvocationRouter {
                 UserCommandInvocationRouter.dispatch(
                     command,
                     projectManager: projectManager,
+                    windowAvailability: windowAvailability,
                     notificationCenter: notificationCenter
                 )
             }

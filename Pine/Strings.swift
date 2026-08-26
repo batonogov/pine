@@ -14,6 +14,21 @@ enum Strings {
     static let settingsTabKeyBindings: LocalizedStringKey =
         "settings.tab.keyBindings"
 
+    /// The five Settings tab titles, in the order the tab strip draws them.
+    /// `SettingsWindowMetrics` measures these to size the window, so they have
+    /// to resolve to `String` rather than stay `LocalizedStringKey` (#1531).
+    static func settingsTabTitles(locale: Locale = .current) -> [String] {
+        [
+            ("settings.tab.general", "General"),
+            ("settings.tab.terminal", "Terminal"),
+            ("settings.tab.languageServers", "Language Servers"),
+            ("settings.tab.agentHandoff", "Agent Handoff"),
+            ("settings.tab.keyBindings", "Key Bindings & Tasks"),
+        ].map { key, fallback in
+            localizedString(forKey: key, fallback: fallback, locale: locale)
+        }
+    }
+
     static let settingsGeneralTitle: LocalizedStringKey =
         "settings.general.title"
     static let settingsGeneralFormatting: LocalizedStringKey =
@@ -774,6 +789,15 @@ enum Strings {
     static let projectSwitcherNoAgents: LocalizedStringKey =
         "projectSwitcher.noAgents"
 
+    /// Menu-bar route to the switcher rows (#1525). The toolbar is a
+    /// convenience layer over these commands, never their only home.
+    static let menuSwitchProjectInWindow: LocalizedStringKey =
+        "menu.switchProjectInWindow"
+    static let menuNextProjectInWindow: LocalizedStringKey =
+        "menu.nextProjectInWindow"
+    static let menuPreviousProjectInWindow: LocalizedStringKey =
+        "menu.previousProjectInWindow"
+
     /// Names the project being closed, so the menu item is unambiguous in a
     /// window holding several.
     static func projectSwitcherCloseProjectTitle(
@@ -861,6 +885,307 @@ enum Strings {
             format: format,
             locale: locale,
             arguments: [agentName]
+        )
+    }
+
+    // MARK: - Agent worktrees (#1524)
+    static let menuAgentWorktrees: LocalizedStringKey =
+        "menu.agentWorktrees"
+    static let agentWorktreesTitle: LocalizedStringKey =
+        "agentWorktrees.title"
+    static let agentWorktreesEmptyTitle: LocalizedStringKey =
+        "agentWorktrees.emptyTitle"
+    static let agentWorktreesEmptyMessage: LocalizedStringKey =
+        "agentWorktrees.emptyMessage"
+    static let agentWorktreesStatusChecking: LocalizedStringKey =
+        "agentWorktrees.status.checking"
+    static let agentWorktreesStatusClean: LocalizedStringKey =
+        "agentWorktrees.status.clean"
+    static let agentWorktreesStatusUnavailable: LocalizedStringKey =
+        "agentWorktrees.status.unavailable"
+    static let agentWorktreesRemove: LocalizedStringKey =
+        "agentWorktrees.remove"
+    static let agentWorktreesIntegrate: LocalizedStringKey =
+        "agentWorktrees.integrate"
+    static let agentWorktreesRemoveTitle: LocalizedStringKey =
+        "agentWorktrees.remove.title"
+    static let agentWorktreesIntegrateTitle: LocalizedStringKey =
+        "agentWorktrees.integrate.title"
+    static let agentWorktreesRemoveConfirm: LocalizedStringKey =
+        "agentWorktrees.remove.confirm"
+    static let agentWorktreesIntegrateConfirm: LocalizedStringKey =
+        "agentWorktrees.integrate.confirm"
+    static let projectSwitcherWorktreesKeptTitle: LocalizedStringKey =
+        "projectSwitcher.worktreesKept.title"
+
+    /// Count of uncommitted paths in one worktree, for the list row.
+    static func agentWorktreesDirtyCountText(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.status.dirty %lld",
+            fallback: "%lld uncommitted",
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: [count])
+    }
+
+    /// Trailing line when a disclosed path list is truncated.
+    static func agentWorktreesMoreChangesText(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.moreChanges %lld",
+            fallback: "…and %lld more",
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: [count])
+    }
+
+    static func agentWorktreesRemoveCleanText(
+        _ path: String,
+        _ branch: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.remove.clean %@ %@",
+            fallback: """
+                Pine will delete %1$@.
+
+                The branch “%2$@” and its commits stay in the repository.
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [path, branch]
+        )
+    }
+
+    static func agentWorktreesRemoveDirtyText(
+        _ path: String,
+        _ listing: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.remove.dirty %@ %@",
+            fallback: """
+                Pine will delete %1$@, including uncommitted work that cannot \
+                be recovered:
+
+                %2$@
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [path, listing]
+        )
+    }
+
+    static func agentWorktreesIntegrateText(
+        _ commit: String,
+        _ targetBranch: String,
+        _ listing: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.integrate.body %@ %@ %@",
+            fallback: """
+                Pine will merge %1$@ into “%2$@” and stage it without \
+                committing:
+
+                %3$@
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [commit, targetBranch, listing]
+        )
+    }
+
+    static func agentWorktreesIntegrateConflictText(
+        _ targetBranch: String,
+        _ listing: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.integrate.conflict %@ %@",
+            fallback: """
+                Merging into “%1$@” would conflict. Resolve these in the \
+                worktree first:
+
+                %2$@
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [targetBranch, listing]
+        )
+    }
+
+    static func agentWorktreesIntegratedText(
+        _ targetBranch: String,
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.integrated %@ %lld",
+            fallback: "Staged %2$lld change(s) on “%1$@”. Nothing was committed.",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [targetBranch, count]
+        )
+    }
+
+    static func agentWorktreesRemovedText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.removed",
+            fallback: "Worktree removed. Its branch is still in the repository.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesUnsafeText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.unsafe",
+            fallback: "This worktree is no longer in the folder Pine manages.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesInspectFailedText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.inspect",
+            fallback: "Pine couldn’t read the state of this worktree.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesChangedText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.changed",
+            fallback: "The repository changed while Pine was asking. Try again.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesSourceDirtyText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.sourceDirty",
+            fallback: "Commit or discard the worktree’s changes before merging.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesTargetDirtyText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.targetDirty",
+            fallback: "Commit or stash the project’s own changes before merging.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesTargetDetachedText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.targetDetached",
+            fallback: "The project isn’t on a branch, so Pine can’t merge into it.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesNoChangesText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.noChanges",
+            fallback: "This worktree has no commits the project doesn’t have.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesConflictsText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.conflicts",
+            fallback: "Merging would conflict. Resolve it in the worktree first.",
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesManualRecoveryText(
+        _ reason: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.error.manualRecovery %@",
+            fallback: """
+                The merge stopped part-way and needs to be finished in a \
+                terminal. %@
+                """,
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: [reason])
+    }
+
+    static func agentWorktreesGenericText(
+        _ reason: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.error.generic %@",
+            fallback: "Pine couldn’t finish. %@",
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: [reason])
+    }
+
+    /// Told at close: the worktrees are still on disk, and this is where.
+    static func projectSwitcherWorktreesKeptText(
+        _ branches: String,
+        _ folderPath: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "projectSwitcher.worktreesKept %@ %@",
+            fallback: """
+                Pine kept these agent worktrees on disk: %1$@.
+
+                They are in %2$@. Reopen the project to merge or remove them \
+                from Pine.
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [branches, folderPath]
         )
     }
 
@@ -1575,6 +1900,12 @@ enum Strings {
     static var commandPaletteRequiresTerminal: String {
         String(localized: "commandPalette.unavailable.terminal")
     }
+    static var commandPaletteRequiresAgentWorktree: String {
+        String(localized: "commandPalette.unavailable.agentWorktree")
+    }
+    static var commandPaletteRequiresProjectSwitching: String {
+        String(localized: "commandPalette.unavailable.projectSwitching")
+    }
     static var commandPaletteNeedsFileAndTerminal: String {
         String(localized: "commandPalette.unavailable.activeFileAndTerminal")
     }
@@ -1895,7 +2226,17 @@ enum Strings {
 
     // MARK: - Branch Switcher
 
-    static let branchFilterPlaceholder: LocalizedStringKey = "branch.filterPlaceholder"
+    static var branchFilterPlaceholder: String {
+        String(localized: "branch.filterPlaceholder")
+    }
+
+    static var branchSwitcherCancel: String {
+        String(localized: "branch.cancel")
+    }
+
+    static var branchCurrentAccessibilityValue: String {
+        String(localized: "branch.current")
+    }
 
     static var branchSwitchErrorTitle: String {
         String(localized: "branch.switchError.title")
@@ -2131,6 +2472,11 @@ enum Strings {
     // MARK: - Terminal Search
 
     static let terminalSearchPlaceholder: LocalizedStringKey = "terminal.search.placeholder"
+    /// Same catalog key as ``terminalSearchPlaceholder``, resolved eagerly for
+    /// the AppKit query field, which takes a `String` placeholder.
+    static var terminalSearchPlaceholderString: String {
+        String(localized: "terminal.search.placeholder")
+    }
     static let menuFindInTerminal: LocalizedStringKey = "menu.findInTerminal"
     static let menuSendToTerminal: LocalizedStringKey = "menu.sendToTerminal"
     static let menuToggleTerminalZoom: LocalizedStringKey = "menu.toggleTerminalZoom"
@@ -2537,6 +2883,70 @@ enum Strings {
     static let a11yGitStatusUntracked: String =
         String(localized: "a11y.gitStatus.untracked", defaultValue: "Untracked")
 
+    // MARK: - Status bar indicator names (#1533)
+    //
+    // The count belongs in the *name*, not in a separate value: macOS drops
+    // `.accessibilityValue` on the `AXUnknown` element a collapsed `Label`
+    // becomes, so a split announcement loses the number entirely. The kind
+    // reads as a category ("Modified: 3"), which needs no plural agreement
+    // in any supported locale.
+
+    static func a11yStatusBarModifiedCount(_ count: Int) -> String {
+        String(localized: "a11y.statusBar.git.modified \(count)")
+    }
+
+    static func a11yStatusBarAddedCount(_ count: Int) -> String {
+        String(localized: "a11y.statusBar.git.added \(count)")
+    }
+
+    static func a11yStatusBarUntrackedCount(_ count: Int) -> String {
+        String(localized: "a11y.statusBar.git.untracked \(count)")
+    }
+
+    static let a11yStatusBarGitSummary: String =
+        String(
+            localized: "a11y.statusBar.git.summary",
+            defaultValue: "Git changes"
+        )
+
+    static let a11yStatusBarCursorPosition: String =
+        String(
+            localized: "a11y.statusBar.cursorPosition",
+            defaultValue: "Cursor position"
+        )
+
+    static func a11yStatusBarCursorPositionValue(
+        line: Int,
+        column: Int
+    ) -> String {
+        String(localized: "a11y.statusBar.cursorPosition.value \(line) \(column)")
+    }
+
+    static let a11yStatusBarIndentation: String =
+        String(
+            localized: "a11y.statusBar.indentation",
+            defaultValue: "Indentation"
+        )
+
+    static let a11yStatusBarFileSize: String =
+        String(
+            localized: "a11y.statusBar.fileSize",
+            defaultValue: "File size"
+        )
+
+    // MARK: - Go-to-Definition quick pick (#1533)
+
+    static let a11yDefinitionQuickPickLabel: String =
+        String(
+            localized: "a11y.definitionQuickPick.label",
+            defaultValue: "Definitions"
+        )
+    static let a11yDefinitionQuickPickHint: String =
+        String(
+            localized: "a11y.definitionQuickPick.item.hint",
+            defaultValue: "Opens this definition"
+        )
+
     // MARK: - Global Tab Switcher overlay (#1239)
 
     /// Title shown at the top of the Control-Tab overlay.
@@ -2687,5 +3097,40 @@ enum Strings {
             locale: locale
         )
         return String(format: format, locale: locale, kind, name, line)
+    }
+
+    // MARK: - Command Line Tool (#1530)
+
+    static var cliInstallFailedTitle: String {
+        String(localized: "cli.install.failedTitle")
+    }
+
+    static var cliInstallMissingScript: String {
+        String(localized: "cli.install.missingScript")
+    }
+
+    static var cliInstallSuccessTitle: String {
+        String(localized: "cli.install.successTitle")
+    }
+
+    static var cliInstallSuccessMessage: String {
+        String(localized: "cli.install.successMessage")
+    }
+
+    static var cliUninstallFailedTitle: String {
+        String(localized: "cli.uninstall.failedTitle")
+    }
+
+    static var cliUninstallSuccessTitle: String {
+        String(localized: "cli.uninstall.successTitle")
+    }
+
+    static var cliUninstallSuccessMessage: String {
+        String(localized: "cli.uninstall.successMessage")
+    }
+
+    /// Fallback body when AppleScript reports an error with no message.
+    static var cliErrorUnknown: String {
+        String(localized: "cli.error.unknown")
     }
 }

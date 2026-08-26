@@ -104,6 +104,225 @@ struct ProjectWindowSessionTests {
         )
     }
 
+    /// #1543: a window anchored at project A that the user last switched to
+    /// project B persists `activeURL = B`. Every later *explicit* open of A —
+    /// Open Folder, Open Recent, the Dock menu, `PINE_OPEN_PROJECT` — created
+    /// a scene keyed by A and then restored B over it, so the user got a
+    /// project they never asked for and the state never healed itself.
+    @Test("an explicit open shows the requested project, not the last active one")
+    func explicitOpenBeatsPersistedActiveProject() async throws {
+        let fixture = try ProjectWindowSessionFixture()
+        defer { fixture.cleanup() }
+        let firstRegistry = fixture.makeRegistry()
+        _ = try #require(
+            firstRegistry.projectManager(for: fixture.firstProject)
+        )
+        let session = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+        await session.openProject(
+            fixture.secondProject,
+            registry: firstRegistry
+        )
+        #expect(
+            session.activeProjectURL
+                == fixture.secondProject.standardizedFileURL
+        )
+        session.windowDidClose(registry: firstRegistry)
+
+        let registry = fixture.makeRegistry()
+        registry.noteExplicitProjectOpenRequest(fixture.firstProject)
+        let reopened = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+
+        #expect(
+            await reopened.restoreIfNeeded(registry: registry) == .restored
+        )
+        #expect(
+            reopened.activeProjectURL
+                == fixture.firstProject.standardizedFileURL
+        )
+        #expect(
+            registry.projectManagerIfAdmitted(for: fixture.firstProject) != nil
+        )
+        // The window keeps its membership: only the active project changed.
+        #expect(reopened.projectURLs == [
+            fixture.firstProject.standardizedFileURL,
+            fixture.secondProject.standardizedFileURL,
+        ])
+    }
+
+    /// The other half of #1543: with no explicit request in flight the scene
+    /// is genuine window restoration, and restoring the project the window
+    /// was last showing stays correct.
+    @Test("restoration with no explicit request still restores the active project")
+    func restorationWithoutRequestKeepsPersistedActiveProject() async throws {
+        let fixture = try ProjectWindowSessionFixture()
+        defer { fixture.cleanup() }
+        let firstRegistry = fixture.makeRegistry()
+        _ = try #require(
+            firstRegistry.projectManager(for: fixture.firstProject)
+        )
+        let session = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+        await session.openProject(
+            fixture.secondProject,
+            registry: firstRegistry
+        )
+        session.windowDidClose(registry: firstRegistry)
+
+        let registry = fixture.makeRegistry()
+        let restored = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+        _ = await restored.restoreIfNeeded(registry: registry)
+
+        #expect(
+            restored.activeProjectURL
+                == fixture.secondProject.standardizedFileURL
+        )
+    }
+
+    /// An explicit request is spent by the scene it opened. A second scene for
+    /// the same anchor — a real restoration — must not inherit it.
+    @Test("an explicit open request is consumed by exactly one scene")
+    func explicitOpenRequestIsConsumedOnce() async throws {
+        let fixture = try ProjectWindowSessionFixture()
+        defer { fixture.cleanup() }
+        let firstRegistry = fixture.makeRegistry()
+        _ = try #require(
+            firstRegistry.projectManager(for: fixture.firstProject)
+        )
+        let session = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+        await session.openProject(
+            fixture.secondProject,
+            registry: firstRegistry
+        )
+        session.windowDidClose(registry: firstRegistry)
+
+        let registry = fixture.makeRegistry()
+        registry.noteExplicitProjectOpenRequest(fixture.firstProject)
+        #expect(
+            registry.consumeExplicitProjectOpenRequest(
+                for: fixture.firstProject
+            )
+        )
+        #expect(
+            !registry.consumeExplicitProjectOpenRequest(
+                for: fixture.firstProject
+            )
+        )
+
+        let restored = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+        _ = await restored.restoreIfNeeded(registry: registry)
+
+        #expect(
+            restored.activeProjectURL
+                == fixture.secondProject.standardizedFileURL
+        )
+    }
+
+    /// Routing (Agent Inbox, a notification) can reach a scene before its
+    /// restore task runs. A request still pending from the open that created
+    /// the scene must not pull the window back off what routing placed.
+    @Test("routing that placed a window first is not undone by a pending request")
+    func routingBeforeRestoreOutranksPendingRequest() async throws {
+        let fixture = try ProjectWindowSessionFixture()
+        defer { fixture.cleanup() }
+        let firstRegistry = fixture.makeRegistry()
+        _ = try #require(
+            firstRegistry.projectManager(for: fixture.firstProject)
+        )
+        let session = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+        await session.openProject(
+            fixture.secondProject,
+            registry: firstRegistry
+        )
+        session.windowDidClose(registry: firstRegistry)
+
+        let registry = fixture.makeRegistry()
+        registry.noteExplicitProjectOpenRequest(fixture.firstProject)
+        let reopened = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+        await reopened.activate(fixture.secondProject, registry: registry)
+        #expect(
+            reopened.activeProjectURL
+                == fixture.secondProject.standardizedFileURL
+        )
+
+        _ = await reopened.restoreIfNeeded(registry: registry)
+
+        #expect(
+            reopened.activeProjectURL
+                == fixture.secondProject.standardizedFileURL
+        )
+    }
+
+    /// A project explicitly reopened after the user closed it out of its own
+    /// anchor window rejoins that window instead of arriving as a scene with
+    /// nothing to show.
+    @Test("an explicit open readmits a project closed out of its anchor window")
+    func explicitOpenReadmitsClosedAnchor() async throws {
+        let fixture = try ProjectWindowSessionFixture()
+        defer { fixture.cleanup() }
+        let firstRegistry = fixture.makeRegistry()
+        _ = try #require(
+            firstRegistry.projectManager(for: fixture.firstProject)
+        )
+        let session = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+        await session.openProject(
+            fixture.secondProject,
+            registry: firstRegistry
+        )
+        #expect(
+            await session.closeProject(
+                fixture.firstProject,
+                registry: firstRegistry
+            )
+        )
+        session.windowDidClose(registry: firstRegistry)
+
+        let registry = fixture.makeRegistry()
+        registry.noteExplicitProjectOpenRequest(fixture.firstProject)
+        let reopened = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject,
+            defaults: fixture.defaults
+        )
+
+        #expect(
+            await reopened.restoreIfNeeded(registry: registry) == .restored
+        )
+        #expect(
+            reopened.activeProjectURL
+                == fixture.firstProject.standardizedFileURL
+        )
+        #expect(
+            reopened.projectURLs.contains(
+                fixture.firstProject.standardizedFileURL
+            )
+        )
+    }
+
     @Test("switching keeps each project alive and restores the active project")
     func switchingAndRestoration() async throws {
         let fixture = try ProjectWindowSessionFixture()

@@ -47,7 +47,7 @@ struct BranchSubtitleClickHandler: NSViewRepresentable {
             )
 
             let hostingController = NSHostingController(rootView: content)
-            hostingController.preferredContentSize = NSSize(width: 280, height: 340)
+            hostingController.preferredContentSize = NSSize(width: 280, height: 388)
 
             let pop = NSPopover()
             pop.contentViewController = hostingController

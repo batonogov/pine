@@ -4586,6 +4586,126 @@
         }
       }
     },
+    "branch.cancel": {
+      "comment": "Button that closes the branch switcher without switching branches.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abbrechen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отмена"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        }
+      }
+    },
+    "branch.current": {
+      "comment": "VoiceOver value marking the branch the working tree is on.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktueller Branch"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current branch"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rama actual"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branche actuelle"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のブランチ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 브랜치"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branch atual"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Текущая ветка"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前分支"
+          }
+        }
+      }
+    },
     "branch.filterPlaceholder": {
       "comment": "Placeholder text in the branch search field.",
       "extractionState": "manual",
@@ -5003,6 +5123,486 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示隐藏的路径段"
+          }
+        }
+      }
+    },
+    "cli.error.unknown": {
+      "comment": "Fallback body when AppleScript reports an error without a message.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unbekannter Fehler"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown error"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error desconocido"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erreur inconnue"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明なエラー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알 수 없는 오류"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erro desconhecido"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неизвестная ошибка"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知错误"
+          }
+        }
+      }
+    },
+    "cli.install.failedTitle": {
+      "comment": "Alert title when installing the pine command line tool fails.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installation fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installation Failed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error en la instalación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de l’installation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストールに失敗しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치 실패"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falha na instalação"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось установить"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装失败"
+          }
+        }
+      }
+    },
+    "cli.install.missingScript": {
+      "comment": "Alert body when the bundled pine CLI script is missing from the app bundle.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das pine-Befehlszeilenskript wurde im App-Bundle nicht gefunden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not find the pine CLI script in the app bundle."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró el script de la herramienta pine en el paquete de la app."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le script en ligne de commande pine est introuvable dans le paquet de l’app."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリバンドル内に pine コマンドラインスクリプトが見つかりませんでした。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 번들에서 pine 명령줄 스크립트를 찾을 수 없습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível encontrar o script de linha de comando pine no pacote do app."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось найти скрипт командной строки pine в пакете приложения."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在应用程序包中找不到 pine 命令行脚本。"
+          }
+        }
+      }
+    },
+    "cli.install.successMessage": {
+      "comment": "Confirmation body after the pine command line tool is installed.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Befehl „pine“ ist jetzt verfügbar.\n\nVerwendung: pine . oder pine file.swift"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The 'pine' command is now available.\n\nUsage: pine . or pine file.swift"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El comando «pine» ya está disponible.\n\nUso: pine . o pine file.swift"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La commande « pine » est maintenant disponible.\n\nUtilisation : pine . ou pine file.swift"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「pine」コマンドが使用できるようになりました。\n\n使い方: pine . または pine file.swift"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이제 ‘pine’ 명령을 사용할 수 있습니다.\n\n사용법: pine . 또는 pine file.swift"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O comando “pine” já está disponível.\n\nUso: pine . ou pine file.swift"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Команда «pine» теперь доступна.\n\nИспользование: pine . или pine file.swift"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“pine”命令现已可用。\n\n用法：pine . 或 pine file.swift"
+          }
+        }
+      }
+    },
+    "cli.install.successTitle": {
+      "comment": "Confirmation title after the pine command line tool is installed.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Befehlszeilenwerkzeug installiert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command Line Tool Installed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herramienta de línea de comandos instalada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outil en ligne de commande installé"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンドラインツールをインストールしました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령줄 도구 설치됨"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ferramenta de linha de comando instalada"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Инструмент командной строки установлен"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已安装命令行工具"
+          }
+        }
+      }
+    },
+    "cli.uninstall.failedTitle": {
+      "comment": "Alert title when removing the pine command line tool fails.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deinstallation fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uninstall Failed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error al desinstalar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de la désinstallation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アンインストールに失敗しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제거 실패"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falha na desinstalação"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось удалить"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卸载失败"
+          }
+        }
+      }
+    },
+    "cli.uninstall.successMessage": {
+      "comment": "Confirmation body after the pine command line tool is removed.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Befehl „pine“ wurde aus /usr/local/bin entfernt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The 'pine' command has been removed from /usr/local/bin."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El comando «pine» se ha eliminado de /usr/local/bin."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La commande « pine » a été supprimée de /usr/local/bin."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「pine」コマンドを /usr/local/bin から削除しました。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/usr/local/bin에서 ‘pine’ 명령을 제거했습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O comando “pine” foi removido de /usr/local/bin."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Команда «pine» удалена из /usr/local/bin."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从 /usr/local/bin 中移除“pine”命令。"
+          }
+        }
+      }
+    },
+    "cli.uninstall.successTitle": {
+      "comment": "Confirmation title after the pine command line tool is removed.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Befehlszeilenwerkzeug entfernt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command Line Tool Removed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herramienta de línea de comandos eliminada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outil en ligne de commande supprimé"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンドラインツールを削除しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령줄 도구 제거됨"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ferramenta de linha de comando removida"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Инструмент командной строки удалён"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除命令行工具"
           }
         }
       }
@@ -8970,6 +9570,66 @@
         }
       }
     },
+    "menu.nextProjectInWindow": {
+      "comment": "Menu command that activates the next project or agent worktree open in the current window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nächstes Projekt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next Project"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proyecto siguiente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projet suivant"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のプロジェクト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 프로젝트"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Próximo projeto"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Следующий проект"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一个项目"
+          }
+        }
+      }
+    },
     "menu.openFolder": {
       "comment": "Menu command: open a folder picker dialog (⌘⇧O).",
       "extractionState": "manual",
@@ -9086,6 +9746,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "跳转到上一处更改"
+          }
+        }
+      }
+    },
+    "menu.previousProjectInWindow": {
+      "comment": "Menu command that activates the previous project or agent worktree open in the current window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorheriges Projekt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous Project"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proyecto anterior"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projet précédent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前のプロジェクト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 프로젝트"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projeto anterior"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущий проект"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一个项目"
           }
         }
       }
@@ -9986,6 +10706,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "切换分支…"
+          }
+        }
+      }
+    },
+    "menu.switchProjectInWindow": {
+      "comment": "Menu-bar submenu listing the projects and agent worktrees open in the current window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projekt wechseln"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch Project"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambiar de proyecto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changer de projet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトを切り替え"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트 전환"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alternar projeto"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переключить проект"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换项目"
           }
         }
       }
@@ -11307,6 +12087,501 @@
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Alternar projetos" } },
         "ru": { "stringUnit": { "state": "translated", "value": "Переключить проект" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "切换项目" } }
+      }
+    },
+    "agentWorktrees.emptyMessage": {
+      "comment": "Explains where agent worktrees come from when the manager list is empty.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine erstellt für jeden Agenten, den Sie über den Projektwechsler starten, einen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine creates one for each agent you start from the project switcher." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine crea uno por cada agente que inicies desde el selector de proyectos." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine en crée un pour chaque agent lancé depuis le sélecteur de projets." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロジェクトスイッチャーからエージェントを起動するたびに作成されます。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "프로젝트 전환기에서 에이전트를 시작할 때마다 하나씩 생성됩니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine cria um para cada agente iniciado no alternador de projetos." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine создаёт его для каждого агента, запущенного из переключателя проектов." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "从项目切换器启动智能体时，Pine 会为其创建一个。" } }
+      }
+    },
+    "agentWorktrees.emptyTitle": {
+      "comment": "Empty state title for the agent worktree manager.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Keine Agent-Worktrees" } },
+        "en": { "stringUnit": { "state": "translated", "value": "No agent worktrees" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Sin worktrees de agentes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucun worktree d’agent" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェントのワークツリーはありません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트 워크트리 없음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhum worktree de agente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Нет worktree агентов" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有智能体工作树" } }
+      }
+    },
+    "agentWorktrees.error.changed": {
+      "comment": "Shown when the repository moved between the confirmation and the action.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Das Repository hat sich geändert, während Pine gefragt hat. Versuchen Sie es erneut." } },
+        "en": { "stringUnit": { "state": "translated", "value": "The repository changed while Pine was asking. Try again." } },
+        "es": { "stringUnit": { "state": "translated", "value": "El repositorio cambió mientras Pine preguntaba. Inténtalo de nuevo." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le dépôt a changé pendant la demande. Réessayez." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "確認の間にリポジトリが変更されました。もう一度お試しください。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "확인하는 동안 저장소가 변경되었습니다. 다시 시도하세요." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O repositório mudou enquanto o Pine perguntava. Tente novamente." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Репозиторий изменился, пока Pine задавал вопрос. Попробуйте ещё раз." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在询问期间仓库发生了变化。请重试。" } }
+      }
+    },
+    "agentWorktrees.error.conflicts": {
+      "comment": "Shown when integration is refused because the merge would conflict.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Das Zusammenführen würde Konflikte verursachen. Lösen Sie sie zuerst im Worktree." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Merging would conflict. Resolve it in the worktree first." } },
+        "es": { "stringUnit": { "state": "translated", "value": "La fusión provocaría conflictos. Resuélvelos primero en el worktree." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La fusion créerait des conflits. Résolvez-les d’abord dans le worktree." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "マージは競合します。先にワークツリーで解決してください。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "병합 시 충돌이 발생합니다. 워크트리에서 먼저 해결하세요." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A mesclagem causaria conflitos. Resolva-os primeiro no worktree." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Слияние вызовет конфликты. Сначала разрешите их в worktree." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "合并会产生冲突。请先在工作树中解决。" } }
+      }
+    },
+    "agentWorktrees.error.generic %@": {
+      "comment": "Fallback failure message; %@ is the diagnostic git reported.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine konnte den Vorgang nicht abschließen. %@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine couldn’t finish. %@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine no pudo completar la operación. %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine n’a pas pu terminer. %@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pine は処理を完了できませんでした。%@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine이 작업을 끝내지 못했습니다. %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine não conseguiu concluir. %@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine не смог завершить операцию. %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 未能完成操作。%@" } }
+      }
+    },
+    "agentWorktrees.error.inspect": {
+      "comment": "Shown when git status could not be read for a managed worktree.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine konnte den Zustand dieses Worktrees nicht lesen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine couldn’t read the state of this worktree." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine no pudo leer el estado de este worktree." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine n’a pas pu lire l’état de ce worktree." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pine はこのワークツリーの状態を読み取れませんでした。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine이 이 워크트리의 상태를 읽지 못했습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine não conseguiu ler o estado deste worktree." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine не смог прочитать состояние этого worktree." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 无法读取该工作树的状态。" } }
+      }
+    },
+    "agentWorktrees.error.manualRecovery %@": {
+      "comment": "Shown when a merge left the checkout part-way; %@ is git's diagnostic.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Das Zusammenführen wurde unterbrochen und muss im Terminal abgeschlossen werden. %@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "The merge stopped part-way and needs to be finished in a terminal. %@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "La fusión se detuvo a mitad y debe terminarse en un terminal. %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La fusion s’est interrompue et doit être terminée dans un terminal. %@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "マージが途中で停止しました。ターミナルで完了させてください。%@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "병합이 중간에 멈컰습니다. 터미널에서 마무리해야 합니다. %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A mesclagem parou no meio e precisa ser concluída em um terminal. %@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Слияние остановилось на середине — завершите его в терминале. %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "合并中途停止，需要在终端中完成。%@" } }
+      }
+    },
+    "agentWorktrees.error.noChanges": {
+      "comment": "Shown when a worktree branch has nothing the project does not already have.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Dieser Worktree enthält keine Commits, die das Projekt nicht schon hat." } },
+        "en": { "stringUnit": { "state": "translated", "value": "This worktree has no commits the project doesn’t have." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Este worktree no tiene commits que el proyecto no tenga ya." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce worktree ne contient aucun commit absent du projet." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このワークツリーにはプロジェクトにないコミットがありません。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 워크트리에는 프로젝트에 없는 커밋이 없습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Este worktree não tem commits que o projeto ainda não tenha." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "В этом worktree нет коммитов, которых не было бы в проекте." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "该工作树没有项目尚未包含的提交。" } }
+      }
+    },
+    "agentWorktrees.error.sourceDirty": {
+      "comment": "Shown when the worktree being merged has uncommitted changes.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Committen oder verwerfen Sie die Änderungen des Worktrees vor dem Zusammenführen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Commit or discard the worktree’s changes before merging." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Confirma o descarta los cambios del worktree antes de fusionar." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Validez ou abandonnez les modifications du worktree avant de fusionner." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "マージ前にワークツリーの変更をコミットまたは破棄してください。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "병합하기 전에 워크트리의 변경 사항을 커밋하거나 버리세요." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Confirme ou descarte as alterações do worktree antes de mesclar." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Перед слиянием закоммитьте или отмените изменения в worktree." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "合并前请提交或放弃工作树中的更改。" } }
+      }
+    },
+    "agentWorktrees.error.targetDetached": {
+      "comment": "Shown when the project checkout has a detached HEAD.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Das Projekt befindet sich nicht auf einem Branch, daher kann Pine nicht dorthin zusammenführen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "The project isn’t on a branch, so Pine can’t merge into it." } },
+        "es": { "stringUnit": { "state": "translated", "value": "El proyecto no está en una rama, así que Pine no puede fusionar en él." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le projet n’est pas sur une branche, Pine ne peut donc pas y fusionner." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロジェクトがブランチ上にないため、マージできません。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "프로젝트가 브랜치에 있지 않아 병합할 수 없습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O projeto não está em um branch, então o Pine não pode mesclar nele." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Проект не находится на ветке, поэтому Pine не может влить в него изменения." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目当前不在任何分支上，Pine 无法合并。" } }
+      }
+    },
+    "agentWorktrees.error.targetDirty": {
+      "comment": "Shown when the project checkout has uncommitted changes of its own.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Committen oder stashen Sie die eigenen Änderungen des Projekts vor dem Zusammenführen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Commit or stash the project’s own changes before merging." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Confirma o guarda en stash los cambios del proyecto antes de fusionar." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Validez ou remisez les modifications du projet avant de fusionner." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "マージ前にプロジェクト自体の変更をコミットまたは stash してください。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "병합하기 전에 프로젝트의 변경 사항을 커밋하거나 stash 하세요." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Confirme ou guarde no stash as alterações do projeto antes de mesclar." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Перед слиянием закоммитьте или спрячьте изменения самого проекта." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "合并前请提交或暂存项目自身的更改。" } }
+      }
+    },
+    "agentWorktrees.error.unsafe": {
+      "comment": "Shown when a managed worktree is no longer inside Pine's managed folder.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Dieser Worktree liegt nicht mehr im von Pine verwalteten Ordner." } },
+        "en": { "stringUnit": { "state": "translated", "value": "This worktree is no longer in the folder Pine manages." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Este worktree ya no está en la carpeta que gestiona Pine." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce worktree n’est plus dans le dossier géré par Pine." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このワークツリーは Pine が管理するフォルダにありません。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 워크트리는 더 이상 Pine이 관리하는 폴더에 없습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Este worktree não está mais na pasta gerenciada pelo Pine." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Этот worktree больше не находится в папке, которой управляет Pine." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "该工作树已不在 Pine 管理的文件夹中。" } }
+      }
+    },
+    "agentWorktrees.integrate": {
+      "comment": "Row action that merges an agent worktree branch back into the project.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Zurückführen …" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Merge Back…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Fusionar…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fusionner…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "マージ…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "병합…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mesclar…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Влить…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "合并…" } }
+      }
+    },
+    "agentWorktrees.integrate.body %@ %@ %@": {
+      "comment": "Integration confirmation body: %1$@ short commit, %2$@ target branch, %3$@ file list.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine führt %1$@ in „%2$@“ zusammen und stellt das Ergebnis bereit, ohne zu committen:\n\n%3$@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine will merge %1$@ into “%2$@” and stage it without committing:\n\n%3$@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine fusionará %1$@ en «%2$@» y lo preparará sin hacer commit:\n\n%3$@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine fusionnera %1$@ dans « %2$@ » et indexera le résultat sans le valider :\n\n%3$@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pine は %1$@ を「%2$@」にマージし、コミットせずにステージします:\n\n%3$@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine이 %1$@을(를) “%2$@”에 병합하고 커밋 없이 스테이징합니다:\n\n%3$@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine mesclará %1$@ em “%2$@” e deixará tudo preparado sem fazer commit:\n\n%3$@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine вольёт %1$@ в «%2$@» и подготовит изменения без коммита:\n\n%3$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 会把 %1$@ 合并到“%2$@”，并暂存结果而不提交：\n\n%3$@" } }
+      }
+    },
+    "agentWorktrees.integrate.confirm": {
+      "comment": "Confirming button of the integration alert.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Zusammenführen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Merge" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Fusionar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fusionner" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "マージ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "병합" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mesclar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Влить" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "合并" } }
+      }
+    },
+    "agentWorktrees.integrate.conflict %@ %@": {
+      "comment": "Integration alert body when the merge would conflict: %1$@ target branch, %2$@ conflicting paths.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Das Zusammenführen in „%1$@“ würde Konflikte verursachen. Lösen Sie diese zuerst im Worktree:\n\n%2$@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Merging into “%1$@” would conflict. Resolve these in the worktree first:\n\n%2$@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Fusionar en «%1$@» provocaría conflictos. Resuélvelos primero en el worktree:\n\n%2$@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La fusion dans « %1$@ » créerait des conflits. Résolvez-les d’abord dans le worktree :\n\n%2$@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "「%1$@」へのマージは競合します。先にワークツリーで解決してください:\n\n%2$@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "“%1$@”에 병합하면 충돌이 발생합니다. 워크트리에서 먼저 해결하세요:\n\n%2$@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mesclar em “%1$@” causaria conflitos. Resolva-os primeiro no worktree:\n\n%2$@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Слияние в «%1$@» вызовет конфликты. Сначала разрешите их в worktree:\n\n%2$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "合并到“%1$@”会产生冲突。请先在工作树中解决：\n\n%2$@" } }
+      }
+    },
+    "agentWorktrees.integrate.title": {
+      "comment": "Title of the integration confirmation alert.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Diesen Agent-Worktree zurückführen?" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Merge this agent worktree back?" } },
+        "es": { "stringUnit": { "state": "translated", "value": "¿Fusionar este worktree de agente?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fusionner ce worktree d’agent ?" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このエージェントのワークツリーをマージしますか？" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 에이전트 워크트리를 병합할까요?" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mesclar este worktree de agente?" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Влить этот worktree агента?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "要合并这个智能体工作树吗？" } }
+      }
+    },
+    "agentWorktrees.integrated %@ %lld": {
+      "comment": "Success banner after integration: %1$@ target branch, %2$lld changed file count.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "%2$lld Änderung(en) auf „%1$@“ bereitgestellt. Es wurde nichts committet." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Staged %2$lld change(s) on “%1$@”. Nothing was committed." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Se prepararon %2$lld cambio(s) en «%1$@». No se hizo ningún commit." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%2$lld modification(s) indexée(s) sur « %1$@ ». Rien n’a été validé." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "「%1$@」に %2$lld 件の変更をステージしました。コミットはしていません。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "“%1$@”에 변경 %2$lld개를 스테이징했습니다. 커밋은 하지 않았습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%2$lld alteração(ões) preparada(s) em “%1$@”. Nada foi confirmado." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Подготовлено изменений: %2$lld на «%1$@». Коммит не сделан." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已在“%1$@”上暂存 %2$lld 项更改。未进行提交。" } }
+      }
+    },
+    "agentWorktrees.moreChanges %lld": {
+      "comment": "Trailing line when a disclosed path list is truncated.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "… und %lld weitere" } },
+        "en": { "stringUnit": { "state": "translated", "value": "…and %lld more" } },
+        "es": { "stringUnit": { "state": "translated", "value": "…y %lld más" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "… et %lld de plus" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "…ほか %lld 件" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "…외 %lld개" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "…e mais %lld" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "…и ещё %lld" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "…以及另外 %lld 项" } }
+      }
+    },
+    "agentWorktrees.remove": {
+      "comment": "Row action that deletes an agent worktree from disk.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Entfernen …" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Remove…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Eliminar…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Supprimer…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "削除…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "제거…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Remover…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Удалить…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "移除…" } }
+      }
+    },
+    "agentWorktrees.remove.clean %@ %@": {
+      "comment": "Removal alert body with no uncommitted work: %1$@ directory, %2$@ branch.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine löscht %1$@.\n\nDer Branch „%2$@“ und seine Commits bleiben im Repository." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine will delete %1$@.\n\nThe branch “%2$@” and its commits stay in the repository." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine eliminará %1$@.\n\nLa rama «%2$@» y sus commits permanecen en el repositorio." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine supprimera %1$@.\n\nLa branche « %2$@ » et ses commits restent dans le dépôt." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pine は %1$@ を削除します。\n\nブランチ「%2$@」とそのコミットはリポジトリに残ります。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine이 %1$@을(를) 삭제합니다.\n\n브랜치 “%2$@”와 커밋은 저장소에 남습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine excluirá %1$@.\n\nO branch “%2$@” e seus commits permanecem no repositório." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine удалит %1$@.\n\nВетка «%2$@» и её коммиты останутся в репозитории." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 将删除 %1$@。\n\n分支“%2$@”及其提交仍保留在仓库中。" } }
+      }
+    },
+    "agentWorktrees.remove.confirm": {
+      "comment": "Destructive confirming button of the removal alert.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Worktree entfernen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Remove Worktree" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Eliminar worktree" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Supprimer le worktree" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ワークツリーを削除" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "워크트리 제거" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Remover worktree" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Удалить worktree" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "移除工作树" } }
+      }
+    },
+    "agentWorktrees.remove.dirty %@ %@": {
+      "comment": "Removal alert body listing uncommitted work: %1$@ directory, %2$@ path list.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine löscht %1$@ einschließlich nicht committeter Arbeit, die nicht wiederhergestellt werden kann:\n\n%2$@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine will delete %1$@, including uncommitted work that cannot be recovered:\n\n%2$@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine eliminará %1$@, incluido el trabajo sin confirmar, que no se podrá recuperar:\n\n%2$@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine supprimera %1$@, y compris un travail non validé et irrécupérable :\n\n%2$@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pine は %1$@ を削除します。復元できない未コミットの作業も含まれます:\n\n%2$@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine이 %1$@을(를) 삭제합니다. 복구할 수 없는 커밋되지 않은 작업도 함께 사라집니다:\n\n%2$@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine excluirá %1$@, incluindo trabalho não confirmado que não poderá ser recuperado:\n\n%2$@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine удалит %1$@ вместе с незакоммиченной работой, которую нельзя восстановить:\n\n%2$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 将删除 %1$@，其中包含无法恢复的未提交内容：\n\n%2$@" } }
+      }
+    },
+    "agentWorktrees.remove.title": {
+      "comment": "Title of the destructive removal alert.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Diesen Agent-Worktree entfernen?" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Remove this agent worktree?" } },
+        "es": { "stringUnit": { "state": "translated", "value": "¿Eliminar este worktree de agente?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Supprimer ce worktree d’agent ?" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このエージェントのワークツリーを削除しますか？" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 에이전트 워크트리를 제거할까요?" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Remover este worktree de agente?" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Удалить этот worktree агента?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "要移除这个智能体工作树吗？" } }
+      }
+    },
+    "agentWorktrees.removed": {
+      "comment": "Success banner after a worktree is removed.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Worktree entfernt. Der Branch bleibt im Repository." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Worktree removed. Its branch is still in the repository." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Worktree eliminado. Su rama sigue en el repositorio." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Worktree supprimé. Sa branche reste dans le dépôt." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ワークツリーを削除しました。ブランチはリポジトリに残ります。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "워크트리를 제거했습니다. 브랜치는 저장소에 남아 있습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Worktree removido. O branch continua no repositório." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Worktree удалён. Его ветка осталась в репозитории." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已移除工作树。其分支仍保留在仓库中。" } }
+      }
+    },
+    "agentWorktrees.status.checking": {
+      "comment": "Row status while git status is still running.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wird geprüft …" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Checking…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Comprobando…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vérification…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "確認中…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "확인 중…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Verificando…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Проверка…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检查中…" } }
+      }
+    },
+    "agentWorktrees.status.clean": {
+      "comment": "Row status for a worktree with nothing uncommitted.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Keine offenen Änderungen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "No uncommitted changes" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Sin cambios sin confirmar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune modification non validée" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "未コミットの変更なし" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "커밋되지 않은 변경 없음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Sem alterações não confirmadas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Нет незакоммиченных изменений" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有未提交的更改" } }
+      }
+    },
+    "agentWorktrees.status.dirty %lld": {
+      "comment": "Row status showing how many paths are uncommitted.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "%lld offen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "%lld uncommitted" } },
+        "es": { "stringUnit": { "state": "translated", "value": "%lld sin confirmar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%lld non validée(s)" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "未コミット %lld 件" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "커밋 안 됨 %lld개" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%lld não confirmada(s)" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "%lld без коммита" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 项未提交" } }
+      }
+    },
+    "agentWorktrees.status.unavailable": {
+      "comment": "Row status when git could not report on the worktree.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Nicht verfügbar" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Unavailable" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No disponible" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Indisponible" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "利用できません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "사용할 수 없음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Indisponível" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Недоступно" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "不可用" } }
+      }
+    },
+    "agentWorktrees.title": {
+      "comment": "Title of the agent worktree manager sheet.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Agent-Worktrees" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Agent Worktrees" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Worktrees de agentes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Worktrees d’agents" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェントのワークツリー" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트 워크트리" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Worktrees de agentes" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Worktree агентов" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能体工作树" } }
+      }
+    },
+    "menu.agentWorktrees": {
+      "comment": "Agent menu item that opens the worktree manager.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Agent-Worktrees verwalten …" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Manage Agent Worktrees…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Gestionar worktrees de agentes…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Gérer les worktrees d’agents…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェントのワークツリーを管理…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트 워크트리 관리…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Gerenciar worktrees de agentes…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Управление worktree агентов…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "管理智能体工作树…" } }
+      }
+    },
+    "projectSwitcher.worktreesKept %@ %@": {
+      "comment": "Told after closing a project: %1$@ is the branch list, %2$@ the folder holding them.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine hat diese Agent-Worktrees auf der Festplatte behalten: %1$@.\n\nSie liegen in %2$@. Öffnen Sie das Projekt erneut, um sie in Pine zusammenzuführen oder zu entfernen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine kept these agent worktrees on disk: %1$@.\n\nThey are in %2$@. Reopen the project to merge or remove them from Pine." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine conservó estos worktrees de agentes en el disco: %1$@.\n\nEstán en %2$@. Vuelve a abrir el proyecto para fusionarlos o eliminarlos desde Pine." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine a conservé ces worktrees d’agents sur le disque : %1$@.\n\nIls se trouvent dans %2$@. Rouvrez le projet pour les fusionner ou les supprimer depuis Pine." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pine は次のエージェントのワークツリーをディスクに残しました: %1$@。\n\n場所は %2$@ です。Pine でマージまたは削除するにはプロジェクトを開き直してください。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine이 다음 에이전트 워크트리를 디스크에 남겨 두었습니다: %1$@.\n\n위치는 %2$@입니다. Pine에서 병합하거나 제거하려면 프로젝트를 다시 열세요." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine manteve estes worktrees de agentes no disco: %1$@.\n\nEles estão em %2$@. Reabra o projeto para mesclá-los ou removê-los pelo Pine." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine оставил на диске эти worktree агентов: %1$@.\n\nОни находятся в %2$@. Откройте проект снова, чтобы влить или удалить их из Pine." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 在磁盘上保留了这些智能体工作树：%1$@。\n\n它们位于 %2$@。重新打开项目即可在 Pine 中合并或移除它们。" } }
+      }
+    },
+    "projectSwitcher.worktreesKept.title": {
+      "comment": "Title of the alert shown after closing a project that had agent worktrees.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Agent-Worktrees beibehalten" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Agent worktrees kept" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Worktrees de agentes conservados" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Worktrees d’agents conservés" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェントのワークツリーを保持しました" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트 워크트리 유지됨" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Worktrees de agentes mantidos" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Worktree агентов сохранены" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已保留智能体工作树" } }
       }
     },
     "quickOpen.noResults": {
@@ -23547,6 +24822,126 @@
         }
       }
     },
+    "a11y.definitionQuickPick.label": {
+      "comment": "Accessibility name for the go-to-definition quick pick list.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Definitionen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Definitions"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Definiciones"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Définitions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定義"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정의"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Definições"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Определения"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定义"
+          }
+        }
+      }
+    },
+    "a11y.definitionQuickPick.item.hint": {
+      "comment": "Accessibility hint for a row in the go-to-definition quick pick.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Öffnet diese Definition"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens this definition"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre esta definición"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre cette définition"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この定義を開きます"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 정의를 엽니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre esta definição"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открывает это определение"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开此定义"
+          }
+        }
+      }
+    },
     "a11y.statusBar.label": {
       "comment": "VoiceOver label for the editor status bar.",
       "extractionState": "extracted_with_value",
@@ -23663,6 +25058,486 @@
           "stringUnit": {
             "state": "new",
             "value": "Shows or hides the terminal"
+          }
+        }
+      }
+    },
+    "a11y.statusBar.git.modified %lld": {
+      "comment": "Accessibility name for the status bar git modified-file count. %lld is the number of files.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geändert: %lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modified: %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modificados: %lld"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifiés : %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更: %lld 件"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경됨: %lld개"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modificados: %lld"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменено: %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已修改：%lld"
+          }
+        }
+      }
+    },
+    "a11y.statusBar.git.added %lld": {
+      "comment": "Accessibility name for the status bar git added-file count. %lld is the number of files.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hinzugefügt: %lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added: %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadidos: %lld"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajoutés : %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加: %lld 件"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추가됨: %lld개"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionados: %lld"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавлено: %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加：%lld"
+          }
+        }
+      }
+    },
+    "a11y.statusBar.git.untracked %lld": {
+      "comment": "Accessibility name for the status bar git untracked-file count. %lld is the number of files.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht verfolgt: %lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untracked: %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin seguimiento: %lld"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non suivis : %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未追跡: %lld 件"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추적되지 않음: %lld개"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não rastreados: %lld"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не отслеживается: %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未跟踪：%lld"
+          }
+        }
+      }
+    },
+    "a11y.statusBar.git.summary": {
+      "comment": "Accessibility name for the group of git change counts in the status bar.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git-Änderungen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git changes"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambios de Git"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifications Git"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git の変更"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git 변경 사항"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alterações do Git"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменения Git"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git 更改"
+          }
+        }
+      }
+    },
+    "a11y.statusBar.cursorPosition": {
+      "comment": "Accessibility name for the status bar cursor position indicator.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cursorposition"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cursor position"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Posición del cursor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Position du curseur"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カーソル位置"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "커서 위치"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Posição do cursor"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Позиция курсора"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "光标位置"
+          }
+        }
+      }
+    },
+    "a11y.statusBar.cursorPosition.value %lld %lld": {
+      "comment": "Spoken reading of the cursor position. %1$lld is the line, %2$lld the column.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeile %1$lld, Spalte %2$lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Line %1$lld, column %2$lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Línea %1$lld, columna %2$lld"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ligne %1$lld, colonne %2$lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 行、%2$lld 列"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld행, %2$lld열"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Linha %1$lld, coluna %2$lld"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Строка %1$lld, столбец %2$lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %1$lld 行，第 %2$lld 列"
+          }
+        }
+      }
+    },
+    "a11y.statusBar.indentation": {
+      "comment": "Accessibility name for the status bar indentation style indicator.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einrückung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indentation"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sangría"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indentation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インデント"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "들여쓰기"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recuo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отступы"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缩进"
+          }
+        }
+      }
+    },
+    "a11y.statusBar.fileSize": {
+      "comment": "Accessibility name for the status bar file size indicator.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dateigröße"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File size"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tamaño del archivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taille du fichier"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルサイズ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 크기"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tamanho do arquivo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Размер файла"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件大小"
           }
         }
       }
@@ -25504,6 +27379,66 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要活动文件。" } }
       }
     },
+    "commandPalette.unavailable.agentWorktree": {
+      "comment": "Command palette explanation for a disabled command that requires a Git repository and an installed agent.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erfordert ein Git-Repository und einen installierten Agenten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires a Git repository and an installed agent."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requiere un repositorio Git y un agente instalado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nécessite un dépôt Git et un agent installé."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git リポジトリとインストール済みのエージェントが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git 저장소와 설치된 에이전트가 필요합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requer um repositório Git e um agente instalado."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Требуется репозиторий Git и установленный агент."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 Git 仓库和已安装的智能体。"
+          }
+        }
+      }
+    },
     "commandPalette.unavailable.gitRepository": {
       "comment": "Command palette explanation for a disabled command that requires a Git repository.",
       "extractionState": "manual",
@@ -25517,6 +27452,66 @@
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Requer um repositório Git." } },
         "ru": { "stringUnit": { "state": "translated", "value": "Требуется репозиторий Git." } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要 Git 仓库。" } }
+      }
+    },
+    "commandPalette.unavailable.projectSwitching": {
+      "comment": "Command palette explanation for a disabled command that requires a second project or agent worktree in the same window.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erfordert ein weiteres Projekt oder Worktree in diesem Fenster."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires another project or worktree in this window."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requiere otro proyecto o árbol de trabajo en esta ventana."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nécessite un autre projet ou arbre de travail dans cette fenêtre."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このウインドウに別のプロジェクトまたはワークツリーが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 윈도우에 다른 프로젝트나 워크트리가 필요합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requer outro projeto ou worktree nesta janela."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Требуется другой проект или рабочее дерево в этом окне."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要此窗口中的另一个项目或工作树。"
+          }
+        }
       }
     },
     "commandPalette.unavailable.terminal": {

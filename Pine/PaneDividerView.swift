@@ -10,8 +10,14 @@ import SwiftUI
 /// A draggable divider between two panes.
 struct PaneDividerView: View {
     let axis: SplitAxis
+    /// Fraction of the split the leading pane currently occupies. Published as
+    /// the splitter's accessibility value and used as the base for adjustment.
+    let ratio: CGFloat
     var onDrag: (CGFloat) -> Void
     var onDragEnd: () -> Void
+    /// Called with an absolute ratio when the divider is moved by an
+    /// accessibility adjust or an arrow key rather than by dragging.
+    var onAdjustRatio: (CGFloat) -> Void
 
     /// Visual thickness of the divider line.
     static let thickness: CGFloat = 1
@@ -68,9 +74,22 @@ struct PaneDividerView: View {
                     isCursorPushed = false
                 }
             }
-            .accessibilityElement()
-            .accessibilityLabel(Strings.a11yPaneDividerLabel)
-            .accessibilityHint(Strings.a11yPaneDividerHint)
-            .accessibilityIdentifier(AccessibilityID.paneDivider)
+            // The AppKit element below is the divider's only accessibility
+            // representation: SwiftUI cannot publish a splitter role, a
+            // position, or an adjustable action, and the hint here promised
+            // a resize that only a mouse could perform.
+            .accessibilityHidden(true)
+            .background {
+                PaneDividerAccessibility(
+                    configuration: PaneDividerAccessibilityConfiguration(
+                        axis: axis,
+                        ratio: ratio,
+                        label: Strings.a11yPaneDividerLabel,
+                        help: Strings.a11yPaneDividerHint,
+                        identifier: AccessibilityID.paneDivider
+                    ),
+                    onAdjust: onAdjustRatio
+                )
+            }
     }
 }

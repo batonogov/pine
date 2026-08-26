@@ -104,6 +104,13 @@ nonisolated struct DefinitionQuickPickItem: Identifiable, Equatable, Sendable {
         self.character = character
         self.id = "\(url.path):\(line):\(character)"
     }
+
+    /// What VoiceOver reads for one row: the symbol, then where it lives.
+    /// Both halves are drawn, and both are needed to tell two overloads of
+    /// the same name apart — which is the only reason this list exists.
+    static func accessibilityLabel(for item: DefinitionQuickPickItem) -> String {
+        item.detail.isEmpty ? item.label : "\(item.label), \(item.detail)"
+    }
 }
 
 /// SwiftUI overlay content for the definition quick-pick.
@@ -140,6 +147,9 @@ struct DefinitionQuickPickContent: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(NSColor.separatorColor.withAlphaComponent(0.5)), lineWidth: 1)
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Strings.a11yDefinitionQuickPickLabel)
+        .accessibilityIdentifier(AccessibilityID.definitionQuickPickList)
     }
 }
 
@@ -148,15 +158,17 @@ struct DefinitionQuickPickContent: View {
 struct DefinitionQuickPickOverlay: View {
     let controller: DefinitionQuickPickController
 
+    @FocusState private var hasKeyboardFocus: Bool
+
     var body: some View {
         ZStack {
-            // Semi-transparent backdrop — click to dismiss.
+            // Semi-transparent backdrop — click to dismiss. It draws a gap,
+            // so it is not published; the key handlers moved off it because a
+            // view that never takes focus never receives a key press, which
+            // left the whole quick pick mouse-only.
             Color.black.opacity(0.01)
                 .onTapGesture { controller.cancel() }
-                .onKeyPress(.escape) { controller.cancel(); return .handled }
-                .onKeyPress(.upArrow) { controller.move(by: -1); return .handled }
-                .onKeyPress(.downArrow) { controller.move(by: 1); return .handled }
-                .onKeyPress(.return) { controller.selectCurrent(); return .handled }
+                .accessibilityHidden(true)
 
             VStack {
                 DefinitionQuickPickContent(controller: controller)
@@ -164,6 +176,14 @@ struct DefinitionQuickPickOverlay: View {
                     .padding(.top, 40)
                 Spacer()
             }
+            .focusable()
+            .focused($hasKeyboardFocus)
+            .focusEffectDisabled()
+            .onAppear { hasKeyboardFocus = true }
+            .onKeyPress(.escape) { controller.cancel(); return .handled }
+            .onKeyPress(.upArrow) { controller.move(by: -1); return .handled }
+            .onKeyPress(.downArrow) { controller.move(by: 1); return .handled }
+            .onKeyPress(.return) { controller.selectCurrent(); return .handled }
         }
     }
 }
@@ -187,6 +207,26 @@ private struct DefinitionRowContainer: View {
             .onTapGesture {
                 controller.select(at: index)
             }
+            // Combined into one stop with a button trait and a press: the row
+            // was three unnamed pieces of static text with the tap gesture —
+            // its only way in — invisible to the accessibility tree.
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                Text(verbatim: DefinitionQuickPickItem.accessibilityLabel(
+                    for: item
+                ))
+            )
+            .accessibilityHint(Strings.a11yDefinitionQuickPickHint)
+            .accessibilityAddTraits(
+                isSelected ? [.isButton, .isSelected] : .isButton
+            )
+            .accessibilityIdentifier(
+                AccessibilityID.definitionQuickPickRow(index)
+            )
+            .accessibilityAction {
+                controller.select(at: index)
+                controller.selectCurrent()
+            }
     }
 }
 
@@ -201,6 +241,7 @@ private struct DefinitionRow: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
+                .accessibilityHidden(true)
             Text(item.label)
                 .font(.system(size: 12))
                 .foregroundStyle(.primary)
