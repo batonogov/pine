@@ -597,6 +597,7 @@ jobs:
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/SidebarFolderClickTests
+              -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
               -only-testing:PineUITests/CheckForUpdatesTests
           # Shard 3 — Navigation (34 tests; accessibility matrix skips here)
