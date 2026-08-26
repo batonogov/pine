@@ -423,10 +423,13 @@ struct TerminalPaneTabBar: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 24, height: 24)
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.plain)
             .padding(.trailing, 4)
             .help(Strings.hideTerminal)
+            .accessibilityLabel(Strings.a11yCloseTerminalLabel)
+            .accessibilityHint(Strings.a11yCloseTerminalHint)
             .accessibilityIdentifier(AccessibilityID.hideTerminalButton)
         }
         .frame(height: LayoutMetrics.tabBarHeight)

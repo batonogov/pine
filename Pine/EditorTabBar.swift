@@ -434,6 +434,7 @@ struct EditorTabBar: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .frame(width: 24, height: 30)
+                .accessibilityLabel(Strings.a11yEditorTabOverflowLabel)
                 .accessibilityIdentifier(AccessibilityID.editorTabOverflowMenu)
             }
 

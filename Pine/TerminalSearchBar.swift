@@ -59,6 +59,11 @@ struct TerminalSearchBar: View {
             }
             .buttonStyle(.borderless)
             .help(Strings.terminalSearchCaseSensitiveTooltip)
+            .accessibilityLabel(Strings.terminalSearchCaseSensitiveTooltip)
+            // A toggle has to say which way it is set, or VoiceOver
+            // announces the same thing on and off. The selected trait is the
+            // native way to say it and needs no string of its own (#1527).
+            .accessibilityAddTraits(caseSensitive ? [.isSelected] : [])
             .accessibilityIdentifier(AccessibilityID.terminalSearchCaseSensitive)
 
             Divider().frame(height: 16)
@@ -66,19 +71,23 @@ struct TerminalSearchBar: View {
             Button(action: onPrevious) {
                 Image(systemName: "chevron.up")
                     .imageScale(.small)
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.borderless)
             .disabled(matchCount == 0)
             .help(Strings.terminalSearchPreviousTooltip)
+            .accessibilityLabel(Strings.terminalSearchPreviousTooltip)
             .accessibilityIdentifier(AccessibilityID.terminalSearchPrevious)
 
             Button(action: onNext) {
                 Image(systemName: "chevron.down")
                     .imageScale(.small)
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.borderless)
             .disabled(matchCount == 0)
             .help(Strings.terminalSearchNextTooltip)
+            .accessibilityLabel(Strings.terminalSearchNextTooltip)
             .accessibilityIdentifier(AccessibilityID.terminalSearchNext)
 
             Divider().frame(height: 16)
@@ -86,8 +95,10 @@ struct TerminalSearchBar: View {
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
                     .imageScale(.small)
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.borderless)
+            .accessibilityLabel(Strings.terminalSearchCloseTooltip)
             .help(Strings.terminalSearchCloseTooltip)
             .accessibilityIdentifier(AccessibilityID.terminalSearchClose)
         }
