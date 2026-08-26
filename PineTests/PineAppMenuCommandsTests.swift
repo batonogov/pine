@@ -30,7 +30,9 @@ struct PineAppMenuCommandsTests {
             toggleQuickTerminal: {},
             recoverQuickTerminalDisplay: {},
             recentProjects: { [] },
-            showAgentInbox: {}
+            showAgentInbox: {},
+            windowSession: { nil },
+            projectRegistry: { nil }
         )
         // `body` is `some Commands` — we can't introspect it, but forcing
         // evaluation verifies the view-builder closure compiles and runs

@@ -121,6 +121,7 @@ release disk image without publishing a release.
 | `Cmd+R` | Go to Symbol |
 | `Cmd+/` | Toggle comment |
 | `Cmd+Shift+B` | Switch branch |
+| `Cmd+Shift+A` | New agent in a worktree |
 | `Cmd+Shift+M` | Toggle minimap |
 | `Cmd+Shift+P` | Markdown preview |
 | `Ctrl+Option+Down` / `Up` | Next / Previous change |

@@ -40,6 +40,16 @@ struct PineAppMenuCommands: Commands {
     /// observation of `ProjectRegistry.recentProjects` in the menu body.
     let recentProjects: () -> [URL]
     let showAgentInbox: () -> Void
+    /// The window session behind the focused project scene (#1525). Starting
+    /// an agent in a worktree, and moving between the projects one window
+    /// holds, are session-scoped commands that used to exist only inside the
+    /// toolbar's switcher menu; the menu bar needs the same session to offer
+    /// them. `nil` while no project window is key.
+    let windowSession: () -> ProjectWindowSession?
+    /// Reads the app-scoped registry for the switcher rows, which resolve each
+    /// worktree's agent task to a status glyph. Same rationale as
+    /// `recentProjects`: a closure keeps Commands off the AppDelegate.
+    let projectRegistry: () -> ProjectRegistry?
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage("minimapVisible") private var minimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var blameVisible = true
@@ -49,6 +59,16 @@ struct PineAppMenuCommands: Commands {
     }
     private var nativeState: NativeMenuCommandState {
         NativeMenuCommandState(projectManager: focusedProject)
+    }
+    /// What the focused window can do with its projects and agents (#1525).
+    private var windowAvailability: ProjectWindowCommandAvailability {
+        ProjectWindowCommandAvailability(
+            session: windowSession(),
+            projectManager: focusedProject
+        )
+    }
+    private var agentLaunchOptions: [ProjectAgentLaunchOption] {
+        windowSession()?.availableAgentOptions ?? []
     }
 
     var body: some Commands {
@@ -339,6 +359,68 @@ struct PineAppMenuCommands: Commands {
                 (focusedProject?.paneManager
                     .validGlobalTabSwitchOrder().count ?? 0) < 2
             )
+
+            Divider()
+
+            // The window's projects and agent worktrees, listed where macOS
+            // keeps "what this window is showing" (#1525).
+            Menu {
+                if let session = windowSession(),
+                   let registry = projectRegistry() {
+                    ProjectSwitcherRows(
+                        session: session,
+                        registry: registry,
+                        carriesIdentifiers: false,
+                        onSelect: { url in
+                            NotificationCenter.default.post(
+                                name: .switchProjectInWindow,
+                                object: focusedProject,
+                                userInfo: ["url": url]
+                            )
+                        }
+                    )
+                }
+            } label: {
+                Label(
+                    Strings.menuSwitchProjectInWindow,
+                    systemImage: MenuIcons.switchProjectInWindow
+                )
+            }
+            .disabled(!windowAvailability.canSwitchProject)
+
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .nextProjectInWindow,
+                    projectManager: focusedProject,
+                    windowAvailability: windowAvailability
+                )
+            } label: {
+                Label(
+                    Strings.menuNextProjectInWindow,
+                    systemImage: MenuIcons.nextProjectInWindow
+                )
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .nextProjectInWindow)
+            )
+            .disabled(!windowAvailability.canSwitchProject)
+
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .previousProjectInWindow,
+                    projectManager: focusedProject,
+                    windowAvailability: windowAvailability
+                )
+            } label: {
+                Label(
+                    Strings.menuPreviousProjectInWindow,
+                    systemImage: MenuIcons.previousProjectInWindow
+                )
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .previousProjectInWindow)
+            )
+            .disabled(!windowAvailability.canSwitchProject)
         }
 
         // MARK: - Edit menu
@@ -350,7 +432,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuToggleComment, systemImage: MenuIcons.toggleComment)
             }
-            .keyboardShortcut("/", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .toggleComment)
+            )
 
             Divider()
 
@@ -359,7 +443,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuFind, systemImage: MenuIcons.find)
             }
-            .keyboardShortcut("f", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .findInFile)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -367,7 +453,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuFindAndReplace, systemImage: MenuIcons.findAndReplace)
             }
-            .keyboardShortcut("f", modifiers: [.command, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .findAndReplace)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -375,7 +463,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuFindNext, systemImage: MenuIcons.nextChange)
             }
-            .keyboardShortcut("g", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .findNext)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -383,7 +473,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuFindPrevious, systemImage: MenuIcons.previousChange)
             }
-            .keyboardShortcut("g", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .findPrevious)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -391,7 +483,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuUseSelectionForFind, systemImage: MenuIcons.find)
             }
-            .keyboardShortcut("e", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .useSelectionForFind)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Divider()
@@ -401,7 +495,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuFindInProject, systemImage: MenuIcons.findInProject)
             }
-            .keyboardShortcut("f", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .findInProject)
+            )
 
             Divider()
 
@@ -413,7 +509,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuGoToLine, systemImage: MenuIcons.goToLine)
             }
-            .keyboardShortcut("l", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .goToLine)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Divider()
@@ -426,7 +524,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuNextChange, systemImage: MenuIcons.nextChange)
             }
-            .keyboardShortcut(.downArrow, modifiers: [.control, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .nextChange)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -437,7 +537,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuPreviousChange, systemImage: MenuIcons.previousChange)
             }
-            .keyboardShortcut(.upArrow, modifiers: [.control, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .previousChange)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -448,7 +550,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuAcceptChange, systemImage: MenuIcons.acceptChange)
             }
-            .keyboardShortcut(.return, modifiers: [.control, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .acceptChange)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -459,7 +563,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuRevertChange, systemImage: MenuIcons.revertChange)
             }
-            .keyboardShortcut(.delete, modifiers: [.control, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .revertChange)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -492,7 +598,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuFoldCode, systemImage: MenuIcons.foldCode)
             }
-            .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .foldCode)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -503,7 +611,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuUnfoldCode, systemImage: MenuIcons.unfoldCode)
             }
-            .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .unfoldCode)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -514,7 +624,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuFoldAll, systemImage: MenuIcons.foldAll)
             }
-            .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .foldAll)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Button {
@@ -525,7 +637,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuUnfoldAll, systemImage: MenuIcons.unfoldAll)
             }
-            .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .unfoldAll)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
         }
 
@@ -539,21 +653,27 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuIncreaseFontSize, systemImage: MenuIcons.increaseFontSize)
             }
-            .keyboardShortcut("+", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .increaseFontSize)
+            )
 
             Button {
                 FontSizeSettings.shared.decrease()
             } label: {
                 Label(Strings.menuDecreaseFontSize, systemImage: MenuIcons.decreaseFontSize)
             }
-            .keyboardShortcut("-", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .decreaseFontSize)
+            )
 
             Button {
                 FontSizeSettings.shared.reset()
             } label: {
                 Label(Strings.menuResetFontSize, systemImage: MenuIcons.resetFontSize)
             }
-            .keyboardShortcut("0", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .resetFontSize)
+            )
 
             Divider()
 
@@ -566,7 +686,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.toggleTerminal, systemImage: MenuIcons.toggleTerminal)
             }
-            .keyboardShortcut("`", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .toggleTerminal)
+            )
 
             Button {
                 guard let pm = focusedProject else { return }
@@ -574,24 +696,32 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuTogglePreview, systemImage: MenuIcons.togglePreview)
             }
-            .keyboardShortcut("p", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .togglePreview)
+            )
 
             Divider()
 
             Toggle(isOn: $minimapVisible) {
                 Label(Strings.menuToggleMinimap, systemImage: MenuIcons.toggleMinimap)
             }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .toggleMinimap)
+            )
 
             Toggle(isOn: $blameVisible) {
                 Label(Strings.menuToggleBlame, systemImage: MenuIcons.toggleBlame)
             }
-            .keyboardShortcut("b", modifiers: [.command, .control])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .toggleBlame)
+            )
 
             Toggle(isOn: $wordWrapEnabled) {
                 Label(Strings.menuToggleWordWrap, systemImage: MenuIcons.toggleWordWrap)
             }
-            .keyboardShortcut("z", modifiers: .option)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .toggleWordWrap)
+            )
 
             Divider()
 
@@ -604,7 +734,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuProblems, systemImage: MenuIcons.problems)
             }
-            .keyboardShortcut("x", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .showProblems)
+            )
             .disabled(focusedProject == nil)
 
             Button {
@@ -619,7 +751,9 @@ struct PineAppMenuCommands: Commands {
                     systemImage: MenuIcons.nextDiagnostic
                 )
             }
-            .keyboardShortcut(KeyEquivalent("\u{F70B}"), modifiers: [])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .nextDiagnostic)
+            )
             .disabled(focusedProject == nil)
 
             Button {
@@ -634,9 +768,8 @@ struct PineAppMenuCommands: Commands {
                     systemImage: MenuIcons.previousDiagnostic
                 )
             }
-            .keyboardShortcut(
-                KeyEquivalent("\u{F70B}"),
-                modifiers: .shift
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .previousDiagnostic)
             )
             .disabled(focusedProject == nil)
 
@@ -690,7 +823,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuRevealFileInFinder, systemImage: MenuIcons.revealFileInFinder)
             }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .revealFileInFinder)
+            )
             .disabled(
                 focusedProject?.paneManager.activeTabManager?
                     .activeTab?
@@ -707,6 +842,42 @@ struct PineAppMenuCommands: Commands {
             .disabled(focusedProject?.workspace.rootURL == nil)
 
             Divider()
+
+            // The switcher's New Agent submenu, in the menu bar where it
+            // belongs (#1525). Hiding the toolbar used to delete the feature
+            // outright: a toolbar is a convenience layer over commands that
+            // live in the menu bar, never their only route.
+            Menu {
+                let options = agentLaunchOptions
+                if options.isEmpty {
+                    Text(Strings.projectSwitcherNoAgents)
+                } else {
+                    ForEach(options) { option in
+                        Button(option.displayName) {
+                            ProjectAgentLaunchSelection.post(
+                                identifier: option.id,
+                                projectManager: focusedProject
+                            )
+                        }
+                        // The preferred (last-used) agent carries the
+                        // command's chord, because that is exactly what the
+                        // palette and a user keybinding launch. Attaching it
+                        // to the submenu's own item instead would give the
+                        // chord nothing to fire.
+                        .effectiveKeyboardShortcut(
+                            option.id == options.first?.id
+                                ? keybindings.effectiveChord(for: .newAgent)
+                                : nil
+                        )
+                    }
+                }
+            } label: {
+                Label(
+                    Strings.projectSwitcherNewAgent,
+                    systemImage: MenuIcons.projectSwitcherNewAgent
+                )
+            }
+            .disabled(!windowAvailability.canLaunchAgent)
 
             Button {
                 showAgentInbox()
@@ -732,6 +903,17 @@ struct PineAppMenuCommands: Commands {
                 Label(Strings.menuAgentHistory, systemImage: MenuIcons.agentHistory)
             }
             .disabled(focusedProject?.workspace.rootURL == nil)
+
+            // Lives in the menu bar, not only in the toolbar switcher: the
+            // switcher is a project-navigation control that a user with a
+            // single project may never open, and #1524's whole complaint is
+            // that Pine-created git state had no discoverable way out.
+            Button {
+                NotificationCenter.default.post(name: .showAgentWorktrees, object: nil)
+            } label: {
+                Label(Strings.menuAgentWorktrees, systemImage: MenuIcons.agentWorktrees)
+            }
+            .disabled(focusedProject == nil)
         }
 
         // Xcode 26's CommandsBuilder supports at most ten direct children.
@@ -746,7 +928,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuSwitchBranch, systemImage: MenuIcons.switchBranch)
             }
-            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .showBranchSwitcher)
+            )
             .disabled(focusedProject?.workspace.gitProvider.isGitRepository != true)
         }
 
@@ -791,7 +975,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuNewTerminalTab, systemImage: MenuIcons.newTerminalTab)
             }
-            .keyboardShortcut("t", modifiers: .command)
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .newTerminalTab)
+            )
 
             Divider()
 
@@ -809,7 +995,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuSendToTerminal, systemImage: MenuIcons.sendToTerminal)
             }
-            .keyboardShortcut(.return, modifiers: [.command, .shift])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .sendToTerminal)
+            )
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Divider()
@@ -826,7 +1014,9 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuToggleTerminalZoom, systemImage: MenuIcons.maximizeTerminal)
             }
-            .keyboardShortcut(.return, modifiers: [.command, .option])
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .toggleTerminalZoom)
+            )
             .disabled(focusedProject?.hasTerminalPanes != true)
 
             Divider()

@@ -13,6 +13,9 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
     private var configuration: SmokeConfiguration!
     private var diagnosticContext = "setup"
 
+    /// The width every Settings surface was pinned to before #1531.
+    private static let legacyPinnedSettingsWidth: CGFloat = 720
+
     override func setUpWithError() throws {
         try super.setUpWithError()
         configuration = try SmokeConfiguration.environment()
@@ -241,6 +244,25 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
             },
             "A Settings window should contain the General pane"
         )
+
+        // #1531. `assertContained` cannot see a truncated tab strip: AppKit
+        // truncates *in order to* keep the strip inside its window, so the
+        // clipped strip satisfies containment by construction. Nor can the AX
+        // label — it reports the model title, not the glyphs actually drawn.
+        // Assert instead that the window sized itself to its localized strip.
+        // Settings used to be pinned to 720 pt, which doubled strings and the
+        // wider shipped locales cannot fit.
+        if configuration.pseudolocalized {
+            XCTAssertGreaterThan(
+                settingsWindow.frame.width,
+                Self.legacyPinnedSettingsWidth,
+                """
+                Settings must grow to fit its localized tab strip; \
+                \(Self.legacyPinnedSettingsWidth) pt means it is pinned again
+                """
+            )
+        }
+
         captureDiagnostics(named: "layout-settings-general")
 
         let terminalTitle = try catalog.value(

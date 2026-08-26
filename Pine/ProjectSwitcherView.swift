@@ -22,19 +22,16 @@ struct ProjectSwitcherView: View {
 
     var body: some View {
         Menu {
-            let groups = session.groups
-            ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                if ProjectSwitcherMenuLayout.needsDivider(
-                    before: index,
-                    in: groups
-                ) {
-                    Divider()
+            ProjectSwitcherRows(
+                session: session,
+                registry: registry,
+                carriesIdentifiers: true,
+                onSelect: { url in
+                    Task { @MainActor in
+                        await session.activate(url, registry: registry)
+                    }
                 }
-                projectButton(group.projectURL)
-                ForEach(group.worktrees, id: \.worktreeRoot) { worktree in
-                    worktreeButton(worktree)
-                }
-            }
+            )
 
             Divider()
 
@@ -86,6 +83,26 @@ struct ProjectSwitcherView: View {
             )
             .accessibilityIdentifier(AccessibilityID.projectSwitcherNewAgent)
 
+            // Mirrors Agent ▸ Manage Agent Worktrees. The menu bar is the
+            // canonical home (#1524 lists that as a requirement, and #1525
+            // tracks the switcher being hard to reach at all); this is the
+            // second door, next to the New Agent item that opens the first.
+            Button {
+                NotificationCenter.default.post(
+                    name: .showAgentWorktrees,
+                    object: nil
+                )
+            } label: {
+                Label(
+                    Strings.menuAgentWorktrees,
+                    systemImage: MenuIcons.agentWorktrees
+                )
+            }
+            .disabled(session.isLaunchingAgent)
+            .accessibilityIdentifier(
+                AccessibilityID.projectSwitcherManageWorktrees
+            )
+
             Button(action: onOpenProject) {
                 Label(
                     Strings.menuOpenFolder,
@@ -130,13 +147,48 @@ struct ProjectSwitcherView: View {
         .accessibilityLabel(Text(session.activeDisplayName))
         .accessibilityIdentifier(AccessibilityID.projectSwitcher)
     }
+}
+
+/// The switcher's rows: every project this window holds, the agent worktrees
+/// hanging off each, and the dividers that group them.
+///
+/// Shared by the toolbar control and the menu bar's Switch Project submenu
+/// (#1525). The toolbar is a convenience layer over commands that exist in the
+/// menu bar, never their only home — and one row renderer is what keeps the
+/// two from disagreeing about what this window is showing.
+struct ProjectSwitcherRows: View {
+    let session: ProjectWindowSession
+    let registry: ProjectRegistry
+    /// Whether these rows carry the switcher's accessibility identifiers.
+    ///
+    /// The toolbar control owns them. The menu bar draws the same rows and
+    /// must not stamp a second copy with the same identifiers: every XCUITest
+    /// and VoiceOver lookup would then match two elements and reach whichever
+    /// came first. Menu-bar rows are found by title, as every other menu-bar
+    /// item is.
+    let carriesIdentifiers: Bool
+    let onSelect: (URL) -> Void
+
+    var body: some View {
+        let groups = session.groups
+        ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+            if ProjectSwitcherMenuLayout.needsDivider(
+                before: index,
+                in: groups
+            ) {
+                Divider()
+            }
+            projectButton(group.projectURL)
+            ForEach(group.worktrees, id: \.worktreeRoot) { worktree in
+                worktreeButton(worktree)
+            }
+        }
+    }
 
     @ViewBuilder
     private func projectButton(_ url: URL) -> some View {
-        Button {
-            Task { @MainActor in
-                await session.activate(url, registry: registry)
-            }
+        let button = Button {
+            onSelect(url)
         } label: {
             Label {
                 Text(session.displayName(for: url))
@@ -147,13 +199,21 @@ struct ProjectSwitcherView: View {
             }
         }
         .disabled(session.isLaunchingAgent)
-        // Identified by the disambiguated name, not the folder name: two roots
-        // called `infra` would otherwise answer to the same identifier, and
-        // both VoiceOver and XCUITest would only ever reach the first one.
-        // With no collision the two strings are identical, so this is stable.
-        .accessibilityIdentifier(
-            AccessibilityID.projectSwitcherProject(session.displayName(for: url))
-        )
+
+        if carriesIdentifiers {
+            // Identified by the disambiguated name, not the folder name: two
+            // roots called `infra` would otherwise answer to the same
+            // identifier, and both VoiceOver and XCUITest would only ever
+            // reach the first one. With no collision the two strings are
+            // identical, so this is stable.
+            button.accessibilityIdentifier(
+                AccessibilityID.projectSwitcherProject(
+                    session.displayName(for: url)
+                )
+            )
+        } else {
+            button
+        }
     }
 
     @ViewBuilder
@@ -164,13 +224,8 @@ struct ProjectSwitcherView: View {
             task: task,
             isActive: session.activeProjectURL == worktree.worktreeRoot
         )
-        Button {
-            Task { @MainActor in
-                await session.activate(
-                    worktree.worktreeRoot,
-                    registry: registry
-                )
-            }
+        let button = Button {
+            onSelect(worktree.worktreeRoot)
         } label: {
             Label {
                 Text(presentation.title)
@@ -179,9 +234,14 @@ struct ProjectSwitcherView: View {
             }
         }
         .disabled(session.isLaunchingAgent)
-        .accessibilityIdentifier(
-            AccessibilityID.projectSwitcherWorktree(worktree.taskID)
-        )
+
+        if carriesIdentifiers {
+            button.accessibilityIdentifier(
+                AccessibilityID.projectSwitcherWorktree(worktree.taskID)
+            )
+        } else {
+            button
+        }
     }
 }
 

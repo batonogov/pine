@@ -48,6 +48,7 @@ struct ContentView: View {
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
     @State var isAgentInboxPresented = false
+    @State var isAgentWorktreesPresented = false
     #if DEBUG
     @State var didSeedAccessibilityDirtyBuffer = false
     #endif
@@ -290,6 +291,12 @@ struct ContentView: View {
             projectManager: projectManager,
             store: projectManager.agentHistory
         ))
+        .modifier(AgentWorktreesPresenter(
+            isPresented: $isAgentWorktreesPresented,
+            projectManager: projectManager,
+            session: projectWindowSession,
+            registry: registry
+        ))
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
             projectManager.quickOpenProvider.invalidateIndex()
@@ -359,6 +366,11 @@ struct ContentView: View {
             ) else { return }
             handleToggleWordWrap()
         }
+        .modifier(ProjectWindowCommandObserver(
+            projectManager: projectManager,
+            session: projectWindowSession,
+            registry: registry
+        ))
         .onReceive(NotificationCenter.default.publisher(for: .revealInSidebar)) { notification in
             handleRevealInSidebar(notification)
         }

@@ -296,7 +296,7 @@ struct AgentInboxPopoverCoordinatorTests {
 
     /// `update` runs inside SwiftUI's live view update, so the `@State` write
     /// this resolution carries has to be deferred — the exact mutation
-    /// AGENTS.md requires observers to move off the pass.
+    /// CLAUDE.md requires observers to move off the pass.
     @Test("an update pass never writes the binding inside itself")
     func updateDefersItsBindingWrite() async throws {
         let fixture = try Fixture()

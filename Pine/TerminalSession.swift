@@ -182,6 +182,16 @@ nonisolated enum AcknowledgedPTYWriter {
 /// full-bounds redraws (so SwiftTerm repaints as many cells as possible),
 /// but deliberately does NOT zero `layer.contents` — see issue #1094.
 final class PineTerminalView: LocalProcessTerminalView {
+    /// Supplies the terminal's spoken name on demand (#1533).
+    ///
+    /// Read at query time so a shell title change or a newly detected agent
+    /// is announced without anyone having to push a fresh label.
+    var accessibilityLabelProvider: (() -> String?)?
+
+    override func accessibilityLabel() -> String? {
+        accessibilityLabelProvider?() ?? super.accessibilityLabel()
+    }
+
     private var redrawBackgroundColor: CGColor?
     private var initialMetalRedrawWorkItems: [DispatchWorkItem] = []
     /// Serializes Pine's cursor policy with SwiftTerm's PTY parser. Process
@@ -2056,6 +2066,17 @@ final class TerminalTab: Identifiable, Hashable {
             MainActor.assumeIsolated {
                 self?.applyPreferredCursorStyle()
             }
+        }
+
+        // The terminal had a role and an identifier but no name at all, so
+        // VoiceOver announced every terminal in the window as "text area".
+        // Supplied as a closure rather than a pushed string because both
+        // halves of the name move on their own: the shell renames the tab
+        // through OSC, and agent detection attaches a session later. Anything
+        // pushed would be stale by the time it was read.
+        terminalView.accessibilityLabelProvider = { [weak self] in
+            guard let self else { return nil }
+            return TerminalTabIdentityLabel.accessibilityLabel(for: self)
         }
     }
 

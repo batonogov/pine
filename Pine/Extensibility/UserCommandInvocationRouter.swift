@@ -15,9 +15,13 @@ enum UserCommandInvocationRouter {
     static func dispatch(
         _ command: UserCommand,
         projectManager: ProjectManager?,
+        windowAvailability: ProjectWindowCommandAvailability = .none,
         notificationCenter: NotificationCenter = .default
     ) {
-        let context = context(for: projectManager)
+        let context = context(
+            for: projectManager,
+            windowAvailability: windowAvailability
+        )
         guard context.satisfies(command.availabilityRequirement) else {
             return
         }
@@ -92,6 +96,24 @@ enum UserCommandInvocationRouter {
             notificationCenter.post(
                 name: .showAgentInbox,
                 object: nil
+            )
+
+        case .newAgent:
+            // No identifier: the palette and user keybindings mean the
+            // preferred (last-used) agent. Only a menu item names one.
+            ProjectAgentLaunchSelection.post(
+                identifier: nil,
+                projectManager: projectManager,
+                notificationCenter: notificationCenter
+            )
+
+        case .nextProjectInWindow, .previousProjectInWindow:
+            let direction: ProjectWindowSwitchOrder.Direction =
+                command == .nextProjectInWindow ? .next : .previous
+            notificationCenter.post(
+                name: .switchProjectInWindow,
+                object: projectManager,
+                userInfo: ["direction": direction.rawValue]
             )
 
         case .goToLine, .symbolNavigator, .quickOpen, .commandPalette:
@@ -249,7 +271,8 @@ enum UserCommandInvocationRouter {
     }
 
     static func context(
-        for projectManager: ProjectManager?
+        for projectManager: ProjectManager?,
+        windowAvailability: ProjectWindowCommandAvailability = .none
     ) -> CommandPaletteContext {
         guard let projectManager else {
             return .unavailable
@@ -261,7 +284,9 @@ enum UserCommandInvocationRouter {
             hasProject: projectManager.workspace.rootURL != nil,
             hasActiveFile: nativeState.activeEditorTabID != nil,
             isGitRepository: projectManager.workspace.gitProvider.isGitRepository,
-            hasTerminal: projectManager.hasTerminalPanes
+            hasTerminal: projectManager.hasTerminalPanes,
+            canLaunchAgent: windowAvailability.canLaunchAgent,
+            canSwitchProjectInWindow: windowAvailability.canSwitchProject
         )
     }
 

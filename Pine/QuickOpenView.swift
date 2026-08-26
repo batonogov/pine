@@ -341,6 +341,10 @@ struct QuickOpenSearchField: NSViewRepresentable {
     var onArrowDown: () -> Void
     var onReturn: () -> Void
     var onEscape: () -> Void
+    /// Optional Tab handler. When `nil`, Tab keeps AppKit's default key-view
+    /// loop behaviour, which is what the overlays without a focusable list
+    /// (Quick Open, Symbol Navigator) want.
+    var onTab: (() -> Void)?
 
     func makeNSView(context: Context) -> CommandOverlayTextField {
         let field = CommandOverlayTextField()
@@ -368,6 +372,7 @@ struct QuickOpenSearchField: NSViewRepresentable {
         context.coordinator.onArrowDown = onArrowDown
         context.coordinator.onReturn = onReturn
         context.coordinator.onEscape = onEscape
+        context.coordinator.onTab = onTab
     }
 
     func makeCoordinator() -> Coordinator {
@@ -376,7 +381,8 @@ struct QuickOpenSearchField: NSViewRepresentable {
             onArrowUp: onArrowUp,
             onArrowDown: onArrowDown,
             onReturn: onReturn,
-            onEscape: onEscape
+            onEscape: onEscape,
+            onTab: onTab
         )
     }
 
@@ -386,19 +392,22 @@ struct QuickOpenSearchField: NSViewRepresentable {
         var onArrowDown: () -> Void
         var onReturn: () -> Void
         var onEscape: () -> Void
+        var onTab: (() -> Void)?
 
         init(
             text: Binding<String>,
             onArrowUp: @escaping () -> Void,
             onArrowDown: @escaping () -> Void,
             onReturn: @escaping () -> Void,
-            onEscape: @escaping () -> Void
+            onEscape: @escaping () -> Void,
+            onTab: (() -> Void)? = nil
         ) {
             _text = text
             self.onArrowUp = onArrowUp
             self.onArrowDown = onArrowDown
             self.onReturn = onReturn
             self.onEscape = onEscape
+            self.onTab = onTab
         }
 
         func controlTextDidChange(_ obj: Notification) {
@@ -423,6 +432,10 @@ struct QuickOpenSearchField: NSViewRepresentable {
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
                 onEscape()
+                return true
+            case #selector(NSResponder.insertTab(_:)):
+                guard let onTab else { return false }
+                onTab()
                 return true
             default:
                 return false

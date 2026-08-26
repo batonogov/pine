@@ -196,6 +196,9 @@ nonisolated struct MenuKeyboardShortcut {
         case "left": return .leftArrow
         case "right": return .rightArrow
         default:
+            if let function = FunctionKeyToken.character(for: token) {
+                return KeyEquivalent(function)
+            }
             guard token.count == 1, let character = token.first else {
                 return nil
             }
