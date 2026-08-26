@@ -4,7 +4,7 @@ Run this short manual pass for release candidates after the automated unit and
 `A11y & Localization` UI matrix is green. The matrix distributes all nine
 supported locales across four focused jobs, exercises a keyboard-only critical
 journey, and retains double-length/representative layout screenshots plus AX
-trees. Record the exact macOS and Xcode/SDK versions described in `AGENTS.md`,
+trees. Record the exact macOS and Xcode/SDK versions described in `CLAUDE.md`,
 plus the language, appearance, and accessibility settings used.
 
 ## Representative configurations

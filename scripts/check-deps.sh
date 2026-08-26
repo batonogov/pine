@@ -5,7 +5,7 @@
 # component so a dependency pass can see, at a glance, what has fallen behind
 # upstream. Read-only: makes no changes.
 #
-# Policy (see AGENTS.md -> "Dependency maintenance"):
+# Policy (see CLAUDE.md -> "Dependency maintenance"):
 #   - keep every pin within N-1 of upstream;
 #   - never downgrade an already-current pin;
 #   - the new version/SHA must be a strict descendant of the one it replaces.
@@ -69,4 +69,4 @@ else
 fi
 
 echo
-echo "Re-run before every dependency pass. See AGENTS.md -> \"Dependency maintenance\"."
+echo "Re-run before every dependency pass. See CLAUDE.md -> \"Dependency maintenance\"."

@@ -248,7 +248,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         guard resolution.bindingIsPresented != nil else { return }
         // The SwiftUI half is not. `update` runs inside a live view update
         // pass, and writing `@State` there re-enters it — the mutation
-        // AGENTS.md requires observers to defer.
+        // CLAUDE.md requires observers to defer.
         NativeCommandDelivery.deferToNextMainRunLoop { [weak self] in
             self?.writeSettledUpdate()
         }

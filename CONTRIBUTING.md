@@ -143,7 +143,7 @@ Pine follows **MVVM** with SwiftUI views backed by AppKit via `NSViewRepresentab
 - **`SyntaxHighlighter`** loads JSON grammar files from `Pine/Grammars/` for syntax highlighting
 - Menu commands are defined in `PineApp.swift` and dispatched via `NotificationCenter`
 
-For more details, see the Architecture section in [AGENTS.md](AGENTS.md).
+For more details, see the Architecture section in [CLAUDE.md](CLAUDE.md).
 
 ## Making Changes
 

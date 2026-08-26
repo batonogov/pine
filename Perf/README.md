@@ -107,7 +107,7 @@ with a regression report.
 | **memory-pressure** | Open a 10MB+ file (`hugeFileThreshold` partial-load path)     | Allocations, `highlight.*`               |
 
 The target is **<4ms main-thread work per scroll frame** for 120Hz ProMotion
-(see AGENTS.md → Concurrency Model).
+(see CLAUDE.md → Concurrency Model).
 
 ---
 

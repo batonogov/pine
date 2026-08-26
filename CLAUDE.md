@@ -1,4 +1,4 @@
-# AGENTS.md
+# CLAUDE.md
 
 Guidance for AI coding agents (Claude Code, pi, and others) working in this repository.
 
@@ -252,7 +252,7 @@ How the maintainer works day-to-day. Documents intent and handoff conventions fo
 ### Working with AI agents
 - Typical handoff: **"реши issue #N"** (solve issue #N) — the agent reads the issue **and all its comments** in full, then plans, implements, writes tests, and opens a PR.
 - Agents may freely, without asking: edit code, run single-file typecheck, run unit tests, create branches, open PRs.
-- **Explicit confirmation required** for: merging a PR, and anything in the destructive-command list in `AGENTS.md` (deletions, force-pushes, infrastructure changes).
+- **Explicit confirmation required** for: merging a PR, and anything in the destructive-command list in this file (deletions, force-pushes, infrastructure changes).
 - Agents should run unit tests themselves — no need to ask first.
 
 ### Maintainer-directed issue swarm
