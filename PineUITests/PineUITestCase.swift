@@ -172,6 +172,40 @@ class PineUITestCase: XCTestCase {
         ).firstMatch
     }
 
+    /// Waits for the close question and fails with the alert's actual text.
+    ///
+    /// A bare `exists` on a missing element reports only that it is missing,
+    /// which says nothing about what the alert did say — and UI shards
+    /// publish no result bundle, so that difference is the whole
+    /// investigation.
+    @discardableResult
+    func assertUnsavedChangesQuestion(
+        in alert: XCUIElement,
+        fileName: String,
+        _ message: String,
+        timeout: TimeInterval = 5,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        let question = unsavedChangesQuestion(in: alert, fileName: fileName)
+        if !question.waitForExistence(timeout: timeout) {
+            let texts = alert.staticTexts.allElementsBoundByIndex
+                .map { "label=\($0.label.debugDescription)" }
+                .joined(separator: "\n    ")
+            XCTFail(
+                """
+                \(message)
+                  alert static texts:
+                    \(texts.isEmpty ? "(none)" : texts)
+                  alert: \(alert.debugDescription)
+                """,
+                file: file,
+                line: line
+            )
+        }
+        return question
+    }
+
     // MARK: - Editor Tab Helpers
 
     /// Finds an editor tab button by file name.

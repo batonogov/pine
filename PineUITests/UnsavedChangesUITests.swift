@@ -148,8 +148,9 @@ final class UnsavedChangesUITests: PineUITestCase {
             alert.waitForExistence(timeout: 5),
             "Closing a dirty untitled tab should show an owned alert"
         )
-        XCTAssertTrue(
-            unsavedChangesQuestion(in: alert, fileName: "Untitled").exists,
+        assertUnsavedChangesQuestion(
+            in: alert,
+            fileName: "Untitled",
             "The close decision should name the file it is about to discard"
         )
         return alert
