@@ -825,7 +825,7 @@ final class TerminalTests: PineUITestCase {
 
         // Click `+` — this is the exact path users hit per issue #918.
         // Cmd+T cannot be used because XCUITest's typeKey() bypasses the
-        // app's NSEvent.addLocalMonitorForEvents (see CLAUDE.md).
+        // app's NSEvent.addLocalMonitorForEvents (see .claude/rules/ui-tests.md).
         newTerminalButton.click()
 
         let tab2 = terminalTab("Terminal 2")
