@@ -75,10 +75,13 @@ final class SidebarCollapseFlakeProbeUITests: PineUITestCase {
     func testCollapseProbe() throws {
         var lines: [String] = []
 
-        for iteration in 0..<15 {
+        for iteration in 0..<10 {
             let waitsForFocus = false
             app = XCUIApplication()
             try setUpLaunchArguments()
+            let focusLog = FileManager.default.temporaryDirectory
+                .appendingPathComponent("focus-\(iteration)-\(UUID().uuidString).log")
+            app.launchEnvironment["PINE_FOCUS_LOG"] = focusLog.path
             launchWithProject(projectURL)
 
             let sidebar = app.scrollViews["sidebar"]
@@ -121,6 +124,11 @@ final class SidebarCollapseFlakeProbeUITests: PineUITestCase {
             let collapsed = child.waitForNonExistence(timeout: 20)
             let elapsed = Date().timeIntervalSince(started)
 
+            let focusTrace = (try? String(contentsOf: focusLog, encoding: .utf8))?
+                .split(separator: "\n")
+                .filter { $0.contains("keyCode=123") }
+                .joined(separator: " | ") ?? "(no log)"
+
             lines.append(
                 """
                 it=\(iteration) focusWait=\(waitsForFocus) \
@@ -130,6 +138,7 @@ final class SidebarCollapseFlakeProbeUITests: PineUITestCase {
                 collapsed=\(collapsed) elapsed=\(String(format: "%.2f", elapsed)) \
                 valueAfter=\(alpha.value as? String ?? "nil") \
                 alphaSelected=\(alpha.isSelected)
+                trace=\(focusTrace)
                 """
             )
             app.terminate()
