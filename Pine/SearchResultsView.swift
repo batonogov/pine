@@ -60,18 +60,34 @@ struct SearchResultsView: View {
         .onDisappear { handoffMonitor.stop() }
     }
 
-    /// Down arrow in the toolbar search field moves selection into this list.
-    /// The field is an `NSSearchToolbarItem`, so it is outside this view's
-    /// SwiftUI hierarchy and `onKeyPress` cannot reach it.
+    /// Routes the navigation keys while the caret is in the toolbar search
+    /// field. The field is an `NSSearchToolbarItem`, so it is outside this
+    /// view's SwiftUI hierarchy and `onKeyPress` cannot reach it, and its
+    /// first responder cannot be taken away — see `SearchFieldHandoffMonitor`.
     private func startFieldHandoff() {
         handoffMonitor.hasResults = {
             !projectManager.searchProvider.flattenedMatches.isEmpty
         }
-        handoffMonitor.onEnterList = {
-            let total = projectManager.searchProvider.flattenedMatches.count
-            guard navigation.enterList(total: total) else { return false }
-            isListFocused = true
-            return true
+        handoffMonitor.currentFocus = { navigation.focus }
+        handoffMonitor.onAction = { action in
+            let flat = projectManager.searchProvider.flattenedMatches
+            switch action {
+            case .enterList:
+                return navigation.enterList(total: flat.count)
+            case .moveSelection(let delta):
+                navigation.moveSelection(delta: delta, total: flat.count)
+                return true
+            case .openSelected:
+                guard let index = navigation.selectedIndex,
+                      flat.indices.contains(index) else { return false }
+                openMatch(flat[index])
+                return true
+            case .stepOutOfList:
+                navigation.handleEscape()
+                return true
+            case .passThrough:
+                return false
+            }
         }
         handoffMonitor.start()
     }

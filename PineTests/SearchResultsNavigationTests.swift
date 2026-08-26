@@ -334,27 +334,75 @@ struct SearchResultsNavigationTests {
 @Suite("Search Field Hand-off Tests")
 struct SearchFieldHandoffTests {
 
-    @Test("Down arrow in the field hands off only when results exist")
-    func downArrowHandsOff() {
-        #expect(SearchKeyboardPolicy.fieldHandsOffToList(
-            keyCode: SearchKeyboardPolicy.KeyCode.downArrow,
-            hasResults: true
-        ))
-        #expect(!SearchKeyboardPolicy.fieldHandsOffToList(
-            keyCode: SearchKeyboardPolicy.KeyCode.downArrow,
-            hasResults: false
-        ))
+    private typealias Key = SearchKeyboardPolicy.KeyCode
+
+    @Test("Down arrow in the field takes the arrows into the list")
+    func downArrowEntersList() {
+        #expect(SearchKeyboardPolicy.fieldAction(
+            keyCode: Key.downArrow, focus: .field, hasResults: true
+        ) == .enterList)
     }
 
-    @Test("Other keys stay in the field")
-    func otherKeysDoNotHandOff() {
-        // Up (126), Return (36), Escape (53), and a printable key must not
-        // steal focus out of the field.
-        for keyCode: UInt16 in [126, 36, 53, 0, 49] {
-            #expect(!SearchKeyboardPolicy.fieldHandsOffToList(
-                keyCode: keyCode,
-                hasResults: true
-            ))
+    @Test("Once the list drives, the arrows walk it")
+    func arrowsWalkTheList() {
+        #expect(SearchKeyboardPolicy.fieldAction(
+            keyCode: Key.downArrow, focus: .list, hasResults: true
+        ) == .moveSelection(delta: 1))
+        #expect(SearchKeyboardPolicy.fieldAction(
+            keyCode: Key.upArrow, focus: .list, hasResults: true
+        ) == .moveSelection(delta: -1))
+    }
+
+    @Test("Return opens the selection only once the list drives")
+    func returnOpensSelection() {
+        #expect(SearchKeyboardPolicy.fieldAction(
+            keyCode: Key.returnKey, focus: .list, hasResults: true
+        ) == .openSelected)
+        #expect(SearchKeyboardPolicy.fieldAction(
+            keyCode: Key.returnKey, focus: .field, hasResults: true
+        ) == .passThrough)
+    }
+
+    @Test("Escape steps out of the list before the field sees it")
+    func escapeStepsOut() {
+        // The regression behind the red CI run: if this passes through, the
+        // search field handles Escape and dismisses the whole search.
+        #expect(SearchKeyboardPolicy.fieldAction(
+            keyCode: Key.escape, focus: .list, hasResults: true
+        ) == .stepOutOfList)
+        // Once the field drives again, Escape belongs to it, so search closes.
+        #expect(SearchKeyboardPolicy.fieldAction(
+            keyCode: Key.escape, focus: .field, hasResults: true
+        ) == .passThrough)
+    }
+
+    @Test("Up arrow in the field does not jump to the last row")
+    func upArrowInFieldPassesThrough() {
+        #expect(SearchKeyboardPolicy.fieldAction(
+            keyCode: Key.upArrow, focus: .field, hasResults: true
+        ) == .passThrough)
+    }
+
+    @Test("Nothing is claimed when there are no results")
+    func noResultsClaimsNothing() {
+        for focus in [SearchResultsFocus.field, .list] {
+            for key in [Key.downArrow, Key.upArrow, Key.returnKey, Key.escape] {
+                #expect(SearchKeyboardPolicy.fieldAction(
+                    keyCode: key, focus: focus, hasResults: false
+                ) == .passThrough)
+            }
+        }
+    }
+
+    @Test("Typing keys are never claimed, so the query stays editable")
+    func typingPassesThrough() {
+        // Letters, digits, delete, tab, space, arrows left/right.
+        for keyCode: UInt16 in [0, 1, 2, 18, 19, 49, 48, 51, 123, 124] {
+            for focus in [SearchResultsFocus.field, .list] {
+                #expect(SearchKeyboardPolicy.fieldAction(
+                    keyCode: keyCode, focus: focus, hasResults: true
+                ) == .passThrough, "keyCode \(keyCode) must stay in the field")
+            }
         }
     }
 }

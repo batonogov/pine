@@ -198,6 +198,22 @@ final class SidebarSearchTests: PineUITestCase {
             waitForExistence(selected, timeout: 5),
             "Down arrow in the search field should select a result row"
         )
+        let firstLabel = selected.label
+
+        // A second Down must *advance* the selection. Asserting only that
+        // something is selected is not enough: an earlier implementation
+        // moved SwiftUI focus that never actually took AppKit first
+        // responder, so every Down re-entered the list and pinned selection
+        // to row 0 while still looking correct.
+        searchField.typeKey(.downArrow, modifierFlags: [])
+
+        let advanced = sidebar.buttons.matching(
+            NSPredicate(format: "isSelected == true AND label != %@", firstLabel)
+        ).firstMatch
+        XCTAssertTrue(
+            waitForExistence(advanced, timeout: 5),
+            "A second Down should move selection to the next result"
+        )
     }
 
     /// Escape in the results list returns focus to the search field rather

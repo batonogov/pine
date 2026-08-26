@@ -92,7 +92,14 @@ struct SearchScrollRequest: Equatable, Sendable {
 
 // MARK: - Focus policy
 
-/// Which surface of the search panel owns keyboard focus.
+/// Which surface of the search panel owns the navigation keys.
+///
+/// This is deliberately *not* AppKit first responder. The toolbar search
+/// field keeps the caret the whole time, the way Spotlight and Safari's
+/// find bar behave, so the user can keep refining the query while arrowing
+/// through results. `list` means "the results list is driving the arrow
+/// keys", not "the list is first responder" — see
+/// ``SearchFieldHandoffMonitor`` for why first responder cannot be moved.
 enum SearchResultsFocus: Equatable, Sendable {
     case field
     case list
@@ -106,10 +113,25 @@ enum SearchEscapeOutcome: Equatable, Sendable {
     case dismissSearch
 }
 
+/// What a key pressed while the caret is in the search field should do.
+enum SearchFieldKeyAction: Equatable, Sendable {
+    /// Down with nothing selected yet: take the arrow keys into the list.
+    case enterList
+    case moveSelection(delta: Int)
+    case openSelected
+    /// Escape while the list drives the arrows: give them back to the field.
+    case stepOutOfList
+    /// Leave the event to the field, so typing and editing are untouched.
+    case passThrough
+}
+
 /// Pure keyboard policy for the search panel, extracted for testability.
 enum SearchKeyboardPolicy {
     enum KeyCode {
         static let downArrow: UInt16 = 125
+        static let upArrow: UInt16 = 126
+        static let returnKey: UInt16 = 36
+        static let escape: UInt16 = 53
     }
 
     static func escape(from focus: SearchResultsFocus) -> SearchEscapeOutcome {
@@ -121,11 +143,31 @@ enum SearchKeyboardPolicy {
         }
     }
 
-    /// Down arrow in the search field hands focus to the results list, but
-    /// only when there is something to select. Every other key stays in the
-    /// field so typing and text editing are untouched.
-    static func fieldHandsOffToList(keyCode: UInt16, hasResults: Bool) -> Bool {
-        keyCode == KeyCode.downArrow && hasResults
+    /// Maps a key pressed in the search field to a list action.
+    ///
+    /// Every key that is not explicitly claimed passes through, so typing,
+    /// caret movement, and text editing in the field keep working. With no
+    /// results nothing is claimed at all.
+    static func fieldAction(
+        keyCode: UInt16,
+        focus: SearchResultsFocus,
+        hasResults: Bool
+    ) -> SearchFieldKeyAction {
+        guard hasResults else { return .passThrough }
+        switch (keyCode, focus) {
+        case (KeyCode.downArrow, .field):
+            return .enterList
+        case (KeyCode.downArrow, .list):
+            return .moveSelection(delta: 1)
+        case (KeyCode.upArrow, .list):
+            return .moveSelection(delta: -1)
+        case (KeyCode.returnKey, .list):
+            return .openSelected
+        case (KeyCode.escape, .list):
+            return .stepOutOfList
+        default:
+            return .passThrough
+        }
     }
 }
 
@@ -217,6 +259,25 @@ final class SearchResultsNavigation {
 /// live only while results are on screen, gives Down arrow the hand-off the
 /// HIG expects without taking over the field's delegate.
 ///
+/// ## Why the caret stays in the field
+///
+/// An earlier version of this moved SwiftUI `@FocusState` to the results list
+/// on Down and let `.onKeyPress` handle the arrows and Escape. It does not
+/// work: setting `@FocusState` does not win AppKit first responder away from
+/// the toolbar's `NSSearchField`, which re-activates itself (see the note on
+/// `SidebarKeyboardFocusController.focusRetryDelays` about "the later AppKit
+/// activation used by an expanded search toolbar item"). Selection moved
+/// because the model was mutated directly, but the `.onKeyPress` handlers
+/// never ran, so Escape reached the field and dismissed the whole search —
+/// caught by `testEscapeFromResultsReturnsFocusToSearchField`.
+///
+/// So the caret deliberately stays in the field and this monitor owns the
+/// navigation keys, which is also how Spotlight and Safari's find bar behave:
+/// the query stays editable while the arrows drive the list. `.onKeyPress` on
+/// the list remains for the case where the user clicks into it and SwiftUI
+/// focus really is there; both paths funnel through
+/// ``SearchResultsNavigation``.
+///
 /// ## Why not the SwiftUI path
 ///
 /// This is deliberately AppKit, and the SwiftUI alternatives were considered
@@ -243,8 +304,9 @@ final class SearchResultsNavigation {
 /// field itself — an `onKeyPress`-style hook on `.searchable`, or a
 /// `searchable` variant that vends the underlying field. At that point the
 /// replacement must still route through ``SearchKeyboardPolicy``, which is
-/// where the hand-off rule actually lives and is unit-tested; only the event
-/// *plumbing* below is AppKit-specific.
+/// where the rules actually live and are unit-tested; only the event
+/// *plumbing* below is AppKit-specific. Moving first responder into the list
+/// is **not** a prerequisite and should not be attempted — see above.
 @MainActor
 final class SearchFieldHandoffMonitor {
     private var monitor: Any?
@@ -252,8 +314,12 @@ final class SearchFieldHandoffMonitor {
     /// Whether the results list currently has anything to select.
     var hasResults: (() -> Bool)?
 
-    /// Returns `true` when the list accepted focus, which consumes the event.
-    var onEnterList: (() -> Bool)?
+    /// Which surface currently owns the navigation keys.
+    var currentFocus: (() -> SearchResultsFocus)?
+
+    /// Performs the action. Returns `true` when it was consumed, which stops
+    /// the event from reaching the search field.
+    var onAction: ((SearchFieldKeyAction) -> Bool)?
 
     func start() {
         guard monitor == nil else { return }
@@ -276,13 +342,13 @@ final class SearchFieldHandoffMonitor {
             return false
         }
         guard Self.isSearchFieldFocused(in: event.window) else { return false }
-        guard SearchKeyboardPolicy.fieldHandsOffToList(
+        let action = SearchKeyboardPolicy.fieldAction(
             keyCode: event.keyCode,
+            focus: currentFocus?() ?? .field,
             hasResults: hasResults?() ?? false
-        ) else {
-            return false
-        }
-        return onEnterList?() ?? false
+        )
+        guard action != .passThrough else { return false }
+        return onAction?(action) ?? false
     }
 
     /// True when the window's first responder is the field editor of the
