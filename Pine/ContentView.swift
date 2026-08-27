@@ -106,8 +106,12 @@ struct ContentView: View {
                         }
                     } label: {
                         Image(systemName: "folder.badge.plus")
+                            .accessibilityHidden(true)
                     }
                     .help(Strings.openFolderTooltip)
+                    // A help tag maps to AXHelp, not AXTitle, so this button
+                    // reached VoiceOver as an unnamed one (#1527).
+                    .accessibilityLabel(Strings.openFolderTooltip)
                     .accessibilityIdentifier(
                         AccessibilityID.openFolderToolbarButton
                     )

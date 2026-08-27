@@ -85,8 +85,15 @@ struct StatusBarView: View {
                     Image(systemName: waitingCount > 0 ? "bell.badge.fill" : "bell")
                         .font(.system(size: LayoutMetrics.captionFontSize))
                         .foregroundStyle(waitingCount > 0 ? .orange : .secondary)
+                        .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
+                // The badge is the whole signal, and it is drawn only. How
+                // many agents are waiting has to be said, not shown (#1527).
+                .accessibilityLabel(Strings.agentAttentionTitle)
+                .accessibilityValue(
+                    Strings.agentInboxToolbarAttentionCount(waitingCount)
+                )
                 .accessibilityIdentifier(AccessibilityID.agentAttentionBell)
             }
 

@@ -3033,6 +3033,13 @@ enum Strings {
     static let a11yPaneDividerHint: String =
         String(localized: "a11y.paneDivider.hint", defaultValue: "Drag to resize the panes")
 
+    // Editor tab bar
+    static let a11yEditorTabOverflowLabel: String =
+        String(
+            localized: "a11y.editorTab.overflow.label",
+            defaultValue: "More tabs"
+        )
+
     // Minimap
     static let a11yMinimapLabel: String =
         String(localized: "a11y.minimap.label", defaultValue: "Minimap")

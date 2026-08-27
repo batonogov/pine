@@ -145,8 +145,13 @@ struct WelcomeView: View {
                             isSearchVisible.toggle()
                         } label: {
                             Image(systemName: "magnifyingglass")
+                                .accessibilityHidden(true)
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityLabel(Strings.welcomeSearchPlaceholder)
+                        .accessibilityAddTraits(
+                            isSearchVisible ? [.isSelected] : []
+                        )
                         .accessibilityIdentifier(AccessibilityID.welcomeSearchToggle)
                     }
                 }
