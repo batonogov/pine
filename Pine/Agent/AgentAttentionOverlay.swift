@@ -10,8 +10,9 @@
 import AppKit
 import SwiftUI
 
-/// Flat list of agent sessions that need the user's eye, presented inside a
-/// `CommandOverlayView`. Rows are sorted blocked → active → done; clicking a
+/// Flat list of agent sessions that need the user's eye, presented inside
+/// the command overlay panel (`CommandOverlayWindow`). Rows are sorted
+/// blocked → active → done; clicking a
 /// row navigates to its terminal tab (pane + tab selection) and dismisses the
 /// overlay. Idle sessions are hidden.
 ///
