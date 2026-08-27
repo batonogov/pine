@@ -134,7 +134,12 @@ run_validator() {
 }
 
 fresh_bundle="$TEST_ROOT/fresh.xcresult"
-start_time="$(date +%s)"
+# GNU date +%s rounds to the nearest second, so it can report a whole second
+# slightly ahead of the bundle mtime set milliseconds later, tripping the
+# freshness check this suite exercises. Bias the synthetic start one second
+# into the past; the stale-bundle case pins start_time 3600s ahead and keeps
+# failing closed (#1576).
+start_time="$(( $(date +%s) - 1 ))"
 mkdir "$fresh_bundle"
 
 run_validator 0 "successful run reports every result category" \
