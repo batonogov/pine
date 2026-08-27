@@ -12,10 +12,15 @@ import Testing
 @Suite("Window Lifecycle Tests", .serialized)
 @MainActor
 struct WindowLifecycleTests {
-    private func makeRegistry() -> ProjectRegistry {
-        ProjectRegistry(agentTasks: AgentTaskRegistry(
-            persistence: WindowLifecycleAgentTaskStore()
-        ))
+    /// Tests that persist sessions must pass a scoped suite; the `.standard`
+    /// default is only for tests that write no defaults at all (#1554).
+    private func makeRegistry(defaults: UserDefaults = .standard) -> ProjectRegistry {
+        ProjectRegistry(
+            defaults: defaults,
+            agentTasks: AgentTaskRegistry(
+                persistence: WindowLifecycleAgentTaskStore()
+            )
+        )
     }
 
     private func settle() async {
@@ -41,6 +46,16 @@ struct WindowLifecycleTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    private let suiteName = "PineTests.WindowLifecycle.\(UUID().uuidString)"
+
+    private func makeDefaults() throws -> UserDefaults {
+        try #require(UserDefaults(suiteName: suiteName))
+    }
+
+    private func cleanupDefaults() {
+        UserDefaults().removePersistentDomain(forName: suiteName)
+    }
+
     private func updateContent(
         _ content: String,
         in project: ProjectManager
@@ -54,8 +69,10 @@ struct WindowLifecycleTests {
     @Test func closingLastProjectTriggersShowWelcome() throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let registry = makeRegistry()
+        let registry = makeRegistry(defaults: defaults)
         _ = registry.projectManager(for: dir)
 
         let delegate = AppDelegate()
@@ -77,8 +94,10 @@ struct WindowLifecycleTests {
         let dir1 = try makeTempDirectory()
         let dir2 = try makeTempDirectory()
         defer { cleanup(dir1); cleanup(dir2) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let registry = makeRegistry()
+        let registry = makeRegistry(defaults: defaults)
         _ = registry.projectManager(for: dir1)
         _ = registry.projectManager(for: dir2)
 
@@ -101,8 +120,10 @@ struct WindowLifecycleTests {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let registry = makeRegistry()
+        let registry = makeRegistry(defaults: defaults)
         let pm = try #require(registry.projectManager(for: dir))
         pm.primaryTabManager.openTab(url: file)
 
@@ -115,7 +136,7 @@ struct WindowLifecycleTests {
         #expect(registry.backgroundProjects.contains(canonical))
 
         // But session was saved BEFORE close — it must be loadable
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         #expect(session != nil)
         #expect(session?.existingFileURLs.count == 1)
         #expect(session?.existingFileURLs.first == file)
@@ -127,11 +148,13 @@ struct WindowLifecycleTests {
         let dir1 = try makeTempDirectory()
         let dir2 = try makeTempDirectory()
         defer { cleanup(dir1); cleanup(dir2) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         let file1 = try makeTempFile(in: dir1, name: "a.swift")
         let file2 = try makeTempFile(in: dir2, name: "b.swift")
 
-        let registry = makeRegistry()
+        let registry = makeRegistry(defaults: defaults)
         let pm1 = try #require(registry.projectManager(for: dir1))
         let pm2 = try #require(registry.projectManager(for: dir2))
         pm1.primaryTabManager.openTab(url: file1)
@@ -144,8 +167,8 @@ struct WindowLifecycleTests {
         delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
 
         // Both sessions saved
-        let session1 = SessionState.load(for: dir1.resolvingSymlinksInPath())
-        let session2 = SessionState.load(for: dir2.resolvingSymlinksInPath())
+        let session1 = SessionState.load(for: dir1.resolvingSymlinksInPath(), defaults: defaults)
+        let session2 = SessionState.load(for: dir2.resolvingSymlinksInPath(), defaults: defaults)
         #expect(session1?.existingFileURLs.count == 1)
         #expect(session2?.existingFileURLs.count == 1)
     }

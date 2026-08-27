@@ -364,7 +364,7 @@ final class ProjectManager {
     /// fallback used by project-level commands while no editor pane exists.
     let primaryTabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
-    let quickOpenProvider = QuickOpenProvider()
+    let quickOpenProvider: QuickOpenProvider
     let progress = ProgressTracker()
     let contextFileWriter: ContextFileWriter
     /// Language Server Protocol manager — owns per-language server processes
@@ -1686,6 +1686,7 @@ final class ProjectManager {
             ContextPresentationIdentity(epoch: 1)
     ) {
         self.sessionDefaults = sessionDefaults
+        self.quickOpenProvider = QuickOpenProvider(defaults: sessionDefaults)
         self.workspace = WorkspaceManager(
             filesystemValidationSeam: workspaceFilesystemValidationSeam
         )
