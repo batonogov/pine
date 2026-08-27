@@ -1607,6 +1607,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
         #endif
 
+        FocusDiagnosticsProbe.startIfRequested()
         NSWindow.allowsAutomaticWindowTabbing = false
         bindQuickTerminalAgentRouting()
         agentNotifications.start()
