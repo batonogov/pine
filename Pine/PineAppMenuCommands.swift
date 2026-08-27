@@ -60,6 +60,19 @@ struct PineAppMenuCommands: Commands {
     private var nativeState: NativeMenuCommandState {
         NativeMenuCommandState(projectManager: focusedProject)
     }
+    /// Whether ⌘G / ⇧⌘G has any addressee in the focused window (#1551):
+    /// the editor's native find bar (active editor tab — the pre-#1551 gate)
+    /// or a terminal search bar the window routing policy can address, which
+    /// is what keeps the items alive in a terminal-only window.
+    private var canStepFind: Bool {
+        guard let project = focusedProject else { return false }
+        return FindStepTargetPolicy.isCommandEnabled(
+            activePaneID: project.paneManager.activePaneID,
+            visibleTerminalSearchPaneIDs:
+                project.paneManager.visibleTerminalSearchPaneIDs,
+            hasActiveEditorTab: project.activeTabManager.activeTab != nil
+        )
+    }
     /// What the focused window can do with its projects and agents (#1525).
     private var windowAvailability: ProjectWindowCommandAvailability {
         ProjectWindowCommandAvailability(
@@ -466,7 +479,7 @@ struct PineAppMenuCommands: Commands {
             .effectiveKeyboardShortcut(
                 keybindings.effectiveChord(for: .findNext)
             )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
+            .disabled(!canStepFind)
 
             Button {
                 NotificationCenter.default.post(name: .findPrevious, object: nil)
@@ -476,7 +489,7 @@ struct PineAppMenuCommands: Commands {
             .effectiveKeyboardShortcut(
                 keybindings.effectiveChord(for: .findPrevious)
             )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
+            .disabled(!canStepFind)
 
             Button {
                 NotificationCenter.default.post(name: .useSelectionForFind, object: nil)

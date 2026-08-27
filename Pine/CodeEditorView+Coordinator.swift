@@ -1014,12 +1014,12 @@ extension CodeEditorView {
         }
 
         @objc func handleFindNext(_ notification: Notification) {
-            guard shouldHandleCommand(notification) else { return }
+            guard shouldHandleCommand(notification), canStepFind() else { return }
             handleFindNext()
         }
 
         @objc func handleFindPrevious(_ notification: Notification) {
-            guard shouldHandleCommand(notification) else { return }
+            guard shouldHandleCommand(notification), canStepFind() else { return }
             handleFindPrevious()
         }
 
@@ -1033,6 +1033,14 @@ extension CodeEditorView {
         func handleFindNext() { performFindAction(.nextMatch) }
         func handleFindPrevious() { performFindAction(.previousMatch) }
         func handleUseSelectionForFind() { performFindAction(.setSearchString) }
+
+        /// Whether the editor's find bar may take a ⌘G / ⇧⌘G step (#1551).
+        /// Find stepping is window-routed: while `FindStepTargetPolicy`
+        /// resolves it to a visible terminal search bar, the editor must
+        /// yield so the command is not double-stepped. Internal for testability.
+        func canStepFind() -> Bool {
+            parent.canHandleFindStepping?() ?? true
+        }
 
         // MARK: - Send to Terminal (issue #311)
 

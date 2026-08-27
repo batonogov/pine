@@ -41,6 +41,11 @@ struct CodeEditorView: NSViewRepresentable {
     /// AppKit bridge. Multiple editor panes share one key NSWindow, so window
     /// focus alone cannot identify the intended coordinator.
     var canHandleCommands: (() -> Bool)? = nil
+    /// Window-wide ownership of ⌘G / ⇧⌘G (#1551). Find stepping is routed by
+    /// `FindStepTargetPolicy`: while it resolves to a visible terminal search
+    /// bar, the editor's native find bar must not also step. `nil` keeps the
+    /// editor eligible — previews and tests that do not model panes.
+    var canHandleFindStepping: (() -> Bool)? = nil
     var lineDiffs: [GitLineDiff] = []
     /// Monotonic counter bumped after every `refreshLineDiffs` completion.
     /// Forces SwiftUI to call `updateNSView` even when the `[GitLineDiff]`
