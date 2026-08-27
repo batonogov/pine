@@ -94,11 +94,23 @@ struct ProductionViewUsageGuardTests {
 
     // MARK: - The predicate on synthetic sources
 
+    /// Routes every fixture through the same stripper as the real tree.
+    ///
+    /// Handing raw source straight to `unreferencedViews` makes comment and
+    /// string-literal mentions count as references — the gap behind the five
+    /// synthetic failures in CI #1584 — so the fixtures below never bypass
+    /// the step `strippedProductionSources()` performs for the tree.
+    private static func stripped(
+        _ sources: [String: String]
+    ) -> [String: String] {
+        sources.mapValues(stripped)
+    }
+
     @Test("A view no production file references is flagged")
     func deadViewIsFlagged() throws {
-        let sources = [
+        let sources = Self.stripped([
             "Pine/Dead.swift": "struct DeadView: View {\n    var body: some View {\n        Text(verbatim: \"x\")\n    }\n}\n",
-        ]
+        ])
 
         let flagged = try Self.unreferencedViews(in: sources)
 
@@ -110,7 +122,7 @@ struct ProductionViewUsageGuardTests {
         // The exact `CommandOverlayView` trap: its own header comment and
         // its declaration were the only occurrences in the file, which a raw
         // text search reads as usage.
-        let sources = [
+        let sources = Self.stripped([
             "Pine/Dead.swift": """
             //  DeadView.swift
             /// A view that is only mentioned, never used.
@@ -118,7 +130,7 @@ struct ProductionViewUsageGuardTests {
                 var body: some View { Text(verbatim: "x") }
             }
             """,
-        ]
+        ])
 
         let flagged = try Self.unreferencedViews(in: sources)
 
@@ -127,10 +139,10 @@ struct ProductionViewUsageGuardTests {
 
     @Test("A string literal naming the view is not a reference")
     func stringLiteralMentionDoesNotCount() throws {
-        let sources = [
+        let sources = Self.stripped([
             "Pine/Dead.swift": "struct DeadView: View {\n    var body: some View { Text(verbatim: \"x\") }\n}\n",
             "Pine/Other.swift": "let label = \"DeadView\"\n",
-        ]
+        ])
 
         let flagged = try Self.unreferencedViews(in: sources)
 
@@ -139,10 +151,14 @@ struct ProductionViewUsageGuardTests {
 
     @Test("A reference from another production file counts")
     func crossFileReferenceCounts() throws {
-        let sources = [
-            "Pine/Dead.swift": "struct AliveView: View {\n    var body: some View { Text(verbatim: \"x\") }\n}\n",
-            "Pine/Parent.swift": "struct Parent: View {\n    var body: some View { AliveView() }\n}\n",
-        ]
+        // The holder is an enum, not a View, so the fixture declares
+        // exactly one view and the assertion isolates cross-file counting.
+        // (A `Parent: View` holder would itself be unreferenced and land in
+        // the result — the expectation mistake CI #1584 exposed.)
+        let sources = Self.stripped([
+            "Pine/Alive.swift": "struct AliveView: View {\n    var body: some View { Text(verbatim: \"x\") }\n}\n",
+            "Pine/Host.swift": "enum Host {\n    static func make() -> AliveView { AliveView() }\n}\n",
+        ])
 
         let flagged = try Self.unreferencedViews(in: sources)
 
@@ -151,51 +167,55 @@ struct ProductionViewUsageGuardTests {
 
     @Test("Use in the declaring file's own body counts")
     func sameFileUsageCounts() throws {
-        let sources = [
+        // Same isolation: the consumer is an enum, not a View, so the only
+        // declared view is the one used beside its declaration.
+        let sources = Self.stripped([
             "Pine/Parent.swift": """
-            struct Parent: View {
-                var body: some View { ChildView() }
-            }
-
             struct ChildView: View {
                 var body: some View { Text(verbatim: "x") }
             }
+
+            enum PreviewFactory {
+                static func make() -> ChildView { ChildView() }
+            }
             """,
-        ]
+        ])
 
         let flagged = try Self.unreferencedViews(in: sources)
 
         #expect(flagged.map(\.name) == [])
     }
 
-    @Test("Private views are file-scoped and exempt")
+    @Test("Private views are exempt where public twins are flagged")
     func privateViewsAreExempt() throws {
-        let sources = [
+        // One shape, two access levels: only the public twin may appear in
+        // the result, so the exemption cannot pass vacuously.
+        let sources = Self.stripped([
             "Pine/Island.swift": """
-            struct Parent: View {
-                var body: some View { Text(verbatim: "x") }
-            }
-
             private struct HelperView: View {
                 var body: some View { Text(verbatim: "x") }
             }
+
+            struct PublicDeadView: View {
+                var body: some View { Text(verbatim: "x") }
+            }
             """,
-        ]
+        ])
 
         let flagged = try Self.unreferencedViews(in: sources)
 
-        #expect(flagged.map(\.name) == [])
+        #expect(flagged.map(\.name) == ["PublicDeadView"])
     }
 
     @Test("ViewModifier conformance is not a View")
     func viewModifierIsNotAView() throws {
-        let sources = [
+        let sources = Self.stripped([
             "Pine/Modifier.swift": """
             struct UnusedModifier: ViewModifier {
                 func body(content: Content) -> some View { content }
             }
             """,
-        ]
+        ])
 
         let flagged = try Self.unreferencedViews(in: sources)
 
@@ -207,13 +227,13 @@ struct ProductionViewUsageGuardTests {
         // A non-View container whose generic parameter happens to require
         // `View` must not be swept into the check by the word "View"
         // appearing in its angle brackets.
-        let sources = [
+        let sources = Self.stripped([
             "Pine/Container.swift": """
             struct UnusedContainer<Content: View>: ViewModifier {
                 func body(content: Content) -> some View { content }
             }
             """,
-        ]
+        ])
 
         let flagged = try Self.unreferencedViews(in: sources)
 
@@ -364,6 +384,10 @@ struct ProductionViewUsageGuardTests {
     }
 
     /// Declarations nothing in production references (allowlist aside).
+    ///
+    /// The input must already be stripped — `strippedProductionSources()` for
+    /// the real tree, `stripped(_:)` for fixtures. On raw source, comment and
+    /// string-literal mentions count as references (CI #1584).
     private static func unreferencedViews(
         in strippedSources: [String: String]
     ) throws -> [ViewDeclaration] {
