@@ -219,38 +219,6 @@ struct PineAnimationReduceMotionTests {
         #expect(PineMotionPreference.reduceMotion == ambient)
     }
 
-    // MARK: - Overlay presentation
-
-    @Test("Overlay presentation drops its scale component under Reduce Motion")
-    func overlayPresentationDropsScale() {
-        let reduced = PineAnimation.OverlayPresentation.resolve(
-            reduceMotion: true
-        )
-        #expect(reduced.scale == nil)
-        #expect(!reduced.usesGeometry)
-        // The cross-fade is what replaces the scale, so it must remain.
-        #expect(reduced.usesOpacity)
-        #expect(reduced.animation == nil)
-
-        let full = PineAnimation.OverlayPresentation.resolve(
-            reduceMotion: false
-        )
-        #expect(full.scale == PineAnimation.overlayScale)
-        #expect(full.usesGeometry)
-        #expect(full.usesOpacity)
-        #expect(full.animation == PineAnimation.overlayCurve)
-    }
-
-    @Test("The two overlay presentations are distinguishable")
-    func overlayPresentationsDiffer() {
-        #expect(
-            PineAnimation.OverlayPresentation.resolve(reduceMotion: true)
-                != PineAnimation.OverlayPresentation.resolve(
-                    reduceMotion: false
-                )
-        )
-    }
-
     // MARK: - The `.center` sidebar policy must be untouched
 
     @Test("Sidebar keyboard navigation is still unanimated and nearest-edge")

@@ -105,7 +105,8 @@ enum PineAnimation {
     /// Fast easeInOut for immediate UI responses (tab switch, sidebar toggle, indicators).
     static let quickCurve: Animation = .easeInOut(duration: 0.2)
 
-    /// Spring animation for overlays (Quick Open, Go to Line, branch switcher).
+    /// Spring animation for overlay-style presentations (global tab
+    /// switcher, toast).
     static let overlayCurve: Animation = .spring(response: 0.3, dampingFraction: 0.9)
 
     /// Standard content transition for views that swap between states.
@@ -115,9 +116,6 @@ enum PineAnimation {
     /// cross-fade. Never a spring — a spring overshoots, and overshoot is
     /// movement.
     static let reducedCrossFade: Animation = .easeInOut(duration: 0.15)
-
-    /// How far an overlay scales up from while it appears.
-    static let overlayScale: CGFloat = 0.96
 
     // MARK: - Policy
 
@@ -194,43 +192,4 @@ enum PineAnimation {
     /// Opacity fade for appearing/disappearing content. Safe under Reduce
     /// Motion at any time: nothing moves.
     static let fadeTransition: AnyTransition = .opacity
-
-    // MARK: - Overlay presentation
-
-    /// The resolved description of how a command overlay appears.
-    ///
-    /// Modelled as an `Equatable` value rather than an `AnyTransition` (which
-    /// cannot be compared) so a test can assert that the scale component is
-    /// actually gone, and so the production transition below is built from the
-    /// same decision the test inspects.
-    struct OverlayPresentation: Equatable, Sendable {
-        /// The cross-fade component. Always present — it is what replaces the
-        /// scale under Reduce Motion.
-        let usesOpacity: Bool
-        /// The scale the overlay grows from, or `nil` when geometry is barred.
-        let scale: CGFloat?
-        /// The curve driving the presentation, or `nil` for an instant swap.
-        let animation: Animation?
-
-        /// `true` when the presentation still moves something on screen.
-        var usesGeometry: Bool { scale != nil }
-
-        static func resolve(reduceMotion: Bool) -> Self {
-            Self(
-                usesOpacity: true,
-                scale: reduceMotion ? nil : PineAnimation.overlayScale,
-                animation: PineAnimation.overlay(reduceMotion: reduceMotion)
-            )
-        }
-    }
-
-    /// Builds the SwiftUI transition described by `presentation`.
-    static func overlayTransition(
-        _ presentation: OverlayPresentation
-    ) -> AnyTransition {
-        guard let scale = presentation.scale else {
-            return .opacity
-        }
-        return .opacity.combined(with: .scale(scale: scale))
-    }
 }

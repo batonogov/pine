@@ -19,7 +19,7 @@ import Testing
 /// *of this suite* never nest inside one another. It says nothing about the
 /// other hosted suites that drain the same main runloop without being
 /// serialized against this one (`CommandPaletteHostedInteractionTests:303`,
-/// `CommandOverlayViewTests:221`, `QuickTerminalContentHostedTests:105`,
+/// `GoToLineViewAccessibilityTests:45`, `QuickTerminalContentHostedTests:105`,
 /// `GlobalTabSwitcherOverlayHostedTests:400`). `settle` itself sleeps and
 /// leaves the main actor free, so the waiting is not what needs serializing.
 ///

@@ -1,8 +1,13 @@
 //
-//  CommandOverlayViewTests.swift
+//  GoToLineViewAccessibilityTests.swift
 //  PineTests
 //
-//  Tests for CommandOverlayView dismissal logic and GoToLineView accessibility.
+//  Tests for GoToLineView accessibility exposure and input parsing.
+//
+//  Previously `CommandOverlayViewTests`, which also covered the dismissal
+//  logic of `CommandOverlayView` — a type that shipped with no production
+//  call site and was removed (#1561). The GoToLineView coverage below was
+//  always independent of it and stays.
 //
 
 import AppKit
@@ -12,113 +17,7 @@ import Testing
 @testable import Pine
 
 @MainActor
-struct CommandOverlayViewTests {
-
-    // MARK: - CommandOverlayView
-
-    @Test("CommandOverlayView sets isPresented to false on backdrop tap")
-    func backdropDismisses() {
-        var isPresented = true
-        let binding = Binding<Bool>(
-            get: { isPresented },
-            set: { isPresented = $0 }
-        )
-        _ = CommandOverlayView(isPresented: binding) {
-            Text("test")
-        }
-        // The overlay is constructed — actual tap simulation requires UI testing.
-        // We verify the binding mechanism works correctly here.
-        binding.wrappedValue = false
-        #expect(isPresented == false)
-    }
-
-    @Test("CommandOverlayView dismissal clears binding and runs cleanup once")
-    func dismissalIsUnifiedAndOneShot() {
-        var isPresented = true
-        var cleanupCount = 0
-        let binding = Binding<Bool>(
-            get: { isPresented },
-            set: { isPresented = $0 }
-        )
-        let overlay = CommandOverlayView(
-            isPresented: binding,
-            onDismiss: { cleanupCount += 1 },
-            content: { Text("test") }
-        )
-
-        overlay.dismiss()
-        #expect(!isPresented)
-        #expect(cleanupCount == 1)
-
-        // An Escape event that bubbles after the focused child already
-        // dismissed must not restore focus a second time.
-        overlay.dismiss()
-        #expect(cleanupCount == 1)
-    }
-
-    // MARK: - CommandOverlayView Reduce Motion (#1534)
-
-    @MainActor
-    private final class MotionRecorder {
-        var presentations: [PineAnimation.OverlayPresentation] = []
-
-        func record(_ presentation: PineAnimation.OverlayPresentation) {
-            presentations.append(presentation)
-        }
-    }
-
-    @Test(
-        "Hosted overlay presents without geometry under Reduce Motion",
-        arguments: [false, true]
-    )
-    func overlayPresentationFollowsMotionPreference(
-        _ reduceMotion: Bool
-    ) throws {
-        let recorder = MotionRecorder()
-        let hosted = NSHostingView(
-            rootView: CommandOverlayView(
-                isPresented: .constant(true),
-                reduceMotionOverride: reduceMotion,
-                observeMotion: { recorder.record($0) },
-                content: { Text(verbatim: "content") }
-            )
-        )
-        hosted.frame = NSRect(x: 0, y: 0, width: 320, height: 200)
-        hosted.layoutSubtreeIfNeeded()
-        drainMainRunLoop()
-        hosted.layoutSubtreeIfNeeded()
-
-        let presentation = try #require(recorder.presentations.last)
-        #expect(presentation.usesGeometry == !reduceMotion)
-        #expect(presentation.scale == (reduceMotion ? nil : PineAnimation.overlayScale))
-        #expect(presentation.animation == (reduceMotion ? nil : PineAnimation.overlayCurve))
-        // The cross-fade replaces the scale rather than disappearing with it.
-        #expect(presentation.usesOpacity)
-        withExtendedLifetime(hosted) {}
-    }
-
-    @Test(
-        "Overlay dismissal animates only when motion is allowed",
-        arguments: [false, true]
-    )
-    func dismissalAnimationFollowsMotionPreference(_ reduceMotion: Bool) {
-        var isPresented = true
-        let overlay = CommandOverlayView(
-            isPresented: Binding(
-                get: { isPresented },
-                set: { isPresented = $0 }
-            ),
-            reduceMotionOverride: reduceMotion,
-            content: { Text(verbatim: "content") }
-        )
-
-        #expect(
-            overlay.dismissalAnimation
-                == (reduceMotion ? nil : PineAnimation.overlayCurve)
-        )
-        overlay.dismiss()
-        #expect(!isPresented)
-    }
+struct GoToLineViewAccessibilityTests {
 
     // MARK: - GoToLineView accessibility
 

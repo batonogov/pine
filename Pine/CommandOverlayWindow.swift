@@ -7,14 +7,18 @@
 //  window so hosted SwiftUI views get a complete accessibility tree (#975).
 //
 //  Why a window and not SwiftUI `.overlay`:
-//    PR #986 migrated the navigation flows to `CommandOverlayView` (a SwiftUI
-//    ZStack overlay) but had to revert because the overlay's inner TextFields
+//    PR #986 briefly presented the navigation flows through a SwiftUI ZStack
+//    overlay and had to back it out because the overlay's inner TextFields
 //    were not reliably exposed to XCUITest / VoiceOver on macOS 26 — a ZStack
 //    overlay lives in the same accessibility tree as the document and SwiftUI
-//    collapsed/obscured the hosted fields under `.isModal`. A real `NSPanel`
-//    (like `.sheet` and `NSPopover`) creates its own accessibility subtree, so
-//    role-based queries (`app.textFields[id]`, VoiceOver navigation) resolve
-//    the hosted content reliably while remaining non-document-modal.
+//    collapsed/obscured the hosted fields under `.isModal`. This panel
+//    replaced that container for good; the SwiftUI type itself was removed
+//    in #1561 after shipping for several releases with no production call
+//    site. A real `NSPanel` (like `.sheet` and `NSPopover`) creates its own
+//    accessibility subtree, so role-based queries (`app.textFields[id]`,
+//    VoiceOver navigation) resolve the hosted content reliably while
+//    remaining non-document-modal. The visual chrome the old container
+//    carried lives on in `ContentWrapper` below.
 //
 
 import AppKit
