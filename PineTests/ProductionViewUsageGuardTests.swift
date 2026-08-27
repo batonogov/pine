@@ -58,13 +58,17 @@ struct ProductionViewUsageGuardTests {
             .filter { Self.allowedUnusedViews[$0.name] == nil }
             .map { "\($0.name) (\($0.path))" }
 
-        #expect(
-            offenders.isEmpty,
-            "Production views with no production reference: "
+        // Built as a `Comment` from a plain String: a concatenated value
+        // does not convert to the `Comment?` parameter the way a string
+        // literal does, and the long chain in one argument list does not
+        // type-check in reasonable time.
+        let message = Comment(
+            rawValue: "Production views with no production reference: "
                 + offenders.joined(separator: ", ")
                 + ". Delete the view, wire it in, or — if it is deliberately "
                 + "test-only — add it to allowedUnusedViews with a reason."
         )
+        #expect(offenders.isEmpty, message)
     }
 
     @Test("Every allowlist entry names a declared production view")
@@ -76,14 +80,16 @@ struct ProductionViewUsageGuardTests {
             .filter { !declared.contains($0) }
             .sorted()
 
-        #expect(
-            stale.isEmpty,
-            "allowedUnusedViews names views that no longer exist: "
+        // Same shape as above: a `Comment` from a plain String, with the
+        // ternary hoisted out so the argument stays cheap to type-check.
+        let suffix = stale.count == 1 ? "y" : "ies"
+        let message = Comment(
+            rawValue: "allowedUnusedViews names views that no longer exist: "
                 + stale.joined(separator: ", ")
-                + ". Remove the stale entr"
-                + (stale.count == 1 ? "y" : "ies")
+                + ". Remove the stale entr" + suffix
                 + " so the list keeps meaning something."
         )
+        #expect(stale.isEmpty, message)
     }
 
     // MARK: - The predicate on synthetic sources
@@ -232,8 +238,7 @@ struct ProductionViewUsageGuardTests {
         )
         #expect(
             Self.referenceCount(of: "Flag", in: stripped, upTo: 1) == 1,
-            "Code after a same-line string literal must survive: "
-                + stripped.debugDescription
+            "Code after a same-line string literal must survive: \(stripped.debugDescription)"
         )
     }
 
@@ -292,7 +297,8 @@ struct ProductionViewUsageGuardTests {
                 range: NSRange(location: 0, length: nsText.length)
             )
             for match in matches {
-                guard match.numberOfCaptures == 2 else { continue }
+                // Full match + the two capture groups (modifiers, name).
+                guard match.numberOfRanges >= 3 else { continue }
                 let modifiers = nsText.substring(with: match.range(at: 1))
                 let nameRange = match.range(at: 2)
                 let name = nsText.substring(with: nameRange)
@@ -493,9 +499,9 @@ struct ProductionViewUsageGuardTests {
                 let start = index
                 index += 2
                 while index < characters.count,
-                      !(characters[index] == "\"",
-                        index + 1 < characters.count,
-                        characters[index + 1] == "#") {
+                      !(characters[index] == "\""
+                          && index + 1 < characters.count
+                          && characters[index + 1] == "#") {
                     index += 1
                 }
                 index = min(index + 2, characters.count)
