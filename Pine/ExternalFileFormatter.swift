@@ -329,10 +329,15 @@ nonisolated private func runSpawnedProcess(
             reapIfExited(childPID, status: &processStatus)
             if processStatus == nil {
                 let reapingPID = childPID
+                // The reaping work item runs on a raw global queue, which
+                // installs no pool of its own — wrap it for contract parity
+                // with every other background work item (#1548).
                 DispatchQueue.global(qos: .utility).async {
-                    var status: Int32 = 0
-                    while Darwin.waitpid(reapingPID, &status, 0) < 0,
-                          errno == EINTR {}
+                    autoreleasepool {
+                        var status: Int32 = 0
+                        while Darwin.waitpid(reapingPID, &status, 0) < 0,
+                              errno == EINTR {}
+                    }
                 }
             }
             break

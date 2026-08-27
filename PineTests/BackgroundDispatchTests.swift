@@ -289,6 +289,82 @@ struct BackgroundDispatchTests {
         }
         #expect(deallocations.value == 8)
     }
+
+    // MARK: - Autorelease pool hygiene on other dispatch surfaces (#1548)
+
+    // `runOnBackground` is Pine's background-work choke point, but not the
+    // only dispatch surface. Custom serial queues default to
+    // `autoreleaseFrequency: .inherit`, which on GCD's pool-less worker
+    // threads means no pool at all — the same shape as a raw
+    // `DispatchQueue.global().async`. The surfaces fixed in #1548 declare
+    // `.workItem` (the `pine.fswatcher`, `com.pine.tool-resolver-cache`,
+    // `com.pine.lsp-transport`, `com.pine.lsp-transport.lifecycle`, and
+    // `com.pine.agent-history` queues) or wrap
+    // their bodies in `autoreleasepool` (the remaining raw global-queue work
+    // items). The production queues are `private`, so these tests mirror the
+    // configuration they now declare. Note what `.workItem` covers per
+    // libdispatch: asynchronously drained work items — including contended
+    // `sync` that turns into an async waiter hand-off. The uncontended
+    // `queue.sync` fast path runs on the caller's thread, where pool
+    // ownership stays with the caller. There is deliberately no test
+    // asserting the *absence* of a drain on an unpooled surface: a worker
+    // thread being torn down can drain the fallback pool and flip the result.
+
+    @Test("A .workItem queue drains autoreleased objects when the work item returns")
+    func workItemQueueDrainsAutoreleasedObjectsPerWorkItem() {
+        let queue = DispatchQueue(
+            label: "com.pine.tests.autorelease-workitem",
+            qos: .utility,
+            autoreleaseFrequency: .workItem
+        )
+        let deallocations = AtomicCounter()
+        queue.async {
+            let probe = AutoreleaseProbe(deallocations: deallocations)
+            _ = Unmanaged.passRetained(probe).autorelease()
+        }
+        // Barrier: returns only after the enqueued item has fully drained.
+        queue.sync {}
+        #expect(deallocations.value == 1)
+    }
+
+    @Test("A .workItem queue drains per work item, not once at thread teardown")
+    func workItemQueueGivesEachWorkItemItsOwnPool() {
+        let queue = DispatchQueue(
+            label: "com.pine.tests.autorelease-workitem-serial",
+            qos: .utility,
+            autoreleaseFrequency: .workItem
+        )
+        let deallocations = AtomicCounter()
+        for _ in 0..<8 {
+            queue.async {
+                let probe = AutoreleaseProbe(deallocations: deallocations)
+                _ = Unmanaged.passRetained(probe).autorelease()
+            }
+        }
+        // Barrier: with a single shared fallback pool the probes would still
+        // be alive here (count 0) — only a per-item drain reaches 8.
+        queue.sync {}
+        #expect(deallocations.value == 8)
+    }
+
+    @Test("A raw global-queue work item drains when its body wraps in autoreleasepool")
+    func wrappedGlobalQueueWorkItemDrainsItsPool() {
+        // Same shape as the wrapped sites in #1548 (GitFetcher's parallel
+        // fetches, the zombie reaper in ExternalFileFormatter): the body is
+        // wrapped, the group handshake stays outside the pool.
+        let deallocations = AtomicCounter()
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            autoreleasepool {
+                let probe = AutoreleaseProbe(deallocations: deallocations)
+                _ = Unmanaged.passRetained(probe).autorelease()
+            }
+            group.leave()
+        }
+        group.wait()
+        #expect(deallocations.value == 1)
+    }
 }
 
 // MARK: - Test helpers

@@ -371,20 +371,20 @@ nonisolated enum GitCommand {
             if Task.isCancelled {
                 cancellationToken.cancel()
             }
-            return await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: .utility).async {
-                    continuation.resume(
-                        returning: runExecutable(
-                            executableURL,
-                            arguments: arguments,
-                            at: directory,
-                            timeout: timeout,
-                            captureLimit: captureLimit,
-                            cancellationToken: cancellationToken,
-                            systemCalls: systemCalls
-                        )
-                    )
-                }
+            // `runOnBackground` wraps the process I/O in an autorelease pool
+            // (#1509) — the raw global-queue dispatch it replaces had none
+            // (#1548) and let git output temporaries pile up on the worker
+            // thread until it was torn down.
+            return await runOnBackground(qos: .utility) {
+                runExecutable(
+                    executableURL,
+                    arguments: arguments,
+                    at: directory,
+                    timeout: timeout,
+                    captureLimit: captureLimit,
+                    cancellationToken: cancellationToken,
+                    systemCalls: systemCalls
+                )
             }
         } onCancel: {
             cancellationToken.cancel()

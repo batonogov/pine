@@ -38,14 +38,14 @@ nonisolated private enum UserTaskCompletionWaiter {
         until deadline: DispatchTime
     ) async -> Bool {
         guard !handles.isEmpty else { return true }
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                var allCompleted = true
-                for handle in handles where !handle.wait(until: deadline) {
-                    allCompleted = false
-                }
-                continuation.resume(returning: allCompleted)
+        // `runOnBackground` gives the blocking waits an autorelease pool
+        // (#1509) — the raw global-queue work item it replaces had none (#1548).
+        return await runOnBackground(qos: .userInitiated) {
+            var allCompleted = true
+            for handle in handles where !handle.wait(until: deadline) {
+                allCompleted = false
             }
+            return allCompleted
         }
     }
 }
