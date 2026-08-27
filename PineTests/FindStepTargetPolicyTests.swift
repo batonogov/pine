@@ -9,6 +9,7 @@
 //  pre-#1551 editor behavior.
 //
 
+import SwiftUI
 import Testing
 @testable import Pine
 
