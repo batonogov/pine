@@ -58,7 +58,7 @@ done < <(grep -rhoE 'uses: [^[:space:]]+@[0-9a-f]{40}' .github/workflows/*.yml \
     | sed -E 's/uses: ([^[:space:]]+)@([0-9a-f]{40})/\1 \2/' | sort -u)
 
 say "SwiftLint (.github/workflows/ci.yml)"
-grep -E 'SWIFTLINT_VERSION|SWIFTLINT_SHA256' .github/workflows/ci.yml || true
+grep -E 'SWIFTLINT_VERSION|SWIFTLINT_SHA256|SWIFTLINT_MACOS_SHA256' .github/workflows/ci.yml || true
 
 say "SPM packages (Package.resolved)"
 resolved="Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"

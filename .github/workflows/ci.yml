@@ -52,7 +52,19 @@ jobs:
           sudo mv swiftlint /usr/local/bin/
 
       - name: Run SwiftLint
-        run: swiftlint --strict
+        run: |
+          set -o pipefail
+          swiftlint --strict 2>&1 | tee "$RUNNER_TEMP/swiftlint-lint.log"
+          # statement_position is Linux-skipped by design and enforced by the macOS SourceKit lane (#1546); any OTHER skipped rule is new drift — add it to that lane's only_rules first.
+          skipped_rules="$(
+            grep "Skipping enabled rule" "$RUNNER_TEMP/swiftlint-lint.log" |
+              sed -E "s/.*Skipping enabled rule '([^']+)'.*/\1/" |
+              grep -vxF statement_position || true
+          )"
+          if [ -n "$skipped_rules" ]; then
+            echo "::error::SourceKit-only rule(s) silently skipped on Linux: ${skipped_rules} — add them to the macOS lane's only_rules (#1546)"
+            exit 1
+          fi
 
       - name: Check nonisolated on background-queue types (issues #693/#699)
         run: python3 .github/scripts/check_nonisolated.py Pine
@@ -87,6 +99,9 @@ jobs:
 
       - name: Tests for SourceKit-LSP smoke workflow
         run: bash scripts/tests/test-sourcekit-lsp-workflow.sh
+
+      - name: Tests for SourceKit lint lane
+        run: bash scripts/tests/test-sourcekit-lint-workflow.sh
 
       - name: Unit tests for lifecycle soak summary
         working-directory: .github/scripts
@@ -124,6 +139,94 @@ jobs:
 
       - name: Tests for screenshot workflow coverage
         run: bash scripts/tests/test-screenshot-workflow.sh
+
+  # SourceKit-dependent rules cannot run in the Linux lane above: SwiftLint
+  # skips them there without failing the build (issue #1546), so
+  # statement_position silently stopped being enforced when the lint job moved
+  # to ubuntu-latest (#431). This lane runs ONLY those rules on macOS, where
+  # SourceKit is available, and fails closed: if the rule is skipped rather
+  # than executed, the job goes red instead of reporting a hollow pass.
+  lint-sourcekit:
+    name: SwiftLint (SourceKit rules)
+    runs-on: macos-26
+    timeout-minutes: 15
+    env:
+      # Same pinned version as the Linux lint job (and local `brew install
+      # swiftlint`), so all three environments report identical violations.
+      # Bump SWIFTLINT_VERSION, SWIFTLINT_SHA256 (Linux lane) and
+      # SWIFTLINT_MACOS_SHA256 together.
+      SWIFTLINT_VERSION: "0.65.1"
+      # SHA256 of the macOS portable_swiftlint.zip release artifact — same
+      # fail-closed pinning as the Linux lane's sha256sum check.
+      SWIFTLINT_MACOS_SHA256: "c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      # SwiftLint loads sourcekitdInProc from the active Xcode toolchain; if
+      # xcode-select resolves CommandLineTools instead, the binary aborts with
+      # a "Loading sourcekitdInProc ... failed" fatal error (see CLAUDE.md).
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+
+      - name: Install SwiftLint (portable macOS binary)
+        run: |
+          curl -fSL "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/portable_swiftlint.zip" -o portable_swiftlint.zip
+          echo "${SWIFTLINT_MACOS_SHA256}  portable_swiftlint.zip" | shasum -a 256 -c -
+          unzip -o portable_swiftlint.zip -d swiftlint-portable
+          chmod +x swiftlint-portable/swiftlint
+          swiftlint-portable/swiftlint version
+
+      - name: Generate SourceKit-only SwiftLint config
+        run: |
+          cat > .swiftlint-sourcekit.yml <<'EOF'
+          # Ephemeral config for the macOS SourceKit lane (#1546):
+          # parent_config inherits the real config's excluded paths so nothing
+          # is duplicated by hand, and only_rules narrows the run to rules the
+          # Linux lane cannot execute. When a rule `swiftlint rules` marks
+          # "uses sourcekit: yes" becomes enabled in .swiftlint.yml, add it
+          # here.
+          parent_config: .swiftlint.yml
+          only_rules:
+            - statement_position
+          EOF
+
+      # Fail-closed guard: on a machine where SourceKit is unavailable,
+      # SwiftLint skips the rule and reports "0 violations" — a hollow pass.
+      # The fixture below must produce a statement_position violation; if it
+      # does not, this lane is verifying nothing (#1546).
+      - name: Positive control — statement_position must fire on a seeded violation
+        run: |
+          set -o pipefail
+          SMOKE_DIR="$RUNNER_TEMP/sourcekit-smoke"
+          mkdir -p "$SMOKE_DIR"
+          cat > "$SMOKE_DIR/StatementPositionSmoke.swift" <<'EOF'
+          func smoke(value: Bool) {
+              if value {
+                  print("yes")
+              }
+              else {
+                  print("no")
+              }
+          }
+          EOF
+          swiftlint-portable/swiftlint lint --config .swiftlint-sourcekit.yml "$SMOKE_DIR" 2>&1 | tee "$RUNNER_TEMP/smoke-lint.log"
+          if ! grep -qE 'warning: .*\((statement_position)\)' "$RUNNER_TEMP/smoke-lint.log"; then
+            echo "::error::statement_position did not fire on the seeded violation — SourceKit rules are being skipped, not enforced (#1546)"
+            exit 1
+          fi
+          if grep -qE "Skipping enabled rule|sourcekitd has failed" "$RUNNER_TEMP/smoke-lint.log"; then
+            echo "::error::SwiftLint degraded SourceKit analysis during the positive control (#1546)"
+            exit 1
+          fi
+
+      - name: Run SwiftLint (SourceKit rules)
+        run: |
+          set -o pipefail
+          swiftlint-portable/swiftlint lint --strict --config .swiftlint-sourcekit.yml 2>&1 | tee "$RUNNER_TEMP/sourcekit-lint.log"
+          if grep -qE "Skipping enabled rule|sourcekitd has failed" "$RUNNER_TEMP/sourcekit-lint.log"; then
+            echo "::error::SwiftLint skipped or degraded a SourceKit rule this lane exists to enforce (#1546)"
+            exit 1
+          fi
 
   build:
     name: Build for Testing
