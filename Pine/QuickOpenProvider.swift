@@ -37,6 +37,14 @@ final class QuickOpenProvider {
     /// The original (unresolved) root path prefix for computing relative paths.
     private var originalRootPrefix: String = ""
 
+    /// Store for recent files. Injectable so tests can point it at a scoped
+    /// suite instead of the production domain (#1554).
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
     // MARK: - Indexing
 
     /// Maximum recursion depth when traversing the file tree for indexing.
@@ -250,13 +258,13 @@ final class QuickOpenProvider {
     private func loadRecentFiles() -> [String] {
         guard let root = indexedRoot else { return [] }
         let key = Self.recentFilesKey + "." + root.path
-        return UserDefaults.standard.stringArray(forKey: key) ?? []
+        return defaults.stringArray(forKey: key) ?? []
     }
 
     private func saveRecentFiles(_ files: [String]) {
         guard let root = indexedRoot else { return }
         let key = Self.recentFilesKey + "." + root.path
-        UserDefaults.standard.set(files, forKey: key)
+        defaults.set(files, forKey: key)
     }
 
     // MARK: - Helpers

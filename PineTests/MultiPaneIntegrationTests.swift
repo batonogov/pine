@@ -178,12 +178,14 @@ struct MultiPaneIntegrationTests {
 
     @Test func saveSession_includesTabsFromAllPanes() throws {
         let (dir, files) = try makeTempProject()
+        let suiteName = "PineTests.MultiPaneSession.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer {
+            defaults.removePersistentDomain(forName: suiteName)
             cleanup(dir)
-            SessionState.clear(for: dir)
         }
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         let firstPaneID = pm.paneManager.activePaneID
@@ -198,7 +200,7 @@ struct MultiPaneIntegrationTests {
 
         pm.saveSession()
 
-        let session = SessionState.load(for: dir)
+        let session = SessionState.load(for: dir, defaults: defaults)
         #expect(session != nil)
         let savedPaths = session?.openFilePaths ?? []
         #expect(savedPaths.count == 3)

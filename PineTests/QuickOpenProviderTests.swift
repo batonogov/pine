@@ -31,9 +31,21 @@ struct QuickOpenProviderTests {
         try? FileManager.default.removeItem(at: dir)
     }
 
-    private func buildProvider(dir: URL) -> QuickOpenProvider {
+    private let suiteName = "PineTests.QuickOpenProvider.\(UUID().uuidString)"
+
+    private func makeDefaults() throws -> UserDefaults {
+        try #require(UserDefaults(suiteName: suiteName))
+    }
+
+    private func cleanupDefaults() {
+        UserDefaults().removePersistentDomain(forName: suiteName)
+    }
+
+    /// Tests that record or read recent files must pass a scoped suite so
+    /// they never touch the production defaults domain (#1554).
+    private func buildProvider(dir: URL, defaults: UserDefaults = .standard) -> QuickOpenProvider {
         let root = FileNode(url: dir, projectRoot: dir)
-        let provider = QuickOpenProvider()
+        let provider = QuickOpenProvider(defaults: defaults)
         provider.buildIndex(from: [root], rootURL: dir)
         return provider
     }
@@ -223,8 +235,10 @@ struct QuickOpenProviderTests {
     func searchEmptyQuery() throws {
         let dir = try createTestProject(files: ["main.swift": ""])
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let provider = buildProvider(dir: dir)
+        let provider = buildProvider(dir: dir, defaults: defaults)
         let results = provider.search(query: "")
         // No recent files recorded yet
         #expect(results.isEmpty)
@@ -311,8 +325,10 @@ struct QuickOpenProviderTests {
             "frequent.swift": ""
         ])
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let provider = buildProvider(dir: dir)
+        let provider = buildProvider(dir: dir, defaults: defaults)
 
         // Record frequent.swift as recently opened
         let frequentURL = dir.appendingPathComponent("frequent.swift")
@@ -332,8 +348,10 @@ struct QuickOpenProviderTests {
             "c.swift": ""
         ])
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let provider = buildProvider(dir: dir)
+        let provider = buildProvider(dir: dir, defaults: defaults)
         let urlA = dir.appendingPathComponent("a.swift")
         let urlC = dir.appendingPathComponent("c.swift")
         provider.recordOpened(url: urlA)

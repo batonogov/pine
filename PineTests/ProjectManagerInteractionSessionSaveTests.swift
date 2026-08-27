@@ -16,8 +16,10 @@ struct InteractionSessionSaveTests {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("PineSessionSave-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suiteName = "PineTests.InteractionSessionSave.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer {
-            SessionState.clear(for: root)
+            defaults.removePersistentDomain(forName: suiteName)
             try? FileManager.default.removeItem(at: root)
         }
         let firstURL = root.appendingPathComponent("first.swift")
@@ -25,7 +27,7 @@ struct InteractionSessionSaveTests {
         try Data("let first = 1\n".utf8).write(to: firstURL)
         try Data("let second = 2\n".utf8).write(to: secondURL)
 
-        let projectManager = ProjectManager()
+        let projectManager = ProjectManager(sessionDefaults: defaults)
         projectManager.workspace.loadDirectory(url: root)
         let firstPane = projectManager.paneManager.activePaneID
         let firstManager = try #require(
@@ -62,7 +64,7 @@ struct InteractionSessionSaveTests {
         projectManager.saveSession()
 
         let session = try #require(
-            SessionState.load(for: root.resolvingSymlinksInPath())
+            SessionState.load(for: root.resolvingSymlinksInPath(), defaults: defaults)
         )
         #expect(session.activePaneID == secondPane.id.uuidString)
         #expect(session.paneActiveEditorPaths == [

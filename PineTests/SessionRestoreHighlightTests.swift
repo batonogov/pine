@@ -35,14 +35,26 @@ struct SessionRestoreHighlightTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    private let suiteName = "PineTests.SessionRestoreHighlight.\(UUID().uuidString)"
+
+    private func makeDefaults() throws -> UserDefaults {
+        try #require(UserDefaults(suiteName: suiteName))
+    }
+
+    private func cleanupDefaults() {
+        UserDefaults().removePersistentDomain(forName: suiteName)
+    }
+
     // MARK: - Active tab after session restore
 
     @Test func restoredSessionHasActiveTab() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Phase 1: save session with 3 tabs, middle one active
-        let pm1 = ProjectManager()
+        let pm1 = ProjectManager(sessionDefaults: defaults)
         pm1.workspace.loadDirectory(url: dir)
         for file in files { pm1.primaryTabManager.openTab(url: file) }
         if let middleTab = pm1.primaryTabManager.tab(for: files[1]) {
@@ -51,10 +63,10 @@ struct SessionRestoreHighlightTests {
         pm1.saveSession()
 
         // Phase 2: restore into fresh TabManager
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
@@ -75,18 +87,20 @@ struct SessionRestoreHighlightTests {
     @Test func restoredSingleTabIsActive() throws {
         let (dir, files) = try makeTempProject(fileCount: 1)
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Save with one tab
-        let pm1 = ProjectManager()
+        let pm1 = ProjectManager(sessionDefaults: defaults)
         pm1.workspace.loadDirectory(url: dir)
         pm1.primaryTabManager.openTab(url: files[0])
         pm1.saveSession()
 
         // Restore
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         for url in session.existingFileURLs {
             pm2.primaryTabManager.openTab(url: url)
@@ -105,19 +119,21 @@ struct SessionRestoreHighlightTests {
     @Test func restoredLastTabAsActiveDoesNotChangeID() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Save with last tab active (which is the default after opening)
-        let pm1 = ProjectManager()
+        let pm1 = ProjectManager(sessionDefaults: defaults)
         pm1.workspace.loadDirectory(url: dir)
         for file in files { pm1.primaryTabManager.openTab(url: file) }
         // Last tab (files[2]) is already active — don't explicitly set it
         pm1.saveSession()
 
         // Restore
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         for url in session.existingFileURLs {
             pm2.primaryTabManager.openTab(url: url)
@@ -141,6 +157,8 @@ struct SessionRestoreHighlightTests {
     @Test func restoredTabsHaveContentForHighlighting() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Write distinct content to each file
         for (i, file) in files.enumerated() {
@@ -148,15 +166,15 @@ struct SessionRestoreHighlightTests {
         }
 
         // Save and restore
-        let pm1 = ProjectManager()
+        let pm1 = ProjectManager(sessionDefaults: defaults)
         pm1.workspace.loadDirectory(url: dir)
         for file in files { pm1.primaryTabManager.openTab(url: file) }
         pm1.saveSession()
 
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
@@ -176,6 +194,8 @@ struct SessionRestoreHighlightTests {
             .appendingPathComponent("PineTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         let swiftFile = dir.appendingPathComponent("main.swift")
         let jsFile = dir.appendingPathComponent("app.js")
@@ -184,7 +204,7 @@ struct SessionRestoreHighlightTests {
         try "const x = 1".write(to: jsFile, atomically: true, encoding: .utf8)
         try "x = 1".write(to: pyFile, atomically: true, encoding: .utf8)
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         for url in [swiftFile, jsFile, pyFile] {
@@ -193,10 +213,10 @@ struct SessionRestoreHighlightTests {
         pm.saveSession()
 
         // Restore
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         for url in session.existingFileURLs {
             pm2.primaryTabManager.openTab(url: url)
@@ -212,17 +232,19 @@ struct SessionRestoreHighlightTests {
     @Test func restoredTabsSyntaxHighlightingNotDisabledByDefault() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
         for file in files { pm.primaryTabManager.openTab(url: file) }
         pm.saveSession()
 
         // Restore
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
@@ -239,19 +261,21 @@ struct SessionRestoreHighlightTests {
     @Test func restoredTabPreservesHighlightingDisabled() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Save with one tab having highlighting disabled
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
         for file in files { pm.primaryTabManager.openTab(url: file) }
         pm.primaryTabManager.tabs[1].syntaxHighlightingDisabled = true
         pm.saveSession()
 
         // Restore
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
@@ -266,17 +290,19 @@ struct SessionRestoreHighlightTests {
     @Test func restoreEmptySessionDoesNotSetActiveTab() throws {
         let (dir, _) = try makeTempProject(fileCount: 0)
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Save empty session
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
         pm.saveSession()
 
         // Restore
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let canonical = dir.resolvingSymlinksInPath()
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
 
         // Session exists but has no files
         if let session {
@@ -293,9 +319,11 @@ struct SessionRestoreHighlightTests {
     @Test func deletedFilesSkippedDuringRestore() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Save session
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
         for file in files { pm.primaryTabManager.openTab(url: file) }
         if let middleTab = pm.primaryTabManager.tab(for: files[1]) {
@@ -307,10 +335,10 @@ struct SessionRestoreHighlightTests {
         try FileManager.default.removeItem(at: files[1])
 
         // Restore
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {

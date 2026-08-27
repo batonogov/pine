@@ -30,13 +30,25 @@ struct ProjectManagerSessionTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    private let suiteName = "PineTests.ProjectManagerSession.\(UUID().uuidString)"
+
+    private func makeDefaults() throws -> UserDefaults {
+        try #require(UserDefaults(suiteName: suiteName))
+    }
+
+    private func cleanupDefaults() {
+        UserDefaults().removePersistentDomain(forName: suiteName)
+    }
+
     // MARK: - saveSession basics
 
     @Test func saveSessionPersistsOpenTabs() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         pm.primaryTabManager.openTab(url: files[0])
@@ -44,7 +56,7 @@ struct ProjectManagerSessionTests {
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         #expect(session != nil)
         #expect(session?.existingFileURLs.count == 2)
         #expect(session?.existingFileURLs.contains(files[0]) == true)
@@ -54,8 +66,10 @@ struct ProjectManagerSessionTests {
     @Test func saveSessionPersistsActiveTab() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         pm.primaryTabManager.openTab(url: files[0])
@@ -64,13 +78,15 @@ struct ProjectManagerSessionTests {
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         #expect(session?.activeFileURL == files[1])
     }
 
     @Test func saveSessionFiltersFilesOutsideProject() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Create a file outside the project
         let outsideDir = FileManager.default.temporaryDirectory
@@ -80,7 +96,7 @@ struct ProjectManagerSessionTests {
         let outsideFile = outsideDir.appendingPathComponent("external.swift")
         try "external".write(to: outsideFile, atomically: true, encoding: .utf8)
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         pm.primaryTabManager.openTab(url: files[0])
@@ -88,7 +104,7 @@ struct ProjectManagerSessionTests {
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         #expect(session?.existingFileURLs.count == 1)
         #expect(session?.existingFileURLs.first == files[0])
     }
@@ -96,22 +112,26 @@ struct ProjectManagerSessionTests {
     @Test func saveSessionNoOpWithoutRootURL() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         // Do NOT call loadDirectory — rootURL stays nil
         pm.primaryTabManager.openTab(url: files[0])
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         #expect(session == nil)
     }
 
     @Test func saveSessionOverwritesPreviousSession() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         // First save with 2 tabs
@@ -124,7 +144,7 @@ struct ProjectManagerSessionTests {
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         #expect(session?.existingFileURLs.count == 3)
     }
 
@@ -133,9 +153,11 @@ struct ProjectManagerSessionTests {
     @Test func fullLifecycleOpenSaveRestore() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Phase 1: open tabs and save
-        let pm1 = ProjectManager()
+        let pm1 = ProjectManager(sessionDefaults: defaults)
         pm1.workspace.loadDirectory(url: dir)
         pm1.primaryTabManager.openTab(url: files[0])
         pm1.primaryTabManager.openTab(url: files[1])
@@ -147,11 +169,11 @@ struct ProjectManagerSessionTests {
         pm1.saveSession()
 
         // Phase 2: simulate reopen — new PM, load session, restore tabs
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         for url in session.existingFileURLs {
             pm2.primaryTabManager.openTab(url: url)
@@ -172,6 +194,8 @@ struct ProjectManagerSessionTests {
     @Test func saveSessionFiltersActiveFileOutsideProject() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         let outsideDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PineTests-outside-\(UUID().uuidString)")
@@ -180,7 +204,7 @@ struct ProjectManagerSessionTests {
         let outsideFile = outsideDir.appendingPathComponent("external.swift")
         try "external".write(to: outsideFile, atomically: true, encoding: .utf8)
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         pm.primaryTabManager.openTab(url: files[0])
@@ -189,7 +213,7 @@ struct ProjectManagerSessionTests {
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         // Active file outside project root should be cleared
         #expect(session?.activeFilePath == nil)
     }
@@ -197,6 +221,8 @@ struct ProjectManagerSessionTests {
     @Test func saveSessionFiltersPreviewModesOutsideProject() throws {
         let (dir, _) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         let outsideDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PineTests-outside-\(UUID().uuidString)")
@@ -208,7 +234,7 @@ struct ProjectManagerSessionTests {
         try "# Inside".write(to: insideMd, atomically: true, encoding: .utf8)
         try "# Outside".write(to: outsideMd, atomically: true, encoding: .utf8)
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         pm.primaryTabManager.openTab(url: insideMd)
@@ -220,7 +246,7 @@ struct ProjectManagerSessionTests {
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         // Only inside markdown should have preview mode persisted
         #expect(session?.previewModes?.count == 1)
         #expect(session?.previewModes?[insideMd.path] == "split")
@@ -230,6 +256,8 @@ struct ProjectManagerSessionTests {
     @Test func saveSessionFiltersHighlightingDisabledOutsideProject() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         let outsideDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PineTests-outside-\(UUID().uuidString)")
@@ -238,7 +266,7 @@ struct ProjectManagerSessionTests {
         let outsideFile = outsideDir.appendingPathComponent("big.swift")
         try "big".write(to: outsideFile, atomically: true, encoding: .utf8)
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         pm.primaryTabManager.openTab(url: files[0])
@@ -249,7 +277,7 @@ struct ProjectManagerSessionTests {
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         // Only inside file should be persisted
         #expect(session?.highlightingDisabledPaths?.count == 1)
         #expect(session?.highlightingDisabledPaths?.first == files[0].path)
@@ -258,8 +286,10 @@ struct ProjectManagerSessionTests {
     @Test func saveSessionPersistsHighlightingDisabled() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let pm = ProjectManager()
+        let pm = ProjectManager(sessionDefaults: defaults)
         pm.workspace.loadDirectory(url: dir)
 
         pm.primaryTabManager.openTab(url: files[0])
@@ -269,13 +299,13 @@ struct ProjectManagerSessionTests {
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
 
         #expect(session.highlightingDisabledPaths?.count == 1)
         #expect(session.highlightingDisabledPaths?.first == files[1].path)
 
         // Phase 2: restore — use overload that skips alert
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
         let disabledSet = Set(session.highlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
@@ -289,8 +319,10 @@ struct ProjectManagerSessionTests {
     @Test func sessionSurvivedWindowClose() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
-        let registry = ProjectRegistry()
+        let registry = ProjectRegistry(defaults: defaults)
         let pm = try #require(registry.projectManager(for: dir))
 
         pm.primaryTabManager.openTab(url: files[0])
@@ -302,13 +334,13 @@ struct ProjectManagerSessionTests {
         registry.closeProject(dir)
 
         // Session must still be loadable after close (PR #98 fix)
-        let session = SessionState.load(for: canonical)
+        let session = SessionState.load(for: canonical, defaults: defaults)
         #expect(session != nil)
         #expect(session?.existingFileURLs.count == 2)
 
         // Simulate reopen from Welcome
         let pm2 = try #require(registry.projectManager(for: dir))
-        let restoredSession = try #require(SessionState.load(for: canonical))
+        let restoredSession = try #require(SessionState.load(for: canonical, defaults: defaults))
         for url in restoredSession.existingFileURLs {
             pm2.primaryTabManager.openTab(url: url)
         }
@@ -324,9 +356,11 @@ struct ProjectManagerSessionTests {
     @Test func roundTrip_emptyEditorNextToTerminal_isPrunedAfterRestore() throws {
         let (dir, _) = try makeTempProject()
         defer { cleanup(dir) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
 
         // Phase 1: build "empty editor + terminal" layout and save the session.
-        let pm1 = ProjectManager()
+        let pm1 = ProjectManager(sessionDefaults: defaults)
         pm1.workspace.loadDirectory(url: dir)
         let editorPaneID = pm1.paneManager.activePaneID
         _ = pm1.paneManager.createTerminalPane(
@@ -340,11 +374,11 @@ struct ProjectManagerSessionTests {
         // Phase 2: reload session into a fresh ProjectManager and apply the
         // same restore steps that ContentView+Helpers.restoreSessionIfNeeded
         // performs (restoreLayout → populate → pruneEmptyEditorLeaves).
-        let pm2 = ProjectManager()
+        let pm2 = ProjectManager(sessionDefaults: defaults)
         pm2.workspace.loadDirectory(url: dir)
 
         let canonical = dir.resolvingSymlinksInPath()
-        let session = try #require(SessionState.load(for: canonical))
+        let session = try #require(SessionState.load(for: canonical, defaults: defaults))
         let layoutData = try #require(session.paneLayoutData)
         let restoredNode = try #require(try? JSONDecoder().decode(PaneNode.self, from: layoutData))
         pm2.paneManager.restoreLayout(
