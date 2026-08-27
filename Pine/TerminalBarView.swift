@@ -345,7 +345,8 @@ struct TerminalSearchBarContainer: View {
 // MARK: - Terminal search observer
 
 /// Extracted modifier to reduce body complexity for the type-checker.
-/// Handles debounced search, case-sensitivity changes, and tab switching.
+/// Handles ⌘F presentation, window-routed ⌘G / ⇧⌘G stepping (#1551),
+/// debounced search, case-sensitivity changes, and tab switching.
 struct TerminalSearchObserver: ViewModifier {
     var terminalState: TerminalPaneState
     let paneID: PaneID
@@ -375,6 +376,12 @@ struct TerminalSearchObserver: ViewModifier {
                     // field; the two must move together (#1523).
                     terminalState.presentSearch()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findNext)) { notification in
+                stepSearch(forward: true, notification: notification)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findPrevious)) { notification in
+                stepSearch(forward: false, notification: notification)
             }
             .onChange(of: terminalState.terminalSearchQuery) { _, newQuery in
                 searchTask?.cancel()
@@ -409,5 +416,63 @@ struct TerminalSearchObserver: ViewModifier {
                     )
                 }
             }
+    }
+
+    /// Steps this pane's terminal search from a window-wide ⌘G / ⇧⌘G (#1551).
+    ///
+    /// The bar no longer needs first responder in its field to be steered —
+    /// that is the whole point of the binding: it keeps working after focus
+    /// has left the field, exactly where Return stops stepping.
+    private func stepSearch(forward: Bool, notification: Notification) {
+        guard Self.shouldStepSearch(
+            in: paneID,
+            paneManager: paneManager,
+            notificationObject: notification.object,
+            currentProject: projectManager,
+            isKeyWindow: controlActiveState == .key
+        ) else { return }
+        // Same reentrancy deferral as `.findInTerminal` above (#1051): the
+        // notification is posted synchronously from the menu ButtonAction
+        // callstack, and `nextMatch()`/`previousMatch()` mutate @Observable
+        // `TerminalTab` state.
+        DispatchQueue.main.async {
+            // The bar may have been dismissed between delivery and this
+            // deferred execution; stepping a closed search would move
+            // highlights nobody sees. Losing the step is the correct outcome.
+            guard terminalState.isSearchVisible else { return }
+            if forward {
+                terminalState.activeTab?.nextMatch()
+            } else {
+                terminalState.activeTab?.previousMatch()
+            }
+        }
+    }
+
+    /// Gate for a find-step notification aimed at this pane's search bar.
+    ///
+    /// Two conditions, both extracted so they are testable without a live
+    /// view hierarchy:
+    /// 1. The targeted-command scoping used by every window-routed command —
+    ///    unscoped posts are only for the key window, project-targeted posts
+    ///    (palette, user keybindings) must match this window's project.
+    /// 2. The window routing policy resolves ⌘G / ⇧⌘G to THIS pane's visible
+    ///    bar — unlike `.findInTerminal` the pane need not be active: a
+    ///    single visible bar stays addressable after focus moves elsewhere.
+    static func shouldStepSearch(
+        in paneID: PaneID,
+        paneManager: PaneManager,
+        notificationObject: Any?,
+        currentProject: ProjectManager,
+        isKeyWindow: Bool
+    ) -> Bool {
+        guard ContentView.shouldHandleTargetedCommand(
+            notificationObject: notificationObject,
+            currentProject: currentProject,
+            isKeyWindow: isKeyWindow
+        ) else { return false }
+        return FindStepTargetPolicy.target(
+            activePaneID: paneManager.activePaneID,
+            visibleTerminalSearchPaneIDs: paneManager.visibleTerminalSearchPaneIDs
+        ) == .terminal(paneID)
     }
 }

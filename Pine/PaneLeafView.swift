@@ -379,6 +379,17 @@ struct PaneLeafView: View {
                 paneManager.activePaneID == paneID
                     && tabManager.activeTabID == tab.id
             },
+            canHandleFindStepping: {
+                // Window-wide ⌘G / ⇧⌘G routing (#1551): the editor's find
+                // bar takes the step only when no visible terminal search bar
+                // claims it. Unaffected by which editor pane/tab is active —
+                // `canHandleCommands` above already narrows to one editor.
+                FindStepTargetPolicy.target(
+                    activePaneID: paneManager.activePaneID,
+                    visibleTerminalSearchPaneIDs:
+                        paneManager.visibleTerminalSearchPaneIDs
+                ) == .editor
+            },
             lineDiffs: lineDiffs,
             diffVersion: diffVersion,
             diffHunks: diffHunks,
