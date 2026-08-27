@@ -100,16 +100,16 @@ struct ProductionDefaultsIsolationTests {
         #expect(SessionState.load(for: canonical, defaults: defaults)?.openFilePaths == [file.path])
     }
 
-    @Test("removePersistentDomain fully wipes a scoped suite")
-    func scopedSuiteTearDownRemovesDomain() throws {
-        let suiteName = "PineTests.Isolation.Wipe.\(UUID().uuidString)"
+    @Test("writes to a scoped suite stay invisible to the production domain")
+    func scopedSuiteWritesAreInvisibleToProduction() throws {
+        let suiteName = "PineTests.Isolation.Visibility.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.set(["leak"], forKey: "probe")
-        #expect(defaults.stringArray(forKey: "probe") == ["leak"])
+        defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        defaults.removePersistentDomain(forName: suiteName)
+        let probeKey = "PineTests.Isolation.VisibilityProbe"
+        defaults.set(["scoped"], forKey: probeKey)
 
-        let reopened = try #require(UserDefaults(suiteName: suiteName))
-        #expect(reopened.dictionaryRepresentation().isEmpty)
+        #expect(defaults.stringArray(forKey: probeKey) == ["scoped"])
+        #expect(UserDefaults.standard.stringArray(forKey: probeKey) == nil)
     }
 }
