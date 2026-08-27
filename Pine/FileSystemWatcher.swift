@@ -16,7 +16,16 @@ nonisolated final class FileSystemWatcher {
 
     /// Serial queue that owns all mutable state (stream, debounceWorkItem).
     /// FSEvents callbacks are delivered here too.
-    private let queue = DispatchQueue(label: "pine.fswatcher", qos: .utility)
+    ///
+    /// `.workItem` pushes an autorelease pool around every asynchronously
+    /// drained work item — every FSEvents callback included — so Foundation
+    /// temporaries drain instead of parking in libobjc's thread-wide
+    /// fallback pool (#1548).
+    private let queue = DispatchQueue(
+        label: "pine.fswatcher",
+        qos: .utility,
+        autoreleaseFrequency: .workItem
+    )
     private var debounceWorkItem: DispatchWorkItem?
 
     /// Strong self-reference kept while the stream is active.

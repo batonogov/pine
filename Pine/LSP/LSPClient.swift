@@ -140,15 +140,24 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     private var stdinPipe: Pipe?
 
     /// Private serial queue — all reads/writes of mutable state happen here.
-    private let ioQueue = DispatchQueue(label: "com.pine.lsp-transport")
+    /// `.workItem` pushes an autorelease pool around every asynchronously
+    /// drained work item (reads, writes, exit hops), so framing and decoding
+    /// temporaries drain per item instead of leaking into the worker
+    /// thread's fallback pool (#1548).
+    private let ioQueue = DispatchQueue(
+        label: "com.pine.lsp-transport",
+        autoreleaseFrequency: .workItem
+    )
 
     /// Keeps process cleanup responsive when background utility work is busy.
     ///
     /// Termination is correctness-critical and can be awaited by the main
     /// actor, so it must not depend on the shared utility worker pool.
+    /// `.workItem` pools each cleanup work item like `ioQueue` above (#1548).
     private let lifecycleQueue = DispatchQueue(
         label: "com.pine.lsp-transport.lifecycle",
-        qos: .userInitiated
+        qos: .userInitiated,
+        autoreleaseFrequency: .workItem
     )
 
     /// Incremental framing state, confined to `ioQueue`.

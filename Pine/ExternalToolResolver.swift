@@ -25,7 +25,14 @@ nonisolated final class ExternalToolResolver: Sendable {
     /// Ordered, deduplicated list of directories to search.
     let searchDirectories: [String]
 
-    private let cacheQueue = DispatchQueue(label: "com.pine.tool-resolver-cache")
+    /// Serial queue protecting the cache. `.workItem` gives every
+    /// asynchronously drained work item an autorelease pool (#1548); the
+    /// uncontended `sync` fast path runs on the caller's thread, where pool
+    /// ownership stays with the caller.
+    private let cacheQueue = DispatchQueue(
+        label: "com.pine.tool-resolver-cache",
+        autoreleaseFrequency: .workItem
+    )
     nonisolated(unsafe) private var cache: [String: String?] = [:]
 
     /// Creates a resolver with an explicit list of directories to search.

@@ -30,15 +30,22 @@ nonisolated enum GitFetcher {
         nonisolated(unsafe) var ignored: Set<String> = []
         nonisolated(unsafe) var branchList: [String] = []
 
+        // Each fetch body runs inside its own autoreleasepool (#1548): raw
+        // global-queue work items execute with no pool in place, and git
+        // process output plus parsing produce autoreleased Foundation
+        // temporaries that would otherwise sit in the worker thread's
+        // fallback pool until the thread is torn down. `fetchAllInParallel`
+        // is synchronous, so `runOnBackground` (async-only) cannot be used
+        // without changing its callers.
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            branch = fetchBranch(at: url)
+            branch = autoreleasepool { fetchBranch(at: url) }
             group.leave()
         }
 
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = fetchStatusAndIgnored(at: url)
+            let result = autoreleasepool { fetchStatusAndIgnored(at: url) }
             statuses = result.statuses
             ignored = result.ignored
             group.leave()
@@ -46,7 +53,7 @@ nonisolated enum GitFetcher {
 
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            branchList = fetchBranches(at: url)
+            branchList = autoreleasepool { fetchBranches(at: url) }
             group.leave()
         }
 

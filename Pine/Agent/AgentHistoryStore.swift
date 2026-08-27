@@ -1001,7 +1001,14 @@ final class AgentHistoryStore {
 /// sufficient for this low-frequency log (written on session finalize / revert,
 /// not on every keystroke).
 nonisolated final class AgentHistoryLogWriter {
-    private let writeQueue = DispatchQueue(label: "com.pine.agent-history", qos: .utility)
+    /// `.workItem` gives every persist work item an autorelease pool (#1548)
+    /// — encoding and file-manager temporaries drain per write instead of
+    /// leaking into the worker thread's fallback pool.
+    private let writeQueue = DispatchQueue(
+        label: "com.pine.agent-history",
+        qos: .utility,
+        autoreleaseFrequency: .workItem
+    )
 
     /// Schedules an atomic write of `snapshot` to `<root>/.pine/agent-log.json`.
     /// A `nil` root (no project open) is a no-op — the in-memory log suffices.
