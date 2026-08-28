@@ -72,7 +72,8 @@ struct FileNodeRow: View {
                         isTransientPreview: isTransientPreview,
                         isExpanded: isExpanded,
                         isMissing: isMissing
-                    )
+                    ),
+                    gitStatus: gitStatus
                 )
                 .opacity(isGitIgnored ? 0.5 : 1.0)
                 .frame(maxWidth: .infinity, alignment: .leading)

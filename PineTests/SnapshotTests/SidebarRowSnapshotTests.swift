@@ -28,6 +28,33 @@ struct SidebarRowSnapshotTests {
         }
     }
 
+    @Test("Git status rows render a distinct badge in light and dark")
+    func gitStatusRows() throws {
+        // #1532: modified, conflicted, and untracked cover the ambiguous
+        // pairs and the "?" case the issue names.
+        let statuses: [(name: String, status: GitFileStatus)] = [
+            ("git-modified", .modified),
+            ("git-conflict", .conflict),
+            ("git-untracked", .untracked),
+        ]
+        for status in statuses {
+            for appearance in [SnapshotAppearance.light, .dark] {
+                try assertSnapshot(
+                    of: Harness(
+                        snapshot: Snapshot(
+                            name: status.name,
+                            state: SidebarRowVisualState(),
+                            gitStatus: status.status
+                        )
+                    ),
+                    size: Self.size,
+                    appearance: appearance,
+                    named: "SidebarRow.\(status.name).\(appearance.suffix)"
+                )
+            }
+        }
+    }
+
     private static let snapshots: [Snapshot] = [
         Snapshot(
             name: "selected-unfocused",
@@ -70,6 +97,7 @@ struct SidebarRowSnapshotTests {
         let name: String
         let state: SidebarRowVisualState
         var isDirectory = false
+        var gitStatus: GitFileStatus?
     }
 
     private struct Harness: View {
@@ -84,9 +112,10 @@ struct SidebarRowSnapshotTests {
                     name: snapshot.isDirectory ? "Sources" : "main.swift",
                     iconName: snapshot.isDirectory ? "folder" : "swift",
                     iconColor: snapshot.isDirectory ? .blue : .orange,
-                    textColor: .primary,
+                    textColor: snapshot.gitStatus?.color ?? .primary,
                     isDirectory: snapshot.isDirectory,
-                    state: snapshot.state
+                    state: snapshot.state,
+                    gitStatus: snapshot.gitStatus
                 )
                 .font(.system(size: 13))
             }
