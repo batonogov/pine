@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.6.1](https://github.com/batonogov/pine/compare/v2.6.0...v2.6.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **accessibility:** name the icon-only controls VoiceOver announced as buttons ([#1575](https://github.com/batonogov/pine/issues/1575)) ([60cb2c0](https://github.com/batonogov/pine/commit/60cb2c0bb5a83be62e50f3a86bd65461974b827c)), closes [#1527](https://github.com/batonogov/pine/issues/1527)
+* **accessibility:** name the unsaved state of editor tabs for VoiceOver ([#1587](https://github.com/batonogov/pine/issues/1587)) ([33a16b3](https://github.com/batonogov/pine/commit/33a16b33a95cc0576e3b7a31b3ce853011874fca)), closes [#1528](https://github.com/batonogov/pine/issues/1528)
+* **ci:** tolerate sub-second mtime skew in validator self-test ([#1577](https://github.com/batonogov/pine/issues/1577)) ([16a28d6](https://github.com/batonogov/pine/commit/16a28d6e0d6ef97722bf516b9a7bc8593116317e))
+* **file-tree:** give git status a letter badge and a VoiceOver value ([#1586](https://github.com/batonogov/pine/issues/1586)) ([53ed8a4](https://github.com/batonogov/pine/commit/53ed8a41671209acf651130dba13fa12ffb62ec7))
+* **i18n:** wire the dead accessibility strings and translate the catalog ([#1588](https://github.com/batonogov/pine/issues/1588)) ([993b6d5](https://github.com/batonogov/pine/commit/993b6d514ea2dd395671fa794575c5414c148dcf)), closes [#1529](https://github.com/batonogov/pine/issues/1529)
+* **search:** make project search results keyboard-reachable and scroll with selection ([#1549](https://github.com/batonogov/pine/issues/1549)) ([d835f48](https://github.com/batonogov/pine/commit/d835f484ad6b58606f66564afa076b1458a3b8e4))
+* **terminal:** route Cmd+G / Shift+Cmd+G to a visible terminal search ([#1582](https://github.com/batonogov/pine/issues/1582)) ([e3a7f48](https://github.com/batonogov/pine/commit/e3a7f486f474600b8e708a1ebfcb7ca0142dfabc))
+* **tests:** stop test runs writing into the production UserDefaults domain ([#1578](https://github.com/batonogov/pine/issues/1578)) ([2d948d0](https://github.com/batonogov/pine/commit/2d948d0072ec8b61a30541d364ee9aeff49212c7))
+* **ux:** name recovery failures and take Return off destructive actions ([#1567](https://github.com/batonogov/pine/issues/1567)) ([4c4b4eb](https://github.com/batonogov/pine/commit/4c4b4ebef31d9b316841d42572cf3b136445c7cb))
+
+
+### Performance Improvements
+
+* **background:** give every dispatch surface outside runOnBackground an autorelease pool ([#1580](https://github.com/batonogov/pine/issues/1580)) ([c550388](https://github.com/batonogov/pine/commit/c550388ee7c3c73b899367c469b09d1d6dee42e3))
+
+
+### Code Refactoring
+
+* **overlay:** delete the unreachable CommandOverlayView and pin the real chrome ([#1584](https://github.com/batonogov/pine/issues/1584)) ([e80699b](https://github.com/batonogov/pine/commit/e80699b06b54434c1b18a88fe74b74e82b9b3336))
+
 ## [2.6.0](https://github.com/batonogov/pine/compare/v2.5.2...v2.6.0) (2026-08-26)
 
 
