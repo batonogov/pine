@@ -22,25 +22,6 @@ struct AccessibilityStringGuardTests {
         "en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans",
     ]
 
-    /// Accessors and catalog keys currently owned by the in-flight #1586,
-    /// which wires the three git-status names and translates their keys.
-    /// Once that branch merges, the set is empty on `main` too — delete
-    /// this property and both references to it below together.
-    static let ownedByInFlightPR = [
-        "a11yGitStatusAdded",
-        "a11yGitStatusModified",
-        "a11yGitStatusUntracked",
-    ]
-
-    /// The catalog keys behind ``ownedByInFlightPR`` — spelled out, because
-    /// the catalog does not camelCase its key segments uniformly
-    /// (`a11y.gitStatus.modified`, but `a11y.branchSwitcher.hint`).
-    static let catalogKeysOwnedByInFlightPR: Set<String> = [
-        "a11y.gitStatus.added",
-        "a11y.gitStatus.modified",
-        "a11y.gitStatus.untracked",
-    ]
-
     @Test("Every a11y accessor in Strings.swift is referenced by a view")
     func everyAccessorReachesAView() throws {
         let root = try ProductionSourceScan.repositoryRoot()
@@ -70,7 +51,7 @@ struct AccessibilityStringGuardTests {
 
         let dead = declared.subtracting(referenced)
         #expect(
-            dead.isSubset(of: Set(Self.ownedByInFlightPR)),
+            dead.isEmpty,
             """
             Dead a11y accessors — authored, localized, and never shown to \
             VoiceOver: \(dead.sorted()). Wire each one into the view it \
@@ -109,7 +90,7 @@ struct AccessibilityStringGuardTests {
                 $0.prefix(while: { $0 != "[" })
                     .trimmingCharacters(in: .whitespaces)
             }
-        ).subtracting(Self.catalogKeysOwnedByInFlightPR)
+        )
         #expect(
             residual.isEmpty,
             """
