@@ -409,12 +409,10 @@ struct EditorTabBar: View {
                             paneManager.selectEditorTab(tab.id, in: paneID)
                         } label: {
                             Label {
-                                HStack(spacing: 0) {
-                                    Text(verbatim: tab.fileName)
-                                    if tab.isDirty {
-                                        Text(" \u{25CF}")
-                                    }
-                                }
+                                Text(verbatim: EditorTabOverflowTitle.make(
+                                    fileName: tab.fileName,
+                                    isDirty: tab.isDirty
+                                ))
                             } icon: {
                                 Image(systemName: tab.isPinned
                                       ? "pin.fill"
@@ -474,6 +472,36 @@ struct EditorTabBar: View {
         // propagate to inline buttons (e.g. `markdownPreviewToggle`).
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.editorTabBar)
+    }
+}
+
+/// The `.accessibilityValue` of an editor tab (#1528): the states a tab can
+/// carry, announced in a stable order. The dirty dot and the preview style
+/// are drawn shapes — without this value a VoiceOver user cannot tell an
+/// unsaved tab from a saved one.
+enum EditorTabAccessibilityValue {
+    static func compose(
+        isDirty: Bool,
+        isTransientPreview: Bool
+    ) -> String? {
+        var parts: [String] = []
+        if isTransientPreview {
+            parts.append(Strings.a11yTransientPreviewTab)
+        }
+        if isDirty {
+            parts.append(Strings.a11yDirtyTab)
+        }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// The overflow menu's entry title for a tab (#1528). An `NSMenuItem`'s
+/// title is what VoiceOver reads, so the dirty state is said in words —
+/// the bare ● glyph the menu used before announced as "black circle".
+enum EditorTabOverflowTitle {
+    static func make(fileName: String, isDirty: Bool) -> String {
+        isDirty ? fileName + " — " + Strings.a11yDirtyTab : fileName
     }
 }
 
@@ -646,7 +674,10 @@ struct EditorTabItem: View {
                     .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
                     .accessibilityAddTraits(isActive ? .isSelected : [])
                     .accessibilityValue(
-                        tab.isTransientPreview ? Strings.a11yTransientPreviewTab : ""
+                        EditorTabAccessibilityValue.compose(
+                            isDirty: tab.isDirty,
+                            isTransientPreview: tab.isTransientPreview
+                        ) ?? ""
                     )
                     .accessibilityActions {
                         if let onMoveLeading {
