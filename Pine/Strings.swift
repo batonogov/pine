@@ -3002,6 +3002,8 @@ enum Strings {
         String(localized: "a11y.editorTab.close.hint", defaultValue: "Closes this editor tab")
     static let a11yTransientPreviewTab: String =
         String(localized: "a11y.editorTab.preview.value", defaultValue: "Preview")
+    static let a11yDirtyTab: String =
+        String(localized: "a11y.editorTab.dirty.value", defaultValue: "Unsaved changes")
 
     // Sidebar file activation
     static let a11ySidebarFileOpenHint: String =
