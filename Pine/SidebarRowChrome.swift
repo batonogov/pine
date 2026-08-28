@@ -46,6 +46,12 @@ struct SidebarRowLabel: View {
     let textColor: Color
     let isDirectory: Bool
     let state: SidebarRowVisualState
+    /// Git status of the row's file or folder, when the workspace has one.
+    /// Drives the trailing status badge (#1532). `nil` renders nothing, so
+    /// rows without git state keep today's layout untouched.
+    var gitStatus: GitFileStatus?
+    @Environment(\.accessibilityDifferentiateWithoutColor)
+    private var differentiateWithoutColor
 
     var body: some View {
         HStack(spacing: 4) {
@@ -63,7 +69,7 @@ struct SidebarRowLabel: View {
                 .accessibilityHidden(true)
 
             Text(name)
-                .foregroundStyle(textColor)
+                .foregroundStyle(effectiveTextColor)
                 .fontWeight(state.isActiveFile ? .semibold : .regular)
                 .italic(state.isTransientPreview)
                 .strikethrough(state.isMissing)
@@ -71,6 +77,27 @@ struct SidebarRowLabel: View {
             Spacer(minLength: 4)
             statusIndicator
         }
+    }
+
+    /// When the user asks the system not to use colour alone, the status
+    /// tint on the filename is the row's only colour-only signal (#1532):
+    /// drop it and let the letter badge carry the status. A pure function
+    /// so the policy is unit-testable without hosting the view.
+    static func effectiveNameColor(
+        base: Color,
+        gitStatus: GitFileStatus?,
+        differentiateWithoutColor: Bool
+    ) -> Color {
+        guard let gitStatus, differentiateWithoutColor else { return base }
+        return .primary
+    }
+
+    private var effectiveTextColor: Color {
+        Self.effectiveNameColor(
+            base: textColor,
+            gitStatus: gitStatus,
+            differentiateWithoutColor: differentiateWithoutColor
+        )
     }
 
     @ViewBuilder
@@ -85,7 +112,19 @@ struct SidebarRowLabel: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
+        } else if let gitStatus {
+            gitStatusBadge(gitStatus)
         }
+    }
+
+    /// The letter badge is the colour-independent status cue and is always
+    /// shown; the hue only reinforces it. Hidden from accessibility because
+    /// the enclosing row announces the status as its value (#1532).
+    private func gitStatusBadge(_ status: GitFileStatus) -> some View {
+        Text(status.statusLetter)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundStyle(status.color)
+            .accessibilityHidden(true)
     }
 }
 

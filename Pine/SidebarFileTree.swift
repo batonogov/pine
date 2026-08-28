@@ -88,6 +88,7 @@ private struct SidebarFileTreeNode: View {
     let onKeyboardFocusRequested: () -> Void
     @Environment(SidebarExpansionState.self) private var expansion
     @Environment(SidebarEditState.self) private var editState
+    @Environment(WorkspaceManager.self) private var workspace
     @Environment(SidebarTreeNavigation.self) private var navigation
     @Environment(PaneManager.self) private var paneManager
     @State private var fontSettings = FontSizeSettings.shared
@@ -287,11 +288,11 @@ private struct SidebarFileTreeNode: View {
             isFocused: isSelected && isKeyboardFocused,
             isFolder: isFolder,
             isExpanded: isExpanded,
-            value: isFolder
-                ? (isExpanded
-                    ? Strings.a11ySidebarDisclosureExpanded
-                    : Strings.a11ySidebarDisclosureCollapsed)
-                : nil,
+            value: SidebarRowAccessibilityValue.compose(
+                isFolder: isFolder,
+                isExpanded: isExpanded,
+                gitStatus: gitStatus
+            ),
             help: isFolder
                 ? Strings.a11ySidebarFolderHint
                 : Strings.a11ySidebarFileOpenHint,
@@ -307,6 +308,16 @@ private struct SidebarFileTreeNode: View {
         editState.renamingURL.map {
             SidebarPathIdentity($0)
         } == SidebarPathIdentity(node.url)
+    }
+
+    /// Mirrors ``FileNodeRow/gitStatus`` so the accessibility row announces
+    /// the same status the visual row tints (#1532). A dictionary lookup on
+    /// the provider — the git process itself runs off the main thread.
+    private var gitStatus: GitFileStatus? {
+        let provider = workspace.gitProvider
+        return node.isDirectory
+            ? provider.statusForDirectory(at: node.url)
+            : provider.statusForFile(at: node.url)
     }
 
     /// Single tap handler for both files and folders. Sets selection and

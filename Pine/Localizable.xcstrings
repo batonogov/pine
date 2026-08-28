@@ -25483,181 +25483,421 @@
       }
     },
     "a11y.gitStatus.modified": {
-      "comment": "Text label shown alongside the git modified-file indicator when Differentiate Without Color is enabled.",
+      "comment": "The git status VoiceOver announces as the row's value for a file with unstaged modifications (#1532).",
       "extractionState": "extracted_with_value",
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Modified"
+            "state": "translated",
+            "value": "Geändert"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Modified"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Modified"
+            "state": "translated",
+            "value": "Modificado"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Modified"
+            "state": "translated",
+            "value": "Modifié"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Modified"
+            "state": "translated",
+            "value": "変更済み"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Modified"
+            "state": "translated",
+            "value": "변경됨"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Modified"
+            "state": "translated",
+            "value": "Modificado"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Modified"
+            "state": "translated",
+            "value": "Изменён"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Modified"
+            "state": "translated",
+            "value": "已修改"
           }
         }
       }
     },
     "a11y.gitStatus.added": {
-      "comment": "Text label shown alongside the git added-file indicator when Differentiate Without Color is enabled.",
+      "comment": "The git status VoiceOver announces as the row's value for a newly added file (#1532).",
       "extractionState": "extracted_with_value",
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Added"
+            "state": "translated",
+            "value": "Hinzugefügt"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Added"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Added"
+            "state": "translated",
+            "value": "Añadido"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Added"
+            "state": "translated",
+            "value": "Ajouté"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Added"
+            "state": "translated",
+            "value": "追加済み"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Added"
+            "state": "translated",
+            "value": "추가됨"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Added"
+            "state": "translated",
+            "value": "Adicionado"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Added"
+            "state": "translated",
+            "value": "Добавлен"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Added"
+            "state": "translated",
+            "value": "已添加"
           }
         }
       }
     },
     "a11y.gitStatus.untracked": {
-      "comment": "Text label shown alongside the git untracked-file indicator when Differentiate Without Color is enabled.",
+      "comment": "The git status VoiceOver announces as the row's value for an untracked file (#1532).",
       "extractionState": "extracted_with_value",
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Untracked"
+            "state": "translated",
+            "value": "Unverfolgt"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Untracked"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Untracked"
+            "state": "translated",
+            "value": "Sin seguimiento"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Untracked"
+            "state": "translated",
+            "value": "Non suivi"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Untracked"
+            "state": "translated",
+            "value": "未追跡"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Untracked"
+            "state": "translated",
+            "value": "추적 안 됨"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Untracked"
+            "state": "translated",
+            "value": "Não rastreado"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Untracked"
+            "state": "translated",
+            "value": "Не отслеживается"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Untracked"
+            "state": "translated",
+            "value": "未跟踪"
+          }
+        }
+      }
+    },
+    "a11y.gitStatus.staged": {
+      "comment": "The git status VoiceOver announces as the row's value for a file whose changes are staged (#1532).",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorgemerkt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staged"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indexé"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ステージ済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스테이징됨"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparado"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В индексе"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暂存"
+          }
+        }
+      }
+    },
+    "a11y.gitStatus.deleted": {
+      "comment": "The git status VoiceOver announces as the row's value for a deleted file (#1532).",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gelöscht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deleted"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimé"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "삭제됨"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excluído"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалён"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除"
+          }
+        }
+      }
+    },
+    "a11y.gitStatus.conflict": {
+      "comment": "The git status VoiceOver announces as the row's value for a file with a merge conflict (#1532).",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konflikt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicted"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En conflicto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En conflit"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "競合"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충돌함"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Em conflito"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Конфликт"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有冲突"
+          }
+        }
+      }
+    },
+    "a11y.gitStatus.mixed": {
+      "comment": "The git status VoiceOver announces as the row's value for a file with both staged and unstaged changes (#1532).",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorgemerkt und geändert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staged and modified"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparado y modificado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indexé et modifié"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ステージ済み、変更あり"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스테이징 및 변경됨"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparado e modificado"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В индексе и изменён"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暂存且有修改"
           }
         }
       }

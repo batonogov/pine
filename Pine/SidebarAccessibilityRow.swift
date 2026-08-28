@@ -23,6 +23,31 @@ struct SidebarAccessibilityRowConfiguration: Equatable {
     let customActionName: String?
 }
 
+/// The `.accessibilityValue` of a sidebar outline row: a folder's disclosure
+/// state and/or the row's git status, joined for VoiceOver (#1532). Files
+/// with no git status keep `nil`, exactly as before the status existed.
+enum SidebarRowAccessibilityValue {
+    static func compose(
+        isFolder: Bool,
+        isExpanded: Bool,
+        gitStatus: GitFileStatus?
+    ) -> String? {
+        var parts: [String] = []
+        if isFolder {
+            parts.append(
+                isExpanded
+                    ? Strings.a11ySidebarDisclosureExpanded
+                    : Strings.a11ySidebarDisclosureCollapsed
+            )
+        }
+        if let gitStatus {
+            parts.append(gitStatus.accessibilityStatusName)
+        }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: ", ")
+    }
+}
+
 /// A semantic outline row that leaves pointer handling to the SwiftUI view
 /// underneath while exposing the native role/state expected by VoiceOver.
 @MainActor

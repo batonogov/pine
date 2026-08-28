@@ -3104,6 +3104,14 @@ enum Strings {
         String(localized: "a11y.gitStatus.added", defaultValue: "Added")
     static let a11yGitStatusUntracked: String =
         String(localized: "a11y.gitStatus.untracked", defaultValue: "Untracked")
+    static let a11yGitStatusStaged: String =
+        String(localized: "a11y.gitStatus.staged", defaultValue: "Staged")
+    static let a11yGitStatusDeleted: String =
+        String(localized: "a11y.gitStatus.deleted", defaultValue: "Deleted")
+    static let a11yGitStatusConflict: String =
+        String(localized: "a11y.gitStatus.conflict", defaultValue: "Conflicted")
+    static let a11yGitStatusMixed: String =
+        String(localized: "a11y.gitStatus.mixed", defaultValue: "Staged and modified")
 
     // MARK: - Status bar indicator names (#1533)
     //
