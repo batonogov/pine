@@ -117,7 +117,10 @@ final class MinimapView: NSView {
         setAccessibilityIdentifier(AccessibilityID.minimap)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Minimap")
+        setAccessibilityLabel(Strings.a11yMinimapLabel)
+        // AppKit has no hint attribute on a plain NSView — `help` is its
+        // vehicle for the same "what does this do" text (#1529).
+        setAccessibilityHelp(Strings.a11yMinimapHint)
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(contentDidChange),

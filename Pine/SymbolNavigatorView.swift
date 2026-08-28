@@ -223,6 +223,9 @@ struct SymbolNavigatorView: View {
                                         entry.symbol.name
                                     )
                                 )
+                                .accessibilityHint(
+                                    Strings.a11ySymbolItemHint
+                                )
                                 .accessibilityAddTraits(
                                     CommandOverlayRowAccessibility
                                         .selectionTraits(
@@ -320,7 +323,12 @@ struct SymbolNavigatorView: View {
             entry.symbol.kind,
             locale: locale
         )
-        return "\(kind) — line \(entry.line)"
+        // The localized "kind — line N" format, not a hand-built string —
+        // the catalog key exists translated in all nine locales (#1529).
+        return Strings.symbolNavigatorItemDetail(
+            kind: kind,
+            line: entry.line
+        )
     }
 
     // MARK: - Loading

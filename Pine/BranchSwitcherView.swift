@@ -100,6 +100,7 @@ struct BranchSwitcherView: View {
                         .buttonStyle(.plain)
                         .id(index)
                         .accessibilityIdentifier(AccessibilityID.branchItem(branch))
+                        .accessibilityHint(Strings.a11yBranchSwitcherHint)
                         .modifier(
                             BranchRowSelectionAccessibility(
                                 isSelected: selection.isSelected(index: index),

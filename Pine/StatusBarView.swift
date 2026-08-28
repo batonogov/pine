@@ -279,11 +279,13 @@ struct StatusBarView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier(AccessibilityID.terminalToggleButton)
+            .accessibilityHint(Strings.a11yTerminalToggleHint)
         }
         .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
         .frame(height: LayoutMetrics.statusBarHeight)
         .background(.bar)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(Strings.a11yStatusBarLabel)
         .accessibilityIdentifier(AccessibilityID.statusBar)
     }
 

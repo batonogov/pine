@@ -20,7 +20,7 @@ struct GoToLineView: View {
         VStack(spacing: 8) {
             QuickOpenSearchField(
                 text: $inputText,
-                placeholder: "42 or 42:10",
+                placeholder: Strings.goToLineFieldPlaceholder,
                 accessibility: CommandOverlayTextFieldAccessibility(
                     identifier: AccessibilityID.goToLineField,
                     label: String(localized: "Go to line"),

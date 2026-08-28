@@ -100,6 +100,9 @@ struct QuickOpenView: View {
                                         result.fileName
                                     )
                                 )
+                                .accessibilityHint(
+                                    Strings.a11yQuickOpenItemHint
+                                )
                                 .accessibilityAddTraits(
                                     CommandOverlayRowAccessibility
                                         .selectionTraits(
