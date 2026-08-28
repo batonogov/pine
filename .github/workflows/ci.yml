@@ -538,15 +538,21 @@ jobs:
 
       # Snapshot references must be recorded on a runner: a developer Mac
       # rasterizes SF Symbols and text differently enough to sit outside the
-      # per-test tolerance. When a snapshot test fails the harness writes the
-      # runner's own render next to the reference, so publishing those makes
-      # "re-record from CI" possible without a local render.
+      # per-test tolerance. The harness writes the runner's own render next
+      # to the reference on a diff and *as* the reference on a missing
+      # baseline, so publishing the whole directory makes "re-record from
+      # CI" possible without a local render. `always()` is load-bearing,
+      # not generous: `-retry-tests-on-failure` turns a missing-baseline
+      # first attempt into a green job (the retry passes against the
+      # baseline the first attempt just wrote), and a `failure()` gate
+      # would publish nothing while leaving the new tests permanently
+      # blind — each run would write a fresh baseline from current code.
       - name: Upload Snapshot Renders
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: snapshot-actual-renders
-          path: PineTests/SnapshotTests/__Snapshots__/*.actual.png
+          path: PineTests/SnapshotTests/__Snapshots__/
           retention-days: 7
           if-no-files-found: ignore
 
