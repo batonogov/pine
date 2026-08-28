@@ -2299,6 +2299,25 @@ enum Strings {
         )
     }
 
+    /// The secondary label of a symbol-navigator row. Reads the catalog key
+    /// `%@ — line %lld`, whose translations may reorder the parts, instead of
+    /// hand-building the string (#1529).
+    static func symbolNavigatorItemDetail(
+        kind: String,
+        line: Int
+    ) -> String {
+        String(
+            format: String(localized: "%@ — line %lld"),
+            kind,
+            line
+        )
+    }
+
+    /// The Go to Line field's placeholder, from its existing catalog key
+    /// rather than the literal (#1529).
+    static let goToLineFieldPlaceholder: String =
+        String(localized: "42 or 42:10")
+
     private static func localizedString(
         forKey key: String,
         fallback: String,

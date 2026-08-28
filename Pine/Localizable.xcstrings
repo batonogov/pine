@@ -23328,56 +23328,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close tab"
+            "state": "translated",
+            "value": "Tab schließen"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Close tab"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close tab"
+            "state": "translated",
+            "value": "Cerrar pestaña"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close tab"
+            "state": "translated",
+            "value": "Fermer l’onglet"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close tab"
+            "state": "translated",
+            "value": "タブを閉じる"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close tab"
+            "state": "translated",
+            "value": "탭 닫기"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close tab"
+            "state": "translated",
+            "value": "Fechar aba"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close tab"
+            "state": "translated",
+            "value": "Закрыть вкладку"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close tab"
+            "state": "translated",
+            "value": "关闭标签页"
           }
         }
       }
@@ -23388,56 +23388,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this editor tab"
+            "state": "translated",
+            "value": "Schließt diesen Editor-Tab"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Closes this editor tab"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this editor tab"
+            "state": "translated",
+            "value": "Cierra esta pestaña del editor"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this editor tab"
+            "state": "translated",
+            "value": "Ferme cet onglet de l’éditeur"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this editor tab"
+            "state": "translated",
+            "value": "このエディタタブを閉じます"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this editor tab"
+            "state": "translated",
+            "value": "이 에디터 탭을 닫습니다"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this editor tab"
+            "state": "translated",
+            "value": "Fecha esta aba do editor"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this editor tab"
+            "state": "translated",
+            "value": "Закрывает эту вкладку редактора"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this editor tab"
+            "state": "translated",
+            "value": "关闭此编辑器标签页"
           }
         }
       }
@@ -24048,56 +24048,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Pane divider"
+            "state": "translated",
+            "value": "Bereichstrennlinie"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Pane divider"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Pane divider"
+            "state": "translated",
+            "value": "Divisor de paneles"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Pane divider"
+            "state": "translated",
+            "value": "Séparateur de volets"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Pane divider"
+            "state": "translated",
+            "value": "ペイン分割バー"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Pane divider"
+            "state": "translated",
+            "value": "분할 막대"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Pane divider"
+            "state": "translated",
+            "value": "Divisor de painéis"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Pane divider"
+            "state": "translated",
+            "value": "Разделитель панелей"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Pane divider"
+            "state": "translated",
+            "value": "窗格分隔条"
           }
         }
       }
@@ -24108,56 +24108,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Drag to resize the panes"
+            "state": "translated",
+            "value": "Ziehen, um die Größe der Bereiche anzupassen"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Drag to resize the panes"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Drag to resize the panes"
+            "state": "translated",
+            "value": "Arrastra para cambiar el tamaño de los paneles"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Drag to resize the panes"
+            "state": "translated",
+            "value": "Faites glisser pour redimensionner les volets"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Drag to resize the panes"
+            "state": "translated",
+            "value": "ドラッグしてペインのサイズを変更します"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Drag to resize the panes"
+            "state": "translated",
+            "value": "드래그하여 분할 창 크기를 조정합니다"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Drag to resize the panes"
+            "state": "translated",
+            "value": "Arraste para redimensionar os painéis"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Drag to resize the panes"
+            "state": "translated",
+            "value": "Потяните, чтобы изменить размер панелей"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Drag to resize the panes"
+            "state": "translated",
+            "value": "拖移以调整窗格大小"
           }
         }
       }
@@ -24168,56 +24168,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Minimap"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Minimap"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Minimap"
+            "state": "translated",
+            "value": "Minimapa"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Minimap"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Minimap"
+            "state": "translated",
+            "value": "ミニマップ"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Minimap"
+            "state": "translated",
+            "value": "미니맵"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Minimap"
+            "state": "translated",
+            "value": "Minimapa"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Minimap"
+            "state": "translated",
+            "value": "Миникарта"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Minimap"
+            "state": "translated",
+            "value": "小地图"
           }
         }
       }
@@ -24228,56 +24228,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Code overview. Click to jump to a line."
+            "state": "translated",
+            "value": "Codeübersicht. Klicken, um zu einer Zeile zu springen."
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Code overview. Click to jump to a line."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Code overview. Click to jump to a line."
+            "state": "translated",
+            "value": "Vista general del código. Haz clic para saltar a una línea."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Code overview. Click to jump to a line."
+            "state": "translated",
+            "value": "Aperçu du code. Cliquez pour aller à une ligne."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Code overview. Click to jump to a line."
+            "state": "translated",
+            "value": "コードの概要。クリックで行に移動します。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Code overview. Click to jump to a line."
+            "state": "translated",
+            "value": "코드 개요. 클릭하면 해당 줄로 이동합니다."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Code overview. Click to jump to a line."
+            "state": "translated",
+            "value": "Visão geral do código. Clique para ir para uma linha."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Code overview. Click to jump to a line."
+            "state": "translated",
+            "value": "Обзор кода. Щёлкните, чтобы перейти к строке."
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Code overview. Click to jump to a line."
+            "state": "translated",
+            "value": "代码概览。点按可跳转到某一行。"
           }
         }
       }
@@ -24288,56 +24288,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "New terminal tab"
+            "state": "translated",
+            "value": "Neues Terminal-Tab"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "New terminal tab"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "New terminal tab"
+            "state": "translated",
+            "value": "Nueva pestaña de terminal"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "New terminal tab"
+            "state": "translated",
+            "value": "Nouvel onglet de terminal"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "New terminal tab"
+            "state": "translated",
+            "value": "新規ターミナルタブ"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "New terminal tab"
+            "state": "translated",
+            "value": "새 터미널 탭"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "New terminal tab"
+            "state": "translated",
+            "value": "Nova aba de terminal"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "New terminal tab"
+            "state": "translated",
+            "value": "Новая вкладка терминала"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "New terminal tab"
+            "state": "translated",
+            "value": "新建终端标签页"
           }
         }
       }
@@ -24348,56 +24348,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Maximize terminal pane"
+            "state": "translated",
+            "value": "Terminal-Bereich maximieren"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Maximize terminal pane"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Maximize terminal pane"
+            "state": "translated",
+            "value": "Maximizar panel de terminal"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Maximize terminal pane"
+            "state": "translated",
+            "value": "Agrandir le volet de terminal"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Maximize terminal pane"
+            "state": "translated",
+            "value": "ターミナルペインを最大化"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Maximize terminal pane"
+            "state": "translated",
+            "value": "터미널 창 최대화"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Maximize terminal pane"
+            "state": "translated",
+            "value": "Maximizar painel de terminal"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Maximize terminal pane"
+            "state": "translated",
+            "value": "Развернуть панель терминала"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Maximize terminal pane"
+            "state": "translated",
+            "value": "最大化终端窗格"
           }
         }
       }
@@ -24408,56 +24408,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Restore terminal pane"
+            "state": "translated",
+            "value": "Terminal-Bereich wiederherstellen"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Restore terminal pane"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Restore terminal pane"
+            "state": "translated",
+            "value": "Restaurar panel de terminal"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Restore terminal pane"
+            "state": "translated",
+            "value": "Restaurer le volet de terminal"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Restore terminal pane"
+            "state": "translated",
+            "value": "ターミナルペインを元に戻す"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Restore terminal pane"
+            "state": "translated",
+            "value": "터미널 창 원래대로"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Restore terminal pane"
+            "state": "translated",
+            "value": "Restaurar painel de terminal"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Restore terminal pane"
+            "state": "translated",
+            "value": "Восстановить панель терминала"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Restore terminal pane"
+            "state": "translated",
+            "value": "恢复终端窗格"
           }
         }
       }
@@ -24468,56 +24468,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close terminal pane"
+            "state": "translated",
+            "value": "Terminal-Bereich schließen"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Close terminal pane"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close terminal pane"
+            "state": "translated",
+            "value": "Cerrar panel de terminal"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close terminal pane"
+            "state": "translated",
+            "value": "Fermer le volet de terminal"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close terminal pane"
+            "state": "translated",
+            "value": "ターミナルペインを閉じる"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close terminal pane"
+            "state": "translated",
+            "value": "터미널 창 닫기"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close terminal pane"
+            "state": "translated",
+            "value": "Fechar painel de terminal"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close terminal pane"
+            "state": "translated",
+            "value": "Закрыть панель терминала"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Close terminal pane"
+            "state": "translated",
+            "value": "关闭终端窗格"
           }
         }
       }
@@ -24528,56 +24528,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this terminal pane"
+            "state": "translated",
+            "value": "Schließt diesen Terminal-Bereich"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Closes this terminal pane"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this terminal pane"
+            "state": "translated",
+            "value": "Cierra este panel de terminal"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this terminal pane"
+            "state": "translated",
+            "value": "Ferme ce volet de terminal"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this terminal pane"
+            "state": "translated",
+            "value": "このターミナルペインを閉じます"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this terminal pane"
+            "state": "translated",
+            "value": "이 터미널 창을 닫습니다"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this terminal pane"
+            "state": "translated",
+            "value": "Fecha este painel de terminal"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this terminal pane"
+            "state": "translated",
+            "value": "Закрывает эту панель терминала"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Closes this terminal pane"
+            "state": "translated",
+            "value": "关闭此终端窗格"
           }
         }
       }
@@ -24588,56 +24588,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Switches to this git branch"
+            "state": "translated",
+            "value": "Wechselt zu diesem Git-Branch"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Switches to this git branch"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Switches to this git branch"
+            "state": "translated",
+            "value": "Cambia a esta rama de git"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Switches to this git branch"
+            "state": "translated",
+            "value": "Bascule vers cette branche git"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Switches to this git branch"
+            "state": "translated",
+            "value": "この git ブランチに切り替えます"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Switches to this git branch"
+            "state": "translated",
+            "value": "이 git 브랜치로 전환합니다"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Switches to this git branch"
+            "state": "translated",
+            "value": "Muda para esta branch do git"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Switches to this git branch"
+            "state": "translated",
+            "value": "Переключается на эту git-ветку"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Switches to this git branch"
+            "state": "translated",
+            "value": "切换到此 git 分支"
           }
         }
       }
@@ -24648,56 +24648,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Opens this file"
+            "state": "translated",
+            "value": "Öffnet diese Datei"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Opens this file"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Opens this file"
+            "state": "translated",
+            "value": "Abre este archivo"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Opens this file"
+            "state": "translated",
+            "value": "Ouvre ce fichier"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Opens this file"
+            "state": "translated",
+            "value": "このファイルを開きます"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Opens this file"
+            "state": "translated",
+            "value": "이 파일을 엽니다"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Opens this file"
+            "state": "translated",
+            "value": "Abre este arquivo"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Opens this file"
+            "state": "translated",
+            "value": "Открывает этот файл"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Opens this file"
+            "state": "translated",
+            "value": "打开此文件"
           }
         }
       }
@@ -24708,56 +24708,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Jumps to this symbol"
+            "state": "translated",
+            "value": "Springt zu diesem Symbol"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Jumps to this symbol"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Jumps to this symbol"
+            "state": "translated",
+            "value": "Salta a este símbolo"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Jumps to this symbol"
+            "state": "translated",
+            "value": "Va à ce symbole"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Jumps to this symbol"
+            "state": "translated",
+            "value": "このシンボルに移動します"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Jumps to this symbol"
+            "state": "translated",
+            "value": "이 심볼로 이동합니다"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Jumps to this symbol"
+            "state": "translated",
+            "value": "Vai para este símbolo"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Jumps to this symbol"
+            "state": "translated",
+            "value": "Переходит к этому символу"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Jumps to this symbol"
+            "state": "translated",
+            "value": "跳转到此符号"
           }
         }
       }
@@ -24888,56 +24888,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Status bar"
+            "state": "translated",
+            "value": "Statusleiste"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Status bar"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Status bar"
+            "state": "translated",
+            "value": "Barra de estado"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Status bar"
+            "state": "translated",
+            "value": "Barre d’état"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Status bar"
+            "state": "translated",
+            "value": "ステータスバー"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Status bar"
+            "state": "translated",
+            "value": "상태 표시줄"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Status bar"
+            "state": "translated",
+            "value": "Barra de status"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Status bar"
+            "state": "translated",
+            "value": "Строка состояния"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Status bar"
+            "state": "translated",
+            "value": "状态栏"
           }
         }
       }
@@ -24948,56 +24948,56 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": "Shows or hides the terminal"
+            "state": "translated",
+            "value": "Blendet das Terminal ein oder aus"
           }
         },
         "en": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Shows or hides the terminal"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": "Shows or hides the terminal"
+            "state": "translated",
+            "value": "Muestra u oculta la terminal"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": "Shows or hides the terminal"
+            "state": "translated",
+            "value": "Affiche ou masque le terminal"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": "Shows or hides the terminal"
+            "state": "translated",
+            "value": "ターミナルの表示を切り替えます"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": "Shows or hides the terminal"
+            "state": "translated",
+            "value": "터미널을 표시하거나 가립니다"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "new",
-            "value": "Shows or hides the terminal"
+            "state": "translated",
+            "value": "Mostra ou oculta o terminal"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "new",
-            "value": "Shows or hides the terminal"
+            "state": "translated",
+            "value": "Показывает или скрывает терминал"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": "Shows or hides the terminal"
+            "state": "translated",
+            "value": "显示或隐藏终端"
           }
         }
       }
