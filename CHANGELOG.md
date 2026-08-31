@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.2](https://github.com/batonogov/pine/compare/v2.6.1...v2.6.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* **agent:** survive slow shell mounts and keep valid worktrees switchable ([#1591](https://github.com/batonogov/pine/issues/1591)) ([85bdc2a](https://github.com/batonogov/pine/commit/85bdc2a47e42cc329d83d1573cb0d70fc9515bee)), closes [#1590](https://github.com/batonogov/pine/issues/1590)
+
 ## [2.6.1](https://github.com/batonogov/pine/compare/v2.6.0...v2.6.1) (2026-08-28)
 
 
