@@ -21,6 +21,7 @@ nonisolated enum LogCategory: String, CaseIterable {
     case lsp
     case task
     case extensibility
+    case agent
 
     /// Subsystem для всех логгеров Pine.
     static let subsystem = Bundle.main.bundleIdentifier ?? "io.github.batonogov.pine"
@@ -61,5 +62,11 @@ nonisolated extension Logger {
     /// Lightweight extensibility: user grammars, keybindings (issue #1009).
     static let extensibility = Logger(
         subsystem: LogCategory.subsystem, category: LogCategory.extensibility.rawValue
+    )
+
+    /// Agent launches: worktree creation, admission, PTY start, reservations
+    /// (issue #1590).
+    static let agent = Logger(
+        subsystem: LogCategory.subsystem, category: LogCategory.agent.rawValue
     )
 }

@@ -1936,6 +1936,12 @@ final class TerminalTab: Identifiable, Hashable {
     private let shellSettings: ShellSettings
     private let agentHandoffSettings: AgentHandoffSettings
     private var processStarted = false
+    /// The most recent start attempt was refused by the working-directory
+    /// admission validator, so the shell will not spawn until a later
+    /// `startIfNeeded()` revalidates successfully. `launchAgentInNewTerminal`
+    /// fast-fails on this instead of burning its whole wait budget on a tab
+    /// that has already been told "no" (issue #1590).
+    private(set) var processStartAdmissionRefused = false
     /// Identity-qualified ownership for the exact shell generation and every
     /// observed descendant launched through this tab's real PTY.
     private var processTreeController: TerminalProcessTreeController?
@@ -2156,6 +2162,11 @@ final class TerminalTab: Identifiable, Hashable {
     ) {
         self.workingDirectory = workingDirectory
         self.initialProcess = initialProcess
+        // A rebound directory is a new admission question. Rotate the
+        // validation generation so a refusal recorded against the previous
+        // directory cannot fast-fail a launch into this one.
+        processStartValidationGeneration = UUID()
+        processStartAdmissionRefused = false
     }
 
     /// Installs the project admission validator used immediately before a
@@ -2168,6 +2179,9 @@ final class TerminalTab: Identifiable, Hashable {
         processStartValidationGeneration = UUID()
         processStartValidationTask?.cancel()
         processStartValidationTask = nil
+        // A new validator is a new set of rules; a refusal recorded against
+        // the old one must not fast-fail a launch that this one would admit.
+        processStartAdmissionRefused = false
         workingDirectoryValidator = validator
     }
 
@@ -2263,9 +2277,21 @@ final class TerminalTab: Identifiable, Hashable {
               terminalView.frame.size.height > 0 else { return }
         if let workingDirectory, let workingDirectoryValidator {
             let generation = processStartValidationGeneration
+            // The mark describes the *last* outcome; a fresh attempt is now
+            // underway, so it must not read as a standing refusal while this
+            // validation is pending.
+            processStartAdmissionRefused = false
             processStartValidationTask = Task { @MainActor [weak self] in
                 guard await workingDirectoryValidator(workingDirectory) else {
-                    self?.processStartValidationTask = nil
+                    // Generation fence: a validator superseded by a rebind or
+                    // a re-admission must not poison the current attempt —
+                    // the same token rule that guards the spawn below.
+                    guard let self,
+                          !Task.isCancelled,
+                          self.processStartValidationGeneration == generation
+                    else { return }
+                    self.processStartValidationTask = nil
+                    self.markProcessStartRefused()
                     return
                 }
                 #if DEBUG
@@ -2273,9 +2299,16 @@ final class TerminalTab: Identifiable, Hashable {
                 #endif
                 let valid = await workingDirectoryValidator(workingDirectory)
                 guard let self else { return }
+                guard valid else {
+                    guard !Task.isCancelled,
+                          self.processStartValidationGeneration == generation
+                    else { return }
+                    self.processStartValidationTask = nil
+                    self.markProcessStartRefused()
+                    return
+                }
                 self.processStartValidationTask = nil
                 guard !Task.isCancelled,
-                      valid,
                       !self.isTerminated,
                       !self.processStarted,
                       self.processStartValidationGeneration == generation,
@@ -2287,9 +2320,21 @@ final class TerminalTab: Identifiable, Hashable {
         startProcessNow()
     }
 
+    /// A refused start is a dead end for this attempt, not a pause: surface it
+    /// for callers and for the log, so an agent launch that can never come up
+    /// fails in one hop instead of after a full wait budget.
+    private func markProcessStartRefused() {
+        guard !processStartAdmissionRefused else { return }
+        processStartAdmissionRefused = true
+        Logger.terminal.error(
+            "Terminal shell start refused by working-directory admission at \(self.workingDirectory?.path ?? "?", privacy: .public)"
+        )
+    }
+
     private func startProcessNow() {
         guard !isTerminated, !processStarted else { return }
         processStarted = true
+        processStartAdmissionRefused = false
 
         let env = buildEnvironment()
         let envStrings = env.map { "\($0.key)=\($0.value)" }

@@ -11834,6 +11834,21 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 无法打开“%@”。" } }
       }
     },
+    "projectSwitcher.error.openWorktree %@ %@": {
+      "comment": "Agent worktree open failure. First argument is the branch, second is the project name.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Pine konnte den Agent-Worktree „%@“ für „%@“ nicht öffnen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Pine couldn’t open the “%@” agent worktree for “%@”." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Pine no pudo abrir el worktree de agente «%@» para «%@»." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pine n’a pas pu ouvrir le worktree d’agent « %@ » pour « %@ »." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Pineでエージェントworktree「%@」（プロジェクト「%@」）を開けませんでした。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pine에서 에이전트 worktree ‘%@’(%@ 프로젝트)를 열 수 없습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O Pine não pôde abrir a worktree de agente “%@” do projeto “%@”." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Pine не удалось открыть worktree агента «%@» для проекта «%@»." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Pine 无法打开“%@”智能体工作树（项目“%@”）。" } }
+      }
+    },
     "projectSwitcher.error.title": {
       "comment": "Title for project switcher and agent launch errors.",
       "extractionState": "manual",

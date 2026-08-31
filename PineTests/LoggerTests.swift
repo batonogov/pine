@@ -85,7 +85,7 @@ struct LoggerTests {
     // MARK: - CaseIterable
 
     @Test func expectedCategoryCount() {
-        #expect(LogCategory.allCases.count == 11)
+        #expect(LogCategory.allCases.count == 12)
     }
 
     @Test func allCasesContainsAllCategories() {
@@ -101,6 +101,7 @@ struct LoggerTests {
             .lsp,
             .task,
             .extensibility,
+            .agent,
         ]
         #expect(Set(LogCategory.allCases) == expected)
     }
