@@ -2828,7 +2828,9 @@ final class ProjectRegistry: LSPSettingsObserver {
             ) else { return false }
             // The window can refuse — the directory may have gone missing
             // between admission and here, and the session drops targets it
-            // cannot activate. Only claim the window if it took the project.
+            // cannot activate (a managed worktree whose root still exists
+            // is the one target it deliberately keeps, #1590). Only claim
+            // the window if it took the project.
             if session.contains(canonicalProjectURL(projectURL)) {
                 openProjectWindow(session.sceneProjectURL)
                 return true

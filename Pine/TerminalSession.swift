@@ -2162,6 +2162,11 @@ final class TerminalTab: Identifiable, Hashable {
     ) {
         self.workingDirectory = workingDirectory
         self.initialProcess = initialProcess
+        // A rebound directory is a new admission question. Rotate the
+        // validation generation so a refusal recorded against the previous
+        // directory cannot fast-fail a launch into this one.
+        processStartValidationGeneration = UUID()
+        processStartAdmissionRefused = false
     }
 
     /// Installs the project admission validator used immediately before a
@@ -2278,8 +2283,15 @@ final class TerminalTab: Identifiable, Hashable {
             processStartAdmissionRefused = false
             processStartValidationTask = Task { @MainActor [weak self] in
                 guard await workingDirectoryValidator(workingDirectory) else {
-                    self?.processStartValidationTask = nil
-                    self?.markProcessStartRefused()
+                    // Generation fence: a validator superseded by a rebind or
+                    // a re-admission must not poison the current attempt —
+                    // the same token rule that guards the spawn below.
+                    guard let self,
+                          !Task.isCancelled,
+                          self.processStartValidationGeneration == generation
+                    else { return }
+                    self.processStartValidationTask = nil
+                    self.markProcessStartRefused()
                     return
                 }
                 #if DEBUG
@@ -2287,11 +2299,15 @@ final class TerminalTab: Identifiable, Hashable {
                 #endif
                 let valid = await workingDirectoryValidator(workingDirectory)
                 guard let self else { return }
-                self.processStartValidationTask = nil
                 guard valid else {
+                    guard !Task.isCancelled,
+                          self.processStartValidationGeneration == generation
+                    else { return }
+                    self.processStartValidationTask = nil
                     self.markProcessStartRefused()
                     return
                 }
+                self.processStartValidationTask = nil
                 guard !Task.isCancelled,
                       !self.isTerminated,
                       !self.processStarted,

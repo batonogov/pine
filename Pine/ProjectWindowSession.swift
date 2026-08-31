@@ -459,15 +459,16 @@ final class ProjectWindowSession {
     ) async {
         guard !isLaunchingAgent else { return }
         let target = url.standardizedFileURL
+        let worktreeLookupKey = Self.worktreeMembershipKey(url)
 
         let manager: ProjectManager?
-        if let worktree = managedWorktrees[target] {
+        if let worktree = managedWorktrees[worktreeLookupKey] {
             manager = await registry.projectManager(for: worktree)
         } else {
             manager = registry.projectManager(for: target)
         }
         guard let manager else {
-            let worktree = managedWorktrees[target]
+            let worktree = managedWorktrees[worktreeLookupKey]
             if reportFailure {
                 alertMessage = if let worktree {
                     Strings.projectSwitcherWorktreeOpenFailureText(
@@ -495,21 +496,26 @@ final class ProjectWindowSession {
             } else {
                 worktreeStillExists = false
             }
-            if worktree == nil || !worktreeStillExists {
-                if worktree == nil {
-                    Logger.agent.error(
-                        "Evicting unavailable project \(target.path, privacy: .public)"
-                    )
-                } else {
-                    Logger.agent.error(
-                        "Evicting worktree \(worktree?.worktreeRoot.path ?? target.path, privacy: .public): the root no longer exists on disk"
-                    )
-                }
+            if worktree == nil {
+                Logger.agent.error(
+                    "Evicting unavailable project \(target.path, privacy: .public)"
+                )
                 removeUnavailableTarget(target)
+            } else if !worktreeStillExists {
+                Logger.agent.error(
+                    "Evicting worktree \(worktree?.worktreeRoot.path ?? target.path, privacy: .public): the root no longer exists on disk"
+                )
+                removeUnavailableTarget(worktreeLookupKey)
             } else {
                 Logger.agent.error(
                     "Worktree \(worktree?.worktreeRoot.path ?? target.path, privacy: .public) kept in the session: activation refused, root exists"
                 )
+                // Persist the current truth even though nothing switched.
+                // A restore whose remembered active URL was this worktree
+                // returns `.unavailable` before `restoreIfNeeded`'s own
+                // save, and without this write the stale active URL would
+                // dismiss that scene to Welcome on every relaunch forever.
+                saveState()
             }
             return
         }
@@ -795,6 +801,20 @@ final class ProjectWindowSession {
             projectURLs.removeAll { $0 == target }
         }
         saveState()
+    }
+
+    /// A stable dictionary key for directory-valued membership URLs.
+    /// `standardizedFileURL` consults the filesystem on modern Foundation
+    /// and drops the trailing slash once the path stops hosting a
+    /// directory, so a worktree replaced by a regular file would miss its
+    /// own entry and an eviction would write under a dead key (#1590).
+    nonisolated private static func worktreeMembershipKey(
+        _ url: URL
+    ) -> URL {
+        URL(
+            fileURLWithPath: url.standardizedFileURL.path,
+            isDirectory: true
+        )
     }
 
     /// Whether a worktree's checkout is still on disk. File I/O stays off the

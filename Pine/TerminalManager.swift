@@ -750,6 +750,7 @@ final class TerminalManager {
             try? await Task.sleep(for: .milliseconds(25))
         }
         var attempts = 0
+        var refusalRekicks = 0
         for _ in 0..<max(0, maximumAttempts) where !tab.isProcessRunning {
             guard !Task.isCancelled else {
                 cancelAgentLaunch(in: tab)
@@ -762,10 +763,24 @@ final class TerminalManager {
                 return .rejected
             }
             if tab.processStartAdmissionRefused {
-                Logger.agent.error(
-                    "Agent launch shell start was refused by working-directory admission (after \(attempts) waits)"
+                // The mark means "the last attempt was refused", not "this
+                // directory is forbidden": a transient admission miss must
+                // not turn into the launch failure it is meant to prevent
+                // (#1590). Re-arm one fresh validation before believing it;
+                // a genuine refusal repeats and still fails fast.
+                guard refusalRekicks < 2 else {
+                    Logger.agent.error(
+                        "Agent launch shell start was refused by working-directory admission twice (after \(attempts) waits)"
+                    )
+                    return .rejected
+                }
+                refusalRekicks += 1
+                Logger.agent.debug(
+                    "Agent launch re-arming terminal validation after a refused admission (re-kick \(refusalRekicks))"
                 )
-                return .rejected
+                tab.startIfNeeded()
+                await wait()
+                continue
             }
             attempts += 1
             await wait()
@@ -784,19 +799,28 @@ final class TerminalManager {
             descriptor: descriptor,
             in: tab
         )
-        if case .reserved = launch {
+        switch launch {
+        case .reserved:
             Logger.agent.debug("Agent launch reserved its terminal")
-        } else {
+        case .sentWithoutReservation:
+            // The command reached the shell but no reservation was armed —
+            // an agent may be running unmanaged. Operational, hence error.
             Logger.agent.error(
-                "Agent launch command did not reserve: \(String(describing: launch), privacy: .public)"
+                "Agent launch command was sent without a reservation at \(workingDirectory.path, privacy: .public)"
+            )
+        case .rejected:
+            Logger.agent.error(
+                "Agent launch command was rejected after the shell started at \(workingDirectory.path, privacy: .public)"
             )
         }
         return launch
     }
 
-    /// 25 ms per attempt × 800 attempts = a 20 s ceiling for the shell to come
-    /// up. Real mounts finish far inside it; the ceiling exists so a launch
-    /// that can never succeed still reports, rather than hanging the session's
+    /// 25 ms per attempt × 800 attempts = a 20 s ceiling for the shell to
+    /// come up — measured in idle main-actor time: each hop resumes on the
+    /// main actor, so heavy contention stretches the wall clock further.
+    /// Real mounts finish far inside it; the ceiling exists so a launch that
+    /// can never succeed still reports, rather than hanging the session's
     /// `isLaunchingAgent` gate forever.
     static let agentLaunchProcessStartAttempts = 800
 
