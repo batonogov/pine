@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import os
 
 nonisolated enum AgentTaskRecoveryLaunchResult: Equatable, Sendable {
     case openedNewSession(terminalID: UUID)
@@ -709,38 +710,95 @@ final class TerminalManager {
     /// waits for its exact PTY generation to become writable, then uses the
     /// existing Pine-owned reservation path to launch one known agent token.
     /// The shell remains interactive after the agent exits.
+    ///
+    /// The wait budget has to cover the whole chain that stands between tab
+    /// creation and a live shell: SwiftUI mounting the just-transitioned
+    /// worktree project, AppKit giving the terminal container real bounds
+    /// (a zero-sized placeholder must not spawn the PTY), the async
+    /// working-directory admission validation, and SwiftTerm's fork. Three
+    /// seconds covered none of that on a large first render (issue #1590), so
+    /// the budget is generous while the deterministic dead ends — admission
+    /// refusal, a tab that died first — fail in one hop.
     func launchAgentInNewTerminal(
         _ command: String,
         descriptor: AgentDescriptor,
         workingDirectory: URL,
-        maximumAttempts: Int = 120,
+        maximumAttempts: Int = TerminalManager
+            .agentLaunchProcessStartAttempts,
         waitForNextAttempt: (@MainActor () async -> Void)? = nil
     ) async -> AgentTaskLaunchResult {
-        guard Self.exactAgentLaunchDescriptor(for: command) == descriptor,
-              !isPermanentlyInvalidated else { return .rejected }
+        let descriptorMatches =
+            Self.exactAgentLaunchDescriptor(for: command) == descriptor
+        guard descriptorMatches, !isPermanentlyInvalidated else {
+            Logger.agent.error(
+                "Agent launch rejected before terminal creation (descriptor \(descriptorMatches), invalidated \(self.isPermanentlyInvalidated))"
+            )
+            return .rejected
+        }
         ensureAgentDetectionStarted()
         guard let (_, tab) = createTerminalTabForRecovery(
             workingDirectory: workingDirectory,
             initialProcess: nil
-        ) else { return .rejected }
+        ) else {
+            Logger.agent.error(
+                "Agent launch could not create a terminal tab at \(workingDirectory.path, privacy: .public)"
+            )
+            return .rejected
+        }
 
         let wait = waitForNextAttempt ?? {
             try? await Task.sleep(for: .milliseconds(25))
         }
+        var attempts = 0
         for _ in 0..<max(0, maximumAttempts) where !tab.isProcessRunning {
             guard !Task.isCancelled else {
                 cancelAgentLaunch(in: tab)
                 return .rejected
             }
+            if tab.isTerminated {
+                Logger.agent.error(
+                    "Agent launch terminal ended before its shell started (after \(attempts) waits)"
+                )
+                return .rejected
+            }
+            if tab.processStartAdmissionRefused {
+                Logger.agent.error(
+                    "Agent launch shell start was refused by working-directory admission (after \(attempts) waits)"
+                )
+                return .rejected
+            }
+            attempts += 1
             await wait()
         }
-        guard tab.isProcessRunning else { return .rejected }
-        return await launchAgentCommand(
+        guard tab.isProcessRunning else {
+            Logger.agent.error(
+                "Agent launch shell never started: \(attempts) waits exhausted at \(workingDirectory.path, privacy: .public)"
+            )
+            return .rejected
+        }
+        Logger.agent.debug(
+            "Agent launch shell started after \(attempts) waits at \(workingDirectory.path, privacy: .public)"
+        )
+        let launch = await launchAgentCommand(
             command,
             descriptor: descriptor,
             in: tab
         )
+        if case .reserved = launch {
+            Logger.agent.debug("Agent launch reserved its terminal")
+        } else {
+            Logger.agent.error(
+                "Agent launch command did not reserve: \(String(describing: launch), privacy: .public)"
+            )
+        }
+        return launch
     }
+
+    /// 25 ms per attempt × 800 attempts = a 20 s ceiling for the shell to come
+    /// up. Real mounts finish far inside it; the ceiling exists so a launch
+    /// that can never succeed still reports, rather than hanging the session's
+    /// `isLaunchingAgent` gate forever.
+    static let agentLaunchProcessStartAttempts = 800
 
 #if DEBUG
     var agentCallbacksFrozenForTesting: Bool {

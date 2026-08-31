@@ -942,6 +942,26 @@ enum Strings {
         )
     }
 
+    /// Names the branch and its project rather than the worktree's UUID
+    /// directory: a person deciding whether to retry has no use for the UUID
+    /// (issue #1590).
+    static func projectSwitcherWorktreeOpenFailureText(
+        _ branchName: String,
+        projectName: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "projectSwitcher.error.openWorktree %@ %@",
+            fallback: "Pine couldn’t open the “%@” agent worktree for “%@”.",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [branchName, projectName]
+        )
+    }
+
     static func projectSwitcherAgentMissingText(
         _ agentName: String,
         locale: Locale = .current
