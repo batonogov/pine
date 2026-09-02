@@ -1573,6 +1573,11 @@ final class ProjectManager {
     #if DEBUG
     private(set) var editorServiceSuspendCountForTesting = 0
     private(set) var editorServiceResumeCountForTesting = 0
+    /// Locks the regression where a lease rebuild rotated the admission
+    /// generation and froze the workspace filesystem validator (#1593).
+    var admissionGenerationForTesting: UUID {
+        agentTaskFilesystemAdmissionGeneration
+    }
     #endif
     private var editorContextCommandGeneration: UInt64 = 0
     private let contextPresentationIdentity: ContextPresentationIdentity
@@ -1583,6 +1588,16 @@ final class ProjectManager {
     private var agentTaskFilesystemAdmissionGeneration = UUID()
     @ObservationIgnored
     private var agentTaskFilesystemIdentity: AgentTaskProjectIdentity?
+    /// When a refused admission revalidation last attempted a whole-lease
+    /// rebuild (#1593). Throttles the rebuild so a layout-driven refusal
+    /// loop cannot turn into a graph-walk storm.
+    @ObservationIgnored
+    private var admissionRebuildAttempt: ContinuousClock.Instant?
+    /// Minimum spacing between whole-lease rebuild attempts. A rebuild that
+    /// cannot succeed fails deterministically in `validationLease`, so
+    /// retrying sooner than this adds cost without adding information.
+    private static let admissionRebuildMinimumInterval: Duration =
+        .milliseconds(250)
 
     /// The crash-recovery entries still worth putting in front of the user.
     ///
@@ -2285,6 +2300,22 @@ final class ProjectManager {
         paneManager.allTerminalTabs.forEach(configureFilesystemAdmission)
     }
 
+    /// Re-derivation of the same admission rules after a refused
+    /// revalidation (#1593): identity and validation semantics are
+    /// unchanged, so the admission generation must NOT rotate here — a
+    /// workspace filesystem validator captured at `loadDirectory` keeps
+    /// comparing against that generation, and rotating it would make every
+    /// later tree reload fail validation and suspend the file watcher.
+    /// Suspended revalidations of the replaced lease stay fenced by the
+    /// `agentTaskFilesystemAdmission ===` identity check in
+    /// `revalidateAgentTaskFilesystemAdmission`.
+    private func swapRevalidatedAdmission(
+        _ admission: RecentAgentTaskFilesystemValidationLease
+    ) {
+        agentTaskFilesystemAdmission = admission
+        paneManager.allTerminalTabs.forEach(configureFilesystemAdmission)
+    }
+
     private func configureFilesystemAdmission(for tab: TerminalTab) {
         guard agentTaskFilesystemAdmission != nil else {
             tab.configureWorkingDirectoryValidation(nil)
@@ -2319,11 +2350,68 @@ final class ProjectManager {
         let valid = await Task.detached(priority: .utility) {
             admission.revalidate()
         }.value
-        return !Task.isCancelled
-            && valid
-            && agentTaskFilesystemAdmission === admission
-            && agentTaskFilesystemAdmissionGeneration == generation
-            && agentTaskFilesystemIdentity == identity
+        if valid {
+            return !Task.isCancelled
+                && agentTaskFilesystemAdmission === admission
+                && agentTaskFilesystemAdmissionGeneration == generation
+                && agentTaskFilesystemIdentity == identity
+        }
+        return await rebuildAgentTaskFilesystemAdmissionIfEligible(
+            replacing: admission,
+            identity: identity
+        )
+    }
+
+    /// A refused revalidation used to stay refused until the next full
+    /// project open, which stranded a fresh agent worktree behind a launch
+    /// that could never come up (#1593). The filesystem can legitimately
+    /// move past a captured descriptor — the OS restamps metadata,
+    /// `git worktree repair` rewrites control files — so before believing a
+    /// permanent refusal, rebuild the lease from the current graph and swap
+    /// it in when the recomputed proof still identifies the same repository.
+    /// Per-descriptor strictness is unchanged; this only re-derives the
+    /// baseline the descriptors compare against.
+    private func rebuildAgentTaskFilesystemAdmissionIfEligible(
+        replacing staleAdmission: RecentAgentTaskFilesystemValidationLease,
+        identity: AgentTaskProjectIdentity
+    ) async -> Bool {
+        guard !Task.isCancelled,
+              agentTaskFilesystemAdmission === staleAdmission,
+              agentTaskFilesystemIdentity == identity else { return false }
+        let now = ContinuousClock.now
+        if let last = admissionRebuildAttempt,
+           now - last < Self.admissionRebuildMinimumInterval {
+            return false
+        }
+        admissionRebuildAttempt = now
+        let expectedProof = staleAdmission.proof
+        let rebuilt = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.validationLease(
+                for: identity,
+                expectedProof: expectedProof
+            )
+        }.value
+        guard let rebuilt else { return false }
+        guard agentTaskFilesystemAdmission === staleAdmission,
+              agentTaskFilesystemIdentity == identity,
+              !Task.isCancelled else { return false }
+        swapRevalidatedAdmission(rebuilt)
+        // Re-arming tab validation cancels any in-flight terminal validation
+        // task — including the one whose refusal triggered this rebuild. A
+        // cancelled task exits without marking its refusal, and nothing else
+        // re-drives `startIfNeeded` (the validation fields are not read by
+        // any view), so a tab whose shell never came up would wait out the
+        // whole launch budget instead of starting against the rebuilt lease.
+        // Restart every tab that still has no live process.
+        paneManager.allTerminalTabs.forEach { tab in
+            if !tab.isProcessRunning {
+                tab.startIfNeeded()
+            }
+        }
+        Logger.agent.error(
+            "Rebuilt agent-task filesystem admission after a refused revalidation at \(identity.canonicalWorktreePath, privacy: .public)"
+        )
+        return true
     }
 
     // MARK: - Agent activity file-system correlation (#1072)
