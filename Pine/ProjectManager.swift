@@ -1583,6 +1583,16 @@ final class ProjectManager {
     private var agentTaskFilesystemAdmissionGeneration = UUID()
     @ObservationIgnored
     private var agentTaskFilesystemIdentity: AgentTaskProjectIdentity?
+    /// When a refused admission revalidation last attempted a whole-lease
+    /// rebuild (#1593). Throttles the rebuild so a layout-driven refusal
+    /// loop cannot turn into a graph-walk storm.
+    @ObservationIgnored
+    private var admissionRebuildAttempt: ContinuousClock.Instant?
+    /// Minimum spacing between whole-lease rebuild attempts. A rebuild that
+    /// cannot succeed fails deterministically in `validationLease`, so
+    /// retrying sooner than this adds cost without adding information.
+    private static let admissionRebuildMinimumInterval: Duration =
+        .milliseconds(250)
 
     /// The crash-recovery entries still worth putting in front of the user.
     ///
@@ -2319,11 +2329,56 @@ final class ProjectManager {
         let valid = await Task.detached(priority: .utility) {
             admission.revalidate()
         }.value
-        return !Task.isCancelled
-            && valid
-            && agentTaskFilesystemAdmission === admission
-            && agentTaskFilesystemAdmissionGeneration == generation
-            && agentTaskFilesystemIdentity == identity
+        if valid {
+            return !Task.isCancelled
+                && agentTaskFilesystemAdmission === admission
+                && agentTaskFilesystemAdmissionGeneration == generation
+                && agentTaskFilesystemIdentity == identity
+        }
+        return await rebuildAgentTaskFilesystemAdmissionIfEligible(
+            replacing: admission,
+            identity: identity
+        )
+    }
+
+    /// A refused revalidation used to stay refused until the next full
+    /// project open, which stranded a fresh agent worktree behind a launch
+    /// that could never come up (#1593). The filesystem can legitimately
+    /// move past a captured descriptor — the OS restamps metadata,
+    /// `git worktree repair` rewrites control files — so before believing a
+    /// permanent refusal, rebuild the lease from the current graph and swap
+    /// it in when the recomputed proof still identifies the same repository.
+    /// Per-descriptor strictness is unchanged; this only re-derives the
+    /// baseline the descriptors compare against.
+    private func rebuildAgentTaskFilesystemAdmissionIfEligible(
+        replacing staleAdmission: RecentAgentTaskFilesystemValidationLease,
+        identity: AgentTaskProjectIdentity
+    ) async -> Bool {
+        guard !Task.isCancelled,
+              agentTaskFilesystemAdmission === staleAdmission,
+              agentTaskFilesystemIdentity == identity else { return false }
+        let now = ContinuousClock.now
+        if let last = admissionRebuildAttempt,
+           now - last < Self.admissionRebuildMinimumInterval {
+            return false
+        }
+        admissionRebuildAttempt = now
+        let expectedProof = staleAdmission.proof
+        let rebuilt = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.validationLease(
+                for: identity,
+                expectedProof: expectedProof
+            )
+        }.value
+        guard let rebuilt else { return false }
+        guard agentTaskFilesystemAdmission === staleAdmission,
+              agentTaskFilesystemIdentity == identity,
+              !Task.isCancelled else { return false }
+        replaceAgentTaskFilesystemAdmission(rebuilt, identity: identity)
+        Logger.agent.error(
+            "Rebuilt agent-task filesystem admission after a refused revalidation at \(identity.canonicalWorktreePath, privacy: .public)"
+        )
+        return true
     }
 
     // MARK: - Agent activity file-system correlation (#1072)

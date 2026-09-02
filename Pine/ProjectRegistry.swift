@@ -142,10 +142,22 @@ nonisolated private struct StableFilesystemObjectIdentity: Equatable, Sendable {
 nonisolated private final class StablePathDescriptor: @unchecked Sendable {
     let url: URL
     let descriptor: Int32
-    let information: stat
     let kind: UInt16
     private let parent: StablePathDescriptor?
     private let entryName: String?
+
+    /// Captured identity and metadata baseline. Mutable for exactly one
+    /// reason: adopting a metadata-only ctime bump that macOS issues
+    /// asynchronously on freshly created files (`com.apple.provenance`,
+    /// issue #1593). Guarded by its own lock because one lease's descriptors
+    /// revalidate concurrently from detached tasks.
+    private let informationLock = NSLock()
+    private var informationStorage: stat
+    var information: stat {
+        informationLock.lock()
+        defer { informationLock.unlock() }
+        return informationStorage
+    }
 
     init?(url: URL, kind: UInt16) {
         let flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW
@@ -167,7 +179,7 @@ nonisolated private final class StablePathDescriptor: @unchecked Sendable {
         }
         self.url = url
         self.descriptor = descriptor
-        self.information = information
+        self.informationStorage = information
         self.kind = kind
         parent = nil
         entryName = nil
@@ -207,7 +219,7 @@ nonisolated private final class StablePathDescriptor: @unchecked Sendable {
         }
         self.url = url
         self.descriptor = descriptor
-        self.information = information
+        self.informationStorage = information
         self.kind = kind
         self.parent = parent
         self.entryName = entryName
@@ -233,10 +245,11 @@ nonisolated private final class StablePathDescriptor: @unchecked Sendable {
         } else {
             pathResult = lstat(url.path, &pathState)
         }
+        let baseline = information
         guard fstat(descriptor, &descriptorState) == 0,
               pathResult == 0,
               RecentAgentTaskFilesystemValidator.stableIdentityMatches(
-                  information,
+                  baseline,
                   descriptorState,
                   kind: kind
               ),
@@ -246,8 +259,23 @@ nonisolated private final class StablePathDescriptor: @unchecked Sendable {
                   kind: kind
               ) else { return false }
         if kind == S_IFREG {
-            return RecentAgentTaskFilesystemValidator
-                .stableFileMetadataMatches(information, descriptorState)
+            guard RecentAgentTaskFilesystemValidator.stableFileStateMatches(
+                baseline,
+                descriptorState
+            ) else { return false }
+            // macOS stamps freshly created files with `com.apple.provenance`
+            // asynchronously — a ctime-only bump that can land long after
+            // this descriptor was captured and never reverts (#1593). Every
+            // field a content or ownership change would move (identity,
+            // mode, size, links, mtime) is still compared strictly above;
+            // adopt the new ctime as the baseline instead of refusing the
+            // descriptor forever.
+            if !RecentAgentTaskFilesystemValidator
+                .stableChangeTimeMatches(baseline, descriptorState) {
+                informationLock.lock()
+                informationStorage = descriptorState
+                informationLock.unlock()
+            }
         }
         return true
     }
@@ -462,7 +490,7 @@ nonisolated enum RecentAgentTaskFilesystemValidator {
         )
     }
 
-    fileprivate static func validationLease(
+    static func validationLease(
         for identity: AgentTaskProjectIdentity,
         expectedProof: RecentAgentTaskRepositoryProof?
     ) -> RecentAgentTaskFilesystemValidationLease? {
@@ -960,7 +988,7 @@ nonisolated enum RecentAgentTaskFilesystemValidator {
 
         var after = stat()
         guard fstat(descriptor.descriptor, &after) == 0,
-              stableFileMetadataMatches(before, after),
+              stableFileStateMatches(before, after),
               descriptor.revalidate(),
               reachedEndOfFile,
               Int64(count) == before.st_size,
@@ -968,7 +996,11 @@ nonisolated enum RecentAgentTaskFilesystemValidator {
         return Data(bytes.prefix(count))
     }
 
-    fileprivate static func stableFileMetadataMatches(
+    /// Identity plus every metadata field a content or ownership change
+    /// moves. Deliberately excludes ctime: macOS itself bumps ctime
+    /// asynchronously (`com.apple.provenance`) without touching contents
+    /// (#1593), so ctime is tracked separately and may be re-baselined.
+    fileprivate static func stableFileStateMatches(
         _ lhs: stat,
         _ rhs: stat
     ) -> Bool {
@@ -978,7 +1010,13 @@ nonisolated enum RecentAgentTaskFilesystemValidator {
             && lhs.st_nlink == rhs.st_nlink
             && lhs.st_mtimespec.tv_sec == rhs.st_mtimespec.tv_sec
             && lhs.st_mtimespec.tv_nsec == rhs.st_mtimespec.tv_nsec
-            && lhs.st_ctimespec.tv_sec == rhs.st_ctimespec.tv_sec
+    }
+
+    fileprivate static func stableChangeTimeMatches(
+        _ lhs: stat,
+        _ rhs: stat
+    ) -> Bool {
+        lhs.st_ctimespec.tv_sec == rhs.st_ctimespec.tv_sec
             && lhs.st_ctimespec.tv_nsec == rhs.st_ctimespec.tv_nsec
     }
 
