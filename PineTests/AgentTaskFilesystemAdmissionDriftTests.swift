@@ -348,6 +348,8 @@ struct AgentTaskFilesystemAdmissionDriftTests {
             agentTaskProject: fixture.identity,
             filesystemAdmission: lease
         )
+        let generationAtLoad = project
+            .admissionGenerationForTesting
 
         let beforeRewrite = await project
             .revalidateAgentTaskFilesystemAdmission(
@@ -368,6 +370,21 @@ struct AgentTaskFilesystemAdmissionDriftTests {
                 workingDirectory: fixture.worktree
             )
         #expect(afterRewrite)
+
+        // A rebuild re-derives the same rules, so it must not rotate the
+        // admission generation: the workspace filesystem validator captured
+        // at loadDirectory keeps validating against it, and a rotation would
+        // suspend the file watcher on the next tree reload.
+        #expect(
+            project.admissionGenerationForTesting
+                == generationAtLoad
+        )
+        let epochValidator = await project
+            .revalidateAgentTaskFilesystemAdmission(
+                expectedGeneration: generationAtLoad,
+                workingDirectory: fixture.worktree
+            )
+        #expect(epochValidator)
 
         // The rebuilt lease is the new baseline: repeated validation with no
         // further drift stays valid.

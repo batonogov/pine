@@ -1573,6 +1573,11 @@ final class ProjectManager {
     #if DEBUG
     private(set) var editorServiceSuspendCountForTesting = 0
     private(set) var editorServiceResumeCountForTesting = 0
+    /// Locks the regression where a lease rebuild rotated the admission
+    /// generation and froze the workspace filesystem validator (#1593).
+    var admissionGenerationForTesting: UUID {
+        agentTaskFilesystemAdmissionGeneration
+    }
     #endif
     private var editorContextCommandGeneration: UInt64 = 0
     private let contextPresentationIdentity: ContextPresentationIdentity
@@ -2295,6 +2300,22 @@ final class ProjectManager {
         paneManager.allTerminalTabs.forEach(configureFilesystemAdmission)
     }
 
+    /// Re-derivation of the same admission rules after a refused
+    /// revalidation (#1593): identity and validation semantics are
+    /// unchanged, so the admission generation must NOT rotate here — a
+    /// workspace filesystem validator captured at `loadDirectory` keeps
+    /// comparing against that generation, and rotating it would make every
+    /// later tree reload fail validation and suspend the file watcher.
+    /// Suspended revalidations of the replaced lease stay fenced by the
+    /// `agentTaskFilesystemAdmission ===` identity check in
+    /// `revalidateAgentTaskFilesystemAdmission`.
+    private func swapRevalidatedAdmission(
+        _ admission: RecentAgentTaskFilesystemValidationLease
+    ) {
+        agentTaskFilesystemAdmission = admission
+        paneManager.allTerminalTabs.forEach(configureFilesystemAdmission)
+    }
+
     private func configureFilesystemAdmission(for tab: TerminalTab) {
         guard agentTaskFilesystemAdmission != nil else {
             tab.configureWorkingDirectoryValidation(nil)
@@ -2374,7 +2395,19 @@ final class ProjectManager {
         guard agentTaskFilesystemAdmission === staleAdmission,
               agentTaskFilesystemIdentity == identity,
               !Task.isCancelled else { return false }
-        replaceAgentTaskFilesystemAdmission(rebuilt, identity: identity)
+        swapRevalidatedAdmission(rebuilt)
+        // Re-arming tab validation cancels any in-flight terminal validation
+        // task — including the one whose refusal triggered this rebuild. A
+        // cancelled task exits without marking its refusal, and nothing else
+        // re-drives `startIfNeeded` (the validation fields are not read by
+        // any view), so a tab whose shell never came up would wait out the
+        // whole launch budget instead of starting against the rebuilt lease.
+        // Restart every tab that still has no live process.
+        paneManager.allTerminalTabs.forEach { tab in
+            if !tab.isProcessRunning {
+                tab.startIfNeeded()
+            }
+        }
         Logger.agent.error(
             "Rebuilt agent-task filesystem admission after a refused revalidation at \(identity.canonicalWorktreePath, privacy: .public)"
         )
