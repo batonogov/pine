@@ -207,6 +207,65 @@ struct AgentTaskFilesystemAdmissionDriftTests {
         #expect(stable)
     }
 
+    @Test("A second restamp after an adopted one keeps the lease valid")
+    func repeatedProvenanceRestampsStayValid() async throws {
+        let fixture = try makeDriftFixture(name: "RepeatedRestamp")
+        defer { removeFixture(fixture.root) }
+        let (_, lease) = try await makeProofAndLease(for: fixture)
+
+        // Production observed the OS stamping the same fresh file more than
+        // once (ctime deltas of +1.4 s and then +5.4 s on one probe). Each
+        // restamp must be adoptable against the previously adopted baseline.
+        for round in 0..<2 {
+            try restampMetadataOnly(atPath: fixture.worktreeCommonDir.path)
+            let validated = await Task.detached(priority: .utility) {
+                lease.revalidate()
+            }.value
+            #expect(
+                validated,
+                "restamp round \(round) must not invalidate the lease"
+            )
+        }
+    }
+
+    @Test("Rewrite with an mtime rollback is the documented tolerance edge")
+    func rewriteWithMtimeRollbackIsTolerated() async throws {
+        let fixture = try makeDriftFixture(name: "MtimeRollback")
+        defer { removeFixture(fixture.root) }
+
+        // Pin the file to a millisecond-rounded mtime BEFORE the lease is
+        // captured: a Date round-trips through double, so restoring a
+        // git-written nanosecond mtime would not land bit-identical and the
+        // test would fail on mtime, not on the behavior it exists to pin.
+        let target = fixture.worktreeCommonDir
+        let roundedModification = Date(
+            timeIntervalSince1970: (Date().timeIntervalSince1970 * 1000)
+                .rounded(.down) / 1000
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: roundedModification],
+            ofItemAtPath: target.path
+        )
+        let (_, lease) = try await makeProofAndLease(for: fixture)
+
+        // This pins the security trade-off accepted in #1593: a same-size
+        // rewrite followed by an mtime rollback leaves only ctime moved, and
+        // ctime-only drift is tolerated because the OS itself produces it.
+        // Detection of this synthetic sequence relies on the next whole-lease
+        // re-derivation (proof comparison), not on per-descriptor stats.
+        let original = try Data(contentsOf: target)
+        try rewriteInPlace(target, contents: original)
+        try FileManager.default.setAttributes(
+            [.modificationDate: roundedModification],
+            ofItemAtPath: target.path
+        )
+
+        let validated = await Task.detached(priority: .utility) {
+            lease.revalidate()
+        }.value
+        #expect(validated)
+    }
+
     @Test("In-place control-file rewrite with identical bytes is rejected")
     func inPlaceRewriteIsRejected() async throws {
         let fixture = try makeDriftFixture(name: "InPlaceRewrite")
