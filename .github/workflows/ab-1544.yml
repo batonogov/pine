@@ -1,0 +1,139 @@
+# A/B arbitration for the #1544 sidebar collapse flake. Not part of CI:
+# this workflow exists only on the throwaway test/1544-ab-validation
+# branch and is never merged to main. Delete the branch once the issue's
+# fix lands.
+#
+# Both arms run in the same workflow run on identical macos-26 runners:
+#   baseline — origin/main as-is (the escape claim still sits over both
+#              branches of SidebarSearchableContent)
+#   fixed    — the same tree with probe-1544-fix.patch applied (the claim
+#              moves to the search branch only)
+#
+# Each arm runs the real UI test 10 times with no retry, then the
+# instrumented probe test 10 times (PINE_FOCUS_LOG trace). The historical
+# baseline loses 20-50% of iterations (#1544: 3/10 … 8/15 across runs);
+# the fix is confirmed only if the fixed arm loses 0/10 while baseline
+# still reproduces in the same run. Failures here are DATA, not breakage —
+# test steps are continue-on-error and every arm finishes with a summary.
+name: "A/B 1544 collapse flake"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [test/1544-ab-validation]
+
+concurrency:
+  group: ab-1544-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ab:
+    name: "Arm: ${{ matrix.arm }}"
+    runs-on: macos-26
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [baseline, fixed]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+
+      - name: Ensure Metal Toolchain
+        run: bash scripts/ensure-metal-toolchain.sh
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Apply fix patch
+        if: matrix.arm == 'fixed'
+        run: |
+          git apply --check probe-1544-fix.patch
+          git apply probe-1544-fix.patch
+          git diff --stat
+
+      - name: Build for Testing
+        run: |
+          xcodebuild build-for-testing \
+            -skipPackagePluginValidation \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -enableCodeCoverage NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
+      # The real flaky test, 10 iterations, deliberately WITHOUT
+      # -retry-tests-on-failure: a rescued failure is exactly the data
+      # point this arm exists to count.
+      - name: Real test x10 (no retry)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -skipPackagePluginValidation \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PineUITests/SidebarFolderClickTests/testKeyboardNavigationTypeSelectAndOutlineSemantics \
+            -test-iterations 10 \
+            -resultBundlePath ABReal.xcresult \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee ab-real.log
+
+      # The instrumented probe (already on main from #1574): per-iteration
+      # collapse result plus the PINE_FOCUS_LOG responder trace, so if the
+      # fixed arm still loses keys the next diagnostic step comes free.
+      - name: Probe test x10 (no retry)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -skipPackagePluginValidation \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests \
+            -test-iterations 10 \
+            -resultBundlePath ABProbe.xcresult \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee ab-probe.log
+
+      - name: Summary
+        if: always()
+        run: |
+          REAL_PASSED=$(grep -c "Test Case .* passed" ab-real.log || echo 0)
+          REAL_FAILED=$(grep -c "Test Case .* failed" ab-real.log || echo 0)
+          {
+            echo "## A/B #1544 — arm: ${{ matrix.arm }}"
+            echo ""
+            echo "Real test (SidebarFolderClickTests keyboard navigation), 10 iterations, no retry:"
+            echo "- passed: ${REAL_PASSED}"
+            echo "- failed: ${REAL_FAILED}"
+            echo ""
+            echo "Probe (testCollapseProbe) per-iteration lines:"
+            grep "PROBE-1544 " ab-probe.log || echo "(probe produced no lines — see artifact)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ab-1544-${{ matrix.arm }}
+          path: |
+            ab-real.log
+            ab-probe.log
+          retention-days: 14
