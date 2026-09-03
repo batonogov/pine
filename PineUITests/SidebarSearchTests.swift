@@ -245,4 +245,48 @@ final class SidebarSearchTests: PineUITestCase {
         )
     }
 
+    /// The second Escape dismisses the search: focus has stepped back to the
+    /// field (see the case above), and one more Escape must clear the query
+    /// and bring the file tree branch back. This pins the keyboard dismissal
+    /// path end-to-end — the `.onKeyPress(.escape)` handler relocated onto
+    /// the search branch of `SidebarSearchableContent` (#1544). Search
+    /// result rows carry no `fileNode_` identifiers, so the file row can
+    /// only exist once the real file tree has returned.
+    func testSecondEscapeDismissesSearchAndReturnsFileTree() throws {
+        launchWithProjectAndSearch(projectURL, query: "greeting")
+
+        let sidebar = app.scrollViews["sidebar"].firstMatch
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+        XCTAssertTrue(waitForExistence(sidebar.buttons.firstMatch, timeout: 10))
+
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(waitForExistence(searchField, timeout: 10))
+        searchField.click()
+        searchField.typeKey(.downArrow, modifierFlags: [])
+
+        let selected = sidebar.buttons.matching(
+            NSPredicate(format: "isSelected == true")
+        ).firstMatch
+        XCTAssertTrue(
+            waitForExistence(selected, timeout: 5),
+            "Down arrow in the search field should select a result row"
+        )
+
+        // First Escape steps back to the field; the query survives.
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(
+            waitForExistence(sidebar.buttons.firstMatch, timeout: 5),
+            "First Escape should return focus to the field, not close search"
+        )
+
+        // Second Escape dismisses the search and restores the file tree.
+        app.typeKey(.escape, modifierFlags: [])
+
+        let fileTreeRow = app.sidebarNodes["fileNode_main.swift"]
+        XCTAssertTrue(
+            fileTreeRow.waitForExistence(timeout: 10),
+            "Second Escape should clear the search and return the file tree"
+        )
+    }
+
 }
