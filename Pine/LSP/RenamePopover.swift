@@ -149,13 +149,13 @@ final class RenamePopoverManager: NSObject {
         let container = NSView()
         container.wantsLayer = true
 
-        let label = NSTextField(labelWithString: "Rename symbol to:")
-        label.font = NSFont.systemFont(ofSize: 11)
+        let label = NSTextField(labelWithString: Strings.lspRenameLabel())
+        label.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         label.textColor = .secondaryLabelColor
 
         let field = NSTextField(frame: .zero)
-        field.font = NSFont.systemFont(ofSize: 13)
-        field.placeholderString = "New name"
+        field.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        field.placeholderString = Strings.lspRenamePlaceholder()
         field.delegate = self
         field.target = self
         field.action = #selector(fieldAction(_:))

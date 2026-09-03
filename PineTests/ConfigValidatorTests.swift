@@ -478,7 +478,9 @@ struct ConfigValidatorTests {
         let results = BuiltinValidator.validateYAML(content)
         let trailingWarn = results.filter { $0.line == 1 && $0.severity == .warning }
         #expect(!trailingWarn.isEmpty)
-        let trailingMsg = results.filter { $0.message.contains("Trailing whitespace") }
+        let trailingMsg = results.filter {
+            $0.message.contains(Strings.validationYamlTrailingWhitespace())
+        }
         #expect(!trailingMsg.isEmpty)
     }
 
@@ -487,7 +489,9 @@ struct ConfigValidatorTests {
         let results = BuiltinValidator.validateYAML(content)
         let oddWarn = results.filter { $0.line == 2 && $0.severity == .warning }
         #expect(!oddWarn.isEmpty)
-        let indentMsg = results.filter { $0.message.contains("Unusual indentation") }
+        let indentMsg = results.filter {
+            $0.message.contains(Strings.validationYamlUnusualIndentation(3))
+        }
         #expect(!indentMsg.isEmpty)
     }
 
@@ -511,7 +515,9 @@ struct ConfigValidatorTests {
     @Test func builtinYAML_multipleTabLines() {
         let content = "\tfirst\n\tsecond\nthird: ok\n"
         let results = BuiltinValidator.validateYAML(content)
-        let tabErrors = results.filter { $0.message.contains("tab") }
+        let tabErrors = results.filter {
+            $0.message.contains(Strings.validationYamlTabIndentation())
+        }
         #expect(tabErrors.count == 2)
     }
 
@@ -524,7 +530,9 @@ struct ConfigValidatorTests {
     @Test func builtinYAML_trailingTab_producesWarning() {
         let content = "key: value\t\n"
         let results = BuiltinValidator.validateYAML(content)
-        let trailing = results.filter { $0.message.contains("Trailing whitespace") }
+        let trailing = results.filter {
+            $0.message.contains(Strings.validationYamlTrailingWhitespace())
+        }
         #expect(!trailing.isEmpty)
     }
 
@@ -547,7 +555,11 @@ struct ConfigValidatorTests {
         let content = "FROM ubuntu:22.04\n// this is invalid\n"
         let results = BuiltinValidator.validateDockerfile(content)
         let invalidErrors = results.filter { $0.severity == .error }
-        let instructionMsg = invalidErrors.filter { $0.message.contains("Invalid Dockerfile instruction") }
+        let instructionMsg = invalidErrors.filter {
+            $0.message.contains(
+                Strings.validationDockerfileInvalidInstruction("//")
+            )
+        }
         #expect(!instructionMsg.isEmpty)
     }
 
@@ -561,14 +573,24 @@ struct ConfigValidatorTests {
     @Test func builtinDockerfile_deprecatedMaintainer_producesWarning() {
         let content = "FROM ubuntu:22.04\nMAINTAINER test@example.com\n"
         let results = BuiltinValidator.validateDockerfile(content)
-        let deprecated = results.filter { $0.severity == .warning && $0.message.contains("deprecated") }
+        let deprecated = results.filter {
+            $0.severity == .warning
+                && $0.message.contains(
+                    Strings.validationDockerfileMaintainerDeprecated()
+                )
+        }
         #expect(!deprecated.isEmpty)
     }
 
     @Test func builtinDockerfile_lowercaseInstruction_producesWarning() {
         let content = "FROM ubuntu:22.04\nrun apt-get update\n"
         let results = BuiltinValidator.validateDockerfile(content)
-        let uppercase = results.filter { $0.severity == .warning && $0.message.contains("uppercase") }
+        let uppercase = results.filter {
+            $0.severity == .warning
+                && $0.message.contains(
+                    Strings.validationDockerfileInstructionCase("run", "RUN")
+                )
+        }
         #expect(!uppercase.isEmpty)
     }
 
@@ -698,7 +720,9 @@ struct ConfigValidatorTests {
             // Just verify no crash
         } else {
             // Built-in validator catches tab indentation
-            let tabErrors = result.diagnostics.filter { $0.message.contains("tab") }
+            let tabErrors = result.diagnostics.filter {
+                $0.message.contains(Strings.validationYamlTabIndentation())
+            }
             #expect(!tabErrors.isEmpty)
         }
     }
@@ -759,7 +783,9 @@ struct ConfigValidatorTests {
         }.value
 
         if !result.toolAvailable {
-            let tabErrors = result.diagnostics.filter { $0.message.contains("tab") }
+            let tabErrors = result.diagnostics.filter {
+                $0.message.contains(Strings.validationYamlTabIndentation())
+            }
             #expect(!tabErrors.isEmpty)
         }
     }
@@ -769,7 +795,12 @@ struct ConfigValidatorTests {
     @Test func builtinDockerfile_mixedCase_instruction() {
         let content = "FROM ubuntu:22.04\nRun echo hello\n"
         let results = BuiltinValidator.validateDockerfile(content)
-        let warnings = results.filter { $0.severity == .warning && $0.message.contains("uppercase") }
+        let warnings = results.filter {
+            $0.severity == .warning
+                && $0.message.contains(
+                    Strings.validationDockerfileInstructionCase("Run", "RUN")
+                )
+        }
         #expect(warnings.count == 1)
         #expect(warnings[0].line == 2)
     }
@@ -814,7 +845,9 @@ struct ConfigValidatorTests {
         // The built-in YAML validator should still catch tab indentation.
         let content = "key: value\n\tindented: bad\n"
         let results = BuiltinValidator.validateYAML(content)
-        let tabErrors = results.filter { $0.message.contains("tab") }
+        let tabErrors = results.filter {
+            $0.message.contains(Strings.validationYamlTabIndentation())
+        }
         #expect(!tabErrors.isEmpty, "Built-in validator must produce diagnostics as fallback")
     }
 
@@ -823,14 +856,18 @@ struct ConfigValidatorTests {
     @Test func builtinShell_backticksInDoubleQuotes_noWarning() {
         let content = "echo \"result is `date`\"\n"
         let results = BuiltinValidator.validateShell(content)
-        let backtickInfo = results.filter { $0.message.contains("backtick") }
+        let backtickInfo = results.filter {
+            $0.message.contains(Strings.validationShellBackticks())
+        }
         #expect(backtickInfo.isEmpty, "Backticks inside double quotes should not trigger a warning")
     }
 
     @Test func builtinShell_backticksInSingleQuotes_noWarning() {
         let content = "echo 'result is `date`'\n"
         let results = BuiltinValidator.validateShell(content)
-        let backtickInfo = results.filter { $0.message.contains("backtick") }
+        let backtickInfo = results.filter {
+            $0.message.contains(Strings.validationShellBackticks())
+        }
         #expect(backtickInfo.isEmpty, "Backticks inside single quotes should not trigger a warning")
     }
 
@@ -853,7 +890,9 @@ struct ConfigValidatorTests {
     @Test func builtinYAML_oneSpaceIndent_warns() {
         let content = "parent:\n child: value\n"
         let results = BuiltinValidator.validateYAML(content)
-        let indentWarn = results.filter { $0.message.contains("Unusual indentation") }
+        let indentWarn = results.filter {
+            $0.message.contains(Strings.validationYamlUnusualIndentation(1))
+        }
         #expect(!indentWarn.isEmpty, "1-space indent is unusual and should warn")
     }
 
@@ -869,8 +908,14 @@ struct ConfigValidatorTests {
     @Test func builtinDockerfile_missingFromAndInvalidInstruction() {
         let content = "INVALID_CMD echo hello\nCOPY . /app\n"
         let results = BuiltinValidator.validateDockerfile(content)
-        let missingFrom = results.filter { $0.message.contains("FROM") }
-        let invalidInstr = results.filter { $0.message.contains("Invalid Dockerfile instruction") }
+        let missingFrom = results.filter {
+            $0.message.contains(Strings.validationDockerfileMissingFrom())
+        }
+        let invalidInstr = results.filter {
+            $0.message.contains(
+                Strings.validationDockerfileInvalidInstruction("INVALID_CMD")
+            )
+        }
         #expect(!missingFrom.isEmpty, "Should report missing FROM instruction")
         #expect(!invalidInstr.isEmpty, "Should report invalid instruction")
         #expect(results.filter { $0.severity == .error }.count >= 2, "Should have at least 2 errors")

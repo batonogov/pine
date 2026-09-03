@@ -94,7 +94,7 @@ extension BuiltinValidator {
                 diagnostics.append(ValidationDiagnostic(
                     line: lineNum,
                     column: nil,
-                    message: "Unquoted variable in test — use \"$var\" to prevent word splitting",
+                    message: Strings.validationShellUnquotedVariable(),
                     severity: .warning,
                     source: "pine-shell"
                 ))
@@ -119,7 +119,7 @@ extension BuiltinValidator {
                     diagnostics.append(ValidationDiagnostic(
                         line: lineNum,
                         column: nil,
-                        message: "Use $(...) instead of backticks for command substitution",
+                        message: Strings.validationShellBackticks(),
                         severity: .info,
                         source: "pine-shell"
                     ))

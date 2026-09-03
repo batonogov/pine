@@ -105,8 +105,8 @@ enum IndentationStyle: Equatable, Sendable {
 
     var displayName: String {
         switch self {
-        case .spaces(let count): "Spaces: \(count)"
-        case .tabs: "Tabs"
+        case .spaces(let count): Strings.statusbarIndentationSpaces(count)
+        case .tabs: Strings.statusbarIndentationTabs()
         }
     }
 
@@ -150,13 +150,11 @@ enum IndentationStyle: Equatable, Sendable {
 
 /// Formats file sizes for display.
 enum FileSizeFormatter {
-    static func format(_ bytes: Int) -> String {
-        if bytes < FileSizeConstants.oneKB {
-            return "\(bytes) B"
-        } else if bytes < FileSizeConstants.oneMB {
-            return String(format: "%.1f KB", Double(bytes) / Double(FileSizeConstants.oneKB))
-        } else {
-            return String(format: "%.1f MB", Double(bytes) / Double(FileSizeConstants.oneMB))
-        }
+    /// Locale-aware file size via `ByteCountFormatStyle` (#1536): the
+    /// decimal separator and unit follow the locale ("2,6 МБ" in Russian)
+    /// where the previous `String(format:)` always produced "2.6 MB".
+    /// Decimal (1000-based) units match what Finder shows for a file.
+    static func format(_ bytes: Int, locale: Locale = .current) -> String {
+        Int64(bytes).formatted(.byteCount(style: .file).locale(locale))
     }
 }

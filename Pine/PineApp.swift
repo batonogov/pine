@@ -58,7 +58,10 @@ struct PineApp: App {
                 .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
                 .background { WelcomeWindowCapture(appDelegate: appDelegate) }
         }
-        .defaultSize(width: 600, height: 400)
+        .defaultSize(
+            width: WelcomeWindowMetrics.width,
+            height: WelcomeWindowMetrics.height
+        )
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(.presented)
 
@@ -1545,7 +1548,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         let window = NSWindow(contentViewController: hostingController)
         window.identifier = NSUserInterfaceItemIdentifier("welcome")
         window.title = ""
-        window.setContentSize(NSSize(width: 600, height: 400))
+        window.setContentSize(NSSize(
+            width: WelcomeWindowMetrics.width,
+            height: WelcomeWindowMetrics.height
+        ))
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.center()
         window.isReleasedWhenClosed = false

@@ -16,25 +16,34 @@ struct ConfigValidatorEdgeTests {
     @Test func builtinYAML_tabIndentation() {
         let content = "\tkey: value"
         let diags = BuiltinValidator.validateYAML(content)
-        #expect(diags.contains { $0.message.contains("tab") && $0.severity == .error })
+        #expect(diags.contains {
+            $0.message.contains(Strings.validationYamlTabIndentation())
+                && $0.severity == .error
+        })
     }
 
     @Test func builtinYAML_trailingWhitespace() {
         let content = "key: value   "
         let diags = BuiltinValidator.validateYAML(content)
-        #expect(diags.contains { $0.message.contains("Trailing whitespace") })
+        #expect(diags.contains {
+            $0.message.contains(Strings.validationYamlTrailingWhitespace())
+        })
     }
 
     @Test func builtinYAML_unusualIndentation1Space() {
         let content = " key: value"
         let diags = BuiltinValidator.validateYAML(content)
-        #expect(diags.contains { $0.message.contains("Unusual indentation (1 spaces)") })
+        #expect(diags.contains {
+            $0.message.contains(Strings.validationYamlUnusualIndentation(1))
+        })
     }
 
     @Test func builtinYAML_unusualIndentation3Spaces() {
         let content = "   key: value"
         let diags = BuiltinValidator.validateYAML(content)
-        #expect(diags.contains { $0.message.contains("3 spaces") })
+        #expect(diags.contains {
+            $0.message.contains(Strings.validationYamlUnusualIndentation(3))
+        })
     }
 
     @Test func builtinYAML_normalIndentation2Spaces() {
@@ -70,7 +79,9 @@ struct ConfigValidatorEdgeTests {
     @Test func builtinYAML_ambiguousMapping() {
         let content = "key: value: extra: stuff"
         let diags = BuiltinValidator.validateYAML(content)
-        #expect(diags.contains { $0.message.contains("Ambiguous mapping") })
+        #expect(diags.contains {
+            $0.message.contains(Strings.validationYamlAmbiguousMapping())
+        })
     }
 
     @Test func builtinYAML_urlNotAmbiguous() {
@@ -84,7 +95,9 @@ struct ConfigValidatorEdgeTests {
     @Test func builtinYAML_trailingTab() {
         let content = "key: value\t"
         let diags = BuiltinValidator.validateYAML(content)
-        #expect(diags.contains { $0.message.contains("Trailing whitespace") })
+        #expect(diags.contains {
+            $0.message.contains(Strings.validationYamlTrailingWhitespace())
+        })
     }
 
     // MARK: - BuiltinValidator Dockerfile
@@ -98,25 +111,40 @@ struct ConfigValidatorEdgeTests {
     @Test func builtinDockerfile_missingFROM() {
         let content = "RUN apt-get update"
         let diags = BuiltinValidator.validateDockerfile(content)
-        #expect(diags.contains { $0.message.contains("FROM") && $0.severity == .error })
+        #expect(diags.contains {
+            $0.message.contains(Strings.validationDockerfileMissingFrom())
+                && $0.severity == .error
+        })
     }
 
     @Test func builtinDockerfile_invalidInstruction() {
         let content = "FROM ubuntu\nINVALIDCMD foo"
         let diags = BuiltinValidator.validateDockerfile(content)
-        #expect(diags.contains { $0.message.contains("Invalid Dockerfile instruction") })
+        #expect(diags.contains {
+            $0.message.contains(
+                Strings.validationDockerfileInvalidInstruction("INVALIDCMD")
+            )
+        })
     }
 
     @Test func builtinDockerfile_deprecatedMAINTAINER() {
         let content = "FROM ubuntu\nMAINTAINER test@test.com"
         let diags = BuiltinValidator.validateDockerfile(content)
-        #expect(diags.contains { $0.message.contains("deprecated") })
+        #expect(diags.contains {
+            $0.message.contains(
+                Strings.validationDockerfileMaintainerDeprecated()
+            )
+        })
     }
 
     @Test func builtinDockerfile_lowercaseInstruction() {
         let content = "FROM ubuntu\nrun apt-get update"
         let diags = BuiltinValidator.validateDockerfile(content)
-        #expect(diags.contains { $0.message.contains("should be uppercase") })
+        #expect(diags.contains {
+            $0.message.contains(
+                Strings.validationDockerfileInstructionCase("run", "RUN")
+            )
+        })
     }
 
     @Test func builtinDockerfile_continuationLines() {
@@ -159,13 +187,17 @@ struct ConfigValidatorEdgeTests {
     @Test func builtinShell_unquotedVariable() {
         let content = "[ $var == \"value\" ]"
         let diags = BuiltinValidator.validateShell(content)
-        #expect(diags.contains { $0.message.contains("Unquoted variable") })
+        #expect(diags.contains {
+            $0.message.contains(Strings.validationShellUnquotedVariable())
+        })
     }
 
     @Test func builtinShell_backtickSubstitution() {
         let content = "result=`date`"
         let diags = BuiltinValidator.validateShell(content)
-        #expect(diags.contains { $0.message.contains("$(...) instead of backticks") })
+        #expect(diags.contains {
+            $0.message.contains(Strings.validationShellBackticks())
+        })
     }
 
     @Test func builtinShell_backtickInSingleQuotes() {

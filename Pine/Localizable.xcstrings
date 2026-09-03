@@ -990,60 +990,41 @@
       "comment": "Agent completion evidence brief (#1308).",
       "extractionState": "manual",
       "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld Dateien enthalten überlappende oder mehrdeutige Änderungen."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld files have overlapping or ambiguous edits."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld archivos tienen ediciones superpuestas o ambiguas."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld fichiers ont des modifications qui se chevauchent ou sont ambiguës."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 個のファイルに重複または曖昧な編集があります。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld개 파일에 겹치거나 모호한 편집이 있습니다."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld arquivos têm edições sobrepostas ou ambíguas."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "В %lld файлах есть пересекающиеся или неоднозначные правки."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 个文件存在重叠或不明确的编辑。"
-          }
-        }
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld Datei enthält überlappende oder mehrdeutige Änderungen." } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld Dateien enthalten überlappende oder mehrdeutige Änderungen." } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld file has overlapping or ambiguous edits." } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld files have overlapping or ambiguous edits." } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld archivo tiene ediciones superpuestas o ambiguas." } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld archivos tienen ediciones superpuestas o ambiguas." } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld fichier a des modifications qui se chevauchent ou sont ambiguës." } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld fichiers ont des modifications qui se chevauchent ou sont ambiguës." } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 個のファイルに重複または曖昧な編集があります。" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld개 파일에 겹치거나 모호한 편집이 있습니다." } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld arquivo tem edições sobrepostas ou ambíguas." } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld arquivos têm edições sobrepostas ou ambíguas." } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "В %lld файле есть пересекающиеся или неоднозначные правки." } },
+          "few": { "stringUnit": { "state": "translated", "value": "В %lld файлах есть пересекающиеся или неоднозначные правки." } },
+          "many": { "stringUnit": { "state": "translated", "value": "В %lld файлах есть пересекающиеся или неоднозначные правки." } },
+          "other": { "stringUnit": { "state": "translated", "value": "В %lld файлах есть пересекающиеся или неоднозначные правки." } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 个文件存在重叠或不明确的编辑。" } }
+        } } }
       }
     },
     "agentCompletion.gap.provenance": {
@@ -1170,60 +1151,41 @@
       "comment": "Agent completion evidence brief (#1308).",
       "extractionState": "manual",
       "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Für %lld Dateien sind keine exakten Diff-Statistiken verfügbar."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Exact diff statistics are unavailable for %lld files."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Las estadísticas exactas del diff no están disponibles para %lld archivos."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Les statistiques exactes du diff ne sont pas disponibles pour %lld fichiers."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 個のファイルでは正確な差分統計を利用できません。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld개 파일의 정확한 diff 통계를 사용할 수 없습니다."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "As estatísticas exatas do diff não estão disponíveis para %lld arquivos."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Для %lld файлов точная статистика diff недоступна."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 个文件无法获得精确差异统计。"
-          }
-        }
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Für %lld Datei sind keine exakten Diff-Statistiken verfügbar." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Für %lld Dateien sind keine exakten Diff-Statistiken verfügbar." } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Exact diff statistics are unavailable for %lld file." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Exact diff statistics are unavailable for %lld files." } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Las estadísticas exactas del diff no están disponibles para %lld archivo." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Las estadísticas exactas del diff no están disponibles para %lld archivos." } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Les statistiques exactes du diff ne sont pas disponibles pour %lld fichier." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Les statistiques exactes du diff ne sont pas disponibles pour %lld fichiers." } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 個のファイルでは正確な差分統計を利用できません。" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld개 파일의 정확한 diff 통계를 사용할 수 없습니다." } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "As estatísticas exatas do diff não estão disponíveis para %lld arquivo." } },
+          "other": { "stringUnit": { "state": "translated", "value": "As estatísticas exatas do diff não estão disponíveis para %lld arquivos." } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Для %lld файла точная статистика diff недоступна." } },
+          "few": { "stringUnit": { "state": "translated", "value": "Для %lld файлов точная статистика diff недоступна." } },
+          "many": { "stringUnit": { "state": "translated", "value": "Для %lld файлов точная статистика diff недоступна." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Для %lld файлов точная статистика diff недоступна." } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 个文件无法获得精确差异统计。" } }
+        } } }
       }
     },
     "agentCompletion.gap.tests": {
@@ -1710,60 +1672,41 @@
       "comment": "Agent completion evidence brief (#1308).",
       "extractionState": "manual",
       "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld verifizierte Testläufe"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld verified test runs"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld ejecuciones de pruebas verificadas"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld exécutions de tests vérifiées"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "検証済みテスト実行 %lld 件"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "검증된 테스트 실행 %lld개"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld execuções de teste verificadas"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Подтверждённых запусков тестов: %lld"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 次已验证测试运行"
-          }
-        }
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld verifizierter Testlauf" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld verifizierte Testläufe" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld verified test run" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld verified test runs" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld ejecución de pruebas verificada" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld ejecuciones de pruebas verificadas" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld exécution de test vérifiée" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld exécutions de tests vérifiées" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "検証済みテスト実行 %lld 件" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "검증된 테스트 실행 %lld개" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld execução de teste verificada" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld execuções de teste verificadas" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Подтверждённых запусков тестов: %lld" } },
+          "few": { "stringUnit": { "state": "translated", "value": "Подтверждённых запусков тестов: %lld" } },
+          "many": { "stringUnit": { "state": "translated", "value": "Подтверждённых запусков тестов: %lld" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Подтверждённых запусков тестов: %lld" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 次已验证测试运行" } }
+        } } }
       }
     },
      "agentHistory.emptyMessage": {
@@ -5847,126 +5790,6 @@
         }
       }
     },
-    "context.delete.confirmMessage %@": {
-      "comment": "Message in the delete confirmation alert. %@ is the file/folder name.",
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Möchten Sie „%@“ wirklich in den Papierkorb legen?"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Are you sure you want to move \"%@\" to the Trash?"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "¿Seguro que quieres mover «%@» a la papelera?"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Êtes-vous sûr de vouloir placer « %@ » dans la corbeille ?"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「%@」をゴミ箱に入れてもよろしいですか？"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\"%@\"을(를) 휴지통으로 이동하시겠습니까?"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tem certeza de que deseja mover \"%@\" para o Lixo?"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Вы уверены, что хотите переместить «%@» в Корзину?"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "确定要将“%@”移到废纸篓吗？"
-          }
-        }
-      }
-    },
-    "context.delete.confirmTitle": {
-      "comment": "Title of the delete confirmation alert.",
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In den Papierkorb legen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Move to Trash"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mover a la papelera"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Placer dans la corbeille"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ゴミ箱に入れる"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "휴지통으로 이동"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mover para o Lixo"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Переместить в Корзину"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "移到废纸篓"
-          }
-        }
-      }
-    },
     "context.duplicate": {
       "comment": "Context menu item to duplicate a file or folder.",
       "extractionState": "manual",
@@ -6023,66 +5846,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "复制"
-          }
-        }
-      }
-    },
-    "context.namePlaceholder": {
-      "comment": "Placeholder text in name input field.",
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Name"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Name"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nombre"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nom"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "名前"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이름"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nome"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Имя"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "名称"
           }
         }
       }
@@ -7951,61 +7714,61 @@
       }
     },
     "largeFile.warning.message %@ %@": {
-      "comment": "Alert message for large file warning. Parameters: file name, size in MB.",
+      "comment": "Alert message for large file warning. Parameters: file name, locale-formatted file size.",
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (%2$@ MB) ist groß und könnte den Editor verlangsamen."
+            "value": "%1$@ (%2$@) ist groß und könnte den Editor verlangsamen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (%2$@ MB) is large and may slow down the editor."
+            "value": "%1$@ (%2$@) is large and may slow down the editor."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (%2$@ MB) es grande y puede ralentizar el editor."
+            "value": "%1$@ (%2$@) es grande y puede ralentizar el editor."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (%2$@ MB) est volumineux et pourrait ralentir l'éditeur."
+            "value": "%1$@ (%2$@) est volumineux et pourrait ralentir l'éditeur."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (%2$@ MB) は大きいファイルで、エディタの動作が遅くなる可能性があります。"
+            "value": "%1$@ (%2$@) は大きいファイルで、エディタの動作が遅くなる可能性があります。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (%2$@ MB)은(는) 큰 파일이며 편집기가 느려질 수 있습니다."
+            "value": "%1$@ (%2$@)은(는) 큰 파일이며 편집기가 느려질 수 있습니다."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (%2$@ MB) é grande e pode deixar o editor lento."
+            "value": "%1$@ (%2$@) é grande e pode deixar o editor lento."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (%2$@ MB) — большой файл, который может замедлить работу редактора."
+            "value": "%1$@ (%2$@) — большой файл, который может замедлить работу редактора."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@（%2$@ MB）文件较大，可能会导致编辑器变慢。"
+            "value": "%1$@（%2$@）文件较大，可能会导致编辑器变慢。"
           }
         }
       }
@@ -8066,6 +7829,126 @@
           "stringUnit": {
             "state": "translated",
             "value": "大文件"
+          }
+        }
+      }
+    },
+    "lsp.rename.label": {
+      "comment": "Label above the field in the LSP rename popover.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Symbol umbenennen zu:"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename symbol to:"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renombrar símbolo a:"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renommer le symbole en :"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シンボルの名前変更:"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "심볼 이름 바꾸기:"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renomear símbolo para:"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать символ в:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将符号重命名为："
+          }
+        }
+      }
+    },
+    "lsp.rename.placeholder": {
+      "comment": "Placeholder of the rename field in the LSP rename popover.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuer Name"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New name"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo nombre"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau nom"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい名前"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 이름"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Novo nome"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новое имя"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新名称"
           }
         }
       }
@@ -12183,15 +12066,41 @@
       "comment": "Success banner after integration: %1$@ target branch, %2$lld changed file count.",
       "extractionState": "manual",
       "localizations": {
-        "de": { "stringUnit": { "state": "translated", "value": "%2$lld Änderung(en) auf „%1$@“ bereitgestellt. Es wurde nichts committet." } },
-        "en": { "stringUnit": { "state": "translated", "value": "Staged %2$lld change(s) on “%1$@”. Nothing was committed." } },
-        "es": { "stringUnit": { "state": "translated", "value": "Se prepararon %2$lld cambio(s) en «%1$@». No se hizo ningún commit." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "%2$lld modification(s) indexée(s) sur « %1$@ ». Rien n’a été validé." } },
-        "ja": { "stringUnit": { "state": "translated", "value": "「%1$@」に %2$lld 件の変更をステージしました。コミットはしていません。" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "“%1$@”에 변경 %2$lld개를 스테이징했습니다. 커밋은 하지 않았습니다." } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "%2$lld alteração(ões) preparada(s) em “%1$@”. Nada foi confirmado." } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Подготовлено изменений: %2$lld на «%1$@». Коммит не сделан." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已在“%1$@”上暂存 %2$lld 项更改。未进行提交。" } }
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%2$lld Änderung auf „%1$@“ bereitgestellt. Es wurde nichts committet." } },
+          "other": { "stringUnit": { "state": "translated", "value": "%2$lld Änderungen auf „%1$@“ bereitgestellt. Es wurde nichts committet." } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Staged %2$lld change on “%1$@”. Nothing was committed." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Staged %2$lld changes on “%1$@”. Nothing was committed." } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Se preparó %2$lld cambio en «%1$@». No se hizo ningún commit." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Se prepararon %2$lld cambios en «%1$@». No se hizo ningún commit." } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%2$lld modification indexée sur « %1$@ ». Rien n’a été validé." } },
+          "other": { "stringUnit": { "state": "translated", "value": "%2$lld modifications indexées sur « %1$@ ». Rien n’a été validé." } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "「%1$@」に %2$lld 件の変更をステージしました。コミットはしていません。" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "“%1$@”에 변경 %2$lld개를 스테이징했습니다. 커밋은 하지 않았습니다." } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%2$lld alteração preparada em “%1$@”. Nada foi confirmado." } },
+          "other": { "stringUnit": { "state": "translated", "value": "%2$lld alterações preparadas em “%1$@”. Nada foi confirmado." } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Подготовлено изменений: %2$lld на «%1$@». Коммит не сделан." } },
+          "few": { "stringUnit": { "state": "translated", "value": "Подготовлено изменений: %2$lld на «%1$@». Коммит не сделан." } },
+          "many": { "stringUnit": { "state": "translated", "value": "Подготовлено изменений: %2$lld на «%1$@». Коммит не сделан." } },
+          "other": { "stringUnit": { "state": "translated", "value": "Подготовлено изменений: %2$lld на «%1$@». Коммит не сделан." } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "已在“%1$@”上暂存 %2$lld 项更改。未进行提交。" } }
+        } } }
       }
     },
     "agentWorktrees.moreChanges %lld": {
@@ -12333,15 +12242,41 @@
       "comment": "Row status showing how many paths are uncommitted.",
       "extractionState": "manual",
       "localizations": {
-        "de": { "stringUnit": { "state": "translated", "value": "%lld offen" } },
-        "en": { "stringUnit": { "state": "translated", "value": "%lld uncommitted" } },
-        "es": { "stringUnit": { "state": "translated", "value": "%lld sin confirmar" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "%lld non validée(s)" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "未コミット %lld 件" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "커밋 안 됨 %lld개" } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "%lld não confirmada(s)" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "%lld без коммита" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 项未提交" } }
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld offen" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld offen" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld uncommitted" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld uncommitted" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld sin confirmar" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld sin confirmar" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld non validée" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld non validées" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "未コミット %lld 件" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "커밋 안 됨 %lld개" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld não confirmada" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld não confirmadas" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld без коммита" } },
+          "few": { "stringUnit": { "state": "translated", "value": "%lld без коммита" } },
+          "many": { "stringUnit": { "state": "translated", "value": "%lld без коммита" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld без коммита" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 项未提交" } }
+        } } }
       }
     },
     "agentWorktrees.status.unavailable": {
@@ -14235,60 +14170,41 @@
       "comment": "Footer shown when per-file search results are truncated. %lld is the per-file cap.",
       "extractionState": "manual",
       "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pro Datei auf %lld Treffer begrenzt — verfeinern Sie die Suche"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Per-file results limited to %lld matches — refine your query"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Resultados por archivo limitados a %lld coincidencias — refine su búsqueda"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Résultats par fichier limités à %lld correspondances — affinez votre recherche"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ファイルあたりの結果は %lld 件まで制限されています — 検索を絞り込んでください"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "파일당 결과가 %lld개로 제한되었습니다 — 검색어를 구체화하세요"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Resultados por arquivo limitados a %lld correspondências — refine sua busca"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Результатов на файл: не более %lld — уточните запрос"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每个文件的结果限制为 %lld 个匹配 — 请优化搜索条件"
-          }
-        }
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Pro Datei auf %lld Treffer begrenzt — verfeinern Sie die Suche" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Pro Datei auf %lld Treffer begrenzt — verfeinern Sie die Suche" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Per-file results limited to %lld match — refine your query" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Per-file results limited to %lld matches — refine your query" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Resultados por archivo limitados a %lld coincidencia — refina tu búsqueda" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Resultados por archivo limitados a %lld coincidencias — refina tu búsqueda" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Résultats par fichier limités à %lld correspondance — affinez votre recherche" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Résultats par fichier limités à %lld correspondances — affinez votre recherche" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "ファイルあたりの結果は %lld 件まで制限されています — 検索を絞り込んでください" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "파일당 결과가 %lld개로 제한되었습니다 — 검색어를 구체화하세요" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Resultados por arquivo limitados a %lld correspondência — refine sua busca" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Resultados por arquivo limitados a %lld correspondências — refine sua busca" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Результатов на файл: не более %lld — уточните запрос" } },
+          "few": { "stringUnit": { "state": "translated", "value": "Результатов на файл: не более %lld — уточните запрос" } },
+          "many": { "stringUnit": { "state": "translated", "value": "Результатов на файл: не более %lld — уточните запрос" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Результатов на файл: не более %lld — уточните запрос" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "每个文件的结果限制为 %lld 个匹配 — 请优化搜索条件" } }
+        } } }
       }
     },
     "search.truncatedTotal %lld %lld": {
@@ -14310,7 +14226,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mostrando %1$lld de %2$lld coincidencias — refine su búsqueda"
+            "value": "Mostrando %1$lld de %2$lld coincidencias — refina tu búsqueda"
           }
         },
         "fr": {
@@ -15755,6 +15671,66 @@
         }
       }
     },
+    "statusbar.cursorPosition %lld %lld": {
+      "comment": "Drawn cursor position in the status bar: line, then column. Locale-specific abbreviations (Ln/Col, Zl/Sp, Стр/Стлб).",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zl %1$lld, Sp %2$lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ln %1$lld, Col %2$lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lín %1$lld, Col %2$lld"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lig %1$lld, Col %2$lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行 %1$lld、列 %2$lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "줄 %1$lld, 열 %2$lld"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ln %1$lld, Col %2$lld"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Стр %1$lld, Стлб %2$lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行 %1$lld，列 %2$lld"
+          }
+        }
+      }
+    },
     "statusbar.encodingDisabledDirty": {
       "comment": "Status bar: tooltip explaining why the encoding menu is disabled while the file has unsaved changes.",
       "extractionState": "manual",
@@ -15811,6 +15787,126 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存或还原文件以更改编码"
+          }
+        }
+      }
+    },
+    "statusbar.indentation.spaces %lld": {
+      "comment": "Drawn indentation indicator in the status bar. %lld is the space width.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leerzeichen: %lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spaces: %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espacios: %lld"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espaces : %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スペース: %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "공백: %lld"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espaços: %lld"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пробелы: %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空格：%lld"
+          }
+        }
+      }
+    },
+    "statusbar.indentation.tabs": {
+      "comment": "Drawn indentation indicator in the status bar for tab-indented files.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabs"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabs"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabulaciones"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabulations"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabulações"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Табуляция"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "制表符"
           }
         }
       }
@@ -22263,120 +22359,82 @@
       "comment": "Toast notification when multiple files were reloaded (count + names).",
       "extractionState": "manual",
       "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld Dateien neu geladen: %2$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld files reloaded: %2$@"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld archivos recargados: %2$@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld fichiers rechargés : %2$@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld 個のファイルを再読み込み: %2$@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld개 파일 다시 불러옴: %2$@"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld arquivos recarregados: %2$@"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld файлов перезагружено: %2$@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已重新加载 %1$lld 个文件：%2$@"
-          }
-        }
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld Datei neu geladen: %2$@" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld Dateien neu geladen: %2$@" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld file reloaded: %2$@" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld files reloaded: %2$@" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld archivo recargado: %2$@" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld archivos recargados: %2$@" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld fichier rechargé : %2$@" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld fichiers rechargés : %2$@" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld 個のファイルを再読み込み: %2$@" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld개 파일 다시 불러옴: %2$@" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld arquivo recarregado: %2$@" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld arquivos recarregados: %2$@" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld файл перезагружен: %2$@" } },
+          "few": { "stringUnit": { "state": "translated", "value": "%1$lld файла перезагружено: %2$@" } },
+          "many": { "stringUnit": { "state": "translated", "value": "%1$lld файлов перезагружено: %2$@" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld файлов перезагружено: %2$@" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "已重新加载 %1$lld 个文件：%2$@" } }
+        } } }
       }
     },
     "toast.filesReloaded.more %lld %@ %lld": {
       "comment": "Toast notification when many files were reloaded (shows first 3 names + remaining count).",
       "extractionState": "manual",
       "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld Dateien neu geladen: %2$@ und %3$lld weitere"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld files reloaded: %2$@ and %3$lld more"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld archivos recargados: %2$@ y %3$lld más"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld fichiers rechargés : %2$@ et %3$lld autres"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld 個のファイルを再読み込み: %2$@ 他%3$lld個"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld개 파일 다시 불러옴: %2$@ 외 %3$lld개"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld arquivos recarregados: %2$@ e mais %3$lld"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld файлов перезагружено: %2$@ и ещё %3$lld"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已重新加载 %1$lld 个文件：%2$@ 及另外 %3$lld 个"
-          }
-        }
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld Datei neu geladen: %2$@ und %3$lld weitere" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld Dateien neu geladen: %2$@ und %3$lld weitere" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld file reloaded: %2$@ and %3$lld more" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld files reloaded: %2$@ and %3$lld more" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld archivo recargado: %2$@ y %3$lld más" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld archivos recargados: %2$@ y %3$lld más" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld fichier rechargé : %2$@ et %3$lld autre" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld fichiers rechargés : %2$@ et %3$lld de plus" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld 個のファイルを再読み込み: %2$@ 他%3$lld個" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld개 파일 다시 불러옴: %2$@ 외 %3$lld개" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld arquivo recarregado: %2$@ e mais %3$lld" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld arquivos recarregados: %2$@ e mais %3$lld" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%1$lld файл перезагружен: %2$@ и ещё %3$lld" } },
+          "few": { "stringUnit": { "state": "translated", "value": "%1$lld файла перезагружено: %2$@ и ещё %3$lld" } },
+          "many": { "stringUnit": { "state": "translated", "value": "%1$lld файлов перезагружено: %2$@ и ещё %3$lld" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%1$lld файлов перезагружено: %2$@ и ещё %3$lld" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "已重新加载 %1$lld 个文件：%2$@ 及另外 %3$lld 个" } }
+        } } }
       }
     },
     "undo.create": {
@@ -22617,64 +22675,285 @@
         }
       }
     },
-    "validation.errorCount %lld": {
-      "comment": "Status bar: number of validation errors found.",
+    "validation.dockerfile.instructionCase %@ %@": {
+      "comment": "Built-in Dockerfile validator: an instruction word must be uppercase.",
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld Fehler"
+            "value": "Anweisung „%1$@“ sollte in Großbuchstaben sein: „%2$@“"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld errors"
+            "value": "Instruction '%1$@' should be uppercase '%2$@'"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld errores"
+            "value": "La instrucción '%1$@' debería estar en mayúsculas '%2$@'"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld erreurs"
+            "value": "L’instruction « %1$@ » devrait être en majuscules « %2$@ »"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld件のエラー"
+            "value": "命令 '%1$@' は大文字 '%2$@' にすべきです"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld개 오류"
+            "value": "명령 '%1$@'은(는) 대문자 '%2$@'여야 합니다"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld erros"
+            "value": "A instrução '%1$@' deveria estar em maiúsculas '%2$@'"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld ошибок"
+            "value": "Инструкция '%1$@' должна быть в верхнем регистре '%2$@'"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld个错误"
+            "value": "指令 '%1$@' 应为大写 '%2$@'"
           }
         }
+      }
+    },
+    "validation.dockerfile.invalidInstruction %@": {
+      "comment": "Built-in Dockerfile validator: unknown instruction word.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungültige Dockerfile-Anweisung „%@“"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid Dockerfile instruction '%@'"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instrucción de Dockerfile no válida '%@'"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instruction Dockerfile non valide « %@ »"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無効な Dockerfile 命令 '%@'"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잘못된 Dockerfile 명령 '%@'"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instrução de Dockerfile inválida '%@'"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Недопустимая инструкция Dockerfile '%@'"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无效的 Dockerfile 指令 '%@'"
+          }
+        }
+      }
+    },
+    "validation.dockerfile.maintainerDeprecated": {
+      "comment": "Built-in Dockerfile validator: MAINTAINER is deprecated in favor of LABEL.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAINTAINER ist veraltet, verwenden Sie stattdessen LABEL maintainer=\"...\""
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAINTAINER is deprecated, use LABEL maintainer=\"...\" instead"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAINTAINER está obsoleto, usa LABEL maintainer=\"...\" en su lugar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAINTAINER est obsolète, utilisez plutôt LABEL maintainer=\"...\""
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAINTAINER は非推奨です。代わりに LABEL maintainer=\"...\" を使用してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAINTAINER는 더 이상 사용되지 않습니다. 대신 LABEL maintainer=\"...\"를 사용하세요"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAINTAINER está obsoleto, use LABEL maintainer=\"...\" em vez disso"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAINTAINER устарела, используйте LABEL maintainer=\"...\""
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAINTAINER 已弃用，请改用 LABEL maintainer=\"...\""
+          }
+        }
+      }
+    },
+    "validation.dockerfile.missingFrom": {
+      "comment": "Built-in Dockerfile validator: no FROM instruction found.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dockerfile muss mit einer FROM-Anweisung beginnen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dockerfile must start with a FROM instruction"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El Dockerfile debe comenzar con una instrucción FROM"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le Dockerfile doit commencer par une instruction FROM"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dockerfile は FROM 命令で始める必要があります"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dockerfile은 FROM 명령으로 시작해야 합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Dockerfile deve começar com uma instrução FROM"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dockerfile должен начинаться с инструкции FROM"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dockerfile 必须以 FROM 指令开头"
+          }
+        }
+      }
+    },
+    "validation.errorCount %lld": {
+      "comment": "Status bar: number of validation errors found.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld Fehler" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld Fehler" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld error" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld errors" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld error" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld errores" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld erreur" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld erreurs" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld件のエラー" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld개 오류" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld erro" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld erros" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld ошибка" } },
+          "few": { "stringUnit": { "state": "translated", "value": "%lld ошибки" } },
+          "many": { "stringUnit": { "state": "translated", "value": "%lld ошибок" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld ошибки" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld个错误" } }
+        } } }
       }
     },
     "validation.passed": {
@@ -22733,6 +23012,126 @@
           "stringUnit": {
             "state": "translated",
             "value": "验证通过"
+          }
+        }
+      }
+    },
+    "validation.shell.backticks": {
+      "comment": "Built-in shell validator: prefer $(...) over backticks.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verwenden Sie $(...) statt Backticks für die Befehlssubstitution"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use $(...) instead of backticks for command substitution"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa $(...) en lugar de comillas invertidas para la sustitución de comandos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisez $(...) au lieu des accents graves pour la substitution de commandes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンド置換にはバッククォートの代わりに $(...) を使用してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령 치환에는 백틱 대신 $(...)를 사용하세요"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use $(...) em vez de crases para substituição de comandos"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Используйте $(...) вместо обратных кавычек для подстановки команд"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令替换请使用 $(...) 而非反引号"
+          }
+        }
+      }
+    },
+    "validation.shell.unquotedVariable": {
+      "comment": "Built-in shell validator: unquoted variable inside a test expression.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht in Anführungszeichen gesetzte Variable im Test — \"$var\" verwenden, um Worttrennung zu verhindern"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unquoted variable in test — use \"$var\" to prevent word splitting"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Variable sin comillas en la prueba — usa \"$var\" para evitar la división de palabras"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Variable non quotée dans le test — utilisez \"$var\" pour éviter le découpage en mots"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト内の引用符なしの変数 — 単語分割を防ぐには \"$var\" を使用してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테스트에서 따옴표 없는 변수 — 단어 분할을 방지하려면 \"$var\"를 사용하세요"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Variável sem aspas no teste — use \"$var\" para evitar a divisão de palavras"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Незаключённая в кавычки переменная в условии — используйте \"$var\", чтобы избежать разбиения по словам"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试中的未加引号变量 — 使用 \"$var\" 以防止分词"
           }
         }
       }
@@ -22801,60 +23200,262 @@
       "comment": "Status bar: number of validation warnings found.",
       "extractionState": "manual",
       "localizations": {
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld Warnung" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld Warnungen" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld warning" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld warnings" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld advertencia" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld advertencias" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld avertissement" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld avertissements" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld件の警告" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld개 경고" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld aviso" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld avisos" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld предупреждение" } },
+          "few": { "stringUnit": { "state": "translated", "value": "%lld предупреждения" } },
+          "many": { "stringUnit": { "state": "translated", "value": "%lld предупреждений" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld предупреждения" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld个警告" } }
+        } } }
+      }
+    },
+    "validation.yaml.ambiguousMapping": {
+      "comment": "Built-in YAML validator: a mapping value contains an unquoted ': '.",
+      "extractionState": "manual",
+      "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld Warnungen"
+            "value": "Mehrdeutiger Mapping-Eintrag — Wert enthält ': ' ohne Anführungszeichen"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld warnings"
+            "value": "Ambiguous mapping entry — value contains unquoted ': '"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld advertencias"
+            "value": "Entrada de mapeo ambigua — el valor contiene ': ' sin comillas"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld avertissements"
+            "value": "Entrée de mappage ambiguë — la valeur contient ': ' sans guillemets"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld件の警告"
+            "value": "曖昧なマッピングエントリ — 値にクォートされていない ': ' が含まれています"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld개 경고"
+            "value": "모호한 매핑 항목 — 값에 따옴표 없는 ': '가 포함되어 있습니다"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld avisos"
+            "value": "Entrada de mapeamento ambígua — o valor contém ': ' sem aspas"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld предупреждений"
+            "value": "Неоднозначная запись отображения — значение содержит ': ' без кавычек"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld个警告"
+            "value": "模糊的映射条目 — 值包含未加引号的 ': '"
           }
         }
+      }
+    },
+    "validation.yaml.tabIndentation": {
+      "comment": "Built-in YAML validator: tabs used for indentation.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML erlaubt keine Tabulatorzeichen für Einrückungen, verwenden Sie Leerzeichen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML does not allow tab characters for indentation, use spaces"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML no permite caracteres de tabulación para la sangría, usa espacios"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML n’autorise pas les tabulations pour l’indentation, utilisez des espaces"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML ではインデントにタブ文字を使用できません。スペースを使用してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML은 들여쓰기에 탭 문자를 허용하지 않습니다. 공백을 사용하세요"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML não permite caracteres de tabulação para indentação, use espaços"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML не допускает символов табуляции для отступов, используйте пробелы"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YAML 不允许使用制表符缩进，请使用空格"
+          }
+        }
+      }
+    },
+    "validation.yaml.trailingWhitespace": {
+      "comment": "Built-in YAML validator: trailing whitespace on a line.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nachgestellte Leerzeichen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trailing whitespace"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espacios al final"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espaces en fin de ligne"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "末尾の空白文字"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "후행 공백"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espaços no final da linha"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершающие пробелы"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行尾空白字符"
+          }
+        }
+      }
+    },
+    "validation.yaml.unusualIndentation %lld": {
+      "comment": "Built-in YAML validator: 1 or 3 leading spaces. %lld is the space count.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Ungewöhnliche Einrückung (%lld Leerzeichen) — YAML verwendet üblicherweise 2 oder 4 Leerzeichen" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Ungewöhnliche Einrückung (%lld Leerzeichen) — YAML verwendet üblicherweise 2 oder 4 Leerzeichen" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Unusual indentation (%lld space) — YAML typically uses 2 or 4 spaces" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Unusual indentation (%lld spaces) — YAML typically uses 2 or 4 spaces" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Sangría inusual (%lld espacio) — YAML normalmente usa 2 o 4 espacios" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Sangría inusual (%lld espacios) — YAML normalmente usa 2 o 4 espacios" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Indentation inhabituelle (%lld espace) — YAML utilise généralement 2 ou 4 espaces" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Indentation inhabituelle (%lld espaces) — YAML utilise généralement 2 ou 4 espaces" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "通常でないインデント（%lld スペース）— YAML では通常 2 または 4 スペースを使用します" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "일반적이지 않은 들여쓰기(공백 %lld개) — YAML은 일반적으로 공백 2 또는 4개를 사용합니다" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Indentação incomum (%lld espaço) — YAML normalmente usa 2 ou 4 espaços" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Indentação incomum (%lld espaços) — YAML normalmente usa 2 ou 4 espaços" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Необычный отступ (%lld пробел) — в YAML обычно используются 2 или 4 пробела" } },
+          "few": { "stringUnit": { "state": "translated", "value": "Необычный отступ (%lld пробела) — в YAML обычно используются 2 или 4 пробела" } },
+          "many": { "stringUnit": { "state": "translated", "value": "Необычный отступ (%lld пробелов) — в YAML обычно используются 2 или 4 пробела" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Необычный отступ (%lld пробела) — в YAML обычно используются 2 или 4 пробела" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "异常缩进（%lld 个空格）— YAML 通常使用 2 或 4 个空格" } }
+        } } }
       }
     },
     "welcome.noRecent": {
@@ -26571,48 +27172,48 @@
       }
     },
     "userConfig.reloadSuccess.message": {
-      "comment": "Alert body: counts of active tasks and keybindings. %1$lld tasks, %2$lld keybindings.",
+      "comment": "Alert body after a configuration reload. Label-shaped so neither count agrees a noun — every (tasks, keybindings) pair is grammatical. %1$lld tasks, %2$lld keybindings.",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld Aufgaben und %2$lld Tastaturkurzbefehle aktiv."
+            "value": "Aktiv – Aufgaben: %1$lld, Tastaturkurzbefehle: %2$lld."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld tasks and %2$lld keybindings active."
+            "value": "Active — tasks: %1$lld, keybindings: %2$lld."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld tareas y %2$lld atajos activos."
+            "value": "En uso — tareas: %1$lld, atajos: %2$lld."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld tâches et %2$lld raccourcis actifs."
+            "value": "Actifs — tâches : %1$lld, raccourcis : %2$lld."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld 個のタスクと %2$lld 個のキーバインドがアクティブです。"
+            "value": "アクティブ: タスク %1$lld 件、キーバインド %2$lld 件。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld개 작업과 %2$lld개 단축키가 활성화되어 있습니다."
+            "value": "활성: 작업 %1$lld개, 단축키 %2$lld개."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld tarefas e %2$lld atalhos ativos."
+            "value": "Ativos — tarefas: %1$lld, atalhos: %2$lld."
           }
         },
         "ru": {
@@ -26624,7 +27225,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld 个任务和 %2$lld 个快捷键已启用。"
+            "value": "已启用：%1$lld 个任务、%2$lld 个快捷键。"
           }
         }
       }
@@ -31384,60 +31985,41 @@
       "comment": "Subtitle for an ambiguous Activity row. %lld is the number of candidate sessions.",
       "extractionState": "manual",
       "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld mögliche Sitzungen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld possible sessions"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld sesiones posibles"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld sessions possibles"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "候補セッション%lld件"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "가능한 세션 %lld개"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld sessões possíveis"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Возможных сеансов: %lld"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 个可能的会话"
-          }
-        }
+        "de": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld mögliche Sitzung" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld mögliche Sitzungen" } }
+        } } },
+        "en": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld possible session" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld possible sessions" } }
+        } } },
+        "es": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld sesión posible" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld sesiones posibles" } }
+        } } },
+        "fr": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld session possible" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld sessions possibles" } }
+        } } },
+        "ja": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "候補セッション%lld件" } }
+        } } },
+        "ko": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "가능한 세션 %lld개" } }
+        } } },
+        "pt-BR": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "%lld sessão possível" } },
+          "other": { "stringUnit": { "state": "translated", "value": "%lld sessões possíveis" } }
+        } } },
+        "ru": { "variations": { "plural": {
+          "one": { "stringUnit": { "state": "translated", "value": "Возможных сеансов: %lld" } },
+          "few": { "stringUnit": { "state": "translated", "value": "Возможных сеансов: %lld" } },
+          "many": { "stringUnit": { "state": "translated", "value": "Возможных сеансов: %lld" } },
+          "other": { "stringUnit": { "state": "translated", "value": "Возможных сеансов: %lld" } }
+        } } },
+        "zh-Hans": { "variations": { "plural": {
+          "other": { "stringUnit": { "state": "translated", "value": "%lld 个可能的会话" } }
+        } } }
       }
     },
     "agentActivity.fileChanged %@": {
@@ -34778,21 +35360,6 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭面板" } }
       }
     },
-    "problems.errorCount.one" : {
-      "comment" : "Status bar summary for exactly one error.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "1 Fehler" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 error" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "1 error" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "1 erreur" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "1件のエラー" } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : "1개 오류" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "1 erro" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "1 ошибка" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1个错误" } }
-      }
-    },
     "problems.filter.allSeverities" : {
       "comment" : "Problems filter option that includes every severity.",
       "extractionState" : "manual",
@@ -34926,21 +35493,6 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não há diagnósticos disponíveis para esta linguagem" } },
         "ru" : { "stringUnit" : { "state" : "translated", "value" : "Для этого языка диагностика недоступна" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此语言没有可用的诊断" } }
-      }
-    },
-    "problems.warningCount.one" : {
-      "comment" : "Status bar summary for exactly one warning.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "1 Warnung" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 warning" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "1 advertencia" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "1 avertissement" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "1件の警告" } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : "1개 경고" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "1 aviso" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "1 предупреждение" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1个警告" } }
       }
     },
     "commandOverlay.announcement.noResults" : {

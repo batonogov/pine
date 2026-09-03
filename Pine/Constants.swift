@@ -21,8 +21,6 @@ nonisolated enum ASCII {
 
 /// Commonly used file size values in bytes.
 nonisolated enum FileSizeConstants {
-    /// 1 KB = 1,024 bytes
-    static let oneKB = 1_024
     /// 1 MB = 1,048,576 bytes
     static let oneMB = 1_048_576
     /// 10 MB = 10,485,760 bytes
