@@ -3,9 +3,11 @@
 //  Pine
 //
 //  The sheet behind Agent ▸ Manage Agent Worktrees (#1524). Lists the git
-//  worktrees Pine created for agent tasks in this window, with the branch and
-//  the working-tree state of each, and offers the two things the app could
-//  previously only do to itself: merge one back, or delete it.
+//  worktrees Pine created for agent tasks in this window — plus the ones a
+//  project close dropped from the record while their directories stayed on
+//  disk, rebuilt by discovery (#1563) — with the branch and the working-tree
+//  state of each, and offers the two things the app could previously only do
+//  to itself: merge one back, or delete it.
 //
 
 import AppKit
@@ -64,7 +66,8 @@ struct AgentWorktreesView: View {
         .task {
             let model = model ?? makeModel()
             self.model = model
-            await model.refresh(session.allManagedWorktrees)
+            model.beginListing()
+            await model.refresh(await session.worktreeManagerListing())
         }
         .alert(
             Strings.agentWorktreesRemoveTitle,
@@ -152,20 +155,29 @@ struct AgentWorktreesView: View {
     private var content: some View {
         let presentations = rowPresentations
         if presentations.isEmpty {
-            VStack(spacing: 6) {
-                Image(systemName: MenuIcons.agentWorktrees)
-                    .font(.system(size: 30))
-                    .foregroundStyle(.secondary)
-                Text(Strings.agentWorktreesEmptyTitle)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                Text(Strings.agentWorktreesEmptyMessage)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
+            if model?.isListing == true {
+                // Discovery is still reading the repository (#1563): show
+                // work in progress, not an empty list that would be a lie
+                // for as long as the git call runs.
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 6) {
+                    Image(systemName: MenuIcons.agentWorktrees)
+                        .font(.system(size: 30))
+                        .foregroundStyle(.secondary)
+                    Text(Strings.agentWorktreesEmptyTitle)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                    Text(Strings.agentWorktreesEmptyMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(24)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(24)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
