@@ -242,38 +242,45 @@ struct StatusBarInfoTests {
         #expect(indent == .spaces(4))
     }
 
-    @Test("IndentationStyle display names")
+    @Test("IndentationStyle display names follow the catalog")
     func indentationDisplayName() {
-        #expect(IndentationStyle.spaces(4).displayName == "Spaces: 4")
-        #expect(IndentationStyle.spaces(2).displayName == "Spaces: 2")
-        #expect(IndentationStyle.tabs.displayName == "Tabs")
+        // Same-path comparison: the enum routes through the localized
+        // accessors, so both sides resolve identically whatever the host
+        // language is.
+        #expect(
+            IndentationStyle.spaces(4).displayName
+                == Strings.statusbarIndentationSpaces(4)
+        )
+        #expect(
+            IndentationStyle.spaces(2).displayName
+                == Strings.statusbarIndentationSpaces(2)
+        )
+        #expect(
+            IndentationStyle.tabs.displayName
+                == Strings.statusbarIndentationTabs()
+        )
     }
 
     // MARK: - File size formatting
 
-    @Test("Format bytes")
-    func formatBytes() {
-        #expect(FileSizeFormatter.format(500) == "500 B")
+    /// `ByteCountFormatStyle` output for a pinned locale (#1536). Values
+    /// follow Finder's decimal (1000-based) file sizes.
+    @Test("Format file sizes for a pinned locale")
+    func formatSizesEnglish() {
+        let english = Locale(identifier: "en")
+        #expect(FileSizeFormatter.format(500, locale: english) == "500 bytes")
+        #expect(FileSizeFormatter.format(1_536, locale: english) == "2 kB")
+        #expect(FileSizeFormatter.format(2_621_440, locale: english) == "2.6 MB")
+        // Foundation spells zero, like Finder does for empty files.
+        #expect(FileSizeFormatter.format(0, locale: english) == "Zero kB")
+        #expect(FileSizeFormatter.format(1_024, locale: english) == "1 kB")
     }
 
-    @Test("Format kilobytes")
-    func formatKB() {
-        #expect(FileSizeFormatter.format(1_536) == "1.5 KB")
-    }
-
-    @Test("Format megabytes")
-    func formatMB() {
-        #expect(FileSizeFormatter.format(2_621_440) == "2.5 MB")
-    }
-
-    @Test("Format zero bytes")
-    func formatZero() {
-        #expect(FileSizeFormatter.format(0) == "0 B")
-    }
-
-    @Test("Format exactly 1 KB")
-    func formatExactKB() {
-        #expect(FileSizeFormatter.format(1_024) == "1.0 KB")
+    @Test("File sizes use the locale's decimal separator and units")
+    func formatSizesRussian() {
+        let russian = Locale(identifier: "ru")
+        #expect(FileSizeFormatter.format(2_621_440, locale: russian) == "2,6 МБ")
+        #expect(FileSizeFormatter.format(500, locale: russian) == "500 байт")
     }
 
     // MARK: - EditorTab cached values

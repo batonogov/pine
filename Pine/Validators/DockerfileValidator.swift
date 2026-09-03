@@ -111,7 +111,7 @@ extension BuiltinValidator {
                 diagnostics.append(ValidationDiagnostic(
                     line: lineNum,
                     column: 1,
-                    message: "Invalid Dockerfile instruction '\(instruction)'",
+                    message: Strings.validationDockerfileInvalidInstruction(instruction),
                     severity: .error,
                     source: "pine-dockerfile"
                 ))
@@ -128,7 +128,7 @@ extension BuiltinValidator {
                 diagnostics.append(ValidationDiagnostic(
                     line: lineNum,
                     column: 1,
-                    message: "MAINTAINER is deprecated, use LABEL maintainer=\"...\" instead",
+                    message: Strings.validationDockerfileMaintainerDeprecated(),
                     severity: .warning,
                     source: "pine-dockerfile"
                 ))
@@ -139,7 +139,7 @@ extension BuiltinValidator {
                 diagnostics.append(ValidationDiagnostic(
                     line: lineNum,
                     column: 1,
-                    message: "Instruction '\(instruction)' should be uppercase '\(upper)'",
+                    message: Strings.validationDockerfileInstructionCase(instruction, upper),
                     severity: .warning,
                     source: "pine-dockerfile"
                 ))
@@ -152,7 +152,7 @@ extension BuiltinValidator {
             diagnostics.insert(ValidationDiagnostic(
                 line: 1,
                 column: 1,
-                message: "Dockerfile must start with a FROM instruction",
+                message: Strings.validationDockerfileMissingFrom(),
                 severity: .error,
                 source: "pine-dockerfile"
             ), at: 0)

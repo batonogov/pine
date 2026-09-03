@@ -104,7 +104,7 @@ extension BuiltinValidator {
                 diagnostics.append(ValidationDiagnostic(
                     line: lineNum,
                     column: 1,
-                    message: "YAML does not allow tab characters for indentation, use spaces",
+                    message: Strings.validationYamlTabIndentation(),
                     severity: .error,
                     source: "pine-yaml"
                 ))
@@ -134,7 +134,7 @@ extension BuiltinValidator {
                             diagnostics.append(ValidationDiagnostic(
                                 line: lineNum,
                                 column: nil,
-                                message: "Ambiguous mapping entry — value contains unquoted ': '",
+                                message: Strings.validationYamlAmbiguousMapping(),
                                 severity: .warning,
                                 source: "pine-yaml"
                             ))
@@ -148,7 +148,7 @@ extension BuiltinValidator {
                 diagnostics.append(ValidationDiagnostic(
                     line: lineNum,
                     column: nil,
-                    message: "Trailing whitespace",
+                    message: Strings.validationYamlTrailingWhitespace(),
                     severity: .warning,
                     source: "pine-yaml"
                 ))
@@ -162,7 +162,7 @@ extension BuiltinValidator {
                 diagnostics.append(ValidationDiagnostic(
                     line: lineNum,
                     column: 1,
-                    message: "Unusual indentation (\(leadingSpaces) spaces) — YAML typically uses 2 or 4 spaces",
+                    message: Strings.validationYamlUnusualIndentation(leadingSpaces),
                     severity: .warning,
                     source: "pine-yaml"
                 ))

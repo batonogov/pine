@@ -67,6 +67,31 @@ extension URL {
     }
 }
 
+/// Shared geometry for the Welcome window (#1536).
+///
+/// The size is pinned in three places — the SwiftUI `Window` scene's
+/// `defaultSize`, the view's own fixed frame, and the AppKit fallback that
+/// creates the window when the scene lifecycle does not (XCUITest and direct
+/// launches on macOS 26). They must move together, so the numbers live here.
+///
+/// The action column is a *minimum*: a fixed 260 pt truncated the localized
+/// "Open Folder" and Agent Inbox button labels. At the minimum it fits every
+/// current locale, and the fixed window width (600) leaves it up to ~319 pt
+/// of room to grow into when a locale or text-size setting needs it.
+enum WelcomeWindowMetrics {
+    /// Fixed Welcome window width.
+    static let width: CGFloat = 600
+
+    /// Fixed Welcome window height.
+    static let height: CGFloat = 400
+
+    /// Minimum width of the logo/action column on the left.
+    static let actionColumnMinWidth: CGFloat = 260
+
+    /// Minimum width of the recent-projects column on the right.
+    static let recentsColumnMinWidth: CGFloat = 280
+}
+
 /// Welcome window shown when no project is open.
 struct WelcomeView: View {
     var registry: ProjectRegistry
@@ -129,7 +154,7 @@ struct WelcomeView: View {
 
                 Spacer()
             }
-            .frame(width: 260)
+            .frame(minWidth: WelcomeWindowMetrics.actionColumnMinWidth)
             .padding()
 
             Divider()
@@ -182,9 +207,9 @@ struct WelcomeView: View {
                     }
                 }
             }
-            .frame(minWidth: 280)
+            .frame(minWidth: WelcomeWindowMetrics.recentsColumnMinWidth)
         }
-        .frame(width: 600, height: 400)
+        .frame(width: WelcomeWindowMetrics.width, height: WelcomeWindowMetrics.height)
         .onChange(of: isSearchVisible) { _, visible in
             if !visible {
                 searchText = ""
@@ -557,9 +582,9 @@ private struct RecentProjectRow: View {
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(url.lastPathComponent)
-                    .font(.system(size: 13))
+                    .font(.body)
                 Text(url.abbreviatedPath)
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)

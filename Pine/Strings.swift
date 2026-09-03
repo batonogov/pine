@@ -283,21 +283,10 @@ enum Strings {
         String(localized: "context.rename.title")
     }
 
-    static var contextDeleteConfirmTitle: String {
-        String(localized: "context.delete.confirmTitle")
-    }
-
-    static func contextDeleteConfirmMessage(_ name: String) -> String {
-        String(localized: "context.delete.confirmMessage \(name)")
-    }
-
-    static var contextNamePlaceholder: String {
-        String(localized: "context.namePlaceholder")
-    }
-
-    static var contextDeleteButton: String {
-        String(localized: "context.delete")
-    }
+    // `context.delete.confirmTitle`, `context.delete.confirmMessage`, and
+    // `context.namePlaceholder` were removed with their accessors: the
+    // sidebar Delete moves to Trash with undo (Finder behavior) and never
+    // confirms, so nothing could reach those strings (#1536).
 
     // MARK: - File Operation Errors / Prompts
 
@@ -428,6 +417,78 @@ enum Strings {
         )
     }
 
+    // MARK: - Status bar indicators (#1536)
+    //
+    // "Ln", "Col", "Spaces: 4", and "Tabs" used to be English literals on a
+    // bar that is otherwise localized.
+
+    /// Resolved formats the status bar re-uses on every cursor move.
+    ///
+    /// `localizedString` walks `.lproj` sub-bundles on each call (~20-27µs),
+    /// and the bar redraws several of these strings per cursor tick, so the
+    /// resolved format is memoized per (key, locale). MainActor-isolated like
+    /// the rest of this enum; the `nonisolated` validator accessors are a
+    /// cold path and intentionally stay uncached.
+    private static var statusbarFormatCache: [String: String] = [:]
+
+    private static func cachedStatusbarFormat(
+        forKey key: String,
+        fallback: String,
+        locale: Locale
+    ) -> String {
+        let cacheKey = "\(key)|\(locale.identifier)"
+        if let cached = statusbarFormatCache[cacheKey] {
+            return cached
+        }
+        let resolved = localizedString(
+            forKey: key,
+            fallback: fallback,
+            locale: locale
+        )
+        statusbarFormatCache[cacheKey] = resolved
+        return resolved
+    }
+
+    /// Drawn cursor position, e.g. "Ln 5, Col 10". Abbreviations follow the
+    /// locale ("Zl/Sp" in German, "Стр/Стлб" in Russian); the VoiceOver form
+    /// stays on ``a11yStatusBarCursorPositionValue(line:column:)``.
+    static func statusbarCursorPosition(
+        line: Int,
+        column: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = cachedStatusbarFormat(
+            forKey: "statusbar.cursorPosition %lld %lld",
+            fallback: "Ln %1$lld, Col %2$lld",
+            locale: locale
+        )
+        return String(format: format, locale: locale, line, column)
+    }
+
+    /// Drawn indentation indicator, e.g. "Spaces: 4".
+    static func statusbarIndentationSpaces(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = cachedStatusbarFormat(
+            forKey: "statusbar.indentation.spaces %lld",
+            fallback: "Spaces: %lld",
+            locale: locale
+        )
+        return String(format: format, locale: locale, count)
+    }
+
+    /// Drawn indentation indicator for tab-indented files.
+    static func statusbarIndentationTabs(
+        locale: Locale = .current
+    ) -> String {
+        cachedStatusbarFormat(
+            forKey: "statusbar.indentation.tabs",
+            fallback: "Tabs",
+            locale: locale
+        )
+    }
+
     // MARK: - Agent liveness (#933)
 
     static var agentLivenessLive: String {
@@ -537,8 +598,16 @@ enum Strings {
             defaultValue: "The associated process is no longer running"
         )
     }
-    static func agentActivityPossibleSessions(_ count: Int) -> String {
-        String(localized: "agentActivity.possibleSessions \(count)")
+    static func agentActivityPossibleSessions(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        localizedPluralString(
+            forKey: "agentActivity.possibleSessions %lld",
+            fallback: "%lld possible sessions",
+            count: count,
+            locale: locale
+        )
     }
     static func agentActivityFileChanged(_ name: String) -> String {
         String(localized: "agentActivity.fileChanged \(name)")
@@ -2338,7 +2407,9 @@ enum Strings {
     static let goToLineFieldPlaceholder: String =
         String(localized: "42 or 42:10")
 
-    private static func localizedString(
+    /// `nonisolated` so `nonisolated` diagnostic builders (the built-in
+    /// validators run off the main actor) can resolve copy too (#1536).
+    nonisolated private static func localizedString(
         forKey key: String,
         fallback: String,
         locale: Locale,
@@ -2398,7 +2469,7 @@ enum Strings {
     /// `String(localized:locale:)` cannot be used for deterministic language
     /// selection: its `locale` parameter formats substitutions but resource
     /// lookup still follows the process's preferred application language.
-    private static func localizedPluralString(
+    nonisolated private static func localizedPluralString(
         forKey key: String,
         fallback: String,
         count: Int,
@@ -2629,8 +2700,15 @@ enum Strings {
         String(localized: "largeFile.warning.title")
     }
 
-    static func largeFileWarningMessage(_ fileName: String, _ sizeMB: Double) -> String {
-        let formatted = String(format: "%.1f", sizeMB)
+    static func largeFileWarningMessage(
+        _ fileName: String,
+        bytes: Int,
+        locale: Locale = .current
+    ) -> String {
+        // One size formatter for every surface: the status bar shows
+        // decimal Finder-style sizes, so the alert must not disagree with
+        // it by computing binary MiB by hand (#1536).
+        let formatted = FileSizeFormatter.format(bytes, locale: locale)
         return String(localized: "largeFile.warning.message \(fileName) \(formatted)")
     }
 
@@ -2673,8 +2751,16 @@ enum Strings {
     static func searchTruncatedTotal(shown: Int, max: Int) -> String {
         String(localized: "search.truncatedTotal \(shown) \(max)")
     }
-    static func searchTruncatedPerFile(_ max: Int) -> String {
-        String(localized: "search.truncatedPerFile \(max)")
+    static func searchTruncatedPerFile(
+        _ max: Int,
+        locale: Locale = .current
+    ) -> String {
+        localizedPluralString(
+            forKey: "search.truncatedPerFile %lld",
+            fallback: "Per-file results limited to %lld matches — refine your query",
+            count: max,
+            locale: locale
+        )
     }
     static let menuFind: LocalizedStringKey = "menu.find"
     static let menuFindAndReplace: LocalizedStringKey = "menu.findAndReplace"
@@ -2835,12 +2921,28 @@ enum Strings {
 
     static let menuToggleValidation: LocalizedStringKey = "menu.toggleValidation"
 
-    static var validationErrorCount: (Int) -> String = { count in
-        String(localized: "validation.errorCount \(count)")
+    static func validationErrorCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        localizedPluralString(
+            forKey: "validation.errorCount %lld",
+            fallback: "%lld errors",
+            count: count,
+            locale: locale
+        )
     }
 
-    static var validationWarningCount: (Int) -> String = { count in
-        String(localized: "validation.warningCount \(count)")
+    static func validationWarningCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        localizedPluralString(
+            forKey: "validation.warningCount %lld",
+            fallback: "%lld warnings",
+            count: count,
+            locale: locale
+        )
     }
 
     static var validationToolNotInstalled: (String) -> String = { tool in
@@ -2851,18 +2953,163 @@ enum Strings {
         String(localized: "validation.passed")
     }
 
+    // MARK: - Built-in validator diagnostics (#1536)
+    //
+    // Pine's own YAML / Shell / Dockerfile fallback diagnostics used to be
+    // English literals while tool output (yamllint, shellcheck, hadolint)
+    // is passed through untranslated. These accessors localize the built-in
+    // half. `nonisolated` because `BuiltinValidator` runs off the main actor.
+
+    nonisolated static func validationYamlTabIndentation(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "validation.yaml.tabIndentation",
+            fallback: "YAML does not allow tab characters for indentation, use spaces",
+            locale: locale
+        )
+    }
+
+    nonisolated static func validationYamlAmbiguousMapping(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "validation.yaml.ambiguousMapping",
+            fallback: "Ambiguous mapping entry — value contains unquoted ': '",
+            locale: locale
+        )
+    }
+
+    nonisolated static func validationYamlTrailingWhitespace(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "validation.yaml.trailingWhitespace",
+            fallback: "Trailing whitespace",
+            locale: locale
+        )
+    }
+
+    nonisolated static func validationYamlUnusualIndentation(
+        _ spaces: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "validation.yaml.unusualIndentation %lld",
+            fallback: "Unusual indentation (%lld spaces) — YAML typically uses 2 or 4 spaces",
+            locale: locale
+        )
+        return String(format: format, locale: locale, spaces)
+    }
+
+    nonisolated static func validationShellUnquotedVariable(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "validation.shell.unquotedVariable",
+            fallback: "Unquoted variable in test — use \"$var\" to prevent word splitting",
+            locale: locale
+        )
+    }
+
+    nonisolated static func validationShellBackticks(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "validation.shell.backticks",
+            fallback: "Use $(...) instead of backticks for command substitution",
+            locale: locale
+        )
+    }
+
+    nonisolated static func validationDockerfileInvalidInstruction(
+        _ instruction: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "validation.dockerfile.invalidInstruction %@",
+            fallback: "Invalid Dockerfile instruction '%@'",
+            locale: locale
+        )
+        return String(format: format, locale: locale, instruction)
+    }
+
+    nonisolated static func validationDockerfileMaintainerDeprecated(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "validation.dockerfile.maintainerDeprecated",
+            fallback: "MAINTAINER is deprecated, use LABEL maintainer=\"...\" instead",
+            locale: locale
+        )
+    }
+
+    nonisolated static func validationDockerfileInstructionCase(
+        _ instruction: String,
+        _ uppercase: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "validation.dockerfile.instructionCase %@ %@",
+            fallback: "Instruction '%1$@' should be uppercase '%2$@'",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [instruction, uppercase]
+        )
+    }
+
+    nonisolated static func validationDockerfileMissingFrom(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "validation.dockerfile.missingFrom",
+            fallback: "Dockerfile must start with a FROM instruction",
+            locale: locale
+        )
+    }
+
     // MARK: - Toast Notifications
 
     static func toastFileReloaded(_ name: String) -> String {
         String(localized: "toast.fileReloaded \(name)")
     }
 
-    static func toastFilesReloaded(count: Int, names: String) -> String {
-        String(localized: "toast.filesReloaded \(count) \(names)")
+    static func toastFilesReloaded(
+        count: Int,
+        names: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "toast.filesReloaded %lld %@",
+            fallback: "%1$lld files reloaded: %2$@",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [count, names]
+        )
     }
 
-    static func toastFilesReloadedMore(count: Int, names: String, remaining: Int) -> String {
-        String(localized: "toast.filesReloaded.more \(count) \(names) \(remaining)")
+    static func toastFilesReloadedMore(
+        count: Int,
+        names: String,
+        remaining: Int,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "toast.filesReloaded.more %lld %@ %lld",
+            fallback: "%1$lld files reloaded: %2$@ and %3$lld more",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [count, names, remaining]
+        )
     }
 
     /// VoiceOver label for the toast dismiss (✕) button. Localized into all 9
@@ -2958,20 +3205,42 @@ enum Strings {
         String(localized: "menu.previousDiagnostic", defaultValue: "Previous Diagnostic")
     }
 
-    static func problemsErrorCount(_ count: Int) -> String {
-        guard count == 1 else { return validationErrorCount(count) }
-        return String(
-            localized: "problems.errorCount.one",
-            defaultValue: "1 error"
+    // MARK: - LSP Rename popover (#1536)
+    //
+    // The popover's label and placeholder were the only English literals in
+    // the LSP UI.
+
+    static func lspRenameLabel(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "lsp.rename.label",
+            fallback: "Rename symbol to:",
+            locale: locale
         )
     }
 
-    static func problemsWarningCount(_ count: Int) -> String {
-        guard count == 1 else { return validationWarningCount(count) }
-        return String(
-            localized: "problems.warningCount.one",
-            defaultValue: "1 warning"
+    static func lspRenamePlaceholder(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "lsp.rename.placeholder",
+            fallback: "New name",
+            locale: locale
         )
+    }
+
+    /// The panel and status-bar counts share the pluralized validation keys;
+    /// the former hand-rolled "1 error" special case lives in the catalog's
+    /// plural variations now (#1536).
+    static func problemsErrorCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        validationErrorCount(count, locale: locale)
+    }
+
+    static func problemsWarningCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        validationWarningCount(count, locale: locale)
     }
 
     static var problemsSeverityFilter: String {

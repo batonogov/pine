@@ -549,8 +549,7 @@ final class TabManager {
         )
         pendingLargeFileOpens[requestURL] = pendingOpen
 
-        let sizeMB = Double(TabPersistence.fileSize(url: url) ?? 0)
-            / Double(FileSizeConstants.oneMB)
+        let fileSizeBytes = TabPersistence.fileSize(url: url) ?? 0
         let presentAlert = largeFileAlertPresenter
         Task { @MainActor [weak self, pendingOpen] in
             let response = await presentAlert(
@@ -558,7 +557,7 @@ final class TabManager {
                 Strings.largeFileWarningTitle,
                 Strings.largeFileWarningMessage(
                     url.lastPathComponent,
-                    sizeMB
+                    bytes: fileSizeBytes
                 )
             )
             guard let self else {

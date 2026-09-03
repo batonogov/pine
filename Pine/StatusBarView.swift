@@ -44,12 +44,12 @@ struct StatusBarView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: summary.errorCount > 0 ? "xmark.octagon.fill" : "exclamationmark.bubble.fill")
-                            .font(.system(size: LayoutMetrics.captionFontSize))
+                            .font(.caption2)
                             // The severity is already in `description`; the
                             // glyph would only add an unnamed image stop.
                             .accessibilityHidden(true)
                         Text(verbatim: summary.description)
-                            .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                            .font(.subheadline)
                     }
                     .foregroundStyle(summary.errorCount > 0 ? .red : .orange)
                 }
@@ -62,7 +62,7 @@ struct StatusBarView: View {
                     ProgressView()
                         .controlSize(.mini)
                     Text(verbatim: progress.message)
-                        .font(.system(size: 11))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -83,7 +83,7 @@ struct StatusBarView: View {
                     onShowAttention?()
                 } label: {
                     Image(systemName: waitingCount > 0 ? "bell.badge.fill" : "bell")
-                        .font(.system(size: LayoutMetrics.captionFontSize))
+                        .font(.caption2)
                         .foregroundStyle(waitingCount > 0 ? .orange : .secondary)
                         .accessibilityHidden(true)
                 }
@@ -161,7 +161,7 @@ struct StatusBarView: View {
                             )
                         }
                     }
-                    .font(.system(size: LayoutMetrics.captionFontSize))
+                    .font(.caption2)
                     // `children: .contain` keeps the three counts as separate
                     // stops. Combining them would read one run-on phrase and
                     // lose the per-kind identifiers UI tests navigate by.
@@ -175,8 +175,14 @@ struct StatusBarView: View {
 
             if let activeTab = tabManager.activeTab, activeTab.kind == .text {
                 // Line / Column indicator (cached in EditorTab by TabManager)
-                Text(verbatim: "Ln \(activeTab.cursorLine), Col \(activeTab.cursorColumn)")
-                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                Text(
+                    verbatim: Strings.statusbarCursorPosition(
+                        line: activeTab.cursorLine,
+                        column: activeTab.cursorColumn
+                    )
+                )
+                    .font(.subheadline)
+                    .lineLimit(1)
                     .foregroundStyle(.secondary)
                     // "Ln" and "Col" are drawn abbreviations; VoiceOver
                     // pronounces them as words. The name stays constant so a
@@ -194,7 +200,8 @@ struct StatusBarView: View {
 
                 // Indentation style indicator (cached, recomputed on content change)
                 Text(verbatim: activeTab.cachedIndentation.displayName)
-                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                    .font(.subheadline)
+                    .lineLimit(1)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel(Strings.a11yStatusBarIndentation)
                     .accessibilityValue(activeTab.cachedIndentation.displayName)
@@ -218,7 +225,8 @@ struct StatusBarView: View {
                     }
                 } label: {
                     Text(verbatim: activeTab.cachedLineEnding.displayName)
-                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                        .font(.subheadline)
+                        .lineLimit(1)
                         .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
@@ -243,7 +251,8 @@ struct StatusBarView: View {
                     }
                 } label: {
                     Text(activeTab.encoding.displayName)
-                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                        .font(.subheadline)
+                        .lineLimit(1)
                         .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
@@ -257,7 +266,8 @@ struct StatusBarView: View {
                     statusDivider
 
                     Text(verbatim: FileSizeFormatter.format(size))
-                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                        .font(.subheadline)
+                        .lineLimit(1)
                         .foregroundStyle(.secondary)
                         .accessibilityLabel(Strings.a11yStatusBarFileSize)
                         .accessibilityValue(FileSizeFormatter.format(size))
@@ -271,9 +281,9 @@ struct StatusBarView: View {
             } label: {
                 HStack(spacing: 3) {
                     Image(systemName: "terminal")
-                        .font(.system(size: LayoutMetrics.captionFontSize))
+                        .font(.caption2)
                     Text(Strings.terminalLabel)
-                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                        .font(.subheadline)
                 }
                 .foregroundStyle(paneManager.terminalPaneIDs.isEmpty ? .secondary : .primary)
             }
@@ -282,7 +292,7 @@ struct StatusBarView: View {
             .accessibilityHint(Strings.a11yTerminalToggleHint)
         }
         .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
-        .frame(height: LayoutMetrics.statusBarHeight)
+        .frame(minHeight: LayoutMetrics.statusBarHeight)
         .background(.bar)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Strings.a11yStatusBarLabel)
@@ -291,7 +301,7 @@ struct StatusBarView: View {
 
     private var statusDivider: some View {
         Text(verbatim: "·")
-            .font(.system(size: LayoutMetrics.bodySmallFontSize))
+            .font(.subheadline)
             .foregroundStyle(.quaternary)
             // A drawn gap, not content. Published, it lands between every
             // pair of indicators as an "interpunct" VoiceOver reads aloud.

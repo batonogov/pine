@@ -95,14 +95,21 @@ final class ToastManager {
         guard !fileNames.isEmpty else { return }
         let message: String
         if fileNames.count == 1 {
-            message = String(localized: "toast.fileReloaded \(fileNames[0])")
+            message = Strings.toastFileReloaded(fileNames[0])
         } else {
             let names = fileNames.prefix(3).joined(separator: ", ")
             let remaining = fileNames.count - 3
             if remaining > 0 {
-                message = String(localized: "toast.filesReloaded.more \(fileNames.count) \(names) \(remaining)")
+                message = Strings.toastFilesReloadedMore(
+                    count: fileNames.count,
+                    names: names,
+                    remaining: remaining
+                )
             } else {
-                message = String(localized: "toast.filesReloaded \(fileNames.count) \(names)")
+                message = Strings.toastFilesReloaded(
+                    count: fileNames.count,
+                    names: names
+                )
             }
         }
         show(ToastItem(message: message, kind: .filesReloaded))

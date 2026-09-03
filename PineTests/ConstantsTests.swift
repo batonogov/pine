@@ -23,12 +23,7 @@ struct ConstantsTests {
     // MARK: - File size thresholds ordering
 
     @Test func fileSizeThresholdsAreInAscendingOrder() {
-        #expect(FileSizeConstants.oneKB < FileSizeConstants.oneMB)
         #expect(FileSizeConstants.oneMB < FileSizeConstants.tenMB)
-    }
-
-    @Test func oneKBIsExactly1024Bytes() {
-        #expect(FileSizeConstants.oneKB == 1_024)
     }
 
     @Test func oneMBIsExactly1048576Bytes() {
