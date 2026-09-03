@@ -61,4 +61,28 @@ struct BranchSwitcherSnapshotTests {
             named: "BranchSwitcherView.dark"
         )
     }
+
+    // #1540 — the error footer must pair the message with a symbol so the
+    // failure state is never carried by the red hue alone.
+    @Test("Branch switcher error message carries a symbol cue (light)")
+    func branchSwitcherErrorRowLight() throws {
+        try assertSnapshot(
+            of: BranchSwitcherErrorRow(message: "error: pathspec 'nope' did not match")
+                .padding(12),
+            size: NSSize(width: 320, height: 60),
+            appearance: .light,
+            named: "BranchSwitcherErrorRow.light"
+        )
+    }
+
+    @Test("Branch switcher error message carries a symbol cue (dark)")
+    func branchSwitcherErrorRowDark() throws {
+        try assertSnapshot(
+            of: BranchSwitcherErrorRow(message: "error: pathspec 'nope' did not match")
+                .padding(12),
+            size: NSSize(width: 320, height: 60),
+            appearance: .dark,
+            named: "BranchSwitcherErrorRow.dark"
+        )
+    }
 }

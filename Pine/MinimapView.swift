@@ -45,10 +45,22 @@ final class MinimapView: NSView {
     var lineDiffs: [GitLineDiff] = [] {
         didSet {
             diffMap = Dictionary(uniqueKeysWithValues: lineDiffs.map { ($0.line, $0.kind) })
+            updateDiffMarkerAccessibilityValue()
             needsDisplay = true
         }
     }
     private var diffMap: [Int: GitLineDiff.Kind] = [:]
+
+    /// The cue the draw path uses for git diff markers, resolved live from
+    /// the system Differentiate Without Color preference (#1540). Kept in
+    /// sync with `LineNumberView.diffMarkerCue` so the minimap and the
+    /// gutter speak the same marker language.
+    var diffMarkerCue: GitDiffMarkerCue {
+        GitDiffMarkerCue.resolve(
+            differentiateWithoutColor: NSWorkspace.shared
+                .accessibilityDisplayShouldDifferentiateWithoutColor
+        )
+    }
 
     /// Default width of the minimap panel.
     static let defaultWidth: CGFloat = 100
@@ -101,6 +113,10 @@ final class MinimapView: NSView {
     #if DEBUG
     /// Counter for scroll-change notifications received — debug-only, for testability.
     var scrollChangeCount = 0
+    /// Counter for accessibility display-option changes received — debug-only.
+    /// The observer lives on the workspace center (#1540), so tests prove
+    /// the subscription through this count.
+    var accessibilityOptionsChangeCount = 0
     #endif
 
     /// Whether user is currently dragging in the minimap.
@@ -139,6 +155,16 @@ final class MinimapView: NSView {
             name: NSView.boundsDidChangeNotification,
             object: resolvedClipView
         )
+        // Differentiate Without Color switches the marker shapes, so the
+        // minimap must repaint when the system preference flips (#1540).
+        // Workspace notifications are only delivered through the workspace's
+        // own notification center.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(accessibilityDisplayOptionsDidChange),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
 
         #if DEBUG
         if resolvedClipView == nil {
@@ -172,12 +198,36 @@ final class MinimapView: NSView {
     deinit {
         scrollRedrawWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
+        // The accessibility observer lives on the workspace center, which
+        // `NotificationCenter.default.removeObserver` does not touch (#1540).
+        // NSView deinit always runs on the main thread.
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     // MARK: - Notifications
 
     @objc private func contentDidChange() {
         needsDisplay = true
+    }
+
+    @objc private func accessibilityDisplayOptionsDidChange() {
+        #if DEBUG
+        accessibilityOptionsChangeCount += 1
+        #endif
+        updateDiffMarkerAccessibilityValue()
+        needsDisplay = true
+    }
+
+    /// Publishes the active diff-marker cue as the minimap's accessibility
+    /// value so assistive tech (and the accessibility smoke matrix, #1540)
+    /// can observe which channel the drawn markers use. Cleared when the
+    /// document carries no markers.
+    func updateDiffMarkerAccessibilityValue() {
+        let value = GitDiffMarkerCue.accessibilityValue(
+            hasMarkers: !diffMap.isEmpty,
+            cue: diffMarkerCue
+        )
+        setAccessibilityValue(value.isEmpty ? nil : value)
     }
 
     @objc private func scrollDidChange(_ notification: Notification) {
@@ -276,6 +326,7 @@ final class MinimapView: NSView {
 
         // Diff marker state — tracked incrementally across fragments
         let hasDiffMarkers = !diffMap.isEmpty
+        let markerCue = diffMarkerCue
         let markerWidth: CGFloat = MinimapConstants.diffMarkerWidth
         let markerX = bounds.width - markerWidth
         var diffLineNumber = 1
@@ -297,7 +348,9 @@ final class MinimapView: NSView {
             // Cull lines outside visible area
             guard y + lineHeight > 0 && y < self.bounds.height else { return }
 
-            // Draw diff marker on the right edge
+            // Draw diff marker on the right edge. Under Differentiate
+            // Without Color the shape — not the hue — carries the kind
+            // (#1540), mirroring the gutter's marker language.
             if hasDiffMarkers, let kind = self.diffMap[diffLineNumber] {
                 let color: NSColor
                 switch kind {
@@ -305,8 +358,38 @@ final class MinimapView: NSView {
                 case .modified: color = .systemYellow
                 case .deleted:  color = .systemRed
                 }
-                color.setFill()
-                NSRect(x: markerX, y: y, width: markerWidth, height: lineHeight).fill()
+                let markerRect = NSRect(
+                    x: markerX, y: y, width: markerWidth, height: lineHeight
+                )
+                switch markerCue.shape(for: kind) {
+                case .bar:
+                    color.setFill()
+                    markerRect.fill()
+                case .outlinedBar:
+                    // A stroked rectangle is indistinguishable from the
+                    // solid bar at 4×2 pt — a 1 pt stroke eats the whole
+                    // marker. Two segments with a gap between them keep the
+                    // "hollow" reading visible on 1× displays (#1540).
+                    let gap: CGFloat = 1
+                    let segmentWidth = (markerWidth - gap) / 2
+                    color.setFill()
+                    NSRect(
+                        x: markerX, y: y,
+                        width: segmentWidth, height: lineHeight
+                    ).fill()
+                    NSRect(
+                        x: markerX + segmentWidth + gap, y: y,
+                        width: segmentWidth, height: lineHeight
+                    ).fill()
+                case .triangle:
+                    let path = NSBezierPath()
+                    path.move(to: NSPoint(x: markerX, y: y))
+                    path.line(to: NSPoint(x: markerX + markerWidth, y: y + lineHeight / 2))
+                    path.line(to: NSPoint(x: markerX, y: y + lineHeight))
+                    path.close()
+                    color.setFill()
+                    path.fill()
+                }
             }
 
             // Skip blank lines for syntax rendering

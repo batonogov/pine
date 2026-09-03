@@ -176,6 +176,61 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
         )
     }
 
+    /// #1540 — Differentiate Without Color must reach the *application*,
+    /// not just the test runner. The gutter and the minimap publish the cue
+    /// their drawing path uses (colors vs shapes) as an accessibility value
+    /// once git diff markers exist, resolved from the app's own read of the
+    /// system preference. Each matrix lane asserts its expected cue, so the
+    /// test fails on a build that ignores the preference.
+    func testDifferentiateWithoutColorReachesDiffSurfaces() throws {
+        let catalog = try SmokeLocalizationCatalog.load()
+        let locale = try XCTUnwrap(configuration.locales.first)
+
+        let projectURL = try createDiffMarkerProject()
+        defer { cleanupProject(projectURL) }
+
+        diagnosticContext = "differentiate-without-color"
+        configureApplication(
+            locale: locale,
+            pseudolocalized: configuration.pseudolocalized
+        )
+        app.launchEnvironment["PINE_OPEN_PROJECT"] = projectURL.path
+        launchConfiguredApplication()
+        openFile("main.swift")
+
+        let expectedCueKey = configuration.differentiateWithoutColor
+            ? "a11y.diffMarkers.value.shapes"
+            : "a11y.diffMarkers.value.colors"
+        var expectedValues = [
+            try catalog.value(for: expectedCueKey, locale: locale.language)
+        ]
+        if configuration.pseudolocalized {
+            // -NSDoubleLocalizedStrings duplicates the rendered string while
+            // the catalog still holds the single form.
+            expectedValues.append(expectedValues[0] + expectedValues[0])
+        }
+
+        let gutter = app.descendants(matching: .any)["lineNumberGutter"].firstMatch
+        XCTAssertTrue(
+            gutter.waitForExistence(timeout: 10),
+            "The editor gutter should be present once a file is open"
+        )
+        XCTAssertTrue(
+            waitForValue(gutter, in: expectedValues),
+            "The gutter must report the \(configuration.differentiateWithoutColor ? "shape" : "color") cue"
+        )
+
+        let minimap = app.groups["minimap"].firstMatch
+        XCTAssertTrue(
+            minimap.waitForExistence(timeout: 10),
+            "The minimap should be present once a file is open"
+        )
+        XCTAssertTrue(
+            waitForValue(minimap, in: expectedValues),
+            "The minimap must report the \(configuration.differentiateWithoutColor ? "shape" : "color") cue"
+        )
+    }
+
     func testRepresentativeAndPseudolocalizedLayouts() throws {
         guard configuration.captureLayout else {
             throw XCTSkip("Layout capture runs only in representative lanes")
@@ -700,6 +755,90 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
             object: element
         )
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    /// Polls an element's accessibility value until it matches any of the
+    /// accepted variants. Used for values that arrive asynchronously (git
+    /// diff computation) rather than sleeping a fixed interval.
+    private func waitForValue(
+        _ element: XCUIElement,
+        in values: [String],
+        timeout: TimeInterval = 10
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value IN %@", values),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    /// Creates a temp project whose working tree carries one modified and
+    /// one added line, so the editor gutter and minimap have real git diff
+    /// markers to render (#1540).
+    private func createDiffMarkerProject() throws -> URL {
+        let projectURL = try createTempProject(
+            files: [
+                "main.swift": "func main() {\n    print(\"one\")\n}\n",
+                "notes.md": "# Notes\n",
+            ],
+            projectName: "A11y Diff Markers"
+        )
+        // Repo-local identity — CI runners carry no global git config, and
+        // `git commit` refuses to run without one (same pattern as
+        // BranchSwitcherTests).
+        try git("init", at: projectURL)
+        try git("config", "user.email", "test@test.com", at: projectURL)
+        try git("config", "user.name", "Test", at: projectURL)
+        try git("add", ".", at: projectURL)
+        try git("commit", "-m", "initial", at: projectURL)
+        try "func main() {\n    print(\"two\")\n    print(\"added\")\n}\n".write(
+            to: projectURL.appending(path: "main.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+        return projectURL
+    }
+
+    /// Runs git inside the project directory. Uses the git bundled with the
+    /// selected Xcode (xcrun is unusable from a sandboxed runner), with the
+    /// stable-Xcode path preferred so CI resolves the same binary as the
+    /// other git-driving suites.
+    @discardableResult
+    private func git(_ arguments: String..., at directory: URL) throws -> String {
+        let candidates = [
+            "/Applications/Xcode.app/Contents/Developer/usr/bin/git",
+            "/Applications/Xcode-beta.app/Contents/Developer/usr/bin/git",
+            "/usr/bin/git",
+        ]
+        guard let gitPath = candidates.first(where: {
+            FileManager.default.fileExists(atPath: $0)
+        }) else {
+            throw NSError(
+                domain: "SmokeGitError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "No git binary found for the smoke suite"]
+            )
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: gitPath)
+        process.arguments = Array(arguments)
+        process.currentDirectoryURL = directory
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        process.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else {
+            throw NSError(
+                domain: "SmokeGitError",
+                code: Int(process.terminationStatus),
+                userInfo: [
+                    NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? ""
+                ]
+            )
+        }
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     private func waitForFile(
