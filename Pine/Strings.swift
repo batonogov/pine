@@ -3087,6 +3087,14 @@ enum Strings {
     static let a11yMinimapHint: String =
         String(localized: "a11y.minimap.hint", defaultValue: "Code overview. Click to jump to a line.")
 
+    // Editor gutter and git diff markers (#1540)
+    static let a11yGutterLabel: String =
+        String(localized: "a11y.gutter.label", defaultValue: "Line numbers")
+    static let a11yDiffMarkersColorCueValue: String =
+        String(localized: "a11y.diffMarkers.value.colors", defaultValue: "Diff markers: colors")
+    static let a11yDiffMarkersShapeCueValue: String =
+        String(localized: "a11y.diffMarkers.value.shapes", defaultValue: "Diff markers: shapes")
+
     // Terminal pane controls
     static let a11yNewTerminalLabel: String =
         String(localized: "a11y.terminal.new.label", defaultValue: "New terminal tab")

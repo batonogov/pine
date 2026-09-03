@@ -38,8 +38,18 @@ final class LineNumberView: NSView {
     var lineDiffs: [GitLineDiff] = [] {
         didSet {
             rebuildDiffMap()
+            updateDiffMarkerAccessibilityValue()
             needsDisplay = true
         }
+    }
+
+    /// The cue the draw path uses for git diff markers, resolved live from
+    /// the system Differentiate Without Color preference (#1540).
+    var diffMarkerCue: GitDiffMarkerCue {
+        GitDiffMarkerCue.resolve(
+            differentiateWithoutColor: NSWorkspace.shared
+                .accessibilityDisplayShouldDifferentiateWithoutColor
+        )
     }
 
     /// Складываемые регионы для отрисовки disclosure triangles.
@@ -206,6 +216,11 @@ final class LineNumberView: NSView {
     #if DEBUG
     /// Counter for bounds-change notifications received — debug-only, for testability.
     var boundsChangeCount = 0
+    /// Counter for accessibility display-option changes received — debug-only.
+    /// The observer lives on the workspace center (#1540), so tests prove
+    /// the subscription (and catch a regression back to NotificationCenter
+    /// .default, which never delivers the notification) through this count.
+    var accessibilityOptionsChangeCount = 0
     #endif
 
     /// Cached total line count — updated on text change, not on every draw.
@@ -233,6 +248,8 @@ final class LineNumberView: NSView {
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityIdentifier(AccessibilityID.lineNumberGutter)
+        setAccessibilityLabel(Strings.a11yGutterLabel)
+        updateDiffMarkerAccessibilityValue()
 
         // Скролл — подписываемся на конкретный clipView (#465)
         NotificationCenter.default.addObserver(
@@ -250,6 +267,16 @@ final class LineNumberView: NSView {
             self, selector: #selector(contentDidChange),
             name: NSView.frameDidChangeNotification,
             object: textView
+        )
+        // Differentiate Without Color / Increase Contrast flip the marker
+        // rendering, so the gutter must repaint the moment the user changes
+        // the system preference (#1540). Workspace notifications are only
+        // delivered through the workspace's own notification center.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(accessibilityDisplayOptionsDidChange),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
         )
 
         #if DEBUG
@@ -274,6 +301,10 @@ final class LineNumberView: NSView {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        // The accessibility observer lives on the workspace center, which
+        // `NotificationCenter.default.removeObserver` does not touch (#1540).
+        // NSView deinit always runs on the main thread.
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         // NOTE: We cannot touch `diagnosticPopover` here because it is MainActor-isolated
         // and `deinit` is non-isolated in Swift 6. Cleanup happens in the
         // `validationDiagnostics.didSet` hook (popover is dismissed when diagnostics
@@ -500,6 +531,26 @@ final class LineNumberView: NSView {
         needsDisplay = true
     }
 
+    @objc private func accessibilityDisplayOptionsDidChange() {
+        #if DEBUG
+        accessibilityOptionsChangeCount += 1
+        #endif
+        updateDiffMarkerAccessibilityValue()
+        needsDisplay = true
+    }
+
+    /// Publishes the active diff-marker cue as the gutter's accessibility
+    /// value so assistive tech (and the accessibility smoke matrix, #1540)
+    /// can observe which channel the drawn markers use. Cleared when the
+    /// file carries no markers.
+    func updateDiffMarkerAccessibilityValue() {
+        let value = GitDiffMarkerCue.accessibilityValue(
+            hasMarkers: !diffMap.isEmpty,
+            cue: diffMarkerCue
+        )
+        setAccessibilityValue(value.isEmpty ? nil : value)
+    }
+
     func recountTotalLines() {
         if let cache = lineStartsCache {
             cachedTotalLines = cache.lineCount
@@ -582,6 +633,7 @@ final class LineNumberView: NSView {
         // Этот метод проходит только по видимым фрагментам строк — быстро.
         var previousLineCharIndex = -1
         let diffBarWidth: CGFloat = 3
+        let diffMarkerCue = self.diffMarkerCue
         let showFoldIndicators = isMouseInside && !foldStartMap.isEmpty
         let hasFolds = !foldState.foldedRanges.isEmpty
 
@@ -640,8 +692,32 @@ final class LineNumberView: NSView {
                     case .deleted:  markerColor = self.deletedColor
                     }
 
-                    if diffKind == .deleted {
-                        // Deleted: small red triangle at the gutter edge
+                    // Bar geometry is shared so only the fill/stroke style
+                    // differs between the cue modes.
+                    let barRect = NSRect(
+                        x: self.gutterWidth - diffBarWidth,
+                        y: y,
+                        width: diffBarWidth,
+                        height: lineRect.height
+                    )
+
+                    switch diffMarkerCue.shape(for: diffKind) {
+                    case .bar:
+                        // Added (both cue modes): solid bar at the gutter edge
+                        markerColor.setFill()
+                        barRect.fill()
+                    case .outlinedBar:
+                        // Modified under Differentiate Without Color: the
+                        // hollow bar keeps the geometry and drops the fill,
+                        // so the pattern — not the hue — carries the kind.
+                        let outline = NSBezierPath(
+                            rect: barRect.insetBy(dx: 0.5, dy: 0.5)
+                        )
+                        outline.lineWidth = 1
+                        markerColor.setStroke()
+                        outline.stroke()
+                    case .triangle:
+                        // Deleted: small triangle at the gutter edge
                         let triangleSize: CGFloat = 5
                         let triX = self.gutterWidth - diffBarWidth
                         let triY = y
@@ -652,16 +728,6 @@ final class LineNumberView: NSView {
                         path.close()
                         markerColor.setFill()
                         path.fill()
-                    } else {
-                        // Added/Modified: colored bar at the right edge of gutter
-                        let barRect = NSRect(
-                            x: self.gutterWidth - diffBarWidth,
-                            y: y,
-                            width: diffBarWidth,
-                            height: lineRect.height
-                        )
-                        markerColor.setFill()
-                        barRect.fill()
                     }
                 }
 

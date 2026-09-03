@@ -49,9 +49,7 @@ struct BranchSwitcherView: View {
 
             if !errorMessage.isEmpty {
                 Divider()
-                Text(errorMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red)
+                BranchSwitcherErrorRow(message: errorMessage)
                     .padding(8)
                     .transition(PineAnimation.fadeTransition)
             }
@@ -237,5 +235,25 @@ private struct BranchRowSelectionAccessibility: ViewModifier {
             .accessibilityValue(
                 isCurrent ? Text(Strings.branchCurrentAccessibilityValue) : Text("")
             )
+    }
+}
+
+/// The checkout-failure footer. The symbol pairs with the message so the
+/// error state is never carried by the red hue alone (#1540) — the same
+/// distinct-SF-Symbol-per-level pattern the Problems panel uses. The message
+/// text already announces the failure, so the glyph stays decorative.
+struct BranchSwitcherErrorRow: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.red)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundStyle(.red)
+        }
     }
 }
