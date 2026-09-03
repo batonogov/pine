@@ -267,7 +267,7 @@ final class SplitPaneRoutingUITests: PineUITestCase {
 
         // Trigger Go to Line via Edit menu (typeKey is unreliable, see ui-tests.md).
         clickMenuBarItem("Edit")
-        let goToLineItem = app.menuItems["Go to Line"]
+        let goToLineItem = app.menuItems["Go to Line…"]
         XCTAssertTrue(
             waitForExistence(goToLineItem, timeout: 5),
             "Go to Line menu item should exist in Edit menu"

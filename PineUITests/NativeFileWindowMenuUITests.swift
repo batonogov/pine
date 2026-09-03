@@ -218,10 +218,12 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(
             waitForExistence(sidebar, timeout: 10),
-            "The project window should be ready before opening Window"
+            "The project window should be ready before opening File"
         )
 
-        clickMenuBarItem("Window")
+        // Close Window sits in the File menu (#1564), after Close Tab and
+        // Close Project.
+        clickMenuBarItem("File")
         let closeWindow = app.menuItems["Close Window"].firstMatch
         XCTAssertTrue(closeWindow.exists)
         XCTAssertTrue(closeWindow.isEnabled)
@@ -229,7 +231,7 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
 
         XCTAssertTrue(
             sidebar.waitForNonExistence(timeout: 5),
-            "Window > Close Window should close the entire project window"
+            "File > Close Window should close the entire project window"
         )
         XCTAssertTrue(
             waitForExistence(app.windows["welcome"], timeout: 10),
@@ -364,7 +366,7 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         )
         clickMenuBarItem("Edit")
         app.menuItems["Paste"].firstMatch.click()
-        clickMenuBarItem("Window")
+        clickMenuBarItem("File")
         app.menuItems["Close Window"].firstMatch.click()
         let closeConfirmation = app.sheets.firstMatch
         XCTAssertTrue(closeConfirmation.waitForExistence(timeout: 5))
@@ -420,7 +422,7 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
         discardAlert.buttons["Don't Save"].firstMatch.click()
         XCTAssertTrue(discardAlert.waitForNonExistence(timeout: 5))
 
-        clickMenuBarItem("Window")
+        clickMenuBarItem("File")
         app.menuItems["Close Window"].firstMatch.click()
         XCTAssertTrue(
             app.scrollViews["sidebar"].waitForNonExistence(timeout: 5),

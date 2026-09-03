@@ -35,7 +35,7 @@ final class MinimapTests: PineUITestCase {
     }
 
     /// Toggles minimap visibility using Cmd+Shift+M keyboard shortcut.
-    /// This works because Toggle Minimap is a SwiftUI .keyboardShortcut,
+    /// This works because the Minimap toggle is a SwiftUI .keyboardShortcut,
     /// not a local event monitor (which XCUITest's typeKey bypasses).
     private func toggleMinimap() {
         app.typeKey("m", modifierFlags: [.command, .shift])
@@ -100,7 +100,7 @@ final class MinimapTests: PineUITestCase {
         let minimapWasVisible = minimap.waitForExistence(timeout: 2)
 
         app.menuBars.menuBarItems["View"].click()
-        let minimapItem = app.menuItems["Toggle Minimap"]
+        let minimapItem = app.menuItems["Minimap"]
         XCTAssertTrue(waitForExistence(minimapItem, timeout: 3))
 
         minimapItem.click()

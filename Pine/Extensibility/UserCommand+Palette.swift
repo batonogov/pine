@@ -406,7 +406,11 @@ nonisolated extension UserCommand {
         case .resetFontSize:
             value = "cmd+0"
         case .toggleWordWrap:
-            value = "option+z"
+            // ⌥⌘Z, not bare ⌥Z: an Option-only chord claims a typeable
+            // letter app-wide (on a US layout ⌥Z is "Ω", which became
+            // untypeable in the editor and the terminal). Command joins the
+            // chord while the Z mnemonic survives (#1564).
+            value = "cmd+option+z"
         case .toggleMinimap:
             value = "cmd+shift+m"
         case .toggleBlame:
@@ -459,9 +463,14 @@ nonisolated extension UserCommand {
         case .showProblems:
             value = "cmd+shift+x"
         case .nextDiagnostic:
-            value = "f8"
+            // ⌥⌘↓ / ⌥⌘↑ mirror Next/Previous Change (⌃⌥↓/↑) on the Command
+            // family. The former bare F8/⇧F8 demanded Fn under default macOS
+            // settings and collided with the system feature keys (#1564);
+            // a user who wants F8 back binds it — `FunctionKeyToken` makes
+            // "f8" a first-class rebindable chord (#1539).
+            value = "cmd+option+down"
         case .previousDiagnostic:
-            value = "shift+f8"
+            value = "cmd+option+up"
         }
         return value.flatMap(UserKeybindingRegistry.parse)
     }

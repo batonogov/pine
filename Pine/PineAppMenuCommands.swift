@@ -13,8 +13,9 @@
 //  in MenuIcons.swift.
 //
 //  Declaration order mirrors the macOS menu bar left-to-right:
-//  App (about/CLI) → File (open/save) → Edit (find/fold/diff) →
-//  View (font/minimap/reveal) → Git → Terminal.
+//  App (about/CLI) → File (open/save/close/reveal) → Edit (find/fold/diff)
+//  → View (font/minimap/diagnostics) → Window (tabs/arrangement/panels)
+//  → Git → Terminal.
 //
 
 import AppKit
@@ -263,8 +264,27 @@ struct PineAppMenuCommands: Commands {
                 keybindings.effectiveChord(for: .closeProject)
             )
             .disabled(focusedProject?.workspace.rootURL == nil)
+
+            // Standard macOS places Close in the File menu, ordered from
+            // the narrowest target to the widest: Tab (⌘W) → Project
+            // (⌃⌘W) → Window (⇧⌘W) (#1564).
+            Button {
+                UserCommandInvocationRouter.dispatch(
+                    .closeWindow,
+                    projectManager: focusedProject
+                )
+            } label: {
+                Label(
+                    Strings.menuCloseWindow,
+                    systemImage: MenuIcons.closeWindow
+                )
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .closeWindow)
+            )
+            .disabled(!nativeState.canCloseWindow)
         }
-        // Save, Save All, Save As, Duplicate, Auto-save toggle
+        // Save, Save All, Save As, Duplicate, Reveal in Finder
         CommandGroup(replacing: .saveItem) {
             Button {
                 guard let pm = focusedProject else { return }
@@ -323,29 +343,45 @@ struct PineAppMenuCommands: Commands {
             )
             .disabled(!nativeState.canDuplicate)
 
+            Divider()
+
+            // Finder and Xcode place "Show in Finder" in the File menu
+            // (#1564); these two moved in from the View menu.
+            Button {
+                guard let pm = focusedProject,
+                      pm.paneManager.root.content(
+                          for: pm.paneManager.activePaneID
+                      ) == .editor,
+                      let url = pm.paneManager.activeTabManager?
+                          .activeTab?
+                          .fileURL else {
+                    return
+                }
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } label: {
+                Label(Strings.menuRevealFileInFinder, systemImage: MenuIcons.revealFileInFinder)
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .revealFileInFinder)
+            )
+            .disabled(
+                focusedProject?.paneManager.activeTabManager?
+                    .activeTab?
+                    .fileURL == nil
+            )
+
+            Button {
+                guard let pm = focusedProject,
+                      let rootURL = pm.workspace.rootURL else { return }
+                NSWorkspace.shared.activateFileViewerSelecting([rootURL])
+            } label: {
+                Label(Strings.menuRevealProjectInFinder, systemImage: MenuIcons.revealProjectInFinder)
+            }
+            .disabled(focusedProject?.workspace.rootURL == nil)
+
         }
 
         // MARK: - Window menu
-        CommandGroup(before: .windowSize) {
-            Button {
-                UserCommandInvocationRouter.dispatch(
-                    .closeWindow,
-                    projectManager: focusedProject
-                )
-            } label: {
-                Label(
-                    Strings.menuCloseWindow,
-                    systemImage: MenuIcons.closeWindow
-                )
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .closeWindow)
-            )
-            .disabled(!nativeState.canCloseWindow)
-
-            Divider()
-        }
-
         // The local event monitor presents the visual MRU switcher for
         // physical Control-Tab gestures. Native menu equivalents preserve the
         // immediate-switch fallback for Accessibility/XCUITest events, which
@@ -372,6 +408,40 @@ struct PineAppMenuCommands: Commands {
                 (focusedProject?.paneManager
                     .validGlobalTabSwitchOrder().count ?? 0) < 2
             )
+
+            // Tab and window arrangement belongs in the Window menu (#1564);
+            // these four moved in from the View menu.
+            Button {
+                focusedProject?.paneManager.moveActiveTab(.leading)
+            } label: {
+                Label(Strings.tabMoveLeading, systemImage: "arrow.left")
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [.command, .control])
+            .disabled(focusedProject?.paneManager.canMoveActiveTab(.leading) != true)
+
+            Button {
+                focusedProject?.paneManager.moveActiveTab(.trailing)
+            } label: {
+                Label(Strings.tabMoveTrailing, systemImage: "arrow.right")
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
+            .disabled(focusedProject?.paneManager.canMoveActiveTab(.trailing) != true)
+
+            Button {
+                focusedProject?.paneManager.moveActiveTab(.previousPane)
+            } label: {
+                Label(Strings.tabMoveToPreviousPane, systemImage: "rectangle.leadinghalf.inset.filled")
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [.command, .control, .shift])
+            .disabled(focusedProject?.paneManager.canMoveActiveTab(.previousPane) != true)
+
+            Button {
+                focusedProject?.paneManager.moveActiveTab(.nextPane)
+            } label: {
+                Label(Strings.tabMoveToNextPane, systemImage: "rectangle.trailinghalf.inset.filled")
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [.command, .control, .shift])
+            .disabled(focusedProject?.paneManager.canMoveActiveTab(.nextPane) != true)
 
             Divider()
 
@@ -434,6 +504,35 @@ struct PineAppMenuCommands: Commands {
                 keybindings.effectiveChord(for: .previousProjectInWindow)
             )
             .disabled(!windowAvailability.canSwitchProject)
+
+            Divider()
+
+            // Auxiliary panels conventionally live in the Window menu
+            // (#1564); these three moved in from the View menu.
+            Button {
+                showAgentInbox()
+            } label: {
+                Label(Strings.menuAgentInbox, systemImage: MenuIcons.agentInbox)
+            }
+            .effectiveKeyboardShortcut(
+                keybindings.effectiveChord(for: .showAgentInbox)
+            )
+
+            Button {
+                AgentActivityPresentationRouter.postRequest(
+                    for: focusedProject
+                )
+            } label: {
+                Label(Strings.menuAgentActivity, systemImage: MenuIcons.agentActivity)
+            }
+            .disabled(focusedProject == nil)
+
+            Button {
+                NotificationCenter.default.post(name: .showAgentHistory, object: nil)
+            } label: {
+                Label(Strings.menuAgentHistory, systemImage: MenuIcons.agentHistory)
+            }
+            .disabled(focusedProject?.workspace.rootURL == nil)
         }
 
         // MARK: - Edit menu
@@ -657,7 +756,8 @@ struct PineAppMenuCommands: Commands {
         }
 
         // MARK: - View menu
-        // Font size, terminal toggle, preview, minimap, blame, word wrap, reveal
+        // Font size, terminal toggle, preview, minimap, blame, word wrap,
+        // problems/diagnostics, agent launch
         CommandGroup(after: .toolbar) {
             Divider()
 
@@ -788,74 +888,6 @@ struct PineAppMenuCommands: Commands {
 
             Divider()
 
-            Button {
-                focusedProject?.paneManager.moveActiveTab(.leading)
-            } label: {
-                Label(Strings.tabMoveLeading, systemImage: "arrow.left")
-            }
-            .keyboardShortcut(.leftArrow, modifiers: [.command, .control])
-            .disabled(focusedProject?.paneManager.canMoveActiveTab(.leading) != true)
-
-            Button {
-                focusedProject?.paneManager.moveActiveTab(.trailing)
-            } label: {
-                Label(Strings.tabMoveTrailing, systemImage: "arrow.right")
-            }
-            .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
-            .disabled(focusedProject?.paneManager.canMoveActiveTab(.trailing) != true)
-
-            Button {
-                focusedProject?.paneManager.moveActiveTab(.previousPane)
-            } label: {
-                Label(Strings.tabMoveToPreviousPane, systemImage: "rectangle.leadinghalf.inset.filled")
-            }
-            .keyboardShortcut(.leftArrow, modifiers: [.command, .control, .shift])
-            .disabled(focusedProject?.paneManager.canMoveActiveTab(.previousPane) != true)
-
-            Button {
-                focusedProject?.paneManager.moveActiveTab(.nextPane)
-            } label: {
-                Label(Strings.tabMoveToNextPane, systemImage: "rectangle.trailinghalf.inset.filled")
-            }
-            .keyboardShortcut(.rightArrow, modifiers: [.command, .control, .shift])
-            .disabled(focusedProject?.paneManager.canMoveActiveTab(.nextPane) != true)
-
-            Divider()
-
-            Button {
-                guard let pm = focusedProject,
-                      pm.paneManager.root.content(
-                          for: pm.paneManager.activePaneID
-                      ) == .editor,
-                      let url = pm.paneManager.activeTabManager?
-                          .activeTab?
-                          .fileURL else {
-                    return
-                }
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            } label: {
-                Label(Strings.menuRevealFileInFinder, systemImage: MenuIcons.revealFileInFinder)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .revealFileInFinder)
-            )
-            .disabled(
-                focusedProject?.paneManager.activeTabManager?
-                    .activeTab?
-                    .fileURL == nil
-            )
-
-            Button {
-                guard let pm = focusedProject,
-                      let rootURL = pm.workspace.rootURL else { return }
-                NSWorkspace.shared.activateFileViewerSelecting([rootURL])
-            } label: {
-                Label(Strings.menuRevealProjectInFinder, systemImage: MenuIcons.revealProjectInFinder)
-            }
-            .disabled(focusedProject?.workspace.rootURL == nil)
-
-            Divider()
-
             // The switcher's New Agent submenu, in the menu bar where it
             // belongs (#1525). Hiding the toolbar used to delete the feature
             // outright: a toolbar is a convenience layer over commands that
@@ -891,31 +923,6 @@ struct PineAppMenuCommands: Commands {
                 )
             }
             .disabled(!windowAvailability.canLaunchAgent)
-
-            Button {
-                showAgentInbox()
-            } label: {
-                Label(Strings.menuAgentInbox, systemImage: MenuIcons.agentInbox)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .showAgentInbox)
-            )
-
-            Button {
-                AgentActivityPresentationRouter.postRequest(
-                    for: focusedProject
-                )
-            } label: {
-                Label(Strings.menuAgentActivity, systemImage: MenuIcons.agentActivity)
-            }
-            .disabled(focusedProject == nil)
-
-            Button {
-                NotificationCenter.default.post(name: .showAgentHistory, object: nil)
-            } label: {
-                Label(Strings.menuAgentHistory, systemImage: MenuIcons.agentHistory)
-            }
-            .disabled(focusedProject?.workspace.rootURL == nil)
 
             // Lives in the menu bar, not only in the toolbar switcher: the
             // switcher is a project-navigation control that a user with a
