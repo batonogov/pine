@@ -785,6 +785,71 @@ struct SidebarTreeNavigationTests {
         ) == nil)
     }
 
+    // MARK: - Live keyboard selection (#1544)
+
+    @Test("Left collapses the live mirrored selection, not a stale snapshot")
+    func leftArrowCollapsesLiveSelectionMirror() throws {
+        let root = try makeTree(files: [
+            "alpha/inside-alpha.swift": "",
+            "root-file.swift": "",
+        ])
+        defer { removeTree(root) }
+
+        let nodes = loadedRootNodes(root)
+        let alpha = try requireNode("alpha", in: nodes)
+        let expansion = SidebarExpansionState()
+        expansion.setExpanded(alpha.url, true)
+        let rows = SidebarTreeFlattener.visibleRows(
+            rootNodes: nodes,
+            expansion: expansion
+        )
+        let navigation = SidebarTreeNavigation()
+
+        // A pointer click on the folder expands it and writes the live
+        // mirror synchronously — this is what `SidebarView.mirroredSelection`
+        // does inside the row binding's setter.
+        navigation.currentSelection = alpha
+
+        // The stale-epoch failure mode of #1544: the key handler read its
+        // captured binding snapshot, which was still nil at dispatch time,
+        // and the collapse silently vanished. (`rows` is a snapshot taken
+        // before any collapse below, so both calls flatten the same tree.)
+        #expect(
+            navigation.handleLeftArrow(
+                current: nil,
+                rows: rows,
+                expansion: expansion
+            ) == nil,
+            "A stale nil snapshot cannot collapse anything"
+        )
+
+        // The keyboard path now reads the live model, so the collapse lands
+        // and the selection stays on the folder.
+        let target = navigation.handleLeftArrow(
+            current: navigation.currentSelection,
+            rows: rows,
+            expansion: expansion
+        )
+        #expect(target === alpha)
+        #expect(!expansion.isExpanded(alpha.url))
+    }
+
+    @Test("The live selection mirror starts empty and tracks writes verbatim")
+    func currentSelectionMirrorLifecycle() throws {
+        let navigation = SidebarTreeNavigation()
+        #expect(navigation.currentSelection == nil)
+
+        let root = try makeTree(files: ["a.swift": ""])
+        defer { removeTree(root) }
+        let node = try requireNode("a.swift", in: loadedRootNodes(root))
+
+        navigation.currentSelection = node
+        #expect(navigation.currentSelection === node)
+
+        navigation.currentSelection = nil
+        #expect(navigation.currentSelection == nil)
+    }
+
     // MARK: - Fixtures
 
     private func typeMatch(

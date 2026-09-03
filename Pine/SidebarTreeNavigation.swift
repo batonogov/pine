@@ -462,14 +462,36 @@ struct SidebarTypeAhead {
 /// changes through one place so the SwiftUI `.onKeyPress` handlers and
 /// the AppKit ``SidebarKeyboardResponderView`` never diverge (#1238).
 ///
-/// The model is **stateless** with respect to the tree contents: every
-/// navigation method receives the current flattened row list as a
-/// parameter and returns the new selection. Only the type-ahead buffer
-/// and the optional scroll callback are stored.
+/// Stored state: the type-ahead buffer, the scroll callback and viewport
+/// height for reveal geometry, and the live selection mirror
+/// (``currentSelection``). The model stays **stateless** with respect to
+/// the tree contents: every navigation method receives the current
+/// flattened row list as a parameter and returns the new selection.
 @MainActor
 @Observable
 final class SidebarTreeNavigation {
     private(set) var typeAhead = SidebarTypeAhead()
+
+    /// Live selection used by every keyboard navigation path (#1544).
+    ///
+    /// `.onKeyPress` closures dispatch through a snapshot of the view
+    /// structure captured when the modifier was installed, and the
+    /// `@Binding` read inside such a snapshot can be stale after a pointer
+    /// click writes the selection: Left arrived with `current == nil` while
+    /// the row still rendered expanded. This model is `@Observable`, and the
+    /// closures reach it through the `@State` storage of their captured view
+    /// structure — a reference shared across every epoch of that view's
+    /// identity — so reading a property here observes the current value
+    /// whichever epoch the calling closure belongs to. (The row views
+    /// separately receive the same instance through the environment.)
+    ///
+    /// ``SidebarView`` is the single writer: the row binding,
+    /// `navigate(to:)`, and reload reconciliation update the mirror in the
+    /// same step as the binding; an `onChange(of:, initial: true)` safety
+    /// net mirrors selection writes made outside the sidebar (tab sync,
+    /// Reveal in Sidebar) on the next graph pass, and re-seeds the mirror
+    /// whenever the view re-mounts with a live binding selection.
+    var currentSelection: FileNode?
 
     /// Scroll callback invoked after selection changes to keep the
     /// selected row visible. Set by ``SidebarView`` via the

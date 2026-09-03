@@ -660,7 +660,7 @@ struct SidebarView: View {
                             SidebarFileTree(
                                 nodes: workspace.rootNodes,
                                 treeRevision: workspace.rootNodesRevision,
-                                selection: $selectedFile,
+                                selection: mirroredSelection,
                                 onFileOpen: { node, disposition in
                                     if disposition.requestsEditorFocus {
                                         keyboardFocusController
@@ -704,6 +704,18 @@ struct SidebarView: View {
                     .environment(editState)
                     .environment(expansion)
                     .environment(navigation)
+                    .onChange(of: selectedFile, initial: true) { _, selection in
+                        // Selections written outside the sidebar (tab sync,
+                        // Reveal in Sidebar) bypass `mirroredSelection`; keep
+                        // the live model in step whenever this view observes
+                        // the change. `initial: true` also seeds the mirror
+                        // on insertion, so a SidebarView that re-mounts after
+                        // the search branch (fresh @State navigation) starts
+                        // from the live binding selection instead of nil —
+                        // otherwise a background reload reconciliation would
+                        // erase the visible selection (#1544).
+                        navigation.currentSelection = selection
+                    }
                     .onChange(of: workspace.rootNodesRevision) { _, _ in
                         // Drop expanded entries for folders that disappeared
                         // (e.g. after delete) so the set stays bounded.
@@ -806,7 +818,7 @@ struct SidebarView: View {
                                         newURL,
                                         rootNodes: workspace.rootNodes
                                     ) {
-                                    selectedFile = node
+                                    selectSidebarRow(node)
                                 }
                             }
                         }
@@ -830,7 +842,7 @@ struct SidebarView: View {
                                     targetID,
                                     rootNodes: workspace.rootNodes
                                 ) {
-                                selectedFile = node
+                                selectSidebarRow(node)
                             }
                             performSidebarScroll(
                                 .intentionalReveal(
@@ -932,7 +944,7 @@ struct SidebarView: View {
         modifiers: SidebarKeyboardModifiers
     ) -> Bool {
         guard editState.renamingURL == nil,
-              let selected = selectedFile,
+              let selected = navigation.currentSelection,
               let action = SidebarReturnAction.resolve(
                 modifiers: modifiers,
                 isRenaming: false,
@@ -956,7 +968,7 @@ struct SidebarView: View {
 
     private func handleSidebarSpace() -> Bool {
         guard editState.renamingURL == nil,
-              let selected = selectedFile,
+              let selected = navigation.currentSelection,
               !selected.isDirectory else {
             return false
         }
@@ -967,6 +979,35 @@ struct SidebarView: View {
     }
 
     // MARK: - Finder-style keyboard navigation (#1238)
+
+    /// Selection binding that mirrors every row-driven write into the live
+    /// navigation model inside the same setter call (#1544).
+    ///
+    /// The `.onKeyPress` handlers dispatch through a snapshot of the view
+    /// structure captured when the modifier was installed, and the binding
+    /// read in that snapshot can be stale after a pointer click writes the
+    /// selection — Left arrived with `current == nil` while the row still
+    /// rendered expanded. `navigation` is `@Observable` and the closures
+    /// reach it through the `@State` storage of that same captured
+    /// structure — a reference shared across every epoch of the view's
+    /// identity — so a read there is always live. The mirror therefore
+    /// updates in the same setter step as the write, never via graph
+    /// invalidation.
+    private var mirroredSelection: Binding<FileNode?> {
+        Binding(
+            get: { selectedFile },
+            set: { selectSidebarRow($0) }
+        )
+    }
+
+    /// The single writer for the selection pair: the binding drives the
+    /// rendered row highlight, the live navigation mirror drives the
+    /// keyboard path (#1544). Every sidebar selection change goes through
+    /// here so the two stores can never drift apart.
+    private func selectSidebarRow(_ node: FileNode?) {
+        selectedFile = node
+        navigation.currentSelection = node
+    }
 
     /// Flattened list of currently-visible rows (respecting expansion state).
     private var visibleRows: [SidebarVisibleRow] {
@@ -979,7 +1020,7 @@ struct SidebarView: View {
     /// Updates the selection and ensures the newly-selected row is visible.
     private func navigate(to node: FileNode?) {
         guard let node else { return }
-        selectedFile = node
+        selectSidebarRow(node)
         navigation.scroll(to: node)
     }
 
@@ -987,7 +1028,7 @@ struct SidebarView: View {
     private func handleArrow(delta: Int) {
         let rows = visibleRows
         guard !rows.isEmpty else { return }
-        navigate(to: navigation.move(by: delta, current: selectedFile, rows: rows))
+        navigate(to: navigation.move(by: delta, current: navigation.currentSelection, rows: rows))
     }
 
     /// Left: collapse an expanded folder, or move to the parent.
@@ -996,7 +1037,7 @@ struct SidebarView: View {
         guard !rows.isEmpty else { return }
         navigate(
             to: navigation.handleLeftArrow(
-                current: selectedFile,
+                current: navigation.currentSelection,
                 rows: rows,
                 expansion: expansion
             )
@@ -1009,7 +1050,7 @@ struct SidebarView: View {
         guard !rows.isEmpty else { return }
         navigate(
             to: navigation.handleRightArrow(
-                current: selectedFile,
+                current: navigation.currentSelection,
                 rows: rows,
                 expansion: expansion
             )
@@ -1027,13 +1068,13 @@ struct SidebarView: View {
     private func handlePageUp() {
         let rows = visibleRows
         guard !rows.isEmpty else { return }
-        navigate(to: navigation.pageUp(current: selectedFile, rows: rows))
+        navigate(to: navigation.pageUp(current: navigation.currentSelection, rows: rows))
     }
 
     private func handlePageDown() {
         let rows = visibleRows
         guard !rows.isEmpty else { return }
-        navigate(to: navigation.pageDown(current: selectedFile, rows: rows))
+        navigate(to: navigation.pageDown(current: navigation.currentSelection, rows: rows))
     }
 
     /// Type-to-select with repeated-character cycling and Unicode support.
@@ -1043,7 +1084,7 @@ struct SidebarView: View {
         navigate(
             to: navigation.typeSelect(
                 character: characters,
-                current: selectedFile,
+                current: navigation.currentSelection,
                 rows: rows
             )
         )
@@ -1052,11 +1093,11 @@ struct SidebarView: View {
     private func reconcileSelectionAfterReload() {
         let rows = visibleRows
         let reconciled = navigation.reconciledSelection(
-            current: selectedFile,
+            current: navigation.currentSelection,
             rootNodes: workspace.rootNodes,
             rows: rows
         )
-        selectedFile = reconciled
+        selectSidebarRow(reconciled)
         // A passive file-system refresh must preserve the viewport. The row
         // was already selected and visible (or intentionally off-screen), so
         // asking ScrollViewReader to reveal it again only forces another
