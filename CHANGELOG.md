@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.7.0](https://github.com/batonogov/pine/compare/v2.6.3...v2.7.0) (2026-09-03)
+
+
+### Features
+
+* **a11y:** adapt diff markers and syntax colours to Differentiate Without Color ([#1602](https://github.com/batonogov/pine/issues/1602)) ([bf26702](https://github.com/batonogov/pine/commit/bf26702b67a2633e670f16f299c10ffeb14f9b67))
+* **i18n:** translate the status bar, validators, and rename popover; pluralize count-bearing keys ([#1536](https://github.com/batonogov/pine/issues/1536)) ([#1616](https://github.com/batonogov/pine/issues/1616)) ([17406ee](https://github.com/batonogov/pine/commit/17406ee38c06992d38b30e33ba8826572b7179c9))
+* **menus:** standardize chords, placement, and naming per macOS conventions ([#1564](https://github.com/batonogov/pine/issues/1564)) ([#1617](https://github.com/batonogov/pine/issues/1617)) ([0aeaea3](https://github.com/batonogov/pine/commit/0aeaea3adc9f47bbfe3c894fa8578ec34e6acff9))
+
+
+### Bug Fixes
+
+* **sidebar:** read keyboard navigation from a live selection mirror ([#1597](https://github.com/batonogov/pine/issues/1597)) ([6df40f4](https://github.com/batonogov/pine/commit/6df40f4930b18aa36e329d41451e13ce58e42bfd)), closes [#1544](https://github.com/batonogov/pine/issues/1544)
+
+
+### Code Refactoring
+
+* **sidebar:** keep the escape key claim on the search branch only ([#1596](https://github.com/batonogov/pine/issues/1596)) ([fd39d09](https://github.com/batonogov/pine/commit/fd39d099fa1c5f485b39f1c6ed0e5913905aac4f)), closes [#1544](https://github.com/batonogov/pine/issues/1544)
+
 ## [2.6.3](https://github.com/batonogov/pine/compare/v2.6.2...v2.6.3) (2026-09-02)
 
 
