@@ -37,7 +37,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     @discardableResult
     private func openGoToLine() -> XCUIElement {
         clickMenuBarItem("Edit")
-        let goToLineItem = app.menuItems["Go to Line"]
+        let goToLineItem = app.menuItems["Go to Line…"]
         XCTAssertTrue(waitForExistence(goToLineItem, timeout: 5))
         goToLineItem.click()
 
@@ -76,7 +76,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
 
         // Open Edit menu and verify Go to Line exists
         clickMenuBarItem("Edit")
-        let goToLineItem = app.menuItems["Go to Line"]
+        let goToLineItem = app.menuItems["Go to Line…"]
         XCTAssertTrue(
             waitForExistence(goToLineItem, timeout: 5),
             "Go to Line menu item should exist in Edit menu"

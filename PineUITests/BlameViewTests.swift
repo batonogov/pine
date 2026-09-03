@@ -70,20 +70,21 @@ final class BlameViewTests: PineUITestCase {
             return
         }
 
-        // The native menu toggle changes the persisted preference.
+        // The native menu toggle changes the persisted preference. The
+        // checkmarked item is named for its state (#1564): "Git Blame".
         app.menuBars.menuBarItems["View"].click()
-        let toggleItem = app.menuItems["Toggle Git Blame"]
+        let toggleItem = app.menuItems["Git Blame"]
         guard waitForExistence(toggleItem, timeout: 3) else {
-            XCTFail("Toggle Git Blame menu item should exist")
+            XCTFail("Git Blame menu item should exist")
             return
         }
         toggleItem.click()
 
         // Toggle it again to leave the persisted preference unchanged for later tests.
         app.menuBars.menuBarItems["View"].click()
-        let toggleItemOff = app.menuItems["Toggle Git Blame"]
+        let toggleItemOff = app.menuItems["Git Blame"]
         guard waitForExistence(toggleItemOff, timeout: 3) else {
-            XCTFail("Toggle Git Blame menu item should still exist")
+            XCTFail("Git Blame menu item should still exist")
             return
         }
         toggleItemOff.click()

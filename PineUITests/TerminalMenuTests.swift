@@ -54,7 +54,7 @@ final class TerminalMenuTests: PineUITestCase {
         openFile("main.swift")
 
         clickMenuBarItem("Terminal")
-        let findItem = app.menuItems["Find in Terminal"]
+        let findItem = app.menuItems["Find in Terminal…"]
         XCTAssertTrue(
             waitForExistence(findItem, timeout: 3),
             "Terminal menu should contain Find in Terminal item"
@@ -66,7 +66,7 @@ final class TerminalMenuTests: PineUITestCase {
         openFile("main.swift")
 
         clickMenuBarItem("Terminal")
-        let findItem = app.menuItems["Find in Terminal"]
+        let findItem = app.menuItems["Find in Terminal…"]
         XCTAssertTrue(waitForExistence(findItem, timeout: 3))
         XCTAssertFalse(
             findItem.isEnabled,

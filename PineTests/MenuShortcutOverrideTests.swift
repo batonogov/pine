@@ -92,12 +92,15 @@ struct MenuShortcutOverrideTests {
             .togglePreview: AdvertisedShortcut("p", [.command, .shift]),
             .toggleMinimap: AdvertisedShortcut("m", [.command, .shift]),
             .toggleBlame: AdvertisedShortcut("b", [.command, .control]),
-            .toggleWordWrap: AdvertisedShortcut("z", .option),
+            // ⌥Z claimed a typeable letter app-wide (#1564): ⌘ joins the
+            // chord so the Z mnemonic survives without stealing text input.
+            .toggleWordWrap: AdvertisedShortcut("z", [.command, .option]),
             .showProblems: AdvertisedShortcut("x", [.command, .shift]),
-            .nextDiagnostic: AdvertisedShortcut(KeyEquivalent("\u{F70B}")),
-            .previousDiagnostic: AdvertisedShortcut(
-                KeyEquivalent("\u{F70B}"), .shift
-            ),
+            // Bare F8/⇧F8 needed Fn under default settings and collided with
+            // system feature keys (#1564). ⌥⌘↓/↑ mirror Next/Previous Change
+            // (⌃⌥↓/↑) on the Command modifier family.
+            .nextDiagnostic: AdvertisedShortcut(.downArrow, [.command, .option]),
+            .previousDiagnostic: AdvertisedShortcut(.upArrow, [.command, .option]),
             .revealFileInFinder: AdvertisedShortcut("r", [.command, .shift]),
             .showAgentInbox: AdvertisedShortcut("i", [.command, .shift]),
             .newAgent: AdvertisedShortcut("a", [.command, .shift]),
@@ -177,10 +180,12 @@ struct MenuShortcutOverrideTests {
         )
     }
 
-    /// The same replacement, for the two commands whose built-in chord is a
-    /// function key. Before #1539 the chord grammar could not name F8 at all,
-    /// so rebinding Next Diagnostic left F8 live underneath the new chord.
-    @Test("rebinding a function-key command retires the function key")
+    /// The same replacement, for a command whose built-in chord is an arrow
+    /// key: the user's new chord must retire the arrow chord underneath.
+    /// (Before #1564 this test used F8 — bare function keys are no longer
+    /// built-in chords, but a user may still bind one, so the grammar below
+    /// keeps naming them.)
+    @Test("rebinding a command retires its replaced chord")
     func rebindRetiresAFunctionKeyChord() async throws {
         let keybindings = try await Self.registry(
             loading: #"[{"command": "nextDiagnostic", "key": "cmd+j"}]"#
@@ -195,26 +200,21 @@ struct MenuShortcutOverrideTests {
         #expect(
             keybindings.suppressesBuiltInShortcut(
                 for: try #require(
-                    Self.keyDown("\u{F70B}", modifiers: [], keyCode: 100)
+                    Self.keyDown("↓", modifiers: [.command, .option], keyCode: 125)
                 )
             )
         )
     }
 
-    /// `f1` … `f20` have to round-trip through the chord grammar, otherwise
-    /// `defaultChord` is `nil` for the two diagnostic commands and neither
-    /// the menu nor the palette can advertise anything for them.
+    /// `f1` … `f20` have to round-trip through the chord grammar, so a user
+    /// can bind them (`FunctionKeyToken`, #1539) even though no built-in
+    /// command carries one anymore (#1564).
     @Test("the chord grammar names function keys")
     func chordGrammarNamesFunctionKeys() throws {
         let parsed = try #require(UserKeybindingRegistry.parse("f8"))
         #expect(parsed.key == "f8")
         #expect(parsed.modifiers.isEmpty)
         #expect(parsed.displayText == "F8")
-        #expect(UserCommand.nextDiagnostic.defaultChord == parsed)
-        #expect(
-            UserCommand.previousDiagnostic.defaultChord
-                == UserKeybindingRegistry.parse("shift+f8")
-        )
         #expect(
             UserKeybindingRegistry.keyToken(
                 keyCode: 100,

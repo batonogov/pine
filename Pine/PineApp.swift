@@ -1734,6 +1734,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return true
         }
 
+        // ⌘= mirrors the menu's ⌘+ (Zoom In) and ⇧⌘- mirrors ⌘- (Zoom Out)
+        // (#1564). SwiftUI Commands cannot carry a hidden second key
+        // equivalent and the chord grammar cannot spell "cmd++", so the
+        // aliases ride this physical-key router, matching the exact key
+        // position the way the system's own shortcuts do. The key filter
+        // runs first so every other keyDown stays free of registry work; a
+        // user rebind of the command retires its alias.
+        if FontZoomAliasPolicy.handles(keyCode: Int(event.keyCode)) {
+            if let zoom = FontZoomAliasPolicy.zoom(
+                keyCode: Int(event.keyCode),
+                modifiers: KeyboardShortcutMatcher.normalizedModifiers(
+                    event.modifierFlags
+                ),
+                increaseFontSizeRebound:
+                    ExtensibilityManager.shared.keybindings
+                        .hasOverride(for: .increaseFontSize),
+                decreaseFontSizeRebound:
+                    ExtensibilityManager.shared.keybindings
+                        .hasOverride(for: .decreaseFontSize)
+            ) {
+                switch zoom {
+                case .increase:
+                    FontSizeSettings.shared.increase()
+                case .decrease:
+                    FontSizeSettings.shared.decrease()
+                }
+                return true
+            }
+        }
+
         // Cmd+Shift+B opens branch switching only for Git projects.
         if KeyboardShortcutMatcher.matches(
             keyCode: KeyboardShortcutMatcher.PhysicalKey.b,

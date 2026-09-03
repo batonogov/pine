@@ -375,7 +375,14 @@ final class UserKeybindingRegistry {
                     entryNumber: entryNumber,
                     reason: .reservedSystemChord(value: entry.key)
                 ))
-            } else if let chord, !Self.hasDispatchModifier(chord) {
+            } else if let chord,
+                      !Self.hasDispatchModifier(chord),
+                      // A function key has no dispatch modifier but is not
+                      // text input either: F8 cannot type a character, so it
+                      // must not take the whole file down with it. #1564
+                      // moved the diagnostics off bare F8 and promised users
+                      // they can bind the keys back (#1539 FunctionKeyToken).
+                      FunctionKeyToken.character(for: chord.key) == nil {
                 diagnostics.append(UserConfigurationDiagnostic(
                     file: .keybindings,
                     fileURL: url,

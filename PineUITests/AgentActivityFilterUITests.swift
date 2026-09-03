@@ -126,13 +126,14 @@ final class AgentActivityFilterUITests: PineUITestCase {
 
     private func launchActivityPanel() {
         launchWithProject(projectURL)
-        clickMenuBarItem("View")
+        // Agent panels conventionally live in the Window menu (#1564).
+        clickMenuBarItem("Window")
         let activityItem = app.menuItems["Agent Activity"]
         XCTAssertTrue(activityItem.waitForExistence(timeout: 3))
         activityItem.click()
         XCTAssertTrue(
             activityPanel.waitForExistence(timeout: 5),
-            "The Activity Panel should open from the View menu"
+            "The Activity Panel should open from the Window menu"
         )
     }
 

@@ -356,14 +356,15 @@ final class EditorWindowTests: PineUITestCase {
         )
         XCTAssertEqual(viewMenuItems.count, 1, "There should be exactly one View menu")
 
-        // Open View menu and check for Reveal items
-        app.menuBars.menuBarItems["View"].click()
+        // Finder and Xcode place "Show in Finder" in the File menu (#1564).
+        // Open the File menu and check for the Reveal items.
+        app.menuBars.menuBarItems["File"].click()
 
         let revealFile = app.menuItems["Reveal File in Finder"]
-        XCTAssertTrue(revealFile.exists, "View menu should contain 'Reveal File in Finder'")
+        XCTAssertTrue(revealFile.exists, "File menu should contain 'Reveal File in Finder'")
 
         let revealProject = app.menuItems["Reveal Project in Finder"]
-        XCTAssertTrue(revealProject.exists, "View menu should contain 'Reveal Project in Finder'")
+        XCTAssertTrue(revealProject.exists, "File menu should contain 'Reveal Project in Finder'")
     }
 
     // MARK: - Window title does not repeat the project switcher label

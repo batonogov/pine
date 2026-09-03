@@ -175,7 +175,8 @@ final class QuickOpenUITests: PineUITestCase {
         openFile("main.swift")
 
         clickMenuBarItem("File")
-        let menuItem = app.menuItems["Symbol Navigator"]
+        // Renamed "Go to Symbol…" to match the help book (#1564).
+        let menuItem = app.menuItems["Go to Symbol…"]
         XCTAssertTrue(menuItem.waitForExistence(timeout: 5))
         menuItem.click()
 

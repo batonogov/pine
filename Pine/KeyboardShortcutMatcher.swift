@@ -25,6 +25,8 @@ nonisolated enum KeyboardShortcutMatcher {
         static let w = 13      // kVK_ANSI_W
         static let b = 11      // kVK_ANSI_B
         static let tab = 48    // kVK_Tab
+        static let equalSign = 24 // kVK_ANSI_Equal (the =/+ key)
+        static let minus = 27  // kVK_ANSI_Minus (the -/_ key)
         /// Digit keys 1-9, indexed by position (index 0 → key "1", index 8 → key "9").
         static let digits: [Int] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
     }
@@ -83,5 +85,65 @@ nonisolated enum KeyboardShortcutMatcher {
             eventModifiers: normalizedModifiers(event.modifierFlags),
             modifiers: modifiers
         )
+    }
+}
+
+/// The font-zoom aliases that answer beside the menu's own chords (#1564).
+///
+/// The Zoom In item advertises ⌘+, which on a US layout means the user must
+/// press ⇧⌘=. Apple apps answer to ⌘= as well, but Pine cannot express that
+/// as a second menu item: SwiftUI `Commands` has no hidden items, and the
+/// chord grammar cannot spell `cmd++` because "+" is its separator. So the
+/// aliases ride the physical-key router next to Cmd+W and terminal find,
+/// matching the exact key position — the same layout-independence the
+/// system's own shortcuts use (ISO keyboards add their extra Section key
+/// elsewhere and leave the Equal/Minus positions in place).
+nonisolated enum FontZoomAliasPolicy {
+    /// The zoom a matched key event should perform.
+    enum Zoom: Equatable {
+        case increase
+        case decrease
+    }
+
+    /// Resolves the zoom alias for a physical key event, or `nil` when the
+    /// event belongs to the menu's own chords, another handler, or text
+    /// input.
+    ///
+    /// - ⌘ on the physical Equal key zooms in — ⌘= beside the menu's ⌘+.
+    /// - ⇧⌘ on the physical Minus key zooms out — ⌘_ beside the menu's ⌘-,
+    ///   the pair Apple apps accept for Zoom Out.
+    /// - ⇧⌘ on Equal stays with the menu: it is how ⌘+ is *typed* on a US
+    ///   layout, and an alias that claimed it would invert Zoom In.
+    /// - A user rebind of the corresponding command retires its alias — the
+    ///   replacement rule `effectiveChord` already applies to the menu
+    ///   chord (#1539).
+    static func zoom(
+        keyCode: Int,
+        modifiers: NSEvent.ModifierFlags,
+        increaseFontSizeRebound: Bool,
+        decreaseFontSizeRebound: Bool
+    ) -> Zoom? {
+        if keyCode == KeyboardShortcutMatcher.PhysicalKey.equalSign,
+           modifiers == .command,
+           !increaseFontSizeRebound {
+            return .increase
+        }
+        if keyCode == KeyboardShortcutMatcher.PhysicalKey.minus,
+           modifiers == [.command, .shift],
+           !decreaseFontSizeRebound {
+            return .decrease
+        }
+        return nil
+    }
+
+    /// Whether `keyCode` is one this policy looks at. Callers guard on this
+    /// before computing the override flags, so the common keyDown path —
+    /// every key that is neither Equal nor Minus — never touches the
+    /// keybinding registry.
+    static func handles(keyCode: Int) -> Bool {
+        [
+            KeyboardShortcutMatcher.PhysicalKey.equalSign,
+            KeyboardShortcutMatcher.PhysicalKey.minus,
+        ].contains(keyCode)
     }
 }

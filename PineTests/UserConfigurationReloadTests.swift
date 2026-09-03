@@ -161,6 +161,43 @@ struct UserConfigurationReloadTests {
         #expect(registry.isEmpty)
     }
 
+    /// #1564 moved Next/Previous Diagnostic off the bare function keys and
+    /// promised that a user who wants F8 back can bind it. A function-key
+    /// chord carries no dispatch modifier, but it is not text input either —
+    /// rejecting it as `textInputChord` would throw away the user's entire
+    /// keybindings file for the sake of two entries.
+    @Test func functionKeyChordsLoadAsRebindsNotTextInput() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("keybindings.json")
+        let registry = UserKeybindingRegistry()
+        try write(
+            """
+            [
+              {"command": "nextDiagnostic", "key": "f8"},
+              {"command": "previousDiagnostic", "key": "shift+f8"},
+              {"command": "quickOpen", "key": "cmd+p"}
+            ]
+            """,
+            to: file
+        )
+
+        let report = await registry.load(from: file)
+
+        #expect(report.outcome == .loaded)
+        #expect(report.diagnostics.isEmpty)
+        #expect(report.activeEntryCount == 3)
+        #expect(
+            registry.effectiveChord(for: .nextDiagnostic)
+                == UserKeybindingRegistry.parse("f8")
+        )
+        #expect(
+            registry.effectiveChord(for: .previousDiagnostic)
+                == UserKeybindingRegistry.parse("shift+f8")
+        )
+        #expect(registry.effectiveChord(for: .quickOpen) != nil)
+    }
+
     @Test func namedKeybindingsMatchAppKitKeyEvents() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

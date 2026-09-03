@@ -179,18 +179,19 @@ final class EditorTabNavigationTests: PineUITestCase {
         XCTAssertTrue(editorTab("utils.swift").exists)
     }
 
-    func testMoveTabCommandsAreKeyboardAccessibleFromViewMenu() throws {
+    func testMoveTabCommandsAreKeyboardAccessibleFromWindowMenu() throws {
         launchWithProject(projectURL)
         openFile("main.swift")
         openFile("utils.swift")
 
         editorTab("main.swift").click()
-        clickMenuBarItem("View")
+        // Tab and window arrangement belongs in the Window menu (#1564).
+        clickMenuBarItem("Window")
 
         let moveRight = app.menuItems["Move Tab Right"]
         XCTAssertTrue(
             moveRight.waitForExistence(timeout: 3),
-            "Pointer-free tab movement should be present in the View menu"
+            "Pointer-free tab movement should be present in the Window menu"
         )
         XCTAssertTrue(moveRight.isEnabled)
         moveRight.click()

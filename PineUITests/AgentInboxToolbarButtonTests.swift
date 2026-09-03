@@ -135,7 +135,7 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(inbox.waitForNonExistence(timeout: 5))
 
-        clickMenuBarItem("View")
+        clickMenuBarItem("Window")
         let menuItem = app.menuItems["Agent Inbox"]
         XCTAssertTrue(waitForExistence(menuItem, timeout: 5))
         menuItem.click()
@@ -171,11 +171,11 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(window, timeout: 10))
         XCTAssertTrue(waitForExistence(toolbarButton, timeout: 10))
 
-        clickMenuBarItem("View")
+        clickMenuBarItem("Window")
         let menuItem = app.menuItems["Agent Inbox"]
         XCTAssertTrue(
             waitForExistence(menuItem, timeout: 5),
-            "View should expose the Agent Inbox command"
+            "The Window menu should expose the Agent Inbox command"
         )
         menuItem.click()
 

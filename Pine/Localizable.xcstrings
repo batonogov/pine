@@ -8677,55 +8677,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Im Projekt suchen"
+            "value": "Im Projekt suchen…"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Find in Project"
+            "value": "Find in Project…"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Buscar en el proyecto"
+            "value": "Buscar en el proyecto…"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rechercher dans le projet"
+            "value": "Rechercher dans le projet…"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "プロジェクト内を検索"
+            "value": "プロジェクト内を検索…"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "프로젝트에서 찾기"
+            "value": "프로젝트에서 찾기…"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Buscar no projeto"
+            "value": "Buscar no projeto…"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Найти в проекте"
+            "value": "Найти в проекте…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在项目中查找"
+            "value": "在项目中查找…"
           }
         }
       }
@@ -8737,55 +8737,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Im Terminal suchen"
+            "value": "Im Terminal suchen…"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Find in Terminal"
+            "value": "Find in Terminal…"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Buscar en terminal"
+            "value": "Buscar en terminal…"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rechercher dans le terminal"
+            "value": "Rechercher dans le terminal…"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナル内を検索"
+            "value": "ターミナル内を検索…"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널에서 찾기"
+            "value": "터미널에서 찾기…"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Buscar no terminal"
+            "value": "Buscar no terminal…"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Найти в терминале"
+            "value": "Найти в терминале…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在终端中查找"
+            "value": "在终端中查找…"
           }
         }
       }
@@ -9157,55 +9157,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gehe zu Zeile"
+            "value": "Gehe zu Zeile…"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Go to Line"
+            "value": "Go to Line…"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ir a la línea"
+            "value": "Ir a la línea…"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aller à la ligne"
+            "value": "Aller à la ligne…"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "行へ移動"
+            "value": "行へ移動…"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "줄로 이동"
+            "value": "줄로 이동…"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ir para a linha"
+            "value": "Ir para a linha…"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Перейти к строке"
+            "value": "Перейти к строке…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "跳转到行"
+            "value": "跳转到行…"
           }
         }
       }
@@ -10597,55 +10597,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Symbolnavigator"
+            "value": "Gehe zu Symbol…"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Symbol Navigator"
+            "value": "Go to Symbol…"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Navegador de símbolos"
+            "value": "Ir al símbolo…"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Navigateur de symboles"
+            "value": "Aller au symbole…"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "シンボルナビゲーター"
+            "value": "シンボルへ移動…"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "심볼 내비게이터"
+            "value": "심볼로 이동…"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Navegador de Símbolos"
+            "value": "Ir para o símbolo…"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Навигатор символов"
+            "value": "Перейти к символу…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "符号导航器"
+            "value": "跳转到符号…"
           }
         }
       }
@@ -10717,55 +10717,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Git Blame umschalten"
+            "value": "Git Blame"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle Git Blame"
+            "value": "Git Blame"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternar Git Blame"
+            "value": "Git Blame"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Afficher/masquer Git Blame"
+            "value": "Git Blame"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Git Blameを切り替え"
+            "value": "Git Blame"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Git Blame 전환"
+            "value": "Git Blame"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternar Git Blame"
+            "value": "Git Blame"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Переключить Git Blame"
+            "value": "Git Blame"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "切换 Git Blame"
+            "value": "Git Blame"
           }
         }
       }
@@ -10837,55 +10837,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Minimap umschalten"
+            "value": "Minimap"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle Minimap"
+            "value": "Minimap"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternar minimapa"
+            "value": "Minimapa"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Afficher/masquer la minicarte"
+            "value": "Minicarte"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ミニマップを切り替え"
+            "value": "ミニマップ"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "미니맵 전환"
+            "value": "미니맵"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternar minimapa"
+            "value": "Minimapa"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Переключить миникарту"
+            "value": "Миникарта"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "切换迷你地图"
+            "value": "迷你地图"
           }
         }
       }
@@ -10897,55 +10897,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vorschau umschalten"
+            "value": "Markdown-Vorschau umschalten"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle Preview"
+            "value": "Toggle Markdown Preview"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternar vista previa"
+            "value": "Alternar vista previa de Markdown"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Afficher/masquer l'aperçu"
+            "value": "Afficher/masquer l'aperçu Markdown"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "プレビューを切り替え"
+            "value": "Markdownプレビューを切り替え"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "미리보기 전환"
+            "value": "Markdown 미리 보기 전환"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternar pré-visualização"
+            "value": "Alternar pré-visualização de Markdown"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Переключить предпросмотр"
+            "value": "Переключить предпросмотр Markdown"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "切换预览"
+            "value": "切换 Markdown 预览"
           }
         }
       }
@@ -11017,55 +11017,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zeilenumbruch umschalten"
+            "value": "Zeilenumbruch"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle Word Wrap"
+            "value": "Word Wrap"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternar ajuste de línea"
+            "value": "Ajuste de línea"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Activer/désactiver le retour à la ligne"
+            "value": "Retour à la ligne"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "折り返しを切り替え"
+            "value": "折り返し"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "줄 바꿈 전환"
+            "value": "줄 바꿈"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternar quebra de linha"
+            "value": "Quebra de linha"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Переключить перенос строк"
+            "value": "Перенос строк"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "切换自动换行"
+            "value": "自动换行"
           }
         }
       }

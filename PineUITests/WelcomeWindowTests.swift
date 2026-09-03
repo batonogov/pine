@@ -67,15 +67,16 @@ final class WelcomeWindowTests: PineUITestCase {
         )
     }
 
-    func testAgentInboxOpensFromViewMenuInProject() throws {
+    func testAgentInboxOpensFromWindowMenuInProject() throws {
         let url = try createTempProject(files: ["hello.swift": "// hi\n"])
         projectURLs.append(url)
         launchWithProject(url)
 
-        let viewMenu = app.menuBars.menuBarItems["View"]
-        XCTAssertTrue(waitForExistence(viewMenu))
-        viewMenu.click()
-        let inboxItem = viewMenu.menus.menuItems["Agent Inbox"].firstMatch
+        // Auxiliary panels conventionally live in the Window menu (#1564).
+        let windowMenu = app.menuBars.menuBarItems["Window"]
+        XCTAssertTrue(waitForExistence(windowMenu))
+        windowMenu.click()
+        let inboxItem = windowMenu.menus.menuItems["Agent Inbox"].firstMatch
         XCTAssertTrue(waitForExistence(inboxItem))
         inboxItem.click()
 
@@ -224,8 +225,8 @@ final class WelcomeWindowTests: PineUITestCase {
     }
 
     private func openAgentInbox() {
-        clickMenuBarItem("View")
-        let inboxItem = app.menuBars.menuBarItems["View"]
+        clickMenuBarItem("Window")
+        let inboxItem = app.menuBars.menuBarItems["Window"]
             .menus.menuItems["Agent Inbox"].firstMatch
         XCTAssertTrue(inboxItem.waitForExistence(timeout: 3))
         inboxItem.click()
