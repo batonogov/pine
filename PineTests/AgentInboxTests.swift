@@ -55,19 +55,26 @@ private actor BlockingInboxProjectCanonicalizer {
 
     /// Waits for the recovery path to reach canonicalization.
     ///
-    /// The budget is generous on purpose. `recoverAgentTaskFromInbox` runs on
-    /// the main actor, and Swift Testing runs suites in parallel, so the 200 ms
-    /// this used to allow was really a race against however busy the main
-    /// actor happened to be — any `@MainActor` neighbour that hosts a view for
-    /// a fifth of a second turned this into a failure with nothing wrong in
-    /// either test. Still bounded, so a genuinely stuck recovery still fails
-    /// rather than hanging the suite (#1533).
+    /// Same contract as `waitUntilMainActor` (#1568), kept local only because
+    /// `entered` is actor-isolated and cannot be polled from a `@MainActor`
+    /// closure: the ceiling is a wall-clock bound, generous on purpose.
+    /// `recoverAgentTaskFromInbox` runs on the main actor, and Swift Testing
+    /// runs suites in parallel, so a tight number would really race however
+    /// busy the main actor happened to be — any `@MainActor` neighbour that
+    /// hosts a view for a fifth of a second could turn this into a failure
+    /// with nothing wrong in either test. Still bounded, so a genuinely
+    /// stuck recovery fails rather than hanging the suite (#1533). The
+    /// previous iteration budget (`0..<5_000` × 1 ms) had no wall-clock
+    /// meaning at all; a cancelled caller now stops instead of spinning.
     func waitUntilEntered() async -> Bool {
-        for _ in 0..<5_000 {
-            if entered { return true }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while !entered {
+            if Task.isCancelled { return false }
+            guard clock.now < deadline else { return false }
             try? await Task.sleep(for: .milliseconds(1))
         }
-        return entered
+        return true
     }
 
     func release() {
@@ -791,10 +798,10 @@ struct AgentInboxTests {
                 activateApplication: { _ in }
             )
         }
-        for _ in 0..<100 where !cancellationWaitEntered {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        try #require(cancellationWaitEntered)
+        try #require(
+            await waitUntilMainActor { cancellationWaitEntered },
+            "cancelled recovery must reach its presentation wait"
+        )
         projectRegistry.runBackgroundReclamationPassForTesting()
         expectRetainedBackgroundState()
         cancelledRecovery.cancel()
@@ -983,10 +990,10 @@ struct AgentInboxTests {
                 activateApplication: { _ in }
             )
         }
-        for _ in 0..<200 where !firstWaitEntered {
-            try? await Task.sleep(for: .milliseconds(2))
-        }
-        try #require(firstWaitEntered)
+        try #require(
+            await waitUntilMainActor { firstWaitEntered },
+            "first recovery must reach its presentation wait"
+        )
 
         let window = makeEligibleProjectWindow()
         defer {
@@ -1104,10 +1111,10 @@ struct AgentInboxTests {
                 activateApplication: { _ in }
             )
         }
-        for _ in 0..<200 where !blocker.hasEntered {
-            try? await Task.sleep(for: .milliseconds(2))
-        }
-        try #require(blocker.hasEntered)
+        try #require(
+            await waitUntilMainActor { blocker.hasEntered },
+            "vendor resume must reach its canonicalization blocker"
+        )
 
         projectRegistry.closeProjectWindow(
             canonical,
@@ -1257,10 +1264,10 @@ struct AgentInboxTests {
         _ taskID: UUID,
         in registry: AgentTaskRegistry
     ) async throws {
-        for _ in 0..<200 where registry.task(for: taskID) == nil {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        _ = try #require(registry.task(for: taskID))
+        try #require(
+            await waitUntilMainActor { registry.task(for: taskID) != nil },
+            "persisted task must finish loading"
+        )
     }
 
     private func assertBackgroundRecoveryState(

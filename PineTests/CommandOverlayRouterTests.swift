@@ -523,17 +523,16 @@ struct CommandOverlayRouterTests {
 
     /// Waits without blocking the main actor so the router's deliberately
     /// deferred AppKit restoration and command delivery can complete.
+    /// Delegates to the shared bounded wait (#1568).
     private func waitUntil(
         timeout: Duration = .seconds(1),
         condition: @MainActor () -> Bool
     ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while !condition() {
-            guard clock.now < deadline else { return false }
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        return true
+        await waitUntilMainActor(
+            condition,
+            ceiling: timeout,
+            pollInterval: .milliseconds(5)
+        )
     }
 }
 

@@ -83,6 +83,15 @@ struct LayoutStabilityTests {
         // Documents the contract used by `isLoadingFalseAfterEmptyDir`:
         // calling `waitForLoadingComplete()` on a fresh manager must not
         // suspend at all.
+        //
+        // Triage (#1568): the 100 ms bound is a no-suspend tripwire, not a
+        // stopwatch. The idle path never releases the main actor — the
+        // continuation is resumed synchronously inside
+        // `withCheckedContinuation` while the caller still owns it — so
+        // parallel neighbours cannot inflate this the way they can a real
+        // main-actor wait. That fast path is a runtime behaviour rather than
+        // a documented contract: if it ever disappears and this starts
+        // flaking under a full run, migrate to `waitUntilMainActor`.
         let workspace = WorkspaceManager()
         let start = ContinuousClock.now
         await workspace.waitForLoadingComplete()
@@ -106,7 +115,10 @@ struct LayoutStabilityTests {
         await workspace.waitForLoadingComplete()
         #expect(!workspace.isLoading)
 
-        // Subsequent waits must be no-ops (idle path).
+        // Subsequent waits must be no-ops (idle path). The 100 ms bound is
+        // the same no-suspend tripwire as in
+        // `waitForLoadingCompleteIsNoOpWhenIdle` — see the triage note there
+        // (#1568).
         let start = ContinuousClock.now
         for _ in 0..<5 {
             await workspace.waitForLoadingComplete()

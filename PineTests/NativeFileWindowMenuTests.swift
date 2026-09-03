@@ -551,12 +551,15 @@ struct NativeFileWindowMenuTests {
         }
 
         projectManager.openFileFromMenu()
-        for _ in 0..<20
-        where !firstTabManager.tabs.contains(where: {
-            $0.fileURL == file
-        }) {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        // The deferred open lands on the main actor; wait under a generous
+        // ceiling instead of a 200 ms iteration budget that measured the
+        // scheduler under a parallel run (#1568).
+        try #require(
+            await waitUntilMainActor {
+                firstTabManager.tabs.contains(where: { $0.fileURL == file })
+            },
+            "menu open must land in the first pane's tab manager"
+        )
 
         #expect(chooserRoot == root)
         #expect(firstTabManager.tabs.contains(where: { $0.fileURL == file }))
@@ -761,9 +764,13 @@ struct NativeFileWindowMenuTests {
                 continuation.resume()
             }
         }
-        for _ in 0..<200 where openedURL == nil {
-            try? await Task.sleep(for: .milliseconds(2))
-        }
+        // The deferred open runs on the main actor; the wait needs a
+        // ceiling that tolerates parallel neighbours, not a 400 ms
+        // iteration budget tuned on an idle machine (#1568).
+        try #require(
+            await waitUntilMainActor { openedURL != nil },
+            "deferred Open Recent fallback must run"
+        )
 
         let canonical = delegate.registry.canonicalProjectURL(directory)
         #expect(openedURL == canonical)

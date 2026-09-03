@@ -147,15 +147,13 @@ struct ProgressTrackerLeakTests {
         // Wait for dir2's load to complete
         await manager.waitForLoadingComplete()
 
-        // The cancelled dir1 task's cleanup runs asynchronously on MainActor.
-        // Poll briefly for its endOperation to land.
-        for _ in 0..<20 {
-            if tracker.activeOperationCount == 0 { break }
-            try await Task.sleep(for: .milliseconds(50))
+        // The cancelled dir1 task's cleanup runs asynchronously on MainActor;
+        // wait for its endOperation to land under a generous ceiling (#1568).
+        let cleanupLanded = await waitUntilMainActor {
+            tracker.activeOperationCount == 0
         }
-
         #expect(
-            tracker.activeOperationCount == 0,
+            cleanupLanded,
             "Cancelled load must not leak progress operations; found \(tracker.activeOperationCount) active"
         )
     }
@@ -192,14 +190,13 @@ struct ProgressTrackerLeakTests {
         // Wait for the last refresh to settle
         await manager.waitForLoadingComplete()
 
-        // Poll briefly for any cancelled task cleanup to land
-        for _ in 0..<20 {
-            if tracker.activeOperationCount == 0 { break }
-            try await Task.sleep(for: .milliseconds(50))
+        // Cancelled-refresh cleanup lands on MainActor; wait under a
+        // generous ceiling (#1568).
+        let cleanupLanded = await waitUntilMainActor {
+            tracker.activeOperationCount == 0
         }
-
         #expect(
-            tracker.activeOperationCount == 0,
+            cleanupLanded,
             "Rapid refreshes must not leak progress operations; found \(tracker.activeOperationCount) active"
         )
     }
@@ -226,14 +223,13 @@ struct ProgressTrackerLeakTests {
 
         await manager.waitForLoadingComplete()
 
-        // Poll briefly for any cancelled task cleanup to land
-        for _ in 0..<20 {
-            if tracker.activeOperationCount == 0 { break }
-            try await Task.sleep(for: .milliseconds(50))
+        // Cancelled-task cleanup lands on MainActor; wait under a generous
+        // ceiling (#1568).
+        let cleanupLanded = await waitUntilMainActor {
+            tracker.activeOperationCount == 0
         }
-
         #expect(
-            tracker.activeOperationCount == 0,
+            cleanupLanded,
             "loadDirectory + refreshFileTreeAsync must not leak; found \(tracker.activeOperationCount) active"
         )
     }

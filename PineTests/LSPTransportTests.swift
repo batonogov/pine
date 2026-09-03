@@ -302,6 +302,22 @@ struct LSPMessageStreamParserTests {
 @Suite("LSP Process Transport Tests", .serialized)
 @MainActor
 struct LSPProcessTransportTests {
+    /// Ceiling for teardown timings in this suite: a tripwire that still
+    /// fails a hung child, not a stopwatch. Process teardown hops through
+    /// the main actor, and parallel suites contend for it — a tighter number
+    /// here measures the scheduler, not the code (#1568).
+    private static let teardownCeiling: Duration = .seconds(10)
+
+    /// The starvation trip-wire pair, named so their relation is checked
+    /// in one place: `starvationBudget` MUST stay below
+    /// `starvationReleaseDelay`. A regressed `terminateAsync` that waits
+    /// behind the saturated utility queue returns only when the saturation
+    /// releases, so it exceeds the budget and fails the test; a healthy
+    /// run finishes far inside the budget. Both stay generous enough that
+    /// parallel-suite contention cannot fail a healthy run (#1568).
+    private static let starvationBudget: Duration = .seconds(5)
+    private static let starvationReleaseDelay: TimeInterval = 5.25
+
     @Test("Stdout descriptor setup succeeds or fails closed")
     func configuresNonblockingDescriptor() {
         let pipe = Pipe()
@@ -819,7 +835,7 @@ struct LSPProcessTransportTests {
         #expect(!(await start.value))
 
         let elapsed = startedAt.duration(to: clock.now)
-        #expect(elapsed < .seconds(2))
+        #expect(elapsed < Self.teardownCeiling)
         #expect(client.state == .failed)
         #expect(client.pendingRequestCount == 0)
         #expect(!client.transport.isRunning)
@@ -871,7 +887,7 @@ struct LSPProcessTransportTests {
         #expect(!(await start.value))
 
         let elapsed = startedAt.duration(to: clock.now)
-        #expect(elapsed < .seconds(2))
+        #expect(elapsed < Self.teardownCeiling)
         #expect(client.state == .failed)
         #expect(client.pendingRequestCount == 0)
         #expect(!client.transport.isRunning)
@@ -1040,7 +1056,7 @@ struct LSPProcessTransportTests {
         #expect(!didShutDownGracefully)
         let elapsed = startedAt.duration(to: clock.now)
 
-        #expect(elapsed < .seconds(2))
+        #expect(elapsed < Self.teardownCeiling)
         #expect(client.state == .exited)
         #expect(!client.transport.isRunning)
         #expect(client.pendingRequestCount == 0)
@@ -1075,7 +1091,7 @@ struct LSPProcessTransportTests {
         transport.terminate(timeout: 0.1)
         let elapsed = startedAt.duration(to: clock.now)
 
-        #expect(elapsed < .seconds(2))
+        #expect(elapsed < Self.teardownCeiling)
         #expect(!transport.isRunning)
         if let processID {
             #expect(!isProcessAlive(processID))
@@ -1102,15 +1118,16 @@ struct LSPProcessTransportTests {
         defer { saturation.release() }
         await saturation.waitUntilSaturated()
         // Keeps the pre-fix implementation from hanging indefinitely while
-        // its terminate block waits behind the saturated utility queue.
-        saturation.release(after: 2.25)
+        // its terminate block waits behind the saturated utility queue. The
+        // budget/release relation is documented on the named pair above.
+        saturation.release(after: Self.starvationReleaseDelay)
 
         let clock = ContinuousClock()
         let startedAt = clock.now
         await transport.terminateAsync(timeout: 0.1)
         let elapsed = startedAt.duration(to: clock.now)
 
-        #expect(elapsed < .seconds(2))
+        #expect(elapsed < Self.starvationBudget)
         #expect(!transport.isRunning)
         #expect(!isProcessAlive(processID))
     }
@@ -1188,16 +1205,10 @@ private final class RecordingLSPTransportDelegate: LSPTransportDelegate {
 
 @MainActor
 private func waitUntil(
-    timeout: Duration = .seconds(2),
+    timeout: Duration = .seconds(5),
     condition: @MainActor () -> Bool
 ) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: timeout)
-    while !condition() {
-        guard clock.now < deadline else { return false }
-        try? await Task.sleep(for: .milliseconds(10))
-    }
-    return true
+    await waitUntilMainActor(condition, ceiling: timeout, pollInterval: .milliseconds(10))
 }
 
 private func isProcessAlive(_ processID: pid_t) -> Bool {
