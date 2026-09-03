@@ -37,3 +37,9 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 **Reentrancy / exclusivity:**
 
 - **Reentrancy / exclusivity** — never post a `NotificationCenter` notification inside a function that holds an `inout` (e.g. `tabs: inout [EditorTab]`) exclusive access. `NotificationCenter.post` delivers observers synchronously on the main queue; an observer that writes the same store re-enters the live access and Swift aborts the process (`_swift_reportExclusivityConflict`, Pine #1066 and the #1047/#1051/#1056/#1058 family). Safe pattern: RETURN the payload (e.g. `SaveOutcome.reload` / `ReloadedTab`) and let the caller post AFTER the `inout` scope ends — see `TabExternalChangeDetector.reloadTab` and `TabPersistence.saveTabContent`. For `.onReceive` / `@objc` observers, defer `@State`/`@Observable` mutations to the next runloop via `DispatchQueue.main.async`. The `check-no-post-under-inout.py` guard enforces the `inout`-post sub-pattern at pre-commit and CI; if you legitimately defer a post inside an `inout` function, mark the line `// reentrancy-safe`
+
+**Bounded waits in tests (`PineTests/**`, #1568):**
+
+- A wait for main-actor work must poll the condition through `waitUntilMainActor` (`PineTests/BoundedMainActorWait.swift`) with a generous ceiling. Swift Testing runs suites in parallel and every hop back onto the main actor queues behind `@MainActor` neighbours — a suite hosting a SwiftUI view holds the actor for ~80 ms per test — so a budget tuned on an idle machine measures the scheduler, not the code, and fails only in a full parallel run while passing in isolation.
+- The ceiling is a stuck-operation tripwire, not a stopwatch: never tune it down because the test "usually finishes in milliseconds", and never fix a flaky wait by adding an unconditional `sleep`.
+- If the point of a test is *speed*, the measurement belongs in `PinePerformanceTests`, not in a suite that runs beside arbitrary neighbours.

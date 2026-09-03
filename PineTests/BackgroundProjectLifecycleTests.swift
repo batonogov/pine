@@ -842,13 +842,16 @@ struct BackgroundProjectLifecycleTests {
         )
     }
 
+    /// Background reclamation lands on the main actor, which parallel
+    /// suites contend for — the 500 ms this used to allow measured the
+    /// scheduler, not the reclamation (#1568). The shared helper keeps a
+    /// generous ceiling so a stuck reclamation still fails.
     private func waitUntil(
         _ condition: @escaping @MainActor () -> Bool
     ) async {
-        for _ in 0..<100 {
-            if condition() { return }
-            try? await Task.sleep(for: .milliseconds(5))
+        guard await waitUntilMainActor(condition) else {
+            Issue.record("Timed out waiting for background reclamation")
+            return
         }
-        Issue.record("Timed out waiting for background reclamation")
     }
 }

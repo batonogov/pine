@@ -1604,11 +1604,13 @@ struct QuickTerminalAgentDetectionTests {
             worktree.path,
         ], at: repository)
         await gate.release()
-        for _ in 0..<200
-        where tab.isStartValidationPendingForTesting {
-            try? await Task.sleep(for: .milliseconds(2))
-        }
-        #expect(!tab.isStartValidationPendingForTesting)
+        // Start validation finishes on the main actor; wait for it under a
+        // generous ceiling instead of a 400 ms iteration budget that
+        // measured the scheduler under a parallel run (#1568).
+        try #require(
+            await waitUntilMainActor { !tab.isStartValidationPendingForTesting },
+            "start validation must finish after the gate is released"
+        )
         #expect(!tab.isProcessRunning)
     }
 

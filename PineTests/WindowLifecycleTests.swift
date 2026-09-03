@@ -920,8 +920,14 @@ struct WindowLifecycleTests {
                 .applicationQuitFailure,
             ]
         )
+        // The probe clock starts before `confirmApplicationTermination` is
+        // even entered, and reaching the deadline arming point hops the main
+        // actor, which parallel suites contend for. The ceiling only has to
+        // prove the 25 ms machine deadline beat the 10 s hung save — 1 s was
+        // a stopwatch number tuned on an idle machine (#1568).
         #expect(
-            deadlineProbe.elapsedNanoseconds.map { $0 < 1_000_000_000 } == true
+            deadlineProbe.elapsedNanoseconds
+                .map { $0 < 5_000_000_000 } == true
         )
         #expect(project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()

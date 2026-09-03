@@ -1094,7 +1094,12 @@ nonisolated struct UserTaskRunnerTests {
         let completion = await probe.waitForCompletion()
         let elapsed = startedAt.duration(to: clock.now)
 
-        #expect(elapsed < .seconds(3))
+        // Ceiling, not stopwatch: the escaped-descendant cleanup competes
+        // with parallel suites for the main actor, so the budget stays
+        // generous. It catches a late return; a truly hung cleanup holds
+        // `waitForCompletion` until the suite's `.timeLimit` — this bound
+        // never has to detect that (#1568).
+        #expect(elapsed < .seconds(10))
         #expect(completion.outcome.succeeded)
         #expect(!completion.cancelled)
         if let childProcessID {
@@ -1143,8 +1148,11 @@ nonisolated struct UserTaskRunnerTests {
         // Darwin has no public kill-process-tree primitive. A daemon that
         // double-forks and calls setsid between 25 ms identity snapshots can
         // escape; the supported guarantee is bounded return plus cleanup of
-        // every identity Pine actually observed.
-        #expect(elapsed < .seconds(3))
+        // every identity Pine actually observed. The elapsed ceiling catches
+        // a late return; a truly hung cleanup holds `waitForCompletion`
+        // until the suite's `.timeLimit`, and the runner's own 3 s timeout
+        // already reports itself via `outcome.timedOut` (#1568).
+        #expect(elapsed < .seconds(10))
         #expect(!completion.outcome.timedOut)
 
         if let childProcessID = await waitForProcessID(at: childPIDURL) {
