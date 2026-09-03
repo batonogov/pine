@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.3](https://github.com/batonogov/pine/compare/v2.6.2...v2.6.3) (2026-09-02)
+
+
+### Bug Fixes
+
+* **agent:** survive OS provenance restamps and re-derive a stale admission lease ([#1594](https://github.com/batonogov/pine/issues/1594)) ([d90b5ec](https://github.com/batonogov/pine/commit/d90b5ece53d0acaa25ad3304aef534ee28dfea9c))
+
 ## [2.6.2](https://github.com/batonogov/pine/compare/v2.6.1...v2.6.2) (2026-08-31)
 
 
