@@ -694,13 +694,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Terminal (34 tests)
+          # Shard 1 — Terminal (35 tests)
           - shard-name: "Terminal"
             test-classes: >-
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
               -only-testing:PineUITests/SessionRestoreTests
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
+              -only-testing:PineUITests/AgentMenuBarCommandsUITests
           # Shard 2 — Welcome & Session (36 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
@@ -736,7 +737,7 @@ jobs:
               -only-testing:PineUITests/UserTaskExecutionUITests
               -only-testing:PineUITests/UnsavedChangesUITests
               -only-testing:PineUITests/ReleaseArtifactSmokeTests
-          # Shard 6 — Search & Panes (35 tests)
+          # Shard 6 — Search & Panes (37 tests)
           - shard-name: "Search & Panes"
             test-classes: >-
               -only-testing:PineUITests/CloseProjectMenuTests
@@ -746,7 +747,6 @@ jobs:
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
               -only-testing:PineUITests/MinimapTests
-              -only-testing:PineUITests/AgentMenuBarCommandsUITests
           # Shard 7 — Security & Layout (35 tests)
           - shard-name: "Security & Layout"
             test-classes: >-

@@ -1088,21 +1088,30 @@ struct SidebarSearchableContent: View {
         Group {
             if !projectManager.searchProvider.query.isEmpty {
                 SearchResultsView()
+                    // Escape clears the search query and returns to the file
+                    // tree. Keep this claim on the search branch only. Over
+                    // the file tree it was dead weight (the query is empty by
+                    // construction of the branch, so it could never handle
+                    // anything) — and a hosted experiment isolated that
+                    // ancestor claim as the delivery interceptor behind the
+                    // #1544 collapse flake: without it, posted Left-arrows
+                    // reached the sidebar's AppKit responder 8/8 across the
+                    // post-press timing window; with it, 0/8 in four harness
+                    // configurations, while the responder and the command
+                    // path stayed healthy. The exact platform mechanism that
+                    // arms the interception is not established; the A/B CI
+                    // run on the probe branch is the deciding evidence.
+                    .onKeyPress(.escape) {
+                        projectManager.searchProvider.query = ""
+                        projectManager.searchProvider.cancel()
+                        return .handled
+                    }
             } else {
                 SidebarView(
                     selectedFile: $selectedNode,
                     onFileOpen: onFileOpen
                 )
             }
-        }
-        .onKeyPress(.escape) {
-            // Escape clears the search query and returns to the file tree.
-            if !projectManager.searchProvider.query.isEmpty {
-                projectManager.searchProvider.query = ""
-                projectManager.searchProvider.cancel()
-                return .handled
-            }
-            return .ignored
         }
     }
 }
