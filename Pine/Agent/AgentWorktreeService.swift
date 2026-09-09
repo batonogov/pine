@@ -23,11 +23,71 @@ nonisolated struct AgentManagedWorktree: Codable, Sendable, Equatable {
     let managedRoot: URL
     let worktreeRoot: URL
     let branchName: String
-    let baseCommit: String
+    /// Commit the worktree was created from. Not recoverable from disk, so a
+    /// record rebuilt by discovery carries `nil` — no downstream path reads
+    /// it (`remove`, `inspectRemoval`, `previewIntegration`, `integrate` all
+    /// work from the live refs).
+    let baseCommit: String?
     /// Filesystem-instance proof captured by the worktree service before the
     /// managed identity leaves its serialized creation boundary. Consumers
     /// must revalidate it off the main actor before admitting the worktree.
-    let repositoryProof: RecentAgentTaskRepositoryProof
+    /// `nil` only for entries discovery rebuilt that the validator cannot
+    /// currently vouch for; registry admission fails closed on those.
+    let repositoryProof: RecentAgentTaskRepositoryProof?
+}
+
+/// One block of `git worktree list --porcelain -z` output (#1563).
+nonisolated struct AgentWorktreeListEntry: Equatable, Sendable {
+    /// Canonical working-tree path exactly as git printed it.
+    let path: String
+    /// Branch with the `refs/heads/` prefix stripped. `nil` for detached,
+    /// bare, or otherwise branch-less blocks.
+    let branch: String?
+}
+
+nonisolated enum AgentWorktreeListParser {
+    /// Splits porcelain output into one entry per worktree block. Attributes
+    /// this consumer ignores (`HEAD`, `locked`, reasons) are skipped; a block
+    /// without a `branch` record yields a `nil` branch rather than a guess.
+    static func entries(inPorcelainOutput output: String) -> [AgentWorktreeListEntry] {
+        var entries: [AgentWorktreeListEntry] = []
+        var path: String?
+        var branch: String?
+        func closeBlock() {
+            defer {
+                path = nil
+                branch = nil
+            }
+            guard let openPath = path else { return }
+            entries.append(
+                AgentWorktreeListEntry(path: openPath, branch: branch)
+            )
+        }
+        for record in output.split(separator: "\0", omittingEmptySubsequences: false) {
+            let field = String(record)
+            if field.isEmpty {
+                closeBlock()
+            } else if field.hasPrefix("worktree ") {
+                closeBlock()
+                path = String(field.dropFirst("worktree ".count))
+            } else if field.hasPrefix("branch refs/heads/") {
+                branch = String(field.dropFirst("branch refs/heads/".count))
+            }
+        }
+        closeBlock()
+        return entries
+    }
+
+    /// The task UUID a managed directory is named with — the exact
+    /// lowercase spelling `create` writes. Anything else (a different case,
+    /// a dashed-less blob, a human name) is not a Pine task directory.
+    static func taskID(forLowercaseUUIDName name: String) -> UUID? {
+        guard name == name.lowercased(),
+              let taskID = UUID(uuidString: name) else {
+            return nil
+        }
+        return taskID
+    }
 }
 
 nonisolated enum AgentWorktreeCreateFailure: Error, Sendable, Equatable {
@@ -175,11 +235,14 @@ actor AgentWorktreeService {
                 ) else {
             return .failed(.invalidRepository)
         }
-        guard let managedRoot = secureExistingDirectory(request.managedRoot)
+        guard let managedRoot = Self.secureExistingDirectory(
+            request.managedRoot,
+            fileManager: fileManager
+        )
         else {
             return .failed(.unsafeManagedRoot)
         }
-        guard !isWithin(managedRoot, root: repository) else {
+        guard !Self.isWithin(managedRoot, root: repository) else {
             return .failed(.managedRootInsideRepository)
         }
         guard await isValidBranch(
@@ -252,6 +315,177 @@ actor AgentWorktreeService {
             baseCommit: baseCommit,
             repositoryProof: finalRepositoryProof
         ))
+    }
+
+    // MARK: - Discovery (#1563)
+
+    /// Rebuilds managed-worktree records for a repository by asking git what
+    /// it still holds, instead of trusting one window's memory.
+    ///
+    /// A project close drops the window's worktree records on purpose while
+    /// the checkouts and their branches survive; this is how those leftovers
+    /// become reachable again. Two sources are combined:
+    ///
+    /// 1. `git worktree list --porcelain -z`, filtered to entries whose
+    ///    parent directory is `managedRoot` and whose last path component is
+    ///    the lowercase task UUID `create` named the destination with. The
+    ///    branch comes from git — a checkout git recognises but that sits
+    ///    detached is labelled `detached`, never a fabricated ref;
+    ///    `baseCommit` is not recoverable and stays `nil`.
+    /// 2. UUID-named directories under `managedRoot` that git says nothing
+    ///    about — interrupted or manually broken checkouts. They are reported
+    ///    with no branch (their task UUID names the row) and no proof, so
+    ///    the manager lists them as unavailable instead of silently hiding
+    ///    them.
+    ///
+    /// Discovery only *adds candidates*; it never admits them. Every
+    /// downstream mutation still passes `secureManagedWorktree`, which
+    /// rejects anything outside the managed root and every symlinked path
+    /// component, exactly as it does for records captured at creation.
+    func discoverManagedWorktrees(
+        repositoryRoot: URL,
+        managedRoot: URL
+    ) async -> [AgentManagedWorktree] {
+        guard let repository = await canonicalRepository(repositoryRoot) else {
+            return []
+        }
+        let listing = await runner.run(
+            ["worktree", "list", "--porcelain", "-z"],
+            repository
+        )
+        guard listing.succeeded else { return [] }
+        let output = listing.output
+        let suppliedRoot = managedRoot.standardizedFileURL
+        return await runOnBackground(qos: .userInitiated) {
+            // `FileManager.default` is the thread-safe process singleton the
+            // service itself holds; capturing the actor's instance here would
+            // cross isolation with a type this SDK does not mark Sendable.
+            Self.discoveredWorktrees(
+                porcelainOutput: output,
+                repository: repository,
+                suppliedRoot: suppliedRoot,
+                fileManager: .default
+            )
+        }
+    }
+
+    /// Label for a worktree git recognises but that no longer sits on a
+    /// branch. Shown verbatim — it is git's own term, not a fabricated ref.
+    private static let detachedBranchLabel = "detached"
+
+    /// Pure rebuild over one porcelain listing and one directory scan. Runs
+    /// off the actor inside `runOnBackground`'s autorelease pool (#1509).
+    private static func discoveredWorktrees(
+        porcelainOutput: String,
+        repository: URL,
+        suppliedRoot: URL,
+        fileManager: FileManager
+    ) -> [AgentManagedWorktree] {
+        // The same admission rule `create` applies: a root that does not
+        // exist as a directory, or sits inside the repository, is not a
+        // managed root this service would have written.
+        guard let root = secureExistingDirectory(
+            suppliedRoot,
+            fileManager: fileManager
+        ), !isWithin(root, root: repository) else {
+            return []
+        }
+        // Git prints canonical paths with symlinks resolved, while records
+        // captured at creation keep the spelling the caller supplied. Compare
+        // against the resolved root, rebuild with the supplied one, and the
+        // discovered twin matches its live record exactly.
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
+
+        var recognized: [AgentManagedWorktree] = []
+        var listedNames = Set<String>()
+        for entry in AgentWorktreeListParser.entries(
+            inPorcelainOutput: porcelainOutput
+        ) {
+            let listedRoot = URL(
+                fileURLWithPath: entry.path,
+                isDirectory: true
+            ).standardizedFileURL
+            let name = listedRoot.lastPathComponent
+            guard listedRoot.deletingLastPathComponent() == resolvedRoot,
+                  let taskID = AgentWorktreeListParser.taskID(
+                      forLowercaseUUIDName: name
+                  ) else { continue }
+            listedNames.insert(name)
+            // A checkout git recognises but that is detached (or bare) has
+            // no branch to recover. It is labelled for exactly what it is —
+            // never the task UUID pretending to be a branch name, which the
+            // removal confirmation would then quote back as one.
+            recognized.append(discoveredWorktree(
+                taskID: taskID,
+                branchName: entry.branch ?? Self.detachedBranchLabel,
+                gitRecognizes: true,
+                repository: repository,
+                managedRoot: root
+            ))
+        }
+
+        // UUID-named directories git said nothing about. Shown, not acted
+        // on: their rows come back unavailable because no git command will
+        // inspect them, and the fail-closed service paths refuse them anyway.
+        var unrecognized: [AgentManagedWorktree] = []
+        let children = (try? fileManager.contentsOfDirectory(
+            atPath: root.path
+        )) ?? []
+        for name in children.sorted() {
+            let child = root.appendingPathComponent(name, isDirectory: true)
+            guard let taskID = AgentWorktreeListParser.taskID(
+                forLowercaseUUIDName: name
+            ), !listedNames.contains(name) else { continue }
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(
+                atPath: child.path,
+                isDirectory: &isDirectory
+            ), isDirectory.boolValue else { continue }
+            unrecognized.append(discoveredWorktree(
+                taskID: taskID,
+                branchName: name,
+                gitRecognizes: false,
+                repository: repository,
+                managedRoot: root
+            ))
+        }
+
+        return recognized + unrecognized
+    }
+
+    /// One rebuilt record. `baseCommit` is never invented, and a proof is
+    /// only claimed for a worktree git currently recognises — recomputed
+    /// live, the same value `create` captured, never a remembered one.
+    private static func discoveredWorktree(
+        taskID: UUID,
+        branchName: String,
+        gitRecognizes: Bool,
+        repository: URL,
+        managedRoot: URL
+    ) -> AgentManagedWorktree {
+        // The validated directory name is the task UUID, so the rebuilt root
+        // is exactly the destination spelling `create` used.
+        let worktreeRoot = managedRoot.appendingPathComponent(
+            taskID.uuidString.lowercased(),
+            isDirectory: true
+        ).standardizedFileURL
+        let identity = AgentTaskProjectIdentity(
+            canonicalProjectPath: repository.path,
+            canonicalWorktreePath: worktreeRoot.path
+        )
+        return AgentManagedWorktree(
+            taskID: taskID,
+            repositoryRoot: repository,
+            managedRoot: managedRoot,
+            worktreeRoot: worktreeRoot,
+            branchName: branchName,
+            baseCommit: nil,
+            repositoryProof: gitRecognizes
+                ? RecentAgentTaskFilesystemValidator.repositoryProof(
+                    for: identity
+                )
+                : nil
+        )
     }
 
     func inspectRemoval(
@@ -427,7 +661,10 @@ actor AgentWorktreeService {
     }
 
     private func canonicalRepository(_ candidate: URL) async -> URL? {
-        guard let directory = secureExistingDirectory(candidate) else {
+        guard let directory = Self.secureExistingDirectory(
+            candidate,
+            fileManager: fileManager
+        ) else {
             return nil
         }
         let result = await runner.run([
@@ -437,7 +674,7 @@ actor AgentWorktreeService {
               let path = singleLine(result.output) else { return nil }
         let canonical = URL(fileURLWithPath: path, isDirectory: true)
             .resolvingSymlinksInPath().standardizedFileURL
-        return secureExistingDirectory(canonical)
+        return Self.secureExistingDirectory(canonical, fileManager: fileManager)
     }
 
     private func isValidBranch(
@@ -542,20 +779,29 @@ actor AgentWorktreeService {
     private func secureManagedWorktree(
         _ worktree: AgentManagedWorktree
     ) -> Bool {
-        guard let managedRoot = secureExistingDirectory(worktree.managedRoot),
-              let worktreeRoot = secureExistingDirectory(worktree.worktreeRoot),
+        guard let managedRoot = Self.secureExistingDirectory(
+                  worktree.managedRoot,
+                  fileManager: fileManager
+              ),
+              let worktreeRoot = Self.secureExistingDirectory(
+                  worktree.worktreeRoot,
+                  fileManager: fileManager
+              ),
               managedRoot == worktree.managedRoot.standardizedFileURL,
               worktreeRoot == worktree.worktreeRoot.standardizedFileURL,
               worktreeRoot.deletingLastPathComponent() == managedRoot else {
             return false
         }
-        return isWithin(worktreeRoot, root: managedRoot)
+        return Self.isWithin(worktreeRoot, root: managedRoot)
     }
 
     /// Rejects every symlink component instead of merely resolving it. This
     /// prevents a managed destination from silently moving between review and
     /// mutation.
-    private func secureExistingDirectory(_ url: URL) -> URL? {
+    private static func secureExistingDirectory(
+        _ url: URL,
+        fileManager: FileManager
+    ) -> URL? {
         let supplied = url.standardizedFileURL
         guard supplied.isFileURL,
               supplied.path.hasPrefix("/"),
@@ -566,7 +812,8 @@ actor AgentWorktreeService {
         // `/var` and `/tmp` are Apple's stable system aliases into `/private`,
         // and Foundation may return either spelling for temporary directories.
         // Every other symlink component remains rejected.
-        guard pathComponentsContainNoSymlink(supplied.path) else {
+        guard pathComponentsContainNoSymlink(supplied.path, fileManager: fileManager)
+        else {
             return nil
         }
         var isDirectory: ObjCBool = false
@@ -577,12 +824,15 @@ actor AgentWorktreeService {
         return supplied
     }
 
-    private func isSymbolicLink(_ path: String) -> Bool {
+    private static func isSymbolicLink(_ path: String) -> Bool {
         var info = stat()
         return lstat(path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFLNK
     }
 
-    private func pathComponentsContainNoSymlink(_ path: String) -> Bool {
+    private static func pathComponentsContainNoSymlink(
+        _ path: String,
+        fileManager: FileManager
+    ) -> Bool {
         var current = ""
         for component in URL(fileURLWithPath: path).pathComponents {
             if component == "/" {
@@ -606,7 +856,7 @@ actor AgentWorktreeService {
         return true
     }
 
-    private func isWithin(_ candidate: URL, root: URL) -> Bool {
+    private static func isWithin(_ candidate: URL, root: URL) -> Bool {
         let candidatePath = candidate.standardizedFileURL.path
         let rootPath = root.standardizedFileURL.path
         return candidatePath == rootPath
