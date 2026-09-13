@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.8.0](https://github.com/batonogov/pine/compare/v2.7.0...v2.8.0) (2026-09-13)
+
+
+### Features
+
+* **agent:** rediscover agent worktrees left behind by a closed project ([#1563](https://github.com/batonogov/pine/issues/1563)) ([#1608](https://github.com/batonogov/pine/issues/1608)) ([cceff20](https://github.com/batonogov/pine/commit/cceff209ab4285ed2c188ed1236ef0cf54c5f8b8))
+
+
+### Documentation
+
+* **agent:** document why the createWelcomeHost Task.yield() is safe ([#1535](https://github.com/batonogov/pine/issues/1535)) ([#1599](https://github.com/batonogov/pine/issues/1599)) ([f7fd8a9](https://github.com/batonogov/pine/commit/f7fd8a9d72e6c0465dac7e577160da948bca982e))
+
 ## [2.7.0](https://github.com/batonogov/pine/compare/v2.6.3...v2.7.0) (2026-09-03)
 
 
