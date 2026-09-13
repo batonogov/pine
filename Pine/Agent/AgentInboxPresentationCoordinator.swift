@@ -228,6 +228,42 @@ final class AgentInboxPresentationCoordinator {
     /// The answer when no existing window can host the Inbox: create Welcome
     /// first, so the Inbox still has a stable, discoverable anchor (#1486), and
     /// hold this one request until that window mounts it.
+    ///
+    /// The `Task.yield()` before the request reaches the router is an
+    /// optimization, never a correctness wait (#1535). The guarantee comes
+    /// from the router, not from the yield: a request for a host with no
+    /// registered anchor answers `.queued` and is kept against that window,
+    /// and `register` delivers it the moment the anchor mounts — one runloop
+    /// turn later, so layout can size the anchor before the popover pins to
+    /// it. A yield that resolves "too early" leaves the request queued and
+    /// delivered on registration; one that resolves "late enough" presents
+    /// directly, leaning on `awaitAgentInboxWelcomeHost` only ever yielding
+    /// a visible, laid-out window. Both suspension orders converge on one
+    /// popover, and each ending is covered by tests that register the
+    /// anchor after the request or before it: the queued ending by the
+    /// router's queued-delivery cases ("a request waits for a newly mounted
+    /// window anchor", "a rebuilt anchor inherits the request exactly once,
+    /// never twice") and by "no eligible window creates Welcome exactly
+    /// once per request", which registers the anchor only after the request
+    /// has settled; the direct ending by "repeated requests while Welcome
+    /// mounts present exactly once", which registers it beforehand. Nothing
+    /// asserts which ending happened — precisely what separates this from
+    /// the yield-as-wait defects #1521 fixed under #1518's guidance, where
+    /// a test asserted on state the yield was hoped to have produced.
+    ///
+    /// The yield becomes load-bearing — and must be replaced with an
+    /// injectable suspension, a sibling
+    /// `waitForAgentInboxWelcomeAnchor()` on the environment in the shape
+    /// of `ProjectManager.recoveryOfferListingSeam` — only if a test
+    /// starts asserting on the path taken rather than the end state,
+    /// `requestPresentation(in:)` stops queueing for an unregistered
+    /// host or `register` stops delivering the queued request,
+    /// ordering-sensitive work appears between the yield and the
+    /// request, or the anchor wait `awaitQueuedAnchor` documents is
+    /// extended to this path as an in-task wait — today this task ends
+    /// at `requestPresentation`; the request merely sits armed on the
+    /// router. Do not copy this yield where no counterpart makes both
+    /// suspension orders converge.
     @discardableResult
     private func createWelcomeHost(
         in environment: any AgentInboxHostEnvironment
@@ -241,8 +277,10 @@ final class AgentInboxPresentationCoordinator {
             let host = await environment.awaitAgentInboxWelcomeHost()
             guard !Task.isCancelled, let host else { return }
             self.prepare(host, in: environment)
-            // One more turn so the freshly raised Welcome window's SwiftUI
-            // anchor can mount before the request reaches the router.
+            // One more turn so the freshly raised Welcome window's anchor
+            // can mount first — an optimization, never a correctness wait:
+            // the router's queued delivery makes both suspension orders
+            // converge (see the doc above and #1535).
             await Task.yield()
             guard !Task.isCancelled else { return }
             self.router.requestPresentation(in: host)
