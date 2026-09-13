@@ -138,6 +138,11 @@ final class ProjectWindowSession {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let worktreeService: AgentWorktreeService
     @ObservationIgnored private let toolResolver: ExternalToolResolver
+    /// Derives the managed root for a repository. Injectable so the discovery
+    /// path can be pointed at a fixture directory in tests; production uses
+    /// ``managedRoot(for:)``.
+    @ObservationIgnored
+    private let managedRootResolver: @Sendable (URL) -> URL
     @ObservationIgnored private var backgroundLeases: [URL: UUID] = [:]
     @ObservationIgnored private var pendingRestoredActiveURL: URL?
     @ObservationIgnored private var didRestore = false
@@ -154,13 +159,17 @@ final class ProjectWindowSession {
         initialProjectURL: URL,
         defaults: UserDefaults = .standard,
         worktreeService: AgentWorktreeService = AgentWorktreeService(),
-        toolResolver: ExternalToolResolver = .fromEnvironment()
+        toolResolver: ExternalToolResolver = .fromEnvironment(),
+        managedRootResolver: @escaping @Sendable (URL) -> URL = {
+            ProjectWindowSession.managedRoot(for: $0)
+        }
     ) {
         let initial = initialProjectURL.standardizedFileURL
         requestedProjectURL = initial
         self.defaults = defaults
         self.worktreeService = worktreeService
         self.toolResolver = toolResolver
+        self.managedRootResolver = managedRootResolver
         let anchor = Self.persistenceAnchor(
             for: initial,
             defaults: defaults
@@ -234,10 +243,69 @@ final class ProjectWindowSession {
     }
 
     /// Every agent worktree this window holds, grouped under its project and
-    /// ordered the same way the switcher orders them. This is what the
-    /// worktree manager lists.
+    /// ordered the same way the switcher orders them. The worktree manager
+    /// starts from this and adds what discovery rebuilds from disk.
     var allManagedWorktrees: [AgentManagedWorktree] {
         groups.flatMap(\.worktrees)
+    }
+
+    /// Worktrees the manager sheet lists (#1563): this window's live record,
+    /// merged with what discovery rebuilds under the active repository's
+    /// managed root.
+    ///
+    /// ``closeProject(_:registry:)`` drops a project's worktree records
+    /// deliberately — they are its children in the switcher and leave with
+    /// it — while their directories and branches stay on disk. Asking the
+    /// repository directly here is what makes those leftovers listable,
+    /// mergeable and removable again after the project is reopened, without
+    /// resurrecting them as switcher rows: discovery does not adopt anything
+    /// into ``managedWorktrees``.
+    func worktreeManagerListing() async -> [AgentManagedWorktree] {
+        let repository = activeRepositoryURL.standardizedFileURL
+        // When the active row itself is a worktree, its record carries the
+        // exact managed root `launchAgent` created it under. The resolver
+        // hashes a repository path, and the spelling it is handed can differ
+        // from the canonical one inside the record (a symlinked anchor) —
+        // hashing the wrong one silently empties discovery exactly when the
+        // user is sitting in a worktree.
+        let managedRoot = managedWorktrees[activeProjectURL]?.managedRoot
+            ?? managedRootResolver(repository)
+        let discovered = await worktreeService.discoverManagedWorktrees(
+            repositoryRoot: repository,
+            managedRoot: managedRoot
+        )
+        return Self.mergedWorktreeListing(
+            live: allManagedWorktrees,
+            discovered: discovered
+        )
+    }
+
+    /// Union of the live record and the discovered set, keyed by standardized
+    /// worktree root. A worktree this window still holds is listed once, and
+    /// its live entry — the one carrying the creation-time base commit and
+    /// repository proof — is the entry shown. Discovered rows are appended
+    /// in the record's own reading order (branch, then task), so the list
+    /// does not switch ordering rules halfway down.
+    ///
+    /// - Important: entries returned here are *listing-only*. They must
+    ///   never be adopted into ``managedWorktrees`` or otherwise persisted —
+    ///   a persisted worktree with a `nil` base commit or proof does not
+    ///   decode in older builds, which would quietly cost the window its
+    ///   saved state on downgrade.
+    nonisolated static func mergedWorktreeListing(
+        live: [AgentManagedWorktree],
+        discovered: [AgentManagedWorktree]
+    ) -> [AgentManagedWorktree] {
+        var seen = Set(live.map { $0.worktreeRoot.standardizedFileURL })
+        var merged = live
+        for worktree in discovered.sorted(by: { lhs, rhs in
+            (lhs.branchName, lhs.taskID.uuidString)
+                < (rhs.branchName, rhs.taskID.uuidString)
+        }) where seen.insert(worktree.worktreeRoot.standardizedFileURL)
+            .inserted {
+            merged.append(worktree)
+        }
+        return merged
     }
 
     /// The git-facing service, narrowed to what a management surface may do
@@ -910,20 +978,31 @@ final class ProjectWindowSession {
         return "projectWindowSession.\(hex)"
     }
 
-    nonisolated private static func prepareManagedRoot(
-        for repository: URL
-    ) throws -> URL {
+    /// The managed root Pine derives for one repository's working tree: a
+    /// SHA-256-derived directory under Application Support (#1524). Creates
+    /// nothing and reads no directory contents — callers that only need to
+    /// read (worktree discovery, #1563) stay side-effect free. The closing
+    /// `standardizedFileURL` may consult the filesystem to normalize the
+    /// path (#1590); that is one cheap lookup, not directory I/O.
+    nonisolated static func managedRoot(for repository: URL) -> URL {
         let digest = SHA256.hash(data: Data(repository.path.utf8))
         let name = digest.prefix(12).map {
             String(format: "%02x", $0)
         }.joined()
-        let root = FileManager.default.urls(
+        return FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )[0]
             .appendingPathComponent("Pine", isDirectory: true)
             .appendingPathComponent("AgentWorktrees", isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)
+            .standardizedFileURL
+    }
+
+    nonisolated private static func prepareManagedRoot(
+        for repository: URL
+    ) throws -> URL {
+        let root = managedRoot(for: repository)
         try FileManager.default.createDirectory(
             at: root,
             withIntermediateDirectories: true,

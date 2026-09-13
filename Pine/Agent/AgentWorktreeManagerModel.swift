@@ -104,6 +104,10 @@ final class AgentWorktreeManagerModel {
     /// remove`, not two.
     private(set) var isBusy = false
     private(set) var message: AgentWorktreeManagerMessage?
+    /// The listing load (#1563) is still reading the repository — the sheet
+    /// shows progress, not the empty state, for its duration. Lowered only by
+    /// ``refresh(_:)``, so a caller cannot forget to end it.
+    private(set) var isListing = false
 
     @ObservationIgnored private let service: any AgentWorktreeManaging
     @ObservationIgnored
@@ -133,12 +137,20 @@ final class AgentWorktreeManagerModel {
 
     // MARK: - Listing
 
+    /// Marks the listing load as started, so the sheet shows progress
+    /// instead of the empty state while the repository is being read
+    /// (#1563). ``refresh(_:)`` ends it together with installing the rows.
+    func beginListing() {
+        isListing = true
+    }
+
     /// Replaces the list and re-reads every row's working-tree state.
     ///
     /// Rows appear immediately as ``AgentWorktreeRowStatus/checking`` so the
     /// sheet is never empty while git runs. A refresh that started earlier and
     /// finishes later is discarded by generation, not by luck.
     func refresh(_ worktrees: [AgentManagedWorktree]) async {
+        isListing = false
         refreshGeneration += 1
         let generation = refreshGeneration
         rows = worktrees.map {
