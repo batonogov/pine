@@ -36,14 +36,10 @@ struct AgentActivityViewSnapshotTests {
     )
 
     /// macOS 26 and 27 rasterize the populated dark panel differently enough
-    /// to exceed the shared 0.03 tolerance. Scope the OS-specific reference to
-    /// this single snapshot; the other three references remain cross-version.
-    private static var populatedDarkSnapshotName: String {
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 {
-            return "AgentActivityView.populated.dark.macos26"
-        }
-        return "AgentActivityView.populated.dark"
-    }
+    /// to exceed the shared 0.03 tolerance, so it compares against per-OS
+    /// references via `osSpecific` (#1620); the other three references remain
+    /// cross-version.
+    private static let populatedDarkSnapshotName = "AgentActivityView.populated.dark"
 
     private func populatedRows() -> [AgentActivityRow] {
         [
@@ -133,13 +129,14 @@ struct AgentActivityViewSnapshotTests {
             )
             verifySnapshotIsNotBlank(bitmap)
         }
-        verifyReferenceIsNotBlank(named: Self.populatedDarkSnapshotName)
+        verifyReferenceIsNotBlank(named: Self.populatedDarkSnapshotName, osSpecific: true)
         try assertSnapshot(
             of: view,
             size: Self.panelSize,
             appearance: .dark,
             named: Self.populatedDarkSnapshotName,
-            tolerance: Self.tolerance
+            tolerance: Self.tolerance,
+            osSpecific: true
         )
     }
 
@@ -280,10 +277,11 @@ struct AgentActivityViewSnapshotTests {
         #expect(rows.filter { $0.attribution.unambiguousCandidate == nil }.count == 1)
     }
 
-    private func verifyReferenceIsNotBlank(named name: String) {
+    private func verifyReferenceIsNotBlank(named name: String, osSpecific: Bool = false) {
         let referenceURL = SnapshotHarness.referenceURL(
             for: name,
-            testFile: #filePath
+            testFile: #filePath,
+            osSpecific: osSpecific
         )
         guard let referenceData = try? Data(contentsOf: referenceURL),
               let bitmap = NSBitmapImageRep(data: referenceData) else {
