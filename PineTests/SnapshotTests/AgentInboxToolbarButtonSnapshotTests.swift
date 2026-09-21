@@ -25,10 +25,10 @@ struct AgentInboxToolbarButtonSnapshotTests {
     // button's own extent is what catches it drifting outward.
     private static let buttonSize = NSSize(width: 32, height: 32)
 
-    // The SF Symbol glyph and the dot's rounded edge anti-alias slightly
-    // differently between macOS 26 (the unit-test runner) and macOS 27 (the
-    // Xcode 27 compatibility lane), and both compare against these references.
-    // 0.02 is the house default and covers that drift.
+    // The SF Symbol glyph and the dot's rounded edge rasterize ~3% differently
+    // between macOS 26 (the unit-test runner) and macOS 27 (#1620), so every
+    // reference here is per-OS. 0.02 covers the residual same-OS drift between
+    // Retina dev machines and the 1× CI virtual display.
     private static let tolerance = 0.02
 
     private func button(count: Int) -> some View {
@@ -44,7 +44,8 @@ struct AgentInboxToolbarButtonSnapshotTests {
             size: Self.buttonSize,
             appearance: .light,
             named: "AgentInboxToolbarButton.zero.light",
-            tolerance: Self.tolerance
+            tolerance: Self.tolerance,
+            osSpecific: true
         )
     }
 
@@ -55,7 +56,8 @@ struct AgentInboxToolbarButtonSnapshotTests {
             size: Self.buttonSize,
             appearance: .dark,
             named: "AgentInboxToolbarButton.zero.dark",
-            tolerance: Self.tolerance
+            tolerance: Self.tolerance,
+            osSpecific: true
         )
     }
 
@@ -68,7 +70,8 @@ struct AgentInboxToolbarButtonSnapshotTests {
             size: Self.buttonSize,
             appearance: .light,
             named: "AgentInboxToolbarButton.badge.light",
-            tolerance: Self.tolerance
+            tolerance: Self.tolerance,
+            osSpecific: true
         )
     }
 
@@ -79,7 +82,8 @@ struct AgentInboxToolbarButtonSnapshotTests {
             size: Self.buttonSize,
             appearance: .dark,
             named: "AgentInboxToolbarButton.badge.dark",
-            tolerance: Self.tolerance
+            tolerance: Self.tolerance,
+            osSpecific: true
         )
     }
 

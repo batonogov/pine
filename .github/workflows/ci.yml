@@ -453,6 +453,22 @@ jobs:
             --started-at "$TEST_STARTED_AT" \
             --github-summary
 
+      # Same rationale as the macos-26 lane's Upload Snapshot Renders step,
+      # but for the macOS 27 side of the per-OS references (#1620): the
+      # harness writes a runner-made baseline for a missing `<name>.macos27`
+      # reference, and `-retry-tests-on-failure` turns that first attempt
+      # green — so the only way to capture the macOS 27 baseline for commit
+      # is to publish the directory from this lane. `always()` for the same
+      # load-bearing reason as below.
+      - name: Upload Snapshot Renders (Xcode 27)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: snapshot-actual-renders-xcode27
+          path: PineTests/SnapshotTests/__Snapshots__/
+          retention-days: 7
+          if-no-files-found: ignore
+
   unit-tests:
     name: Unit Tests
     runs-on: macos-26

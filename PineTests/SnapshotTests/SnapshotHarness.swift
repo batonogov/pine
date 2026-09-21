@@ -8,6 +8,14 @@
 //    try assertSnapshot(of: MyView(), size: NSSize(width: 400, height: 300),
 //                       appearance: .light, named: "MyView.light")
 //
+//  Per-OS references (#1620): system rasterization (SF Symbols, rounded
+//  edges, anti-aliasing) differs ~3% between macOS major versions, past any
+//  tolerance that still catches real regressions. Pass `osSpecific: true`
+//  and the reference resolves to `<name>.macos<major>.png` for both
+//  comparison and recording, so each supported OS compares against its own
+//  baseline. Record per-OS copies on the matching CI lane (baselines are
+//  CI-only) and commit them.
+//
 //  Recording mode:
 //    Pass `PINE_RECORD_SNAPSHOTS=1` as an xcodebuild setting to (re)write
 //    reference PNGs under `PineTests/SnapshotTests/__Snapshots__/`.
@@ -51,6 +59,11 @@ import Testing
 ///   - named: Snapshot name, used as the PNG filename (without extension).
 ///   - tolerance: Mean absolute pixel difference allowed, in `[0, 1]`.
 ///                Default `0.01` tolerates trivial anti-aliasing noise.
+///   - osSpecific: When `true`, the reference filename gains the running
+///                macOS major-version suffix (`<name>.macos<major>.png`) for
+///                both comparison and recording — for views whose system
+///                rasterization drifts across macOS versions (#1620). Leave
+///                `false` for the default single shared reference.
 ///   - file: Source file (auto-filled) used to locate `__Snapshots__/`.
 @MainActor
 func assertSnapshot<V: View>(
@@ -59,6 +72,7 @@ func assertSnapshot<V: View>(
     appearance: SnapshotAppearance,
     named: String,
     tolerance: Double = 0.01,
+    osSpecific: Bool = false,
     sourceLocation: SourceLocation = #_sourceLocation,
     file: StaticString = #filePath
 ) throws {
@@ -77,7 +91,11 @@ func assertSnapshot<V: View>(
         return
     }
 
-    let referenceURL = SnapshotHarness.referenceURL(for: named, testFile: file)
+    let referenceURL = SnapshotHarness.referenceURL(
+        for: named,
+        testFile: file,
+        osSpecific: osSpecific
+    )
 
     // Record mode: always (over)write the reference and pass.
     if SnapshotHarness.isRecording {
@@ -107,8 +125,20 @@ func assertSnapshot<V: View>(
         let diffString = String(format: "%.4f", diff)
         let message = "Snapshot '\(named)' differs by \(diffString) (> tolerance \(tolerance)). "
             + "Actual written to \(actualURL.lastPathComponent). "
-            + "Re-record with PINE_RECORD_SNAPSHOTS=1."
-        Issue.record(Comment(rawValue: message), sourceLocation: sourceLocation)
+            + "Re-record with PINE_RECORD_SNAPSHOTS=1"
+        if !osSpecific {
+            Issue.record(
+                Comment(
+                    rawValue: message
+                        + ". If this is macOS rasterization drift rather than a "
+                        + "regression, mark the call osSpecific and record per-OS "
+                        + "references (#1620)."
+                ),
+                sourceLocation: sourceLocation
+            )
+        } else {
+            Issue.record(Comment(rawValue: message + "."), sourceLocation: sourceLocation)
+        }
     }
 }
 
@@ -220,14 +250,33 @@ enum SnapshotHarness {
         return bitmap
     }
 
-    static func referenceURL(for name: String, testFile: StaticString) -> URL {
+    static func referenceURL(
+        for name: String,
+        testFile: StaticString,
+        osSpecific: Bool = false
+    ) -> URL {
         // `#filePath` gives us an absolute path to the test source file.
         // Reference PNGs live in a sibling `__Snapshots__/` directory.
         let testFilePath = String(describing: testFile)
         let testFileURL = URL(fileURLWithPath: testFilePath)
         let snapshotDir = testFileURL.deletingLastPathComponent()
             .appendingPathComponent("__Snapshots__", isDirectory: true)
-        return snapshotDir.appendingPathComponent("\(name).png")
+        return snapshotDir.appendingPathComponent(
+            referenceFilename(for: name, osSpecific: osSpecific) + ".png"
+        )
+    }
+
+    /// The PNG filename (without extension) a snapshot name resolves to:
+    /// the name as-is for the default shared reference, or with the running
+    /// macOS major-version suffix appended for `osSpecific` calls (#1620).
+    static func referenceFilename(for name: String, osSpecific: Bool) -> String {
+        osSpecific ? "\(name).\(currentOSNameSuffix)" : name
+    }
+
+    /// Major-version-only OS marker (`.macos26`, `.macos27`, …) so a new
+    /// macOS release needs new reference PNGs but no harness change.
+    static var currentOSNameSuffix: String {
+        "macos\(ProcessInfo.processInfo.operatingSystemVersion.majorVersion)"
     }
 
     static func ensureDirectory(for fileURL: URL) throws {
