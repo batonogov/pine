@@ -137,6 +137,72 @@ struct UserKeybindingDispatcherTests {
         #expect(registry.suppressesBuiltInShortcut(for: formerShortcut))
     }
 
+    @Test("Rebinding ⌘+ suppresses its typed ⇧⌘= form too")
+    func reboundPlusSuppressesTypedForm() async throws {
+        // ⌘+ is typed ⇧⌘=: AppKit reports the event with an extra Shift and
+        // the shifted glyph in `charactersIgnoringModifiers` (#1611). The
+        // typed form must be consumed like the literal chord, or NSMenu
+        // keeps the old shortcut alive beside the rebind.
+        let registry = try await makeRegistry(chords: [
+            ("increaseFontSize", "cmd+="),
+        ])
+        let typedPlus = try makeTypedEvent(
+            base: "=",
+            shifted: "+",
+            modifiers: [.command, .shift]
+        )
+        var userDispatchCount = 0
+        var builtInCallCount = 0
+
+        let routed = UserKeybindingDispatcher.route(
+            typedPlus,
+            registry: registry,
+            dispatchUserCommand: { _ in userDispatchCount += 1 },
+            dispatchBuiltIn: { _ in
+                builtInCallCount += 1
+                return true
+            }
+        )
+
+        #expect(routed == nil)
+        #expect(userDispatchCount == 0)
+        #expect(builtInCallCount == 0)
+        #expect(registry.suppressesBuiltInShortcut(for: typedPlus))
+    }
+
+    @Test("A user binding dispatches through its typed shifted-glyph form")
+    func userBindingDispatchesThroughTypedForm() async throws {
+        // On a layout where "0" needs Shift (AZERTY types ⇧⌘à), the event
+        // carries an extra Shift that belongs to the glyph, not the chord.
+        // Dispatch must match the typed form (#1611) BEFORE the same event
+        // is consumed as a suppressed built-in — or the user binding is
+        // silenced by the very chord they typed.
+        let registry = try await makeRegistry(chords: [
+            ("resetFontSize", "cmd+0"),
+        ])
+        let azertyZero = try makeTypedEvent(
+            base: "à",
+            shifted: "0",
+            modifiers: [.command, .shift]
+        )
+        var dispatchedCommands: [UserCommand] = []
+        var builtInCallCount = 0
+
+        let routed = UserKeybindingDispatcher.route(
+            azertyZero,
+            registry: registry,
+            dispatchUserCommand: { dispatchedCommands.append($0) },
+            dispatchBuiltIn: { _ in
+                builtInCallCount += 1
+                return true
+            }
+        )
+
+        #expect(routed == nil)
+        #expect(dispatchedCommands == [.resetFontSize])
+        #expect(builtInCallCount == 0)
+    }
+
     @Test("A different user command may claim a built-in shortcut")
     func userCommandClaimsAnotherBuiltInShortcut() async throws {
         let registry = try await makeRegistry(chords: [
@@ -239,6 +305,29 @@ struct UserKeybindingDispatcherTests {
             context: nil,
             characters: key,
             charactersIgnoringModifiers: key,
+            isARepeat: false,
+            keyCode: 0 // resolved via charactersIgnoringModifiers
+        ))
+    }
+
+    /// A key-down event as AppKit delivers a shifted glyph like ⇧⌘=:
+    /// `characters` carries the unshifted glyph, while
+    /// `charactersIgnoringModifiers` keeps Shift applied.
+    @MainActor
+    private func makeTypedEvent(
+        base: String,
+        shifted: String,
+        modifiers: NSEvent.ModifierFlags
+    ) throws -> NSEvent {
+        try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: base,
+            charactersIgnoringModifiers: shifted,
             isARepeat: false,
             keyCode: 0 // resolved via charactersIgnoringModifiers
         ))

@@ -206,6 +206,93 @@ struct MenuShortcutOverrideTests {
         )
     }
 
+    /// #1611: ⌘+ is *typed* as ⇧⌘= — AppKit delivers that event with an
+    /// extra Shift and the shifted glyph in `charactersIgnoringModifiers`
+    /// ("=", "+"). The typed form must suppress a rebound command's ⌘+
+    /// exactly like the literal chord, or the menu keeps firing the built-in
+    /// shortcut alongside the rebind.
+    @Test("the typed ⇧⌘= form of a rebound ⌘+ is suppressed")
+    func typedPlusFormSuppressesReboundChord() async throws {
+        let keybindings = try await Self.registry(
+            loading: #"[{"command": "increaseFontSize", "key": "cmd+="}]"#
+        )
+
+        let typedPlus = try #require(Self.typedKeyDown(
+            "=",
+            shifted: "+",
+            modifiers: [.command, .shift],
+            keyCode: 24
+        ))
+        #expect(keybindings.suppressesBuiltInShortcut(for: typedPlus))
+    }
+
+    /// Without a rebind, the typed form is an ordinary built-in shortcut:
+    /// ⌘+ must keep zooming, so nothing is suppressed.
+    @Test("the typed ⇧⌘= form survives while ⌘+ is not rebound")
+    func typedPlusFormFallsThroughWithoutRebind() async throws {
+        let keybindings = try await Self.registry(
+            loading: #"[{"command": "findInFile", "key": "cmd+k"}]"#
+        )
+
+        let typedPlus = try #require(Self.typedKeyDown(
+            "=",
+            shifted: "+",
+            modifiers: [.command, .shift],
+            keyCode: 24
+        ))
+        #expect(!keybindings.suppressesBuiltInShortcut(for: typedPlus))
+    }
+
+    /// Shift that only upper-cases a letter is a real chord modifier:
+    /// ⇧⌘F is not a typed form of ⌘F and must not suppress a rebound ⌘F.
+    @Test("case-only Shift stays a chord modifier")
+    func caseOnlyShiftDoesNotSuppressTheUnshiftedChord() async throws {
+        let keybindings = try await Self.registry(
+            loading: #"[{"command": "findInFile", "key": "cmd+k"}]"#
+        )
+
+        let shiftF = try #require(Self.typedKeyDown(
+            "f",
+            shifted: "F",
+            modifiers: [.command, .shift]
+        ))
+        #expect(!keybindings.suppressesBuiltInShortcut(for: shiftF))
+    }
+
+    /// The #1611 scenario itself: increaseFontSize rebound off ⌘+, the user
+    /// types its ⇧⌘= form — the retired built-in chord must be consumed so
+    /// the replacement stays a replacement.
+    @Test("a rebound ⌘+ is suppressed in its typed form")
+    func reboundPlusKeepsItsTypedFormRetired() async throws {
+        let keybindings = try await Self.registry(
+            loading: #"[{"command": "increaseFontSize", "key": "cmd+8"}]"#
+        )
+
+        let typedPlus = try #require(Self.typedKeyDown(
+            "=",
+            shifted: "+",
+            modifiers: [.command, .shift],
+            keyCode: 24
+        ))
+        #expect(keybindings.suppressesBuiltInShortcut(for: typedPlus))
+    }
+
+    /// The typed-form match requires Shift: a plain ⌘= is a different chord
+    /// and must reach the menu untouched.
+    @Test("an unshifted ⌘= is not treated as a typed ⌘+")
+    func unshiftedEqualsIsNotATypedPlusForm() async throws {
+        let keybindings = try await Self.registry(
+            loading: #"[{"command": "increaseFontSize", "key": "cmd+8"}]"#
+        )
+
+        let plainEquals = try #require(Self.keyDown(
+            "=",
+            modifiers: [.command],
+            keyCode: 24
+        ))
+        #expect(!keybindings.suppressesBuiltInShortcut(for: plainEquals))
+    }
+
     /// `f1` … `f20` have to round-trip through the chord grammar, so a user
     /// can bind them (`FunctionKeyToken`, #1539) even though no built-in
     /// command carries one anymore (#1564).
@@ -259,6 +346,30 @@ struct MenuShortcutOverrideTests {
             context: nil,
             characters: characters,
             charactersIgnoringModifiers: characters,
+            isARepeat: false,
+            keyCode: keyCode
+        )
+    }
+
+    /// A key-down event as AppKit delivers a shifted glyph like ⇧⌘=:
+    /// `characters` carries the unshifted glyph ("="), while
+    /// `charactersIgnoringModifiers` keeps Shift applied and carries the
+    /// shifted one ("+").
+    private static func typedKeyDown(
+        _ characters: String,
+        shifted: String,
+        modifiers: NSEvent.ModifierFlags,
+        keyCode: UInt16 = 0
+    ) -> NSEvent? {
+        NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: shifted,
             isARepeat: false,
             keyCode: keyCode
         )

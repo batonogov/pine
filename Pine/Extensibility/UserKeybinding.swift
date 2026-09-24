@@ -433,9 +433,18 @@ final class UserKeybindingRegistry {
     }
 
     /// Looks up the command matching a key event, if any.
+    ///
+    /// A chord whose key is a shifted glyph is matched in its typed form
+    /// too: on a layout where "0" requires Shift (AZERTY types ⇧⌘à), the
+    /// event carries an extra Shift that belongs to the character, not to
+    /// the user's chord. Dispatch already runs before suppression in
+    /// `UserKeybindingDispatcher.route`, so a user binding still wins over
+    /// the suppression of a retired built-in chord (#1611).
     func command(for event: NSEvent) -> UserCommand? {
         guard let chord = Self.chord(for: event) else { return nil }
-        for entry in entries where entry.chord == chord {
+        let typedUnshifted = Self.typedUnshiftedChord(for: event)
+        for entry in entries
+        where entry.chord == chord || entry.chord == typedUnshifted {
             return entry.command
         }
         return nil
@@ -465,11 +474,49 @@ final class UserKeybindingRegistry {
     /// that has been rebound by the user. The unified event router consumes
     /// such an event before NSMenu sees it, making a user binding a true
     /// replacement instead of an additional shortcut.
+    ///
+    /// A built-in chord whose key is a shifted glyph — ⌘+ — is *typed* as
+    /// ⇧⌘=: AppKit reports that event with an extra Shift and the shifted
+    /// character in `charactersIgnoringModifiers`. The Shift belongs to the
+    /// character, not the chord, so the typed form is matched with the Shift
+    /// stripped (#1611).
     func suppressesBuiltInShortcut(for event: NSEvent) -> Bool {
         guard let chord = Self.chord(for: event) else { return false }
+        let typedUnshifted = Self.typedUnshiftedChord(for: event)
         return UserCommand.allCases.contains { command in
-            command.defaultChord == chord && hasOverride(for: command)
+            guard let builtIn = command.defaultChord,
+                  builtIn == chord || builtIn == typedUnshifted else {
+                return false
+            }
+            return hasOverride(for: command)
         }
+    }
+
+    /// The chord `event` types when its Shift only selects the shifted glyph
+    /// (⇧⌘= types ⌘+): the modifier is part of the character, not the chord.
+    ///
+    /// `nil` when Shift is a real chord modifier — ⇧⌘F is ⇧⌘F, not a typed
+    /// form of ⌘F — because Shift then changes nothing but the letter's case,
+    /// which the chord grammar already lowercases away.
+    nonisolated private static func typedUnshiftedChord(
+        for event: NSEvent
+    ) -> ParsedKeyChord? {
+        guard event.modifierFlags.contains(.shift),
+              let base = event.characters?.lowercased(),
+              let shifted = event.charactersIgnoringModifiers,
+              base != shifted.lowercased(),
+              let key = keyToken(
+                  keyCode: event.keyCode,
+                  charactersIgnoringModifiers: shifted
+              ) else {
+            return nil
+        }
+        return ParsedKeyChord(
+            modifiers: event.modifierFlags
+                .intersection(dispatchModifierMask)
+                .subtracting(.shift),
+            key: key
+        )
     }
 
     init() {}
