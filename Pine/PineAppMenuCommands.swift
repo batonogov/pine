@@ -67,12 +67,7 @@ struct PineAppMenuCommands: Commands {
     /// is what keeps the items alive in a terminal-only window.
     private var canStepFind: Bool {
         guard let project = focusedProject else { return false }
-        return FindStepTargetPolicy.isCommandEnabled(
-            activePaneID: project.paneManager.activePaneID,
-            visibleTerminalSearchPaneIDs:
-                project.paneManager.visibleTerminalSearchPaneIDs,
-            hasActiveEditorTab: project.activeTabManager.activeTab != nil
-        )
+        return project.hasFindStepTarget
     }
     /// What the focused window can do with its projects and agents (#1525).
     private var windowAvailability: ProjectWindowCommandAvailability {

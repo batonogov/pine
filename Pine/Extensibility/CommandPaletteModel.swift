@@ -49,6 +49,11 @@ nonisolated enum CommandAvailabilityRequirement: Sendable, Equatable {
     case agentWorktree
     /// A window holding more than one project or agent worktree (#1525).
     case projectSwitching
+    /// An editor tab for the native find bar, or a terminal search bar the
+    /// window routing policy can address (#1581) — the same verdict the Find
+    /// menu items use (#1551), so Find Next / Find Previous stay alive in a
+    /// terminal-only window instead of greying out in the palette.
+    case activeFileOrTerminalSearch
 }
 
 nonisolated struct CommandPaletteContext: Sendable, Equatable {
@@ -61,6 +66,12 @@ nonisolated struct CommandPaletteContext: Sendable, Equatable {
     /// "no window session, therefore nothing on offer".
     let canLaunchAgent: Bool
     let canSwitchProjectInWindow: Bool
+    /// The focused window has an addressee for ⌘G / ⇧⌘G (#1581): an active
+    /// editor tab, or a visible terminal search bar `FindStepTargetPolicy`
+    /// can route to — the same verdict the Find menu items gate on (#1551).
+    /// Defaulted like the other window-scoped facts: call sites that do not
+    /// describe the window keep meaning "nothing addressable".
+    let hasFindStepTarget: Bool
 
     init(
         hasProject: Bool,
@@ -68,7 +79,8 @@ nonisolated struct CommandPaletteContext: Sendable, Equatable {
         isGitRepository: Bool,
         hasTerminal: Bool,
         canLaunchAgent: Bool = false,
-        canSwitchProjectInWindow: Bool = false
+        canSwitchProjectInWindow: Bool = false,
+        hasFindStepTarget: Bool = false
     ) {
         self.hasProject = hasProject
         self.hasActiveFile = hasActiveFile
@@ -76,6 +88,7 @@ nonisolated struct CommandPaletteContext: Sendable, Equatable {
         self.hasTerminal = hasTerminal
         self.canLaunchAgent = canLaunchAgent
         self.canSwitchProjectInWindow = canSwitchProjectInWindow
+        self.hasFindStepTarget = hasFindStepTarget
     }
 
     static let unavailable = CommandPaletteContext(
@@ -103,6 +116,8 @@ nonisolated struct CommandPaletteContext: Sendable, Equatable {
             canLaunchAgent
         case .projectSwitching:
             canSwitchProjectInWindow
+        case .activeFileOrTerminalSearch:
+            hasFindStepTarget
         }
     }
 }
@@ -261,6 +276,8 @@ enum CommandPaletteCatalog {
             Strings.commandPaletteRequiresAgentWorktree
         case .projectSwitching:
             Strings.commandPaletteRequiresProjectSwitching
+        case .activeFileOrTerminalSearch:
+            Strings.commandPaletteRequiresFindStepTarget
         }
     }
 

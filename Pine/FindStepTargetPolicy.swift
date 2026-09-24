@@ -78,3 +78,21 @@ enum FindStepTargetPolicy {
         return hasActiveEditorTab
     }
 }
+
+/// The window verdict the Find menu items (#1551) and the command palette's
+/// availability gate (#1581) share: whether a ⌘G / ⇧⌘G press has any
+/// addressee in this project's window. Keeping the inputs in one place stops
+/// the two surfaces from drifting apart.
+@MainActor
+extension ProjectManager {
+    var hasFindStepTarget: Bool {
+        FindStepTargetPolicy.isCommandEnabled(
+            activePaneID: paneManager.activePaneID,
+            visibleTerminalSearchPaneIDs: paneManager.visibleTerminalSearchPaneIDs,
+            // `activeTabManager` deliberately falls back to the primary
+            // editor manager while a terminal pane holds focus — the exact
+            // pre-#1551 menu gate.
+            hasActiveEditorTab: activeTabManager.activeTab != nil
+        )
+    }
+}

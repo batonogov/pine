@@ -327,9 +327,13 @@ nonisolated extension UserCommand {
             .terminal
         case .sendToTerminal:
             .activeFileAndTerminal
+        case .findNext, .findPrevious:
+            // #1581: ⌘G / ⇧⌘G also step a visible terminal search bar
+            // (#1551), so the palette must not grey these out in a
+            // terminal-only window.
+            .activeFileOrTerminalSearch
         case .save, .saveAs, .duplicate, .toggleComment, .findInFile,
-             .findAndReplace, .findNext, .findPrevious,
-             .useSelectionForFind, .goToLine, .nextChange,
+             .findAndReplace, .useSelectionForFind, .goToLine, .nextChange,
              .previousChange, .acceptChange, .revertChange,
              .acceptAllChanges, .revertAllChanges, .foldCode,
              .unfoldCode, .foldAll, .unfoldAll, .symbolNavigator,
