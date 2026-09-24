@@ -474,9 +474,13 @@ struct PersistenceFixtureCorpusTests {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/chmod")
         process.arguments = ["-N", root.path]
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
+        // Bounded by a deadline (issue #1622): a hung child fails fast
+        // instead of hanging the suite forever.
+        let output = try runProcessBounded(
+            process,
+            commandDescription: "chmod -N \(root.path)"
+        )
+        guard output.terminationStatus == 0 else {
             throw CocoaError(.fileWriteNoPermission)
         }
         return root

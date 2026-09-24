@@ -292,34 +292,12 @@ struct SidebarRefreshTests {
 
     /// Runs a shell command as a child process, exactly like SwiftTerm's
     /// `LocalProcessTerminalView` does when the user types in the built-in
-    /// terminal. This is the repro path for issue #774.
+    /// terminal. This is the repro path for issue #774. Bounded by a
+    /// deadline (issue #1622): a hung child fails fast instead of hanging
+    /// the suite forever.
     @discardableResult
     private func runShell(_ command: String, at dir: URL) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
-        process.currentDirectoryURL = dir
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        try process.run()
-        process.waitUntilExit()
-        if process.terminationStatus != 0 {
-            let stderr = String(
-                data: errPipe.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            ) ?? ""
-            throw NSError(
-                domain: "ShellError",
-                code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
-            )
-        }
-        return String(
-            data: outPipe.fileHandleForReading.readDataToEndOfFile(),
-            encoding: .utf8
-        ) ?? ""
+        try runShellBounded(command, at: dir)
     }
 
     @Test("Issue #774: mkdir via shell child process appears in sidebar")

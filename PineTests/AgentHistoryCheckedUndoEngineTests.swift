@@ -1602,11 +1602,14 @@ struct AgentHistoryCheckedUndoEngineTests {
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = pipe
-            try process.run()
-            process.waitUntilExit()
-            if process.terminationStatus != 0 {
-                let out = pipe.fileHandleForReading.readDataToEndOfFile()
-                let detail = String(data: out, encoding: .utf8) ?? ""
+            // Bounded by a deadline (issue #1622): a hung git fails fast
+            // instead of hanging the suite forever.
+            let output = try runProcessBounded(
+                process,
+                commandDescription: "git \(args.joined(separator: " "))"
+            )
+            if output.terminationStatus != 0 {
+                let detail = String(data: output.standardOutput, encoding: .utf8) ?? ""
                 Issue.record("git \(args.joined(separator: " ")) failed: \(detail)")
             }
         }
@@ -1724,8 +1727,9 @@ struct AgentHistoryCheckedUndoEngineTests {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", repo.path, "init"]
-        try process.run()
-        process.waitUntilExit()
+        // Bounded by a deadline (issue #1622): a hung git init fails fast
+        // instead of hanging the suite forever.
+        _ = try runProcessBounded(process, commandDescription: "git init")
         try runGit(repo, ["config", "user.email", "test@pine.local"])
         try runGit(repo, ["config", "user.name", "Pine Test"])
 
@@ -1747,8 +1751,12 @@ struct AgentHistoryCheckedUndoEngineTests {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", repo.path] + args
-        try process.run()
-        process.waitUntilExit()
+        // Bounded by a deadline (issue #1622): a hung git fails fast
+        // instead of hanging the suite forever.
+        _ = try runProcessBounded(
+            process,
+            commandDescription: "git \(args.joined(separator: " "))"
+        )
     }
 
     private func posixPermissions(of url: URL) -> UInt16? {

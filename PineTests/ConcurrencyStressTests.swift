@@ -63,30 +63,37 @@ nonisolated private func runShell(_ command: String, at dir: URL) throws -> Stri
         xcSelect.arguments = ["-p"]
         let pipe = Pipe()
         xcSelect.standardOutput = pipe
-        try? xcSelect.run()
-        xcSelect.waitUntilExit()
-        let path = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        env["DEVELOPER_DIR"] = path ?? "/Applications/Xcode.app/Contents/Developer"
+        // Bounded by a deadline (issue #1622): a hung child fails fast
+        // instead of hanging the suite forever.
+        if let result = try? runProcessBounded(
+            xcSelect,
+            commandDescription: "xcode-select -p"
+        ), result.terminationStatus == 0,
+           let path = String(data: result.standardOutput, encoding: .utf8)?
+               .trimmingCharacters(in: .whitespacesAndNewlines) {
+            env["DEVELOPER_DIR"] = path
+        } else {
+            env["DEVELOPER_DIR"] = "/Applications/Xcode.app/Contents/Developer"
+        }
     }
     process.environment = env
     let outPipe = Pipe()
     let errPipe = Pipe()
     process.standardOutput = outPipe
     process.standardError = errPipe
-    try process.run()
-    process.waitUntilExit()
-    let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-    let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-    guard process.terminationStatus == 0 else {
-        let stderr = String(data: errData, encoding: .utf8) ?? ""
+    let output = try runProcessBounded(
+        process,
+        commandDescription: command
+    )
+    guard output.terminationStatus == 0 else {
+        let stderr = String(data: output.standardError, encoding: .utf8) ?? ""
         throw NSError(
             domain: "ShellError",
-            code: Int(process.terminationStatus),
+            code: Int(output.terminationStatus),
             userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
         )
     }
-    return String(data: outData, encoding: .utf8) ?? ""
+    return String(data: output.standardOutput, encoding: .utf8) ?? ""
 }
 
 nonisolated private func makeGitRepo(label: String) throws -> URL {

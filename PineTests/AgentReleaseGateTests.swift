@@ -205,13 +205,17 @@ struct AgentReleaseGateTests {
 
         let clock = ContinuousClock()
         let startedAt = clock.now
-        try process.run()
-        process.waitUntilExit()
+        // Bounded by a deadline (issue #1622): a hung fake agent fails fast
+        // instead of hanging the suite forever.
+        let result = try runProcessBounded(
+            process,
+            commandDescription: "\(fakeAgentURL.path) \(scenario)"
+        )
         return Execution(
-            status: process.terminationStatus,
-            output: output.fileHandleForReading.readDataToEndOfFile(),
+            status: result.terminationStatus,
+            output: result.standardOutput,
             errorOutput: String(
-                data: errorOutput.fileHandleForReading.readDataToEndOfFile(),
+                data: result.standardError,
                 encoding: .utf8
             ) ?? "",
             elapsed: startedAt.duration(to: clock.now)

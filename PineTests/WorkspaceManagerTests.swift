@@ -27,45 +27,19 @@ struct WorkspaceManagerTests {
         try? FileManager.default.removeItem(at: url)
     }
 
-    /// Polls `condition` on the main actor until it returns true or the
-    /// attempt budget is exhausted. Used in place of the old synchronous
-    /// assertions about `rootNodes` now that `refreshFileTree()` runs its
-    /// shallow pass off the main thread (issue #1006).
-    @MainActor
-    private func waitFor(
-        _ condition: @MainActor () -> Bool,
-        maxAttempts: Int = 200,
-        interval: Duration = .milliseconds(25)
-    ) async {
-        for _ in 0..<maxAttempts {
-            if condition() { return }
-            try? await Task.sleep(for: interval)
-        }
-    }
-
+    /// Runs `/bin/sh -c command` bounded by a deadline (issue #1622): a hung
+    /// child is terminated and reported as a failure naming the command,
+    /// instead of blocking the suite forever — Swift Testing has no per-test
+    /// execution allowance, so a bare `waitUntilExit()` on a stalled `git`
+    /// under load hangs the lane until the job-level timeout.
     @discardableResult
-    private func runShell(_ command: String, at dir: URL) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
-        process.currentDirectoryURL = dir
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        try process.run()
-        process.waitUntilExit()
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: errData, encoding: .utf8) ?? ""
-            throw NSError(
-                domain: "ShellError",
-                code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
-            )
-        }
-        return String(data: outData, encoding: .utf8) ?? ""
+    private func runShell(
+        _ command: String,
+        at dir: URL,
+        deadline: TimeInterval = 10,
+        gracePeriod: TimeInterval = 2
+    ) throws -> String {
+        try runShellBounded(command, at: dir, deadline: deadline, gracePeriod: gracePeriod)
     }
 
     private func makeGitRepo() throws -> URL {
@@ -144,7 +118,10 @@ struct WorkspaceManagerTests {
         // refreshFileTree now runs off the main thread (issue #1006);
         // poll for the shallow pass to land.
         manager.refreshFileTree()
-        await waitFor { manager.rootNodes.isEmpty }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.isEmpty },
+            "The shallow pass should land and leave the empty directory empty"
+        )
 
         // Initially empty directory
         #expect(manager.rootNodes.isEmpty)
@@ -158,7 +135,10 @@ struct WorkspaceManagerTests {
 
         // Refresh should pick it up once the async shallow pass lands.
         manager.refreshFileTree()
-        await waitFor { manager.rootNodes.count == 1 }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.count == 1 },
+            "The refresh should pick up the newly created file"
+        )
         #expect(manager.rootNodes.count == 1)
         #expect(manager.rootNodes.first?.url.lastPathComponent == "newfile.txt")
     }
@@ -189,7 +169,10 @@ struct WorkspaceManagerTests {
         // refreshFileTree now routes through the async two-phase loader
         // (issue #1006); rootNodes is no longer populated synchronously.
         manager.refreshFileTree()
-        await waitFor { manager.rootNodes.count == 2 }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.count == 2 },
+            "The shallow pass should list both files"
+        )
 
         #expect(manager.rootNodes.count == 2)
     }
@@ -222,7 +205,10 @@ struct WorkspaceManagerTests {
         manager.loadDirectory(url: dir)
         manager.gitProvider.setup(repositoryURL: dir)
         manager.refreshFileTree()
-        await waitFor { !manager.rootNodes.isEmpty }
+        #expect(
+            await waitUntilMainActor { !manager.rootNodes.isEmpty },
+            "The shallow pass should populate the git repo's root nodes"
+        )
 
         #expect(manager.gitProvider.isGitRepository == true)
         #expect(manager.gitProvider.ignoredPaths.contains("build"))
@@ -239,7 +225,10 @@ struct WorkspaceManagerTests {
         manager.loadDirectory(url: dir)
         manager.gitProvider.setup(repositoryURL: dir)
         manager.refreshFileTree()
-        await waitFor { !manager.rootNodes.isEmpty }
+        #expect(
+            await waitUntilMainActor { !manager.rootNodes.isEmpty },
+            "The shallow pass should populate rootNodes after refresh"
+        )
 
         // Create an untracked file — git status should detect it after refresh
         try "new".write(
@@ -273,7 +262,12 @@ struct WorkspaceManagerTests {
         )
 
         // Eventually the git fetch lands on the main actor.
-        await waitFor { manager.gitProvider.fileStatuses["untracked.txt"] != nil }
+        #expect(
+            await waitUntilMainActor {
+                manager.gitProvider.fileStatuses["untracked.txt"] != nil
+            },
+            "The async git fetch should eventually report the untracked file"
+        )
         #expect(manager.gitProvider.fileStatuses["untracked.txt"] != nil)
     }
 
@@ -286,7 +280,10 @@ struct WorkspaceManagerTests {
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
         manager.refreshFileTree()
-        await waitFor { !manager.rootNodes.isEmpty }
+        #expect(
+            await waitUntilMainActor { !manager.rootNodes.isEmpty },
+            "The first refresh should populate rootNodes"
+        )
 
         // Simulate rapid user actions (create, rename, delete) that each
         // trigger refreshFileTree(). Each bumps loadGeneration and schedules
@@ -303,11 +300,14 @@ struct WorkspaceManagerTests {
 
         // File tree should reflect the latest state once the final
         // refresh's shallow pass lands on main.
-        await waitFor {
-            (0..<5).allSatisfy { i in
-                manager.rootNodes.contains { $0.name == "file\(i).txt" }
-            }
-        }
+        #expect(
+            await waitUntilMainActor {
+                (0..<5).allSatisfy { i in
+                    manager.rootNodes.contains { $0.name == "file\(i).txt" }
+                }
+            },
+            "The final refresh should list all five rapid-mutation files"
+        )
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         for i in 0..<5 {
             #expect(names.contains("file\(i).txt"))
@@ -331,7 +331,10 @@ struct WorkspaceManagerTests {
         // refreshFileTree on non-git dir — the loader's git-detection
         // branch bails out without crash.
         manager.refreshFileTree()
-        await waitFor { !manager.rootNodes.isEmpty }
+        #expect(
+            await waitUntilMainActor { !manager.rootNodes.isEmpty },
+            "The shallow pass should list the non-git directory"
+        )
 
         #expect(manager.rootNodes.count == 1)
         #expect(manager.gitProvider.isGitRepository == false)
@@ -362,7 +365,10 @@ struct WorkspaceManagerTests {
         manager.refreshFileTree()
 
         #expect(manager.rootURL == dir2)
-        await waitFor { manager.rootNodes.contains { $0.name == "other.txt" } }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.contains { $0.name == "other.txt" } },
+            "The switched project's file should appear after refresh"
+        )
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         #expect(names.contains("other.txt"))
     }
@@ -387,7 +393,10 @@ struct WorkspaceManagerTests {
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
         manager.refreshFileTree()
-        await waitFor { manager.rootNodes.contains { $0.name == "top.txt" } }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.contains { $0.name == "top.txt" } },
+            "The shallow pass should list the top-level file"
+        )
 
         // Top-level files should be present
         let names = manager.rootNodes.map(\.url.lastPathComponent)
@@ -558,7 +567,10 @@ struct WorkspaceManagerTests {
         // Should settle on the last directory
         #expect(manager.rootURL == dirs.last)
         manager.refreshFileTree()
-        await waitFor { manager.rootNodes.contains { $0.name == "file4.txt" } }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.contains { $0.name == "file4.txt" } },
+            "The last directory's file should appear after refresh"
+        )
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         #expect(names.contains("file4.txt"))
         #expect(!names.contains("file0.txt"))
@@ -595,7 +607,10 @@ struct WorkspaceManagerTests {
         // refreshFileTree is now async (issue #1006); poll for the
         // shallow pass to land and verify the latest generation wins.
         manager.refreshFileTree()
-        await waitFor { manager.rootNodes.contains { $0.name == "from_dir2.txt" } }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.contains { $0.name == "from_dir2.txt" } },
+            "The latest generation (dir2) should win the race"
+        )
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         #expect(names.contains("from_dir2.txt"))
         #expect(!names.contains("from_dir1.txt"))
@@ -629,7 +644,10 @@ struct WorkspaceManagerTests {
         manager.refreshFileTree()
 
         // Phase 1 (shallow pass) lands on main via MainActor.run; poll for it.
-        await waitFor { manager.rootNodes.contains { $0.name == "alpha" } }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.contains { $0.name == "alpha" } },
+            "The shallow pass should list the top-level directories"
+        )
         let topNames = manager.rootNodes.map(\.name)
         #expect(topNames.contains("alpha"))
         #expect(topNames.contains("beta"))
@@ -687,7 +705,10 @@ struct WorkspaceManagerTests {
         // refreshFileTree is now async (issue #1006); poll for the
         // dir2 content to land.
         manager.refreshFileTree()
-        await waitFor { manager.rootNodes.contains { $0.name == "from_dir2.txt" } }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.contains { $0.name == "from_dir2.txt" } },
+            "The immediately-loaded second directory should win the race"
+        )
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         #expect(names.contains("from_dir2.txt"))
         #expect(!names.contains("from_dir1.txt"))
@@ -726,7 +747,10 @@ struct WorkspaceManagerTests {
         // refreshFileTree is now async (issue #1006); poll for the
         // shallow pass to land before inspecting rootNodes.
         manager.refreshFileTree()
-        await waitFor { manager.rootNodes.contains { $0.name == ".claude" } }
+        #expect(
+            await waitUntilMainActor { manager.rootNodes.contains { $0.name == ".claude" } },
+            "The shallow pass should list the gitignored .claude directory"
+        )
 
         let claudeNode = manager.rootNodes.first { $0.name == ".claude" }
         #expect(claudeNode != nil, "`.claude` should appear in rootNodes")
@@ -745,5 +769,30 @@ struct WorkspaceManagerTests {
 
         let nmNode = manager.rootNodes.first { $0.name == "node_modules" }
         #expect(nmNode?.optionalChildren?.contains(where: { $0.name == "express" }) == true)
+    }
+
+    /// Issue #1622 — a hung child must fail the test in seconds, not hang
+    /// the `@MainActor` suite forever (Swift Testing ignores
+    /// `-test-timeouts-enabled`, so nothing else bounds the wait).
+    @Test("runShell fails fast when a command never exits (issue #1622)")
+    @MainActor
+    func runShellFailsFastWhenCommandHangs() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        do {
+            _ = try runShell("sleep 60", at: dir, deadline: 1, gracePeriod: 1)
+            Issue.record("'sleep 60' must throw instead of hanging the suite")
+        } catch let error as BoundedProcessExitError {
+            #expect(
+                String(describing: error).contains("sleep 60"),
+                "The timeout error must name the hung command"
+            )
+        }
+        // Boundedness invariant ("seconds, not forever"), not a performance
+        // measurement.
+        #expect(startedAt.duration(to: clock.now) < .seconds(10))
     }
 }

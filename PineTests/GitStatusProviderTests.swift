@@ -52,27 +52,10 @@ struct GitStatusProviderTests {
 
     @discardableResult
     private func runShell(_ command: String, at dir: URL) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
-        process.currentDirectoryURL = dir
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        try process.run()
-        process.waitUntilExit()
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: errData, encoding: .utf8) ?? ""
-            throw NSError(
-                domain: "ShellError",
-                code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
-            )
-        }
-        return String(data: outData, encoding: .utf8) ?? ""
+        // Bounded by a deadline (issue #1622): this suite is @MainActor, so
+        // a bare waitUntilExit() on a stalled git blocked every parallel
+        // neighbour for the duration of the hang.
+        try runShellBounded(command, at: dir)
     }
 
     // MARK: - setup
