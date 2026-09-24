@@ -2111,6 +2111,28 @@ extension CodeEditorView {
             menuLocation: NSPoint,
             textView: NSTextView
         ) {
+            let menu = Self.makeCodeActionMenu(response: response, target: self)
+
+            guard !menu.items.isEmpty else { return }
+
+            menu.popUp(
+                positioning: nil,
+                at: menuLocation,
+                in: textView
+            )
+        }
+
+        /// Builds the code-action context menu without presenting it, so its
+        /// structure is unit-testable.
+        ///
+        /// No row in this menu carries a key equivalent: a context menu is a
+        /// shortcut surface, not a shortcut definition (HIG). The Rename row
+        /// used to display ⌘R, colliding with Go to Symbol and letting the
+        /// keyboard fire Rename while the menu was open (#1611).
+        static func makeCodeActionMenu(
+            response: LSPCodeActionResponse,
+            target: AnyObject?
+        ) -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
 
@@ -2121,7 +2143,7 @@ extension CodeEditorView {
                     action: #selector(handleCodeActionSelection(_:)),
                     keyEquivalent: ""
                 )
-                item.target = self
+                item.target = target
                 item.representedObject = CodeActionPayload(action: action)
                 if let kind = action.kind {
                     item.image = NSImage(
@@ -2142,29 +2164,22 @@ extension CodeEditorView {
                     action: #selector(handleCodeCommandSelection(_:)),
                     keyEquivalent: ""
                 )
-                item.target = self
+                item.target = target
                 item.representedObject = command
                 menu.addItem(item)
             }
 
-            // Add rename option.
+            // Add rename option — no key equivalent (see above).
             menu.addItem(.separator())
             let renameItem = NSMenuItem(
                 title: Strings.contextRenameTitle,
                 action: #selector(handleRenameFromMenu(_:)),
-                keyEquivalent: "r"
+                keyEquivalent: ""
             )
-            renameItem.target = self
-            renameItem.keyEquivalentModifierMask = [.command]
+            renameItem.target = target
             menu.addItem(renameItem)
 
-            guard !menu.items.isEmpty else { return }
-
-            menu.popUp(
-                positioning: nil,
-                at: menuLocation,
-                in: textView
-            )
+            return menu
         }
 
         /// Payload wrapping an LSPCodeAction for menu selection.
