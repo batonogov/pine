@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.1](https://github.com/batonogov/pine/compare/v2.8.0...v2.8.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **editor:** drop ⌘R from the code-action context menu and honor typed shifted-glyph chords ([#1623](https://github.com/batonogov/pine/issues/1623)) ([f88b511](https://github.com/batonogov/pine/commit/f88b5116c8c45cd4bb2a5e706c5bac4a01149cd2))
+
 ## [2.8.0](https://github.com/batonogov/pine/compare/v2.7.0...v2.8.0) (2026-09-21)
 
 
