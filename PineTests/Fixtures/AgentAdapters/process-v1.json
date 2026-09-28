@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "fixtureVersion": "2026-08-03",
+  "fixtureVersion": "2026-09-28",
   "sanitization": "Synthetic commands and lifecycle events only; no prompts, output, credentials, home paths, or repository paths.",
   "agents": [
     {
@@ -62,6 +62,11 @@
       "stableIdentifier": "crush",
       "testedVersion": "0.88.0",
       "commands": ["crush", "/opt/homebrew/bin/crush"]
+    },
+    {
+      "stableIdentifier": "kimiCode",
+      "testedVersion": "2.1.1",
+      "commands": ["kimi", "/opt/homebrew/bin/kimi"]
     }
   ],
   "fakeExecutable": {

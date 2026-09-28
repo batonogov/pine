@@ -216,6 +216,7 @@ extension AgentType {
         case .goose: "goose"
         case .qwenCode: "qwenCode"
         case .crush: "crush"
+        case .kimiCode: "kimiCode"
         case .generic(let name): "generic:\(name)"
         }
     }
@@ -239,6 +240,7 @@ extension AgentType {
         case "goose": self = .goose
         case "qwenCode": self = .qwenCode
         case "crush": self = .crush
+        case "kimiCode": self = .kimiCode
         default:
             guard stableIdentifier.hasPrefix("generic:") else { return nil }
             let name = String(stableIdentifier.dropFirst("generic:".count))

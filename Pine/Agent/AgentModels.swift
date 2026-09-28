@@ -40,6 +40,8 @@ enum AgentType: Equatable, Sendable {
     case qwenCode
     /// Charmbracelet Crush (`crush`).
     case crush
+    /// Moonshot AI Kimi Code (`kimi`).
+    case kimiCode
     /// Any other/unrecognised agent, identified by a free-form name.
     case generic(name: String)
 
@@ -58,6 +60,7 @@ enum AgentType: Equatable, Sendable {
         case .goose: "Goose"
         case .qwenCode: "Qwen Code"
         case .crush: "Crush"
+        case .kimiCode: "Kimi Code"
         case .generic(let name): name
         }
     }
@@ -74,7 +77,9 @@ enum AgentType: Equatable, Sendable {
         return []
     }
 
-    /// Semantic system color used for UI color-coding of this agent.
+    /// Color used for UI color-coding of this agent. Adaptive system colors
+    /// are preferred; `.kimiCode` uses the fixed `.magenta` because every
+    /// adaptive system color is already assigned to another agent.
     var color: NSColor {
         switch self {
         case .claudeCode: .systemOrange
@@ -89,6 +94,7 @@ enum AgentType: Equatable, Sendable {
         case .goose: .systemYellow
         case .qwenCode: .systemRed
         case .crush: .systemBrown
+        case .kimiCode: .magenta
         case .generic: .systemGray
         }
     }

@@ -37,7 +37,7 @@ struct FirstPartyAgentCompatibilityTests {
 
     @Test func catalogIsCompleteUniqueAndFailClosed() throws {
         let records = FirstPartyAgentCompatibilityCatalog.records
-        #expect(records.count == 12)
+        #expect(records.count == 13)
         #expect(Set(records.map(\.stableIdentifier)).count == records.count)
         #expect(records.allSatisfy { $0.schemaVersion == FirstPartyAgentCompatibilityCatalog.schemaVersion })
         #expect(records.allSatisfy { $0.supportTier == .detected })
