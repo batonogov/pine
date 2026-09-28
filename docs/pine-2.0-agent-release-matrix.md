@@ -86,6 +86,7 @@ text is never parsed as trusted lifecycle evidence.
 | Goose | 1.45.0 | Detected | Exact executable alias + process generation | Generic terminal command | ACP disabled; process termination only |
 | Qwen Code | 0.21.4 | Detected | Exact executable alias + process generation | Generic terminal command | Structured stream disabled; process termination only |
 | Crush | 0.88.0 | Detected | Exact executable alias + process generation | Generic terminal command | Experimental SSE disabled; process termination only |
+| Kimi Code | 2.1.1 | Detected | Exact executable alias + process generation | Generic terminal command | Process termination only |
 
 If the installed version differs, record it and rerun the shared adapter
 conformance suite. Do not raise the tier based on terminal presentation,

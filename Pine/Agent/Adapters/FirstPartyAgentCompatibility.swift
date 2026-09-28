@@ -215,6 +215,13 @@ nonisolated enum FirstPartyAgentCompatibilityCatalog {
             source: ("https://github.com/charmbracelet/crush", ["0.88.0"]),
             interface: "experimental workspace SSE"
         ),
+        record(
+            id: "kimiCode",
+            name: "Kimi Code",
+            aliases: ["kimi"],
+            upstream: "https://www.kimi.com/code/docs/en/",
+            versions: ["2.1.1"]
+        ),
     ]
 
     static func record(stableIdentifier: String) -> FirstPartyAgentCompatibilityRecord? {

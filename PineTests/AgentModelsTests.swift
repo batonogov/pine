@@ -27,6 +27,7 @@ struct AgentModelsTests {
         #expect(AgentType.goose.displayName == "Goose")
         #expect(AgentType.qwenCode.displayName == "Qwen Code")
         #expect(AgentType.crush.displayName == "Crush")
+        #expect(AgentType.kimiCode.displayName == "Kimi Code")
         #expect(AgentType.generic(name: "Custom").displayName == "Custom")
     }
 
@@ -45,6 +46,7 @@ struct AgentModelsTests {
         #expect(AgentType.goose.cliNames == ["goose"])
         #expect(AgentType.qwenCode.cliNames == ["qwen"])
         #expect(AgentType.crush.cliNames == ["crush"])
+        #expect(AgentType.kimiCode.cliNames == ["kimi"])
         // Generic agents have no known CLI names.
         #expect(AgentType.generic(name: "Custom").cliNames.isEmpty)
     }
@@ -52,7 +54,8 @@ struct AgentModelsTests {
     @Test func color_isDistinctAndNotClearPerAgent() {
         let agents: [AgentType] = [
             .claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
-            .amp, .cursorAgent, .goose, .qwenCode, .crush, .generic(name: "X"),
+            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode,
+            .generic(name: "X"),
         ]
 
         // Every case must resolve to a concrete, non-transparent color.
@@ -63,7 +66,7 @@ struct AgentModelsTests {
         // Known agents must return distinct colors so UI badges stay distinguishable.
         let known = [
             AgentType.claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
-            .amp, .cursorAgent, .goose, .qwenCode, .crush,
+            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode,
         ]
         for i in known.indices {
             for j in (i + 1)..<known.count {
@@ -108,6 +111,7 @@ struct AgentModelsTests {
         #expect(AgentType.resolve(fromProcessName: "goose") == .goose)
         #expect(AgentType.resolve(fromProcessName: "qwen") == .qwenCode)
         #expect(AgentType.resolve(fromProcessName: "crush") == .crush)
+        #expect(AgentType.resolve(fromProcessName: "kimi") == .kimiCode)
     }
 
     @Test func pi_isDistinctFromGenericNamedPi() {
@@ -128,6 +132,7 @@ struct AgentModelsTests {
         #expect(AgentType.resolve(fromProcessName: "GOOSE") == .goose)
         #expect(AgentType.resolve(fromProcessName: "QWEN") == .qwenCode)
         #expect(AgentType.resolve(fromProcessName: "CRUSH") == .crush)
+        #expect(AgentType.resolve(fromProcessName: "KIMI") == .kimiCode)
     }
 
     @Test func resolve_trimsWhitespace() {
