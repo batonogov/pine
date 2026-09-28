@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.1](https://github.com/batonogov/pine/compare/v2.9.0...v2.9.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **agent:** detect the kimi-code process title so Kimi Code reaches the inbox ([#1626](https://github.com/batonogov/pine/issues/1626)) ([9ff947f](https://github.com/batonogov/pine/commit/9ff947f2f90fb3c50e58a7748ec425a2890d477c))
+
 ## [2.9.0](https://github.com/batonogov/pine/compare/v2.8.0...v2.9.0) (2026-09-28)
 
 
