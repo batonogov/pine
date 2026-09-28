@@ -28,7 +28,7 @@ paths:
   - **SPM packages** (`Package.resolved`): SwiftTerm, Sparkle, swift-markdown, swift-cmark, swift-argument-parser. Bump via Xcode → File → Packages → Update, then rebuild and run `PineTests` before merge. A bump that regresses behavior is reverted and filed as an issue, not pinned to an older release.
 - **Nightly performance** (`.github/workflows/nightly-perf.yml`) — runs performance tests nightly and on schedule, uploads `PerformanceResults.xcresult` artifact, detects regressions via `scripts/check_perf_regression.py`
 - **Nightly fuzz** (`.github/workflows/nightly-fuzz.yml`) — scheduled fuzz testing
-- **Screenshots** (`.github/workflows/screenshots.yml`) — regenerates GitHub/landing page screenshots in `assets/` on demand
+- **Screenshots** — no automated pipeline (removed: the auto-generated captures looked bad); marketing screenshots in `assets/` are refreshed manually with `scripts/update-screenshots.sh`
 
 ## Adding a dependency
 
@@ -36,4 +36,4 @@ paths:
 
 ## Utility scripts
 
-- **Utility scripts** — `scripts/` directory contains `normalize-xcstrings.sh` (called by pre-commit hook to unstage cosmetic xcstrings changes), `reset-cosmetic-xcstrings.sh` (reverts cosmetic-only xcstrings diffs), `test-normalize-xcstrings.sh` (tests for the normalizer), `update-screenshots.sh` (regenerates GitHub/landing page screenshots), `check-no-post-under-inout.py` (pre-commit + CI guard that blocks the exclusivity-abort reentrancy class), `tests/test-check-no-post-under-inout.sh` (tests for that guard), and `check-deps.sh` (read-only dependency audit: prints pinned-vs-latest for GitHub Actions, SwiftLint, and SPM packages — run before each dependency pass)
+- **Utility scripts** — `scripts/` directory contains `normalize-xcstrings.sh` (called by pre-commit hook to unstage cosmetic xcstrings changes), `reset-cosmetic-xcstrings.sh` (reverts cosmetic-only xcstrings diffs), `test-normalize-xcstrings.sh` (tests for the normalizer), `update-screenshots.sh` (manual marketing screenshot regeneration into `assets/`; no CI pipeline), `check-no-post-under-inout.py` (pre-commit + CI guard that blocks the exclusivity-abort reentrancy class), `tests/test-check-no-post-under-inout.sh` (tests for that guard), and `check-deps.sh` (read-only dependency audit: prints pinned-vs-latest for GitHub Actions, SwiftLint, and SPM packages — run before each dependency pass)

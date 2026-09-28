@@ -25,11 +25,8 @@ DerivedData/
 .pine-context.json
 
 # Screenshots: the canonical screenshot-*.png files in assets/ are
-# committed to the repo and updated by the Update Screenshots workflow
-# (.github/workflows/screenshots.yml). They are NOT gitignored — doing
-# so would make `git add assets/screenshot-*.png` in the workflow exit
-# non-zero under `bash -e` (git refuses to add ignored paths), which is
-# what historically caused the workflow to fail on every release tag.
+# committed to the repo and refreshed manually via
+# scripts/update-screenshots.sh. They are NOT gitignored.
 #
 # Only ignore the unnamed fallback artifacts produced by the raw
 # filesystem extraction strategy in scripts/update-screenshots.sh; those

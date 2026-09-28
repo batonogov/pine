@@ -13,7 +13,7 @@
 > A native macOS code editor for CLI-agent workflows.
 
 <p align="center">
-  <img src="assets/screenshot-editor.png" width="800" alt="Pine Editor — syntax highlighting, minimap, and Liquid Glass UI">
+  <img src="assets/screenshot-terminal.png" width="800" alt="Pine — code editor with a built-in terminal running the agent workflow">
 </p>
 
 > **The agent stays in the terminal.**<br>
@@ -65,14 +65,26 @@ See the [latest release](https://github.com/batonogov/pine/releases/latest) for 
 <details>
 <summary>Screenshots</summary>
 
-### Welcome Screen
-<img src="assets/screenshot-welcome.png" width="600" alt="Pine Welcome Screen">
+### Code Editor
+<img src="assets/screenshot-editor.png" width="800" alt="Pine code editor with syntax highlighting and minimap">
 
 ### Built-in Terminal
 <img src="assets/screenshot-terminal.png" width="800" alt="Pine Terminal">
 
 ### Markdown Preview
 <img src="assets/screenshot-markdown.png" width="800" alt="Pine Markdown Preview">
+
+### Agent Inbox
+<img src="assets/screenshot-agent-inbox.png" width="520" alt="Pine Agent Inbox showing agent tasks across projects">
+
+### Sidebar
+<img src="assets/screenshot-sidebar.png" width="800" alt="Pine sidebar with the project file tree">
+
+### Minimap
+<img src="assets/screenshot-minimap.png" width="800" alt="Pine minimap with syntax-colored code overview">
+
+### Welcome Screen
+<img src="assets/screenshot-welcome.png" width="600" alt="Pine Welcome Screen">
 
 </details>
 

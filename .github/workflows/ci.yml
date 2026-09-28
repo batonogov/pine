@@ -137,9 +137,6 @@ jobs:
       - name: Tests for release smoke loopback feed server
         run: bash scripts/tests/test-appcast-server.sh
 
-      - name: Tests for screenshot workflow coverage
-        run: bash scripts/tests/test-screenshot-workflow.sh
-
   # SourceKit-dependent rules cannot run in the Linux lane above: SwiftLint
   # skips them there without failing the build (issue #1546), so
   # statement_position silently stopped being enforced when the lint job moved

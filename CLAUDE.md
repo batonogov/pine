@@ -121,7 +121,7 @@ scoped so it enters context only when it is relevant.
 | `lsp.md` | `Pine/LSP/**` | SourceKit-LSP smoke test |
 | `ci-release.md` | `.github/**`, `scripts/**` | Release Please, CI pipeline, action pinning, dependency maintenance |
 | `localization.md` | `Localizable.xcstrings`, `Strings.swift` | The xcstrings format rule and the nine shipped locales |
-| `marketing-surfaces.md` | `README.md`, `docs/**`, `assets/**` | Keeping the public product description consistent |
+| `marketing-surfaces.md` | `README.md`, `docs/**`, `assets/**` | Keeping the public product description consistent; marketing screenshots must be refreshed periodically (dark appearance, at least once per release) |
 
 `.claude/skills/` — invoked by name when the task calls for it:
 

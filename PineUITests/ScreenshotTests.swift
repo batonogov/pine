@@ -12,6 +12,13 @@ import XCTest
 
 final class ScreenshotTests: PineUITestCase {
 
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        // Marketing captures target the dark landing page; never inherit the
+        // host machine's system appearance.
+        app.launchArguments += ["--ui-test-dark-appearance"]
+    }
+
     /// Attaches a screenshot to the test result with the given name.
     private func attachScreenshot(_ screenshot: XCUIScreenshot, name: String) {
         let attachment = XCTAttachment(screenshot: screenshot)
