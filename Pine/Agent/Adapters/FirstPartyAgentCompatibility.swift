@@ -218,7 +218,7 @@ nonisolated enum FirstPartyAgentCompatibilityCatalog {
         record(
             id: "kimiCode",
             name: "Kimi Code",
-            aliases: ["kimi"],
+            aliases: ["kimi", "kimi-code"],
             upstream: "https://www.kimi.com/code/docs/en/",
             versions: ["2.1.1"]
         ),

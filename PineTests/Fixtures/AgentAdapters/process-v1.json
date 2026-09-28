@@ -66,7 +66,7 @@
     {
       "stableIdentifier": "kimiCode",
       "testedVersion": "2.1.1",
-      "commands": ["kimi", "/opt/homebrew/bin/kimi"]
+      "commands": ["kimi", "kimi-code", "/opt/homebrew/bin/kimi"]
     }
   ],
   "fakeExecutable": {
