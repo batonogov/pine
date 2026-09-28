@@ -21,7 +21,9 @@ final class TerminalFindStepMenuUITests: PineUITestCase {
         try super.setUpWithError()
 
         // Delete first so an interrupted earlier run cannot leak a stale
-        // shell override into this one (deleting a missing key succeeds).
+        // shell override into this one. On a fresh runner the defaults
+        // domain itself may not exist yet; `runDefaults` tolerates a
+        // `delete` that fails only because the domain or key is missing.
         try runDefaults(["delete", Self.bundleIdentifier, "terminalShellPath"])
         try runDefaults(["delete", Self.bundleIdentifier, "terminalShellArgs"])
 
@@ -60,21 +62,36 @@ final class TerminalFindStepMenuUITests: PineUITestCase {
     /// Runs `/usr/bin/defaults`, inheriting the runner's environment so
     /// `DEVELOPER_DIR` stays visible to sandboxed tooling. Fails the test
     /// when the tool itself errors — a silently skipped override would
-    /// surface later as an unrelated missing-match-counter failure.
+    /// surface later as an unrelated missing-match-counter failure. The one
+    /// exception: a `delete` whose stderr says the domain or key does not
+    /// exist is tolerated, since on a fresh runner the app has not written
+    /// any defaults yet and `defaults delete` exits non-zero with
+    /// "Domain ... not found" even though there is nothing to clean up.
     private func runDefaults(_ arguments: [String]) throws {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
         proc.arguments = arguments
         proc.environment = ProcessInfo.processInfo.environment
+        let errorPipe = Pipe()
+        proc.standardError = errorPipe
         try proc.run()
         proc.waitUntilExit()
         guard proc.terminationStatus == 0 else {
+            // Output is a single line, so reading after waitUntilExit
+            // cannot deadlock on a full pipe buffer.
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+            if arguments.first == "delete",
+               errorOutput.contains("not found")
+                || errorOutput.contains("Could not find") {
+                return
+            }
             throw NSError(
                 domain: "TerminalFindStepMenuUITests.defaults",
                 code: Int(proc.terminationStatus),
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "defaults \(arguments.joined(separator: " ")) failed"
+                        "defaults \(arguments.joined(separator: " ")) failed: \(errorOutput)"
                 ]
             )
         }
