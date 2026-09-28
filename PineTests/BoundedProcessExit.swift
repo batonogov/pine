@@ -4,6 +4,11 @@
 //
 //  Shared bounded wait for child processes (issue #1622).
 //
+//  Both the spawn (`Process.run()`) and the post-spawn exit wait are
+//  deadline-bounded: on the macOS 27 runtime fork/spawn can stall under
+//  load (#1060, #1509), and either stall must fail the test in seconds
+//  instead of hanging the suite.
+//
 
 import Foundation
 
@@ -13,17 +18,27 @@ import Foundation
 /// on the macOS 27 runtime, where fork/spawn of child processes is known to
 /// stall under load (#1060, #1509), a stuck `git init` then hangs a
 /// `@MainActor` Swift Testing suite with no per-test execution allowance to
-/// save it (`-test-timeouts-enabled` is an XCTest mechanism). A hung child
-/// must become a red test in seconds, not a dead lane.
+/// save it (`-test-timeouts-enabled` is an XCTest mechanism). And the stall
+/// can happen *inside* `Process.run()` itself: the call never returns, so a
+/// deadline that only covers the post-spawn wait starts too late to help.
+/// Both phases are therefore bounded — a hung spawn or a hung child must
+/// become a red test in seconds, not a dead lane.
 nonisolated enum BoundedProcessExitError: Error, CustomStringConvertible {
     /// `command` did not exit within `deadline` seconds and was terminated
     /// (SIGTERM, escalating to SIGKILL after the grace period).
     case timedOut(command: String, deadline: TimeInterval)
 
+    /// `Process.run()` for `command` did not return within `deadline`
+    /// seconds — the spawn itself stalled inside Foundation/kernel, so the
+    /// child may never have started.
+    case didNotStart(command: String, deadline: TimeInterval)
+
     var description: String {
         switch self {
         case let .timedOut(command, deadline):
             "'\(command)' did not exit within \(Int(deadline))s and was terminated"
+        case let .didNotStart(command, deadline):
+            "'\(command)' did not start within \(Int(deadline))s (spawn stalled)"
         }
     }
 }
@@ -87,12 +102,23 @@ nonisolated private final class BoundedPipeDrain: @unchecked Sendable {
 /// The wait keeps the synchronous shape callers rely on, but a hung child is
 /// terminated instead of blocking the caller forever:
 ///
-/// 1. `terminationHandler` signals a semaphore, raced against the deadline.
-/// 2. On timeout the child gets `SIGTERM`; if it is still running after
+/// 1. `process.run()` itself is dispatched to a background queue and the
+///    caller waits for "spawn returned (or threw)" with the same `deadline`:
+///    on the macOS 27 runtime fork/spawn can stall inside Foundation/kernel
+///    (#1060, #1509), and a deadline that only covers the post-spawn wait
+///    would start too late to help. A spawn that never returns throws
+///    `BoundedProcessExitError.didNotStart` — the stuck background thread is
+///    leaked (and with it possibly an orphaned child), but the test fails
+///    instead of the whole lane freezing.
+/// 2. `terminationHandler` signals a semaphore, raced against the deadline.
+/// 3. On timeout the child gets `SIGTERM`; if it is still running after
 ///    `gracePeriod` more seconds, it gets `SIGKILL` (same escalation as the
 ///    SourceKit-LSP smoke wait).
-/// 3. Only then does the helper throw `BoundedProcessExitError`, naming the
+/// 4. Only then does the helper throw `BoundedProcessExitError`, naming the
 ///    command that hung.
+///
+/// A `Process.run()` that throws on the background thread (e.g. a missing
+/// executable) rethrows that error to the caller unchanged.
 ///
 /// Any `Pipe` attached to `standardOutput`/`standardError` is drained on a
 /// background queue for the whole run (see `BoundedPipeDrain`). A caller
@@ -112,8 +138,9 @@ nonisolated private final class BoundedPipeDrain: @unchecked Sendable {
 /// - Parameters:
 ///   - process: configured, not yet running.
 ///   - commandDescription: human-readable command for failure messages.
-///   - deadline: seconds to wait for a normal exit. A tripwire, not a
-///     stopwatch — keep it generous (see `BoundedMainActorWait.swift`).
+///   - deadline: seconds to wait for a normal exit, and for the spawn to
+///     return. A tripwire, not a stopwatch — keep it generous (see
+///     `BoundedMainActorWait.swift`).
 ///   - gracePeriod: seconds to wait after `SIGTERM` before `SIGKILL`.
 ///   - postExitAllowance: seconds to wait for pipe EOF after the child has
 ///     exited, covering a grandchild that still holds the write end.
@@ -142,7 +169,59 @@ nonisolated func runProcessBounded(
 
     let exitSemaphore = DispatchSemaphore(value: 0)
     process.terminationHandler = { _ in exitSemaphore.signal() }
-    try process.run()
+
+    // Spawn on a background queue: `Process.run()` can stall inside
+    // Foundation/kernel (#1060), so calling it inline would block the caller
+    // — possibly the main thread of a @MainActor suite — before the exit
+    // deadline ever starts. `Process` is not thread-safe, so until the spawn
+    // result comes back only the background block touches `process`; the
+    // result crosses over through a lock-protected box and a semaphore
+    // (queue submission and the semaphore provide the happens-before edges).
+    let spawnSemaphore = DispatchSemaphore(value: 0)
+    final class SpawnResultBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var result: Result<Void, Error>?
+        func store(_ result: Result<Void, Error>) {
+            lock.lock()
+            self.result = result
+            lock.unlock()
+        }
+        func load() -> Result<Void, Error>? {
+            lock.lock()
+            defer { lock.unlock() }
+            return result
+        }
+    }
+    let spawnBox = SpawnResultBox()
+    DispatchQueue.global().async {
+        autoreleasepool {
+            do {
+                try process.run()
+                spawnBox.store(.success(()))
+            } catch {
+                spawnBox.store(.failure(error))
+            }
+        }
+        spawnSemaphore.signal()
+    }
+    guard spawnSemaphore.wait(timeout: .now() + deadline) == .success else {
+        // The spawn thread is stuck inside `Process.run()` — leave it (and
+        // `process`) alone; touching the process from here would race the
+        // stuck block. The leaked thread fails this test instead of the lane.
+        throw BoundedProcessExitError.didNotStart(
+            command: commandDescription,
+            deadline: deadline
+        )
+    }
+    guard let spawnResult = spawnBox.load() else {
+        // Unreachable: the semaphore is signalled only after the box is
+        // filled. Fail bounded rather than crash if that ever breaks.
+        throw BoundedProcessExitError.didNotStart(
+            command: commandDescription,
+            deadline: deadline
+        )
+    }
+    try spawnResult.get()
 
     guard exitSemaphore.wait(timeout: .now() + deadline) == .success else {
         process.terminate()

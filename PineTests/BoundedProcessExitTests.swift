@@ -171,6 +171,32 @@ struct BoundedProcessExitTests {
         )
     }
 
+    @Test("A failed launch propagates the spawn error instead of reporting a timeout")
+    func failedLaunchPropagatesSpawnError() throws {
+        // The spawn step runs on a background queue with its own deadline;
+        // a `Process.run()` that *throws* there (missing executable) must
+        // rethrow that error to the caller, not turn into a timeout.
+        let process = Process()
+        process.executableURL = URL(
+            fileURLWithPath: "/nonexistent/pine-bounded-\(UUID().uuidString)"
+        )
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            _ = try runProcessBounded(
+                process,
+                commandDescription: "missing executable"
+            )
+            Issue.record("A missing executable must throw instead of running")
+        } catch is BoundedProcessExitError {
+            Issue.record("A failed launch is not a timeout — the spawn error must propagate")
+        } catch {
+            // Expected: the original launch error reaches the caller.
+        }
+    }
+
     @Test("runProcessBounded reports a non-zero status without throwing")
     func nonZeroStatusIsReportedNotThrown() throws {
         let process = Process()
