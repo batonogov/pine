@@ -19,7 +19,7 @@ paths:
 - Pipeline: build → code sign → notarize → create DMG → GitHub Release → update Homebrew Tap
 - Secrets: `CERTIFICATE_P12`, `CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`, `TAP_GITHUB_TOKEN`, `RELEASE_PLEASE_TOKEN`
 - Homebrew: `brew tap batonogov/tap && brew install --cask pine-editor`
-- **CI pipeline** (`.github/workflows/ci.yml`): Lint (Linux) + SourceKit-rules lint (macOS) → Build → Unit Tests (with code coverage) + 7 UI Test shards (parallel) + Flaky Test Summary. All UI tests always run (no conditional skip). Coverage threshold: 70% logic-only (SwiftUI view files excluded). Flaky tests auto-retry once and are reported separately. UI test shards must be balanced (±3 tests, currently 33-35 per shard); verify script checks all test classes are assigned to a shard
+- **CI pipeline** (`.github/workflows/ci.yml`): Lint (Linux) + SourceKit-rules lint (macOS) → Build → Unit Tests (with code coverage) + 7 UI Test shards (parallel) + Flaky Test Summary. All UI tests always run (no conditional skip). Coverage threshold: 70% logic-only (SwiftUI view files excluded). Flaky tests auto-retry once and are reported separately. UI test shards must be balanced (±3 tests, currently 34-37 per shard); verify script checks all test classes are assigned to a shard
 - **Branch protection**: requires all checks to pass. Does NOT require the branch to be up-to-date with main, and does NOT use a merge queue — multiple PRs can be merged in parallel/sequence without re-running CI on each. GitHub recomputes mergeability after each merge, but stale branches merge cleanly (3-way merge handles shared files)
 - **Action pinning** — all third-party GitHub Actions are pinned by full commit SHA (not mutable tags) for supply-chain safety. To update: find the new version's commit SHA on GitHub (Tags → verify the commit), replace the SHA in the workflow file, and keep the trailing `# vX.Y.Z` comment on the exact release tag (a floating `# vX` comment hides drift once the moving tag advances)
 - **Dependency maintenance** — keep every pinned dependency within **N-1 of upstream** (one release behind latest stable); **never downgrade** an already-current pin. The new version/SHA must be a strict descendant of the one it replaces. Run `scripts/check-deps.sh` to list pinned-vs-latest before each pass. Scope:
@@ -28,7 +28,7 @@ paths:
   - **SPM packages** (`Package.resolved`): SwiftTerm, Sparkle, swift-markdown, swift-cmark, swift-argument-parser. Bump via Xcode → File → Packages → Update, then rebuild and run `PineTests` before merge. A bump that regresses behavior is reverted and filed as an issue, not pinned to an older release.
 - **Nightly performance** (`.github/workflows/nightly-perf.yml`) — runs performance tests nightly and on schedule, uploads `PerformanceResults.xcresult` artifact, detects regressions via `scripts/check_perf_regression.py`
 - **Nightly fuzz** (`.github/workflows/nightly-fuzz.yml`) — scheduled fuzz testing
-- **Screenshots** (`.github/workflows/screenshots.yml`) — regenerates GitHub/landing page screenshots in `assets/` on demand
+- **Screenshots** — no automated pipeline (removed: the auto-generated captures looked bad); marketing screenshots in `assets/` are refreshed manually with `scripts/update-screenshots.sh`
 
 ## Adding a dependency
 
@@ -36,4 +36,4 @@ paths:
 
 ## Utility scripts
 
-- **Utility scripts** — `scripts/` directory contains `normalize-xcstrings.sh` (called by pre-commit hook to unstage cosmetic xcstrings changes), `reset-cosmetic-xcstrings.sh` (reverts cosmetic-only xcstrings diffs), `test-normalize-xcstrings.sh` (tests for the normalizer), `update-screenshots.sh` (regenerates GitHub/landing page screenshots), `check-no-post-under-inout.py` (pre-commit + CI guard that blocks the exclusivity-abort reentrancy class), `tests/test-check-no-post-under-inout.sh` (tests for that guard), and `check-deps.sh` (read-only dependency audit: prints pinned-vs-latest for GitHub Actions, SwiftLint, and SPM packages — run before each dependency pass)
+- **Utility scripts** — `scripts/` directory contains `normalize-xcstrings.sh` (called by pre-commit hook to unstage cosmetic xcstrings changes), `reset-cosmetic-xcstrings.sh` (reverts cosmetic-only xcstrings diffs), `test-normalize-xcstrings.sh` (tests for the normalizer), `update-screenshots.sh` (manual marketing screenshot regeneration into `assets/`; no CI pipeline), `check-no-post-under-inout.py` (pre-commit + CI guard that blocks the exclusivity-abort reentrancy class), `tests/test-check-no-post-under-inout.sh` (tests for that guard), and `check-deps.sh` (read-only dependency audit: prints pinned-vs-latest for GitHub Actions, SwiftLint, and SPM packages — run before each dependency pass)

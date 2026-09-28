@@ -9,15 +9,15 @@
 #     tests may fail individually while others succeed and still produce
 #     usable attachments).
 #   - Extraction itself MUST succeed and produce at least one new PNG —
-#     otherwise we exit non-zero so CI fails loudly instead of silently
-#     committing zero changes.
+#     otherwise we exit non-zero so a broken capture run fails loudly
+#     instead of silently producing zero changes.
 #
 # Compatibility:
 #   - Uses `xcresulttool get test-results tests/activities` (Xcode 16+) to
 #     enumerate attachments by name and extract payloads directly.
 #   - Set `PINE_SCREENSHOT_DERIVED_DATA_PATH` to isolate local build artifacts.
 #   - Set `PINE_SCREENSHOT_CODE_SIGNING_ALLOWED=YES` when a local UI-test
-#     runner must be signed to launch; CI remains unsigned by default.
+#     runner must be signed to launch; the default stays unsigned.
 
 set -uo pipefail
 
@@ -28,10 +28,10 @@ ASSETS_DIR="$REPO_ROOT/assets"
 DERIVED_DATA_PATH="${PINE_SCREENSHOT_DERIVED_DATA_PATH:-}"
 CODE_SIGNING_ALLOWED="${PINE_SCREENSHOT_CODE_SIGNING_ALLOWED:-NO}"
 ## Names that ScreenshotTests is expected to produce. The first group is
-## REQUIRED — the workflow fails if any of these are missing or empty after
-## extraction. The second group is optional (newer captures that are not yet
-## committed to the repo); they are extracted when present but absence does
-## not fail the build.
+## REQUIRED — the script exits non-zero if any of these are missing or empty
+## after extraction. The second group is optional (newer captures that are
+## not yet committed to the repo); they are extracted when present but
+## absence does not fail the run.
 REQUIRED_NAMES=(
   "screenshot-welcome"
   "screenshot-agent-inbox"
@@ -94,8 +94,8 @@ mkdir -p "$ASSETS_DIR"
 extract_named_screenshots() {
   local found_any=false
   # Pass the known canonical screenshot names to the extractor so it can map
-  # Xcode 26's suffixed attachment names back to the names the workflow
-  # expects (e.g. screenshot-editor_0_<UUID>.png -> screenshot-editor).
+  # Xcode 26's suffixed attachment names back to the canonical asset names
+  # (e.g. screenshot-editor_0_<UUID>.png -> screenshot-editor).
   # Computed once here (before the loop) because the process substitution
   # feeding the `while read` is set up at loop entry, not per iteration.
   local canon_arg
@@ -168,9 +168,9 @@ def find_test_ids(node):
 def canonical_name(raw):
     # Xcode 26 stores attachment names like
     #   "screenshot-editor_0_<UUID>.png"
-    # rather than the bare "screenshot-editor" the workflow expects. Map the
+    # rather than the bare "screenshot-editor" the assets/ files use. Map the
     # raw name back to a known canonical name so the required-names guardrail
-    # and the commit step keep working unchanged.
+    # keeps working.
     base = raw[:-4] if raw.endswith(".png") else raw
     for c in canonical_names:
         if base == c or base.startswith(c + "_"):
@@ -207,7 +207,7 @@ if not data:
 # document has no "children" key — so seed find_test_ids with each testNodes
 # entry rather than with the document root. (The previous implementation
 # walked the non-existent root "children" and silently found zero tests,
-# which is what made this workflow fail on every release since v1.26.3.)
+# which is what made extraction fail on every run since v1.26.3.)
 test_ids = []
 for root in data.get("testNodes", []):
     test_ids.extend(find_test_ids(root))
@@ -249,9 +249,9 @@ else
 fi
 
 # --- Guardrail ---------------------------------------------------------------
-# Every REQUIRED screenshot must exist as a non-empty PNG. This prevents the
-# workflow from silently committing zero changes when only test-runner crash
-# logs were captured. Optional screenshots only emit a warning when missing.
+# Every REQUIRED screenshot must exist as a non-empty PNG. This prevents
+# silently accepting a run that captured only test-runner crash logs.
+# Optional screenshots only emit a warning when missing.
 MISSING_REQUIRED=()
 for name in "${REQUIRED_NAMES[@]}"; do
   path="$ASSETS_DIR/${name}.png"

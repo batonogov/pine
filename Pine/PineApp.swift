@@ -1597,6 +1597,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             FontSizeSettings.shared.reset()
         }
 
+        // UI testing support: force dark appearance for marketing screenshots
+        // regardless of the host machine's system theme.
+        if CommandLine.arguments.contains("--ui-test-dark-appearance") {
+            NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        }
+
         // UI testing support: read project path from environment variable.
         // Using env var instead of launch argument because macOS interprets
         // bare file paths in arguments as files to open, suppressing normal window behavior.
