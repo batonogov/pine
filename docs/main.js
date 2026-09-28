@@ -7,6 +7,17 @@
     var LANGS = ["en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans"];
     var STORAGE_KEY = "pine-lang";
     var cache = {};
+    var currentLang = "en";
+
+    // localStorage can throw SecurityError (blocked cookies, some private
+    // browsing or file:// contexts); the page must stay fully functional.
+    function storageGet(key) {
+        try { return localStorage.getItem(key); } catch (e) { return null; }
+    }
+
+    function storageSet(key, value) {
+        try { localStorage.setItem(key, value); } catch (e) { /* unavailable */ }
+    }
 
     // English strings live in the HTML itself; snapshot them so switching
     // back to English never requires a network request.
@@ -25,6 +36,8 @@
             dict[el.getAttribute("data-i18n-aria-label")] = el.getAttribute("aria-label");
         });
         dict["meta.title"] = document.title;
+        var copyButton = document.querySelector(".copy-btn[data-copied-label]");
+        if (copyButton) dict["install.copied"] = copyButton.getAttribute("data-copied-label");
         var metaSelectors = {
             "meta.description": 'meta[name="description"]',
             "meta.ogTitle": 'meta[property="og:title"]',
@@ -40,7 +53,7 @@
     }
 
     function detectLang() {
-        var stored = localStorage.getItem(STORAGE_KEY);
+        var stored = storageGet(STORAGE_KEY);
         if (stored && LANGS.indexOf(stored) !== -1) return stored;
         var nav = navigator.language || "";
         if (LANGS.indexOf(nav) !== -1) return nav;
@@ -96,25 +109,36 @@
             });
         }
 
-        localStorage.setItem(STORAGE_KEY, lang);
+        storageSet(STORAGE_KEY, lang);
+        currentLang = lang;
     }
+
+    var langRequest = 0;
 
     function setLang(lang) {
         if (cache[lang]) {
             applyLang(lang);
             return;
         }
+        var requestId = ++langRequest;
         fetch("i18n/" + encodeURIComponent(lang) + ".json")
             .then(function (res) {
                 if (!res.ok) throw new Error("locale " + res.status);
                 return res.json();
             })
             .then(function (dict) {
+                // A newer selection may have been made while this fetch was
+                // in flight; only the latest request wins.
+                if (requestId !== langRequest) return;
                 cache[lang] = dict;
                 applyLang(lang);
             })
             .catch(function () {
-                // Offline / file:// preview: stay on the current language.
+                // Offline / file:// preview: stay on the current language and
+                // reflect that in the selector.
+                if (requestId === langRequest && langSelect) {
+                    langSelect.value = currentLang;
+                }
             });
     }
 
@@ -139,7 +163,7 @@
         steps.forEach(function (step, i) {
             var current = i === index;
             step.classList.toggle("is-current", current);
-            step.setAttribute("aria-selected", current ? "true" : "false");
+            step.setAttribute("aria-pressed", current ? "true" : "false");
         });
         frames.forEach(function (frame, i) {
             frame.classList.toggle("is-current", i === index);

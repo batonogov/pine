@@ -14,11 +14,6 @@
   "hero.gitAware": "LSP и Git-контекст",
   "hero.download": "Скачать Pine",
   "hero.github": "Открыть на GitHub",
-  "hero.installLabel": "Установка за 10 секунд",
-  "hero.alt": "Скриншот редактора Pine",
-  "hero.chipTabs": "Активность агентов",
-  "hero.chipTerminal": "Терминал в разделённых панелях",
-  "hero.chipGit": "Диагностика LSP и Git",
   "mini.nativeKicker": "Нативный",
   "mini.nativeTitle": "SwiftUI + AppKit",
   "mini.nativeDesc": "Сделан как настоящее Mac-приложение, а не как браузер в маске редактора.",
@@ -76,8 +71,6 @@
   "screenshots.title": "Видите всю задачу, а не набор разрозненных инструментов.",
   "screenshots.alt0": "Входящие агентов Pine с задачами из разных проектов",
   "screenshots.cap0": "Входящие агентов собирают работу из всех проектов в одном месте",
-  "screenshots.alt1": "Окно приветствия Pine со списком недавних проектов",
-  "screenshots.cap1": "Окно приветствия с недавними проектами",
   "screenshots.alt2": "Редактор Pine с подсветкой синтаксиса и деревом файлов",
   "screenshots.cap2": "Редактор кода с подсветкой синтаксиса и маркерами Git",
   "screenshots.alt3": "Встроенный терминал Pine",
@@ -111,5 +104,6 @@
   "meta.twitterTitle": "Pine — нативный редактор кода для macOS и CLI-агентов",
   "meta.twitterDescription": "Агент остаётся в терминале. Код остаётся перед глазами. Pine объединяет их в нативном редакторе macOS для работы с CLI-агентами.",
   "install.copy": "Скопировать",
-  "install.copied": "Скопировано"
+  "install.copied": "Скопировано",
+  "nav.language": "Язык"
 }

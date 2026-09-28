@@ -36,7 +36,7 @@
                 <a href="#screenshots" data-i18n="nav.screenshots">Screenshots</a>
                 <a href="https://github.com/batonogov/pine">GitHub</a>
             </nav>
-            <select class="lang-toggle" id="lang-toggle" aria-label="Language">
+            <select class="lang-toggle" id="lang-toggle" aria-label="Language" data-i18n-aria-label="nav.language">
                 <option value="en">English</option>
                 <option value="de">Deutsch</option>
                 <option value="es">Español</option>
@@ -86,16 +86,16 @@
                         <span class="section-kicker" data-i18n="release.kicker">The Pine loop</span>
                         <h2 data-i18n="release.title">One continuous loop. From agent command to code review.</h2>
                         <p class="workflow-desc" data-i18n="release.desc">Pine keeps the terminal, task context, and edited files in one native workspace, so you always know what the agent is doing and where to review it.</p>
-                        <div class="workflow-steps" role="tablist" aria-label="Workflow steps">
-                            <button class="workflow-step is-current" type="button" role="tab" aria-selected="true">
+                        <div class="workflow-steps" role="group" aria-label="Workflow steps">
+                            <button class="workflow-step is-current" type="button" aria-pressed="true">
                                 <span class="step-index">01</span>
                                 <strong data-i18n="release.li1">Run any CLI agent in a real terminal</strong>
                             </button>
-                            <button class="workflow-step" type="button" role="tab" aria-selected="false">
+                            <button class="workflow-step" type="button" aria-pressed="false">
                                 <span class="step-index">02</span>
                                 <strong data-i18n="release.li2">See every task and return to its exact session</strong>
                             </button>
-                            <button class="workflow-step" type="button" role="tab" aria-selected="false">
+                            <button class="workflow-step" type="button" aria-pressed="false">
                                 <span class="step-index">03</span>
                                 <strong data-i18n="release.li3">Review code, Git changes, and diagnostics beside the agent</strong>
                             </button>

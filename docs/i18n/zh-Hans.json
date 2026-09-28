@@ -14,11 +14,6 @@
   "hero.gitAware": "LSP + Git 上下文",
   "hero.download": "下载 Pine",
   "hero.github": "在 GitHub 查看",
-  "hero.installLabel": "10 秒完成安装",
-  "hero.alt": "Pine 编辑器截图",
-  "hero.chipTabs": "代理活动",
-  "hero.chipTerminal": "分屏终端窗格",
-  "hero.chipGit": "LSP + Git 诊断",
   "mini.nativeKicker": "原生",
   "mini.nativeTitle": "SwiftUI + AppKit",
   "mini.nativeDesc": "像真正的 Mac 应用一样构建，不是伪装成应用的浏览器。",
@@ -76,8 +71,6 @@
   "screenshots.title": "看到完整任务，而不是彼此割裂的工具。",
   "screenshots.alt0": "显示多个项目智能体任务的 Pine Agent Inbox",
   "screenshots.cap0": "Agent Inbox 将所有项目的工作集中在一处",
-  "screenshots.alt1": "带最近项目的 Pine 欢迎窗口",
-  "screenshots.cap1": "带最近项目的欢迎窗口",
   "screenshots.alt2": "带语法高亮和文件树的 Pine 代码编辑器",
   "screenshots.cap2": "带语法高亮和 Git 行间标记的代码编辑器",
   "screenshots.alt3": "Pine 内置终端",
@@ -111,5 +104,6 @@
   "meta.twitterTitle": "Pine — 面向 CLI 代理的原生 macOS 编辑器",
   "meta.twitterDescription": "智能体留在终端。代码始终在眼前。Pine 将二者连接在面向 CLI 智能体的原生 macOS 编辑器中。",
   "install.copy": "复制",
-  "install.copied": "已复制"
+  "install.copied": "已复制",
+  "nav.language": "语言"
 }

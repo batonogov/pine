@@ -14,11 +14,6 @@
   "hero.gitAware": "LSP + Git 컨텍스트",
   "hero.download": "Pine 다운로드",
   "hero.github": "GitHub에서 보기",
-  "hero.installLabel": "10초 만에 설치",
-  "hero.alt": "Pine 편집기 스크린샷",
-  "hero.chipTabs": "에이전트 활동",
-  "hero.chipTerminal": "분할 터미널 패널",
-  "hero.chipGit": "LSP + Git 진단",
   "mini.nativeKicker": "네이티브",
   "mini.nativeTitle": "SwiftUI + AppKit",
   "mini.nativeDesc": "브라우저가 아닌 진짜 Mac 앱으로 제작.",
@@ -76,8 +71,6 @@
   "screenshots.title": "흩어진 도구가 아닌 전체 작업을 한눈에.",
   "screenshots.alt0": "여러 프로젝트의 에이전트 작업을 보여 주는 Pine Agent Inbox",
   "screenshots.cap0": "Agent Inbox가 모든 프로젝트의 작업을 한곳에 모읍니다",
-  "screenshots.alt1": "최근 프로젝트가 있는 Pine 환영 창",
-  "screenshots.cap1": "최근 프로젝트가 있는 환영 창",
   "screenshots.alt2": "구문 강조와 파일 트리가 있는 Pine 코드 편집기",
   "screenshots.cap2": "구문 강조와 Git 거터가 있는 코드 편집기",
   "screenshots.alt3": "Pine 내장 터미널",
@@ -111,5 +104,6 @@
   "meta.twitterTitle": "Pine — CLI 에이전트를 위한 네이티브 macOS 편집기",
   "meta.twitterDescription": "에이전트는 터미널에 남습니다. 코드는 시야에 남습니다. Pine은 둘을 연결하는 CLI 에이전트용 네이티브 macOS 편집기입니다.",
   "install.copy": "복사",
-  "install.copied": "복사됨"
+  "install.copied": "복사됨",
+  "nav.language": "언어"
 }

@@ -14,11 +14,6 @@
   "hero.gitAware": "LSP + Git コンテキスト",
   "hero.download": "Pine をダウンロード",
   "hero.github": "GitHub で見る",
-  "hero.installLabel": "10秒でインストール",
-  "hero.alt": "Pine エディタのスクリーンショット",
-  "hero.chipTabs": "エージェントの活動",
-  "hero.chipTerminal": "分割ターミナルペイン",
-  "hero.chipGit": "LSP + Git 診断",
   "mini.nativeKicker": "ネイティブ",
   "mini.nativeTitle": "SwiftUI + AppKit",
   "mini.nativeDesc": "ブラウザの仮面ではなく、本物の Mac アプリとして構築。",
@@ -76,8 +71,6 @@
   "screenshots.title": "ばらばらのツールではなく、タスク全体を見渡す。",
   "screenshots.alt0": "複数プロジェクトのエージェントタスクを表示する Pine Agent Inbox",
   "screenshots.cap0": "Agent Inbox がすべてのプロジェクトの仕事を一か所に集約",
-  "screenshots.alt1": "最近のプロジェクト付き Pine ウェルカムウィンドウ",
-  "screenshots.cap1": "最近のプロジェクト付きウェルカムウィンドウ",
   "screenshots.alt2": "シンタックスハイライトとファイルツリーを備えた Pine コードエディタ",
   "screenshots.cap2": "シンタックスハイライトと Git ガター付きコードエディタ",
   "screenshots.alt3": "Pine 内蔵ターミナル",
@@ -111,5 +104,6 @@
   "meta.twitterTitle": "Pine — CLI エージェント向けネイティブ macOS エディタ",
   "meta.twitterDescription": "エージェントはターミナルに。コードは視界に。Pine が両者をつなぐ、CLI エージェント向けのネイティブ macOS エディタです。",
   "install.copy": "コピー",
-  "install.copied": "コピーしました"
+  "install.copied": "コピーしました",
+  "nav.language": "言語"
 }

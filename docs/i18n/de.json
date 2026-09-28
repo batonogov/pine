@@ -14,11 +14,6 @@
   "hero.gitAware": "LSP + Git-Kontext",
   "hero.download": "Pine herunterladen",
   "hero.github": "Auf GitHub ansehen",
-  "hero.installLabel": "Installation in 10 Sekunden",
-  "hero.alt": "Pine Editor Screenshot",
-  "hero.chipTabs": "Agentenaktivität",
-  "hero.chipTerminal": "Geteilte Terminal-Bereiche",
-  "hero.chipGit": "LSP- und Git-Diagnosen",
   "mini.nativeKicker": "Nativ",
   "mini.nativeTitle": "SwiftUI + AppKit",
   "mini.nativeDesc": "Wie eine echte Mac-App gebaut, nicht ein Browser, der eine vorspielt.",
@@ -76,8 +71,6 @@
   "screenshots.title": "Die ganze Aufgabe sehen, nicht getrennte Werkzeuge.",
   "screenshots.alt0": "Pine Agenten-Posteingang mit Aufgaben aus mehreren Projekten",
   "screenshots.cap0": "Der Agenten-Posteingang bündelt Arbeit aus allen Projekten",
-  "screenshots.alt1": "Pine-Willkommensfenster mit letzten Projekten",
-  "screenshots.cap1": "Willkommensfenster mit letzten Projekten",
   "screenshots.alt2": "Pine-Code-Editor mit Syntaxhervorhebung und Dateibaum",
   "screenshots.cap2": "Code-Editor mit Syntaxhervorhebung und Git-Gutter",
   "screenshots.alt3": "Eingebautes Pine-Terminal",
@@ -111,5 +104,6 @@
   "meta.twitterTitle": "Pine — Nativer macOS-Code-Editor für CLI-Agenten",
   "meta.twitterDescription": "Der Agent bleibt im Terminal. Der Code bleibt im Blick. Pine bringt beides in einem nativen macOS-Editor für CLI-Agenten zusammen.",
   "install.copy": "Kopieren",
-  "install.copied": "Kopiert"
+  "install.copied": "Kopiert",
+  "nav.language": "Sprache"
 }

@@ -472,7 +472,6 @@ img {
     display: grid;
     gap: 8px;
     margin-top: 30px;
-    list-style: none;
 }
 
 .workflow-step {
