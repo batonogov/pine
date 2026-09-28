@@ -46,7 +46,7 @@ struct AgentModelsTests {
         #expect(AgentType.goose.cliNames == ["goose"])
         #expect(AgentType.qwenCode.cliNames == ["qwen"])
         #expect(AgentType.crush.cliNames == ["crush"])
-        #expect(AgentType.kimiCode.cliNames == ["kimi"])
+        #expect(AgentType.kimiCode.cliNames == ["kimi", "kimi-code"])
         // Generic agents have no known CLI names.
         #expect(AgentType.generic(name: "Custom").cliNames.isEmpty)
     }
@@ -112,6 +112,8 @@ struct AgentModelsTests {
         #expect(AgentType.resolve(fromProcessName: "qwen") == .qwenCode)
         #expect(AgentType.resolve(fromProcessName: "crush") == .crush)
         #expect(AgentType.resolve(fromProcessName: "kimi") == .kimiCode)
+        // The Kimi Code CLI rewrites its process title to "kimi-code".
+        #expect(AgentType.resolve(fromProcessName: "kimi-code") == .kimiCode)
     }
 
     @Test func pi_isDistinctFromGenericNamedPi() {
@@ -133,6 +135,7 @@ struct AgentModelsTests {
         #expect(AgentType.resolve(fromProcessName: "QWEN") == .qwenCode)
         #expect(AgentType.resolve(fromProcessName: "CRUSH") == .crush)
         #expect(AgentType.resolve(fromProcessName: "KIMI") == .kimiCode)
+        #expect(AgentType.resolve(fromProcessName: "KIMI-CODE") == .kimiCode)
     }
 
     @Test func resolve_trimsWhitespace() {
