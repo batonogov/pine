@@ -459,6 +459,10 @@ final class ProjectManager {
         paneManager.activeEditorTabManager ?? primaryTabManager
     }
 
+    /// URL of the sidebar's selected row, mirrored from `ContentView` so the
+    /// File ▸ Sidebar menu commands can gate on a selection (#1537).
+    var sidebarSelectionURL: URL?
+
     /// Collects all tabs from every pane (for session save, dirty-tab checks, etc.).
     var allTabs: [EditorTab] {
         paneManager.tabManagers.values.flatMap(\.tabs)
@@ -1412,6 +1416,129 @@ final class ProjectManager {
                 await self.workspace.gitProvider.refreshAsync()
                 NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
             }
+        }
+    }
+
+    // MARK: - Menu-triggered tab commands (#1537)
+
+    /// The focused editor pane's identity and tab manager, or `nil` when a
+    /// terminal (or nothing) is focused. Menu commands must not fall back to
+    /// another editor pane the way ``activeTabManager`` deliberately does —
+    /// the same focus rule ``NativeMenuCommandState`` applies.
+    private var focusedEditorPane: (paneID: PaneID, tabManager: TabManager)? {
+        let paneID = paneManager.activePaneID
+        guard paneManager.root.content(for: paneID) == .editor,
+              let tabManager = paneManager.tabManager(for: paneID) else {
+            return nil
+        }
+        return (paneID, tabManager)
+    }
+
+    /// Window ▸ Pin/Unpin Tab for the focused editor pane's active tab.
+    func togglePinOnActiveEditorTab() {
+        guard let focused = focusedEditorPane,
+              let tabID = focused.tabManager.activeTabID else { return }
+        // Deferred like the native close commands: pinning mutates
+        // `@Observable` tab state and must not run inside the SwiftUI
+        // `ButtonAction` callstack (#1058).
+        NativeCommandDelivery.deferToNextMainRunLoop { [weak tabManager = focused.tabManager] in
+            tabManager?.togglePin(id: tabID)
+        }
+    }
+
+    /// Close Other Tabs with the same unsaved-changes protection the tab
+    /// context menu uses. Shared by the Window menu and `PaneLeafView`.
+    func requestCloseOtherTabs(keeping tabID: UUID, in tabManager: TabManager) {
+        let context = DialogPresenter.forProject(self)
+        Task { @MainActor in
+            _ = await TabCloseHelper.closeOtherTabs(
+                keeping: tabID,
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context,
+                saveTab: bulkCloseTabSaver(for: tabManager, context: context)
+            )
+        }
+    }
+
+    /// Close Tabs to the Right, shared by the Window menu and `PaneLeafView`.
+    func requestCloseTabsToTheRight(of tabID: UUID, in tabManager: TabManager) {
+        let context = DialogPresenter.forProject(self)
+        Task { @MainActor in
+            _ = await TabCloseHelper.closeTabsToTheRight(
+                of: tabID,
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context,
+                saveTab: bulkCloseTabSaver(for: tabManager, context: context)
+            )
+        }
+    }
+
+    /// Close All Tabs, shared by the Window menu and `PaneLeafView`. An
+    /// emptied pane is removed, matching the context-menu behavior.
+    func requestCloseAllTabs(in tabManager: TabManager, paneID: PaneID) {
+        let context = DialogPresenter.forProject(self)
+        Task { @MainActor in
+            let didClose = await TabCloseHelper.closeAllTabs(
+                in: tabManager,
+                gitProvider: workspace.gitProvider,
+                context: context,
+                saveTab: bulkCloseTabSaver(for: tabManager, context: context)
+            )
+            if didClose && tabManager.tabs.isEmpty {
+                paneManager.removePane(paneID)
+            }
+        }
+    }
+
+    /// Window ▸ Close Other Tabs for the focused editor pane's active tab.
+    func closeOtherTabsOnActiveEditorPane() {
+        guard let focused = focusedEditorPane,
+              let tabID = focused.tabManager.activeTabID else { return }
+        requestCloseOtherTabs(keeping: tabID, in: focused.tabManager)
+    }
+
+    /// Window ▸ Close Tabs to the Right for the focused editor pane.
+    func closeTabsToTheRightOnActiveEditorPane() {
+        guard let focused = focusedEditorPane,
+              let tabID = focused.tabManager.activeTabID else { return }
+        requestCloseTabsToTheRight(of: tabID, in: focused.tabManager)
+    }
+
+    /// Window ▸ Close All Tabs for the focused editor pane.
+    func closeAllTabsOnActiveEditorPane() {
+        guard let focused = focusedEditorPane else { return }
+        requestCloseAllTabs(in: focused.tabManager, paneID: focused.paneID)
+    }
+
+    /// Window ▸ Reveal in Sidebar for the focused editor pane's active tab.
+    func revealActiveTabInSidebar() {
+        guard let focused = focusedEditorPane,
+              let fileURL = focused.tabManager.activeTab?.fileURL else { return }
+        NotificationCenter.default.post(
+            name: .revealInSidebar,
+            object: self,
+            userInfo: ["url": fileURL]
+        )
+    }
+
+    private func bulkCloseTabSaver(
+        for tabManager: TabManager,
+        context: DialogPresentationContext
+    ) -> @MainActor (Int) async -> Bool {
+        { [weak self, weak tabManager] index in
+            guard let self,
+                  let tabManager,
+                  tabManager.tabs.indices.contains(index) else {
+                return false
+            }
+            return await self.saveTab(
+                tabID: tabManager.tabs[index].id,
+                in: tabManager,
+                forceSaveAs: false,
+                context: context
+            )
         }
     }
 

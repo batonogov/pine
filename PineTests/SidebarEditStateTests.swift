@@ -118,4 +118,83 @@ struct SidebarEditStateTests {
         #expect(scrollID == editState.renamingURL)
         #expect(FileManager.default.fileExists(atPath: scrollID.path))
     }
+
+    // MARK: - Reveal intent (#1537)
+
+    @Test("createNewItem and duplicateItem reveal intentionally")
+    @MainActor
+    func createAndDuplicateRevealIntentionally() throws {
+        let tmpDir = try makeTempDirectory()
+        defer { cleanup(tmpDir) }
+
+        let workspace = WorkspaceManager()
+        workspace.loadDirectory(url: tmpDir)
+
+        let editState = SidebarEditState()
+        #expect(editState.scrollRevealIntent == .intentional)
+        editState.createNewItem(in: tmpDir, isDirectory: true, workspace: workspace)
+        #expect(editState.scrollRevealIntent == .intentional)
+
+        let sourceURL = tmpDir.appendingPathComponent("source.txt")
+        FileManager.default.createFile(atPath: sourceURL.path, contents: Data("hello".utf8))
+        editState.duplicateItem(
+            at: sourceURL,
+            isDirectory: false,
+            workspace: workspace,
+            tabManager: TabManager()
+        )
+        #expect(editState.scrollRevealIntent == .intentional)
+    }
+
+    @Test("requestScroll pairs the target with its intent")
+    @MainActor
+    func requestScrollPairsIntent() {
+        let editState = SidebarEditState()
+        let url = URL(fileURLWithPath: "/tmp/renamed.swift")
+
+        editState.requestScroll(to: url, intent: .minimal)
+
+        #expect(editState.scrollToNodeID == url)
+        #expect(editState.scrollRevealIntent == .minimal)
+    }
+
+    // MARK: - deleteItem (#1537)
+
+    @Test("deleteItem trashes a file inside the project root")
+    @MainActor
+    func deleteItemTrashesFile() throws {
+        let tmpDir = try makeTempDirectory()
+        defer { cleanup(tmpDir) }
+
+        let workspace = WorkspaceManager()
+        workspace.loadDirectory(url: tmpDir)
+
+        let fileURL = tmpDir.appendingPathComponent("doomed.txt")
+        FileManager.default.createFile(atPath: fileURL.path, contents: Data("bye".utf8))
+
+        SidebarEditState().deleteItem(at: fileURL, workspace: workspace)
+
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    @Test("deleteItem refuses paths outside the project root")
+    @MainActor
+    func deleteItemRefusesOutsideRoot() throws {
+        let tmpDir = try makeTempDirectory()
+        let outsideDir = try makeTempDirectory()
+        defer {
+            cleanup(tmpDir)
+            cleanup(outsideDir)
+        }
+
+        let workspace = WorkspaceManager()
+        workspace.loadDirectory(url: tmpDir)
+
+        let outsideFile = outsideDir.appendingPathComponent("safe.txt")
+        FileManager.default.createFile(atPath: outsideFile.path, contents: Data("keep".utf8))
+
+        SidebarEditState().deleteItem(at: outsideFile, workspace: workspace)
+
+        #expect(FileManager.default.fileExists(atPath: outsideFile.path))
+    }
 }
