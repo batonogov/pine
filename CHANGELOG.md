@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.9.2](https://github.com/batonogov/pine/compare/v2.9.1...v2.9.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **accessibility:** problems severity, adaptive materials, identifier hygiene ([#1634](https://github.com/batonogov/pine/issues/1634)) ([90775be](https://github.com/batonogov/pine/commit/90775bec0a5f10648a1a5e81ee2cab86bd679854)), closes [#1533](https://github.com/batonogov/pine/issues/1533)
+* **agent:** let a manually deleted agent worktree be reclaimed by pruning its git registration ([#1603](https://github.com/batonogov/pine/issues/1603)) ([#1631](https://github.com/batonogov/pine/issues/1631)) ([9dda05d](https://github.com/batonogov/pine/commit/9dda05d04e427aa325c44540b1a69537016f39aa))
+* **agent:** share one admission rebuild across concurrent stale revalidations ([#1635](https://github.com/batonogov/pine/issues/1635)) ([15ad936](https://github.com/batonogov/pine/commit/15ad936c30e6213ad6349711c0ed7659058c11be)), closes [#1518](https://github.com/batonogov/pine/issues/1518)
+* **editor:** offer Find Next/Previous in the palette for terminal searches ([#1627](https://github.com/batonogov/pine/issues/1627)) ([62db4c6](https://github.com/batonogov/pine/commit/62db4c672ba0c1a602d3a22eafb62abb0ca38488))
+* **ux:** keyboard operability and scroll policy across list surfaces ([#1636](https://github.com/batonogov/pine/issues/1636)) ([71f9b77](https://github.com/batonogov/pine/commit/71f9b77b0f615ed0f886f1302de74fdc4aec45c0))
+
+
+### Documentation
+
+* redesign landing page with dark technical theme and dark screenshots ([#1630](https://github.com/batonogov/pine/issues/1630)) ([7e2bc65](https://github.com/batonogov/pine/commit/7e2bc65e267d62227e2d47d7918b457af3d8ec70))
+
 ## [2.9.1](https://github.com/batonogov/pine/compare/v2.9.0...v2.9.1) (2026-09-28)
 
 
