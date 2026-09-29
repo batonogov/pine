@@ -406,6 +406,22 @@ final class LifecycleResourceSoakTests: XCTestCase {
         }
 
         let initial = SoakResourceSampler.snapshot(startedAt: startedAt)
+        // One shared host window for every terminal cycle: a throwaway
+        // NSWindow that is never closed stays registered with
+        // NSNotificationCenter (tracking-area and _commonAwake observers),
+        // which retains the whole window tree — roughly 100 KiB per cycle.
+        // Production windows are owned and closed by SwiftUI/AppKit, so
+        // reusing one host matches real lifecycle behavior.
+        let terminalWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            terminalWindow.contentView = nil
+            terminalWindow.close()
+        }
         for rendererMode in [
             SoakRendererMode.coreGraphics,
             SoakRendererMode.automatic,
@@ -415,7 +431,8 @@ final class LifecycleResourceSoakTests: XCTestCase {
                     selector: generator.next(),
                     projectURL: fixtureRoot,
                     defaults: defaults,
-                    rendererMode: rendererMode
+                    rendererMode: rendererMode,
+                    terminalWindow: terminalWindow
                 )
             } catch {
                 report.hardFailures.append(
@@ -455,7 +472,8 @@ final class LifecycleResourceSoakTests: XCTestCase {
                     selector: selector,
                     projectURL: fixtureRoot,
                     defaults: defaults,
-                    rendererMode: rendererMode
+                    rendererMode: rendererMode,
+                    terminalWindow: terminalWindow
                 )
             } catch {
                 report.hardFailures.append("cycle \(cycle): \(error)")
@@ -536,7 +554,8 @@ final class LifecycleResourceSoakTests: XCTestCase {
         selector: UInt64,
         projectURL: URL,
         defaults: UserDefaults,
-        rendererMode: SoakRendererMode = .coreGraphics
+        rendererMode: SoakRendererMode = .coreGraphics,
+        terminalWindow: NSWindow
     ) async throws -> SoakRendererObservation {
         try await exerciseProjectLifecycle(
             selector: selector,
@@ -545,7 +564,8 @@ final class LifecycleResourceSoakTests: XCTestCase {
         )
         let renderer = try await exerciseTerminalProcessTree(
             projectURL: projectURL,
-            rendererMode: rendererMode
+            rendererMode: rendererMode,
+            terminalWindow: terminalWindow
         )
         try await exerciseLSPCrashAndRestart(projectURL: projectURL)
         return renderer
@@ -640,7 +660,8 @@ final class LifecycleResourceSoakTests: XCTestCase {
 
     private func exerciseTerminalProcessTree(
         projectURL: URL,
-        rendererMode: SoakRendererMode
+        rendererMode: SoakRendererMode,
+        terminalWindow: NSWindow
     ) async throws -> SoakRendererObservation {
         let signpost = PerformanceSignposts.beginInterval(
             "lifecycle.soak.terminal"
@@ -670,14 +691,8 @@ final class LifecycleResourceSoakTests: XCTestCase {
             throw LifecycleSoakError.invariant("terminal renderer bridge unavailable")
         }
         terminalView.metalRendererDisabledForTesting = rendererMode == .coreGraphics
-        let window = NSWindow(
-            contentRect: tab.terminalView.frame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = terminalView
-        defer { window.contentView = nil }
+        terminalWindow.contentView = terminalView
+        defer { terminalWindow.contentView = nil }
         if rendererMode == .coreGraphics, terminalView.isUsingMetalRenderer {
             throw LifecycleSoakError.invariant("CoreGraphics cycle enabled Metal")
         }
