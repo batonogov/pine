@@ -7,7 +7,8 @@
 //  project close dropped from the record while their directories stayed on
 //  disk, rebuilt by discovery (#1563) — with the branch and the working-tree
 //  state of each, and offers the two things the app could previously only do
-//  to itself: merge one back, or delete it.
+//  to itself: merge one back, or delete it. A row whose directory was deleted
+//  by hand instead offers to prune git's registration of it (#1603).
 //
 
 import AppKit
@@ -40,9 +41,13 @@ struct AgentWorktreeRowPresentation: Identifiable, Equatable {
     var canIntegrate: Bool {
         switch status {
         case .clean: return true
-        case .checking, .dirty, .unavailable: return false
+        case .checking, .dirty, .unavailable, .missing: return false
         }
     }
+
+    /// A row whose directory is already gone is reclaimed by pruning git's
+    /// registration (#1603), not by deleting a tree that no longer exists.
+    var offersPrune: Bool { status == .missing }
 }
 
 struct AgentWorktreesView: View {
@@ -70,7 +75,9 @@ struct AgentWorktreesView: View {
             await model.refresh(await session.worktreeManagerListing())
         }
         .alert(
-            Strings.agentWorktreesRemoveTitle,
+            model?.removalPrompt?.directoryMissing == true
+                ? Strings.agentWorktreesPruneTitle
+                : Strings.agentWorktreesRemoveTitle,
             isPresented: removalBinding,
             presenting: model?.removalPrompt
         ) { prompt in
@@ -78,7 +85,9 @@ struct AgentWorktreesView: View {
                 model?.cancelRemoval()
             }
             Button(
-                Strings.agentWorktreesRemoveConfirm,
+                prompt.directoryMissing
+                    ? Strings.agentWorktreesPruneConfirm
+                    : Strings.agentWorktreesRemoveConfirm,
                 role: .destructive
             ) {
                 Task { @MainActor in await model?.confirmRemoval() }
@@ -86,10 +95,12 @@ struct AgentWorktreesView: View {
             .accessibilityIdentifier(
                 AccessibilityID.agentWorktreesConfirmRemove
             )
-            Button(Strings.contextRevealInFinder) {
-                NSWorkspace.shared.activateFileViewerSelecting(
-                    [prompt.worktree.worktreeRoot]
-                )
+            if !prompt.directoryMissing {
+                Button(Strings.contextRevealInFinder) {
+                    NSWorkspace.shared.activateFileViewerSelecting(
+                        [prompt.worktree.worktreeRoot]
+                    )
+                }
             }
         } message: { prompt in
             Text(verbatim: AgentWorktreeManagerModel.removalMessage(
@@ -235,7 +246,9 @@ struct AgentWorktreesView: View {
                     await model?.prepareRemoval(worktree)
                 }
             } label: {
-                Text(Strings.agentWorktreesRemove)
+                Text(presentation.offersPrune
+                    ? Strings.agentWorktreesPrune
+                    : Strings.agentWorktreesRemove)
             }
             .controlSize(.small)
             .disabled(model?.isBusy == true)
@@ -278,6 +291,14 @@ struct AgentWorktreesView: View {
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.secondary)
+        case .missing:
+            Label {
+                Text(Strings.agentWorktreesStatusMissing)
+            } icon: {
+                Image(systemName: "questionmark.folder.fill")
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -314,7 +335,7 @@ struct AgentWorktreesView: View {
         _ message: AgentWorktreeManagerMessage
     ) -> String {
         switch message {
-        case .removed, .integrated: return "checkmark.circle.fill"
+        case .removed, .pruned, .integrated: return "checkmark.circle.fill"
         case .failure: return "exclamationmark.triangle.fill"
         }
     }
@@ -323,7 +344,7 @@ struct AgentWorktreesView: View {
         _ message: AgentWorktreeManagerMessage
     ) -> Color {
         switch message {
-        case .removed, .integrated: return .green
+        case .removed, .pruned, .integrated: return .green
         case .failure: return .orange
         }
     }

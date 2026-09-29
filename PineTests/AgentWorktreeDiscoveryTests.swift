@@ -444,6 +444,71 @@ struct AgentWorktreeDiscoveryTests {
         )
     }
 
+    @Test("A worktree deleted by hand offers a prune and disappears after it")
+    @MainActor
+    func prunableRowIsReclaimedByPrune() async throws {
+        let fixture = try DiscoveryFixture()
+        defer { fixture.cleanup() }
+        let service = AgentWorktreeService()
+        _ = try await fixture.createWorktree(
+            service, taskID: id(0xD1), branch: "pine/agent/codex/aaaabbbb"
+        )
+        let deleted = try await fixture.createWorktree(
+            service, taskID: id(0xD2), branch: "pine/agent/codex/ccccdddd"
+        )
+        // The user reclaims the disk by hand; git keeps the registration and
+        // reports the entry as prunable. Before this fix the row sat
+        // unavailable forever with Remove refusing it (#1603).
+        try FileManager.default.removeItem(at: deleted.worktreeRoot)
+
+        let discovered = await service.discoverManagedWorktrees(
+            repositoryRoot: fixture.repository,
+            managedRoot: fixture.managedRoot
+        )
+        #expect(
+            Set(discovered.map(\.taskID)) == Set([id(0xD1), id(0xD2)])
+        )
+        let rebuilt = try #require(
+            discovered.first { $0.taskID == id(0xD2) }
+        )
+        // The branch name still comes from git; no proof can be claimed for
+        // a directory that is gone.
+        #expect(rebuilt.branchName == deleted.branchName)
+        #expect(rebuilt.repositoryProof == nil)
+
+        let model = AgentWorktreeManagerModel(service: service)
+        await model.refresh(discovered)
+        #expect(
+            model.rows.first { $0.worktree.taskID == id(0xD1) }?.status
+                == .clean
+        )
+        #expect(
+            model.rows.first { $0.worktree.taskID == id(0xD2) }?.status
+                == .missing
+        )
+
+        // The row offers the prune, the alert's answer reclaims the record
+        // through the real service, and the kept worktree is untouched.
+        await model.prepareRemoval(rebuilt)
+        #expect(model.removalPrompt?.directoryMissing == true)
+        await model.confirmRemoval()
+
+        #expect(model.rows.map { $0.worktree.taskID } == [id(0xD1)])
+        #expect(model.message == .pruned(branch: deleted.branchName))
+
+        // The pruned entry is gone from discovery too; its branch stays.
+        let after = await service.discoverManagedWorktrees(
+            repositoryRoot: fixture.repository,
+            managedRoot: fixture.managedRoot
+        )
+        #expect(after.map(\.taskID) == [id(0xD1)])
+        #expect(
+            try fixture.git([
+                "branch", "--list", "pine/agent/codex/ccccdddd",
+            ]).contains("pine/agent/codex/ccccdddd")
+        )
+    }
+
     // MARK: - Session listing
 
     @Test("The manager listing merges the live record with disk discovery")
