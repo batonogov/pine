@@ -91,6 +91,12 @@ nonisolated enum MenuIcons {
     static let clearMenu = "eraser"
     static let closeTab = "xmark"
     static let closeWindow = "xmark.rectangle"
+    /// File ▸ Sidebar submenu and Window ▸ Split commands (#1537).
+    static let sidebarOperations = "sidebar.left"
+    static let splitRight = "rectangle.split.2x1"
+    static let splitDown = "rectangle.split.1x2"
+    static let pinTab = "pin"
+    static let unpinTab = "pin.slash"
 
     // MARK: - Problems panel (#1236)
     static let problems = "exclamationmark.bubble"

@@ -651,6 +651,51 @@ struct SidebarTreeNavigationTests {
         )
     }
 
+    @Test("Rename reveal is minimal at any Reduce Motion setting (#1537)")
+    func renameRevealIntentPolicy() {
+        let id = URL(fileURLWithPath: "/tmp/renamed.swift")
+        for reduceMotion in [false, true] {
+            #expect(
+                SidebarRevealIntent.minimal.scrollRequest(
+                    for: id,
+                    reduceMotion: reduceMotion
+                ) == .keyboardSelection(id),
+                "A rename commits on a row that never left the viewport"
+            )
+        }
+        #expect(
+            SidebarRevealIntent.intentional.scrollRequest(
+                for: id,
+                reduceMotion: false
+            ) == SidebarScrollRequest(
+                id: id,
+                alignment: .center,
+                motion: .animated
+            ),
+            "Create/duplicate keeps the intentional centered reveal"
+        )
+    }
+
+    @Test("Page movement follows the rendered row height, not the minimum metric (#1537)")
+    func pageMovementUsesRenderedRowHeight() throws {
+        let names = (0..<40).map { String(format: "%02d.swift", $0) }
+        let fixture = try flatFixture(names: names)
+        defer { removeTree(fixture.root) }
+        let navigation = SidebarTreeNavigation()
+        navigation.viewportHeight = 260
+        navigation.rowHeight = 26
+
+        #expect(navigation.estimatedPageSize == 10)
+        #expect(navigation.pageDown(
+            current: fixture.rows[0].node,
+            rows: fixture.rows
+        )?.name == "10.swift")
+        // With the minimum metric (20 pt) the same viewport would step 13
+        // rows — past the 10 rows actually on screen.
+        navigation.rowHeight = Double(SidebarRowMetrics.minRowHeight)
+        #expect(navigation.estimatedPageSize == 13)
+    }
+
     @Test("Return and Tab accept only their exact modifier contracts")
     func exactModifierPolicies() {
         #expect(SidebarReturnAction.accepts(modifiers: []))

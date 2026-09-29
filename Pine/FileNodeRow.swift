@@ -313,8 +313,11 @@ struct FileNodeRow: View {
             }
             // Preserve sidebar selection across the FileNode replacement
             // performed by the refresh below. SidebarView resolves this URL
-            // to the fresh node before scrolling it into view.
-            editState.scrollToNodeID = newURL
+            // to the fresh node before scrolling it into view. A rename
+            // commits on a row that never left the viewport, so the reveal
+            // is minimal — `.center` is reserved for create/duplicate
+            // (#1537).
+            editState.requestScroll(to: newURL, intent: .minimal)
             editState.clear()
             workspace.refreshFileTree()
             NotificationCenter.default.post(
@@ -353,33 +356,11 @@ struct FileNodeRow: View {
     }
 
     private func deleteItem() {
-        let deletedURL = node.url
-
-        if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(deletedURL, projectRoot: root) {
-            SidebarEditState.showFileError(
-                Strings.operationOutsideProject,
-                context: DialogPresenter.forProject(projectManager)
-            )
-            return
-        }
-
-        do {
-            if let undoManager {
-                try FileOperationUndoManager.deleteItem(at: deletedURL, undoManager: undoManager)
-            } else {
-                try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
-            }
-            workspace.refreshFileTree()
-            NotificationCenter.default.post(
-                name: .fileDeleted,
-                object: nil,
-                userInfo: ["url": deletedURL]
-            )
-        } catch {
-            SidebarEditState.showFileError(
-                error.localizedDescription,
-                context: DialogPresenter.forProject(projectManager)
-            )
-        }
+        editState.deleteItem(
+            at: node.url,
+            workspace: workspace,
+            undoManager: undoManager,
+            context: DialogPresenter.forProject(projectManager)
+        )
     }
 }

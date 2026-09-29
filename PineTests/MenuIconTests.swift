@@ -36,6 +36,11 @@ struct MenuIconTests {
         (MenuIcons.nextChange, "Next Change"),
         (MenuIcons.previousChange, "Previous Change"),
         (MenuIcons.switchBranch, "Switch Branch"),
+        (MenuIcons.sidebarOperations, "Sidebar (File menu submenu)"),
+        (MenuIcons.splitRight, "Split Right"),
+        (MenuIcons.splitDown, "Split Down"),
+        (MenuIcons.pinTab, "Pin Tab"),
+        (MenuIcons.unpinTab, "Unpin Tab"),
     ])
     func mainMenuIconExists(_ symbol: String, _ menuItem: String) {
         #expect(

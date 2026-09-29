@@ -378,6 +378,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .revealInSidebar)) { notification in
             handleRevealInSidebar(notification)
         }
+        .onChange(of: selectedNode, initial: true) { _, node in
+            // Mirror the sidebar selection onto the project so the
+            // File ▸ Sidebar menu commands can gate on it (#1537).
+            projectManager.sidebarSelectionURL = node?.url
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sendTextToTerminal)) { notification in
             handleSendTextToTerminal(notification)
         }
