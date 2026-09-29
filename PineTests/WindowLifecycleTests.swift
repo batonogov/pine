@@ -23,6 +23,12 @@ struct WindowLifecycleTests {
         )
     }
 
+    /// Gives the deferred asynchronous close a few turns before teardown, or
+    /// before asserting that something did *not* happen (a committed
+    /// termination must not reply twice). A short settle there can only make
+    /// the test weaker, never flaky (#1543). Waiting *for* an event must use
+    /// `waitUntilMainActor` instead: a yield budget does not make a
+    /// continuation parked on another executor run.
     private func settle() async {
         for _ in 0..<8 {
             await Task.yield()
@@ -1773,7 +1779,13 @@ struct WindowLifecycleTests {
 
         installer.release()
         #expect(await installer.waitUntilReturned())
-        await settle()
+
+        // The post-install reconciliation lands asynchronously; a yield
+        // budget can lapse before it does, and the #require below would then
+        // fail on the very state the settle was waiting for (#1543).
+        #expect(await waitUntilMainActor {
+            tabs.tabs.contains(where: { $0.fileURL == file })
+        })
 
         let reconciledTab = try #require(tabs.tabs.first(where: {
             $0.fileURL == file
@@ -2213,7 +2225,9 @@ struct WindowLifecycleTests {
             outcome: makeTaskOutcome(id: "second-detached"),
             cancelled: true
         )
-        await settle()
+        #expect(await waitUntilMainActor {
+            !registry.hasOutstandingUserTaskExecution
+        })
         #expect(registry.destroyAllProjects())
     }
 
@@ -2412,10 +2426,7 @@ struct WindowLifecycleTests {
             replies.append($0)
         }
         #expect(initialReply == .terminateLater)
-        for _ in 0..<50 {
-            if !replies.isEmpty { break }
-            await Task.yield()
-        }
+        #expect(await waitUntilMainActor { !replies.isEmpty })
 
         #expect(replies == [true])
         #expect(delegate.isTerminating)

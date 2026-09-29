@@ -12,6 +12,13 @@ import Testing
 @Suite("Window dialog coordinator")
 @MainActor
 struct DialogPresentationCoordinatorTests {
+    /// Gives already-scheduled work a few turns before asserting that
+    /// something did *not* happen (a queued request stayed blocked, a late
+    /// completion did not resume a request twice). There is no positive
+    /// signal to wait for at those sites, and a short settle can only make
+    /// the test weaker, never flaky (#1543). Waiting *for* an event must use
+    /// `waitUntilMainActor` instead: a yield budget does not make a
+    /// continuation parked on another executor run.
     private func settle() async {
         for _ in 0..<8 {
             await Task.yield()
@@ -30,7 +37,7 @@ struct DialogPresentationCoordinatorTests {
     }
 
     @Test("requests for one window are presented FIFO, never concurrently")
-    func serializesRequestsPerWindow() async {
+    func serializesRequestsPerWindow() async throws {
         let window = NSWindow()
         let coordinator = WindowDialogCoordinator(ownerWindow: window)
         var starts: [Int] = []
@@ -45,7 +52,7 @@ struct DialogPresentationCoordinatorTests {
                 cancel: { _ in }
             )
         }
-        await settle()
+        try #require(await waitUntilMainActor { starts == [1] })
 
         let second = Task {
             await coordinator.present(
@@ -56,18 +63,21 @@ struct DialogPresentationCoordinatorTests {
                 cancel: { _ in }
             )
         }
-        await settle()
+        try #require(await waitUntilMainActor {
+            coordinator.pendingRequestCount == 2
+        })
 
         #expect(starts == [1])
         #expect(coordinator.pendingRequestCount == 2)
 
         completions[0](.alertFirstButtonReturn)
-        await settle()
-        #expect(starts == [1, 2])
+        #expect(await waitUntilMainActor { starts == [1, 2] })
         #expect(coordinator.pendingRequestCount == 1)
 
         completions[1](.alertSecondButtonReturn)
-        await settle()
+        #expect(await waitUntilMainActor {
+            coordinator.pendingRequestCount == 0
+        })
         #expect(await first.value == .alertFirstButtonReturn)
         #expect(await second.value == .alertSecondButtonReturn)
         #expect(coordinator.pendingRequestCount == 0)
@@ -94,7 +104,7 @@ struct DialogPresentationCoordinatorTests {
                 cancel: { _ in }
             )
         }
-        await settle()
+        #expect(await waitUntilMainActor { startCount == 1 })
 
         let duplicate = await coordinator.present(
             deduplicationKey: key,
@@ -111,7 +121,9 @@ struct DialogPresentationCoordinatorTests {
 
         firstCompletion?(.alertSecondButtonReturn)
         #expect(await first.value == .alertSecondButtonReturn)
-        await settle()
+        #expect(await waitUntilMainActor {
+            coordinator.pendingRequestCount == 0
+        })
 
         let next = await coordinator.present(
             deduplicationKey: key,
@@ -154,7 +166,7 @@ struct DialogPresentationCoordinatorTests {
                 cancel: { _ in }
             )
         }
-        await settle()
+        #expect(await waitUntilMainActor { starts.count == 2 })
 
         #expect(Set(starts) == Set(["first", "second"]))
         #expect(firstCoordinator.pendingRequestCount == 1)
@@ -191,13 +203,10 @@ struct DialogPresentationCoordinatorTests {
         let secondResponse = Task {
             await secondAlert.runSheet(on: secondContext)
         }
-        for _ in 0..<50 {
-            if firstWindow.attachedSheet != nil,
-               secondWindow.attachedSheet != nil {
-                break
-            }
-            await Task.yield()
-        }
+        #expect(await waitUntilMainActor {
+            firstWindow.attachedSheet != nil
+                && secondWindow.attachedSheet != nil
+        })
 
         #expect(firstWindow.attachedSheet === firstAlert.window)
         #expect(secondWindow.attachedSheet === secondAlert.window)
@@ -253,11 +262,7 @@ struct DialogPresentationCoordinatorTests {
         #expect(startCount == 0)
 
         owner.endSheet(frameworkSheet, returnCode: .cancel)
-        for _ in 0..<50 {
-            if startCount == 1 { break }
-            await Task.yield()
-        }
-        #expect(startCount == 1)
+        #expect(await waitUntilMainActor { startCount == 1 })
 
         if let completion {
             completion(.alertFirstButtonReturn)
@@ -281,18 +286,19 @@ struct DialogPresentationCoordinatorTests {
                 cancel: { _ in cancelCount += 1 }
             )
         }
-        await settle()
+        #expect(await waitUntilMainActor { activeCompletion != nil })
         let queued = Task {
             await coordinator.present(
                 start: { _, _ in queuedStarted = true },
                 cancel: { _ in cancelCount += 1 }
             )
         }
-        await settle()
+        #expect(await waitUntilMainActor {
+            coordinator.pendingRequestCount == 2
+        })
 
         coordinator.ownerDidClose()
         coordinator.ownerDidClose()
-        await settle()
 
         #expect(await active.value == .abort)
         #expect(await queued.value == .abort)
@@ -322,11 +328,12 @@ struct DialogPresentationCoordinatorTests {
                 cancel: { _ in cancelCount += 1 }
             )
         }
-        await settle()
+        #expect(await waitUntilMainActor { lateCompletion != nil })
         request.cancel()
-        await settle()
 
-        let didCancelRequest = coordinator.pendingRequestCount == 0
+        let didCancelRequest = await waitUntilMainActor {
+            coordinator.pendingRequestCount == 0
+        }
         #expect(didCancelRequest)
         #expect(!coordinator.isOwnerClosed)
         if !didCancelRequest {
@@ -358,13 +365,15 @@ struct DialogPresentationCoordinatorTests {
                 cancel: { _ in cancelCount += 1 }
             )
         }
-        await settle()
+        #expect(await waitUntilMainActor {
+            coordinator.pendingRequestCount == 1
+        })
 
         notificationCenter.post(
             name: NSWindow.willCloseNotification,
             object: window
         )
-        await settle()
+        #expect(await waitUntilMainActor { cancelCount == 1 })
 
         #expect(await request.value == .abort)
         #expect(cancelCount == 1)
@@ -536,7 +545,7 @@ struct DialogPresentationCoordinatorTests {
                 }
             )
         }
-        await settle()
+        #expect(await waitUntilMainActor { activeCompletion != nil })
         let queued = Task {
             await firstContext.present(
                 start: { _, _ in
@@ -545,13 +554,14 @@ struct DialogPresentationCoordinatorTests {
                 cancel: { _ in }
             )
         }
-        await settle()
+        #expect(await waitUntilMainActor {
+            DialogPresenter.coordinator(for: window).pendingRequestCount == 2
+        })
 
         let secondContext = DialogPresenter.register(
             window: window,
             projectManager: secondProject
         )
-        await settle()
 
         #expect(await active.value == .abort)
         #expect(await queued.value == .abort)
@@ -571,7 +581,7 @@ struct DialogPresentationCoordinatorTests {
                 cancel: { _ in }
             )
         }
-        await settle()
+        #expect(await waitUntilMainActor { secondCompletion != nil })
         if let secondCompletion {
             secondCompletion(.alertFirstButtonReturn)
         } else {
@@ -634,15 +644,11 @@ struct DialogPresentationCoordinatorTests {
         project.enqueueDialogOperation {
             events.append("second")
         }
-        await settle()
+        #expect(await waitUntilMainActor { events == ["first-start"] })
 
-        #expect(events == ["first-start"])
         gateContinuation.yield()
         gateContinuation.finish()
-        for _ in 0..<50 {
-            if events.count == 3 { break }
-            await Task.yield()
-        }
+        #expect(await waitUntilMainActor { events.count == 3 })
 
         #expect(events == ["first-start", "first-end", "second"])
     }
@@ -696,12 +702,10 @@ struct DialogPresentationCoordinatorTests {
 
         // End the foreign sheet. NSWindow posts didEndSheet to .default, which
         // the coordinator does not observe here — only the watchdog re-checks.
+        // The watchdog runs on a wall-clock timer, so a yield budget races it
+        // (#1543); wait on the event with a real deadline instead.
         owner.endSheet(foreignSheet, returnCode: .cancel)
-        for _ in 0..<2000 {
-            if startCount == 1 { break }
-            await Task.yield()
-        }
-        #expect(startCount == 1)
+        #expect(await waitUntilMainActor { startCount == 1 })
 
         if let completion {
             completion(.alertFirstButtonReturn)
@@ -785,11 +789,7 @@ struct DialogPresentationCoordinatorTests {
         #expect(!started)
 
         owner.endSheet(foreignSheet, returnCode: .cancel)
-        for _ in 0..<100 {
-            if started { break }
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        #expect(started)
+        #expect(await waitUntilMainActor { started })
         if let completion {
             completion(.alertFirstButtonReturn)
         } else {
