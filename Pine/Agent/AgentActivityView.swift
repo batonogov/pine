@@ -253,7 +253,7 @@ struct AgentActivityView: View {
             list
         }
         .frame(width: panelWidth, height: 480)
-        .background(.adaptiveRegularMaterial)
+        .adaptiveMaterialBackground(.regularMaterial)
         .sheet(item: Binding(
             get: {
                 Self.detailSelection(id: detailRowID, rows: rows)
@@ -741,7 +741,7 @@ struct AgentActivityDetailView: View {
             actionsBar
         }
         .frame(width: 420, height: 460)
-        .background(.adaptiveRegularMaterial)
+        .adaptiveMaterialBackground(.regularMaterial)
     }
 
     // MARK: Header

@@ -465,7 +465,7 @@ struct EditorTabBar: View {
             }
         }
         .frame(height: LayoutMetrics.tabBarHeight)
-        .background(.adaptiveBar)
+        .adaptiveMaterialBackground(.bar)
         // `.contain` keeps each interactive child as a discrete accessibility
         // element with its own identifier — without this hint, SwiftUI on
         // macOS lets the parent PaneLeafView's `paneLeaf_<id>` identifier

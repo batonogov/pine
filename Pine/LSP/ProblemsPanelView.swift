@@ -239,7 +239,7 @@ struct ProblemsPanelChrome: View {
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.adaptiveRegularMaterial)
+        .adaptiveMaterialBackground(.regularMaterial)
         .accessibilityIdentifier(AccessibilityID.problemsPanel)
     }
 
@@ -302,7 +302,7 @@ struct ProblemsPanelChrome: View {
         }
         .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
         .frame(height: LayoutMetrics.problemsPanelHeaderHeight)
-        .background(.adaptiveBar)
+        .adaptiveMaterialBackground(.bar)
     }
 }
 

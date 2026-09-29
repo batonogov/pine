@@ -428,7 +428,7 @@ struct CommandOverlayWindow<Content: View>: NSViewRepresentable {
                 content
                     .background {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(.adaptiveRegularMaterial)
+                            .adaptiveMaterialFill(.regularMaterial)
                             .shadow(color: .black.opacity(0.2), radius: 24, y: 6)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

@@ -104,7 +104,7 @@ struct TerminalSearchBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(.adaptiveBar)
+        .adaptiveMaterialBackground(.bar)
         .overlay(alignment: .bottom) {
             Divider()
         }

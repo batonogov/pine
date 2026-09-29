@@ -202,8 +202,8 @@ struct GlobalTabSwitcherOverlay: View {
         }
         .padding(16)
         .frame(width: 380, height: 320)
-        .background(
-            .adaptiveRegularMaterial,
+        .adaptiveMaterialBackground(
+            .regularMaterial,
             in: RoundedRectangle(cornerRadius: 14, style: .continuous)
         )
         .overlay {
