@@ -2192,6 +2192,9 @@ enum Strings {
     static var commandPaletteRequiresProjectSwitching: String {
         String(localized: "commandPalette.unavailable.projectSwitching")
     }
+    static var commandPaletteRequiresFindStepTarget: String {
+        String(localized: "commandPalette.unavailable.fileOrTerminalSearch")
+    }
     static var commandPaletteNeedsFileAndTerminal: String {
         String(localized: "commandPalette.unavailable.activeFileAndTerminal")
     }

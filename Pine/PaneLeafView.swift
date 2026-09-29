@@ -147,6 +147,12 @@ struct PaneLeafView: View {
                 : Color.clear,
             width: 1
         )
+        // `.contain` makes the leaf itself the named container, so the
+        // `paneLeaf_<id>` identifier cannot propagate into descendant
+        // containers (tab bar, terminal search bar) and mask the identifiers
+        // they set for themselves — the same propagation EditorTabBar and
+        // TerminalPaneTabBar guard their inline controls against.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.paneLeaf(paneID.id.uuidString))
     }
 

@@ -124,6 +124,100 @@ struct UserCommandInvocationRouterTests {
         #expect(probe.values.isEmpty)
     }
 
+    @Test("Find Next dispatches in a terminal-only window while its search bar is addressable")
+    func findNextDispatchesForVisibleTerminalSearch() {
+        // Terminal-only window: no editor tab anywhere, one terminal pane
+        // with its search bar open — the #1581 scenario the old `.activeFile`
+        // gate greyed out.
+        let projectManager = ProjectManager()
+        let paneManager = projectManager.paneManager
+        let terminalPane = paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        paneManager.terminalState(for: terminalPane)?.presentSearch()
+
+        let context = UserCommandInvocationRouter.context(
+            for: projectManager
+        )
+        #expect(context.hasActiveFile == false)
+        #expect(context.hasTerminal)
+        #expect(context.satisfies(.activeFileOrTerminalSearch))
+
+        let center = NotificationCenter()
+        let probe = NotificationProbe()
+        let token = center.addObserver(
+            forName: .findNext,
+            object: nil,
+            queue: nil
+        ) { _ in
+            probe.record("findNext")
+        }
+        defer { center.removeObserver(token) }
+
+        UserCommandInvocationRouter.dispatch(
+            .findNext,
+            projectManager: projectManager,
+            notificationCenter: center
+        )
+        #expect(probe.values == ["findNext"])
+
+        // Closing the bar leaves the window with no addressee: the palette
+        // gate must flip off with the same policy the menu uses (#1551).
+        paneManager.terminalState(for: terminalPane)?.dismissSearch()
+        #expect(
+            !UserCommandInvocationRouter.context(for: projectManager)
+                .satisfies(.activeFileOrTerminalSearch)
+        )
+        UserCommandInvocationRouter.dispatch(
+            .findNext,
+            projectManager: projectManager,
+            notificationCenter: center
+        )
+        #expect(probe.values == ["findNext"])
+    }
+
+    @Test("Find Next keeps its editor dispatch path without any terminal")
+    func findNextDispatchesForActiveEditorTab() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "pine-find-step-router-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("main.swift")
+        try Data("func main() {}".utf8).write(to: file)
+
+        let projectManager = ProjectManager()
+        projectManager.activeTabManager.openTab(url: file)
+
+        #expect(
+            UserCommandInvocationRouter.context(for: projectManager)
+                .satisfies(.activeFileOrTerminalSearch)
+        )
+
+        let center = NotificationCenter()
+        let probe = NotificationProbe()
+        let token = center.addObserver(
+            forName: .findPrevious,
+            object: nil,
+            queue: nil
+        ) { _ in
+            probe.record("findPrevious")
+        }
+        defer { center.removeObserver(token) }
+
+        UserCommandInvocationRouter.dispatch(
+            .findPrevious,
+            projectManager: projectManager,
+            notificationCenter: center
+        )
+        #expect(probe.values == ["findPrevious"])
+    }
+
     @Test("Targeted overlay requests only match their owning project")
     func overlayTargeting() {
         let currentProject = ProjectManager()

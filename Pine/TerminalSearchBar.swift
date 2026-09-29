@@ -112,6 +112,11 @@ struct TerminalSearchBar: View {
             onDismiss()
             return .handled
         }
+        // `.contain` keeps the bar a named container with each control a
+        // discrete element carrying its own identifier — without it, macOS
+        // lets the parent PaneLeafView's `paneLeaf_<id>` identifier propagate
+        // to the inline field and buttons (same propagation as EditorTabBar).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.terminalSearchBar)
     }
 

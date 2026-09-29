@@ -28610,6 +28610,21 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要活动文件和打开的终端。" } }
       }
     },
+    "commandPalette.unavailable.fileOrTerminalSearch": {
+      "comment": "Command palette explanation for a disabled Find Next/Find Previous command that requires an active file or a terminal search bar the window can address.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Erfordert eine aktive Datei oder eine offene Terminalsuche." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Requires an active file or an open terminal search." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Requiere un archivo activo o una búsqueda abierta en el terminal." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nécessite un fichier actif ou une recherche ouverte dans le terminal." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アクティブなファイルまたは開いているターミナル検索が必要です。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "활성 파일 또는 열려 있는 터미널 검색이 필요합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Requer um arquivo ativo ou uma busca aberta no terminal." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Требуется активный файл или открытый поиск в терминале." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要活动文件或打开的终端搜索。" } }
+      }
+    },
     "menu.commandPalette": {
       "comment": "Menu command that opens the searchable command palette.",
       "extractionState": "manual",

@@ -286,7 +286,11 @@ enum UserCommandInvocationRouter {
             isGitRepository: projectManager.workspace.gitProvider.isGitRepository,
             hasTerminal: projectManager.hasTerminalPanes,
             canLaunchAgent: windowAvailability.canLaunchAgent,
-            canSwitchProjectInWindow: windowAvailability.canSwitchProject
+            canSwitchProjectInWindow: windowAvailability.canSwitchProject,
+            // The same `FindStepTargetPolicy` verdict the Find menu items
+            // gate on (#1551): the palette and the menu must agree on
+            // whether ⌘G / ⇧⌘G has an addressee in the window (#1581).
+            hasFindStepTarget: projectManager.hasFindStepTarget
         )
     }
 
