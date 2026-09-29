@@ -418,7 +418,7 @@ struct AgentInboxView: View {
             }
         }
         .padding(10)
-        .background(.bar)
+        .adaptiveMaterialBackground(.bar)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Strings.agentInboxRecoveryActions)
         .accessibilityIdentifier(AccessibilityID.agentInboxRecoveryActions)

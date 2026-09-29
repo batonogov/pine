@@ -39,11 +39,17 @@ plus the language, appearance, and accessibility settings used.
    announces both the symbol and its location.
 7. Read the status bar end to end. Each git count must name what it counts, and
    nothing may announce a bare number or an interpunct separator.
-8. Trigger unsaved-changes, application-Quit, and update surfaces. Check the
+8. Open the Problems panel with at least one error and one warning. Confirm
+   each row announces its severity together with the message, and that the
+   severity- and source-filter pickers expose localized names.
+9. Trigger unsaved-changes, application-Quit, and update surfaces. Check the
    title, explanation, default button, cancel path, and keyboard focus order.
-9. Repeat the visual pass in light and dark appearance. With Differentiate
-   Without Color enabled, confirm status and selection do not rely on color
-   alone; with Reduce Motion enabled, confirm transitions are immediate.
+10. Repeat the visual pass in light and dark appearance. With Differentiate
+    Without Color enabled, confirm status and selection do not rely on color
+    alone; with Reduce Motion enabled, confirm transitions are immediate; with
+    Reduce Transparency enabled, confirm overlays and panels (Quick Open,
+    Command Palette, completion popup, Problems panel, toasts) fall back to
+    opaque backgrounds and stay legible over bright content.
 
 ## Physical-keyboard journey
 

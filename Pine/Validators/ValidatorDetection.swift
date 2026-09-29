@@ -16,6 +16,19 @@ nonisolated enum ValidationSeverity: Sendable, Equatable {
     case info
 }
 
+extension ValidationSeverity {
+    /// Spoken severity name. Shared by the diagnostic popover and the
+    /// Problems panel so the two surfaces cannot disagree about what a
+    /// diagnostic is called (#1533). Main-actor because `Strings` is.
+    @MainActor var displayName: String {
+        switch self {
+        case .error: return Strings.diagnosticSeverityError
+        case .warning: return Strings.diagnosticSeverityWarning
+        case .info: return Strings.diagnosticSeverityInfo
+        }
+    }
+}
+
 /// A single validation diagnostic tied to a line in the file.
 nonisolated struct ValidationDiagnostic: Sendable, Equatable, Identifiable {
     let id = UUID()

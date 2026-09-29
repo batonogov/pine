@@ -438,7 +438,7 @@ struct TerminalPaneTabBar: View {
             .accessibilityIdentifier(AccessibilityID.hideTerminalButton)
         }
         .frame(height: LayoutMetrics.tabBarHeight)
-        .background(.bar)
+        .adaptiveMaterialBackground(.bar)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.terminalTabBar)
     }

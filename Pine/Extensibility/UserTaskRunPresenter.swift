@@ -73,7 +73,7 @@ private struct UserTaskRunHistoryView: View {
             }
         }
         .frame(maxHeight: 280)
-        .background(.bar)
+        .adaptiveMaterialBackground(.bar)
     }
 
     private var header: some View {

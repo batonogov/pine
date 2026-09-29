@@ -135,6 +135,7 @@ private struct ProblemsFileSection: View {
                 Image(systemName: "doc.text")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 Text(displayName)
                     .font(.system(size: LayoutMetrics.bodySmallFontSize, weight: .semibold))
                 Text(verbatim: "(\(diagnostics.count))")
@@ -146,7 +147,10 @@ private struct ProblemsFileSection: View {
 }
 
 /// A single diagnostic row: severity icon, message, and line:column.
-private struct ProblemsDiagnosticRow: View {
+/// Internal rather than private so `ProblemsPanelAccessibilityTests` can host
+/// the row on its own — a `List` does not materialize its cells in an
+/// offscreen hosted window, so the published tree can only be read this way.
+struct ProblemsDiagnosticRow: View {
     let diagnostic: ValidationDiagnostic
     let isSelected: Bool
     let action: () -> Void
@@ -180,6 +184,9 @@ private struct ProblemsDiagnosticRow: View {
                 Image(systemName: severitySymbol)
                     .foregroundStyle(severityColor)
                     .font(.system(size: LayoutMetrics.captionFontSize))
+                    // Without the label VoiceOver reads the message with no
+                    // severity (#1533).
+                    .accessibilityLabel(diagnostic.severity.displayName)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(diagnostic.message)
                         .font(.system(size: LayoutMetrics.bodySmallFontSize))
@@ -232,7 +239,7 @@ struct ProblemsPanelChrome: View {
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial)
+        .adaptiveMaterialBackground(.regularMaterial)
         .accessibilityIdentifier(AccessibilityID.problemsPanel)
     }
 
@@ -241,6 +248,7 @@ struct ProblemsPanelChrome: View {
             Image(systemName: MenuIcons.problems)
                 .font(.system(size: LayoutMetrics.bodySmallFontSize))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(Strings.problemsPanelTitle)
                 .font(.system(size: LayoutMetrics.bodySmallFontSize, weight: .semibold))
             Text(verbatim: "(\(controller.diagnosticCount))")
@@ -294,7 +302,7 @@ struct ProblemsPanelChrome: View {
         }
         .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
         .frame(height: LayoutMetrics.problemsPanelHeaderHeight)
-        .background(.bar)
+        .adaptiveMaterialBackground(.bar)
     }
 }
 

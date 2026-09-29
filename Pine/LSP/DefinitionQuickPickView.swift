@@ -141,7 +141,7 @@ struct DefinitionQuickPickContent: View {
             }
         }
         .frame(width: 400, height: min(CGFloat(controller.items.count) * 22 + 8, 220))
-        .background(.regularMaterial)
+        .adaptiveMaterialBackground(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)

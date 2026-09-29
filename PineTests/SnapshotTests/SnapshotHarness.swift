@@ -190,7 +190,17 @@ enum SnapshotHarness {
         size: NSSize,
         appearance: SnapshotAppearance
     ) throws -> NSBitmapImageRep {
-        let hosting = NSHostingView(rootView: view)
+        // Pin Reduce Transparency off so the host's accessibility settings
+        // cannot leak into snapshots: CI runners run with the setting ON
+        // (#1533), where adaptive material backgrounds paint their opaque
+        // fallback instead of the material — a whole-panel change worth
+        // ~4% of mean pixel diff. A test that needs the setting (e.g. the
+        // AccessibilityAdaptiveMaterial branch probes) sets
+        // `\_accessibilityReduceTransparency` closer to the content, and
+        // the inner value wins over this root pin.
+        let hosting = NSHostingView(
+            rootView: view.environment(\._accessibilityReduceTransparency, false)
+        )
         hosting.appearance = appearance.nsAppearance
         hosting.frame = NSRect(origin: .zero, size: size)
         hosting.layoutSubtreeIfNeeded()

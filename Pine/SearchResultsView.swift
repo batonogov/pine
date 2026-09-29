@@ -190,7 +190,7 @@ struct SearchResultsView: View {
             .padding(.horizontal, LayoutMetrics.searchResultHorizontalPadding)
             .padding(.vertical, LayoutMetrics.searchResultHeaderVerticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.bar)
+            .adaptiveMaterialBackground(.bar)
             .accessibilityIdentifier(AccessibilityID.searchTruncationFooter)
         }
     }
@@ -236,7 +236,7 @@ struct SearchResultsView: View {
             }
             .padding(.horizontal, LayoutMetrics.searchResultHorizontalPadding)
             .padding(.vertical, LayoutMetrics.searchResultHeaderVerticalPadding)
-            .background(.bar)
+            .adaptiveMaterialBackground(.bar)
 
             ForEach(Array(group.matches.enumerated()), id: \.element.id) { _, match in
                 let flatIndex = flat.firstIndex { $0.fileURL == group.url && $0.match.id == match.id } ?? -1
