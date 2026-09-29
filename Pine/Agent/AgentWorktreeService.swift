@@ -112,6 +112,21 @@ nonisolated enum AgentWorktreeCreateResult: Sendable, Equatable {
 nonisolated struct AgentWorktreeRemovalInspection: Sendable, Equatable {
     let worktree: AgentManagedWorktree
     let dirtyPaths: [String]
+    /// The managed root and the record's path shape validated, but the
+    /// worktree directory itself is gone — the state `git worktree list`
+    /// reports as `prunable` (#1603). There is no working tree left to
+    /// inspect, so removal degenerates to pruning git's registration.
+    let directoryMissing: Bool
+
+    init(
+        worktree: AgentManagedWorktree,
+        dirtyPaths: [String],
+        directoryMissing: Bool = false
+    ) {
+        self.worktree = worktree
+        self.dirtyPaths = dirtyPaths
+        self.directoryMissing = directoryMissing
+    }
 
     var requiresDestructiveConfirmation: Bool { !dirtyPaths.isEmpty }
 }
@@ -123,6 +138,22 @@ nonisolated struct AgentWorktreeRemovalConfirmation: Sendable, Equatable {
     let worktreeRoot: URL
     let dirtyPaths: [String]
     let acknowledgesUnrecoverableDataLoss: Bool
+    /// Set only when the alert disclosed a *missing* directory (#1603): the
+    /// consent is for pruning git's registration, and the service fails
+    /// closed if a directory has reappeared at the path since.
+    let expectsMissingDirectory: Bool
+
+    init(
+        worktreeRoot: URL,
+        dirtyPaths: [String],
+        acknowledgesUnrecoverableDataLoss: Bool,
+        expectsMissingDirectory: Bool = false
+    ) {
+        self.worktreeRoot = worktreeRoot
+        self.dirtyPaths = dirtyPaths
+        self.acknowledgesUnrecoverableDataLoss = acknowledgesUnrecoverableDataLoss
+        self.expectsMissingDirectory = expectsMissingDirectory
+    }
 }
 
 nonisolated enum AgentWorktreeRemovalFailure: Error, Sendable, Equatable {
@@ -331,7 +362,10 @@ actor AgentWorktreeService {
     ///    the lowercase task UUID `create` named the destination with. The
     ///    branch comes from git — a checkout git recognises but that sits
     ///    detached is labelled `detached`, never a fabricated ref;
-    ///    `baseCommit` is not recoverable and stays `nil`.
+    ///    `baseCommit` is not recoverable and stays `nil`. A `prunable`
+    ///    entry — its directory deleted by hand, its registration still held
+    ///    (#1603) — is admitted the same way, without a proof; the manager
+    ///    lists it as missing and offers to prune the registration.
     /// 2. UUID-named directories under `managedRoot` that git says nothing
     ///    about — interrupted or manually broken checkouts. They are reported
     ///    with no branch (their task UUID names the row) and no proof, so
@@ -339,9 +373,11 @@ actor AgentWorktreeService {
     ///    them.
     ///
     /// Discovery only *adds candidates*; it never admits them. Every
-    /// downstream mutation still passes `secureManagedWorktree`, which
-    /// rejects anything outside the managed root and every symlinked path
-    /// component, exactly as it does for records captured at creation.
+    /// downstream mutation still passes `secureManagedWorktree` — or, for a
+    /// record whose directory is already gone (#1603), its
+    /// `secureMissingManagedWorktree` counterpart — which rejects anything
+    /// outside the managed root and every symlinked path component, exactly
+    /// as it does for records captured at creation.
     func discoverManagedWorktrees(
         repositoryRoot: URL,
         managedRoot: URL
@@ -401,12 +437,19 @@ actor AgentWorktreeService {
         for entry in AgentWorktreeListParser.entries(
             inPorcelainOutput: porcelainOutput
         ) {
-            let listedRoot = URL(
-                fileURLWithPath: entry.path,
+            // Git prints realpath(3) spellings (`/private/var/…`) while
+            // Foundation canonicalizes *existing* paths back to the `/var`
+            // alias. A prunable entry's directory no longer exists
+            // (#1603), so its listed path keeps git's spelling and only
+            // its parent — which must exist to be the managed root — can
+            // be canonicalized. Compare parents, re-append the name.
+            let listedURL = URL(fileURLWithPath: entry.path, isDirectory: true)
+            let listedParent = URL(
+                fileURLWithPath: listedURL.deletingLastPathComponent().path,
                 isDirectory: true
             ).standardizedFileURL
-            let name = listedRoot.lastPathComponent
-            guard listedRoot.deletingLastPathComponent() == resolvedRoot,
+            let name = listedURL.lastPathComponent
+            guard listedParent == resolvedRoot,
                   let taskID = AgentWorktreeListParser.taskID(
                       forLowercaseUUIDName: name
                   ) else { continue }
@@ -492,7 +535,19 @@ actor AgentWorktreeService {
         _ worktree: AgentManagedWorktree
     ) async -> Result<AgentWorktreeRemovalInspection, AgentWorktreeRemovalFailure> {
         guard secureManagedWorktree(worktree) else {
-            return .failure(.unsafeWorktree)
+            // A record whose directory was deleted by hand is not unsafe —
+            // git still holds its registration (`prunable` in the porcelain
+            // listing), and reclaiming the row is exactly what the user
+            // needs (#1603). Report it as a successful, empty inspection of
+            // a missing directory instead of a dead row.
+            guard secureMissingManagedWorktree(worktree) else {
+                return .failure(.unsafeWorktree)
+            }
+            return .success(AgentWorktreeRemovalInspection(
+                worktree: worktree,
+                dirtyPaths: [],
+                directoryMissing: true
+            ))
         }
         let result = await runner.run([
             "status", "--porcelain=v1", "-z", "--untracked-files=all",
@@ -516,24 +571,41 @@ actor AgentWorktreeService {
         case .success(let value): inspection = value
         }
 
-        if inspection.requiresDestructiveConfirmation {
+        var arguments = ["worktree", "remove"]
+        if inspection.directoryMissing {
+            // Pruning consent pins the state it was given for: the directory
+            // was gone. Anything else — no consent at all, consent for a
+            // different path, or a confirmation issued for a tree that still
+            // had a directory — fails closed, because a directory that came
+            // back may hold data the user never agreed to delete.
+            guard let confirmation else {
+                return .failed(.confirmationRequired(inspection))
+            }
+            guard confirmation.expectsMissingDirectory,
+                  confirmation.worktreeRoot.standardizedFileURL
+                    == worktree.worktreeRoot.standardizedFileURL,
+                  confirmation.dirtyPaths.isEmpty else {
+                return .failed(.confirmationMismatch)
+            }
+            // There is no working tree left to be dirty; `--force` is what
+            // lets git drop a registration whose directory is already gone.
+            arguments.append("--force")
+        } else if inspection.requiresDestructiveConfirmation {
             guard let confirmation else {
                 return .failed(.confirmationRequired(inspection))
             }
             guard confirmation.acknowledgesUnrecoverableDataLoss,
+                  !confirmation.expectsMissingDirectory,
                   confirmation.worktreeRoot.standardizedFileURL
                     == worktree.worktreeRoot.standardizedFileURL,
                   confirmation.dirtyPaths == inspection.dirtyPaths else {
                 return .failed(.confirmationMismatch)
             }
+            arguments.append("--force")
         } else if confirmation != nil {
             return .failed(.confirmationMismatch)
         }
 
-        var arguments = ["worktree", "remove"]
-        if inspection.requiresDestructiveConfirmation {
-            arguments.append("--force")
-        }
         arguments += ["--", worktree.worktreeRoot.path]
         let result = await runner.run(arguments, worktree.repositoryRoot)
         if result.timedOut || result.cancelled {
@@ -793,6 +865,39 @@ actor AgentWorktreeService {
             return false
         }
         return Self.isWithin(worktreeRoot, root: managedRoot)
+    }
+
+    /// `secureManagedWorktree` relaxed in exactly one place: the worktree
+    /// directory itself must be *absent* rather than present (#1603). Every
+    /// other guarantee stands — the managed root is a real, unsymlinked
+    /// directory, the record's spelling is its standardized self, and the
+    /// path sits directly inside the root. A leaf that exists as anything
+    /// (a directory, a plain file, a symlink) is not a prunable record and
+    /// fails closed here, so the prune path can never be aimed at data.
+    private func secureMissingManagedWorktree(
+        _ worktree: AgentManagedWorktree
+    ) -> Bool {
+        guard let managedRoot = Self.secureExistingDirectory(
+                  worktree.managedRoot,
+                  fileManager: fileManager
+              ),
+              managedRoot == worktree.managedRoot.standardizedFileURL else {
+            return false
+        }
+        let worktreeRoot = worktree.worktreeRoot.standardizedFileURL
+        guard worktreeRoot.deletingLastPathComponent() == managedRoot,
+              Self.isWithin(worktreeRoot, root: managedRoot) else {
+            return false
+        }
+        return Self.isAbsentFileSystemEntry(worktreeRoot.path)
+    }
+
+    /// True only when nothing — not even a dangling symlink — sits at `path`.
+    /// `FileManager.fileExists` follows symlinks, so it cannot say this.
+    private static func isAbsentFileSystemEntry(_ path: String) -> Bool {
+        var info = stat()
+        guard lstat(path, &info) != 0 else { return false }
+        return errno == ENOENT
     }
 
     /// Rejects every symlink component instead of merely resolving it. This

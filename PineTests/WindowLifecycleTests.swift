@@ -23,6 +23,12 @@ struct WindowLifecycleTests {
         )
     }
 
+    /// Gives the deferred asynchronous close a few turns before teardown, or
+    /// before asserting that something did *not* happen (a committed
+    /// termination must not reply twice). A short settle there can only make
+    /// the test weaker, never flaky (#1543). Waiting *for* an event must use
+    /// `waitUntilMainActor` instead: a yield budget does not make a
+    /// continuation parked on another executor run.
     private func settle() async {
         for _ in 0..<8 {
             await Task.yield()
@@ -62,6 +68,21 @@ struct WindowLifecycleTests {
     ) {
         project.primaryTabManager.autoSavePreferenceProvider = { false }
         project.primaryTabManager.updateContent(content)
+    }
+
+    /// Records the machine-work budget remaining at the termination deadline
+    /// arming point, then re-arms generously (#1606). The budget ordering
+    /// (deliberation longer than the override) stays the detector; what
+    /// changes is that bounded machine work no longer runs against a
+    /// wall-clock budget that parallel-suite neighbours can spend on
+    /// scheduler contention.
+    private func rebaseTerminationDeadline(
+        recordingInto probe: TerminationDeadlineRebaseProbe
+    ) -> @Sendable (DispatchTime) -> DispatchTime {
+        { armedDeadline in
+            probe.record(armedDeadline: armedDeadline)
+            return .now() + 30
+        }
     }
 
     // MARK: - onDisappear logic (handleProjectWindowDisappear)
@@ -260,6 +281,7 @@ struct WindowLifecycleTests {
         let delegate = AppDelegate()
         delegate.registry = registry
         let deadlineProbe = TerminationDeadlineProbe()
+        let rebaseProbe = TerminationDeadlineRebaseProbe()
 
         let result = await delegate.confirmApplicationTermination(
             presentAlert: { template, _, _, _ in
@@ -272,11 +294,21 @@ struct WindowLifecycleTests {
                 }
             },
             terminationDeadlineOverride: .now() + .milliseconds(500),
-            terminationDeadlineObserver: deadlineProbe.record
+            terminationDeadlineObserver: deadlineProbe.record,
+            terminationDeadlineRebase: rebaseTerminationDeadline(
+                recordingInto: rebaseProbe
+            )
         )
 
         #expect(result)
         #expect(deadlineProbe.elapsedNanoseconds == nil)
+        // The 600 ms panel deliberation must not consume the 500 ms machine
+        // budget (#1354): nearly all of it remains at the arming point.
+        let remainingNanoseconds = try #require(
+            rebaseProbe.remainingNanosecondsAtArming,
+            "Termination deadline was never armed"
+        )
+        #expect(remainingNanoseconds > 400_000_000)
         #expect(try String(contentsOf: destination, encoding: .utf8) ==
                 "// saved after a slow panel\n")
         #expect(!project.hasUnsavedChanges)
@@ -373,6 +405,7 @@ struct WindowLifecycleTests {
         let delegate = AppDelegate()
         delegate.registry = registry
         let deadlineProbe = TerminationDeadlineProbe()
+        let rebaseProbe = TerminationDeadlineRebaseProbe()
         var projectPromptCount = 0
 
         let result = await delegate.confirmApplicationTermination(
@@ -386,12 +419,23 @@ struct WindowLifecycleTests {
                 return .alertSecondButtonReturn
             },
             terminationDeadlineOverride: .now() + .milliseconds(500),
-            terminationDeadlineObserver: deadlineProbe.record
+            terminationDeadlineObserver: deadlineProbe.record,
+            terminationDeadlineRebase: rebaseTerminationDeadline(
+                recordingInto: rebaseProbe
+            )
         )
 
         #expect(result)
         #expect(projectPromptCount == 2)
         #expect(deadlineProbe.elapsedNanoseconds == nil)
+        // Two 300 ms review deliberations must not consume the 500 ms
+        // machine budget (#1354): nearly all of it remains at the arming
+        // point.
+        let remainingNanoseconds = try #require(
+            rebaseProbe.remainingNanosecondsAtArming,
+            "Termination deadline was never armed"
+        )
+        #expect(remainingNanoseconds > 400_000_000)
         await first.workspace.waitForLoadingComplete()
         await second.workspace.waitForLoadingComplete()
     }
@@ -860,6 +904,7 @@ struct WindowLifecycleTests {
         let delegate = AppDelegate()
         delegate.registry = registry
         let deadlineProbe = TerminationDeadlineProbe()
+        let rebaseProbe = TerminationDeadlineRebaseProbe()
         let started = DispatchTime.now().uptimeNanoseconds
 
         let result = await delegate.confirmApplicationTermination(
@@ -872,7 +917,10 @@ struct WindowLifecycleTests {
                 return .abort
             },
             terminationDeadlineOverride: .now() + .milliseconds(500),
-            terminationDeadlineObserver: deadlineProbe.record
+            terminationDeadlineObserver: deadlineProbe.record,
+            terminationDeadlineRebase: rebaseTerminationDeadline(
+                recordingInto: rebaseProbe
+            )
         )
 
         let elapsed = DispatchTime.now().uptimeNanoseconds - started
@@ -882,6 +930,14 @@ struct WindowLifecycleTests {
         // not cap the user's decision time.
         #expect(elapsed >= 550_000_000)
         #expect(deadlineProbe.elapsedNanoseconds == nil)
+        // Nearly the whole machine budget must remain at the arming point
+        // (#1354); the detector no longer depends on wall-clock contention
+        // during bounded machine work (#1606).
+        let remainingNanoseconds = try #require(
+            rebaseProbe.remainingNanosecondsAtArming,
+            "Termination deadline was never armed"
+        )
+        #expect(remainingNanoseconds > 400_000_000)
         #expect(!project.hasUnsavedChanges)
         await project.workspace.waitForLoadingComplete()
     }
@@ -1773,7 +1829,13 @@ struct WindowLifecycleTests {
 
         installer.release()
         #expect(await installer.waitUntilReturned())
-        await settle()
+
+        // The post-install reconciliation lands asynchronously; a yield
+        // budget can lapse before it does, and the #require below would then
+        // fail on the very state the settle was waiting for (#1543).
+        #expect(await waitUntilMainActor {
+            tabs.tabs.contains(where: { $0.fileURL == file })
+        })
 
         let reconciledTab = try #require(tabs.tabs.first(where: {
             $0.fileURL == file
@@ -2213,7 +2275,9 @@ struct WindowLifecycleTests {
             outcome: makeTaskOutcome(id: "second-detached"),
             cancelled: true
         )
-        await settle()
+        #expect(await waitUntilMainActor {
+            !registry.hasOutstandingUserTaskExecution
+        })
         #expect(registry.destroyAllProjects())
     }
 
@@ -2412,10 +2476,7 @@ struct WindowLifecycleTests {
             replies.append($0)
         }
         #expect(initialReply == .terminateLater)
-        for _ in 0..<50 {
-            if !replies.isEmpty { break }
-            await Task.yield()
-        }
+        #expect(await waitUntilMainActor { !replies.isEmpty })
 
         #expect(replies == [true])
         #expect(delegate.isTerminating)
@@ -2699,6 +2760,28 @@ nonisolated private final class TerminationDeadlineProbe: @unchecked Sendable {
             guard recordedElapsedNanoseconds == nil else { return }
             recordedElapsedNanoseconds =
                 DispatchTime.now().uptimeNanoseconds - started
+        }
+    }
+}
+
+/// Records how much of the machine-work budget remained when the termination
+/// deadline was armed after the final human decision (#1354). The arming
+/// point, not the wall clock, is what proves deliberation never consumed the
+/// budget, so the assertion survives parallel-suite load (#1606).
+nonisolated private final class TerminationDeadlineRebaseProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedRemainingNanoseconds: Int64?
+
+    var remainingNanosecondsAtArming: Int64? {
+        lock.withLock { recordedRemainingNanoseconds }
+    }
+
+    func record(armedDeadline: DispatchTime) {
+        let remaining = Int64(bitPattern: armedDeadline.uptimeNanoseconds)
+            - Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)
+        lock.withLock {
+            guard recordedRemainingNanoseconds == nil else { return }
+            recordedRemainingNanoseconds = remaining
         }
     }
 }

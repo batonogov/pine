@@ -1106,6 +1106,14 @@ enum Strings {
         "agentWorktrees.remove.confirm"
     static let agentWorktreesIntegrateConfirm: LocalizedStringKey =
         "agentWorktrees.integrate.confirm"
+    static let agentWorktreesPrune: LocalizedStringKey =
+        "agentWorktrees.prune"
+    static let agentWorktreesPruneTitle: LocalizedStringKey =
+        "agentWorktrees.prune.title"
+    static let agentWorktreesPruneConfirm: LocalizedStringKey =
+        "agentWorktrees.prune.confirm"
+    static let agentWorktreesStatusMissing: LocalizedStringKey =
+        "agentWorktrees.status.missing"
     static let projectSwitcherWorktreesKeptTitle: LocalizedStringKey =
         "projectSwitcher.worktreesKept.title"
 
@@ -1246,6 +1254,40 @@ enum Strings {
         localizedString(
             forKey: "agentWorktrees.removed",
             fallback: "Worktree removed. Its branch is still in the repository.",
+            locale: locale
+        )
+    }
+
+    /// Body of the prune alert: the directory is already gone, only git's
+    /// registration of the worktree is dropped (#1603).
+    static func agentWorktreesPruneText(
+        _ path: String,
+        _ branch: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentWorktrees.prune.body %@ %@",
+            fallback: """
+                The directory %1$@ is already deleted.
+
+                Pine will remove git’s record of the worktree. The branch \
+                “%2$@” and its commits stay in the repository.
+                """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [path, branch]
+        )
+    }
+
+    static func agentWorktreesPrunedText(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "agentWorktrees.pruned",
+            fallback: "Worktree record pruned. Its branch is still in the repository.",
             locale: locale
         )
     }

@@ -1598,6 +1598,20 @@ final class ProjectManager {
     /// retrying sooner than this adds cost without adding information.
     private static let admissionRebuildMinimumInterval: Duration =
         .milliseconds(250)
+    /// A lease re-derivation currently running, shared by every caller whose
+    /// stale revalidation arrives while it is in flight (#1518). Without it,
+    /// a concurrent caller bounced off `admissionRebuildMinimumInterval` or
+    /// the superseded-lease guard in
+    /// `rebuildAgentTaskFilesystemAdmissionIfEligible` and reported the stale
+    /// lease's refusal as its own — even when the in-flight rebuild was
+    /// about to restore admission. The `id` lets a late awaiter avoid
+    /// clearing a newer derivation that replaced the one it joined.
+    private struct AdmissionDerivation {
+        let id = UUID()
+        let task: Task<RecentAgentTaskFilesystemValidationLease?, Never>
+    }
+    @ObservationIgnored
+    private var admissionDerivationInFlight: AdmissionDerivation?
 
     /// The crash-recovery entries still worth putting in front of the user.
     ///
@@ -2306,9 +2320,10 @@ final class ProjectManager {
     /// workspace filesystem validator captured at `loadDirectory` keeps
     /// comparing against that generation, and rotating it would make every
     /// later tree reload fail validation and suspend the file watcher.
-    /// Suspended revalidations of the replaced lease stay fenced by the
-    /// `agentTaskFilesystemAdmission ===` identity check in
-    /// `revalidateAgentTaskFilesystemAdmission`.
+    /// Revalidations of the replaced lease that are still in flight land in
+    /// `rebuildAgentTaskFilesystemAdmissionIfEligible`, where the
+    /// `agentTaskFilesystemAdmission ===` identity check routes them to
+    /// `revalidateSupersededAdmission` for this lease's verdict (#1518).
     private func swapRevalidatedAdmission(
         _ admission: RecentAgentTaskFilesystemValidationLease
     ) {
@@ -2358,7 +2373,8 @@ final class ProjectManager {
         }
         return await rebuildAgentTaskFilesystemAdmissionIfEligible(
             replacing: admission,
-            identity: identity
+            identity: identity,
+            expectedGeneration: expectedGeneration
         )
     }
 
@@ -2371,30 +2387,70 @@ final class ProjectManager {
     /// it in when the recomputed proof still identifies the same repository.
     /// Per-descriptor strictness is unchanged; this only re-derives the
     /// baseline the descriptors compare against.
+    ///
+    /// Several callers can observe the same stale lease at once — the
+    /// workspace-load validator and a terminal's working-directory
+    /// validation, say (#1518). They share one derivation through
+    /// `admissionDerivationInFlight`: joiners await it instead of bouncing
+    /// off the throttle, and exactly one resumer installs the result; the
+    /// rest answer from the lease that was swapped in.
     private func rebuildAgentTaskFilesystemAdmissionIfEligible(
         replacing staleAdmission: RecentAgentTaskFilesystemValidationLease,
-        identity: AgentTaskProjectIdentity
+        identity: AgentTaskProjectIdentity,
+        expectedGeneration: UUID? = nil
     ) async -> Bool {
         guard !Task.isCancelled,
               agentTaskFilesystemAdmission === staleAdmission,
-              agentTaskFilesystemIdentity == identity else { return false }
-        let now = ContinuousClock.now
-        if let last = admissionRebuildAttempt,
-           now - last < Self.admissionRebuildMinimumInterval {
+              agentTaskFilesystemIdentity == identity else {
+            // A concurrent rebuild swapped the lease while this caller's
+            // stale revalidation was in flight. Answer from the lease that
+            // replaced it rather than reporting the superseded refusal.
+            return await revalidateSupersededAdmission(
+                staleAdmission,
+                identity: identity,
+                expectedGeneration: expectedGeneration
+            )
+        }
+        let derivation: AdmissionDerivation
+        if let inFlight = admissionDerivationInFlight {
+            derivation = inFlight
+        } else {
+            let now = ContinuousClock.now
+            if let last = admissionRebuildAttempt,
+               now - last < Self.admissionRebuildMinimumInterval {
+                return false
+            }
+            admissionRebuildAttempt = now
+            let expectedProof = staleAdmission.proof
+            derivation = AdmissionDerivation(
+                task: Task.detached(priority: .utility) {
+                    RecentAgentTaskFilesystemValidator.validationLease(
+                        for: identity,
+                        expectedProof: expectedProof
+                    )
+                }
+            )
+            admissionDerivationInFlight = derivation
+        }
+        let rebuilt = await derivation.task.value
+        guard let rebuilt, !Task.isCancelled else {
+            if admissionDerivationInFlight?.id == derivation.id {
+                admissionDerivationInFlight = nil
+            }
             return false
         }
-        admissionRebuildAttempt = now
-        let expectedProof = staleAdmission.proof
-        let rebuilt = await Task.detached(priority: .utility) {
-            RecentAgentTaskFilesystemValidator.validationLease(
-                for: identity,
-                expectedProof: expectedProof
-            )
-        }.value
-        guard let rebuilt else { return false }
         guard agentTaskFilesystemAdmission === staleAdmission,
-              agentTaskFilesystemIdentity == identity,
-              !Task.isCancelled else { return false }
+              agentTaskFilesystemIdentity == identity else {
+            // A joined caller already installed this rebuild.
+            return await revalidateSupersededAdmission(
+                staleAdmission,
+                identity: identity,
+                expectedGeneration: expectedGeneration
+            )
+        }
+        if admissionDerivationInFlight?.id == derivation.id {
+            admissionDerivationInFlight = nil
+        }
         swapRevalidatedAdmission(rebuilt)
         // Re-arming tab validation cancels any in-flight terminal validation
         // task — including the one whose refusal triggered this rebuild. A
@@ -2412,6 +2468,34 @@ final class ProjectManager {
             "Rebuilt agent-task filesystem admission after a refused revalidation at \(identity.canonicalWorktreePath, privacy: .public)"
         )
         return true
+    }
+
+    /// The answer for a caller whose captured lease was superseded while its
+    /// revalidation was in flight. A fresh load (different identity, or a
+    /// rotated generation the caller pinned) still fails closed; a
+    /// same-identity swap revalidates the current lease, so the caller gets
+    /// the rebuilt admission's verdict instead of the stale lease's refusal
+    /// (#1518).
+    private func revalidateSupersededAdmission(
+        _ staleAdmission: RecentAgentTaskFilesystemValidationLease,
+        identity: AgentTaskProjectIdentity,
+        expectedGeneration: UUID? = nil
+    ) async -> Bool {
+        guard !Task.isCancelled,
+              agentTaskFilesystemIdentity == identity,
+              let current = agentTaskFilesystemAdmission,
+              current !== staleAdmission else { return false }
+        if let expectedGeneration,
+           expectedGeneration != agentTaskFilesystemAdmissionGeneration {
+            return false
+        }
+        let valid = await Task.detached(priority: .utility) {
+            current.revalidate()
+        }.value
+        return valid
+            && !Task.isCancelled
+            && agentTaskFilesystemAdmission === current
+            && agentTaskFilesystemIdentity == identity
     }
 
     // MARK: - Agent activity file-system correlation (#1072)

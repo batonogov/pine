@@ -395,6 +395,55 @@ struct AgentTaskFilesystemAdmissionDriftTests {
         #expect(stable)
     }
 
+    @Test("Concurrent revalidations share one rebuild after a control rewrite")
+    @MainActor
+    func concurrentRevalidationsShareTheRebuild() async throws {
+        let fixture = try makeDriftFixture(name: "ConcurrentRebuild")
+        defer { removeFixture(fixture.root) }
+        let (_, lease) = try await makeProofAndLease(for: fixture)
+
+        let project = ProjectManager()
+        project.loadDirectory(
+            url: fixture.worktree,
+            agentTaskProject: fixture.identity,
+            filesystemAdmission: lease
+        )
+
+        let original = try Data(contentsOf: fixture.worktreeControlFile)
+        try original.write(
+            to: fixture.worktreeControlFile,
+            options: .atomic
+        )
+
+        // #1518: the workspace-load validator and terminal validation can
+        // both observe the stale lease at once. Every caller must share the
+        // one rebuild and answer from the lease it installs — before the
+        // fix, a caller whose stale revalidation lost the race reported the
+        // old lease's refusal (throttle window or superseded-lease guard)
+        // even though the rebuild had already restored admission.
+        async let first = project.revalidateAgentTaskFilesystemAdmission(
+            workingDirectory: fixture.worktree
+        )
+        async let second = project.revalidateAgentTaskFilesystemAdmission(
+            workingDirectory: fixture.worktree
+        )
+        async let third = project.revalidateAgentTaskFilesystemAdmission(
+            workingDirectory: fixture.worktree
+        )
+        async let fourth = project.revalidateAgentTaskFilesystemAdmission(
+            workingDirectory: fixture.worktree
+        )
+        async let fifth = project.revalidateAgentTaskFilesystemAdmission(
+            workingDirectory: fixture.worktree
+        )
+        async let sixth = project.revalidateAgentTaskFilesystemAdmission(
+            workingDirectory: fixture.worktree
+        )
+        for result in await [first, second, third, fourth, fifth, sixth] {
+            #expect(result)
+        }
+    }
+
     @Test("Manager revalidation refuses a worktree that changed identity")
     @MainActor
     func managerRefusesAfterWorktreeReplacement() async throws {

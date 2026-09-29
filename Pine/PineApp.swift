@@ -2525,6 +2525,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         terminationFailureContext: (@MainActor () -> DialogPresentationContext)? = nil,
         terminationDeadlineOverride: DispatchTime? = nil,
         terminationDeadlineObserver: @escaping @Sendable () -> Void = {},
+        terminationDeadlineRebase: @escaping @Sendable (DispatchTime) -> DispatchTime = { $0 },
         terminationAliasCapture: @escaping TerminationAliasCapture = { urls, deadline in
             await TerminationFileAliasResolver.capture(
                 urls,
@@ -3087,8 +3088,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             )
 
         // Rebase the captured duration only after the final human response.
-        let terminationDeadline = DispatchTime.now() + .nanoseconds(
-            Int(clamping: workBudgetNanoseconds)
+        // The seam observes the freshly armed deadline so a test can prove
+        // deliberation never consumed the budget (#1354) and re-arm it
+        // without depending on parallel-suite wall-clock contention (#1606).
+        let terminationDeadline = terminationDeadlineRebase(
+            DispatchTime.now() + .nanoseconds(
+                Int(clamping: workBudgetNanoseconds)
+            )
         )
 
         let saveAliasURLs = destinationURLs + unplannedOpenURLs

@@ -54,6 +54,10 @@ nonisolated enum AgentWorktreeRowStatus: Equatable, Sendable {
     /// it. Shown rather than hidden: a row the app cannot vouch for is still a
     /// row the user may need to reclaim.
     case unavailable
+    /// The directory is gone — deleted by hand, `prunable` in git's own
+    /// listing — while git still holds the registration (#1603). This row is
+    /// reclaimable: removal degenerates to pruning the registration.
+    case missing
 }
 
 nonisolated struct AgentWorktreeRow: Identifiable, Equatable, Sendable {
@@ -74,6 +78,19 @@ nonisolated struct AgentWorktreeRemovalPrompt: Identifiable, Equatable,
     Sendable {
     let worktree: AgentManagedWorktree
     let dirtyPaths: [String]
+    /// The inspection found the directory already deleted (#1603): the alert
+    /// offers to prune git's registration instead of deleting a tree.
+    let directoryMissing: Bool
+
+    init(
+        worktree: AgentManagedWorktree,
+        dirtyPaths: [String],
+        directoryMissing: Bool = false
+    ) {
+        self.worktree = worktree
+        self.dirtyPaths = dirtyPaths
+        self.directoryMissing = directoryMissing
+    }
 
     var id: URL { worktree.worktreeRoot }
     var destroysUncommittedWork: Bool { !dirtyPaths.isEmpty }
@@ -82,6 +99,7 @@ nonisolated struct AgentWorktreeRemovalPrompt: Identifiable, Equatable,
 /// Outcome banner shown under the list.
 nonisolated enum AgentWorktreeManagerMessage: Equatable, Sendable {
     case removed(branch: String)
+    case pruned(branch: String)
     case integrated(targetBranch: String, changedPathCount: Int)
     case failure(String)
 }
@@ -164,9 +182,13 @@ final class AgentWorktreeManagerModel {
             let status: AgentWorktreeRowStatus
             switch result {
             case .success(let inspection):
-                status = inspection.dirtyPaths.isEmpty
-                    ? .clean
-                    : .dirty(inspection.dirtyPaths)
+                if inspection.directoryMissing {
+                    status = .missing
+                } else {
+                    status = inspection.dirtyPaths.isEmpty
+                        ? .clean
+                        : .dirty(inspection.dirtyPaths)
+                }
             case .failure:
                 status = .unavailable
             }
@@ -190,7 +212,8 @@ final class AgentWorktreeManagerModel {
         case .success(let inspection):
             removalPrompt = AgentWorktreeRemovalPrompt(
                 worktree: worktree,
-                dirtyPaths: inspection.dirtyPaths
+                dirtyPaths: inspection.dirtyPaths,
+                directoryMissing: inspection.directoryMissing
             )
         case .failure(let failure):
             message = .failure(Self.describe(removalFailure: failure))
@@ -208,18 +231,30 @@ final class AgentWorktreeManagerModel {
     /// A clean worktree is removed with no confirmation at all — the service
     /// rejects a confirmation it did not ask for, which is what stops a stale
     /// "yes, delete my changes" from being replayed against a different tree.
+    /// A missing directory (#1603) consents to the prune instead: the value
+    /// pins "the directory was gone" so the service refuses if one reappeared.
     func confirmRemoval() async {
         guard !isBusy, let prompt = removalPrompt else { return }
         isBusy = true
         defer { isBusy = false }
 
-        let confirmation = prompt.destroysUncommittedWork
-            ? AgentWorktreeRemovalConfirmation(
+        let confirmation: AgentWorktreeRemovalConfirmation?
+        if prompt.directoryMissing {
+            confirmation = AgentWorktreeRemovalConfirmation(
+                worktreeRoot: prompt.worktree.worktreeRoot,
+                dirtyPaths: [],
+                acknowledgesUnrecoverableDataLoss: false,
+                expectsMissingDirectory: true
+            )
+        } else if prompt.destroysUncommittedWork {
+            confirmation = AgentWorktreeRemovalConfirmation(
                 worktreeRoot: prompt.worktree.worktreeRoot,
                 dirtyPaths: prompt.dirtyPaths,
                 acknowledgesUnrecoverableDataLoss: true
             )
-            : nil
+        } else {
+            confirmation = nil
+        }
 
         switch await service.remove(
             prompt.worktree,
@@ -228,7 +263,9 @@ final class AgentWorktreeManagerModel {
         case .removed:
             removalPrompt = nil
             rows.removeAll { $0.id == prompt.worktree.worktreeRoot }
-            message = .removed(branch: prompt.worktree.branchName)
+            message = prompt.directoryMissing
+                ? .pruned(branch: prompt.worktree.branchName)
+                : .removed(branch: prompt.worktree.branchName)
             await onRemoved(prompt.worktree)
         case .failed(.confirmationRequired(let inspection)):
             // The worktree picked up uncommitted work between the inspection
@@ -237,7 +274,8 @@ final class AgentWorktreeManagerModel {
             // for an emptier tree.
             removalPrompt = AgentWorktreeRemovalPrompt(
                 worktree: prompt.worktree,
-                dirtyPaths: inspection.dirtyPaths
+                dirtyPaths: inspection.dirtyPaths,
+                directoryMissing: inspection.directoryMissing
             )
         case .failed(let failure):
             removalPrompt = nil
@@ -316,11 +354,20 @@ final class AgentWorktreeManagerModel {
 
     /// Body of the removal alert. Names the directory that is deleted and,
     /// when there is uncommitted work, the paths that go with it — the whole
-    /// point of ``AgentWorktreeService/inspectRemoval(_:)``.
+    /// point of ``AgentWorktreeService/inspectRemoval(_:)``. A prompt for a
+    /// directory that is already gone discloses the prune instead: only git's
+    /// registration is dropped, the branch stays (#1603).
     static func removalMessage(
         for prompt: AgentWorktreeRemovalPrompt,
         locale: Locale = .current
     ) -> String {
+        if prompt.directoryMissing {
+            return Strings.agentWorktreesPruneText(
+                prompt.worktree.worktreeRoot.path,
+                prompt.worktree.branchName,
+                locale: locale
+            )
+        }
         guard prompt.destroysUncommittedWork else {
             return Strings.agentWorktreesRemoveCleanText(
                 prompt.worktree.worktreeRoot.path,
@@ -386,6 +433,8 @@ final class AgentWorktreeManagerModel {
         switch message {
         case .removed:
             return Strings.agentWorktreesRemovedText(locale: locale)
+        case .pruned:
+            return Strings.agentWorktreesPrunedText(locale: locale)
         case .integrated(let targetBranch, let changedPathCount):
             return Strings.agentWorktreesIntegratedText(
                 targetBranch,

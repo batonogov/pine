@@ -722,25 +722,36 @@ nonisolated struct UserTaskRunnerTests {
                 continue
             }
 
-            #expect(completion.outcome.cleanupSucceeded)
             #expect(completion.cancelled == testCase.cancel)
             #expect(completion.outcome.timedOut == testCase.timedOut)
-            if !testCase.cancel && !testCase.timedOut {
-                #expect(completion.outcome.succeeded)
-            } else {
-                #expect(!completion.outcome.succeeded)
+
+            // Bounded cleanup may legitimately defer to the background under
+            // executor contention (cleanupSucceeded: false, #1607). The
+            // cancellation handle resolves only after that deferred cleanup
+            // has released every resource, so waiting on it observes either
+            // path instead of demanding synchronous success.
+            #expect(cancellation.wait(until: .now() + 10))
+
+            // `succeeded` requires synchronous cleanup by construction, so
+            // only a run whose cleanup finished inside the bounded window
+            // carries a meaningful exit-status assertion.
+            if completion.outcome.cleanupSucceeded {
+                if !testCase.cancel && !testCase.timedOut {
+                    #expect(completion.outcome.succeeded)
+                } else {
+                    #expect(!completion.outcome.succeeded)
+                }
             }
 
             // A PID cannot be reused while an unreaped direct child still owns
-            // it. Therefore ECHILD proves Pine collected its shell without a
-            // racy pre-completion identity lookup that can observe an already
+            // it. Once full cleanup — synchronous or deferred — has resolved,
+            // ECHILD proves Pine collected its shell without a racy
+            // pre-completion identity lookup that can observe an already
             // reaped process under test-runner contention.
-            if completion.outcome.cleanupSucceeded {
-                var status: Int32 = 0
-                errno = 0
-                #expect(Darwin.waitpid(processID, &status, WNOHANG) == -1)
-                #expect(errno == ECHILD)
-            }
+            var status: Int32 = 0
+            errno = 0
+            #expect(Darwin.waitpid(processID, &status, WNOHANG) == -1)
+            #expect(errno == ECHILD)
             try? FileManager.default.removeItem(at: processIDURL)
         }
     }
@@ -1209,9 +1220,15 @@ nonisolated struct UserTaskRunnerTests {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
+    /// Tripwire ceiling for process-state polls, not a stopwatch: parallel
+    /// suites can starve a shell spawn or exit for well over two seconds,
+    /// and each poll tick does synchronous file I/O or `proc_pidinfo`
+    /// (#1568, #1607). It exists only to fail a genuinely stuck process.
+    private static let processWaitCeiling: Duration = .seconds(10)
+
     private func waitForProcessID(at url: URL) async -> pid_t? {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
+        let deadline = clock.now.advanced(by: Self.processWaitCeiling)
         while true {
             if let text = try? String(contentsOf: url, encoding: .utf8),
                let processID = pid_t(text) {
@@ -1224,7 +1241,7 @@ nonisolated struct UserTaskRunnerTests {
 
     private func waitForFile(at url: URL) async -> Bool {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
+        let deadline = clock.now.advanced(by: Self.processWaitCeiling)
         while true {
             if FileManager.default.fileExists(atPath: url.path) {
                 return true
@@ -1236,7 +1253,7 @@ nonisolated struct UserTaskRunnerTests {
 
     private func waitForProcessExit(_ processID: pid_t) async -> Bool {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
+        let deadline = clock.now.advanced(by: Self.processWaitCeiling)
         while isProcessAlive(processID), clock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
