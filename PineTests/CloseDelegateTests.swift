@@ -11,6 +11,12 @@ import AppKit
 @Suite("CloseDelegate Tests")
 @MainActor
 struct CloseDelegateTests {
+    /// Gives the asynchronous close path a few turns before asserting that
+    /// something did *not* happen (a cancelled close never reached
+    /// `performClose`). There is no positive signal for "the close was
+    /// considered and dropped", and a short settle there can only make the
+    /// test weaker, never flaky (#1543). Waiting *for* the close flow to
+    /// reach an observable milestone must use `waitUntilMainActor` instead.
     private func settle() async {
         for _ in 0..<8 { await Task.yield() }
     }
@@ -80,10 +86,13 @@ struct CloseDelegateTests {
         defer { cleanup(dir) }
         let (delegate, _, _) = makeCloseDelegate(projectURL: dir)
 
-        let window = NSWindow()
+        let window = CloseTrackingWindow()
         defer { DialogPresenter.ownerDidClose(window) }
+        window.delegate = delegate
         #expect(delegate.windowShouldClose(window) == false)
-        await settle()
+        // The deferred close is approved asynchronously and re-enters through
+        // performClose; wait for that instead of yielding (#1543).
+        #expect(await waitUntilMainActor { window.performCloseCount == 1 })
     }
 
     @Test func approvedCloseReentersThroughPerformCloseExactlyOnce() async throws {
@@ -95,7 +104,7 @@ struct CloseDelegateTests {
         window.delegate = delegate
 
         #expect(!delegate.windowShouldClose(window))
-        await settle()
+        #expect(await waitUntilMainActor { window.performCloseCount == 1 })
 
         #expect(window.performCloseCount == 1)
         #expect(window.approvedCloseCount == 1)
@@ -114,7 +123,7 @@ struct CloseDelegateTests {
         window.delegate = delegate
 
         #expect(!delegate.windowShouldClose(window))
-        await settle()
+        #expect(await waitUntilMainActor { window.performCloseCount == 1 })
 
         #expect(original.shouldCloseCount == 1)
         #expect(window.performCloseCount == 1)
@@ -143,7 +152,7 @@ struct CloseDelegateTests {
         defer { DialogPresenter.ownerDidClose(window) }
 
         #expect(!delegate.windowShouldClose(window))
-        await settle()
+        #expect(await waitUntilMainActor { saveCount == 1 })
 
         #expect(presentedTemplates == [.unsavedChangesBulk])
         #expect(saveCount == 1)
@@ -169,7 +178,7 @@ struct CloseDelegateTests {
         defer { DialogPresenter.ownerDidClose(window) }
 
         #expect(!delegate.windowShouldClose(window))
-        await settle()
+        #expect(await waitUntilMainActor { window.performCloseCount == 1 })
 
         #expect(saveCount == 0)
         #expect(window.performCloseCount == 1)
@@ -205,8 +214,7 @@ struct CloseDelegateTests {
         }
 
         #expect(!delegate.windowShouldClose(window))
-        await settle()
-        #expect(window.approvedCloseCount == 1)
+        #expect(await waitUntilMainActor { window.approvedCloseCount == 1 })
         delegate.windowWillClose(
             Notification(name: NSWindow.willCloseNotification, object: window)
         )
@@ -223,9 +231,13 @@ struct CloseDelegateTests {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         var saveCount = 0
+        var promptCount = 0
         let (delegate, projectManager, _) = makeCloseDelegate(
             projectURL: dir,
-            presentAlert: { _, _, _, _ in .alertThirdButtonReturn },
+            presentAlert: { _, _, _, _ in
+                promptCount += 1
+                return .alertThirdButtonReturn
+            },
             saveAll: { _, _ in
                 saveCount += 1
                 return true
@@ -237,6 +249,11 @@ struct CloseDelegateTests {
         defer { DialogPresenter.ownerDidClose(window) }
 
         #expect(!delegate.windowShouldClose(window))
+        // The prompt is the last positive signal on the cancel path; once it
+        // has answered, nothing can still reach saveAll or performClose.
+        // Waiting only on yields here could assert the zeros before the flow
+        // even ran (#1543).
+        #expect(await waitUntilMainActor { promptCount == 1 })
         await settle()
 
         #expect(saveCount == 0)
@@ -266,6 +283,13 @@ struct CloseDelegateTests {
         defer { DialogPresenter.ownerDidClose(window) }
 
         #expect(!delegate.windowShouldClose(window))
+        // The mutation happens inside the alert closure, so observing it
+        // proves the prompt was reached and answered; only then can the
+        // zero-count assertions below mean anything (#1543).
+        #expect(await waitUntilMainActor {
+            projectManager.primaryTabManager.activeTab?.content
+                == "changed while confirmation was visible"
+        })
         await settle()
 
         #expect(window.performCloseCount == 0)
@@ -297,8 +321,7 @@ struct CloseDelegateTests {
 
         #expect(pm.primaryTabManager.tabs.count == 1)
         delegate.closeActiveTab()
-        await settle()
-        #expect(pm.primaryTabManager.tabs.isEmpty)
+        #expect(await waitUntilMainActor { pm.primaryTabManager.tabs.isEmpty })
     }
 
     // MARK: - windowWillClose idempotency
@@ -343,7 +366,7 @@ struct CloseDelegateTests {
 
         // Close the only tab in the active (second) pane via CloseDelegate
         delegate.closeActiveTab()
-        await settle()
+        #expect(await waitUntilMainActor { pane.root.leafCount == 1 })
 
         // The empty pane should have been removed
         #expect(pane.root.leafCount == 1)
@@ -380,6 +403,12 @@ struct CloseDelegateTests {
 
         // Close one tab — pane should remain since it still has a tab
         delegate.closeActiveTab()
+        // The tab close is the last positive signal; the pane-prune decision
+        // that follows has none ("considered and dropped"), so settle before
+        // asserting the pane stayed (#1543).
+        #expect(await waitUntilMainActor {
+            pane.tabManagers[secondPaneID]?.tabs.count == 1
+        })
         await settle()
 
         #expect(pane.root.leafCount == 2)
@@ -453,6 +482,10 @@ struct CloseDelegateTests {
         #expect(secondInterceptor !== firstInterceptor)
         #expect(secondInterceptor.original === replacement)
         window.performClose(nil)
+        // The prompt proves the close flow ran; the veto means nothing after
+        // it can still approve, so the zero assertions can follow a settle
+        // once the prompt has answered (#1543).
+        #expect(await waitUntilMainActor { promptCount == 1 })
         await settle()
 
         #expect(promptCount == 1)
@@ -771,8 +804,7 @@ struct CloseDelegateTests {
         #expect(!interceptor.didCompleteWindowLifecycle)
         #expect(project.dialogOwnerWindow === window)
         window.performClose(nil)
-        await settle()
-        #expect(window.approvedCloseCount == 1)
+        #expect(await waitUntilMainActor { window.approvedCloseCount == 1 })
 
         interceptor.windowWillClose(
             Notification(name: NSWindow.willCloseNotification, object: window)
