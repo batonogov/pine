@@ -135,23 +135,25 @@ final class TerminalFindStepMenuUITests: PineUITestCase {
         app.typeKey(.escape, modifierFlags: [])
     }
 
-    /// The "n of m" counter inside the terminal search bar.
+    /// The "n of m" counter inside the terminal search bar. SwiftUI exposes
+    /// the text as the element's value, not its label (same convention as
+    /// BranchSwitcherTests' subtitle queries).
     private var matchCounter: XCUIElement {
         terminalSearchBar.staticTexts.matching(
-            NSPredicate(format: "label MATCHES %@", "^[0-9]+ of [0-9]+$")
+            NSPredicate(format: "value MATCHES %@", "^[0-9]+ of [0-9]+$")
         ).firstMatch
     }
 
-    /// Parses "current" out of the counter's "n of m" label.
-    private func currentMatchIndex(_ label: String) -> Int? {
-        let parts = label.split(separator: " ")
+    /// Parses "current" out of the counter's "n of m" value.
+    private func currentMatchIndex(_ counterValue: String) -> Int? {
+        let parts = counterValue.split(separator: " ")
         guard parts.count == 3, let index = Int(parts[0]) else { return nil }
         return index
     }
 
     /// Polls until the counter's current index grows past `previous`.
     /// The total keeps changing while `yes` feeds the pty, so comparing the
-    /// whole label would pass on total growth alone — only the current
+    /// whole value would pass on total growth alone — only the current
     /// index proves the step happened.
     private func waitForMatchIndexAdvance(
         past previous: Int,
@@ -159,15 +161,15 @@ final class TerminalFindStepMenuUITests: PineUITestCase {
     ) {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            let label = matchCounter.label
-            if let index = currentMatchIndex(label), index > previous {
+            let value = matchCounter.value as? String ?? ""
+            if let index = currentMatchIndex(value), index > previous {
                 return
             }
             Thread.sleep(forTimeInterval: 0.5)
         }
         XCTFail(
             "Match counter did not advance past \(previous); "
-                + "last label: '\(matchCounter.label)'"
+                + "last value: '\(matchCounter.value as? String ?? "")'"
         )
     }
 
@@ -239,9 +241,10 @@ final class TerminalFindStepMenuUITests: PineUITestCase {
             matchCounter.waitForExistence(timeout: 10),
             "Match counter should appear for a query that matches the scrollback"
         )
+        let counterValue = matchCounter.value as? String ?? ""
         let indexBefore = try XCTUnwrap(
-            currentMatchIndex(matchCounter.label),
-            "Counter should parse as 'n of m', got '\(matchCounter.label)'"
+            currentMatchIndex(counterValue),
+            "Counter should parse as 'n of m', got '\(counterValue)'"
         )
         findItems = openEditMenuFindItems()
         findItems.next.click()
