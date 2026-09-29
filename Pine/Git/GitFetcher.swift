@@ -57,9 +57,28 @@ nonisolated enum GitFetcher {
             group.leave()
         }
 
-        group.wait()
+        // Bounded wait (#1622): each body is deadline-bounded inside
+        // GitCommand — including the spawn step — but a body can still fail
+        // to *start* when the global queue's worker pool is saturated by
+        // other blocked callers on a loaded runner. An unbounded wait would
+        // then block the caller forever, and a synchronous caller can be the
+        // main thread (the test-only synchronous `GitStatusProvider.setup`
+        // path). On timeout return an empty snapshot: callers treat it as
+        // "git state unavailable" and degrade one refresh instead of hanging
+        // the process. The in-flight bodies keep their captured storage
+        // alive, and nothing here reads the partial results, so the early
+        // return races nothing.
+        guard group.wait(timeout: .now() + Self.fetchTimeout) == .success else {
+            return (branch: "", statuses: [:], ignored: [], branches: [])
+        }
         return (branch, statuses, ignored, branchList)
     }
+
+    /// Upper bound on one `fetchAllInParallel` wait. Each body runs exactly
+    /// one deadline-bounded `GitCommand.run`; the factor covers scheduling
+    /// delay on a loaded runner without turning a stuck worker pool into an
+    /// unbounded block.
+    private static let fetchTimeout: TimeInterval = GitCommand.defaultTimeout * 2
 
     static func fetchBranch(at url: URL) -> String {
         let result = GitCommand.run(["rev-parse", "--abbrev-ref", "HEAD"], at: url)

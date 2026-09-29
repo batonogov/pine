@@ -77,6 +77,13 @@ nonisolated struct GitCommandSystemCalls: @unchecked Sendable {
     ) -> Int
     let waitpid: @Sendable (pid_t, UnsafeMutablePointer<Int32>?, Int32) -> pid_t
     let kill: @Sendable (pid_t, Int32) -> Int32
+    /// The spawn step. Overridable so tests can simulate a `posix_spawn`
+    /// that stalls inside the kernel (#1060) without hanging the suite.
+    let spawn: @Sendable (
+        URL,
+        [String],
+        URL
+    ) -> Result<GitCommandChild, GitCommandLaunchError>
 
     init(
         read: @escaping @Sendable (
@@ -96,11 +103,17 @@ nonisolated struct GitCommandSystemCalls: @unchecked Sendable {
         },
         kill: @escaping @Sendable (pid_t, Int32) -> Int32 = { processIdentifier, signal in
             Darwin.kill(processIdentifier, signal)
-        }
+        },
+        spawn: @escaping @Sendable (
+            URL,
+            [String],
+            URL
+        ) -> Result<GitCommandChild, GitCommandLaunchError> = GitCommand.spawn
     ) {
         self.read = read
         self.waitpid = waitpid
         self.kill = kill
+        self.spawn = spawn
     }
 
     static let live = GitCommandSystemCalls()
@@ -186,10 +199,19 @@ nonisolated enum GitCommand {
         let commandDeadline = startedAt + normalizedTimeout(timeout)
 
         let child: GitCommandChild
-        switch spawn(
+        // The spawn itself is deadline-bounded: `posix_spawn` can stall
+        // inside the kernel under load (#1060, #1509), before the lifecycle
+        // loop's deadline ever starts. A synchronous caller blocks its own
+        // thread here — possibly the main thread (the test-only synchronous
+        // `GitStatusProvider.setup` path, #1622) — so an unbounded spawn
+        // hangs that thread forever; a stalled spawn must become a launch
+        // failure instead.
+        switch spawnWithDeadline(
             executableURL,
             arguments: arguments,
-            directory: directory
+            directory: directory,
+            deadline: spawnDeadline(for: timeout),
+            systemCalls: systemCalls
         ) {
         case let .success(spawnedChild):
             child = spawnedChild
@@ -423,7 +445,86 @@ nonisolated enum GitCommand {
         return false
     }
 
-    private static func spawn(
+    /// Lower bound for the spawn-step deadline. The spawn shares the
+    /// command timeout's budget, but a (near-)zero timeout must still give
+    /// `posix_spawn` a chance to run: the deadline is a kernel-stall
+    /// tripwire (#1060), not a scheduling stopwatch — a 24-way parallel
+    /// burst can legitimately take longer than a 0.2 s command timeout to
+    /// schedule the spawn worker.
+    private static let spawnDeadlineFloor: TimeInterval = 10
+
+    private static func spawnDeadline(for timeout: TimeInterval) -> TimeInterval {
+        max(normalizedTimeout(timeout), spawnDeadlineFloor)
+    }
+
+    /// Runs the spawn on a background worker and races it against `deadline`.
+    ///
+    /// The stall this guards against lives inside `posix_spawn` itself
+    /// (#1060): the call never returns, so a deadline that only covers the
+    /// post-spawn lifecycle loop starts too late to help. A stall becomes a
+    /// launch failure after `deadline` seconds — the stuck worker thread (and
+    /// possibly a half-spawned child holding pipe write ends) is leaked, but
+    /// the caller survives. This is the same tradeoff the test-side
+    /// `runProcessBounded` helper documents for `Process.run()`.
+    private static func spawnWithDeadline(
+        _ executableURL: URL,
+        arguments: [String],
+        directory: URL,
+        deadline: TimeInterval,
+        systemCalls: GitCommandSystemCalls
+    ) -> Result<GitCommandChild, GitCommandLaunchError> {
+        // The result crosses from the worker through a lock-protected box;
+        // thread start and the semaphore provide the happens-before edges.
+        final class SpawnResultBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var result: Result<GitCommandChild, GitCommandLaunchError>?
+            func store(_ result: Result<GitCommandChild, GitCommandLaunchError>) {
+                lock.lock()
+                self.result = result
+                lock.unlock()
+            }
+            func load() -> Result<GitCommandChild, GitCommandLaunchError>? {
+                lock.lock()
+                defer { lock.unlock() }
+                return result
+            }
+        }
+        let box = SpawnResultBox()
+        let spawnReturned = DispatchSemaphore(value: 0)
+        // A dedicated thread, not a GCD queue: the caller blocks on the
+        // semaphore until the spawn worker runs, so submitting that worker to
+        // a global queue makes progress depend on the pool having a free
+        // thread. Under a parallel burst the pool saturates with exactly such
+        // blocked callers, the spawn work item waits unscheduled, and the
+        // deadline fires even though `posix_spawn` itself is healthy — the
+        // tripwire then measures pool exhaustion, not a kernel stall (#1628).
+        // A detached thread is scheduled by the kernel directly, so the
+        // deadline only trips on a genuine `posix_spawn` stall (#1060).
+        Thread.detachNewThread {
+            // Match the QoS the global-queue worker used to run at, so a
+            // user-initiated caller waiting on the semaphore does not
+            // priority-invert against a default-QoS spawn thread.
+            Thread.current.qualityOfService = .userInitiated
+            // Background work owns its autorelease pool (#1509).
+            autoreleasepool {
+                box.store(systemCalls.spawn(executableURL, arguments, directory))
+            }
+            spawnReturned.signal()
+        }
+        guard spawnReturned.wait(timeout: .now() + deadline) == .success,
+              let result = box.load() else {
+            // The worker is stuck inside the spawn — leave it alone; touching
+            // its half-built pipes or child from here would race it.
+            return .failure(.spawnStall(deadline: deadline))
+        }
+        return result
+    }
+
+    /// Process-execution seam used by deterministic lifecycle tests.
+    ///
+    /// Production callers use the default `GitCommandSystemCalls.live`, which
+    /// points here.
+    static func spawn(
         _ executableURL: URL,
         arguments: [String],
         directory: URL
@@ -806,16 +907,34 @@ nonisolated enum GitCommand {
     private static let unknownWaitStatus = Int32.min
 }
 
-nonisolated private struct GitCommandChild {
+nonisolated struct GitCommandChild {
     let processIdentifier: pid_t
     let stdoutDescriptor: Int32
     let stderrDescriptor: Int32
 }
 
-nonisolated private struct GitCommandLaunchError: Error {
+nonisolated struct GitCommandLaunchError: Error {
     let code: Int32
+    private let customMessage: String?
+
+    init(code: Int32, message: String? = nil) {
+        self.code = code
+        self.customMessage = message
+    }
+
+    /// The spawn step never returned — `posix_spawn` stalled inside the
+    /// kernel under load (#1060) and the caller-side deadline fired.
+    static func spawnStall(deadline: TimeInterval) -> GitCommandLaunchError {
+        GitCommandLaunchError(
+            code: ETIMEDOUT,
+            message: "Process spawn did not return within \(Int(deadline))s (spawn stalled)"
+        )
+    }
 
     var message: String {
+        if let customMessage {
+            return customMessage
+        }
         guard let description = strerror(code) else {
             return "Process launch failed (\(code))"
         }

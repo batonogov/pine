@@ -126,12 +126,16 @@ private struct TempRepo {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
+        // Bounded by a deadline (issue #1622): a hung git fails fast
+        // instead of hanging the suite forever.
+        let output = try runProcessBounded(
+            process,
+            commandDescription: "git \(arguments.joined(separator: " "))"
+        )
+        guard output.terminationStatus == 0 else {
             throw NSError(
                 domain: "GitFileRevertTests",
-                code: Int(process.terminationStatus),
+                code: Int(output.terminationStatus),
                 userInfo: [NSLocalizedDescriptionKey: "git \(arguments.joined(separator: " ")) failed"]
             )
         }

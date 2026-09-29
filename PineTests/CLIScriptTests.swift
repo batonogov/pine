@@ -33,11 +33,15 @@ struct CLIScriptTests {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
-        try process.run()
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
-        return (output, process.terminationStatus)
+        // Bounded by a deadline (issue #1622): a hung script fails fast
+        // instead of hanging the suite forever. Both streams share `pipe`,
+        // so the helper reports the merged output in both fields.
+        let result = try runProcessBounded(
+            process,
+            commandDescription: "pine \(args.joined(separator: " "))"
+        )
+        let output = String(data: result.standardOutput, encoding: .utf8) ?? ""
+        return (output, result.terminationStatus)
     }
 
     enum ScriptError: Error {

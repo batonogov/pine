@@ -329,16 +329,19 @@ struct AgentHistoryUndoSafetyTests {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let output = pipe.fileHandleForReading.readDataToEndOfFile()
+        // Bounded by a deadline (issue #1622): a hung git fails fast
+        // instead of hanging the suite forever.
+        let output = try runProcessBounded(
+            process,
+            commandDescription: "git \(arguments.joined(separator: " "))"
+        )
+        guard output.terminationStatus == 0 else {
             throw NSError(
                 domain: "AgentHistoryUndoSafetyTests",
-                code: Int(process.terminationStatus),
+                code: Int(output.terminationStatus),
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        String(data: output, encoding: .utf8) ?? "git failed",
+                        String(data: output.standardOutput, encoding: .utf8) ?? "git failed",
                 ]
             )
         }

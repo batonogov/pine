@@ -3425,9 +3425,13 @@ struct AgentTaskRegistryTests {
             "\(NSUserName()) allow read",
             fileURL.path,
         ]
-        try chmod.run()
-        chmod.waitUntilExit()
-        #expect(chmod.terminationStatus == 0)
+        // Bounded by a deadline (issue #1622): a hung child fails fast
+        // instead of hanging the suite forever.
+        let chmodOutput = try runProcessBounded(
+            chmod,
+            commandDescription: "chmod +a \(fileURL.path)"
+        )
+        #expect(chmodOutput.terminationStatus == 0)
 
         #expect(await store.load(project: identity).status
             == .rejected(.unsafeFilesystemObject))
@@ -4029,9 +4033,13 @@ private final class PersistenceFixture {
             let chmod = Process()
             chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
             chmod.arguments = ["-N", root.path]
-            try chmod.run()
-            chmod.waitUntilExit()
-            guard chmod.terminationStatus == 0 else {
+            // Bounded by a deadline (issue #1622): a hung child fails fast
+            // instead of hanging the suite forever.
+            let chmodOutput = try runProcessBounded(
+                chmod,
+                commandDescription: "chmod -N \(root.path)"
+            )
+            guard chmodOutput.terminationStatus == 0 else {
                 throw CocoaError(.fileWriteNoPermission)
             }
             try fileManager.createDirectory(
