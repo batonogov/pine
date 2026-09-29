@@ -418,6 +418,11 @@ final class LifecycleResourceSoakTests: XCTestCase {
             backing: .buffered,
             defer: false
         )
+        // The default isReleasedWhenClosed lets close() deallocate the
+        // window while ARC still owns this strong reference; the dangling
+        // release crashes XCTMemoryChecker's end-of-scope autorelease-pool
+        // validation. ARC stays the sole owner here.
+        terminalWindow.isReleasedWhenClosed = false
         defer {
             terminalWindow.contentView = nil
             terminalWindow.close()
@@ -426,13 +431,24 @@ final class LifecycleResourceSoakTests: XCTestCase {
             SoakRendererMode.coreGraphics,
             SoakRendererMode.automatic,
         ] {
+            let selector = generator.next()
             do {
-                try await runCycle(
-                    selector: generator.next(),
-                    projectURL: fixtureRoot,
-                    defaults: defaults,
-                    rendererMode: rendererMode,
-                    terminalWindow: terminalWindow
+                _ = try await withTimeoutRetry(
+                    onRetry: { phase in
+                        report.trendWarnings.append(
+                            "warmup \(rendererMode.rawValue): "
+                                + "retried after timeout waiting for \(phase)"
+                        )
+                    },
+                    operation: {
+                        try await self.runCycle(
+                            selector: selector,
+                            projectURL: fixtureRoot,
+                            defaults: defaults,
+                            rendererMode: rendererMode,
+                            terminalWindow: terminalWindow
+                        )
+                    }
                 )
             } catch {
                 report.hardFailures.append(
@@ -468,12 +484,22 @@ final class LifecycleResourceSoakTests: XCTestCase {
                 "lifecycle.soak.cycle"
             )
             do {
-                renderer = try await runCycle(
-                    selector: selector,
-                    projectURL: fixtureRoot,
-                    defaults: defaults,
-                    rendererMode: rendererMode,
-                    terminalWindow: terminalWindow
+                renderer = try await withTimeoutRetry(
+                    onRetry: { phase in
+                        report.trendWarnings.append(
+                            "cycle \(cycle): "
+                                + "retried after timeout waiting for \(phase)"
+                        )
+                    },
+                    operation: {
+                        try await self.runCycle(
+                            selector: selector,
+                            projectURL: fixtureRoot,
+                            defaults: defaults,
+                            rendererMode: rendererMode,
+                            terminalWindow: terminalWindow
+                        )
+                    }
                 )
             } catch {
                 report.hardFailures.append("cycle \(cycle): \(error)")
@@ -569,6 +595,27 @@ final class LifecycleResourceSoakTests: XCTestCase {
         )
         try await exerciseLSPCrashAndRestart(projectURL: projectURL)
         return renderer
+    }
+
+    // The external-process startup gates (project load, terminal child,
+    // LSP initialize) wait with short timeouts that flake under shared-runner
+    // CPU starvation at the start of a run (#1619). A timed-out cycle leaves
+    // no persistent state behind — every attempt builds a fresh project
+    // manager, terminal tab, and LSP client — so one retry absorbs transient
+    // load while a genuine hang still fails the run. Invariant failures are
+    // rethrown immediately: they signal lifecycle breakage, not environment
+    // noise, and must not be masked.
+    private func withTimeoutRetry<Result>(
+        onRetry: (String) -> Void,
+        operation: () async throws -> Result
+    ) async throws -> Result {
+        do {
+            return try await operation()
+        } catch let error as LifecycleSoakError {
+            guard case .timeout(let phase) = error else { throw error }
+            onRetry(phase)
+            return try await operation()
+        }
     }
 
     private func exerciseProjectLifecycle(
