@@ -15,6 +15,14 @@
 //  `background(_: Material)` call it replaces — that is what keeps every
 //  recorded snapshot baseline valid across the migration.
 //
+//  Both sides of every comparison carry the same explicit
+//  `\_accessibilityReduceTransparency` override. Materials consult the
+//  setting when they render (on macOS 27 the RT-on and RT-off paints of
+//  `.regularMaterial` differ by ~2%), and a host may default the setting
+//  to ON — the xcode-27 CI runner does. An asymmetric override compares
+//  "material with RT off" against "material with RT on" and fails with a
+//  diff that says nothing about the style under test.
+//
 
 import AppKit
 import Foundation
@@ -41,6 +49,7 @@ struct AccessibilityAdaptiveMaterialTests {
             .adaptiveMaterialBackground(.regularMaterial, fallback: .red)
             .environment(\._accessibilityReduceTransparency, true)
         let plain = Color.red
+            .environment(\._accessibilityReduceTransparency, true)
         let diff = try renderedDiff(adaptive, plain)
         #expect(
             diff < Self.tolerance,
@@ -55,6 +64,7 @@ struct AccessibilityAdaptiveMaterialTests {
             .adaptiveMaterialBackground(.regularMaterial)
             .environment(\._accessibilityReduceTransparency, false)
         let plain = Color.clear.background(.regularMaterial)
+            .environment(\._accessibilityReduceTransparency, false)
         let diff = try renderedDiff(adaptive, plain)
         #expect(
             diff < Self.tolerance,
@@ -70,6 +80,7 @@ struct AccessibilityAdaptiveMaterialTests {
             .adaptiveMaterialBackground(.regularMaterial, in: clip)
             .environment(\._accessibilityReduceTransparency, false)
         let plain = Color.clear.background(.regularMaterial, in: clip)
+            .environment(\._accessibilityReduceTransparency, false)
         let diff = try renderedDiff(adaptive, plain)
         #expect(
             diff < Self.tolerance,
@@ -85,6 +96,7 @@ struct AccessibilityAdaptiveMaterialTests {
             .adaptiveMaterialBackground(.regularMaterial, in: clip, fallback: .red)
             .environment(\._accessibilityReduceTransparency, true)
         let plain = Color.clear.background(Color.red, in: clip)
+            .environment(\._accessibilityReduceTransparency, true)
         let diff = try renderedDiff(adaptive, plain)
         #expect(
             diff < Self.tolerance,
@@ -100,6 +112,7 @@ struct AccessibilityAdaptiveMaterialTests {
             .environment(\._accessibilityReduceTransparency, false)
         let plain = RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(.regularMaterial)
+            .environment(\._accessibilityReduceTransparency, false)
         let diff = try renderedDiff(adaptive, plain)
         #expect(
             diff < Self.tolerance,
@@ -115,6 +128,7 @@ struct AccessibilityAdaptiveMaterialTests {
             .environment(\._accessibilityReduceTransparency, true)
         let plain = RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(Color.red)
+            .environment(\._accessibilityReduceTransparency, true)
         let diff = try renderedDiff(adaptive, plain)
         #expect(
             diff < Self.tolerance,
@@ -129,6 +143,7 @@ struct AccessibilityAdaptiveMaterialTests {
             .adaptiveMaterialBackground(.bar, opacity: 0.5)
             .environment(\._accessibilityReduceTransparency, false)
         let plain = Color.clear.background(.bar.opacity(0.5))
+            .environment(\._accessibilityReduceTransparency, false)
         let diff = try renderedDiff(adaptive, plain)
         #expect(
             diff < Self.tolerance,
