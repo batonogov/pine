@@ -71,7 +71,7 @@ struct BreadcrumbPathBar: View {
             .padding(.horizontal, 8)
         }
         .frame(height: LayoutMetrics.breadcrumbBarHeight)
-        .background(.bar.opacity(0.5))
+        .background(.adaptiveBar.opacity(0.5))
         .accessibilityIdentifier(AccessibilityID.breadcrumbBar)
     }
 

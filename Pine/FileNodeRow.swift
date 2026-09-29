@@ -96,7 +96,7 @@ struct FileNodeRow: View {
             .font(.body)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .background(.adaptiveRegularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Inline editor

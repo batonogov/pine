@@ -380,7 +380,7 @@ struct WelcomeView: View {
         .disabled(recentSelection.selectedURL == nil)
         .padding(.horizontal)
         .padding(.vertical, 8)
-        .background(.bar)
+        .background(.adaptiveBar)
     }
 
     @ViewBuilder

@@ -245,7 +245,7 @@ struct CompletionPopupContent: View {
                 }
             }
         }
-        .background(.regularMaterial)
+        .background(.adaptiveRegularMaterial)
         .accessibilityIdentifier(AccessibilityID.completionPopup)
     }
 }

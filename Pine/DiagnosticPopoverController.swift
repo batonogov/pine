@@ -37,11 +37,7 @@ struct DiagnosticPopoverView: View {
     let diagnostic: ValidationDiagnostic
 
     private var severityLabel: String {
-        switch diagnostic.severity {
-        case .error: return Strings.diagnosticSeverityError
-        case .warning: return Strings.diagnosticSeverityWarning
-        case .info: return Strings.diagnosticSeverityInfo
-        }
+        diagnostic.severity.displayName
     }
 
     private var lineLabel: String {

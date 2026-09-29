@@ -293,7 +293,7 @@ struct StatusBarView: View {
         }
         .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
         .frame(minHeight: LayoutMetrics.statusBarHeight)
-        .background(.bar)
+        .background(.adaptiveBar)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Strings.a11yStatusBarLabel)
         .accessibilityIdentifier(AccessibilityID.statusBar)

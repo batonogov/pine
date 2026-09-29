@@ -62,13 +62,16 @@ struct AgentTabBadge: View {
                     .foregroundStyle(
                         session.liveness == .stale ? .orange : .secondary
                     )
+                    .accessibilityHidden(true)
             } else if userFacingState == .waitingInput {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
             } else {
                 Circle()
                     .fill(Color(nsColor: session.agentType.color))
                     .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
                     .opacity(userFacingState == .idle ? 0.6 : 1.0)
                     .scaleEffect(
                         Self.shouldPulse(
@@ -152,6 +155,7 @@ struct TerminalTabIdentityLabel: View {
             Image(systemName: "terminal")
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
             Text(tab.name)
                 .font(.system(size: 11))
@@ -185,6 +189,10 @@ struct TerminalNativeTabItem: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 7, weight: .bold))
                     .foregroundStyle(.secondary)
+                    // Pure affordance — the close action is published by the
+                    // accessibility representation below, so the glyph must
+                    // not be a second stop.
+                    .accessibilityHidden(true)
                     .frame(
                         width: TabSlotHitTesting.closeGlyphSize,
                         height: TabSlotHitTesting.closeGlyphSize
