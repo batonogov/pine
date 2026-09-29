@@ -12118,6 +12118,81 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "…以及另外 %lld 项" } }
       }
     },
+    "agentWorktrees.prune": {
+      "comment": "Row action that prunes git's record of an agent worktree whose directory is already gone.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Bereinigen …" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Prune…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Purgar…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Purger…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "整理…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "정리…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Limpar…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Очистить…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "清理…" } }
+      }
+    },
+    "agentWorktrees.prune.body %@ %@": {
+      "comment": "Prune alert body: %1$@ directory that is already deleted, %2$@ branch.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Das Verzeichnis %1$@ ist bereits gelöscht.\n\nPine entfernt den Git-Eintrag des Worktrees. Der Branch „%2$@“ und seine Commits bleiben im Repository." } },
+        "en": { "stringUnit": { "state": "translated", "value": "The directory %1$@ is already deleted.\n\nPine will remove git’s record of the worktree. The branch “%2$@” and its commits stay in the repository." } },
+        "es": { "stringUnit": { "state": "translated", "value": "El directorio %1$@ ya está eliminado.\n\nPine eliminará el registro de git del worktree. La rama «%2$@» y sus commits permanecen en el repositorio." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le dossier %1$@ est déjà supprimé.\n\nPine supprimera l’enregistrement git du worktree. La branche « %2$@ » et ses commits restent dans le dépôt." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ディレクトリ %1$@ はすでに削除されています。\n\nPine はワークツリーの git 記録を削除します。ブランチ「%2$@」とそのコミットはリポジトリに残ります。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%1$@ 디렉터리는 이미 삭제되었습니다.\n\nPine이 워크트리의 git 기록을 제거합니다. 브랜치 “%2$@”와 커밋은 저장소에 남습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O diretório %1$@ já foi apagado.\n\nO Pine removerá o registro do worktree no git. O branch “%2$@” e seus commits permanecem no repositório." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Каталог %1$@ уже удалён.\n\nPine удалит запись git об этом worktree. Ветка «%2$@» и её коммиты останутся в репозитории." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "目录 %1$@ 已被删除。\n\nPine 将移除该工作树的 git 记录。分支“%2$@”及其提交仍保留在仓库中。" } }
+      }
+    },
+    "agentWorktrees.prune.confirm": {
+      "comment": "Confirming button of the prune alert.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Eintrag bereinigen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Prune Record" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Purgar registro" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Purger l’enregistrement" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "記録を整理" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "기록 정리" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Limpar registro" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Очистить запись" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "清理记录" } }
+      }
+    },
+    "agentWorktrees.prune.title": {
+      "comment": "Title of the prune alert for a worktree whose directory is already gone.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Eintrag dieses Agent-Worktrees bereinigen?" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Prune this agent worktree record?" } },
+        "es": { "stringUnit": { "state": "translated", "value": "¿Purgar el registro de este worktree de agente?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Purger l’enregistrement de ce worktree d’agent ?" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このエージェントのワークツリー記録を整理しますか？" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 에이전트 워크트리 기록을 정리할까요?" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Limpar o registro deste worktree de agente?" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Очистить запись этого worktree агента?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "要清理这个智能体工作树的记录吗？" } }
+      }
+    },
+    "agentWorktrees.pruned": {
+      "comment": "Success banner after a missing worktree's record is pruned.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Worktree-Eintrag bereinigt. Der Branch bleibt im Repository." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Worktree record pruned. Its branch is still in the repository." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Registro del worktree purgado. Su rama sigue en el repositorio." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Enregistrement du worktree purgé. Sa branche reste dans le dépôt." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ワークツリーの記録を整理しました。ブランチはリポジトリに残ります。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "워크트리 기록을 정리했습니다. 브랜치는 저장소에 남아 있습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Registro do worktree limpo. O branch continua no repositório." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Запись worktree очищена. Её ветка осталась в репозитории." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已清理工作树记录。其分支仍保留在仓库中。" } }
+      }
+    },
     "agentWorktrees.remove": {
       "comment": "Row action that deletes an agent worktree from disk.",
       "extractionState": "manual",
@@ -12277,6 +12352,21 @@
         "zh-Hans": { "variations": { "plural": {
           "other": { "stringUnit": { "state": "translated", "value": "%lld 项未提交" } }
         } } }
+      }
+    },
+    "agentWorktrees.status.missing": {
+      "comment": "Row status when the worktree's directory was deleted but git still holds its registration.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Fehlt" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Missing" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No existe" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Absent" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "見つかりません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "없음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ausente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Отсутствует" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "缺失" } }
       }
     },
     "agentWorktrees.status.unavailable": {

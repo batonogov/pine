@@ -274,6 +274,95 @@ struct AgentWorktreeManagerModelTests {
         #expect(model.message == .failure(Strings.agentWorktreesUnsafeText()))
     }
 
+    // MARK: - Prune consent (#1603)
+
+    @Test("A worktree whose directory is gone is listed as missing")
+    func missingDirectoryGetsItsOwnRowStatus() async throws {
+        let worktree = makeWorktree(branch: "pine/agent/codex/e0e0e0e0")
+        let service = ScriptedWorktreeService()
+        await service.setInspection(
+            .success(inspection(
+                worktree,
+                dirtyPaths: [],
+                directoryMissing: true
+            )),
+            for: worktree
+        )
+        let model = AgentWorktreeManagerModel(service: service)
+
+        await model.refresh([worktree])
+
+        #expect(model.rows[0].status == .missing)
+    }
+
+    @Test("The prune prompt discloses the missing directory and the branch")
+    func prunePromptDisclosesWhatHappens() async throws {
+        let worktree = makeWorktree(branch: "pine/agent/codex/e1e1e1e1")
+        let service = ScriptedWorktreeService()
+        await service.setInspection(
+            .success(inspection(
+                worktree,
+                dirtyPaths: [],
+                directoryMissing: true
+            )),
+            for: worktree
+        )
+        let model = AgentWorktreeManagerModel(service: service)
+
+        await model.prepareRemoval(worktree)
+
+        let prompt = try #require(model.removalPrompt)
+        #expect(prompt.directoryMissing)
+        // Nothing uncommitted is at stake: the loss already happened when
+        // the directory was deleted by hand.
+        #expect(!prompt.destroysUncommittedWork)
+        let locale = Locale(identifier: "en")
+        let message = AgentWorktreeManagerModel.removalMessage(
+            for: prompt,
+            locale: locale
+        )
+        #expect(message == Strings.agentWorktreesPruneText(
+            worktree.worktreeRoot.path,
+            worktree.branchName,
+            locale: locale
+        ))
+        #expect(message.contains(worktree.worktreeRoot.path))
+        #expect(message.contains(worktree.branchName))
+    }
+
+    @Test("Confirming a prune consents to exactly the missing-directory state")
+    func pruneConfirmationPinsTheMissingState() async throws {
+        let worktree = makeWorktree(branch: "pine/agent/codex/e2e2e2e2")
+        let service = ScriptedWorktreeService()
+        await service.setInspection(
+            .success(inspection(
+                worktree,
+                dirtyPaths: [],
+                directoryMissing: true
+            )),
+            for: worktree
+        )
+        await service.setRemoval(.removed, for: worktree)
+        let forgotten = Recorder()
+        let model = AgentWorktreeManagerModel(
+            service: service,
+            onRemoved: { await forgotten.record($0) }
+        )
+
+        await model.refresh([worktree])
+        await model.prepareRemoval(worktree)
+        await model.confirmRemoval()
+
+        let calls = await service.removeCalls
+        let confirmation = try #require(calls.first?.confirmation)
+        #expect(confirmation.worktreeRoot == worktree.worktreeRoot)
+        #expect(confirmation.expectsMissingDirectory)
+        #expect(confirmation.dirtyPaths.isEmpty)
+        #expect(model.rows.isEmpty)
+        #expect(model.message == .pruned(branch: worktree.branchName))
+        #expect(await forgotten.worktrees == [worktree])
+    }
+
     // MARK: - Integration consent
 
     @Test("The integration confirmation mirrors the preview exactly")
@@ -416,6 +505,28 @@ struct AgentWorktreeManagerModelTests {
         // one the user most needs to be able to reclaim.
         #expect(presentation(.unavailable).canRemove)
     }
+
+    @Test("Prune is offered exactly for a row whose directory is gone")
+    func pruneIsOfferedOnlyForMissingRows() {
+        let worktree = makeWorktree(branch: "pine/agent/codex/e3e3e3e3")
+        func presentation(
+            _ status: AgentWorktreeRowStatus
+        ) -> AgentWorktreeRowPresentation {
+            AgentWorktreeRowPresentation(
+                row: AgentWorktreeRow(worktree: worktree, status: status),
+                projectName: "Pine"
+            )
+        }
+
+        #expect(presentation(.missing).offersPrune)
+        #expect(presentation(.missing).canRemove)
+        #expect(!presentation(.missing).canIntegrate)
+        for status: AgentWorktreeRowStatus in [
+            .checking, .clean, .dirty(["a"]), .unavailable,
+        ] {
+            #expect(!presentation(status).offersPrune)
+        }
+    }
 }
 
 // MARK: - Fixtures
@@ -448,11 +559,13 @@ private func makeWorktree(
 
 private func inspection(
     _ worktree: AgentManagedWorktree,
-    dirtyPaths: [String]
+    dirtyPaths: [String],
+    directoryMissing: Bool = false
 ) -> AgentWorktreeRemovalInspection {
     AgentWorktreeRemovalInspection(
         worktree: worktree,
-        dirtyPaths: dirtyPaths
+        dirtyPaths: dirtyPaths,
+        directoryMissing: directoryMissing
     )
 }
 

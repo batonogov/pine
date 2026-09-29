@@ -77,6 +77,150 @@ struct AgentWorktreeServiceTests {
         #expect(!FileManager.default.fileExists(atPath: worktree.worktreeRoot.path))
     }
 
+    @Test("A worktree deleted by hand is prunable, and the prune reclaims it")
+    func missingDirectoryIsPrunable() async throws {
+        let fixture = try WorktreeFixture()
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(
+            taskID: id(18),
+            branch: "agent/prunable"
+        )))
+        // The user reclaims the disk by hand; git keeps the registration and
+        // reports the entry as prunable (#1603).
+        let canonicalPath = worktree.worktreeRoot
+            .resolvingSymlinksInPath().path
+        try FileManager.default.removeItem(at: worktree.worktreeRoot)
+        #expect(try fixture.git(["worktree", "list", "--porcelain"])
+            .contains(canonicalPath))
+
+        // What an inspection of a manually deleted directory produces:
+        // nothing left to lose, flagged so the caller offers the prune.
+        let inspection = try inspected(
+            await service.inspectRemoval(worktree)
+        )
+        #expect(inspection.directoryMissing)
+        #expect(inspection.dirtyPaths.isEmpty)
+
+        // The prune still demands exact consent, and the consent pins the
+        // state it was given for: the directory was gone.
+        guard case .failed(.confirmationRequired(let required)) =
+                await service.remove(worktree) else {
+            Issue.record("Expected the prune to require confirmation")
+            return
+        }
+        #expect(required.directoryMissing)
+
+        let wrongState = AgentWorktreeRemovalConfirmation(
+            worktreeRoot: worktree.worktreeRoot,
+            dirtyPaths: [],
+            acknowledgesUnrecoverableDataLoss: true
+        )
+        #expect(await service.remove(
+            worktree,
+            confirmation: wrongState
+        ) == .failed(.confirmationMismatch))
+        #expect(try fixture.git(["worktree", "list", "--porcelain"])
+            .contains(canonicalPath))
+
+        let consent = AgentWorktreeRemovalConfirmation(
+            worktreeRoot: worktree.worktreeRoot,
+            dirtyPaths: [],
+            acknowledgesUnrecoverableDataLoss: false,
+            expectsMissingDirectory: true
+        )
+        #expect(await service.remove(
+            worktree,
+            confirmation: consent
+        ) == .removed)
+
+        // git no longer registers the worktree; its branch stays.
+        #expect(try !fixture.git(["worktree", "list", "--porcelain"])
+            .contains(canonicalPath))
+        #expect(try fixture.git(["branch", "--list", "agent/prunable"])
+            .contains("agent/prunable"))
+    }
+
+    @Test("Anything at the deleted worktree's path is not prunable")
+    func replacedDirectoryIsNotPrunable() async throws {
+        let fixture = try WorktreeFixture()
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(
+            taskID: id(19),
+            branch: "agent/replaced"
+        )))
+        let canonicalPath = worktree.worktreeRoot
+            .resolvingSymlinksInPath().path
+        try FileManager.default.removeItem(at: worktree.worktreeRoot)
+        // A symlink appearing where the directory was is not a prunable
+        // record; the prune path must never be aimed at it.
+        let decoy = fixture.root.appendingPathComponent(
+            "decoy",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: decoy,
+            withIntermediateDirectories: false
+        )
+        try FileManager.default.createSymbolicLink(
+            at: worktree.worktreeRoot,
+            withDestinationURL: decoy
+        )
+
+        #expect(await service.inspectRemoval(worktree)
+            == .failure(.unsafeWorktree))
+        let consent = AgentWorktreeRemovalConfirmation(
+            worktreeRoot: worktree.worktreeRoot,
+            dirtyPaths: [],
+            acknowledgesUnrecoverableDataLoss: false,
+            expectsMissingDirectory: true
+        )
+        #expect(await service.remove(
+            worktree,
+            confirmation: consent
+        ) == .failed(.unsafeWorktree))
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(
+            atPath: decoy.path,
+            isDirectory: &isDirectory
+        ) && isDirectory.boolValue)
+        #expect(try fixture.git(["worktree", "list", "--porcelain"])
+            .contains(canonicalPath))
+    }
+
+    @Test("A prune consent is refused once something reappears at the path")
+    func reappearedDirectoryRefusesPruneConsent() async throws {
+        let fixture = try WorktreeFixture()
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(
+            taskID: id(20),
+            branch: "agent/reappeared"
+        )))
+        try FileManager.default.removeItem(at: worktree.worktreeRoot)
+        let consent = AgentWorktreeRemovalConfirmation(
+            worktreeRoot: worktree.worktreeRoot,
+            dirtyPaths: [],
+            acknowledgesUnrecoverableDataLoss: false,
+            expectsMissingDirectory: true
+        )
+        // The directory comes back between the alert and the answer. The
+        // consent covered pruning a registration, not deleting a tree, so
+        // the removal fails closed and the directory is left alone.
+        try FileManager.default.createDirectory(
+            at: worktree.worktreeRoot,
+            withIntermediateDirectories: false
+        )
+
+        #expect(await service.remove(
+            worktree,
+            confirmation: consent
+        ) == .failed(.inspectionFailed))
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(
+            atPath: worktree.worktreeRoot.path,
+            isDirectory: &isDirectory
+        ) && isDirectory.boolValue)
+    }
+
     @Test("Invalid branches, missing refs, and symlink roots fail closed")
     func invalidInputsFailClosed() async throws {
         let fixture = try WorktreeFixture()
@@ -372,6 +516,18 @@ struct AgentWorktreeServiceTests {
             throw WorktreeFixtureError.commandFailed
         }
         return worktree
+    }
+
+    private func inspected(
+        _ result: Result<
+            AgentWorktreeRemovalInspection, AgentWorktreeRemovalFailure
+        >
+    ) throws -> AgentWorktreeRemovalInspection {
+        guard case .success(let inspection) = result else {
+            Issue.record("Expected removal inspection, received \(result)")
+            throw WorktreeFixtureError.commandFailed
+        }
+        return inspection
     }
 
     private func ready(
