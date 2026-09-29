@@ -366,7 +366,10 @@ struct EditorTabBar: View {
                     }
                     .onAppear {
                         if let activeID = tabManager.activeTabID {
-                            proxy.scrollTo(activeID, anchor: .center)
+                            // No anchor: reveal by the smallest necessary
+                            // amount instead of re-centring a tab that is
+                            // already visible (#1537).
+                            proxy.scrollTo(activeID)
                         }
                     }
                     .onDisappear {
@@ -390,11 +393,14 @@ struct EditorTabBar: View {
                     }
                     .onChange(of: tabManager.activeTabID) {
                         guard let activeID = tabManager.activeTabID else { return }
+                        // Omitting the anchor reveals an off-screen tab by
+                        // the smallest necessary amount; re-centring yanked
+                        // the whole strip on every Ctrl+Tab switch (#1537).
                         if reduceMotion {
-                            proxy.scrollTo(activeID, anchor: .center)
+                            proxy.scrollTo(activeID)
                         } else {
                             withAnimation(PineAnimation.quick) {
-                                proxy.scrollTo(activeID, anchor: .center)
+                                proxy.scrollTo(activeID)
                             }
                         }
                     }

@@ -19,6 +19,10 @@ final class SidebarEditState {
     var isNewlyCreated: Bool = false
     /// URL of the newly created node to scroll to in the sidebar.
     var scrollToNodeID: URL?
+    /// How the row at ``scrollToNodeID`` should be revealed (#1537): create
+    /// and duplicate intentionally centre the new row; a rename commits on a
+    /// row that never left the viewport and reveals at the nearest edge.
+    private(set) var scrollRevealIntent: SidebarRevealIntent = .intentional
     /// Monotonic request consumed by `SidebarView` after Escape cancels an
     /// inline rename. Keeping this separate from `clear()` avoids stealing
     /// focus when editing ends because the user clicked another control.
@@ -44,6 +48,13 @@ final class SidebarEditState {
 
     func requestSidebarFocusRestoration() {
         focusRestorationGeneration &+= 1
+    }
+
+    /// Requests a post-edit reveal of `url`, recorded together with its
+    /// intent so the view cannot pair a rename with a centering scroll.
+    func requestScroll(to url: URL, intent: SidebarRevealIntent) {
+        scrollToNodeID = url
+        scrollRevealIntent = intent
     }
 
     /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
@@ -78,7 +89,7 @@ final class SidebarEditState {
             }
             workspace.refreshFileTree()
             startNewItem(url: newURL)
-            scrollToNodeID = newURL
+            requestScroll(to: newURL, intent: .intentional)
         } catch {
             Self.showFileError(error.localizedDescription, context: context)
         }
@@ -107,10 +118,43 @@ final class SidebarEditState {
             renamingURL = copyURL
             editingText = copyURL.lastPathComponent
             isNewlyCreated = false
-            scrollToNodeID = copyURL
+            requestScroll(to: copyURL, intent: .intentional)
             if !isDirectory {
                 tabManager.openTab(url: copyURL)
             }
+        } catch {
+            Self.showFileError(error.localizedDescription, context: context)
+        }
+    }
+
+    /// Moves a file or folder to the Trash with a registered undo (#1537).
+    ///
+    /// Shared by the row context menu, the File menu command, and ⌘⌫ so all
+    /// three paths keep identical Finder semantics (`FileManager.trashItem`
+    /// via ``FileOperationUndoManager``).
+    func deleteItem(
+        at url: URL,
+        workspace: WorkspaceManager,
+        undoManager: UndoManager? = nil,
+        context: DialogPresentationContext = .unscoped
+    ) {
+        if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(url, projectRoot: root) {
+            Self.showFileError(Strings.operationOutsideProject, context: context)
+            return
+        }
+
+        do {
+            if let undoManager {
+                try FileOperationUndoManager.deleteItem(at: url, undoManager: undoManager)
+            } else {
+                try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            }
+            workspace.refreshFileTree()
+            NotificationCenter.default.post(
+                name: .fileDeleted,
+                object: nil,
+                userInfo: ["url": url]
+            )
         } catch {
             Self.showFileError(error.localizedDescription, context: context)
         }
@@ -290,6 +334,31 @@ enum SidebarKeyboardCommand: Equatable, Sendable {
     }
 }
 
+/// Sidebar file operations that must exist outside the row context menu
+/// (#1537): the File menu posts them, `SidebarView` applies them to the
+/// selected row.
+enum SidebarFileMenuOperation: Equatable, Sendable {
+    case newFolder
+    case rename
+    case duplicate
+    case moveToTrash
+    case revealInFinder
+}
+
+/// Pure targeting rules for menu-bar sidebar file operations (#1537).
+enum SidebarMenuOperationTarget {
+    /// Directory a menu-bar New Folder applies to: the selected folder, the
+    /// selected file's parent, or — without a selection — the project root.
+    static func newItemParent(selection: FileNode?, rootURL: URL?) -> URL? {
+        if let selection {
+            return selection.isDirectory
+                ? selection.url
+                : selection.url.deletingLastPathComponent()
+        }
+        return rootURL
+    }
+}
+
 /// Invisible responder embedded in the sidebar hierarchy.
 @MainActor
 final class SidebarKeyboardResponderView: NSView {
@@ -297,6 +366,10 @@ final class SidebarKeyboardResponderView: NSView {
     var onPrintableText: ((String) -> Bool)?
     var onReturn: ((SidebarKeyboardModifiers) -> Bool)?
     var onSpace: (() -> Bool)?
+    /// Finder's ⌘⌫ Move to Trash for the selected row (#1537). Kept local to
+    /// the sidebar: a menu-bar key equivalent would shadow the standard
+    /// delete-to-beginning-of-line text binding in every editor.
+    var onMoveToTrash: (() -> Bool)?
     var onFocusChange: ((Bool) -> Void)?
     /// Injectable only so hosted tests can prove selector trust boundaries.
     var currentEventProvider: () -> NSEvent? = { NSApp.currentEvent }
@@ -320,6 +393,10 @@ final class SidebarKeyboardResponderView: NSView {
         }
         if Self.isSpaceEvent(event) {
             routePhysicalSpace(event, modifiers: modifiers)
+            return
+        }
+        if Self.isMoveToTrashEvent(event, modifiers: modifiers),
+           onMoveToTrash?() == true {
             return
         }
         if let command = SidebarKeyboardCommand(keyCode: event.keyCode) {
@@ -463,6 +540,15 @@ final class SidebarKeyboardResponderView: NSView {
             && (event.keyCode == 49 || event.characters == " ")
     }
 
+    private static func isMoveToTrashEvent(
+        _ event: NSEvent,
+        modifiers: SidebarKeyboardModifiers
+    ) -> Bool {
+        event.type == .keyDown
+            && event.keyCode == 51
+            && modifiers == [.command]
+    }
+
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
         if accepted {
@@ -487,6 +573,7 @@ struct SidebarKeyboardFocusBridge: NSViewRepresentable {
     let onPrintableText: (String) -> Bool
     let onReturn: (SidebarKeyboardModifiers) -> Bool
     let onSpace: () -> Bool
+    let onMoveToTrash: () -> Bool
 
     func makeNSView(context: Context) -> SidebarKeyboardResponderView {
         let view = SidebarKeyboardResponderView()
@@ -494,6 +581,7 @@ struct SidebarKeyboardFocusBridge: NSViewRepresentable {
         view.onPrintableText = onPrintableText
         view.onReturn = onReturn
         view.onSpace = onSpace
+        view.onMoveToTrash = onMoveToTrash
         controller.attach(view)
         return view
     }
@@ -503,6 +591,7 @@ struct SidebarKeyboardFocusBridge: NSViewRepresentable {
         nsView.onPrintableText = onPrintableText
         nsView.onReturn = onReturn
         nsView.onSpace = onSpace
+        nsView.onMoveToTrash = onMoveToTrash
         controller.attach(nsView)
     }
 }
@@ -618,6 +707,7 @@ struct SidebarView: View {
     @State private var expansion = SidebarExpansionState()
     @State private var keyboardFocusController = SidebarKeyboardFocusController()
     @State private var navigation = SidebarTreeNavigation()
+    @State private var fontSettings = FontSizeSettings.shared
     @FocusState private var hasSwiftUIKeyboardFocus: Bool
 
     var body: some View {
@@ -684,7 +774,8 @@ struct SidebarView: View {
                             onCommand: handleSidebarCommand,
                             onPrintableText: handleSidebarPrintableText,
                             onReturn: handleSidebarReturn,
-                            onSpace: handleSidebarSpace
+                            onSpace: handleSidebarSpace,
+                            onMoveToTrash: handleSidebarMoveToTrash
                         )
                         .frame(width: 1, height: 1)
                     }
@@ -694,6 +785,14 @@ struct SidebarView: View {
                         Color.clear.onAppear { navigation.viewportHeight = geo.size.height }
                             .onChange(of: geo.size.height) { _, h in navigation.viewportHeight = h }
                     })
+                    .onChange(of: fontSettings.fontSize, initial: true) { _, size in
+                        // Page Up/Down steps must match the rendered row
+                        // height, not the minimum metric (#1537).
+                        navigation.rowHeight = Double(max(
+                            SidebarRowMetrics.minRowHeight,
+                            size + SidebarRowMetrics.rowVerticalPadding
+                        ))
+                    }
                     .onChange(of: hasSwiftUIKeyboardFocus) { _, hasFocus in
                         guard hasFocus else { return }
                         // Full Keyboard Access focuses SwiftUI's host first.
@@ -760,6 +859,53 @@ struct SidebarView: View {
                             return .ignored
                         }
                         return handleSidebarSpace() ? .handled : .ignored
+                    }
+                    // ⌘⌫ Move to Trash, Finder-style (#1537). Deliberately
+                    // not a menu key equivalent: that would shadow the
+                    // delete-to-beginning-of-line text binding app-wide.
+                    .onKeyPress(.delete, phases: .down) { press in
+                        guard SidebarKeyboardModifiers(press.modifiers) == [.command],
+                              editState.renamingURL == nil else {
+                            return .ignored
+                        }
+                        return handleSidebarMoveToTrash() ? .handled : .ignored
+                    }
+                    .onReceive(
+                        NotificationCenter.default.publisher(
+                            for: .sidebarFileOperation
+                        )
+                    ) { notification in
+                        guard ContentView.shouldHandleTargetedCommand(
+                            notificationObject: notification.object,
+                            currentProject: projectManager,
+                            isKeyWindow: controlActiveState == .key
+                        ), let operation = notification.userInfo?["operation"]
+                            as? SidebarFileMenuOperation else { return }
+                        // Deferred: the operation mutates `@Observable` edit
+                        // state and must not run inside the synchronous
+                        // notification delivery (#1051).
+                        DispatchQueue.main.async {
+                            handleSidebarFileMenuOperation(operation)
+                        }
+                    }
+                    .onReceive(
+                        NotificationCenter.default.publisher(
+                            for: .revealInSidebar
+                        )
+                    ) { notification in
+                        // ContentView performs the selection write; the
+                        // sidebar adds the missing halves (#1537): reveal the
+                        // row at the nearest edge and move keyboard focus
+                        // into the tree so ⌘Return's editor focus has a
+                        // keyboard route back.
+                        guard ContentView.shouldHandleTargetedCommand(
+                            notificationObject: notification.object,
+                            currentProject: projectManager,
+                            isKeyWindow: controlActiveState == .key
+                        ), let url = notification.userInfo?["url"] as? URL else { return }
+                        DispatchQueue.main.async {
+                            revealNodeInSidebar(url)
+                        }
                     }
                     .contextMenu {
                         if let rootURL = workspace.rootURL {
@@ -845,8 +991,8 @@ struct SidebarView: View {
                                 selectSidebarRow(node)
                             }
                             performSidebarScroll(
-                                .intentionalReveal(
-                                    targetID,
+                                editState.scrollRevealIntent.scrollRequest(
+                                    for: targetID,
                                     reduceMotion: reduceMotion
                                 ),
                                 using: scrollProxy
@@ -976,6 +1122,96 @@ struct SidebarView: View {
         claimSidebarKeyboardFocus()
         onFileOpen(selected, .transientPreview)
         return true
+    }
+
+    // MARK: - Menu-bar file operations (#1537)
+
+    /// Applies a File ▸ Sidebar menu command to the selected row. These are
+    /// the same operations the row context menu offers, routed through
+    /// ``SidebarEditState`` so undo, error presentation, and reveal behavior
+    /// stay identical.
+    private func handleSidebarFileMenuOperation(
+        _ operation: SidebarFileMenuOperation
+    ) {
+        switch operation {
+        case .newFolder:
+            guard let parent = SidebarMenuOperationTarget.newItemParent(
+                selection: navigation.currentSelection,
+                rootURL: workspace.rootURL
+            ) else { return }
+            editState.createNewItem(
+                in: parent,
+                isDirectory: true,
+                workspace: workspace,
+                undoManager: undoManager,
+                context: DialogPresenter.forProject(projectManager)
+            )
+        case .rename:
+            guard let selected = navigation.currentSelection else { return }
+            navigation.resetTypeAhead()
+            paneManager.cancelPendingFocusForActivePane()
+            editState.startRename(for: selected)
+        case .duplicate:
+            guard let selected = navigation.currentSelection else { return }
+            editState.duplicateItem(
+                at: selected.url,
+                isDirectory: selected.isDirectory,
+                workspace: workspace,
+                tabManager: projectManager.activeTabManager,
+                context: DialogPresenter.forProject(projectManager)
+            )
+        case .moveToTrash:
+            _ = handleSidebarMoveToTrash()
+        case .revealInFinder:
+            guard let selected = navigation.currentSelection else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([selected.url])
+        }
+    }
+
+    /// ⌘⌫ / File ▸ Sidebar ▸ Move to Trash on the selected row.
+    private func handleSidebarMoveToTrash() -> Bool {
+        guard editState.renamingURL == nil,
+              let selected = navigation.currentSelection else {
+            return false
+        }
+        navigation.resetTypeAhead()
+        editState.deleteItem(
+            at: selected.url,
+            workspace: workspace,
+            undoManager: undoManager,
+            context: DialogPresenter.forProject(projectManager)
+        )
+        return true
+    }
+
+    /// Reveal in Sidebar: expand the ancestor chain, select the row, reveal
+    /// it by the smallest necessary amount, and move keyboard focus into the
+    /// sidebar (#1537).
+    private func revealNodeInSidebar(_ url: URL) {
+        guard case .present(let node) = SidebarTreeFlattener.lookup(
+            url,
+            rootNodes: workspace.rootNodes
+        ) else { return }
+        expandAncestors(of: url, in: workspace.rootNodes)
+        selectSidebarRow(node)
+        navigation.scroll(to: node)
+        claimSidebarKeyboardFocus(retryOnNextRunLoop: true)
+    }
+
+    /// Expands every loaded directory on the path to `url`, using each node's
+    /// own URL so expansion keys match the tree exactly (directory URLs may
+    /// carry a trailing slash).
+    private func expandAncestors(of target: URL, in nodes: [FileNode]) {
+        let targetIdentity = SidebarPathIdentity(target)
+        for node in nodes where node.isDirectory {
+            guard targetIdentity.isDescendant(of: SidebarPathIdentity(node.url)) else {
+                continue
+            }
+            expansion.setExpanded(node.url, true)
+            if let children = node.children {
+                expandAncestors(of: target, in: children)
+            }
+        }
     }
 
     // MARK: - Finder-style keyboard navigation (#1238)

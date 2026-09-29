@@ -228,8 +228,12 @@ final class SplitPaneRoutingUITests: PineUITestCase {
         XCTAssertTrue(utilsTab.waitForExistence(timeout: 5))
         utilsTab.rightClick()
 
-        // Select "Close All Tabs" from the context menu.
-        let closeAllItem = app.menuItems["Close All Tabs"]
+        // Select "Close All Tabs" from the context menu. Query by the
+        // context menu item's accessibility identifier: the Window menu
+        // carries a same-titled item since #1537, and menu-bar items can
+        // leak into title queries with a zero frame while their menu is
+        // closed.
+        let closeAllItem = app.menuItems["editorTabCloseAll_utils.swift"]
         XCTAssertTrue(
             closeAllItem.waitForExistence(timeout: 3),
             "'Close All Tabs' should appear in the tab context menu"

@@ -307,7 +307,10 @@ struct TerminalPaneTabBar: View {
                         }
                         .onAppear {
                             if let activeID = terminalState.activeTerminalID {
-                                proxy.scrollTo(activeID, anchor: .center)
+                                // No anchor: smallest necessary reveal, not
+                                // a re-centre of an already-visible tab
+                                // (#1537).
+                                proxy.scrollTo(activeID)
                             }
                         }
                         .onDisappear {
@@ -331,7 +334,9 @@ struct TerminalPaneTabBar: View {
                         }
                         .onChange(of: terminalState.activeTerminalID) {
                             guard let activeID = terminalState.activeTerminalID else { return }
-                            proxy.scrollTo(activeID, anchor: .center)
+                            // Smallest necessary reveal; `.center` re-centred
+                            // an already-visible tab on every switch (#1537).
+                            proxy.scrollTo(activeID)
                         }
                     }
                 }

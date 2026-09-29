@@ -2192,6 +2192,9 @@ enum Strings {
     static var commandPaletteRequiresProjectSwitching: String {
         String(localized: "commandPalette.unavailable.projectSwitching")
     }
+    static var commandPaletteRequiresFindStepTarget: String {
+        String(localized: "commandPalette.unavailable.fileOrTerminalSearch")
+    }
     static var commandPaletteNeedsFileAndTerminal: String {
         String(localized: "commandPalette.unavailable.activeFileAndTerminal")
     }
@@ -2579,6 +2582,12 @@ enum Strings {
     static let menuCloseTab: LocalizedStringKey = "menu.closeTab"
     static let menuCloseWindow: LocalizedStringKey = "menu.closeWindow"
     static let menuCloseProject: LocalizedStringKey = "menu.closeProject"
+    /// File ▸ Sidebar submenu holding the row context menu's file operations
+    /// (#1537); the item titles reuse the `context.*` keys.
+    static let menuSidebarOperations: LocalizedStringKey = "menu.sidebarOperations"
+    /// Window ▸ Split Right / Split Down (#1537).
+    static let menuSplitRight: LocalizedStringKey = "menu.splitRight"
+    static let menuSplitDown: LocalizedStringKey = "menu.splitDown"
 
     // MARK: - Affordance / Accessibility Help
 

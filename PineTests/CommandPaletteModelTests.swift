@@ -144,6 +144,72 @@ struct CommandPaletteModelTests {
         #expect(try #require(item(forTask: "project-task", in: items)).isEnabled)
     }
 
+    @Test("Find Next/Previous follow the window's find-step target, not just an editor tab")
+    func findStepCommandsFollowTerminalSearchAvailability() throws {
+        let registry = UserKeybindingRegistry()
+        // Terminal-only window (no editor tab) whose search bar the window
+        // routing policy can address — the #1581 scenario.
+        let terminalOnly = CommandPaletteContext(
+            hasProject: true,
+            hasActiveFile: false,
+            isGitRepository: true,
+            hasTerminal: true,
+            hasFindStepTarget: true
+        )
+        var items = CommandPaletteCatalog.makeItems(
+            tasks: [],
+            keybindings: registry,
+            context: terminalOnly
+        )
+        #expect(try #require(item(for: .findNext, in: items)).isEnabled)
+        #expect(try #require(item(for: .findPrevious, in: items)).isEnabled)
+        #expect(
+            try #require(item(for: .findNext, in: items)).unavailabilityReason
+                == nil
+        )
+        // Commands that genuinely need the editor keep their stricter gate.
+        #expect(try #require(item(for: .findInFile, in: items)).isEnabled == false)
+        #expect(try #require(item(for: .goToLine, in: items)).isEnabled == false)
+
+        // Same window once nothing is addressable: disabled and explained.
+        items = CommandPaletteCatalog.makeItems(
+            tasks: [],
+            keybindings: registry,
+            context: CommandPaletteContext(
+                hasProject: true,
+                hasActiveFile: false,
+                isGitRepository: true,
+                hasTerminal: true,
+                hasFindStepTarget: false
+            )
+        )
+        #expect(try #require(item(for: .findNext, in: items)).isEnabled == false)
+        #expect(
+            try #require(item(for: .findNext, in: items)).unavailabilityReason
+                == Strings.commandPaletteRequiresFindStepTarget
+        )
+        #expect(
+            try #require(item(for: .findPrevious, in: items))
+                .unavailabilityReason
+                == Strings.commandPaletteRequiresFindStepTarget
+        )
+
+        // An editor tab alone keeps the pre-#1581 behavior: both enabled.
+        items = CommandPaletteCatalog.makeItems(
+            tasks: [],
+            keybindings: registry,
+            context: CommandPaletteContext(
+                hasProject: true,
+                hasActiveFile: true,
+                isGitRepository: true,
+                hasTerminal: false,
+                hasFindStepTarget: true
+            )
+        )
+        #expect(try #require(item(for: .findNext, in: items)).isEnabled)
+        #expect(try #require(item(for: .findPrevious, in: items)).isEnabled)
+    }
+
     @Test("Every unavailable context has a localized explanation")
     func contextualAvailabilityReasons() throws {
         let items = CommandPaletteCatalog.makeItems(
@@ -175,6 +241,11 @@ struct CommandPaletteModelTests {
             try #require(item(for: .sendToTerminal, in: items))
                 .unavailabilityReason
                 == Strings.commandPaletteNeedsFileAndTerminal
+        )
+        #expect(
+            try #require(item(for: .findNext, in: items))
+                .unavailabilityReason
+                == Strings.commandPaletteRequiresFindStepTarget
         )
     }
 

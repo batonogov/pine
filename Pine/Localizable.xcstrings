@@ -28610,6 +28610,21 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要活动文件和打开的终端。" } }
       }
     },
+    "commandPalette.unavailable.fileOrTerminalSearch": {
+      "comment": "Command palette explanation for a disabled Find Next/Find Previous command that requires an active file or a terminal search bar the window can address.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Erfordert eine aktive Datei oder eine offene Terminalsuche." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Requires an active file or an open terminal search." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Requiere un archivo activo o una búsqueda abierta en el terminal." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nécessite un fichier actif ou une recherche ouverte dans le terminal." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アクティブなファイルまたは開いているターミナル検索が必要です。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "활성 파일 또는 열려 있는 터미널 검색이 필요합니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Requer um arquivo ativo ou uma busca aberta no terminal." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Требуется активный файл или открытый поиск в терминале." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "需要活动文件或打开的终端搜索。" } }
+      }
+    },
     "menu.commandPalette": {
       "comment": "Menu command that opens the searchable command palette.",
       "extractionState": "manual",
@@ -37926,6 +37941,186 @@
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Deseja salvar as alterações feitas nestes arquivos?" } },
         "ru": { "stringUnit": { "state": "translated", "value": "Сохранить изменения, внесённые в эти файлы?" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "要存储您对这些文件所做的更改吗？" } }
+      }
+    },
+    "menu.sidebarOperations": {
+      "comment": "File menu submenu holding the sidebar file operations (New Folder, Rename, Duplicate, Delete, Reveal in Finder).",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seitenleiste"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sidebar"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Barra lateral"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Barre latérale"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사이드바"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Barra lateral"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Боковая панель"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "边栏"
+          }
+        }
+      }
+    },
+    "menu.splitDown": {
+      "comment": "Window menu item: split the active pane stacked vertically, moving the active tab when the source keeps another.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach unten teilen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Split Down"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dividir hacia abajo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diviser vers le bas"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下に分割"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래로 분할"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dividir abaixo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разделить вниз"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向下拆分"
+          }
+        }
+      }
+    },
+    "menu.splitRight": {
+      "comment": "Window menu item: split the active pane side by side, moving the active tab when the source keeps another.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach rechts teilen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Split Right"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dividir a la derecha"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diviser à droite"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右に分割"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오른쪽으로 분할"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dividir à direita"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разделить вправо"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向右拆分"
+          }
+        }
       }
     }
   },

@@ -36,6 +36,10 @@ extension Notification.Name {
     static let fileDeleted = Notification.Name("fileDeleted")
     /// userInfo: ["url": URL] — reveals a file in the sidebar tree
     static let revealInSidebar = Notification.Name("revealInSidebar")
+    /// Applies a file operation to the sidebar's selected row
+    /// (File ▸ Sidebar submenu, #1537).
+    /// userInfo: ["operation": SidebarFileMenuOperation]
+    static let sidebarFileOperation = Notification.Name("sidebarFileOperation")
 
     // MARK: - Find & Replace (issue #275)
     static let findInFile = Notification.Name("findInFile")

@@ -38,6 +38,14 @@ struct MenuHardcodedShortcutGuardTests {
         "tabMoveToNextPane",
         // Recover Terminal Display — a renderer escape hatch (#1472).
         "menuRecoverTerminalDisplay",
+        // New Folder (⌘⇧N) — a sidebar context-menu operation mirrored into
+        // the menu bar (#1537); no UserCommand case.
+        "contextNewFolder",
+        // Close Other Tabs (⌥⌘W) and Reveal in Sidebar (⌘⇧J) — tab
+        // context-menu commands mirrored into the Window menu (#1537);
+        // neither has a UserCommand case.
+        "tabCloseOtherTabs",
+        "tabRevealInSidebar",
     ]
 
     @Test("only the exempt menu items spell a key equivalent out in source")

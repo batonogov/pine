@@ -147,6 +147,12 @@ struct PaneLeafView: View {
                 : Color.clear,
             width: 1
         )
+        // `.contain` makes the leaf itself the named container, so the
+        // `paneLeaf_<id>` identifier cannot propagate into descendant
+        // containers (tab bar, terminal search bar) and mask the identifiers
+        // they set for themselves — the same propagation EditorTabBar and
+        // TerminalPaneTabBar guard their inline controls against.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.paneLeaf(paneID.id.uuidString))
     }
 
@@ -795,74 +801,15 @@ struct PaneLeafView: View {
     }
 
     private func closeOtherTabsWithConfirmation(keeping tabID: UUID, tabManager: TabManager) {
-        let context = DialogPresenter.forProject(projectManager)
-        Task { @MainActor in
-            _ = await TabCloseHelper.closeOtherTabs(
-                keeping: tabID,
-                in: tabManager,
-                gitProvider: workspace.gitProvider,
-                context: context,
-                saveTab: { index in
-                    guard tabManager.tabs.indices.contains(index) else {
-                        return false
-                    }
-                    return await projectManager.saveTab(
-                        tabID: tabManager.tabs[index].id,
-                        in: tabManager,
-                        forceSaveAs: false,
-                        context: context
-                    )
-                }
-            )
-        }
+        projectManager.requestCloseOtherTabs(keeping: tabID, in: tabManager)
     }
 
     private func closeTabsToTheRightWithConfirmation(of tabID: UUID, tabManager: TabManager) {
-        let context = DialogPresenter.forProject(projectManager)
-        Task { @MainActor in
-            _ = await TabCloseHelper.closeTabsToTheRight(
-                of: tabID,
-                in: tabManager,
-                gitProvider: workspace.gitProvider,
-                context: context,
-                saveTab: { index in
-                    guard tabManager.tabs.indices.contains(index) else {
-                        return false
-                    }
-                    return await projectManager.saveTab(
-                        tabID: tabManager.tabs[index].id,
-                        in: tabManager,
-                        forceSaveAs: false,
-                        context: context
-                    )
-                }
-            )
-        }
+        projectManager.requestCloseTabsToTheRight(of: tabID, in: tabManager)
     }
 
     private func closeAllTabsWithConfirmation(tabManager: TabManager) {
-        let context = DialogPresenter.forProject(projectManager)
-        Task { @MainActor in
-            let didClose = await TabCloseHelper.closeAllTabs(
-                in: tabManager,
-                gitProvider: workspace.gitProvider,
-                context: context,
-                saveTab: { index in
-                    guard tabManager.tabs.indices.contains(index) else {
-                        return false
-                    }
-                    return await projectManager.saveTab(
-                        tabID: tabManager.tabs[index].id,
-                        in: tabManager,
-                        forceSaveAs: false,
-                        context: context
-                    )
-                }
-            )
-            if didClose && tabManager.tabs.isEmpty {
-                paneManager.removePane(paneID)
-            }
-        }
+        projectManager.requestCloseAllTabs(in: tabManager, paneID: paneID)
     }
 }
 

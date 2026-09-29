@@ -329,6 +329,30 @@ struct SidebarScrollRequest: Equatable, Sendable {
     }
 }
 
+/// Why the sidebar is about to reveal a row after an edit (#1537).
+///
+/// The contract in `.claude/rules/architecture.md` reserves `.center` +
+/// animation for intentional reveals; a rename commits on a row that never
+/// left the viewport, so it must reveal like ordinary keyboard selection.
+enum SidebarRevealIntent: Equatable, Sendable {
+    /// Create/duplicate: deliberately place the new row mid-viewport.
+    case intentional
+    /// Rename: move the viewport by the smallest necessary amount, if at all.
+    case minimal
+
+    func scrollRequest(
+        for id: URL,
+        reduceMotion: Bool
+    ) -> SidebarScrollRequest {
+        switch self {
+        case .intentional:
+            return .intentionalReveal(id, reduceMotion: reduceMotion)
+        case .minimal:
+            return .keyboardSelection(id)
+        }
+    }
+}
+
 // MARK: - Type-ahead
 
 /// Finder-style type-to-select with repeated-character cycling.
@@ -502,10 +526,15 @@ final class SidebarTreeNavigation {
     /// size for Page Up / Page Down.
     var viewportHeight: Double = 400
 
+    /// Height of one rendered row. `SidebarView` keeps this in step with the
+    /// font-driven row metric (`SidebarFileTreeNode`); using the *minimum*
+    /// row height here made a page jump overshoot the visible page (#1537).
+    var rowHeight: Double = Double(SidebarRowMetrics.minRowHeight)
+
     /// Estimated number of visible rows per page, derived from the
-    /// viewport height and the minimum row height.
+    /// viewport height and the rendered row height.
     var estimatedPageSize: Int {
-        max(1, Int(viewportHeight / SidebarRowMetrics.minRowHeight))
+        max(1, Int(viewportHeight / rowHeight))
     }
 
     // MARK: - Linear movement (Up / Down / Home / End / Page)

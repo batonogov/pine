@@ -156,10 +156,17 @@ final class EditorWindowTests: PineUITestCase {
         let mainTab = editorTab("main.swift")
         XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
 
-        // File > Duplicate via menu
+        // File > Duplicate via menu. The File ▸ Sidebar submenu (#1537) adds
+        // a second "Duplicate" item, so match the visible top-level one:
+        // items of closed submenus leak into the query with a zero frame.
         app.activate()
         clickMenuBarItem("File")
-        app.menuItems["Duplicate"].click()
+        let duplicateItem = app.menuItems
+            .matching(NSPredicate(format: "title == %@", "Duplicate"))
+            .allElementsBoundByIndex
+            .first { $0.frame.width > 0 && $0.frame.height > 0 }
+        XCTAssertNotNil(duplicateItem, "File menu should contain Duplicate")
+        duplicateItem?.click()
 
         // A new tab "main copy.swift" should appear
         let copyTab = editorTab("main copy.swift")

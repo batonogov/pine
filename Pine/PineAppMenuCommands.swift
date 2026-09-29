@@ -67,12 +67,7 @@ struct PineAppMenuCommands: Commands {
     /// is what keeps the items alive in a terminal-only window.
     private var canStepFind: Bool {
         guard let project = focusedProject else { return false }
-        return FindStepTargetPolicy.isCommandEnabled(
-            activePaneID: project.paneManager.activePaneID,
-            visibleTerminalSearchPaneIDs:
-                project.paneManager.visibleTerminalSearchPaneIDs,
-            hasActiveEditorTab: project.activeTabManager.activeTab != nil
-        )
+        return project.hasFindStepTarget
     }
     /// What the focused window can do with its projects and agents (#1525).
     private var windowAvailability: ProjectWindowCommandAvailability {
@@ -83,6 +78,46 @@ struct PineAppMenuCommands: Commands {
     }
     private var agentLaunchOptions: [ProjectAgentLaunchOption] {
         windowSession()?.availableAgentOptions ?? []
+    }
+    /// The focused pane's editor tab manager, `nil` when a terminal (or
+    /// nothing) is focused. Window-menu tab commands must not fall back to
+    /// another editor pane the way `ProjectManager.activeTabManager` does.
+    private var focusedEditorTabManager: TabManager? {
+        guard let project = focusedProject,
+              project.paneManager.root.content(
+                  for: project.paneManager.activePaneID
+              ) == .editor else { return nil }
+        return project.paneManager.tabManager(
+            for: project.paneManager.activePaneID
+        )
+    }
+
+    /// Routes a File ▸ Sidebar command to the focused project's sidebar,
+    /// which owns the row selection and the edit state (#1537).
+    private func postSidebarFileOperation(_ operation: SidebarFileMenuOperation) {
+        NotificationCenter.default.post(
+            name: .sidebarFileOperation,
+            object: focusedProject,
+            userInfo: ["operation": operation]
+        )
+    }
+
+    /// Whether Window ▸ Close Other Tabs has a closable victim: pinned tabs
+    /// survive the sweep, so they alone do not enable it.
+    private var canCloseOtherTabs: Bool {
+        guard let tabManager = focusedEditorTabManager,
+              let activeID = tabManager.activeTabID else { return false }
+        return tabManager.tabs.contains { $0.id != activeID && !$0.isPinned }
+    }
+
+    /// Whether Window ▸ Close Tabs to the Right has a closable victim to the
+    /// right of the active tab (pinned tabs are skipped).
+    private var canCloseTabsToTheRight: Bool {
+        guard let tabManager = focusedEditorTabManager,
+              let activeID = tabManager.activeTabID,
+              let index = tabManager.tabs.firstIndex(where: { $0.id == activeID })
+        else { return false }
+        return tabManager.tabs[(index + 1)...].contains { !$0.isPinned }
     }
 
     var body: some Commands {
@@ -381,6 +416,62 @@ struct PineAppMenuCommands: Commands {
 
         }
 
+        // MARK: - File ▸ Sidebar (#1537)
+        // The sidebar row context menu's operations, mirrored into the menu
+        // bar so every context-menu command also exists outside right-click
+        // (HIG: a context menu is a shortcut, never the only path). Each acts
+        // on the sidebar's *selected* row; the sidebar itself resolves the
+        // live selection when the posted notification arrives.
+        CommandGroup(after: .saveItem) {
+            Menu {
+                Button {
+                    postSidebarFileOperation(.newFolder)
+                } label: {
+                    Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(focusedProject?.workspace.rootURL == nil)
+
+                Divider()
+
+                Button {
+                    postSidebarFileOperation(.rename)
+                } label: {
+                    Label(Strings.contextRename, systemImage: MenuIcons.rename)
+                }
+                .disabled(focusedProject?.sidebarSelectionURL == nil)
+
+                Button {
+                    postSidebarFileOperation(.duplicate)
+                } label: {
+                    Label(Strings.contextDuplicate, systemImage: MenuIcons.duplicate)
+                }
+                .disabled(focusedProject?.sidebarSelectionURL == nil)
+
+                Button(role: .destructive) {
+                    postSidebarFileOperation(.moveToTrash)
+                } label: {
+                    Label(Strings.contextDelete, systemImage: MenuIcons.delete)
+                }
+                .disabled(focusedProject?.sidebarSelectionURL == nil)
+
+                Divider()
+
+                Button {
+                    postSidebarFileOperation(.revealInFinder)
+                } label: {
+                    Label(Strings.contextRevealInFinder, systemImage: MenuIcons.revealInFinder)
+                }
+                .disabled(focusedProject?.sidebarSelectionURL == nil)
+            } label: {
+                Label(
+                    Strings.menuSidebarOperations,
+                    systemImage: MenuIcons.sidebarOperations
+                )
+            }
+            .disabled(focusedProject?.workspace.rootURL == nil)
+        }
+
         // MARK: - Window menu
         // The local event monitor presents the visual MRU switcher for
         // physical Control-Tab gestures. Native menu equivalents preserve the
@@ -442,6 +533,75 @@ struct PineAppMenuCommands: Commands {
             }
             .keyboardShortcut(.rightArrow, modifiers: [.command, .control, .shift])
             .disabled(focusedProject?.paneManager.canMoveActiveTab(.nextPane) != true)
+
+            Divider()
+
+            // The tab context menu's commands, mirrored into the menu bar so
+            // they are reachable without right-click (#1537). Each acts on
+            // the focused editor pane's active tab.
+            Button {
+                focusedProject?.togglePinOnActiveEditorTab()
+            } label: {
+                Label(
+                    focusedEditorTabManager?.activeTab?.isPinned == true
+                        ? Strings.tabUnpin
+                        : Strings.tabPin,
+                    systemImage: focusedEditorTabManager?.activeTab?.isPinned == true
+                        ? MenuIcons.unpinTab
+                        : MenuIcons.pinTab
+                )
+            }
+            .disabled(focusedEditorTabManager?.activeTab == nil)
+
+            Button {
+                focusedProject?.closeOtherTabsOnActiveEditorPane()
+            } label: {
+                Label(Strings.tabCloseOtherTabs, systemImage: MenuIcons.closeOtherTabs)
+            }
+            .keyboardShortcut("w", modifiers: [.command, .option])
+            .disabled(!canCloseOtherTabs)
+
+            Button {
+                focusedProject?.closeTabsToTheRightOnActiveEditorPane()
+            } label: {
+                Label(Strings.tabCloseTabsToTheRight, systemImage: MenuIcons.closeTabsToTheRight)
+            }
+            .disabled(!canCloseTabsToTheRight)
+
+            Button(role: .destructive) {
+                focusedProject?.closeAllTabsOnActiveEditorPane()
+            } label: {
+                Label(Strings.tabCloseAllTabs, systemImage: MenuIcons.closeAllTabs)
+            }
+            .disabled(focusedEditorTabManager?.tabs.isEmpty != false)
+
+            Divider()
+
+            Button {
+                focusedProject?.revealActiveTabInSidebar()
+            } label: {
+                Label(Strings.tabRevealInSidebar, systemImage: MenuIcons.revealInSidebar)
+            }
+            .keyboardShortcut("j", modifiers: [.command, .shift])
+            .disabled(focusedEditorTabManager?.activeTab?.fileURL == nil)
+
+            Divider()
+
+            // Splitting was reachable only by dragging a tab onto a drop
+            // zone (#1537).
+            Button {
+                focusedProject?.paneManager.splitActivePane(axis: .horizontal)
+            } label: {
+                Label(Strings.menuSplitRight, systemImage: MenuIcons.splitRight)
+            }
+            .disabled(focusedProject == nil)
+
+            Button {
+                focusedProject?.paneManager.splitActivePane(axis: .vertical)
+            } label: {
+                Label(Strings.menuSplitDown, systemImage: MenuIcons.splitDown)
+            }
+            .disabled(focusedProject == nil)
 
             Divider()
 

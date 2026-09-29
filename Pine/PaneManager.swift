@@ -1028,6 +1028,23 @@ final class PaneManager {
         return newID
     }
 
+    /// Splits the active pane for the Window menu commands (#1537) — before
+    /// them, ``splitPane`` was reachable only by dragging a tab onto a drop
+    /// zone. The active editor tab moves into the new pane when its source
+    /// keeps another tab; otherwise the new pane starts empty, so splitting
+    /// a single-tab pane is never an invisible no-op.
+    @discardableResult
+    func splitActivePane(axis: SplitAxis) -> PaneID? {
+        let source = activePaneID
+        if root.content(for: source) == .editor,
+           let sourceTabManager = tabManagers[source],
+           let tabID = sourceTabManager.activeTabID,
+           sourceTabManager.tabs.count > 1 {
+            return splitPane(source, axis: axis, tabID: tabID, sourcePane: source)
+        }
+        return splitPane(source, axis: axis)
+    }
+
     /// Moves a tab from one pane to another by URL.
     @discardableResult
     func moveTabBetweenPanes(tabURL: URL, from sourceID: PaneID, to targetID: PaneID) -> Bool {
