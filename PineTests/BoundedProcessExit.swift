@@ -50,12 +50,19 @@ nonisolated struct BoundedProcessOutput {
     let standardError: Data
 }
 
-/// Drains a pipe on a background queue as soon as it is created.
+/// Drains a pipe on a dedicated thread as soon as it is created.
 ///
 /// The drain must start before `process.run()`: a child that writes more
 /// than the 64 KB pipe buffer blocks on `write(2)` and never exits, so
 /// reading only after the wait would turn large output into a false
 /// timeout.
+///
+/// The reader blocks in `read(2)` for the child's whole lifetime, so it runs
+/// on a detached thread rather than a GCD global queue: under a parallel
+/// burst (e.g. 40 concurrent `runShell` calls) global-queue workers blocked
+/// in `read` saturate the pool and starve every other suite's async work of
+/// threads (#1628). A detached thread is kernel-scheduled and costs the pool
+/// nothing.
 ///
 /// `collect(allowance:)` is bounded (issue #1622 review): it is called only
 /// after the child is known to have exited, but a surviving grandchild can
@@ -72,7 +79,7 @@ nonisolated private final class BoundedPipeDrain: @unchecked Sendable {
     init(_ pipe: Pipe) {
         let handle = pipe.fileHandleForReading
         // Background work owns its autorelease pool (#1509).
-        DispatchQueue.global().async {
+        Thread.detachNewThread {
             autoreleasepool {
                 while true {
                     let chunk = handle.availableData
@@ -102,8 +109,8 @@ nonisolated private final class BoundedPipeDrain: @unchecked Sendable {
 /// The wait keeps the synchronous shape callers rely on, but a hung child is
 /// terminated instead of blocking the caller forever:
 ///
-/// 1. `process.run()` itself is dispatched to a background queue and the
-///    caller waits for "spawn returned (or threw)" with the same `deadline`:
+/// 1. `process.run()` itself runs on a detached thread and the caller waits
+///    for "spawn returned (or threw)" with the same `deadline`:
 ///    on the macOS 27 runtime fork/spawn can stall inside Foundation/kernel
 ///    (#1060, #1509), and a deadline that only covers the post-spawn wait
 ///    would start too late to help. A spawn that never returns throws
@@ -121,7 +128,7 @@ nonisolated private final class BoundedPipeDrain: @unchecked Sendable {
 /// executable) rethrows that error to the caller unchanged.
 ///
 /// Any `Pipe` attached to `standardOutput`/`standardError` is drained on a
-/// background queue for the whole run (see `BoundedPipeDrain`). A caller
+/// dedicated thread for the whole run (see `BoundedPipeDrain`). A caller
 /// that wires both streams into one pipe gets that pipe's output in both
 /// fields. Non-zero exit status is *not* an error here — callers decide
 /// whether a status is a failure.
@@ -170,13 +177,20 @@ nonisolated func runProcessBounded(
     let exitSemaphore = DispatchSemaphore(value: 0)
     process.terminationHandler = { _ in exitSemaphore.signal() }
 
-    // Spawn on a background queue: `Process.run()` can stall inside
+    // Spawn on a dedicated thread: `Process.run()` can stall inside
     // Foundation/kernel (#1060), so calling it inline would block the caller
     // — possibly the main thread of a @MainActor suite — before the exit
-    // deadline ever starts. `Process` is not thread-safe, so until the spawn
-    // result comes back only the background block touches `process`; the
-    // result crosses over through a lock-protected box and a semaphore
-    // (queue submission and the semaphore provide the happens-before edges).
+    // deadline ever starts. A detached thread, not a GCD global queue: the
+    // caller blocks on `spawnSemaphore` until the worker runs, so a queued
+    // worker makes progress depend on the pool having a free thread. Under a
+    // parallel burst the pool saturates with exactly such blocked callers,
+    // the spawn work item never gets scheduled, and the deadline fires even
+    // though the spawn itself is healthy — the tripwire then measures pool
+    // exhaustion, not a kernel stall (#1628). `Process` is not thread-safe,
+    // so until the spawn result comes back only the detached thread touches
+    // `process`; the result crosses over through a lock-protected box and a
+    // semaphore (thread start and the semaphore provide the happens-before
+    // edges).
     let spawnSemaphore = DispatchSemaphore(value: 0)
     final class SpawnResultBox: @unchecked Sendable {
         private let lock = NSLock()
@@ -193,7 +207,7 @@ nonisolated func runProcessBounded(
         }
     }
     let spawnBox = SpawnResultBox()
-    DispatchQueue.global().async {
+    Thread.detachNewThread {
         autoreleasepool {
             do {
                 try process.run()

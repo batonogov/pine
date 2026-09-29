@@ -60,14 +60,14 @@ nonisolated enum GitFetcher {
         // Bounded wait (#1622): each body is deadline-bounded inside
         // GitCommand — including the spawn step — but a body can still fail
         // to *start* when the global queue's worker pool is saturated by
-        // threads leaked from earlier kernel-level spawn stalls. An
-        // unbounded wait would then block the caller forever, and a
-        // synchronous caller can be the main thread (the test-only
-        // synchronous `GitStatusProvider.setup` path). On timeout return an
-        // empty snapshot: callers treat it as "git state unavailable" and
-        // degrade one refresh instead of hanging the process. The in-flight
-        // bodies keep their captured storage alive, and nothing here reads
-        // the partial results, so the early return races nothing.
+        // other blocked callers on a loaded runner. An unbounded wait would
+        // then block the caller forever, and a synchronous caller can be the
+        // main thread (the test-only synchronous `GitStatusProvider.setup`
+        // path). On timeout return an empty snapshot: callers treat it as
+        // "git state unavailable" and degrade one refresh instead of hanging
+        // the process. The in-flight bodies keep their captured storage
+        // alive, and nothing here reads the partial results, so the early
+        // return races nothing.
         guard group.wait(timeout: .now() + Self.fetchTimeout) == .success else {
             return (branch: "", statuses: [:], ignored: [], branches: [])
         }

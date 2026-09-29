@@ -474,7 +474,7 @@ nonisolated enum GitCommand {
         systemCalls: GitCommandSystemCalls
     ) -> Result<GitCommandChild, GitCommandLaunchError> {
         // The result crosses from the worker through a lock-protected box;
-        // queue submission and the semaphore provide the happens-before edges.
+        // thread start and the semaphore provide the happens-before edges.
         final class SpawnResultBox: @unchecked Sendable {
             private let lock = NSLock()
             private var result: Result<GitCommandChild, GitCommandLaunchError>?
@@ -491,7 +491,20 @@ nonisolated enum GitCommand {
         }
         let box = SpawnResultBox()
         let spawnReturned = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .userInitiated).async {
+        // A dedicated thread, not a GCD queue: the caller blocks on the
+        // semaphore until the spawn worker runs, so submitting that worker to
+        // a global queue makes progress depend on the pool having a free
+        // thread. Under a parallel burst the pool saturates with exactly such
+        // blocked callers, the spawn work item waits unscheduled, and the
+        // deadline fires even though `posix_spawn` itself is healthy — the
+        // tripwire then measures pool exhaustion, not a kernel stall (#1628).
+        // A detached thread is scheduled by the kernel directly, so the
+        // deadline only trips on a genuine `posix_spawn` stall (#1060).
+        Thread.detachNewThread {
+            // Match the QoS the global-queue worker used to run at, so a
+            // user-initiated caller waiting on the semaphore does not
+            // priority-invert against a default-QoS spawn thread.
+            Thread.current.qualityOfService = .userInitiated
             // Background work owns its autorelease pool (#1509).
             autoreleasepool {
                 box.store(systemCalls.spawn(executableURL, arguments, directory))
