@@ -629,6 +629,42 @@ struct GitCommandTests {
         #expect(result.output == "ready")
     }
 
+    @Test("a spawn stalled in the kernel fails bounded instead of blocking the caller")
+    func stalledSpawnFailsBounded() {
+        // #1060/#1622: posix_spawn can stall inside the kernel under load and
+        // never return. The caller of the synchronous API blocks its own
+        // thread on the spawn — possibly the main thread (the test-only
+        // synchronous GitStatusProvider.setup path) — so the stall must
+        // become a launch failure in seconds, not a hung lane.
+        let systemCalls = GitCommandSystemCalls(
+            spawn: { _, _, _ in
+                // Never returns within the test's horizon; the worker thread
+                // is leaked by design (same tradeoff as runProcessBounded).
+                Thread.sleep(forTimeInterval: 120)
+                return .failure(GitCommandLaunchError(code: ETIMEDOUT))
+            }
+        )
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let result = GitCommand.runExecutable(
+            shellURL,
+            arguments: ["-c", ":"],
+            at: workingDirectory,
+            timeout: 0.5,
+            systemCalls: systemCalls
+        )
+        let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+
+        #expect(result.succeeded == false)
+        #expect(result.exitCode == -1)
+        #expect(result.timedOut == false)
+        #expect(result.errorOutput.contains("spawn stalled"))
+        // Boundedness invariant ("seconds, not forever"), not a performance
+        // measurement: the stall trips the spawn floor (10 s), not the 0.5 s
+        // command timeout, so a (near-)zero timeout still lets posix_spawn
+        // run.
+        #expect(elapsed < 15)
+    }
+
     @Test("unrelated parent descriptors are closed across exec")
     func unrelatedParentDescriptorsAreClosed() {
         var descriptors = [Int32](repeating: -1, count: 2)
