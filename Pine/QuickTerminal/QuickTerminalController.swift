@@ -657,11 +657,28 @@ extension QuickTerminalController: QuickTerminalAgentRouting {
     /// process exits, the tab remains what the user is looking at, and that
     /// is exactly when a `.processEnded` banner must stay silent.
     func isQuickTerminalAgentTaskPresented(_ task: AgentTask) -> Bool {
-        isVisible
-            && window?.isVisible == true
-            && window?.isKeyWindow == true
-            && task.route.surface.isQuickTerminal
-            && task.route.tabID == task.route.terminalID
-            && paneState.activeTab?.id == task.route.terminalID
+        Self.isQuickTerminalRoutePresented(
+            task.route,
+            panelIsVisible: isVisible && window?.isVisible == true,
+            panelIsKey: window?.isKeyWindow == true,
+            activeTerminalID: paneState.activeTerminalID
+        )
+    }
+
+    /// Pure presentation decision for a quick-terminal route, extracted so
+    /// tests can exercise panel key/visible state that a background test
+    /// runner cannot produce from a real panel (macOS denies key-window
+    /// status without app-level foreground activation).
+    nonisolated static func isQuickTerminalRoutePresented(
+        _ route: AgentTaskRoute,
+        panelIsVisible: Bool,
+        panelIsKey: Bool,
+        activeTerminalID: UUID?
+    ) -> Bool {
+        panelIsVisible
+            && panelIsKey
+            && route.surface.isQuickTerminal
+            && route.tabID == route.terminalID
+            && activeTerminalID == route.terminalID
     }
 }

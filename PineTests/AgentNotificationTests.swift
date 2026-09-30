@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @MainActor
+@Suite(.serialized)
 struct AgentNotificationTests {
     @Test("verified waiting, failure, and completion transitions are actionable")
     func verifiedTransitions() throws {
@@ -50,14 +51,41 @@ struct AgentNotificationTests {
         // Becoming stale is evidence degradation, not an event.
         #expect(events(working, stale, accuracy: .processTerminationOnly).isEmpty)
 
+        // Genuine poll-driven termination: the task is still `.active`, and
+        // `recordTermination` never advances the observation timestamp, so
+        // `lastObservedAt` is equal between the stale and terminated states.
         var ended = stale
-        update(&ended, state: .done, liveness: .terminated, offset: 2)
+        update(&ended, state: .done, liveness: .terminated, offset: 1)
         #expect(events(stale, ended, accuracy: .processTerminationOnly).map(\.kind) == [.processEnded])
 
         // An already-terminated run never re-fires.
         var reobserved = ended
         update(&reobserved, state: .done, liveness: .terminated, offset: 3)
         #expect(events(ended, reobserved, accuracy: .processTerminationOnly).isEmpty)
+    }
+
+    @Test("resume bookkeeping close-out of an interrupted stale run never fires process-ended")
+    func interruptedStaleCloseOutIsSilent() {
+        // `AgentTaskRegistry.consume` terminates the stale tail of a
+        // load-normalized (`.paused`) interrupted task when the user resumes
+        // it. That mutation is bookkeeping for the resurrection, not a
+        // process death; it must not banner "Process ended".
+        let working = task(seed: 7, state: .executing)
+        var interrupted = working
+        interrupted.lifecycle = .paused
+        update(&interrupted, state: .executing, liveness: .stale, offset: 1)
+
+        var closedOut = interrupted
+        update(&closedOut, state: .done, liveness: .terminated, offset: 1)
+        #expect(events(interrupted, closedOut, accuracy: .processTerminationOnly).isEmpty)
+
+        // `consume` also stamps `endedAt` past `lastObservedAt`; timestamps
+        // must not resurrect the event either.
+        var stampedCloseOut = interrupted
+        update(&stampedCloseOut, state: .done, liveness: .terminated, offset: 1)
+        stampedCloseOut.runs[0].endedAt = stampedCloseOut.runs[0].startedAt
+            .addingTimeInterval(3_600)
+        #expect(events(interrupted, stampedCloseOut, accuracy: .processTerminationOnly).isEmpty)
     }
 
     @Test("duplicates, reordered evidence, stale evidence, and new generations are ignored")
@@ -388,13 +416,15 @@ struct AgentNotificationTests {
         #expect(controller.authorizationStatus == .denied)
         #expect(settings.isEnabled)
 
-        // While denied, transitions resolve but are not delivered.
+        // While denied, transitions resolve but are dropped, not deferred:
+        // nothing may arrive after the recovery from this first event.
         let first = makeSession(seed: 60)
         registry.bridge(
             first,
             replacing: nil,
             context: context(seed: 60, project: "/tmp/notify-recover")
         )
+        let firstTaskID = try #require(registry.taskID(forSessionID: first.id))
         first.applyLiveness(.terminated)
         registry.refresh(sessions: [first])
         await settle()
@@ -406,6 +436,9 @@ struct AgentNotificationTests {
             object: nil
         )
         #expect(await waitUntil { controller.authorizationStatus == .authorized })
+        // The recovery itself must not flush the dropped event.
+        await settle()
+        #expect(delivery.requests.isEmpty)
 
         // Transitions after the recovery deliver normally.
         let second = makeSession(seed: 61)
@@ -414,9 +447,18 @@ struct AgentNotificationTests {
             replacing: nil,
             context: context(seed: 61, project: "/tmp/notify-recover")
         )
+        let secondTaskID = try #require(registry.taskID(forSessionID: second.id))
         second.applyLiveness(.terminated)
         registry.refresh(sessions: [first, second])
         #expect(await waitUntil { delivery.requests.count == 1 })
+
+        // The delivered request is the post-recovery event, not a replay of
+        // the event dropped while denied.
+        let deliveredTaskID = try #require(
+            delivery.requests.first?.userInfo["taskID"]
+        )
+        #expect(deliveredTaskID == secondTaskID.uuidString)
+        #expect(deliveredTaskID != firstTaskID.uuidString)
         controller.stop()
     }
 

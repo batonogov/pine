@@ -92,11 +92,23 @@ enum AgentNotificationTransitionResolver {
         switch boundedAccuracy {
         case .processTerminationOnly:
             // Any not-yet-terminated prior liveness is eligible: a run that
-            // went `.stale` first (ps polling under load, a backgrounded
-            // project, relaunch normalization) and only later proved dead
-            // must still surface exactly one termination event.
+            // went `.stale` first (ps polling under load or a backgrounded
+            // project) and only later proved dead must still surface exactly
+            // one termination event.
             guard previousRun.liveness != .terminated,
                   run.liveness == .terminated else { return nil }
+            // A stale run only proves dead through fresh process polling
+            // while its task is still indexed, and indexed tasks are
+            // `.active`: runtime staleness (`markEvidenceUnavailable`,
+            // `updateMappedSession`) never pauses a task. A stale run on an
+            // already-paused task is a load-normalized interruption
+            // (`normalizeLoadedTask`), which is unindexed and therefore
+            // unreachable by polling; its only reachable stale→terminated
+            // transition is the bookkeeping close-out in
+            // `AgentTaskRegistry.consume` when the user resumes the task.
+            // That close-out is not a process death and must not banner.
+            if previousRun.liveness == .stale,
+               previousTask.lifecycle != .active { return nil }
             return .processEnded
         case .verifiedLifecycleTransitions:
             if task.attention == .failed,

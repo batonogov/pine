@@ -143,6 +143,12 @@ final class SystemAgentNotificationCenter: NSObject,
     /// banner for the terminal route the user is currently watching stays
     /// silent; everything else gets the full foreground set so background
     /// agent work remains visible while Pine is frontmost.
+    ///
+    /// Suppression returns the empty set on purpose — no banner *and* no
+    /// Notification Center `.list` entry — matching the delivery-time
+    /// suppression in `AgentNotificationController.scheduleDelivery`: the
+    /// user watched the process end live, so there is nothing to review
+    /// later in Notification Center either.
     func presentationOptions(
         forTaskID taskID: UUID?
     ) -> UNNotificationPresentationOptions {
@@ -374,6 +380,10 @@ final class AgentNotificationController {
             case .notDetermined:
                 deferEvent(event, task: task)
             case .denied:
+                // Deliberate drop, not defer: events resolved while denied
+                // are discarded so a later re-grant cannot replay arbitrarily
+                // old history. Only events already in flight when revocation
+                // is discovered are re-armed (see `deliver`).
                 Logger.agent.debug(
                     "Agent notification event dropped: authorization denied (id=\(event.id, privacy: .public))"
                 )
@@ -475,12 +485,9 @@ final class AgentNotificationController {
                 try await delivery.deliver(request)
             } catch {
                 let reason = error.localizedDescription
-                Logger.agent.warning(
-                    "Agent notification attempt \(attempt + 1, privacy: .public) failed (id=\(eventID, privacy: .public))"
-                )
-                Logger.agent.warning(
-                    "Agent notification delivery error (id=\(eventID, privacy: .public)): \(reason, privacy: .public)"
-                )
+                let message = "Agent notification attempt \(attempt + 1) "
+                    + "failed (id=\(eventID)): \(reason)"
+                Logger.agent.warning("\(message, privacy: .public)")
                 continue
             }
             // `UNUserNotificationCenter.add` does not throw when permission
@@ -494,6 +501,9 @@ final class AgentNotificationController {
                     "Agent notification authorization changed: \(transition, privacy: .public)"
                 )
                 authorizationStatus = currentStatus
+                if currentStatus == .authorized {
+                    flushDeferredEvents()
+                }
             }
             guard currentStatus == .authorized else {
                 Logger.agent.warning(
