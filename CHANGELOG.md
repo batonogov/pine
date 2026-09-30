@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.3](https://github.com/batonogov/pine/compare/v2.9.2...v2.9.3) (2026-09-30)
+
+
+### Bug Fixes
+
+* **agent:** restore reliable agent task notifications ([#1641](https://github.com/batonogov/pine/issues/1641)) ([1197073](https://github.com/batonogov/pine/commit/119707315ca68714a63727a795d6fd2330f144ad))
+
 ## [2.9.2](https://github.com/batonogov/pine/compare/v2.9.1...v2.9.2) (2026-09-29)
 
 
