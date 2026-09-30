@@ -319,6 +319,7 @@ struct SettingsWindowMetricsTests {
 @MainActor
 private final class InertNotificationDelivery: AgentNotificationDelivering {
     var responseHandler: ((AgentNotificationResponseAction) -> Void)?
+    var presentationSuppression: ((UUID) -> Bool)?
 
     func registerActions() {}
 
