@@ -161,8 +161,8 @@ struct AgentNotificationPresentationTests {
         ))
     }
 
-    @Test("quick terminal instance is not presented before the panel is shown")
-    func quickTerminalInstanceNotShownIsNotPresented() throws {
+    @Test("quick terminal instance presentation never depends on host window state")
+    func quickTerminalInstancePresentationIsHostIndependent() throws {
         let settingsDomain = "AgentNotificationPresentation.\(UUID().uuidString)"
         let settingsDefaults = try #require(UserDefaults(suiteName: settingsDomain))
         settingsDefaults.removePersistentDomain(forName: settingsDomain)
@@ -176,15 +176,26 @@ struct AgentNotificationPresentationTests {
         let controller = QuickTerminalController(settings: settings)
         defer { controller.shutdown() }
 
+        // Panel never shown: `isVisible` is controller state, so this is
+        // false on any host.
+        let anyTask = quickTerminalTask(tabID: UUID())
+        #expect(!controller.isQuickTerminalAgentTaskPresented(anyTask))
+
         controller.show()
         let tab = try #require(controller.paneState.activeTab)
-        let presented = quickTerminalTask(tabID: tab.id)
-        // The panel is visible in the test host but cannot become key
-        // without foreground activation, so the instance predicate holds.
-        #expect(!controller.isQuickTerminalAgentTaskPresented(presented))
+        // A route whose terminalID the panel does not host is never
+        // presented. This must NOT rely on panel key state: that is
+        // environment-dependent in the opposite direction of the
+        // FoldObserverReentrancyTests assumption — a local background
+        // runner cannot make the panel key, but the CI host app is
+        // frontmost, so there the panel is visible AND key.
+        let alienTask = quickTerminalTask(tabID: UUID())
+        #expect(!controller.isQuickTerminalAgentTaskPresented(alienTask))
 
         controller.hide()
-        #expect(!controller.isQuickTerminalAgentTaskPresented(presented))
+        // After hide the panel is not visible even for its own tab.
+        let ownTask = quickTerminalTask(tabID: tab.id)
+        #expect(!controller.isQuickTerminalAgentTaskPresented(ownTask))
     }
 
     // MARK: - Fixtures
