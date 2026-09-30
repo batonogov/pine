@@ -2336,21 +2336,20 @@ final class ProjectRegistry: LSPSettingsObserver {
         closeProjectWindow(url)
     }
 
-    /// True only when the exact live terminal route is already visible in the
-    /// key project window. Merely having Pine active or the project open is not
-    /// enough to suppress a notification for another pane or terminal tab.
+    /// True when the terminal route recorded for the task is the focused
+    /// pane and tab of the key project window (or the selected tab of the
+    /// visible Quick Terminal panel). Merely having Pine active or the
+    /// project open is not enough to suppress a notification for another
+    /// pane or terminal tab.
+    ///
+    /// Presentation is read from the task's terminal route, which survives
+    /// process termination, rather than from run liveness: a `.processEnded`
+    /// notification is resolved from the same registry mutation that already
+    /// marked the run terminated, so a liveness-based check could never pass
+    /// by delivery time and the banner+sound fired for the very terminal the
+    /// user was watching.
     func isAgentTaskPresented(_ taskID: UUID) -> Bool {
-        guard let task = agentTasks.task(for: taskID),
-              task.lifecycle == .active,
-              task.route.availability == .available,
-              let run = task.runs.last,
-              run.liveness == .live,
-              run.endedAt == nil,
-              agentTasks.isExactLiveOwner(
-                  taskID: taskID,
-                  terminalID: task.route.terminalID,
-                  runID: run.id
-              ) else { return false }
+        guard let task = agentTasks.task(for: taskID) else { return false }
         if task.route.surface.isQuickTerminal {
             return quickTerminalAgentRouter?
                 .isQuickTerminalAgentTaskPresented(task) == true

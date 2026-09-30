@@ -3,6 +3,7 @@
 //  PineTests
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Pine
@@ -39,6 +40,24 @@ struct AgentNotificationTests {
         var ended = waiting
         update(&ended, state: .done, liveness: .terminated, offset: 2)
         #expect(events(waiting, ended, accuracy: .processTerminationOnly).map(\.kind) == [.processEnded])
+    }
+
+    @Test("a run that goes stale before terminating still fires process-ended")
+    func staleThenTerminatedProcessEnd() {
+        let working = task(seed: 6, state: .executing)
+        var stale = working
+        update(&stale, state: .executing, liveness: .stale, offset: 1)
+        // Becoming stale is evidence degradation, not an event.
+        #expect(events(working, stale, accuracy: .processTerminationOnly).isEmpty)
+
+        var ended = stale
+        update(&ended, state: .done, liveness: .terminated, offset: 2)
+        #expect(events(stale, ended, accuracy: .processTerminationOnly).map(\.kind) == [.processEnded])
+
+        // An already-terminated run never re-fires.
+        var reobserved = ended
+        update(&reobserved, state: .done, liveness: .terminated, offset: 3)
+        #expect(events(ended, reobserved, accuracy: .processTerminationOnly).isEmpty)
     }
 
     @Test("duplicates, reordered evidence, stale evidence, and new generations are ignored")
@@ -322,7 +341,7 @@ struct AgentNotificationTests {
         controller.stop()
     }
 
-    @Test("denied authorization disables delivery but remains reversible")
+    @Test("denied authorization gates delivery at runtime but keeps the user's preference")
     func deniedAuthorization() async {
         let fixture = DefaultsFixture()
         defer { fixture.cleanup() }
@@ -339,12 +358,160 @@ struct AgentNotificationTests {
 
         await controller.refreshAuthorizationStatus()
         #expect(controller.authorizationStatus == .denied)
-        #expect(!settings.isEnabled)
+        // The persisted master toggle is the user's choice; OS denial is a
+        // runtime condition and must not clobber it.
+        #expect(settings.isEnabled)
 
         delivery.status = .authorized
         delivery.requestResult = true
         #expect(await controller.requestAuthorization())
         #expect(settings.isEnabled)
+    }
+
+    @Test("authorization restored in System Settings resumes delivery on activation")
+    func authorizationRecoveryOnActivation() async throws {
+        let fixture = DefaultsFixture()
+        defer { fixture.cleanup() }
+        let settings = AgentNotificationSettings(defaults: fixture.defaults)
+        settings.setEnabled(true)
+        let registry = AgentTaskRegistry()
+        let delivery = RecordingAgentNotificationDelivery(status: .denied)
+        let controller = AgentNotificationController(
+            registry: registry,
+            settings: settings,
+            delivery: delivery,
+            isPresented: { _ in false },
+            openTask: { _ in }
+        )
+        controller.start()
+        await controller.refreshAuthorizationStatus()
+        #expect(controller.authorizationStatus == .denied)
+        #expect(settings.isEnabled)
+
+        // While denied, transitions resolve but are not delivered.
+        let first = makeSession(seed: 60)
+        registry.bridge(
+            first,
+            replacing: nil,
+            context: context(seed: 60, project: "/tmp/notify-recover")
+        )
+        first.applyLiveness(.terminated)
+        registry.refresh(sessions: [first])
+        await settle()
+        #expect(delivery.requests.isEmpty)
+
+        delivery.status = .authorized
+        NotificationCenter.default.post(
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        #expect(await waitUntil { controller.authorizationStatus == .authorized })
+
+        // Transitions after the recovery deliver normally.
+        let second = makeSession(seed: 61)
+        registry.bridge(
+            second,
+            replacing: nil,
+            context: context(seed: 61, project: "/tmp/notify-recover")
+        )
+        second.applyLiveness(.terminated)
+        registry.refresh(sessions: [first, second])
+        #expect(await waitUntil { delivery.requests.count == 1 })
+        controller.stop()
+    }
+
+    @Test("authorization revoked at delivery time is not claimed and is re-armed")
+    func revokedAtDeliveryReArms() async throws {
+        let fixture = DefaultsFixture()
+        defer { fixture.cleanup() }
+        let settings = AgentNotificationSettings(defaults: fixture.defaults)
+        settings.setEnabled(true)
+        let registry = AgentTaskRegistry()
+        let delivery = RecordingAgentNotificationDelivery(status: .authorized)
+        delivery.suspendAuthorizationStatus = true
+        let controller = AgentNotificationController(
+            registry: registry,
+            settings: settings,
+            delivery: delivery,
+            isPresented: { _ in false },
+            openTask: { _ in }
+        )
+        controller.start()
+        // Park then release the startup status read so the cached status is
+        // deterministically `.authorized` before the mock flips to denied.
+        #expect(await waitUntil { delivery.hasPendingAuthorizationStatusRequest })
+        delivery.resumeAuthorizationStatus()
+        #expect(await waitUntil { controller.authorizationStatus == .authorized })
+
+        // `UNUserNotificationCenter.add` does not throw when permission was
+        // revoked in System Settings, so the mock accepts the request while
+        // reporting `.denied` on the status re-check.
+        delivery.status = .denied
+        let session = makeSession(seed: 62)
+        registry.bridge(
+            session,
+            replacing: nil,
+            context: context(seed: 62, project: "/tmp/notify-revoked")
+        )
+        session.applyLiveness(.terminated)
+        registry.refresh(sessions: [session])
+        #expect(await waitUntil { delivery.requests.count == 1 })
+
+        let request = try #require(delivery.requests.first)
+        #expect(!settings.hasDelivered(request.identifier))
+        #expect(await waitUntil { controller.authorizationStatus == .denied })
+        #expect(settings.isEnabled)
+
+        // On the activation refresh back to authorized the re-armed event
+        // flushes and is claimed exactly once.
+        delivery.status = .authorized
+        NotificationCenter.default.post(
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        #expect(await waitUntil { delivery.requests.count == 2 })
+        #expect(delivery.requests.last?.identifier == request.identifier)
+        #expect(settings.hasDelivered(request.identifier))
+        controller.stop()
+    }
+
+    @Test("controller wires route presentation suppression into delivery")
+    func presentationSuppressionWiring() async {
+        let fixture = DefaultsFixture()
+        defer { fixture.cleanup() }
+        let settings = AgentNotificationSettings(defaults: fixture.defaults)
+        let delivery = RecordingAgentNotificationDelivery(status: .authorized)
+        let presentedTaskID = UUID()
+        let controller = AgentNotificationController(
+            registry: AgentTaskRegistry(),
+            settings: settings,
+            delivery: delivery,
+            isPresented: { $0 == presentedTaskID },
+            openTask: { _ in }
+        )
+
+        #expect(delivery.presentationSuppression == nil)
+        controller.start()
+        let suppression = delivery.presentationSuppression
+        #expect(suppression?(presentedTaskID) == true)
+        #expect(suppression?(UUID()) == false)
+        controller.stop()
+        #expect(delivery.presentationSuppression == nil)
+    }
+
+    @Test("foreground banner is suppressed for the watched terminal route")
+    func foregroundPresentationSuppression() {
+        let center = SystemAgentNotificationCenter()
+        let presentedTaskID = UUID()
+        #expect(center.presentationOptions(forTaskID: presentedTaskID)
+            == SystemAgentNotificationCenter.foregroundPresentationOptions)
+        #expect(center.presentationOptions(forTaskID: nil)
+            == SystemAgentNotificationCenter.foregroundPresentationOptions)
+
+        center.presentationSuppression = { $0 == presentedTaskID }
+        #expect(center.presentationOptions(forTaskID: presentedTaskID).isEmpty)
+        #expect(center.presentationOptions(forTaskID: UUID())
+            == SystemAgentNotificationCenter.foregroundPresentationOptions)
     }
 
     private func events(
@@ -486,17 +653,21 @@ struct AgentNotificationTests {
 @MainActor
 private final class RecordingAgentNotificationDelivery: AgentNotificationDelivering {
     var responseHandler: ((AgentNotificationResponseAction) -> Void)?
+    var presentationSuppression: ((UUID) -> Bool)?
     var status: AgentNotificationAuthorizationStatus
     var requestResult = false
     var failuresRemaining = 0
     var suspendAuthorizationStatus = false
     private(set) var requests: [AgentNotificationRequest] = []
     private(set) var deliveryAttemptCount = 0
-    private var authorizationStatusContinuation:
-        CheckedContinuation<AgentNotificationAuthorizationStatus, Never>?
+    // More than one caller can park here: an activation-notification refresh
+    // posted by another test in the parallel suite can arrive while the
+    // startup refresh is still suspended.
+    private var authorizationStatusContinuations:
+        [CheckedContinuation<AgentNotificationAuthorizationStatus, Never>] = []
 
     var hasPendingAuthorizationStatusRequest: Bool {
-        authorizationStatusContinuation != nil
+        !authorizationStatusContinuations.isEmpty
     }
 
     init(status: AgentNotificationAuthorizationStatus) {
@@ -507,14 +678,15 @@ private final class RecordingAgentNotificationDelivery: AgentNotificationDeliver
     func authorizationStatus() async -> AgentNotificationAuthorizationStatus {
         guard suspendAuthorizationStatus else { return status }
         return await withCheckedContinuation { continuation in
-            authorizationStatusContinuation = continuation
+            authorizationStatusContinuations.append(continuation)
         }
     }
 
     func resumeAuthorizationStatus() {
         suspendAuthorizationStatus = false
-        authorizationStatusContinuation?.resume(returning: status)
-        authorizationStatusContinuation = nil
+        let pending = authorizationStatusContinuations
+        authorizationStatusContinuations = []
+        pending.forEach { $0.resume(returning: status) }
     }
     func requestAuthorization() async throws -> Bool { requestResult }
     func deliver(_ request: AgentNotificationRequest) async throws {

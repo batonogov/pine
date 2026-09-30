@@ -91,7 +91,11 @@ enum AgentNotificationTransitionResolver {
         )
         switch boundedAccuracy {
         case .processTerminationOnly:
-            guard previousRun.liveness == .live,
+            // Any not-yet-terminated prior liveness is eligible: a run that
+            // went `.stale` first (ps polling under load, a backgrounded
+            // project, relaunch normalization) and only later proved dead
+            // must still surface exactly one termination event.
+            guard previousRun.liveness != .terminated,
                   run.liveness == .terminated else { return nil }
             return .processEnded
         case .verifiedLifecycleTransitions:

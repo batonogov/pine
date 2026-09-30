@@ -653,10 +653,15 @@ extension QuickTerminalController: QuickTerminalAgentRouting {
         return route
     }
 
+    /// Presentation check by route, not by run liveness: after the agent
+    /// process exits, the tab remains what the user is looking at, and that
+    /// is exactly when a `.processEnded` banner must stay silent.
     func isQuickTerminalAgentTaskPresented(_ task: AgentTask) -> Bool {
         isVisible
             && window?.isVisible == true
             && window?.isKeyWindow == true
-            && resolveQuickTerminalAgentRoute(for: task) != nil
+            && task.route.surface.isQuickTerminal
+            && task.route.tabID == task.route.terminalID
+            && paneState.activeTab?.id == task.route.terminalID
     }
 }
