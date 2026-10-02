@@ -68,10 +68,9 @@ struct MenuIconTests {
     // MARK: - Project switcher icons (ProjectSwitcherView.swift, #1470)
 
     // The switcher shipped with `folder.stack`, which is not an SF Symbol.
-    // It rendered as nothing and stayed unnoticed because a text label sat
-    // beside it. The toolbar capsule can now be icon-only, so a missing
-    // symbol would leave an empty capsule holding nothing but the toolbar's
-    // own disclosure chevron.
+    // It rendered as nothing and stayed unnoticed because the pill's text
+    // sat beside it. The pill always shows that text now, so a missing
+    // symbol would leave a visible hole where the icon belongs.
     @Test(arguments: [
         (MenuIcons.projectSwitcher, "Project switcher control"),
         (MenuIcons.projectSwitcherNewAgent, "New Agent"),

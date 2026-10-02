@@ -10,10 +10,6 @@ import SwiftUI
 struct ProjectSwitcherView: View {
     let session: ProjectWindowSession
     let registry: ProjectRegistry
-    /// Text beside the icon, or `nil` when the window title already says the
-    /// same thing and the switcher should not repeat it. Resolved by
-    /// ``WindowChromePresentation``.
-    let label: String?
     let onOpenProject: () -> Void
     /// Takes the active project out of this window. Owned by the view that
     /// has the dialog context, since closing may have to ask about unsaved
@@ -38,16 +34,13 @@ struct ProjectSwitcherView: View {
                         .controlSize(.small)
                 } else {
                     // Was `folder.stack`, which is not an SF Symbol and so
-                    // rendered as nothing — invisible while the label sat
-                    // beside it, a bare chevron once the label could be
-                    // suppressed.
+                    // rendered as nothing, leaving the pill with a hole
+                    // where its icon sits.
                     Image(systemName: MenuIcons.projectSwitcher)
                 }
-                if let label {
-                    Text(label)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
-                }
+                Text(session.activeDisplayName)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.secondary)
@@ -55,6 +48,11 @@ struct ProjectSwitcherView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
+            // `.borderlessButton` stretches its label to fill the toolbar
+            // item's height — with a navigation subtitle the pill ballooned
+            // into a tall slab dwarfing the round buttons beside it. Pin the
+            // capsule to its content size.
+            .fixedSize()
             .background {
                 Capsule(style: .continuous)
                     .fill(
@@ -71,21 +69,25 @@ struct ProjectSwitcherView: View {
         // Styled after Safari's tab-group picker (macOS 27): a filled tinted
         // capsule — icon, semibold project name, chevron — that reads as the
         // navigation zone's primary control rather than one more round
-        // toolbar button. `.borderlessButton` opts out of the toolbar's own
-        // item chrome so the capsule the label draws is the only chrome;
-        // its two known failure modes are patched above — the capsule is
-        // sized by hand with generous padding, and inactive-window dimming
-        // is applied manually. The tint is a whisper of the label colour,
-        // not the accent: the control should read as chrome, not as a call
-        // to action.
+        // toolbar button. The name is always shown: the pill is the one
+        // place carrying the project's identity, and an earlier iteration
+        // that suppressed the name when the window title repeated it just
+        // collapsed the capsule into an unlabelled icon.
+        //
+        // `.borderlessButton` opts out of the toolbar's own item chrome so
+        // the capsule the label draws is the only chrome; its known failure
+        // modes are patched above — the capsule is sized by hand, and
+        // inactive-window dimming is applied manually. The tint is a whisper
+        // of the label colour, not the accent: the control should read as
+        // chrome, not as a call to action.
         .menuStyle(.borderlessButton)
         // The label draws its own chevron; the system indicator would stamp
         // a second one on top.
         .menuIndicator(.hidden)
         .help(Strings.projectSwitcherTooltip)
-        // Spoken name stays the project even when the visible text is
-        // suppressed as a duplicate — an icon-only control must not reach
-        // VoiceOver as an unnamed button.
+        // Kept for parity, but macOS drops `.accessibilityLabel` on Menu
+        // (see `AccessibilityTreeProbe`) — the spoken name really comes from
+        // the visible project-name Text in the label above.
         .accessibilityLabel(Text(session.activeDisplayName))
         .accessibilityIdentifier(AccessibilityID.projectSwitcher)
     }

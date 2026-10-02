@@ -69,13 +69,13 @@ struct ContentView: View {
 
     var activeTab: EditorTab? { activeTabManager.activeTab }
 
-    /// Title-bar text. The title carries the active file and the switcher
-    /// carries the project, so neither repeats the other.
+    /// Title-bar text. The pill always names the project, so the visible
+    /// title carries only the active file; the underlying `NSWindow.title`
+    /// never empties — see ``WindowChromePresentation``.
     var windowChrome: WindowChromePresentation {
         WindowChromePresentation(
             activeFileName: activeTab?.fileName,
-            repositoryName: projectWindowSession.activeProjectDisplayName,
-            switcherLabel: projectWindowSession.activeDisplayName
+            repositoryName: projectWindowSession.activeProjectDisplayName
         )
     }
 
@@ -136,7 +136,6 @@ struct ContentView: View {
                 ProjectSwitcherView(
                     session: projectWindowSession,
                     registry: registry,
-                    label: windowChrome.switcherLabel,
                     onOpenProject: { openNewProject() },
                     onCloseProject: { closeActiveProject() }
                 )
@@ -166,6 +165,7 @@ struct ContentView: View {
             RepresentedFileTracker(
                 url: activeTab?.fileURL ?? workspace.rootURL
             )
+            WindowTitleVisibilityTracker(showsTitle: windowChrome.showsTitle)
         }
         .task {
             reconcileKeyProjectPresentation()

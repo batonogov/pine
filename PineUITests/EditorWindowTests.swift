@@ -374,12 +374,15 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(revealProject.exists, "File menu should contain 'Reveal Project in Finder'")
     }
 
-    // MARK: - Window title does not repeat the project switcher label
+    // MARK: - Window title carries the file, the pill carries the project
 
-    /// The toolbar's project switcher already names the project. The native
-    /// title showed that same name again, printing one word twice in a single
-    /// strip; it now carries the active file and falls back to the project
-    /// only when no editor tab is open.
+    /// The switcher pill always names the project — it is the one surface
+    /// carrying the project's identity, Safari tab-group style. The window
+    /// title therefore reports the active file; with no tab open the visible
+    /// title is hidden rather than repeating the pill, while `NSWindow.title`
+    /// keeps the project name as the window's system identity (Window menu,
+    /// Mission Control). These assertions cover the system identity — the
+    /// visibility split itself is AppKit chrome XCUITest cannot see.
     func testWindowTitleShowsActiveFileInsteadOfRepeatingProjectName() throws {
         let namedProject = try createTempProject(
             files: [
@@ -394,7 +397,8 @@ final class EditorWindowTests: PineUITestCase {
 
         XCTAssertTrue(
             waitForExistence(app.windows["TitleFixture"], timeout: 10),
-            "With no editor tab open the window keeps the project name"
+            "With no editor tab open the window keeps the project name as "
+                + "its system identity"
         )
 
         openFile("main.swift")
@@ -404,8 +408,8 @@ final class EditorWindowTests: PineUITestCase {
         )
         XCTAssertTrue(
             app.windows["TitleFixture"].waitForNonExistence(timeout: 5),
-            "The project name must leave the title bar while a file is open "
-                + "— the project switcher is the one place that shows it"
+            "The project name must leave the title while a file is open "
+                + "— the switcher pill is the one place that shows it"
         )
 
         openFile("utils.swift")
@@ -453,6 +457,18 @@ final class EditorWindowTests: PineUITestCase {
             "The project switcher should be visible in the toolbar"
         )
 
+        // The pill always names the project — it is the one surface carrying
+        // the project's identity, so the name must be visible from the very
+        // first screen, before any file is open and regardless of what the
+        // window title says.
+        XCTAssertTrue(
+            waitForExistence(
+                app.staticTexts["SwitcherMetrics"].firstMatch,
+                timeout: 5
+            ),
+            "The pill should show the project name even with no file open"
+        )
+
         let openFolder = app.descendants(matching: .any)[
             "openFolderToolbarButton"
         ].firstMatch
@@ -473,20 +489,6 @@ final class EditorWindowTests: PineUITestCase {
             "The switcher carries an icon, a name, and a chevron, so its "
                 + "pill must be wider than a single-glyph toolbar button "
                 + "(\(switcher.frame.width) vs \(neighbourWidth))"
-        )
-
-        // The pill's name text is suppressed while the window title repeats
-        // it; with a file open the title takes the file, and the project
-        // name must be visible in the switcher — an empty pill would be an
-        // unlabelled mystery control.
-        openFile("main.swift")
-        XCTAssertTrue(
-            waitForExistence(
-                app.staticTexts["SwitcherMetrics"].firstMatch,
-                timeout: 5
-            ),
-            "The pill should show the project name once the window title "
-                + "moves to the open file"
         )
     }
 
