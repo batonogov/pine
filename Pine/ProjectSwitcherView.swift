@@ -10,152 +10,200 @@ import SwiftUI
 struct ProjectSwitcherView: View {
     let session: ProjectWindowSession
     let registry: ProjectRegistry
-    /// Text beside the icon, or `nil` when the window title already says the
-    /// same thing and the switcher should not repeat it. Resolved by
-    /// ``WindowChromePresentation``.
-    let label: String?
     let onOpenProject: () -> Void
     /// Takes the active project out of this window. Owned by the view that
     /// has the dialog context, since closing may have to ask about unsaved
     /// files first.
     let onCloseProject: () -> Void
 
+    @Environment(\.controlActiveState) private var controlActiveState
+    @State private var isHovered = false
+
     var body: some View {
         Menu {
-            ProjectSwitcherRows(
+            ProjectSwitcherMenuContent(
                 session: session,
                 registry: registry,
-                carriesIdentifiers: true,
-                onSelect: { url in
-                    Task { @MainActor in
-                        await session.activate(url, registry: registry)
-                    }
-                }
+                onOpenProject: onOpenProject,
+                onCloseProject: onCloseProject
             )
-
-            Divider()
-
-            Button {
-                onCloseProject()
-            } label: {
-                Label {
-                    // The repository, not `activeDisplayName`: with an agent
-                    // worktree active the display name carries its branch,
-                    // while closing takes out the whole project — worktrees
-                    // included. Naming the branch here would promise less
-                    // than the item does.
-                    Text(verbatim: Strings.projectSwitcherCloseProjectTitle(
-                        session.displayName(for: session.activeRepositoryURL)
-                    ))
-                } icon: {
-                    Image(systemName: MenuIcons.closeProject)
-                }
-            }
-            .disabled(session.isLaunchingAgent)
-            .accessibilityIdentifier(
-                AccessibilityID.projectSwitcherCloseProject
-            )
-
-            Menu {
-                if session.availableAgentOptions.isEmpty {
-                    Text(Strings.projectSwitcherNoAgents)
-                } else {
-                    ForEach(session.availableAgentOptions) { option in
-                        Button(option.displayName) {
-                            Task { @MainActor in
-                                await session.launchAgent(
-                                    option,
-                                    registry: registry
-                                )
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Label(
-                    Strings.projectSwitcherNewAgent,
-                    systemImage: MenuIcons.projectSwitcherNewAgent
-                )
-            }
-            .disabled(
-                session.isLaunchingAgent
-                    || session.availableAgentOptions.isEmpty
-            )
-            .accessibilityIdentifier(AccessibilityID.projectSwitcherNewAgent)
-
-            // Mirrors Agent ▸ Manage Agent Worktrees. The menu bar is the
-            // canonical home (#1524 lists that as a requirement, and #1525
-            // tracks the switcher being hard to reach at all); this is the
-            // second door, next to the New Agent item that opens the first.
-            Button {
-                NotificationCenter.default.post(
-                    name: .showAgentWorktrees,
-                    object: nil
-                )
-            } label: {
-                Label(
-                    Strings.menuAgentWorktrees,
-                    systemImage: MenuIcons.agentWorktrees
-                )
-            }
-            .disabled(session.isLaunchingAgent)
-            .accessibilityIdentifier(
-                AccessibilityID.projectSwitcherManageWorktrees
-            )
-
-            Button(action: onOpenProject) {
-                Label(
-                    Strings.menuOpenFolder,
-                    systemImage: MenuIcons.projectSwitcherOpenFolder
-                )
-            }
-            .disabled(session.isLaunchingAgent)
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 if session.isLaunchingAgent {
                     ProgressView()
                         .controlSize(.small)
                 } else {
                     // Was `folder.stack`, which is not an SF Symbol and so
-                    // rendered as nothing — invisible while the label sat
-                    // beside it, a bare chevron once the label could be
-                    // suppressed.
+                    // rendered as nothing, leaving the pill with a hole
+                    // where its icon sits.
                     Image(systemName: MenuIcons.projectSwitcher)
                 }
-                if let label {
-                    Text(label)
-                        .lineLimit(1)
-                }
+                Text(session.activeDisplayName)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            // `.borderlessButton` stretches its label to fill the toolbar
+            // item's height — with a navigation subtitle the pill ballooned
+            // into a tall slab dwarfing the round buttons beside it. Pin the
+            // capsule to its content size.
+            .fixedSize()
+            .background {
+                Capsule(style: .continuous)
+                    .fill(
+                        Color.primary.opacity(isHovered ? 0.14 : 0.08)
+                    )
+            }
+            .contentShape(Capsule(style: .continuous))
+            .onHover { isHovered = $0 }
+            // `.borderlessButton` escapes the toolbar's inactive-window
+            // dimming — the label used to stay full-strength white while
+            // every neighbour faded — so the pill fades by hand.
+            .opacity(controlActiveState == .key ? 1 : 0.5)
         }
-        // No `menuStyle` and no hand-drawn chevron: the toolbar's own style
-        // is what sizes the item chrome and draws the disclosure indicator.
-        // `.borderlessButton` opted out of both and pinned the control to a
-        // chrome narrower than the round items beside it while holding two
-        // glyphs instead of one, so the icon and the chevron sat flush
-        // against the capsule with no breathing room. It also kept the label
-        // full-strength white while every neighbour, and the window title,
-        // dimmed with an inactive window. Measured on macOS 27 beta at 2×:
-        // 33pt beside 35pt neighbours before, 41.5pt after. The exact metric
-        // moves with the OS and the display scale; the relationship — a
-        // busier control is never the narrowest one on the strip — does not,
-        // which is what `EditorWindowTests` asserts.
+        // Styled after Safari's tab-group picker (macOS 27): a filled tinted
+        // capsule — icon, semibold project name, chevron — that reads as the
+        // navigation zone's primary control rather than one more round
+        // toolbar button. The name is always shown: the pill is the one
+        // place carrying the project's identity, and an earlier iteration
+        // that suppressed the name when the window title repeated it just
+        // collapsed the capsule into an unlabelled icon.
+        //
+        // `.borderlessButton` opts out of the toolbar's own item chrome so
+        // the capsule the label draws is the only chrome; its known failure
+        // modes are patched above — the capsule is sized by hand, and
+        // inactive-window dimming is applied manually. The tint is a whisper
+        // of the label colour, not the accent: the control should read as
+        // chrome, not as a call to action.
+        .menuStyle(.borderlessButton)
+        // The label draws its own chevron; the system indicator would stamp
+        // a second one on top.
+        .menuIndicator(.hidden)
         .help(Strings.projectSwitcherTooltip)
-        // Spoken name stays the project even when the visible text is
-        // suppressed as a duplicate — an icon-only control must not reach
-        // VoiceOver as an unnamed button.
+        // Kept for parity, but macOS drops `.accessibilityLabel` on Menu
+        // (see `AccessibilityTreeProbe`) — the spoken name really comes from
+        // the visible project-name Text in the label above.
         .accessibilityLabel(Text(session.activeDisplayName))
         .accessibilityIdentifier(AccessibilityID.projectSwitcher)
+    }
+}
+
+/// Everything the switcher's menu offers below the label: the project and
+/// worktree rows, Close Project, New Agent, Manage Worktrees, Open Folder.
+///
+/// Extracted from `ProjectSwitcherView.body` so the menu's content is defined
+/// exactly once and the view's own code can stay about the pill chrome drawn
+/// around it.
+struct ProjectSwitcherMenuContent: View {
+    let session: ProjectWindowSession
+    let registry: ProjectRegistry
+    let onOpenProject: () -> Void
+    let onCloseProject: () -> Void
+
+    var body: some View {
+        ProjectSwitcherRows(
+            session: session,
+            registry: registry,
+            carriesIdentifiers: true,
+            onSelect: { url in
+                Task { @MainActor in
+                    await session.activate(url, registry: registry)
+                }
+            }
+        )
+
+        Divider()
+
+        Button {
+            onCloseProject()
+        } label: {
+            Label {
+                // The repository, not `activeDisplayName`: with an agent
+                // worktree active the display name carries its branch,
+                // while closing takes out the whole project — worktrees
+                // included. Naming the branch here would promise less
+                // than the item does.
+                Text(verbatim: Strings.projectSwitcherCloseProjectTitle(
+                    session.displayName(for: session.activeRepositoryURL)
+                ))
+            } icon: {
+                Image(systemName: MenuIcons.closeProject)
+            }
+        }
+        .disabled(session.isLaunchingAgent)
+        .accessibilityIdentifier(
+            AccessibilityID.projectSwitcherCloseProject
+        )
+
+        Menu {
+            if session.availableAgentOptions.isEmpty {
+                Text(Strings.projectSwitcherNoAgents)
+            } else {
+                ForEach(session.availableAgentOptions) { option in
+                    Button(option.displayName) {
+                        Task { @MainActor in
+                            await session.launchAgent(
+                                option,
+                                registry: registry
+                            )
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(
+                Strings.projectSwitcherNewAgent,
+                systemImage: MenuIcons.projectSwitcherNewAgent
+            )
+        }
+        .disabled(
+            session.isLaunchingAgent
+                || session.availableAgentOptions.isEmpty
+        )
+        .accessibilityIdentifier(AccessibilityID.projectSwitcherNewAgent)
+
+        // Mirrors Agent ▸ Manage Agent Worktrees. The menu bar is the
+        // canonical home (#1524 lists that as a requirement, and #1525
+        // tracks the switcher being hard to reach at all); this is the
+        // second door, next to the New Agent item that opens the first.
+        Button {
+            NotificationCenter.default.post(
+                name: .showAgentWorktrees,
+                object: nil
+            )
+        } label: {
+            Label(
+                Strings.menuAgentWorktrees,
+                systemImage: MenuIcons.agentWorktrees
+            )
+        }
+        .disabled(session.isLaunchingAgent)
+        .accessibilityIdentifier(
+            AccessibilityID.projectSwitcherManageWorktrees
+        )
+
+        Button(action: onOpenProject) {
+            Label(
+                Strings.menuOpenFolder,
+                systemImage: MenuIcons.projectSwitcherOpenFolder
+            )
+        }
+        .disabled(session.isLaunchingAgent)
     }
 }
 
 /// The switcher's rows: every project this window holds, the agent worktrees
 /// hanging off each, and the dividers that group them.
 ///
-/// Shared by the toolbar control and the menu bar's Switch Project submenu
-/// (#1525). The toolbar is a convenience layer over commands that exist in the
-/// menu bar, never their only home — and one row renderer is what keeps the
-/// two from disagreeing about what this window is showing.
+/// Shared by the window's switcher control and the menu bar's Switch Project
+/// submenu (#1525). The switcher is a convenience layer over commands that
+/// exist in the menu bar, never their only home — and one row renderer is
+/// what keeps the two from disagreeing about what this window is showing.
 struct ProjectSwitcherRows: View {
     let session: ProjectWindowSession
     let registry: ProjectRegistry

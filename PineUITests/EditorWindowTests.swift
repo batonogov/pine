@@ -374,12 +374,15 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(revealProject.exists, "File menu should contain 'Reveal Project in Finder'")
     }
 
-    // MARK: - Window title does not repeat the project switcher label
+    // MARK: - Window title is the system identity; the pill names the project
 
-    /// The toolbar's project switcher already names the project. The native
-    /// title showed that same name again, printing one word twice in a single
-    /// strip; it now carries the active file and falls back to the project
-    /// only when no editor tab is open.
+    /// The visible window title is hidden for good — identity on the strip
+    /// is the switcher pill (project) plus the branch button, with editor
+    /// tabs naming files, the Safari composition. `NSWindow.title` still
+    /// tracks the active file and falls back to the project, because the
+    /// Window menu, Mission Control, and window cycling read it. These
+    /// assertions cover that system identity — the hiding itself is AppKit
+    /// chrome XCUITest cannot see.
     func testWindowTitleShowsActiveFileInsteadOfRepeatingProjectName() throws {
         let namedProject = try createTempProject(
             files: [
@@ -394,7 +397,8 @@ final class EditorWindowTests: PineUITestCase {
 
         XCTAssertTrue(
             waitForExistence(app.windows["TitleFixture"], timeout: 10),
-            "With no editor tab open the window keeps the project name"
+            "With no editor tab open the window keeps the project name as "
+                + "its system identity"
         )
 
         openFile("main.swift")
@@ -404,8 +408,8 @@ final class EditorWindowTests: PineUITestCase {
         )
         XCTAssertTrue(
             app.windows["TitleFixture"].waitForNonExistence(timeout: 5),
-            "The project name must leave the title bar while a file is open "
-                + "— the project switcher is the one place that shows it"
+            "The project name must leave the title while a file is open "
+                + "— the switcher pill is the one place that shows it"
         )
 
         openFile("utils.swift")
@@ -423,12 +427,14 @@ final class EditorWindowTests: PineUITestCase {
         )
     }
 
-    // MARK: - Project switcher is not narrower than its toolbar neighbours
+    // MARK: - Project switcher pill is not narrower than its toolbar neighbours
 
-    /// The switcher opted out of the toolbar's own control style, which
-    /// pinned it to a chrome narrower than the round items beside it while it
-    /// holds two glyphs — an icon and a disclosure chevron — instead of one.
-    /// Both sat flush against the capsule and the control read as squashed.
+    /// The switcher is the navigation zone's primary control: a filled pill
+    /// with an icon, the semibold project name, and a chevron, styled after
+    /// Safari's tab-group picker. Its capsule must never come out narrower
+    /// than the single-glyph round buttons beside it — the failure mode of
+    /// the pre-pill chrome, where icon and chevron sat flush against the
+    /// edges.
     ///
     /// The assertion is relative rather than a hardcoded point size: the
     /// toolbar metric differs between macOS 26 and 27 and between display
@@ -451,6 +457,18 @@ final class EditorWindowTests: PineUITestCase {
             "The project switcher should be visible in the toolbar"
         )
 
+        // The pill always names the project — it is the one surface carrying
+        // the project's identity, so the name must be visible from the very
+        // first screen, before any file is open and regardless of what the
+        // window title says.
+        XCTAssertTrue(
+            waitForExistence(
+                app.staticTexts["SwitcherMetrics"].firstMatch,
+                timeout: 5
+            ),
+            "The pill should show the project name even with no file open"
+        )
+
         let openFolder = app.descendants(matching: .any)[
             "openFolderToolbarButton"
         ].firstMatch
@@ -468,8 +486,8 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertGreaterThan(
             switcher.frame.width,
             neighbourWidth,
-            "The switcher carries an icon and a disclosure chevron, so its "
-                + "chrome must be wider than a single-glyph toolbar button "
+            "The switcher carries an icon, a name, and a chevron, so its "
+                + "pill must be wider than a single-glyph toolbar button "
                 + "(\(switcher.frame.width) vs \(neighbourWidth))"
         )
     }

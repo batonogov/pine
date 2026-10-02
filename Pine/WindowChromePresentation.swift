@@ -2,58 +2,36 @@
 //  WindowChromePresentation.swift
 //  Pine
 //
-//  Title-bar text for one project window: what the title says, and whether
-//  the project switcher repeats it.
+//  The window's system title — identity only, never displayed.
 //
 
 import Foundation
 
-/// The two pieces of text a project window puts in its title bar, resolved
-/// together so the same string never appears twice in one strip.
+/// The string `NSWindow.title` carries for one project window.
 ///
-/// The window title carries the active file, matching how Xcode splits the
-/// two surfaces: the switcher answers "which project", the title answers
-/// "which file". With no editor tab open there is nothing file-shaped to
-/// show, so the title falls back to the project — a window must stay
-/// identifiable in the Window menu, Mission Control, and window cycling, and
-/// an empty title is never an option.
-///
-/// That fallback is exactly when the switcher would echo the title, and it is
-/// not a rare state: a project with no restored session opens straight into a
-/// terminal (#1251), so it is the first thing a new project shows. Whenever
-/// the two would read identically the switcher drops its text and stays an
-/// icon; the name is still one click away and still in the title bar.
-///
-/// The comparison is on the resolved strings rather than on "is a file open",
-/// which keeps an agent worktree readable: its switcher reads
-/// `pine — feat/branch` while the title falls back to the repository name
-/// `pine`, so the branch — the one thing distinguishing that window — never
-/// gets suppressed as a duplicate.
+/// Nothing on the strip displays it: the visible title is hidden permanently
+/// (`WindowTitleVisibilityTracker`), the Safari composition — the switcher
+/// pill names the project, the status-bar branch button names the checkout,
+/// and editor tabs name the open files. The title's only job is the system
+/// identity a window cannot live without: the Window menu, Mission Control,
+/// and window cycling read `NSWindow.title` even while the title bar hides
+/// it, and an empty title would drop the window from all three. Hence the
+/// chain — active file, then repository, then "Pine" — kept for the system
+/// even though no human reads it in the title bar.
 nonisolated struct WindowChromePresentation: Equatable {
     /// Last-resort title. Pine is a brand name and stays untranslated.
     static let fallbackTitle = "Pine"
 
-    /// Native window title.
+    /// Native window title. Always non-empty — see the type's docstring.
     let title: String
-
-    /// Text for the toolbar's project switcher, or `nil` when it would repeat
-    /// ``title`` and the switcher should render as an icon alone.
-    let switcherLabel: String?
 
     init(
         activeFileName: String?,
-        repositoryName: String,
-        switcherLabel: String
+        repositoryName: String
     ) {
-        let resolvedTitle = Self.presentable(activeFileName)
+        title = Self.presentable(activeFileName)
             ?? Self.presentable(repositoryName)
             ?? Self.fallbackTitle
-        title = resolvedTitle
-
-        let resolvedLabel = Self.presentable(switcherLabel)
-        self.switcherLabel = resolvedLabel == resolvedTitle
-            ? nil
-            : resolvedLabel
     }
 
     /// A candidate is presentable when it survives trimming and is not a bare

@@ -136,8 +136,7 @@ final class TerminalFindStepMenuUITests: PineUITestCase {
     }
 
     /// The "n of m" counter inside the terminal search bar. SwiftUI exposes
-    /// the text as the element's value, not its label (same convention as
-    /// BranchSwitcherTests' subtitle queries).
+    /// the text as the element's value, not its label.
     private var matchCounter: XCUIElement {
         terminalSearchBar.staticTexts.matching(
             NSPredicate(format: "value MATCHES %@", "^[0-9]+ of [0-9]+$")
