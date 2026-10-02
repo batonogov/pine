@@ -69,9 +69,10 @@ struct ContentView: View {
 
     var activeTab: EditorTab? { activeTabManager.activeTab }
 
-    /// Title-bar text. The pill always names the project, so the visible
-    /// title carries only the active file; the underlying `NSWindow.title`
-    /// never empties — see ``WindowChromePresentation``.
+    /// System title for the window. Never displayed — the visible title is
+    /// hidden for good (`WindowTitleVisibilityTracker`); the string exists
+    /// for the Window menu, Mission Control, and window cycling. See
+    /// ``WindowChromePresentation``.
     var windowChrome: WindowChromePresentation {
         WindowChromePresentation(
             activeFileName: activeTab?.fileName,
@@ -130,7 +131,6 @@ struct ContentView: View {
         ))
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(windowChrome.title)
-        .navigationSubtitle(branchSubtitle)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 ProjectSwitcherView(
@@ -139,6 +139,20 @@ struct ContentView: View {
                     onOpenProject: { openNewProject() },
                     onCloseProject: { closeActiveProject() }
                 )
+            }
+
+            // The branch the subtitle used to carry, until hiding the window
+            // title took the whole native title block with it — see
+            // `WindowTitleVisibilityTracker`.
+            if !branchSubtitle.isEmpty {
+                ToolbarItem(placement: .navigation) {
+                    BranchToolbarButton(
+                        title: branchSubtitle,
+                        branchName: workspace.gitProvider.currentBranch
+                    ) {
+                        isBranchSwitcherPresented = true
+                    }
+                }
             }
 
             // Agent Inbox entry point in the project window toolbar (#1337).
@@ -156,16 +170,11 @@ struct ContentView: View {
             }
         }
         .background {
-            BranchSubtitleClickHandler(
-                gitProvider: workspace.gitProvider,
-                isGitRepository: workspace.gitProvider.isGitRepository,
-                projectManager: projectManager
-            )
             DocumentEditedTracker(isEdited: projectManager.hasUnsavedChanges)
             RepresentedFileTracker(
                 url: activeTab?.fileURL ?? workspace.rootURL
             )
-            WindowTitleVisibilityTracker(showsTitle: windowChrome.showsTitle)
+            WindowTitleVisibilityTracker()
         }
         .task {
             reconcileKeyProjectPresentation()
@@ -514,7 +523,8 @@ struct ContentView: View {
         }
     }
 
-    /// Branch subtitle as a plain String to avoid generating a localization key.
+    /// Branch indicator text as a plain String to avoid generating a
+    /// localization key. Empty hides the branch toolbar button.
     var branchSubtitle: String {
         Self.branchSubtitle(
             isGitRepo: workspace.gitProvider.isGitRepository,
@@ -532,15 +542,15 @@ struct ContentView: View {
         return registry.agentInboxAttentionCount(for: rootURL)
     }
 
-    /// Builds the toolbar subtitle for the current git branch.
-    /// Kept as a static function for testability.
+    /// Builds the branch indicator text — "main ▾" — shown by the branch
+    /// toolbar button (formerly the navigation subtitle). Kept as a static
+    /// function for testability.
     ///
     /// Every fact on the strip sounds once: with an agent worktree active the
     /// switcher pill already reads "project — branch"
-    /// (`ProjectWindowSession.activeDisplayName`), so the subtitle repeats
-    /// the same branch and stays empty. The branch switcher the "▾"
-    /// advertises remains reachable through ⌘⇧B and the menu, and
-    /// `BranchSubtitleClickHandler` already no-ops on an empty subtitle.
+    /// (`ProjectWindowSession.activeDisplayName`), so the button would
+    /// repeat the same branch and stays empty. The branch switcher the "▾"
+    /// advertises remains reachable through ⌘⇧B and the Git menu.
     static func branchSubtitle(
         isGitRepo: Bool,
         branchName: String,

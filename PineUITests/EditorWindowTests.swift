@@ -374,15 +374,15 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(revealProject.exists, "File menu should contain 'Reveal Project in Finder'")
     }
 
-    // MARK: - Window title carries the file, the pill carries the project
+    // MARK: - Window title is the system identity; the pill names the project
 
-    /// The switcher pill always names the project — it is the one surface
-    /// carrying the project's identity, Safari tab-group style. The window
-    /// title therefore reports the active file; with no tab open the visible
-    /// title is hidden rather than repeating the pill, while `NSWindow.title`
-    /// keeps the project name as the window's system identity (Window menu,
-    /// Mission Control). These assertions cover the system identity — the
-    /// visibility split itself is AppKit chrome XCUITest cannot see.
+    /// The visible window title is hidden for good — identity on the strip
+    /// is the switcher pill (project) plus the branch button, with editor
+    /// tabs naming files, the Safari composition. `NSWindow.title` still
+    /// tracks the active file and falls back to the project, because the
+    /// Window menu, Mission Control, and window cycling read it. These
+    /// assertions cover that system identity — the hiding itself is AppKit
+    /// chrome XCUITest cannot see.
     func testWindowTitleShowsActiveFileInsteadOfRepeatingProjectName() throws {
         let namedProject = try createTempProject(
             files: [

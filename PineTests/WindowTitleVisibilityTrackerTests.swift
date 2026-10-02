@@ -20,41 +20,24 @@ struct WindowTitleVisibilityTrackerTests {
         )
     }
 
-    @Test("a value set before attachment is applied once the view reaches a window")
-    func pendingValueAppliesOnAttachment() {
-        // The race this type exists for: SwiftUI's updateNSView runs while
-        // `window` is still nil. The write must survive and land when the
-        // view is attached — the "fresh project, no file" scenario never
-        // produces a second update to repair a lost one.
-        let anchor = TitleVisibilityAnchorView()
-        anchor.showsTitle = false
-
+    @Test("the title hides once the anchor view reaches a window")
+    func titleHidesOnAttachment() {
+        // A plain updateNSView write would race attachment (window == nil),
+        // and with a constant value no later update would repair the loss.
         let window = makeWindow()
-        window.contentView?.addSubview(anchor)
-
-        #expect(window.titleVisibility == .hidden)
-    }
-
-    @Test("updates after attachment apply immediately, both ways")
-    func updatesApplyAfterAttachment() {
-        let window = makeWindow()
-        let anchor = TitleVisibilityAnchorView()
-        window.contentView?.addSubview(anchor)
-
-        anchor.showsTitle = false
-        #expect(window.titleVisibility == .hidden)
-
-        anchor.showsTitle = true
         #expect(window.titleVisibility == .visible)
+
+        window.contentView?.addSubview(TitleVisibilityAnchorView())
+
+        #expect(window.titleVisibility == .hidden)
     }
 
-    @Test("a view moved between windows carries its value to the new one")
-    func valueFollowsTheViewAcrossWindows() {
+    @Test("an anchor moved between windows hides the new one's title too")
+    func hidingFollowsTheViewAcrossWindows() {
         let first = makeWindow()
         let second = makeWindow()
         let anchor = TitleVisibilityAnchorView()
         first.contentView?.addSubview(anchor)
-        anchor.showsTitle = false
 
         anchor.removeFromSuperview()
         second.contentView?.addSubview(anchor)
@@ -62,19 +45,29 @@ struct WindowTitleVisibilityTrackerTests {
         #expect(second.titleVisibility == .hidden)
     }
 
-    @Test("changing the window title does not reset title visibility")
+    @Test("changing the window title does not bring the title back")
     func titleChangeKeepsVisibility() {
-        // AppKit fact the no-observation design rests on: assigning
-        // `NSWindow.title` — which is all SwiftUI's `.navigationTitle` does
-        // when a file opens or closes — never touches `titleVisibility`,
-        // so the tracker does not need to replay after title changes.
+        // AppKit fact the design rests on: assigning `NSWindow.title` — which
+        // is all SwiftUI's `.navigationTitle` does when a file opens or
+        // closes — never touches `titleVisibility`.
         let window = makeWindow()
-        window.titleVisibility = .hidden
+        window.contentView?.addSubview(TitleVisibilityAnchorView())
 
         window.title = "main.swift"
         #expect(window.titleVisibility == .hidden)
 
-        window.title = ""
+        window.title = "pine"
+        #expect(window.titleVisibility == .hidden)
+    }
+
+    @Test("attaching twice stays hidden without re-applying")
+    func idempotentReattachment() {
+        let window = makeWindow()
+        let anchor = TitleVisibilityAnchorView()
+        window.contentView?.addSubview(anchor)
+        anchor.removeFromSuperview()
+        window.contentView?.addSubview(anchor)
+
         #expect(window.titleVisibility == .hidden)
     }
 }

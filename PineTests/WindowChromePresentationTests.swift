@@ -20,48 +20,27 @@ struct WindowChromePresentationTests {
         )
     }
 
-    // MARK: - The pill owns the project name; the title shows only the file
+    // MARK: - Fallback chain (the title is pure system identity)
 
-    @Test("An open file titles the window, and the title stays visible")
+    @Test("An open file names the window for the system")
     func openFileTitlesTheWindow() {
-        let resolved = chrome(file: "ContentView.swift")
-        #expect(resolved.title == "ContentView.swift")
-        #expect(resolved.showsTitle)
+        #expect(chrome(file: "ContentView.swift").title == "ContentView.swift")
     }
 
-    @Test("Without an editor tab the title hides instead of echoing the pill")
-    func terminalOnlyWindowHidesTitle() {
+    @Test("With no editor tab the repository names the window")
+    func terminalOnlyWindowFallsBackToRepository() {
         // A project with no restored session opens straight into a terminal
-        // (#1251), so this is the first screen of a new project — the one
-        // place the pill/title duplicate was most visible.
-        let resolved = chrome(file: nil)
-        #expect(resolved.title == "pine")
-        #expect(resolved.showsTitle == false)
+        // (#1251). Nothing reads this string off the title bar — the visible
+        // title is hidden for good — but the Window menu and Mission Control
+        // do.
+        #expect(chrome(file: nil).title == "pine")
     }
 
-    @Test("The hidden title still names the window for the system")
-    func hiddenTitleKeepsSystemIdentity() {
-        // Window menu, Mission Control, and window cycling read
-        // `NSWindow.title` even when titleVisibility hides the text — the
-        // string must outlive its visibility.
-        #expect(chrome(file: nil, repository: "acme").title == "acme")
-    }
-
-    @Test("A blank file name counts as no file")
-    func blankFileNameHidesTitle() {
-        let resolved = chrome(file: "   ")
-        #expect(resolved.title == "pine")
-        #expect(resolved.showsTitle == false)
-    }
-
-    @Test("A file named like its project still titles the window")
+    @Test("A file named like its project still names the window")
     func fileMatchingProjectNameKeepsTitle() {
         // Opening a file called `pine` inside project `pine` is a genuine
-        // coincidence: the title reports the open file — the duplication
-        // rule applies to the fallback, not to real content.
-        let resolved = chrome(file: "pine")
-        #expect(resolved.title == "pine")
-        #expect(resolved.showsTitle)
+        // coincidence: the system title reports the open file.
+        #expect(chrome(file: "pine").title == "pine")
     }
 
     // MARK: - Worktree windows
@@ -70,18 +49,14 @@ struct WindowChromePresentationTests {
     func worktreeTitleUsesRepositoryName() {
         // The worktree root is Application Support/Pine/AgentWorktrees/<hash>;
         // the caller passes the repository name so no hash reaches the title.
-        let resolved = chrome(file: nil, repository: "pine")
-        #expect(resolved.title == "pine")
-        #expect(resolved.showsTitle == false)
+        #expect(chrome(file: nil, repository: "pine").title == "pine")
     }
 
-    // MARK: - Fallback chain
+    // MARK: - Fallback chain edge cases
 
     @Test("An untitled buffer with a display name titles the window")
     func untitledBufferUsesItsDisplayName() {
-        let resolved = chrome(file: "Untitled 2")
-        #expect(resolved.title == "Untitled 2")
-        #expect(resolved.showsTitle)
+        #expect(chrome(file: "Untitled 2").title == "Untitled 2")
     }
 
     @Test(
@@ -89,9 +64,7 @@ struct WindowChromePresentationTests {
         arguments: ["", " ", "\t", "\n", "   \n\t  "]
     )
     func blankFileNameFallsBack(blank: String) {
-        let resolved = chrome(file: blank)
-        #expect(resolved.title == "pine")
-        #expect(resolved.showsTitle == false)
+        #expect(chrome(file: blank).title == "pine")
     }
 
     @Test(

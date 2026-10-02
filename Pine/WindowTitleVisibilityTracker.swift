@@ -2,62 +2,47 @@
 //  WindowTitleVisibilityTracker.swift
 //  Pine
 //
-//  Mirrors WindowChromePresentation.showsTitle onto NSWindow.titleVisibility.
+//  Hides the window's visible title for good while NSWindow.title keeps
+//  naming the window for the system.
 //
 
 import AppKit
 import SwiftUI
 
-/// Hides the title-bar text without clearing `NSWindow.title`: the string
-/// stays the window's identity for the Window menu, Mission Control, and
-/// window cycling while the title bar stops repeating what the switcher
-/// pill already says.
+/// Hides the title-bar text permanently: `NSWindow.title` stays set — it is
+/// the window's identity for the Window menu, Mission Control, and window
+/// cycling — but the title bar never renders it. On the strip, identity is
+/// split the Safari way: the switcher pill names the project, the branch
+/// toolbar button names the checkout, and editor tabs name files.
+///
+/// The hiding costs the whole native title block, subtitle and document
+/// proxy icon included (verified empirically: `titleVisibility = .hidden`
+/// removes both text fields from the theme frame). That is exactly why the
+/// branch moved out of `.navigationSubtitle` into a first-class toolbar
+/// control, and why the proxy icon's Cmd+click path menu is gone — an
+/// accepted trade-off; `RepresentedFileTracker` still sets `representedURL`
+/// so the rest of AppKit keeps a correct file reference.
 struct WindowTitleVisibilityTracker: NSViewRepresentable {
-    let showsTitle: Bool
-
     func makeNSView(context: Context) -> NSView {
         TitleVisibilityAnchorView()
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? TitleVisibilityAnchorView)?.showsTitle = showsTitle
-    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-/// Applies the last requested visibility as soon as — and whenever — the
-/// view sits in a window.
+/// Applies the hidden visibility as soon as the view sits in a window.
 ///
-/// `updateNSView` can run before the representable is attached, where
-/// `nsView.window` is nil and a direct write would vanish. In the scenario
-/// that matters — a window opening straight into a project with no file —
-/// the value never changes afterwards, so no second update would ever
-/// repair the loss and the duplicate title stayed visible forever.
-/// Replaying from `viewDidMoveToWindow` (the pattern
-/// `WindowCaptureSentinel` uses) closes that race; the `didSet` covers the
-/// reverse one, an update arriving after the window is already there.
-///
-/// No observation of `NSWindow.title`: assigning `title` does not touch
-/// `titleVisibility` in AppKit, and SwiftUI's `.navigationTitle` machinery
-/// has no code path that writes it — pinned by
-/// `WindowTitleVisibilityTrackerTests`.
+/// A plain `updateNSView` write races attachment (`nsView.window` is still
+/// nil), and with a constant value no later update would repair the loss —
+/// the first iteration of this tracker shipped exactly that bug. Replaying
+/// from `viewDidMoveToWindow` (the `WindowCaptureSentinel` pattern) makes
+/// the application reliable at window creation, and assigning `title`
+/// afterwards never resets `titleVisibility` (pinned by
+/// `WindowTitleVisibilityTrackerTests`).
 final class TitleVisibilityAnchorView: NSView {
-    /// Last value SwiftUI asked for. Reapplied on every change and on every
-    /// window attachment.
-    var showsTitle = true {
-        didSet { applyTitleVisibility() }
-    }
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        applyTitleVisibility()
-    }
-
-    private func applyTitleVisibility() {
-        guard let window else { return }
-        let visibility: NSWindow.TitleVisibility = showsTitle
-            ? .visible
-            : .hidden
-        guard window.titleVisibility != visibility else { return }
-        window.titleVisibility = visibility
+        guard let window, window.titleVisibility != .hidden else { return }
+        window.titleVisibility = .hidden
     }
 }

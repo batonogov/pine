@@ -4,12 +4,11 @@
 //
 //  Tests for branch switching UI.
 //
-//  Note: The branch subtitle is made clickable via an AppKit gesture
-//  recognizer (BranchSubtitleClickHandler), which XCUITest cannot
-//  interact with directly (window chrome is not an accessibility element).
-//  Cmd+Shift+B is handled via NSEvent.addLocalMonitorForEvents, which
-//  XCUITest's typeKey() bypasses. Therefore, these tests open the switcher
-//  through the Git menu and verify the displayed branch information.
+//  The branch indicator is a first-class toolbar button
+//  (`branchSwitcherButton`), reachable by identifier — the navigation
+//  subtitle it replaced was window chrome XCUITest could not interact
+//  with, and ⌘⇧B goes through an NSEvent local monitor that typeKey
+//  bypasses, so the switcher itself is opened through the Git menu.
 //
 
 import XCTest
@@ -74,38 +73,43 @@ final class BranchSwitcherTests: PineUITestCase {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    // MARK: - Title bar shows branch name
+    // MARK: - Branch button shows the current branch
 
-    func testTitleBarShowsBranchName() throws {
+    func testBranchButtonShowsBranchName() throws {
         launchWithProject(projectURL)
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
 
-        let branchText = app.staticTexts.matching(
-            NSPredicate(format: "value CONTAINS 'main'")
-        ).firstMatch
+        let branchButton = app.buttons["branchSwitcherButton"].firstMatch
         XCTAssertTrue(
-            waitForExistence(branchText, timeout: 10),
-            "Title bar should display the current branch name"
+            waitForExistence(branchButton, timeout: 10),
+            "The branch toolbar button should display the current branch"
+        )
+        XCTAssertTrue(
+            branchButton.label.contains("main")
+                || (branchButton.value as? String)?.contains("main") == true,
+            "The branch button should name the current branch, got "
+                + "label='\(branchButton.label)'"
         )
     }
 
-    // MARK: - Subtitle contains clickable indicator
+    // MARK: - Branch button opens the branch switcher
 
-    func testSubtitleShowsBranchIndicator() throws {
+    func testBranchButtonOpensBranchSwitcher() throws {
         launchWithProject(projectURL)
 
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 10))
-
-        // Subtitle should contain the branch indicator "▾"
-        let indicator = app.staticTexts.matching(
-            NSPredicate(format: "value CONTAINS '▾'")
-        ).firstMatch
+        let branchButton = app.buttons["branchSwitcherButton"].firstMatch
         XCTAssertTrue(
-            waitForExistence(indicator, timeout: 10),
-            "Subtitle should contain ▾ indicator showing it is clickable"
+            waitForExistence(branchButton, timeout: 10),
+            "The branch toolbar button should exist"
+        )
+        branchButton.click()
+
+        let searchField = app.textFields["branchSearchField"]
+        XCTAssertTrue(
+            searchField.waitForExistence(timeout: 5),
+            "Clicking the branch button should open the branch switcher"
         )
     }
 
@@ -255,33 +259,38 @@ final class BranchSwitcherTests: PineUITestCase {
         XCTAssertEqual(try checkedOutBranch(), "main")
     }
 
-    // MARK: - External branch switch updates subtitle
+    // MARK: - External branch switch updates the branch button
 
-    func testExternalBranchSwitchUpdatesSubtitle() throws {
+    func testExternalBranchSwitchUpdatesBranchButton() throws {
         launchWithProject(projectURL)
 
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 10))
-
-        // Verify initial branch is main
-        let mainText = app.staticTexts.matching(
-            NSPredicate(format: "value CONTAINS 'main'")
-        ).firstMatch
+        let branchButton = app.buttons["branchSwitcherButton"].firstMatch
         XCTAssertTrue(
-            waitForExistence(mainText, timeout: 10),
+            waitForExistence(branchButton, timeout: 10),
+            "The branch toolbar button should exist"
+        )
+        XCTAssertTrue(
+            branchButton.label.contains("main")
+                || (branchButton.value as? String)?.contains("main") == true,
             "Initial branch should be main"
         )
 
         // Switch branch externally via git
         try git("switch", "test-branch", at: projectURL)
 
-        // The app polls git status periodically — subtitle should update
-        let testBranchText = app.staticTexts.matching(
-            NSPredicate(format: "value CONTAINS 'test-branch'")
-        ).firstMatch
-        XCTAssertTrue(
-            waitForExistence(testBranchText, timeout: 15),
-            "Subtitle should update to show test-branch after external switch"
+        // The app polls git status periodically — the button should update
+        let updated = NSPredicate(
+            format: "label CONTAINS 'test-branch' OR value CONTAINS 'test-branch'"
+        )
+        let expectation = XCTNSPredicateExpectation(
+            predicate: updated,
+            object: branchButton
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [expectation], timeout: 15),
+            .completed,
+            "The branch button should update to test-branch after an "
+                + "external switch"
         )
     }
 }

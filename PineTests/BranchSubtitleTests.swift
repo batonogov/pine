@@ -187,7 +187,8 @@ struct BranchSubtitleTests {
     }
 
     @Test func subtitle_matchesExactFormat() {
-        // Verify the exact format so BranchSubtitleClickHandler can match window.subtitle
+        // Verify the exact format — the branch toolbar button displays this
+        // string verbatim.
         let result = ContentView.branchSubtitle(
             isGitRepo: true,
             branchName: "my-branch",
