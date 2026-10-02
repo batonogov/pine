@@ -97,11 +97,14 @@ struct ContentView: View {
                         handleFileSelection(node, disposition: disposition)
                     }
                 )
-                // The identifier must stay on this inner view: it resolves
-                // onto the file tree's ScrollView, which every existing
-                // XCUITest reaches as `app.scrollViews["sidebar"]`. Moving it
-                // onto the VStack wrapper would re-type that element and
-                // break those lookups; the header is found through its own
+                // The file-tree branch stamps this identifier on its own
+                // ScrollView (`SidebarView`); the modifier here covers the
+                // search-results branch, so `app.scrollViews["sidebar"]`
+                // resolves in both. It must stay on the inner content, not
+                // the VStack wrapper: on the wrapper the identifier would
+                // land on the stack's own element, and the scroll-view
+                // lookups every existing XCUITest relies on would stop
+                // matching. The header is found through its own
                 // `projectSwitcher` identifier instead.
                 .accessibilityIdentifier(AccessibilityID.sidebar)
             }

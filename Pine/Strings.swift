@@ -960,8 +960,9 @@ enum Strings {
     static let projectSwitcherNoAgents: LocalizedStringKey =
         "projectSwitcher.noAgents"
 
-    /// Menu-bar route to the switcher rows (#1525). The toolbar is a
-    /// convenience layer over these commands, never their only home.
+    /// Menu-bar route to the switcher rows (#1525). The window's switcher
+    /// control is a convenience layer over these commands, never their only
+    /// home.
     static let menuSwitchProjectInWindow: LocalizedStringKey =
         "menu.switchProjectInWindow"
     static let menuNextProjectInWindow: LocalizedStringKey =

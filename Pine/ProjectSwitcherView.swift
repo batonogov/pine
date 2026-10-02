@@ -184,12 +184,14 @@ struct ProjectSwitcherRows: View {
     /// Whether these rows carry the switcher's accessibility identifiers.
     ///
     /// The window's switcher control owns them — the sidebar header, or the
-    /// toolbar capsule that stands in for it while the sidebar is collapsed;
-    /// only one of the two is rendered at a time. The menu bar draws the same
-    /// rows and must not stamp a second copy with the same identifiers: every
-    /// XCUITest and VoiceOver lookup would then match two elements and reach
-    /// whichever came first. Menu-bar rows are found by title, as every other
-    /// menu-bar item is.
+    /// toolbar capsule that stands in for it while the sidebar is collapsed.
+    /// At rest exactly one of the two is rendered; during the collapse or
+    /// expand animation both can briefly coexist, which is why a count-based
+    /// lookup must only run once the transition settles. The menu bar draws
+    /// the same rows and must not stamp a second copy with the same
+    /// identifiers: every XCUITest and VoiceOver lookup would then match two
+    /// elements and reach whichever came first. Menu-bar rows are found by
+    /// title, as every other menu-bar item is.
     let carriesIdentifiers: Bool
     let onSelect: (URL) -> Void
 

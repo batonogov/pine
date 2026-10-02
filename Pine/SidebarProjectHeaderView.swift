@@ -56,7 +56,7 @@ struct SidebarProjectHeaderView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, SidebarRowMetrics.rowHorizontalPadding)
-            .padding(.vertical, 7)
+            .padding(.vertical, SidebarRowMetrics.headerVerticalPadding)
             .background {
                 RoundedRectangle(
                     cornerRadius: SidebarRowMetrics.selectionCornerRadius,
@@ -78,9 +78,12 @@ struct SidebarProjectHeaderView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .help(Strings.projectSwitcherTooltip)
-        // Same identifier and spoken name as the toolbar capsule: only one of
-        // the two exists at a time, and every test and VoiceOver lookup that
-        // knows the switcher must keep finding it after the move.
+        // Same identifier as the toolbar capsule: at rest only one of the
+        // two exists, so every test and VoiceOver lookup that knows the
+        // switcher keeps finding it after the move. The label modifier is
+        // kept for parity, but macOS drops `.accessibilityLabel` on Menu
+        // (see `AccessibilityTreeProbe`) — the spoken name really comes
+        // from the visible project-name Text in the label above.
         .accessibilityLabel(Text(session.activeDisplayName))
         .accessibilityIdentifier(AccessibilityID.projectSwitcher)
     }

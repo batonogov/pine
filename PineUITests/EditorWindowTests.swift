@@ -447,6 +447,7 @@ final class EditorWindowTests: PineUITestCase {
             waitForExistence(switcher, timeout: 10),
             "The project switcher should head the sidebar"
         )
+        assertExactlyOneSwitcher("sidebar visible")
 
         let openFolder = app.descendants(matching: .any)[
             "openFolderToolbarButton"
@@ -462,6 +463,12 @@ final class EditorWindowTests: PineUITestCase {
             "A full-width header row must be wider than a single-glyph "
                 + "toolbar button (\(switcher.frame.width) vs "
                 + "\(openFolder.frame.width))"
+        )
+        XCTAssertLessThanOrEqual(
+            abs(switcher.frame.width - sidebar.frame.width),
+            10,
+            "The header should span the sidebar column edge to edge "
+                + "(\(switcher.frame.width) vs \(sidebar.frame.width))"
         )
         XCTAssertLessThan(
             switcher.frame.minY,
@@ -497,23 +504,109 @@ final class EditorWindowTests: PineUITestCase {
             waitForExistence(switcher, timeout: 10),
             "The project switcher should head the sidebar"
         )
+        assertExactlyOneSwitcher("sidebar visible")
 
-        app.typeKey("s", modifierFlags: [.command, .control])
+        toggleSidebarViaMenu()
         XCTAssertTrue(
-            sidebar.waitForNonExistence(timeout: 5),
-            "⌃⌘S should collapse the sidebar"
+            sidebar.waitForNonExistence(timeout: 10),
+            "View ▸ Toggle Sidebar should collapse the sidebar"
         )
         XCTAssertTrue(
-            waitForExistence(switcher, timeout: 5),
+            waitForExistence(switcher, timeout: 10),
             "With the sidebar hidden the switcher must remain in the window "
                 + "as the toolbar fallback"
         )
+        assertExactlyOneSwitcher("sidebar collapsed")
 
-        app.typeKey("s", modifierFlags: [.command, .control])
+        // The capsule belongs to the toolbar strip: with the column gone,
+        // nothing but the toolbar sits at the top of the window.
+        let toolbar = app.toolbars.firstMatch
         XCTAssertTrue(
-            waitForExistence(sidebar, timeout: 5),
-            "⌃⌘S should bring the sidebar back"
+            toolbar.exists,
+            "The window toolbar should exist with the sidebar collapsed"
         )
+        XCTAssertTrue(
+            toolbar.frame.contains(
+                CGPoint(x: switcher.frame.midX, y: switcher.frame.midY)
+            ),
+            "The fallback capsule must live in the toolbar strip "
+                + "(\(switcher.frame) vs toolbar \(toolbar.frame))"
+        )
+
+        // A capsule holding icon and chevron is never narrower than a
+        // single-glyph neighbour — the property the removed toolbar-metrics
+        // test pinned. The sidebar's Open Folder button leaves with the
+        // column, so the always-present Agent Inbox button is the yardstick.
+        let inboxButton = app.buttons["agentInboxToolbarButton"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(inboxButton, timeout: 5),
+            "The Agent Inbox toolbar button should remain visible"
+        )
+        XCTAssertGreaterThan(
+            switcher.frame.width,
+            inboxButton.frame.width,
+            "The capsule carries more than one glyph, so it must be wider "
+                + "than a single-glyph toolbar button "
+                + "(\(switcher.frame.width) vs \(inboxButton.frame.width))"
+        )
+
+        toggleSidebarViaMenu()
+        XCTAssertTrue(
+            waitForExistence(sidebar, timeout: 10),
+            "View ▸ Toggle Sidebar should bring the sidebar back"
+        )
+        XCTAssertTrue(
+            waitForExistence(switcher, timeout: 10),
+            "The switcher should be back once the sidebar returns"
+        )
+        assertExactlyOneSwitcher("sidebar restored")
+        XCTAssertLessThan(
+            switcher.frame.minY,
+            sidebar.frame.minY,
+            "The switcher must move back into the header above the file "
+                + "tree, not stay in the toolbar"
+        )
+    }
+
+    /// At rest exactly one switcher exists: the header with the sidebar
+    /// visible, the toolbar capsule with it collapsed. A regression that
+    /// shows the capsule unconditionally produces two, and one that shows
+    /// neither produces zero. Only asserted after transitions settle —
+    /// mid-animation both can briefly coexist.
+    private func assertExactlyOneSwitcher(_ context: String) {
+        let count = app.descendants(matching: .any)
+            .matching(identifier: "projectSwitcher")
+            .count
+        XCTAssertEqual(
+            count,
+            1,
+            "Exactly one project switcher should exist with \(context)"
+        )
+    }
+
+    /// Drives the sidebar through View ▸ Toggle Sidebar.
+    ///
+    /// The ⌃⌘S shortcut is the obvious driver, but `typeKey` posts synthetic
+    /// events down the accessibility path, which never reaches the split
+    /// view's toggle — this suite's launch notes (`.claude/rules/ui-tests.md`)
+    /// and the #1544 probe both document lost sidebar keystrokes, and CI lost
+    /// this one three runs out of three. Menu clicks travel the real menu
+    /// path every other command in the suite already uses. The item is
+    /// SwiftUI's system-provided one (Pine never replaces the `.sidebar`
+    /// command group), so its title is not ours to pin; match every spelling
+    /// macOS has used for it.
+    private func toggleSidebarViaMenu() {
+        clickMenuBarItem("View")
+        let item = app.menuItems.matching(
+            NSPredicate(
+                format: "title IN {'Toggle Sidebar', 'Show Sidebar', 'Hide Sidebar'}"
+            )
+        ).firstMatch
+        XCTAssertTrue(
+            item.waitForExistence(timeout: 5),
+            "The View menu should offer the system sidebar toggle"
+        )
+        item.click()
     }
 
     // MARK: - Sidebar context menu has Reveal in Finder

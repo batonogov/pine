@@ -33,6 +33,10 @@ enum SidebarRowMetrics {
     /// Extra vertical padding added on top of the font's ascender/descender
     /// so rows stay comfortable without inflating beyond Xcode-style density.
     static let rowVerticalPadding: CGFloat = 6
+    /// Vertical padding of the sidebar's project header row. A touch taller
+    /// than a file row: the header is a control rather than a list entry,
+    /// and its semibold name reads cramped at plain row density.
+    static let headerVerticalPadding: CGFloat = 7
 }
 
 enum SidebarFileOpenDisposition: Equatable, Sendable {
