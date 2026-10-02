@@ -119,6 +119,31 @@ class PineUITestCase: XCTestCase {
         item.click()
     }
 
+    /// Drives the sidebar through View ▸ Toggle Sidebar.
+    ///
+    /// The ⌃⌘S shortcut is the obvious driver, but `typeKey` posts synthetic
+    /// events down the accessibility path, which never reaches the split
+    /// view's toggle — this suite's launch notes (`.claude/rules/ui-tests.md`)
+    /// and the #1544 probe both document lost sidebar keystrokes, and CI lost
+    /// this one three runs out of three. Menu clicks travel the real menu
+    /// path every other command in the suite already uses. The item is
+    /// SwiftUI's system-provided one (Pine never replaces the `.sidebar`
+    /// command group), so its title is not ours to pin; match every spelling
+    /// macOS has used for it.
+    func toggleSidebarViaMenu() {
+        clickMenuBarItem("View")
+        let item = app.menuItems.matching(
+            NSPredicate(
+                format: "title IN {'Toggle Sidebar', 'Show Sidebar', 'Hide Sidebar'}"
+            )
+        ).firstMatch
+        XCTAssertTrue(
+            item.waitForExistence(timeout: 5),
+            "The View menu should offer the system sidebar toggle"
+        )
+        item.click()
+    }
+
     /// Cleans up a temporary project directory.
     func cleanupProject(_ url: URL) {
         let parent = url.deletingLastPathComponent()

@@ -423,31 +423,35 @@ final class EditorWindowTests: PineUITestCase {
         )
     }
 
-    // MARK: - Project switcher lives in the sidebar header
+    // MARK: - Project switcher pill is not narrower than its toolbar neighbours
 
-    /// The switcher moved out of the toolbar into a full-width header row at
-    /// the top of the sidebar column. The assertions stay relative — toolbar
-    /// and column metrics differ between macOS versions and display scales —
-    /// but a header row must span the column and sit above the file tree,
-    /// where the capsule it replaced could never be confused with the round
-    /// toolbar buttons.
-    func testProjectSwitcherLivesInSidebarHeader() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.scrollViews["sidebar"]
-        XCTAssertTrue(
-            waitForExistence(sidebar, timeout: 10),
-            "Sidebar should appear"
+    /// The switcher is the navigation zone's primary control: a filled pill
+    /// with an icon, the semibold project name, and a chevron, styled after
+    /// Safari's tab-group picker. Its capsule must never come out narrower
+    /// than the single-glyph round buttons beside it — the failure mode of
+    /// the pre-pill chrome, where icon and chevron sat flush against the
+    /// edges.
+    ///
+    /// The assertion is relative rather than a hardcoded point size: the
+    /// toolbar metric differs between macOS 26 and 27 and between display
+    /// scales, but a control holding more content than its neighbour must
+    /// never come out narrower than it on the same strip.
+    func testProjectSwitcherIsWiderThanSingleGlyphToolbarButtons() throws {
+        let metricsProject = try createTempProject(
+            files: ["main.swift": "let greeting = \"Hello\"\n"],
+            projectName: "SwitcherMetrics"
         )
+        defer { cleanupProject(metricsProject) }
+
+        launchWithProject(metricsProject)
 
         let switcher = app.descendants(matching: .any)[
             "projectSwitcher"
         ].firstMatch
         XCTAssertTrue(
             waitForExistence(switcher, timeout: 10),
-            "The project switcher should head the sidebar"
+            "The project switcher should be visible in the toolbar"
         )
-        assertExactlyOneSwitcher("sidebar visible")
 
         let openFolder = app.descendants(matching: .any)[
             "openFolderToolbarButton"
@@ -457,156 +461,33 @@ final class EditorWindowTests: PineUITestCase {
             "The sidebar's Open Folder button should be visible"
         )
 
+        let neighbourWidth = openFolder.frame.width
+        XCTAssertGreaterThan(
+            neighbourWidth,
+            0,
+            "A visible toolbar button must report a real frame"
+        )
         XCTAssertGreaterThan(
             switcher.frame.width,
-            openFolder.frame.width,
-            "A full-width header row must be wider than a single-glyph "
-                + "toolbar button (\(switcher.frame.width) vs "
-                + "\(openFolder.frame.width))"
-        )
-        XCTAssertLessThanOrEqual(
-            abs(switcher.frame.width - sidebar.frame.width),
-            10,
-            "The header should span the sidebar column edge to edge "
-                + "(\(switcher.frame.width) vs \(sidebar.frame.width))"
-        )
-        XCTAssertLessThan(
-            switcher.frame.minY,
-            sidebar.frame.minY,
-            "The header row sits above the file tree, not inside it"
-        )
-        XCTAssertLessThanOrEqual(
-            abs(switcher.frame.midX - sidebar.frame.midX),
-            8,
-            "The header should be centred over the sidebar column "
-                + "(\(switcher.frame) vs \(sidebar.frame))"
-        )
-    }
-
-    // MARK: - Project switcher falls back to the toolbar when the sidebar is hidden
-
-    /// Collapsing the sidebar removes the header with it. The switcher must
-    /// stay reachable, so the pre-header toolbar capsule returns for exactly
-    /// that state — and leaves again once the column comes back.
-    func testProjectSwitcherFallsBackToToolbarWhenSidebarCollapsed() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.scrollViews["sidebar"]
-        XCTAssertTrue(
-            waitForExistence(sidebar, timeout: 10),
-            "Sidebar should appear"
+            neighbourWidth,
+            "The switcher carries an icon, a name, and a chevron, so its "
+                + "pill must be wider than a single-glyph toolbar button "
+                + "(\(switcher.frame.width) vs \(neighbourWidth))"
         )
 
-        let switcher = app.descendants(matching: .any)[
-            "projectSwitcher"
-        ].firstMatch
+        // The pill's name text is suppressed while the window title repeats
+        // it; with a file open the title takes the file, and the project
+        // name must be visible in the switcher — an empty pill would be an
+        // unlabelled mystery control.
+        openFile("main.swift")
         XCTAssertTrue(
-            waitForExistence(switcher, timeout: 10),
-            "The project switcher should head the sidebar"
-        )
-        assertExactlyOneSwitcher("sidebar visible")
-
-        toggleSidebarViaMenu()
-        XCTAssertTrue(
-            sidebar.waitForNonExistence(timeout: 10),
-            "View ▸ Toggle Sidebar should collapse the sidebar"
-        )
-        XCTAssertTrue(
-            waitForExistence(switcher, timeout: 10),
-            "With the sidebar hidden the switcher must remain in the window "
-                + "as the toolbar fallback"
-        )
-        assertExactlyOneSwitcher("sidebar collapsed")
-
-        // The capsule belongs to the toolbar strip: with the column gone,
-        // nothing but the toolbar sits at the top of the window.
-        let toolbar = app.toolbars.firstMatch
-        XCTAssertTrue(
-            toolbar.exists,
-            "The window toolbar should exist with the sidebar collapsed"
-        )
-        XCTAssertTrue(
-            toolbar.frame.contains(
-                CGPoint(x: switcher.frame.midX, y: switcher.frame.midY)
+            waitForExistence(
+                app.staticTexts["SwitcherMetrics"].firstMatch,
+                timeout: 5
             ),
-            "The fallback capsule must live in the toolbar strip "
-                + "(\(switcher.frame) vs toolbar \(toolbar.frame))"
+            "The pill should show the project name once the window title "
+                + "moves to the open file"
         )
-
-        // A capsule holding icon and chevron is never narrower than a
-        // single-glyph neighbour — the property the removed toolbar-metrics
-        // test pinned. The sidebar's Open Folder button leaves with the
-        // column, so the always-present Agent Inbox button is the yardstick.
-        let inboxButton = app.buttons["agentInboxToolbarButton"].firstMatch
-        XCTAssertTrue(
-            waitForExistence(inboxButton, timeout: 5),
-            "The Agent Inbox toolbar button should remain visible"
-        )
-        XCTAssertGreaterThan(
-            switcher.frame.width,
-            inboxButton.frame.width,
-            "The capsule carries more than one glyph, so it must be wider "
-                + "than a single-glyph toolbar button "
-                + "(\(switcher.frame.width) vs \(inboxButton.frame.width))"
-        )
-
-        toggleSidebarViaMenu()
-        XCTAssertTrue(
-            waitForExistence(sidebar, timeout: 10),
-            "View ▸ Toggle Sidebar should bring the sidebar back"
-        )
-        XCTAssertTrue(
-            waitForExistence(switcher, timeout: 10),
-            "The switcher should be back once the sidebar returns"
-        )
-        assertExactlyOneSwitcher("sidebar restored")
-        XCTAssertLessThan(
-            switcher.frame.minY,
-            sidebar.frame.minY,
-            "The switcher must move back into the header above the file "
-                + "tree, not stay in the toolbar"
-        )
-    }
-
-    /// At rest exactly one switcher exists: the header with the sidebar
-    /// visible, the toolbar capsule with it collapsed. A regression that
-    /// shows the capsule unconditionally produces two, and one that shows
-    /// neither produces zero. Only asserted after transitions settle —
-    /// mid-animation both can briefly coexist.
-    private func assertExactlyOneSwitcher(_ context: String) {
-        let count = app.descendants(matching: .any)
-            .matching(identifier: "projectSwitcher")
-            .count
-        XCTAssertEqual(
-            count,
-            1,
-            "Exactly one project switcher should exist with \(context)"
-        )
-    }
-
-    /// Drives the sidebar through View ▸ Toggle Sidebar.
-    ///
-    /// The ⌃⌘S shortcut is the obvious driver, but `typeKey` posts synthetic
-    /// events down the accessibility path, which never reaches the split
-    /// view's toggle — this suite's launch notes (`.claude/rules/ui-tests.md`)
-    /// and the #1544 probe both document lost sidebar keystrokes, and CI lost
-    /// this one three runs out of three. Menu clicks travel the real menu
-    /// path every other command in the suite already uses. The item is
-    /// SwiftUI's system-provided one (Pine never replaces the `.sidebar`
-    /// command group), so its title is not ours to pin; match every spelling
-    /// macOS has used for it.
-    private func toggleSidebarViaMenu() {
-        clickMenuBarItem("View")
-        let item = app.menuItems.matching(
-            NSPredicate(
-                format: "title IN {'Toggle Sidebar', 'Show Sidebar', 'Hide Sidebar'}"
-            )
-        ).firstMatch
-        XCTAssertTrue(
-            item.waitForExistence(timeout: 5),
-            "The View menu should offer the system sidebar toggle"
-        )
-        item.click()
     }
 
     // MARK: - Sidebar context menu has Reveal in Finder

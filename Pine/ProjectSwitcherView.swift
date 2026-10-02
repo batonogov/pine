@@ -20,6 +20,9 @@ struct ProjectSwitcherView: View {
     /// files first.
     let onCloseProject: () -> Void
 
+    @Environment(\.controlActiveState) private var controlActiveState
+    @State private var isHovered = false
+
     var body: some View {
         Menu {
             ProjectSwitcherMenuContent(
@@ -29,7 +32,7 @@ struct ProjectSwitcherView: View {
                 onCloseProject: onCloseProject
             )
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 if session.isLaunchingAgent {
                     ProgressView()
                         .controlSize(.small)
@@ -42,21 +45,43 @@ struct ProjectSwitcherView: View {
                 }
                 if let label {
                     Text(label)
+                        .fontWeight(.semibold)
                         .lineLimit(1)
                 }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(
+                        Color.primary.opacity(isHovered ? 0.14 : 0.08)
+                    )
+            }
+            .contentShape(Capsule(style: .continuous))
+            .onHover { isHovered = $0 }
+            // `.borderlessButton` escapes the toolbar's inactive-window
+            // dimming — the label used to stay full-strength white while
+            // every neighbour faded — so the pill fades by hand.
+            .opacity(controlActiveState == .key ? 1 : 0.5)
         }
-        // No `menuStyle` and no hand-drawn chevron: the toolbar's own style
-        // is what sizes the item chrome and draws the disclosure indicator.
-        // `.borderlessButton` opted out of both and pinned the control to a
-        // chrome narrower than the round items beside it while holding two
-        // glyphs instead of one, so the icon and the chevron sat flush
-        // against the capsule with no breathing room. It also kept the label
-        // full-strength white while every neighbour, and the window title,
-        // dimmed with an inactive window. Measured on macOS 27 beta at 2×:
-        // 33pt beside 35pt neighbours before, 41.5pt after. The exact metric
-        // moves with the OS and the display scale; the relationship — a
-        // busier control is never the narrowest one on the strip — does not.
+        // Styled after Safari's tab-group picker (macOS 27): a filled tinted
+        // capsule — icon, semibold project name, chevron — that reads as the
+        // navigation zone's primary control rather than one more round
+        // toolbar button. `.borderlessButton` opts out of the toolbar's own
+        // item chrome so the capsule the label draws is the only chrome;
+        // its two known failure modes are patched above — the capsule is
+        // sized by hand with generous padding, and inactive-window dimming
+        // is applied manually. The tint is a whisper of the label colour,
+        // not the accent: the control should read as chrome, not as a call
+        // to action.
+        .menuStyle(.borderlessButton)
+        // The label draws its own chevron; the system indicator would stamp
+        // a second one on top.
+        .menuIndicator(.hidden)
         .help(Strings.projectSwitcherTooltip)
         // Spoken name stays the project even when the visible text is
         // suppressed as a duplicate — an icon-only control must not reach
@@ -69,10 +94,9 @@ struct ProjectSwitcherView: View {
 /// Everything the switcher's menu offers below the label: the project and
 /// worktree rows, Close Project, New Agent, Manage Worktrees, Open Folder.
 ///
-/// Shared by the toolbar capsule (`ProjectSwitcherView`) and the full-width
-/// sidebar header (`SidebarProjectHeaderView`) so the two surfaces can never
-/// disagree about what the switcher does — they differ only in the label
-/// chrome drawn around this content.
+/// Extracted from `ProjectSwitcherView.body` so the menu's content is defined
+/// exactly once and the view's own code can stay about the pill chrome drawn
+/// around it.
 struct ProjectSwitcherMenuContent: View {
     let session: ProjectWindowSession
     let registry: ProjectRegistry
@@ -183,15 +207,11 @@ struct ProjectSwitcherRows: View {
     let registry: ProjectRegistry
     /// Whether these rows carry the switcher's accessibility identifiers.
     ///
-    /// The window's switcher control owns them — the sidebar header, or the
-    /// toolbar capsule that stands in for it while the sidebar is collapsed.
-    /// At rest exactly one of the two is rendered; during the collapse or
-    /// expand animation both can briefly coexist, which is why a count-based
-    /// lookup must only run once the transition settles. The menu bar draws
-    /// the same rows and must not stamp a second copy with the same
-    /// identifiers: every XCUITest and VoiceOver lookup would then match two
-    /// elements and reach whichever came first. Menu-bar rows are found by
-    /// title, as every other menu-bar item is.
+    /// The toolbar control owns them. The menu bar draws the same rows and
+    /// must not stamp a second copy with the same identifiers: every XCUITest
+    /// and VoiceOver lookup would then match two elements and reach whichever
+    /// came first. Menu-bar rows are found by title, as every other menu-bar
+    /// item is.
     let carriesIdentifiers: Bool
     let onSelect: (URL) -> Void
 

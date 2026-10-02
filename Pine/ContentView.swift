@@ -81,33 +81,13 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            VStack(spacing: 0) {
-                if Self.showsSidebarProjectHeader(rootURL: workspace.rootURL) {
-                    SidebarProjectHeaderView(
-                        session: projectWindowSession,
-                        registry: registry,
-                        onOpenProject: { openNewProject() },
-                        onCloseProject: { closeActiveProject() }
-                    )
-                    Divider()
+            SidebarSearchableContent(
+                selectedNode: $selectedNode,
+                onFileOpen: { node, disposition in
+                    handleFileSelection(node, disposition: disposition)
                 }
-                SidebarSearchableContent(
-                    selectedNode: $selectedNode,
-                    onFileOpen: { node, disposition in
-                        handleFileSelection(node, disposition: disposition)
-                    }
-                )
-                // The file-tree branch stamps this identifier on its own
-                // ScrollView (`SidebarView`); the modifier here covers the
-                // search-results branch, so `app.scrollViews["sidebar"]`
-                // resolves in both. It must stay on the inner content, not
-                // the VStack wrapper: on the wrapper the identifier would
-                // land on the stack's own element, and the scroll-view
-                // lookups every existing XCUITest relies on would stop
-                // matching. The header is found through its own
-                // `projectSwitcher` identifier instead.
-                .accessibilityIdentifier(AccessibilityID.sidebar)
-            }
+            )
+            .accessibilityIdentifier(AccessibilityID.sidebar)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
             .toolbar {
                 ToolbarItem {
@@ -152,21 +132,14 @@ struct ContentView: View {
         .navigationTitle(windowChrome.title)
         .navigationSubtitle(branchSubtitle)
         .toolbar {
-            // The toolbar capsule is the fallback for a collapsed sidebar:
-            // with the column visible the switcher lives in its header, and a
-            // second copy here would duplicate the project name on one strip.
-            if Self.showsToolbarProjectSwitcher(
-                columnVisibility: columnVisibility
-            ) {
-                ToolbarItem(placement: .navigation) {
-                    ProjectSwitcherView(
-                        session: projectWindowSession,
-                        registry: registry,
-                        label: windowChrome.switcherLabel,
-                        onOpenProject: { openNewProject() },
-                        onCloseProject: { closeActiveProject() }
-                    )
-                }
+            ToolbarItem(placement: .navigation) {
+                ProjectSwitcherView(
+                    session: projectWindowSession,
+                    registry: registry,
+                    label: windowChrome.switcherLabel,
+                    onOpenProject: { openNewProject() },
+                    onCloseProject: { closeActiveProject() }
+                )
             }
 
             // Agent Inbox entry point in the project window toolbar (#1337).
@@ -561,23 +534,6 @@ struct ContentView: View {
     /// Kept as a static function for testability.
     static func branchSubtitle(isGitRepo: Bool, branchName: String) -> String {
         isGitRepo ? "\(branchName) ▾" : ""
-    }
-
-    /// The sidebar header carries the switcher only once the window actually
-    /// holds a project. Before the workspace binds its root the sidebar's own
-    /// empty state already offers Open Folder, and a switcher above it would
-    /// duplicate that one action.
-    static func showsSidebarProjectHeader(rootURL: URL?) -> Bool {
-        rootURL != nil
-    }
-
-    /// The toolbar capsule exists only as the fallback for a collapsed
-    /// sidebar: when the header is off-screen the switcher must still be
-    /// reachable from the window.
-    static func showsToolbarProjectSwitcher(
-        columnVisibility: NavigationSplitViewVisibility
-    ) -> Bool {
-        columnVisibility == .detailOnly
     }
 
     static func shouldPresentBranchSwitcher(
