@@ -518,7 +518,9 @@ struct ContentView: View {
     var branchSubtitle: String {
         Self.branchSubtitle(
             isGitRepo: workspace.gitProvider.isGitRepository,
-            branchName: workspace.gitProvider.currentBranch
+            branchName: workspace.gitProvider.currentBranch,
+            hasActiveWorktree: projectWindowSession
+                .managedWorktrees[projectWindowSession.activeProjectURL] != nil
         )
     }
 
@@ -532,8 +534,19 @@ struct ContentView: View {
 
     /// Builds the toolbar subtitle for the current git branch.
     /// Kept as a static function for testability.
-    static func branchSubtitle(isGitRepo: Bool, branchName: String) -> String {
-        isGitRepo ? "\(branchName) ▾" : ""
+    ///
+    /// Every fact on the strip sounds once: with an agent worktree active the
+    /// switcher pill already reads "project — branch"
+    /// (`ProjectWindowSession.activeDisplayName`), so the subtitle repeats
+    /// the same branch and stays empty. The branch switcher the "▾"
+    /// advertises remains reachable through ⌘⇧B and the menu, and
+    /// `BranchSubtitleClickHandler` already no-ops on an empty subtitle.
+    static func branchSubtitle(
+        isGitRepo: Bool,
+        branchName: String,
+        hasActiveWorktree: Bool
+    ) -> String {
+        isGitRepo && !hasActiveWorktree ? "\(branchName) ▾" : ""
     }
 
     static func shouldPresentBranchSwitcher(
