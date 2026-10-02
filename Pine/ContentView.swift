@@ -141,20 +141,6 @@ struct ContentView: View {
                 )
             }
 
-            // The branch the subtitle used to carry, until hiding the window
-            // title took the whole native title block with it — see
-            // `WindowTitleVisibilityTracker`.
-            if !branchSubtitle.isEmpty {
-                ToolbarItem(placement: .navigation) {
-                    BranchToolbarButton(
-                        title: branchSubtitle,
-                        branchName: workspace.gitProvider.currentBranch
-                    ) {
-                        isBranchSwitcherPresented = true
-                    }
-                }
-            }
-
             // Agent Inbox entry point in the project window toolbar (#1337).
             // The popover remains additive to ⌘⇧I and the View menu (#1486).
             ToolbarItem(placement: .primaryAction) {
@@ -481,6 +467,13 @@ struct ContentView: View {
                 },
                 onShowAttention: {
                     commandOverlayRouter.present(.agentAttention)
+                },
+                branchTitle: branchSubtitle.isEmpty ? nil : branchSubtitle,
+                branchName: workspace.gitProvider.isGitRepository
+                    ? workspace.gitProvider.currentBranch
+                    : nil,
+                onSwitchBranch: {
+                    isBranchSwitcherPresented = true
                 }
             )
         }
@@ -524,7 +517,7 @@ struct ContentView: View {
     }
 
     /// Branch indicator text as a plain String to avoid generating a
-    /// localization key. Empty hides the branch toolbar button.
+    /// localization key. Empty hides the status-bar branch button.
     var branchSubtitle: String {
         Self.branchSubtitle(
             isGitRepo: workspace.gitProvider.isGitRepository,
@@ -542,9 +535,9 @@ struct ContentView: View {
         return registry.agentInboxAttentionCount(for: rootURL)
     }
 
-    /// Builds the branch indicator text — "main ▾" — shown by the branch
-    /// toolbar button (formerly the navigation subtitle). Kept as a static
-    /// function for testability.
+    /// Builds the branch indicator text — "main ▾" — shown by the status-bar
+    /// branch button (formerly the navigation subtitle, then a toolbar
+    /// button). Kept as a static function for testability.
     ///
     /// Every fact on the strip sounds once: with an agent worktree active the
     /// switcher pill already reads "project — branch"

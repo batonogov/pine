@@ -4,11 +4,12 @@
 //
 //  Tests for branch switching UI.
 //
-//  The branch indicator is a first-class toolbar button
+//  The branch indicator is a first-class status-bar button
 //  (`branchSwitcherButton`), reachable by identifier — the navigation
 //  subtitle it replaced was window chrome XCUITest could not interact
 //  with, and ⌘⇧B goes through an NSEvent local monitor that typeKey
-//  bypasses, so the switcher itself is opened through the Git menu.
+//  bypasses, so tests that do not exercise the button itself open the
+//  switcher through the Git menu.
 //
 
 import XCTest
@@ -84,7 +85,7 @@ final class BranchSwitcherTests: PineUITestCase {
         let branchButton = app.buttons["branchSwitcherButton"].firstMatch
         XCTAssertTrue(
             waitForExistence(branchButton, timeout: 10),
-            "The branch toolbar button should display the current branch"
+            "The branch status-bar button should display the current branch"
         )
         XCTAssertTrue(
             branchButton.label.contains("main")
@@ -102,7 +103,7 @@ final class BranchSwitcherTests: PineUITestCase {
         let branchButton = app.buttons["branchSwitcherButton"].firstMatch
         XCTAssertTrue(
             waitForExistence(branchButton, timeout: 10),
-            "The branch toolbar button should exist"
+            "The branch status-bar button should exist"
         )
         branchButton.click()
 
@@ -267,7 +268,7 @@ final class BranchSwitcherTests: PineUITestCase {
         let branchButton = app.buttons["branchSwitcherButton"].firstMatch
         XCTAssertTrue(
             waitForExistence(branchButton, timeout: 10),
-            "The branch toolbar button should exist"
+            "The branch status-bar button should exist"
         )
         XCTAssertTrue(
             branchButton.label.contains("main")

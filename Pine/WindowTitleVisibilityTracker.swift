@@ -18,10 +18,11 @@ import SwiftUI
 /// The hiding costs the whole native title block, subtitle and document
 /// proxy icon included (verified empirically: `titleVisibility = .hidden`
 /// removes both text fields from the theme frame). That is exactly why the
-/// branch moved out of `.navigationSubtitle` into a first-class toolbar
-/// control, and why the proxy icon's Cmd+click path menu is gone — an
-/// accepted trade-off; `RepresentedFileTracker` still sets `representedURL`
-/// so the rest of AppKit keeps a correct file reference.
+/// branch moved out of `.navigationSubtitle` into a first-class control
+/// (now the status-bar branch button), and why the proxy icon's Cmd+click
+/// path menu is gone — an accepted trade-off; `RepresentedFileTracker`
+/// still sets `representedURL` so the rest of AppKit keeps a correct file
+/// reference.
 struct WindowTitleVisibilityTracker: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         TitleVisibilityAnchorView()

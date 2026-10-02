@@ -24,6 +24,15 @@ struct StatusBarView: View {
     /// Called when the user clicks the agent attention bell to open the
     /// attention-list overlay (#1112).
     var onShowAttention: (() -> Void)?
+    /// Branch indicator text ("main ▾"); `nil` hides the button — not a git
+    /// repository, or an agent worktree is active and the switcher pill
+    /// already says "project — branch".
+    var branchTitle: String? = nil
+    /// Bare branch name for the indicator's VoiceOver label.
+    var branchName: String? = nil
+    /// Called when the user clicks the branch indicator to open the branch
+    /// switcher.
+    var onSwitchBranch: (() -> Void)? = nil
 
     /// Active AI agent sessions across all terminal panes (#952).
     /// Empty when no agent is running → `AgentStatusBarItem` is hidden.
@@ -273,6 +282,26 @@ struct StatusBarView: View {
                         .accessibilityValue(FileSizeFormatter.format(size))
                         .accessibilityIdentifier(AccessibilityID.fileSizeIndicator)
                 }
+            }
+
+            // Branch indicator: opens the branch switcher. It describes the
+            // checkout, not the open file, so it stands with the Terminal
+            // toggle rather than among the file indicators — and like the
+            // Terminal toggle it takes no `statusDivider` (those only
+            // separate file indicators).
+            if let branchTitle, let branchName {
+                Button {
+                    onSwitchBranch?()
+                } label: {
+                    Text(verbatim: branchTitle)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(Strings.menuSwitchBranch)
+                .accessibilityLabel(branchName)
+                .accessibilityIdentifier(AccessibilityID.branchSwitcherButton)
             }
 
             // Terminal toggle button

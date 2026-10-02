@@ -11,7 +11,7 @@ import Foundation
 ///
 /// Nothing on the strip displays it: the visible title is hidden permanently
 /// (`WindowTitleVisibilityTracker`), the Safari composition — the switcher
-/// pill names the project, the branch toolbar button names the checkout,
+/// pill names the project, the status-bar branch button names the checkout,
 /// and editor tabs name the open files. The title's only job is the system
 /// identity a window cannot live without: the Window menu, Mission Control,
 /// and window cycling read `NSWindow.title` even while the title bar hides
