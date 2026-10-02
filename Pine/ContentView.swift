@@ -81,13 +81,30 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarSearchableContent(
-                selectedNode: $selectedNode,
-                onFileOpen: { node, disposition in
-                    handleFileSelection(node, disposition: disposition)
+            VStack(spacing: 0) {
+                if Self.showsSidebarProjectHeader(rootURL: workspace.rootURL) {
+                    SidebarProjectHeaderView(
+                        session: projectWindowSession,
+                        registry: registry,
+                        onOpenProject: { openNewProject() },
+                        onCloseProject: { closeActiveProject() }
+                    )
+                    Divider()
                 }
-            )
-            .accessibilityIdentifier(AccessibilityID.sidebar)
+                SidebarSearchableContent(
+                    selectedNode: $selectedNode,
+                    onFileOpen: { node, disposition in
+                        handleFileSelection(node, disposition: disposition)
+                    }
+                )
+                // The identifier must stay on this inner view: it resolves
+                // onto the file tree's ScrollView, which every existing
+                // XCUITest reaches as `app.scrollViews["sidebar"]`. Moving it
+                // onto the VStack wrapper would re-type that element and
+                // break those lookups; the header is found through its own
+                // `projectSwitcher` identifier instead.
+                .accessibilityIdentifier(AccessibilityID.sidebar)
+            }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
             .toolbar {
                 ToolbarItem {
@@ -132,14 +149,21 @@ struct ContentView: View {
         .navigationTitle(windowChrome.title)
         .navigationSubtitle(branchSubtitle)
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                ProjectSwitcherView(
-                    session: projectWindowSession,
-                    registry: registry,
-                    label: windowChrome.switcherLabel,
-                    onOpenProject: { openNewProject() },
-                    onCloseProject: { closeActiveProject() }
-                )
+            // The toolbar capsule is the fallback for a collapsed sidebar:
+            // with the column visible the switcher lives in its header, and a
+            // second copy here would duplicate the project name on one strip.
+            if Self.showsToolbarProjectSwitcher(
+                columnVisibility: columnVisibility
+            ) {
+                ToolbarItem(placement: .navigation) {
+                    ProjectSwitcherView(
+                        session: projectWindowSession,
+                        registry: registry,
+                        label: windowChrome.switcherLabel,
+                        onOpenProject: { openNewProject() },
+                        onCloseProject: { closeActiveProject() }
+                    )
+                }
             }
 
             // Agent Inbox entry point in the project window toolbar (#1337).
@@ -534,6 +558,23 @@ struct ContentView: View {
     /// Kept as a static function for testability.
     static func branchSubtitle(isGitRepo: Bool, branchName: String) -> String {
         isGitRepo ? "\(branchName) ▾" : ""
+    }
+
+    /// The sidebar header carries the switcher only once the window actually
+    /// holds a project. Before the workspace binds its root the sidebar's own
+    /// empty state already offers Open Folder, and a switcher above it would
+    /// duplicate that one action.
+    static func showsSidebarProjectHeader(rootURL: URL?) -> Bool {
+        rootURL != nil
+    }
+
+    /// The toolbar capsule exists only as the fallback for a collapsed
+    /// sidebar: when the header is off-screen the switcher must still be
+    /// reachable from the window.
+    static func showsToolbarProjectSwitcher(
+        columnVisibility: NavigationSplitViewVisibility
+    ) -> Bool {
+        columnVisibility == .detailOnly
     }
 
     static func shouldPresentBranchSwitcher(

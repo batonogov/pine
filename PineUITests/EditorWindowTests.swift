@@ -423,32 +423,29 @@ final class EditorWindowTests: PineUITestCase {
         )
     }
 
-    // MARK: - Project switcher is not narrower than its toolbar neighbours
+    // MARK: - Project switcher lives in the sidebar header
 
-    /// The switcher opted out of the toolbar's own control style, which
-    /// pinned it to a chrome narrower than the round items beside it while it
-    /// holds two glyphs — an icon and a disclosure chevron — instead of one.
-    /// Both sat flush against the capsule and the control read as squashed.
-    ///
-    /// The assertion is relative rather than a hardcoded point size: the
-    /// toolbar metric differs between macOS 26 and 27 and between display
-    /// scales, but a control holding more content than its neighbour must
-    /// never come out narrower than it on the same strip.
-    func testProjectSwitcherIsWiderThanSingleGlyphToolbarButtons() throws {
-        let metricsProject = try createTempProject(
-            files: ["main.swift": "let greeting = \"Hello\"\n"],
-            projectName: "SwitcherMetrics"
+    /// The switcher moved out of the toolbar into a full-width header row at
+    /// the top of the sidebar column. The assertions stay relative — toolbar
+    /// and column metrics differ between macOS versions and display scales —
+    /// but a header row must span the column and sit above the file tree,
+    /// where the capsule it replaced could never be confused with the round
+    /// toolbar buttons.
+    func testProjectSwitcherLivesInSidebarHeader() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.scrollViews["sidebar"]
+        XCTAssertTrue(
+            waitForExistence(sidebar, timeout: 10),
+            "Sidebar should appear"
         )
-        defer { cleanupProject(metricsProject) }
-
-        launchWithProject(metricsProject)
 
         let switcher = app.descendants(matching: .any)[
             "projectSwitcher"
         ].firstMatch
         XCTAssertTrue(
             waitForExistence(switcher, timeout: 10),
-            "The project switcher should be visible in the toolbar"
+            "The project switcher should head the sidebar"
         )
 
         let openFolder = app.descendants(matching: .any)[
@@ -459,18 +456,63 @@ final class EditorWindowTests: PineUITestCase {
             "The sidebar's Open Folder button should be visible"
         )
 
-        let neighbourWidth = openFolder.frame.width
-        XCTAssertGreaterThan(
-            neighbourWidth,
-            0,
-            "A visible toolbar button must report a real frame"
-        )
         XCTAssertGreaterThan(
             switcher.frame.width,
-            neighbourWidth,
-            "The switcher carries an icon and a disclosure chevron, so its "
-                + "chrome must be wider than a single-glyph toolbar button "
-                + "(\(switcher.frame.width) vs \(neighbourWidth))"
+            openFolder.frame.width,
+            "A full-width header row must be wider than a single-glyph "
+                + "toolbar button (\(switcher.frame.width) vs "
+                + "\(openFolder.frame.width))"
+        )
+        XCTAssertLessThan(
+            switcher.frame.minY,
+            sidebar.frame.minY,
+            "The header row sits above the file tree, not inside it"
+        )
+        XCTAssertLessThanOrEqual(
+            abs(switcher.frame.midX - sidebar.frame.midX),
+            8,
+            "The header should be centred over the sidebar column "
+                + "(\(switcher.frame) vs \(sidebar.frame))"
+        )
+    }
+
+    // MARK: - Project switcher falls back to the toolbar when the sidebar is hidden
+
+    /// Collapsing the sidebar removes the header with it. The switcher must
+    /// stay reachable, so the pre-header toolbar capsule returns for exactly
+    /// that state — and leaves again once the column comes back.
+    func testProjectSwitcherFallsBackToToolbarWhenSidebarCollapsed() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.scrollViews["sidebar"]
+        XCTAssertTrue(
+            waitForExistence(sidebar, timeout: 10),
+            "Sidebar should appear"
+        )
+
+        let switcher = app.descendants(matching: .any)[
+            "projectSwitcher"
+        ].firstMatch
+        XCTAssertTrue(
+            waitForExistence(switcher, timeout: 10),
+            "The project switcher should head the sidebar"
+        )
+
+        app.typeKey("s", modifierFlags: [.command, .control])
+        XCTAssertTrue(
+            sidebar.waitForNonExistence(timeout: 5),
+            "⌃⌘S should collapse the sidebar"
+        )
+        XCTAssertTrue(
+            waitForExistence(switcher, timeout: 5),
+            "With the sidebar hidden the switcher must remain in the window "
+                + "as the toolbar fallback"
+        )
+
+        app.typeKey("s", modifierFlags: [.command, .control])
+        XCTAssertTrue(
+            waitForExistence(sidebar, timeout: 5),
+            "⌃⌘S should bring the sidebar back"
         )
     }
 

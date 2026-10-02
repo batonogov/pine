@@ -22,94 +22,12 @@ struct ProjectSwitcherView: View {
 
     var body: some View {
         Menu {
-            ProjectSwitcherRows(
+            ProjectSwitcherMenuContent(
                 session: session,
                 registry: registry,
-                carriesIdentifiers: true,
-                onSelect: { url in
-                    Task { @MainActor in
-                        await session.activate(url, registry: registry)
-                    }
-                }
+                onOpenProject: onOpenProject,
+                onCloseProject: onCloseProject
             )
-
-            Divider()
-
-            Button {
-                onCloseProject()
-            } label: {
-                Label {
-                    // The repository, not `activeDisplayName`: with an agent
-                    // worktree active the display name carries its branch,
-                    // while closing takes out the whole project — worktrees
-                    // included. Naming the branch here would promise less
-                    // than the item does.
-                    Text(verbatim: Strings.projectSwitcherCloseProjectTitle(
-                        session.displayName(for: session.activeRepositoryURL)
-                    ))
-                } icon: {
-                    Image(systemName: MenuIcons.closeProject)
-                }
-            }
-            .disabled(session.isLaunchingAgent)
-            .accessibilityIdentifier(
-                AccessibilityID.projectSwitcherCloseProject
-            )
-
-            Menu {
-                if session.availableAgentOptions.isEmpty {
-                    Text(Strings.projectSwitcherNoAgents)
-                } else {
-                    ForEach(session.availableAgentOptions) { option in
-                        Button(option.displayName) {
-                            Task { @MainActor in
-                                await session.launchAgent(
-                                    option,
-                                    registry: registry
-                                )
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Label(
-                    Strings.projectSwitcherNewAgent,
-                    systemImage: MenuIcons.projectSwitcherNewAgent
-                )
-            }
-            .disabled(
-                session.isLaunchingAgent
-                    || session.availableAgentOptions.isEmpty
-            )
-            .accessibilityIdentifier(AccessibilityID.projectSwitcherNewAgent)
-
-            // Mirrors Agent ▸ Manage Agent Worktrees. The menu bar is the
-            // canonical home (#1524 lists that as a requirement, and #1525
-            // tracks the switcher being hard to reach at all); this is the
-            // second door, next to the New Agent item that opens the first.
-            Button {
-                NotificationCenter.default.post(
-                    name: .showAgentWorktrees,
-                    object: nil
-                )
-            } label: {
-                Label(
-                    Strings.menuAgentWorktrees,
-                    systemImage: MenuIcons.agentWorktrees
-                )
-            }
-            .disabled(session.isLaunchingAgent)
-            .accessibilityIdentifier(
-                AccessibilityID.projectSwitcherManageWorktrees
-            )
-
-            Button(action: onOpenProject) {
-                Label(
-                    Strings.menuOpenFolder,
-                    systemImage: MenuIcons.projectSwitcherOpenFolder
-                )
-            }
-            .disabled(session.isLaunchingAgent)
         } label: {
             HStack(spacing: 6) {
                 if session.isLaunchingAgent {
@@ -138,8 +56,7 @@ struct ProjectSwitcherView: View {
         // dimmed with an inactive window. Measured on macOS 27 beta at 2×:
         // 33pt beside 35pt neighbours before, 41.5pt after. The exact metric
         // moves with the OS and the display scale; the relationship — a
-        // busier control is never the narrowest one on the strip — does not,
-        // which is what `EditorWindowTests` asserts.
+        // busier control is never the narrowest one on the strip — does not.
         .help(Strings.projectSwitcherTooltip)
         // Spoken name stays the project even when the visible text is
         // suppressed as a duplicate — an icon-only control must not reach
@@ -149,23 +66,130 @@ struct ProjectSwitcherView: View {
     }
 }
 
+/// Everything the switcher's menu offers below the label: the project and
+/// worktree rows, Close Project, New Agent, Manage Worktrees, Open Folder.
+///
+/// Shared by the toolbar capsule (`ProjectSwitcherView`) and the full-width
+/// sidebar header (`SidebarProjectHeaderView`) so the two surfaces can never
+/// disagree about what the switcher does — they differ only in the label
+/// chrome drawn around this content.
+struct ProjectSwitcherMenuContent: View {
+    let session: ProjectWindowSession
+    let registry: ProjectRegistry
+    let onOpenProject: () -> Void
+    let onCloseProject: () -> Void
+
+    var body: some View {
+        ProjectSwitcherRows(
+            session: session,
+            registry: registry,
+            carriesIdentifiers: true,
+            onSelect: { url in
+                Task { @MainActor in
+                    await session.activate(url, registry: registry)
+                }
+            }
+        )
+
+        Divider()
+
+        Button {
+            onCloseProject()
+        } label: {
+            Label {
+                // The repository, not `activeDisplayName`: with an agent
+                // worktree active the display name carries its branch,
+                // while closing takes out the whole project — worktrees
+                // included. Naming the branch here would promise less
+                // than the item does.
+                Text(verbatim: Strings.projectSwitcherCloseProjectTitle(
+                    session.displayName(for: session.activeRepositoryURL)
+                ))
+            } icon: {
+                Image(systemName: MenuIcons.closeProject)
+            }
+        }
+        .disabled(session.isLaunchingAgent)
+        .accessibilityIdentifier(
+            AccessibilityID.projectSwitcherCloseProject
+        )
+
+        Menu {
+            if session.availableAgentOptions.isEmpty {
+                Text(Strings.projectSwitcherNoAgents)
+            } else {
+                ForEach(session.availableAgentOptions) { option in
+                    Button(option.displayName) {
+                        Task { @MainActor in
+                            await session.launchAgent(
+                                option,
+                                registry: registry
+                            )
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(
+                Strings.projectSwitcherNewAgent,
+                systemImage: MenuIcons.projectSwitcherNewAgent
+            )
+        }
+        .disabled(
+            session.isLaunchingAgent
+                || session.availableAgentOptions.isEmpty
+        )
+        .accessibilityIdentifier(AccessibilityID.projectSwitcherNewAgent)
+
+        // Mirrors Agent ▸ Manage Agent Worktrees. The menu bar is the
+        // canonical home (#1524 lists that as a requirement, and #1525
+        // tracks the switcher being hard to reach at all); this is the
+        // second door, next to the New Agent item that opens the first.
+        Button {
+            NotificationCenter.default.post(
+                name: .showAgentWorktrees,
+                object: nil
+            )
+        } label: {
+            Label(
+                Strings.menuAgentWorktrees,
+                systemImage: MenuIcons.agentWorktrees
+            )
+        }
+        .disabled(session.isLaunchingAgent)
+        .accessibilityIdentifier(
+            AccessibilityID.projectSwitcherManageWorktrees
+        )
+
+        Button(action: onOpenProject) {
+            Label(
+                Strings.menuOpenFolder,
+                systemImage: MenuIcons.projectSwitcherOpenFolder
+            )
+        }
+        .disabled(session.isLaunchingAgent)
+    }
+}
+
 /// The switcher's rows: every project this window holds, the agent worktrees
 /// hanging off each, and the dividers that group them.
 ///
-/// Shared by the toolbar control and the menu bar's Switch Project submenu
-/// (#1525). The toolbar is a convenience layer over commands that exist in the
-/// menu bar, never their only home — and one row renderer is what keeps the
-/// two from disagreeing about what this window is showing.
+/// Shared by the window's switcher control and the menu bar's Switch Project
+/// submenu (#1525). The switcher is a convenience layer over commands that
+/// exist in the menu bar, never their only home — and one row renderer is
+/// what keeps the two from disagreeing about what this window is showing.
 struct ProjectSwitcherRows: View {
     let session: ProjectWindowSession
     let registry: ProjectRegistry
     /// Whether these rows carry the switcher's accessibility identifiers.
     ///
-    /// The toolbar control owns them. The menu bar draws the same rows and
-    /// must not stamp a second copy with the same identifiers: every XCUITest
-    /// and VoiceOver lookup would then match two elements and reach whichever
-    /// came first. Menu-bar rows are found by title, as every other menu-bar
-    /// item is.
+    /// The window's switcher control owns them — the sidebar header, or the
+    /// toolbar capsule that stands in for it while the sidebar is collapsed;
+    /// only one of the two is rendered at a time. The menu bar draws the same
+    /// rows and must not stamp a second copy with the same identifiers: every
+    /// XCUITest and VoiceOver lookup would then match two elements and reach
+    /// whichever came first. Menu-bar rows are found by title, as every other
+    /// menu-bar item is.
     let carriesIdentifiers: Bool
     let onSelect: (URL) -> Void
 
