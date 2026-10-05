@@ -12,8 +12,8 @@ import SwiftUI
 /// Hides the title-bar text permanently: `NSWindow.title` stays set — it is
 /// the window's identity for the Window menu, Mission Control, and window
 /// cycling — but the title bar never renders it. On the strip, identity is
-/// split the Safari way: the switcher pill names the project, the branch
-/// toolbar button names the checkout, and editor tabs name files.
+/// split the Safari way: the switcher pill names the project, the status-bar
+/// branch button names the checkout, and editor tabs name files.
 ///
 /// The hiding costs the whole native title block, subtitle and document
 /// proxy icon included (verified empirically: `titleVisibility = .hidden`
@@ -31,19 +31,37 @@ struct WindowTitleVisibilityTracker: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-/// Applies the hidden visibility as soon as the view sits in a window.
+/// Applies the hidden visibility as soon as the view sits in a window, then
+/// pins it.
 ///
 /// A plain `updateNSView` write races attachment (`nsView.window` is still
 /// nil), and with a constant value no later update would repair the loss —
 /// the first iteration of this tracker shipped exactly that bug. Replaying
 /// from `viewDidMoveToWindow` (the `WindowCaptureSentinel` pattern) makes
-/// the application reliable at window creation, and assigning `title`
-/// afterwards never resets `titleVisibility` (pinned by
-/// `WindowTitleVisibilityTrackerTests`).
+/// the application reliable at window creation.
+///
+/// Attachment alone is not enough on macOS 27: SwiftUI's `.navigationTitle`
+/// machinery flips `titleVisibility` back to `.visible` when it applies the
+/// title/toolbar configuration after the anchor attached (assigning
+/// `NSWindow.title` through AppKit never does this — the SwiftUI path goes
+/// further). A KVO pin puts `.hidden` back on every flip, so the title bar
+/// never renders the text no matter who re-asserts it. The write inside the
+/// observer re-triggers KVO exactly once; the guard stops the recursion.
 final class TitleVisibilityAnchorView: NSView {
+    private var visibilityPin: NSKeyValueObservation?
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window, window.titleVisibility != .hidden else { return }
+        visibilityPin = nil
+        guard let window else { return }
+        hideTitle(of: window)
+        visibilityPin = window.observe(\.titleVisibility, options: [.new]) { [weak self] window, _ in
+            self?.hideTitle(of: window)
+        }
+    }
+
+    private func hideTitle(of window: NSWindow) {
+        guard window.titleVisibility != .hidden else { return }
         window.titleVisibility = .hidden
     }
 }

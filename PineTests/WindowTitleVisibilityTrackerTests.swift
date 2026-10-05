@@ -47,9 +47,10 @@ struct WindowTitleVisibilityTrackerTests {
 
     @Test("changing the window title does not bring the title back")
     func titleChangeKeepsVisibility() {
-        // AppKit fact the design rests on: assigning `NSWindow.title` — which
-        // is all SwiftUI's `.navigationTitle` does when a file opens or
-        // closes — never touches `titleVisibility`.
+        // AppKit fact the pin must preserve: assigning `NSWindow.title` —
+        // which is all SwiftUI's `.navigationTitle` does when a file opens
+        // or closes — never touches `titleVisibility`, so no re-hiding
+        // fires here.
         let window = makeWindow()
         window.contentView?.addSubview(TitleVisibilityAnchorView())
 
@@ -57,6 +58,19 @@ struct WindowTitleVisibilityTrackerTests {
         #expect(window.titleVisibility == .hidden)
 
         window.title = "pine"
+        #expect(window.titleVisibility == .hidden)
+    }
+
+    @Test("a visibility flip back to visible is pinned back to hidden")
+    func visibilityFlipIsPinnedBack() {
+        // macOS 27: SwiftUI's `.navigationTitle` machinery re-asserts
+        // `.visible` when it applies the title/toolbar configuration after
+        // the anchor attached. Simulate that flip — the anchor's KVO pin
+        // must put `.hidden` back synchronously.
+        let window = makeWindow()
+        window.contentView?.addSubview(TitleVisibilityAnchorView())
+
+        window.titleVisibility = .visible
         #expect(window.titleVisibility == .hidden)
     }
 
