@@ -460,12 +460,16 @@ final class EditorWindowTests: PineUITestCase {
         // The pill always names the project — it is the one surface carrying
         // the project's identity, so the name must be visible from the very
         // first screen, before any file is open and regardless of what the
-        // window title says.
+        // window title says. The pill is a Menu, so macOS folds its label
+        // into a single accessibility element named after the visible text
+        // rather than publishing that text as a separate static text; accept
+        // the name on either surface.
         XCTAssertTrue(
-            waitForExistence(
-                app.staticTexts["SwitcherMetrics"].firstMatch,
-                timeout: 5
-            ),
+            switcher.label.contains("SwitcherMetrics")
+                || waitForExistence(
+                    app.staticTexts["SwitcherMetrics"].firstMatch,
+                    timeout: 5
+                ),
             "The pill should show the project name even with no file open"
         )
 
