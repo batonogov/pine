@@ -12,77 +12,38 @@ import Testing
 struct WindowChromePresentationTests {
     private func chrome(
         file: String?,
-        repository: String = "pine",
-        switcher: String = "pine"
+        repository: String = "pine"
     ) -> WindowChromePresentation {
         WindowChromePresentation(
             activeFileName: file,
-            repositoryName: repository,
-            switcherLabel: switcher
+            repositoryName: repository
         )
     }
 
-    // MARK: - The duplication this type exists to remove
+    // MARK: - Fallback chain (the title is pure system identity)
 
-    @Test("No string is ever printed twice in the title bar")
-    func titleAndSwitcherNeverMatch() {
-        // The invariant, stated once: whatever the inputs, the two title-bar
-        // surfaces never read identically.
-        let inputs: [(String?, String, String)] = [
-            ("ContentView.swift", "pine", "pine"),
-            (nil, "pine", "pine"),
-            (nil, "pine", "pine — feat/x"),
-            ("ContentView.swift", "pine", "pine — feat/x"),
-            ("pine", "pine", "pine"),
-            ("", "pine", "pine"),
-            ("  ", "  ", "  "),
-            (nil, "/", "/")
-        ]
-        for (file, repository, switcher) in inputs {
-            let resolved = WindowChromePresentation(
-                activeFileName: file,
-                repositoryName: repository,
-                switcherLabel: switcher
-            )
-            #expect(
-                resolved.switcherLabel != resolved.title,
-                "\(String(describing: file)) / \(repository) / \(switcher)"
-            )
-        }
+    @Test("An open file names the window for the system")
+    func openFileTitlesTheWindow() {
+        #expect(chrome(file: "ContentView.swift").title == "ContentView.swift")
     }
 
-    @Test("An open file titles the window and the switcher keeps the project")
-    func openFileSplitsTheTwoSurfaces() {
-        let resolved = chrome(file: "ContentView.swift")
-        #expect(resolved.title == "ContentView.swift")
-        #expect(resolved.switcherLabel == "pine")
-    }
-
-    @Test("Without an editor tab the switcher drops its duplicate text")
-    func terminalOnlyWindowSuppressesSwitcherText() {
+    @Test("With no editor tab the repository names the window")
+    func terminalOnlyWindowFallsBackToRepository() {
         // A project with no restored session opens straight into a terminal
-        // (#1251), so this is the first screen of a new project — the one
-        // place the duplicate was most visible.
-        let resolved = chrome(file: nil)
-        #expect(resolved.title == "pine")
-        #expect(resolved.switcherLabel == nil)
+        // (#1251). Nothing reads this string off the title bar — the visible
+        // title is hidden for good — but the Window menu and Mission Control
+        // do.
+        #expect(chrome(file: nil).title == "pine")
     }
 
-    // MARK: - Worktree windows keep their distinguishing text
-
-    @Test("A worktree keeps its branch label even with no file open")
-    func worktreeBranchIsNotSuppressed() {
-        // The branch is the only thing telling two windows of one repository
-        // apart. It shares a word with the title but is not the same string,
-        // so it must survive.
-        let resolved = chrome(
-            file: nil,
-            repository: "pine",
-            switcher: "pine — feat/multi-project"
-        )
-        #expect(resolved.title == "pine")
-        #expect(resolved.switcherLabel == "pine — feat/multi-project")
+    @Test("A file named like its project still names the window")
+    func fileMatchingProjectNameKeepsTitle() {
+        // Opening a file called `pine` inside project `pine` is a genuine
+        // coincidence: the system title reports the open file.
+        #expect(chrome(file: "pine").title == "pine")
     }
+
+    // MARK: - Worktree windows
 
     @Test("A worktree window never surfaces its hashed service directory")
     func worktreeTitleUsesRepositoryName() {
@@ -91,15 +52,7 @@ struct WindowChromePresentationTests {
         #expect(chrome(file: nil, repository: "pine").title == "pine")
     }
 
-    // MARK: - Fallback chain
-
-    @Test("No open tab falls back to the repository name")
-    func noTabFallsBack() {
-        #expect(
-            chrome(file: nil, repository: "acme", switcher: "acme").title
-                == "acme"
-        )
-    }
+    // MARK: - Fallback chain edge cases
 
     @Test("An untitled buffer with a display name titles the window")
     func untitledBufferUsesItsDisplayName() {
@@ -120,29 +73,18 @@ struct WindowChromePresentationTests {
     )
     func namelessWindowIsImpossible(blankRepository: String) {
         // A window with an empty title disappears from the Window menu and
-        // Mission Control. Both text inputs degenerate at once here — the
-        // last resort must still produce something identifiable.
-        let resolved = chrome(
-            file: nil,
-            repository: blankRepository,
-            switcher: blankRepository
-        )
+        // Mission Control — the last resort must still produce something
+        // identifiable.
+        let resolved = chrome(file: nil, repository: blankRepository)
         #expect(resolved.title == WindowChromePresentation.fallbackTitle)
         #expect(!resolved.title.isEmpty)
-    }
-
-    @Test("A blank switcher label never renders as empty text")
-    func blankSwitcherLabelBecomesIconOnly() {
-        // An empty Text() would reserve layout width for nothing and reach
-        // the accessibility tree as a nameless string.
-        #expect(chrome(file: "main.swift", switcher: "   ").switcherLabel == nil)
     }
 
     @Test("A filesystem-root project does not title the window '/'")
     func filesystemRootIsNotATitle() {
         // URL(fileURLWithPath: "/").lastPathComponent is "/".
         #expect(
-            chrome(file: nil, repository: "/", switcher: "/").title
+            chrome(file: nil, repository: "/").title
                 == WindowChromePresentation.fallbackTitle
         )
     }
@@ -152,16 +94,6 @@ struct WindowChromePresentationTests {
     @Test("Surrounding whitespace is trimmed, inner spacing is preserved")
     func trimsEdgesOnly() {
         #expect(chrome(file: "  read me.swift \n").title == "read me.swift")
-    }
-
-    @Test("Whitespace differences alone do not defeat duplicate detection")
-    func duplicateDetectionComparesTrimmedText() {
-        // The switcher label and the title arrive from different call sites;
-        // padding on one of them must not smuggle the duplicate back in.
-        #expect(
-            chrome(file: nil, repository: "pine", switcher: "  pine  ")
-                .switcherLabel == nil
-        )
     }
 
     @Test(
@@ -179,18 +111,6 @@ struct WindowChromePresentationTests {
         // No normalization, no transliteration: the title must match the name
         // the user sees in Finder.
         #expect(chrome(file: name).title == name)
-    }
-
-    @Test("Canonically equivalent spellings still count as duplicates")
-    func unicodeEquivalenceIsTreatedAsDuplicate() {
-        // Swift string comparison is canonical, so a precomposed title and a
-        // decomposed switcher label are equal — and must not both render.
-        let resolved = WindowChromePresentation(
-            activeFileName: nil,
-            repositoryName: "Cafe\u{0301}",     // decomposed
-            switcherLabel: "Caf\u{00E9}"        // precomposed
-        )
-        #expect(resolved.switcherLabel == nil)
     }
 
     @Test(
@@ -223,16 +143,6 @@ struct WindowChromePresentationTests {
         // the Window menu and accessibility tree read.
         let long = String(repeating: "a", count: 4096) + ".swift"
         #expect(chrome(file: long).title == long)
-    }
-
-    @Test("A file named like its project keeps the title, hides the label")
-    func fileMatchingProjectNameCollapsesToOneSurface() {
-        // Opening a file called `pine` inside project `pine` is a genuine
-        // coincidence: the title still reports the open file, and the
-        // switcher — which would print the same word — goes icon-only.
-        let resolved = chrome(file: "pine")
-        #expect(resolved.title == "pine")
-        #expect(resolved.switcherLabel == nil)
     }
 
     // MARK: - Value semantics

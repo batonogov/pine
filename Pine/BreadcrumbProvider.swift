@@ -23,8 +23,13 @@ struct BreadcrumbSegment: Identifiable, Equatable {
 enum BreadcrumbProvider {
 
     /// Decomposes `fileURL` into path segments relative to `projectRoot`.
-    /// Returns an array of segments from the project root down to the file.
-    /// If `fileURL` is not inside `projectRoot`, returns just the filename.
+    /// Returns an array of segments from the first path component inside the
+    /// project root down to the file. If `fileURL` is not inside
+    /// `projectRoot`, returns just the filename.
+    ///
+    /// The project root itself is deliberately not a segment: the toolbar's
+    /// switcher pill already names the project, and every fact on the strip
+    /// sounds once.
     static func segments(for fileURL: URL, relativeTo projectRoot: URL) -> [BreadcrumbSegment] {
         let filePath = fileURL.standardizedFileURL.path(percentEncoded: false)
         let rootPath = projectRoot.standardizedFileURL.path(percentEncoded: false)
@@ -55,15 +60,7 @@ enum BreadcrumbProvider {
 
         var result: [BreadcrumbSegment] = []
 
-        // First segment: the project root itself
-        result.append(BreadcrumbSegment(
-            id: projectRoot,
-            name: projectRoot.lastPathComponent,
-            isDirectory: true,
-            parentURL: nil
-        ))
-
-        // Middle segments (directories)
+        // Segments start at the first component inside the project root.
         var currentURL = projectRoot
         for (index, component) in components.enumerated() {
             let parentURL = currentURL

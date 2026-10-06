@@ -15,35 +15,33 @@ struct BreadcrumbProviderTests {
 
     // MARK: - Path decomposition
 
-    @Test("File at project root produces two segments: root + file")
+    @Test("File at project root produces a single segment: just the file")
     func fileAtRoot() {
         let root = URL(fileURLWithPath: "/Users/dev/MyProject")
         let file = URL(fileURLWithPath: "/Users/dev/MyProject/main.swift")
 
         let segments = BreadcrumbProvider.segments(for: file, relativeTo: root)
 
-        #expect(segments.count == 2)
-        #expect(segments[0].name == "MyProject")
-        #expect(segments[0].isDirectory == true)
-        #expect(segments[0].parentURL == nil)
-        #expect(segments[1].name == "main.swift")
-        #expect(segments[1].isDirectory == false)
-        #expect(segments[1].parentURL == root)
+        // The project root is not a segment — the switcher pill already
+        // names the project, and every fact on the strip sounds once.
+        #expect(segments.count == 1)
+        #expect(segments[0].name == "main.swift")
+        #expect(segments[0].isDirectory == false)
+        #expect(segments[0].parentURL == root)
     }
 
-    @Test("Nested file produces segments for each path component")
+    @Test("Nested file produces segments for each path component below the root")
     func nestedFile() {
         let root = URL(fileURLWithPath: "/Users/dev/MyProject")
         let file = URL(fileURLWithPath: "/Users/dev/MyProject/src/components/Button.swift")
 
         let segments = BreadcrumbProvider.segments(for: file, relativeTo: root)
 
-        #expect(segments.count == 4)
-        #expect(segments.map(\.name) == ["MyProject", "src", "components", "Button.swift"])
-        #expect(segments[0].isDirectory == true) // MyProject
-        #expect(segments[1].isDirectory == true) // src
-        #expect(segments[2].isDirectory == true) // components
-        #expect(segments[3].isDirectory == false) // Button.swift
+        #expect(segments.count == 3)
+        #expect(segments.map(\.name) == ["src", "components", "Button.swift"])
+        #expect(segments[0].isDirectory == true) // src
+        #expect(segments[1].isDirectory == true) // components
+        #expect(segments[2].isDirectory == false) // Button.swift
     }
 
     @Test("File outside project root shows only filename")
@@ -65,9 +63,9 @@ struct BreadcrumbProviderTests {
 
         let segments = BreadcrumbProvider.segments(for: file, relativeTo: root)
 
-        // root + 10 dirs + file = 12 segments
-        #expect(segments.count == 12)
-        #expect(segments.first?.name == "project")
+        // 10 dirs + file = 11 segments; the root is not a segment
+        #expect(segments.count == 11)
+        #expect(segments.first?.name == "a")
         #expect(segments.last?.name == "file.txt")
         #expect(segments.last?.isDirectory == false)
     }
@@ -79,8 +77,8 @@ struct BreadcrumbProviderTests {
 
         let segments = BreadcrumbProvider.segments(for: file, relativeTo: root)
 
-        #expect(segments.count == 3)
-        #expect(segments.map(\.name) == ["Проект", "исходники", "файл.swift"])
+        #expect(segments.count == 2)
+        #expect(segments.map(\.name) == ["исходники", "файл.swift"])
     }
 
     @Test("Each segment has correct parentURL")
@@ -90,9 +88,8 @@ struct BreadcrumbProviderTests {
 
         let segments = BreadcrumbProvider.segments(for: file, relativeTo: root)
 
-        #expect(segments[0].parentURL == nil) // root has no parent
-        #expect(segments[1].parentURL == root) // src's parent is root
-        #expect(segments[2].parentURL == URL(fileURLWithPath: "/project/src")) // main.swift's parent is src
+        #expect(segments[0].parentURL == root) // src's parent is the root
+        #expect(segments[1].parentURL == URL(fileURLWithPath: "/project/src")) // main.swift's parent is src
     }
 
     @Test("Each segment's id equals its full URL")
@@ -102,9 +99,8 @@ struct BreadcrumbProviderTests {
 
         let segments = BreadcrumbProvider.segments(for: file, relativeTo: root)
 
-        #expect(segments[0].url == root)
-        #expect(segments[1].url == URL(fileURLWithPath: "/project/src"))
-        #expect(segments[2].url == file)
+        #expect(segments[0].url == URL(fileURLWithPath: "/project/src"))
+        #expect(segments[1].url == file)
     }
 
     // MARK: - Truncation
