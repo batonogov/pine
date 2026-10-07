@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve Pine. Please include exact version and build numbers so we can distinguish macOS 26 issues from macOS 27 beta regressions.
+        Thanks for helping improve Pine. Please include exact version and build numbers so we can distinguish macOS 26 issues from macOS 27 regressions.
 
   - type: textarea
     id: summary

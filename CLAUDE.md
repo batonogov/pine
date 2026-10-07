@@ -31,7 +31,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Its mini
 - Run a single test class: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests`
 - **UI Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineUITests`
 - **Performance Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PinePerformanceTests` — XCTest `measure {}` benchmarks for FoldRange, SyntaxHighlighter, ProjectSearch, GitStatus. Enabled in default scheme but excluded from CI (opt-in via `perf` label on PR or `workflow_dispatch`)
-- Targets: `PineTests` (Swift Testing, 180+ files), `PineUITests` (XCUITest, 41 classes, base class `PineUITestCase`, 7 parallel CI shards × 2 OS axes), `PinePerformanceTests` (XCTest `measure {}`)
+- Targets: `PineTests` (Swift Testing, 180+ files), `PineUITests` (XCUITest, 44 classes, base class `PineUITestCase`, 7 parallel CI shards × 2 OS axes), `PinePerformanceTests` (XCTest `measure {}`)
 - XCUITest limitations, snapshot-harness details, and the SourceKit-LSP smoke test load from `.claude/rules/` when you open the matching files
 
 ## Non-negotiables
@@ -87,7 +87,7 @@ How the maintainer works day-to-day. Documents intent and handoff conventions fo
 - Run locally: `swiftlint` + the unit tests in `PineTests` that cover the touched area.
 - **UI tests (`PineUITests`, 7 shards) run only on CI** — almost never locally.
 
-**Local runs on macOS 27 are not a pass/fail signal** — CI is (#1509). Two known standing differences on that runtime, both unrelated to whatever diff is in the tree: `AgentInboxToolbarButtonSnapshotTests` fails all four cases because the baselines are recorded on the macOS 26 CI runner and macOS 27 renders that view ~3% differently; and `ApplicationLifecycleProcessTests.quitCrashAndRelaunchJourney()` fails with `terminal-child-unavailable` when several agents run `xcodebuild` at once, because its wait for the spawned terminal child is bounded at 5s. Confirm a local failure on an idle machine before blaming a diff for it.
+**Local runs on macOS 27 are not a pass/fail signal** — CI is (#1509). Snapshot tests use per-OS references (`osSpecific: true`, #1620), so a locally recorded baseline still cannot stand in for the CI-recorded one; and `ApplicationLifecycleProcessTests.quitCrashAndRelaunchJourney()` fails with `terminal-child-unavailable` when several agents run `xcodebuild` at once, because its wait for the spawned terminal child is bounded at 5s — both unrelated to whatever diff is in the tree. Confirm a local failure on an idle machine before blaming a diff for it.
 
 For the crash-report workflow on that runtime, invoke the `macos27-crash-triage` skill.
 

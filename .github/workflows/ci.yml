@@ -18,9 +18,9 @@ on:
         type: boolean
         default: true
 
-# Cancel superseded runs on PRs to reclaim ~27 min of macOS-26 runner time
-# per push. Main-branch pushes and manual dispatches use a dedicated group
-# with `cancel-in-progress: false` so required main-branch runs are never
+# Cancel superseded runs on PRs to reclaim macOS runner time per push.
+# Main-branch pushes and manual dispatches use a dedicated group with
+# `cancel-in-progress: false` so required main-branch runs are never
 # cancelled mid-run (they queue instead). See issue #999.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -226,7 +226,8 @@ jobs:
           fi
 
   # Primary lane: macOS 27 via the hosted xcode-27 image (public preview —
-  # migrate the label to macos-27 once GitHub promotes it to GA). The macos-26
+  # GitHub now names macOS images by Xcode major, so the label may simply
+  # lose its preview tag rather than gaining a macos-27 alias). The macos-26
   # axis keeps full N-1 runtime coverage: 26.0 remains the deployment target,
   # so the app must keep building and passing the full suite there.
   build:
@@ -242,6 +243,33 @@ jobs:
 
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
+
+      # The xcode-27 axis must actually compile against the 27 SDK: without
+      # this assert an image regression could silently degrade the primary
+      # axis to an older toolchain while every job stays green.
+      - name: Assert Xcode 27 Toolchain
+        if: matrix.os == 'xcode-27'
+        run: |
+          xcode_version="$(xcodebuild -version | awk 'NR == 1 { print $2 }')"
+          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "Xcode version: $xcode_version"
+          echo "macOS SDK version: $sdk_version"
+
+          case "$xcode_version" in
+            27|27.*) ;;
+            *)
+              echo "::error::The xcode-27 axis resolved Xcode $xcode_version"
+              exit 1
+              ;;
+          esac
+
+          case "$sdk_version" in
+            27|27.*) ;;
+            *)
+              echo "::error::The xcode-27 axis resolved macOS SDK $sdk_version"
+              exit 1
+              ;;
+          esac
 
       - name: Ensure Metal Toolchain
         run: bash scripts/ensure-metal-toolchain.sh

@@ -50,7 +50,7 @@ New `.swift` files placed in `Pine/`, `PineTests/`, or `PineUITests/` are automa
 
 ## macOS Compatibility
 
-Pine's minimum deployment target remains macOS 26.0. The current macOS 27 beta is an additional compatibility target, so compatibility fixes must preserve macOS 26 support rather than raising the deployment target.
+Pine's minimum deployment target remains macOS 26.0. macOS 27 is an additional compatibility target, so compatibility fixes must preserve macOS 26 support rather than raising the deployment target.
 
 For OS-, SDK-, or rendering-specific bug reports and pull requests, capture the exact environment:
 
@@ -61,13 +61,13 @@ xcrun --sdk macosx --show-sdk-version
 xcrun --sdk macosx --show-sdk-build-version
 ```
 
-Include the complete output, the Mac model/chip, and the display configuration. When both runtimes are available, state the result separately for macOS 26 and the current macOS 27 beta; use `not tested` where a runtime was unavailable.
+Include the complete output, the Mac model/chip, and the display configuration. When both runtimes are available, state the result separately for macOS 26 and macOS 27; use `not tested` where a runtime was unavailable.
 
 For terminal rendering bugs, perform a manual comparison after each code change:
 
 1. Launch normally to exercise the default path (Metal when available), and note any fallback-to-CoreGraphics message in Console.
 2. Quit Pine completely, then relaunch with the `--disable-metal` argument or `PINE_DISABLE_METAL=1` environment variable to force CoreGraphics.
-3. Report the effective renderer that reproduces the problem and whether behavior differs between macOS 26 and macOS 27 beta.
+3. Report the effective renderer that reproduces the problem and whether behavior differs between macOS 26 and macOS 27.
 
 ## Running Tests
 
@@ -209,7 +209,7 @@ Add a JSON file to `Pine/Grammars/` following the format of existing grammars. I
 
 ### CI pipeline
 
-The CI runs: Lint -> Build -> Unit Tests (with coverage) -> UI Tests (6 parallel shards). Code coverage threshold is 70% (logic-only, SwiftUI view files excluded).
+The CI runs: Lint -> Build -> Unit Tests (with coverage) -> UI Tests (7 parallel shards). Every macOS lane runs on two OS axes — macOS 27 (primary) and macOS 26 (compatibility). Code coverage threshold is 70% (logic-only, SwiftUI view files excluded).
 
 ## Finding Work
 
