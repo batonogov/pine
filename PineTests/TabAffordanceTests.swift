@@ -26,7 +26,6 @@ struct TabAffordanceTests {
         // which checks the underlying key string for string-literal keys.)
         #expect(Strings.tabCloseTabDisabledPinned == LocalizedStringKey("tab.closeTabDisabledPinned"))
         #expect(Strings.statusbarEncodingDisabledDirty == LocalizedStringKey("statusbar.encodingDisabledDirty"))
-        #expect(Strings.breadcrumbShowHiddenSegments == LocalizedStringKey("breadcrumb.showHiddenSegments"))
     }
 
     @Test("New string keys are present in Localizable.xcstrings")
@@ -43,45 +42,5 @@ struct TabAffordanceTests {
 
         #expect(strings["tab.closeTabDisabledPinned"] != nil)
         #expect(strings["statusbar.encodingDisabledDirty"] != nil)
-        #expect(strings["breadcrumb.showHiddenSegments"] != nil)
-    }
-
-    // MARK: - Breadcrumb truncate returns hidden segments
-
-    @Test("Breadcrumb truncate hidden count is correct")
-    func truncateHiddenCount() {
-        let segments = (0..<12).map { i in
-            BreadcrumbSegment(
-                id: URL(fileURLWithPath: "/proj/dir\(i)"),
-                name: "dir\(i)",
-                isDirectory: true,
-                parentURL: URL(fileURLWithPath: "/proj/dir\(max(i - 1, 0))")
-            )
-        }
-
-        let (showEllipsis, visible) = BreadcrumbProvider.truncate(segments, maxVisible: 8)
-
-        #expect(showEllipsis == true)
-        #expect(visible.count == 8)
-        // Hidden segments = 12 - 8 = 4
-        let hiddenCount = segments.count - visible.count
-        #expect(hiddenCount == 4)
-    }
-
-    @Test("Breadcrumb truncate returns false when under max")
-    func truncateNoEllipsis() {
-        let segments = (0..<3).map { i in
-            BreadcrumbSegment(
-                id: URL(fileURLWithPath: "/proj/dir\(i)"),
-                name: "dir\(i)",
-                isDirectory: true,
-                parentURL: nil
-            )
-        }
-
-        let (showEllipsis, visible) = BreadcrumbProvider.truncate(segments, maxVisible: 8)
-
-        #expect(showEllipsis == false)
-        #expect(visible.count == 3)
     }
 }

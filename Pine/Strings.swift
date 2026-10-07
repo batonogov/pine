@@ -2593,7 +2593,6 @@ enum Strings {
     // MARK: - Affordance / Accessibility Help
 
     static let statusbarEncodingDisabledDirty: LocalizedStringKey = "statusbar.encodingDisabledDirty"
-    static let breadcrumbShowHiddenSegments: LocalizedStringKey = "breadcrumb.showHiddenSegments"
 
     // MARK: - Tab Pinning
 
