@@ -145,7 +145,7 @@ jobs:
   # than executed, the job goes red instead of reporting a hollow pass.
   lint-sourcekit:
     name: SwiftLint (SourceKit rules)
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 15
     env:
       # Same pinned version as the Linux lint job (and local `brew install
@@ -225,10 +225,18 @@ jobs:
             exit 1
           fi
 
+  # Primary lane: macOS 27 via the hosted xcode-27 image (public preview —
+  # migrate the label to macos-27 once GitHub promotes it to GA). The macos-26
+  # axis keeps full N-1 runtime coverage: 26.0 remains the deployment target,
+  # so the app must keep building and passing the full suite there.
   build:
-    name: Build for Testing
-    runs-on: macos-26
+    name: Build for Testing (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [xcode-27, macos-26]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
@@ -238,13 +246,50 @@ jobs:
       - name: Ensure Metal Toolchain
         run: bash scripts/ensure-metal-toolchain.sh
 
+      # runner.os is identical on both images, so matrix.os has to carry the
+      # OS distinction in the cache key.
       - name: Cache SPM Dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: DerivedData/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: spm-${{ matrix.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-
+            spm-${{ matrix.os }}-
+
+      # macOS 27 is a runtime compatibility target, not a new minimum: every
+      # target must stay at MACOSX_DEPLOYMENT_TARGET=26.0 on both OS axes.
+      - name: Verify macOS 26 Deployment Target
+        run: |
+          for configuration in Debug Release; do
+            settings="$(
+              xcodebuild \
+                -project Pine.xcodeproj \
+                -alltargets \
+                -configuration "$configuration" \
+                -showBuildSettings \
+                -json
+            )"
+            target_count="$(jq 'length' <<<"$settings")"
+            if [ "$target_count" -eq 0 ]; then
+              echo "::error::No targets resolved for $configuration"
+              exit 1
+            fi
+
+            invalid="$(
+              jq -r '
+                .[]
+                | select(.buildSettings.MACOSX_DEPLOYMENT_TARGET != "26.0")
+                | "\(.target)=\(.buildSettings.MACOSX_DEPLOYMENT_TARGET // "missing")"
+              ' <<<"$settings"
+            )"
+            if [ -n "$invalid" ]; then
+              echo "::error::Expected MACOSX_DEPLOYMENT_TARGET=26.0 for every $configuration target"
+              echo "$invalid"
+              exit 1
+            fi
+
+            echo "Verified $target_count $configuration target settings at MACOSX_DEPLOYMENT_TARGET=26.0"
+          done
 
       - name: Build App
         run: |
@@ -307,169 +352,21 @@ jobs:
       - name: Upload Build Products
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: build-products
+          name: build-products-${{ matrix.os }}
           path: |
             build-products.tar.zst
             build-products.sha256
           retention-days: 1
           compression-level: 0
 
-  # Compiler/SDK compatibility lane for the Xcode 27 preview image. The
-  # hosted runner still uses macOS 26, so runtime coverage on macOS 27 must
-  # continue on real hardware. Keep this non-blocking while the image is in
-  # preview; failures should remain visible without becoming required checks.
-  xcode-27-compatibility:
-    name: Xcode 27 Preview Compatibility
-    runs-on: xcode-27
-    continue-on-error: true
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-
-      # Do not use the stable select-xcode helper here: xcode-27 runners
-      # provide the preview Xcode/SDK pair as their active toolchain.
-      - name: Report Preview Environment
-        run: |
-          sw_vers
-          uname -m
-          xcodebuild -version
-          xcode_version="$(xcodebuild -version | awk 'NR == 1 { print $2 }')"
-          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
-          echo "macOS SDK version: $sdk_version"
-          echo "macOS SDK build: $(xcrun --sdk macosx --show-sdk-build-version)"
-          echo "macOS SDK path: $(xcrun --sdk macosx --show-sdk-path)"
-
-          case "$xcode_version" in
-            27|27.*) ;;
-            *)
-              echo "::error::The xcode-27 lane resolved Xcode $xcode_version"
-              exit 1
-              ;;
-          esac
-
-          case "$sdk_version" in
-            27|27.*) ;;
-            *)
-              echo "::error::The xcode-27 lane resolved macOS SDK $sdk_version"
-              exit 1
-              ;;
-          esac
-
-      - name: Ensure Metal Toolchain
-        run: bash scripts/ensure-metal-toolchain.sh
-
-      - name: Cache SPM Dependencies
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: DerivedData-Xcode27/SourcePackages
-          key: spm-xcode-27-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
-          restore-keys: |
-            spm-xcode-27-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Verify macOS 26 Deployment Target
-        run: |
-          for configuration in Debug Release; do
-            settings="$(
-              xcodebuild \
-                -project Pine.xcodeproj \
-                -alltargets \
-                -configuration "$configuration" \
-                -showBuildSettings \
-                -json
-            )"
-            target_count="$(jq 'length' <<<"$settings")"
-            if [ "$target_count" -eq 0 ]; then
-              echo "::error::No targets resolved for $configuration"
-              exit 1
-            fi
-
-            invalid="$(
-              jq -r '
-                .[]
-                | select(.buildSettings.MACOSX_DEPLOYMENT_TARGET != "26.0")
-                | "\(.target)=\(.buildSettings.MACOSX_DEPLOYMENT_TARGET // "missing")"
-              ' <<<"$settings"
-            )"
-            if [ -n "$invalid" ]; then
-              echo "::error::Expected MACOSX_DEPLOYMENT_TARGET=26.0 for every $configuration target"
-              echo "$invalid"
-              exit 1
-            fi
-
-            echo "Verified $target_count $configuration target settings at MACOSX_DEPLOYMENT_TARGET=26.0"
-          done
-
-      - name: Build App with Xcode 27
-        run: |
-          xcodebuild build \
-            -skipPackagePluginValidation \
-            -project Pine.xcodeproj \
-            -scheme Pine \
-            -destination "platform=macOS" \
-            -derivedDataPath DerivedData-Xcode27 \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
-
-      - name: Unit Tests with Xcode 27
-        run: |
-          RESULT_BUNDLE="Xcode27TestResults.xcresult"
-          rm -rf "$RESULT_BUNDLE"
-          TEST_STARTED_AT="$(date +%s)"
-
-          set +e
-          xcodebuild test \
-            -skipPackagePluginValidation \
-            -project Pine.xcodeproj \
-            -scheme Pine \
-            -destination "platform=macOS" \
-            -derivedDataPath DerivedData-Xcode27 \
-            -only-testing:PineTests \
-            -skip-testing:PineTests/FuzzGitDiffParserTests \
-            -skip-testing:PineTests/FuzzGitBlameParserTests \
-            -skip-testing:PineTests/FuzzGitStatusParserTests \
-            -skip-testing:PineTests/FuzzSyntaxHighlighterTests \
-            -skip-testing:PineTests/FuzzQuickOpenProviderTests \
-            -skip-testing:PineTests/FuzzSymbolParserTests \
-            -skip-testing:PineTests/FuzzConfigValidatorTests \
-            -skip-testing:PineTests/FuzzGoToLineParserTests \
-            -skip-testing:PineTests/FuzzAgentBoundaryTests \
-            -retry-tests-on-failure \
-            -parallel-testing-enabled NO \
-            -test-timeouts-enabled YES \
-            -resultBundlePath "$RESULT_BUNDLE" \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
-          TEST_EXIT=$?
-          set -e
-
-          python3 .github/scripts/validate_test_results.py \
-            "$RESULT_BUNDLE" \
-            --xcodebuild-exit "$TEST_EXIT" \
-            --started-at "$TEST_STARTED_AT" \
-            --github-summary
-
-      # Same rationale as the macos-26 lane's Upload Snapshot Renders step,
-      # but for the macOS 27 side of the per-OS references (#1620): the
-      # harness writes a runner-made baseline for a missing `<name>.macos27`
-      # reference, and `-retry-tests-on-failure` turns that first attempt
-      # green — so the only way to capture the macOS 27 baseline for commit
-      # is to publish the directory from this lane. `always()` for the same
-      # load-bearing reason as below.
-      - name: Upload Snapshot Renders (Xcode 27)
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: snapshot-actual-renders-xcode27
-          path: PineTests/SnapshotTests/__Snapshots__/
-          retention-days: 7
-          if-no-files-found: ignore
-
   unit-tests:
-    name: Unit Tests
-    runs-on: macos-26
+    name: Unit Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [xcode-27, macos-26]
     # Bumped from 45 → 60 min as a safety net. The per-test timeout
     # (-test-timeouts-enabled below) is the primary mitigation for the
     # macos-26 fork/spawn hang (#1060): a stuck test is now killed in
@@ -488,7 +385,7 @@ jobs:
       - name: Download Build Products
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: build-products
+          name: build-products-${{ matrix.os }}
 
       - name: Extract Build Products
         run: |
@@ -542,7 +439,7 @@ jobs:
         if: success() || failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: unit-test-results
+          name: unit-test-results-${{ matrix.os }}
           path: |
             TestResults.xcresult
             LifecycleDiagnostics
@@ -564,7 +461,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: snapshot-actual-renders
+          name: snapshot-actual-renders-${{ matrix.os }}
           path: PineTests/SnapshotTests/__Snapshots__/
           retention-days: 7
           if-no-files-found: ignore
@@ -586,8 +483,10 @@ jobs:
             --github-output "$GITHUB_OUTPUT" \
             --github-summary "$GITHUB_STEP_SUMMARY"
 
+      # Only the primary axis comments: both OS jobs would otherwise race to
+      # update the same <!-- pine-coverage-report --> comment.
       - name: Comment Coverage on PR
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && matrix.os == 'xcode-27'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           COVERAGE_STATUS: ${{ steps.coverage.outputs.status }}
@@ -695,17 +594,31 @@ jobs:
             --workflow .github/workflows/ci.yml \
             --max-delta 3
 
-  # UI test shards — 7 parallel jobs, 34-37 tests each (delta 3).
+  # UI test shards — 7 shards × 2 OS axes = 14 jobs, 34-37 tests each (delta 3).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
+  # shard-name is a real matrix axis (not only an include key): an include
+  # entry merges into every combination whose axis values it does not
+  # overwrite, so each entry below adds test-classes to the two os
+  # combinations of its own shard. check_ui_test_shards.py keys off the
+  # `- shard-name:` lines inside include and never sees the bare axis list.
   ui-tests:
-    name: "UI Tests (${{ matrix.shard-name }})"
-    runs-on: macos-26
+    name: "UI Tests (${{ matrix.shard-name }} / ${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
     needs: build
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        os: [xcode-27, macos-26]
+        shard-name:
+          - "Terminal"
+          - "Welcome & Session"
+          - "Navigation"
+          - "Editor Chrome"
+          - "Files & Save"
+          - "Search & Panes"
+          - "Security & Layout"
         include:
           # Shard 1 — Terminal (36 tests)
           - shard-name: "Terminal"
@@ -781,7 +694,7 @@ jobs:
       - name: Download Build Products
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: build-products
+          name: build-products-${{ matrix.os }}
 
       - name: Extract Build Products
         run: |
@@ -819,27 +732,35 @@ jobs:
         run: |
           python3 .github/scripts/detect_flaky_tests.py \
             UITestResults.xcresult --github-summary \
-            --output-file flaky-shard-${{ strategy.job-index }}.json
+            --output-file flaky-shard-${{ matrix.os }}-${{ strategy.job-index }}.json
 
       - name: Upload Flaky Report
         if: success() || failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: flaky-ui-${{ strategy.job-index }}
-          path: flaky-shard-${{ strategy.job-index }}.json
+          name: flaky-ui-${{ matrix.os }}-${{ strategy.job-index }}
+          path: flaky-shard-${{ matrix.os }}-${{ strategy.job-index }}.json
           retention-days: 1
 
   # A small release-critical UI matrix, separate from the ordinary seven-shard
-  # suite. All supported locales render once across four jobs; only the
-  # representative configuration in each job captures layout diagnostics.
+  # suite. All supported locales render once across four configurations × two
+  # OS axes; only the representative configuration in each job captures layout
+  # diagnostics. `name` is a real matrix axis for the same include-merge
+  # reason as in ui-tests above.
   accessibility-localization-smoke:
-    name: "A11y & Localization (${{ matrix.name }})"
-    runs-on: macos-26
+    name: "A11y & Localization (${{ matrix.name }} / ${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
     needs: build
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        os: [xcode-27, macos-26]
+        name:
+          - "en-es-fr-light"
+          - "de-pt-dark-reduce-motion"
+          - "ja-ko-zh-light-differentiate"
+          - "ru-dark-both-double-length"
         include:
           - name: "en-es-fr-light"
             locales: "en|en_US;es|es_ES;fr|fr_FR"
@@ -893,7 +814,7 @@ jobs:
       - name: Download Build Products
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: build-products
+          name: build-products-${{ matrix.os }}
 
       - name: Extract Build Products
         run: |
@@ -951,7 +872,7 @@ jobs:
         if: failure() || matrix.capture_layout
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: a11y-localization-${{ matrix.name }}
+          name: a11y-localization-${{ matrix.os }}-${{ matrix.name }}
           path: |
             AccessibilityLocalizationSmoke.xcresult
             A11yDiagnostics
@@ -1084,7 +1005,7 @@ jobs:
   # them locally in Xcode's Test Navigator to inspect the measure {} numbers.
   performance-tests:
     name: Performance Tests (on-demand)
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     concurrency:
       group: perf-${{ github.ref }}
@@ -1160,7 +1081,7 @@ jobs:
   # For nightly scheduled runs, see .github/workflows/nightly-fuzz.yml.
   fuzz-tests:
     name: Fuzz Tests (on-demand)
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     concurrency:
       group: fuzz-${{ github.ref }}

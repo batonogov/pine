@@ -123,21 +123,16 @@ validate_parallel_options() {
 
     validate_serialized_step \
         "$workflow" \
-        "Unit Tests with Xcode 27" \
-        "The Xcode 27 unit-test lane" \
-        || return 1
-    validate_serialized_step \
-        "$workflow" \
         "Unit Tests" \
-        "The macOS 26 unit-test lane" \
+        "The unit-test lane" \
         || return 1
 
     all_parallel_lines="$(
         active_option_lines "$workflow" '-parallel-testing-enabled'
     )"
     all_parallel_count="$(line_count "$all_parallel_lines")"
-    if [ "$all_parallel_count" -ne 2 ]; then
-        echo "✗ CI workflow must contain exactly two active serialized unit-test options (found $all_parallel_count)" >&2
+    if [ "$all_parallel_count" -ne 1 ]; then
+        echo "✗ CI workflow must contain exactly one active serialized unit-test option (found $all_parallel_count)" >&2
         echo "$all_parallel_lines" >&2
         return 1
     fi
@@ -151,36 +146,23 @@ validate_workflow() {
 }
 
 fixture_workflow() {
-    local xcode_27_parallel="$1"
-    local macos_26_parallel="$2"
-    local extra_parallel="$3"
-    local xcode_27_timeout='-test-timeouts-enabled YES \'
-    local macos_26_timeout='-test-timeouts-enabled YES \'
+    local unit_parallel="$1"
+    local extra_parallel="$2"
+    local unit_timeout='-test-timeouts-enabled YES \'
 
-    if [ "$#" -ge 4 ]; then
-        xcode_27_timeout="$4"
-    fi
-    if [ "$#" -ge 5 ]; then
-        macos_26_timeout="$5"
+    if [ "$#" -ge 3 ]; then
+        unit_timeout="$3"
     fi
 
     printf '%s\n' \
         'jobs:' \
-        '  xcode-27-compatibility:' \
-        '    steps:' \
-        '      - name: Unit Tests with Xcode 27' \
-        '        run: |' \
-        '          xcodebuild test \' \
-        "            $xcode_27_parallel" \
-        "            $xcode_27_timeout" \
-        '            -resultBundlePath Xcode27TestResults.xcresult' \
         '  unit-tests:' \
         '    steps:' \
         '      - name: Unit Tests' \
         '        run: |' \
         '          xcodebuild test-without-building \' \
-        "            $macos_26_parallel" \
-        "            $macos_26_timeout" \
+        "            $unit_parallel" \
+        "            $unit_timeout" \
         '            -resultBundlePath TestResults.xcresult' \
         '      - name: Detect Flaky Tests' \
         '        run: python3 .github/scripts/detect_flaky_tests.py' \
@@ -232,89 +214,62 @@ TIMEOUT_MISSING_VALUE='-test-timeouts-enabled \'
 TIMEOUT_WRONG_VALUE='-test-timeouts-enabled NO \'
 
 assert_fixture_passes \
-    "both unit lanes explicitly serialized" \
-    "$(fixture_workflow "$SERIALIZED" "$SERIALIZED" "")"
+    "unit lane explicitly serialized" \
+    "$(fixture_workflow "$SERIALIZED" "")"
 assert_fixture_passes \
-    "commented lookalike outside unit lanes is ignored" \
+    "commented lookalike outside the unit lane is ignored" \
     "$(fixture_workflow \
-        "$SERIALIZED" \
         "$SERIALIZED" \
         '# -parallel-testing-enabled YES')"
 assert_fixture_passes \
-    "commented lookalike inside a unit lane is ignored" \
+    "commented lookalike inside the unit lane is ignored" \
     "$(fixture_workflow \
         "$SERIALIZED
             # $WRONG_VALUE" \
-        "$SERIALIZED" \
         "")"
 
 assert_fixture_fails \
-    "missing Xcode 27 serialization" \
-    "The Xcode 27 unit-test lane must contain exactly one active" \
-    "$(fixture_workflow "" "$SERIALIZED" "")"
+    "missing unit-lane serialization" \
+    "The unit-test lane must contain exactly one active" \
+    "$(fixture_workflow "" "")"
 assert_fixture_fails \
-    "missing macOS 26 serialization" \
-    "The macOS 26 unit-test lane must contain exactly one active" \
-    "$(fixture_workflow "$SERIALIZED" "" "")"
+    "unit-lane serialization missing value" \
+    "The unit-test lane must pass an explicit NO value" \
+    "$(fixture_workflow "$MISSING_VALUE" "")"
 assert_fixture_fails \
-    "Xcode 27 serialization missing value" \
-    "The Xcode 27 unit-test lane must pass an explicit NO value" \
-    "$(fixture_workflow "$MISSING_VALUE" "$SERIALIZED" "")"
+    "unit-lane serialization enabled" \
+    "The unit-test lane must pass an explicit NO value" \
+    "$(fixture_workflow "$WRONG_VALUE" "")"
 assert_fixture_fails \
-    "macOS 26 serialization missing value" \
-    "The macOS 26 unit-test lane must pass an explicit NO value" \
-    "$(fixture_workflow "$SERIALIZED" "$MISSING_VALUE" "")"
-assert_fixture_fails \
-    "Xcode 27 serialization enabled" \
-    "The Xcode 27 unit-test lane must pass an explicit NO value" \
-    "$(fixture_workflow "$WRONG_VALUE" "$SERIALIZED" "")"
-assert_fixture_fails \
-    "macOS 26 serialization enabled" \
-    "The macOS 26 unit-test lane must pass an explicit NO value" \
-    "$(fixture_workflow "$SERIALIZED" "$WRONG_VALUE" "")"
-assert_fixture_fails \
-    "duplicate serialization in Xcode 27 unit lane" \
-    "The Xcode 27 unit-test lane must contain exactly one active" \
+    "duplicate serialization in the unit lane" \
+    "The unit-test lane must contain exactly one active" \
     "$(fixture_workflow \
-        "$SERIALIZED
-            $SERIALIZED" \
-        "$SERIALIZED" \
-        "")"
-assert_fixture_fails \
-    "duplicate serialization in macOS 26 unit lane" \
-    "The macOS 26 unit-test lane must contain exactly one active" \
-    "$(fixture_workflow \
-        "$SERIALIZED" \
         "$SERIALIZED
             $SERIALIZED" \
         "")"
 assert_fixture_fails \
-    "serialization added outside unit lanes" \
-    "CI workflow must contain exactly two active serialized unit-test options" \
-    "$(fixture_workflow "$SERIALIZED" "$SERIALIZED" "$SERIALIZED")"
+    "serialization added outside the unit lane" \
+    "CI workflow must contain exactly one active serialized unit-test option" \
+    "$(fixture_workflow "$SERIALIZED" "$SERIALIZED")"
 assert_fixture_fails \
     "timeout option missing value" \
     "Every -test-timeouts-enabled option must pass an explicit YES value" \
     "$(fixture_workflow \
         "$SERIALIZED" \
-        "$SERIALIZED" \
         "" \
-        "$TIMEOUT_MISSING_VALUE" \
-        "$TIMEOUT")"
+        "$TIMEOUT_MISSING_VALUE")"
 assert_fixture_fails \
     "timeout option has wrong value" \
     "Every -test-timeouts-enabled option must pass an explicit YES value" \
     "$(fixture_workflow \
         "$SERIALIZED" \
-        "$SERIALIZED" \
         "" \
-        "$TIMEOUT" \
         "$TIMEOUT_WRONG_VALUE")"
 assert_fixture_fails \
     "timeout options removed" \
     "CI workflow no longer enables per-test timeouts" \
-    "$(fixture_workflow "$SERIALIZED" "$SERIALIZED" "" "" "")"
+    "$(fixture_workflow "$SERIALIZED" "" "")"
 
 validate_workflow "$(< "$CI_WORKFLOW")"
 echo "✓ Every xcodebuild test-timeout option passes an explicit YES value"
-echo "✓ Both unit-test lanes disable parallel testing exactly once"
+echo "✓ The unit-test lane disables parallel testing exactly once"

@@ -49,7 +49,7 @@ require_lane_count() {
     fi
 }
 
-require_in_lane "runs-on: macos-26"
+require_in_lane "runs-on: xcode-27"
 require_in_lane "timeout-minutes: 15"
 require_in_lane "SWIFTLINT_VERSION: \""
 require_in_lane "SWIFTLINT_MACOS_SHA256: \""
