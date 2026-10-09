@@ -206,30 +206,31 @@ struct DigitalRainThemeTests {
         #expect(theme.light.cursor == TerminalPaletteEntry(red: 0x0A, green: 0x2E, blue: 0x16))
     }
 
-    // MARK: Ghost text (SwiftTerm 8 -> 0 collapse)
+    // MARK: Slot 0 legibility
 
     @Test("Slot 0 is distinct from the background in both schemes")
     func slot0DiffersFromBackground() {
-        // Pine runs SwiftTerm with useBrightColors = false, which collapses the
-        // 256-color index 8 onto 0 (see TerminalPalette.ghostTextOverride). A
-        // slot 0 equal to the background renders zsh-autosuggestions ghost text
-        // invisible — the Nord light defect tracked in #1350.
+        // Slot 0 doubles as Digital Rain's "black" text on bright TUI
+        // backgrounds; keeping it distinct from the background also kept
+        // zsh-autosuggestions ghost text readable back when SwiftTerm
+        // collapsed the 256-color index 8 onto 0 (fixed in Pine's SwiftTerm
+        // fork for #1650 — ghost text now reads slot 8).
         #expect(theme.dark.ansiColors[0] != theme.dark.background)
         #expect(theme.light.ansiColors[0] != theme.light.background)
     }
 
-    @Test("Slot 0 is legible as ghost text — at least 2.5:1 against its background")
+    @Test("Slot 0 is legible — at least 2.5:1 against its background")
     func slot0IsLegible() {
         // "Not equal to the background" is not enough: a near-background slot 0
-        // is still invisible in practice. Ghost text is dim by design, so the
+        // is still invisible in practice. Slot 0 is dim by design, so the
         // bar is below body-text AA but well clear of the background.
         let darkRatio = contrastRatio(theme.dark.ansiColors[0], theme.dark.background)
         let lightRatio = contrastRatio(theme.light.ansiColors[0], theme.light.background)
-        #expect(darkRatio >= 2.5, "dark slot 0 ghost-text contrast \(darkRatio) below 2.5:1")
-        #expect(lightRatio >= 2.5, "light slot 0 ghost-text contrast \(lightRatio) below 2.5:1")
+        #expect(darkRatio >= 2.5, "dark slot 0 contrast \(darkRatio) below 2.5:1")
+        #expect(lightRatio >= 2.5, "light slot 0 contrast \(lightRatio) below 2.5:1")
     }
 
-    @Test("Slot 0 stays dimmer than the foreground so ghost text reads as a hint")
+    @Test("Slot 0 stays dimmer than the foreground so it reads as a secondary tone")
     func slot0IsDimmerThanForeground() {
         #expect(
             contrastRatio(theme.dark.ansiColors[0], theme.dark.background)

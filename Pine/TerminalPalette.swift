@@ -16,42 +16,34 @@
 //  the default terminal colors and reapplies them when the system appearance
 //  changes. TUI apps paint their own background through ANSI sequences anyway.
 //
-//  Coverage across SGR forms — and the SwiftTerm 1.13.0 collapse quirk:
+//  Coverage across SGR forms:
 //
 //    * Basic SGR \e[30m..\e[37m and \e[90m..\e[97m, plus the 256-color
 //      form \e[38;5;Nm for N in 0...15 — both go through the SAME code
-//      path in `Apple/AppleTerminalView.swift` (`case .ansi256(let ansi):`,
-//      ~line 241). There is no separate handler for the basic 16. The
-//      relevant snippet is:
-//
-//          if useBrightColors {
-//              midx = ansi < 7 ? (Int (ansi) + (isBold ? 8 : 0)) : Int (ansi)
-//          } else {
-//              midx = ansi > 7 ? (Int (ansi) - 8) : Int(ansi)   // <- collapse!
-//          }
+//      path in `Apple/AppleTerminalView.swift` (`case .ansi256(let ansi):`
+//      in `mapColor`). There is no separate handler for the basic 16;
+//      SGR 90-97 are parsed into `ansi256` codes 8-15 (`Terminal.swift`,
+//      `case 90...97`).
 //
 //      Pine sets `useBrightColors = false` in `TerminalSession.swift` so
 //      that bold text does NOT auto-promote to bright (issue #733 / Ghostty
-//      parity). The unfortunate side effect is the second branch above:
-//      it collapses every ANSI index 8..15 onto 0..7 BEFORE looking up
-//      `terminal.ansiColors[midx]`. So `\e[38;5;8m` (which is what
-//      zsh-autosuggestions / fish use for ghost text via `fg=8`) actually
-//      reads `ansiColors[0]` — slot 8 is unreachable and any override on
-//      it is silently ignored.
+//      parity). Upstream SwiftTerm 1.19.0 coupled a second behavior to that
+//      flag: with `useBrightColors = false`, `mapColor` folded EVERY ANSI
+//      index above 7 onto `index - 8` before looking up
+//      `terminal.ansiColors[midx]`, which made slots 8-15 unreachable for
+//      foreground text and shifted the whole 16-255 extended range down
+//      by 8 (issue #1650).
 //
-//      The workaround: override slot 0 instead (see `ghostTextOverride`).
-//      That makes the 8 → 0 collapse land on the readable grey, which is
-//      what users actually need. ANSI 0 ("black") on a dark terminal
-//      background was already invisible, so making it grey is strictly
-//      better, not worse. On light backgrounds it becomes mid-grey instead
-//      of pure black — slightly off-spec but still legible.
+//      Pine ships a SwiftTerm fork (batonogov/SwiftTerm,
+//      branch `pine/bright-ansi-fg`) that decouples the two behaviors via
+//      `collapseBrightColorsToBase`. Pine sets it to `false`, so `\e[38;5;8m`
+//      (which is what zsh-autosuggestions / fish use for ghost text via
+//      `fg=8`) now reads the real slot 8, and bright themes (Dracula,
+//      GitHub, Digital Rain) render their distinct bright variants. Bold
+//      text still keeps its base color (#733 preserved).
 //
 //    * True color \e[38;2;R;G;Bm — not affected by palettes, passes
 //      through unchanged (by design).
-//
-//  Long-term fix is upstream in SwiftTerm: separate the bold-as-bright
-//  rendering decision from the 256-color index collapse so `useBrightColors`
-//  only affects the former. Tracked as a follow-up issue.
 //
 
 import Foundation
@@ -155,25 +147,6 @@ enum TerminalPalette {
         .init(red: 0xFF, green: 0xFF, blue: 0xFF), // 15 bright white
     ]
 
-    /// One Dark's slot 8 value (#5C6370 — bright black / readable grey for
-    /// zsh-autosuggestions ghost text). Used to override slot 0 so that
-    /// ghost text remains readable on the dark-mode background.
-    ///
-    /// Why slot 0 and not slot 8? SwiftTerm 1.13.0 in `useBrightColors = false`
-    /// mode (which Pine sets in `TerminalSession.swift` for #733 / Ghostty
-    /// parity) collapses ANSI 256-color indices 8..15 -> 0..7 inside
-    /// `Apple/AppleTerminalView.swift:246-249`:
-    ///
-    ///     // useBrightColors = false branch
-    ///     midx = ansi > 7 ? (Int (ansi) - 8) : Int(ansi)
-    ///
-    /// This means any `\e[38;5;8m` (which is what zsh-autosuggestions sends
-    /// for `fg=8`) actually reads `terminal.ansiColors[0]` — slot 8 is
-    /// physically unreachable. We work around it by overriding slot 0 with
-    /// the readable grey, so the ghost text comes out at #5C6370 via the
-    /// 8 -> 0 collapse.
-    static let ghostTextOverride = TerminalPaletteEntry(red: 0x5C, green: 0x63, blue: 0x70)
-
     /// Reference background used by the contrast assertions for the
     /// dark-mode `NSColor.textBackgroundColor` worst case. Hard-coded so
     /// the test target does not depend on host appearance.
@@ -181,33 +154,27 @@ enum TerminalPalette {
     /// background in `TerminalSession.swift`.
     static let darkModeBackgroundReference = TerminalPaletteEntry(red: 0x28, green: 0x2C, blue: 0x34)
 
-    /// Default palette Pine actually installs.
+    /// Default palette Pine actually installs in dark mode.
     ///
-    /// Equals `oneDark` for every slot EXCEPT slot 0 (black), which
-    /// is replaced with `ghostTextOverride` (#5C6370 — One Dark's bright
-    /// black). See the doc on `ghostTextOverride` for *why* slot 0 and not
-    /// slot 8 — SwiftTerm 1.13.0 collapses 256-color 8 -> 0 in
-    /// `useBrightColors = false` mode so slot 8 is physically unreachable,
-    /// and the ghost-text fix has to land on slot 0 to actually take effect
-    /// at runtime.
-    static let macOSAligned: [TerminalPaletteEntry] = {
-        var entries = oneDark
-        entries[0] = ghostTextOverride
-        return entries
-    }()
+    /// Exactly One Dark, with NO slot substitutions: slot 0 is One Dark's
+    /// canonical black (#282C34), so text sent as ANSI 0 (e.g. p10k segment
+    /// text on bright backgrounds) renders as the theme's true black rather
+    /// than a grey substitute. zsh-autosuggestions ghost text reads the real
+    /// bright-black slot 8 (#5C6370) now that Pine's SwiftTerm fork no longer
+    /// collapses bright foreground indexes onto the base palette (issue
+    /// #1650 — see the file header).
+    static let macOSAligned: [TerminalPaletteEntry] = oneDark
 
     // MARK: - Light palette (Catppuccin Latte base)
 
-    /// Light-mode ghost text override for slot 0. Catppuccin Latte's Subtext 0
-    /// (#6C6F85) — readable grey for ghost text on the light background.
-    /// Uses the same slot-0 workaround as the dark palette (SwiftTerm 8→0 collapse).
-    static let lightGhostTextOverride = TerminalPaletteEntry(red: 0x6C, green: 0x6F, blue: 0x85)
-
-    /// Catppuccin Latte palette before ghost-text slot-0 override.
-    /// Bright colors (slots 9-14) intentionally equal their normal counterparts
-    /// — canonical for Catppuccin Latte, not a copy-paste error.
+    /// Catppuccin Latte palette. Bright colors (slots 9-14) intentionally
+    /// equal their normal counterparts — canonical for Catppuccin Latte,
+    /// not a copy-paste error. Slot 0 is Latte's canonical terminal black
+    /// (Subtext 1, #5C5F77); zsh-autosuggestions ghost text reads the real
+    /// bright-black slot 8 now that the SwiftTerm fork keeps bright
+    /// foreground indexes addressable (issue #1650).
     private static let catppuccinLatte: [TerminalPaletteEntry] = [
-        .init(red: 0xAC, green: 0xBE, blue: 0xBE), // 0  black (overridden below)
+        .init(red: 0x5C, green: 0x5F, blue: 0x77), // 0  black (Subtext 1)
         .init(red: 0xD2, green: 0x0F, blue: 0x39), // 1  red
         .init(red: 0x40, green: 0xA0, blue: 0x2B), // 2  green
         .init(red: 0xDF, green: 0x8E, blue: 0x1D), // 3  yellow
@@ -243,10 +210,9 @@ enum TerminalPalette {
     private static let lightContrastWhite = TerminalPaletteEntry(red: 0x7C, green: 0x7F, blue: 0x89)
     private static let lightContrastBrightWhite = TerminalPaletteEntry(red: 0x87, green: 0x8A, blue: 0x93)
 
-    /// Light-mode ANSI palette with ghost-text and contrast overrides applied.
+    /// Light-mode ANSI palette with contrast overrides applied.
     static let lightPalette: [TerminalPaletteEntry] = {
         var entries = catppuccinLatte
-        entries[0] = lightGhostTextOverride
         entries[2] = lightContrastGreen
         entries[3] = lightContrastYellow
         entries[5] = lightContrastMagenta

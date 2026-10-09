@@ -144,11 +144,10 @@ extension TerminalTheme {
 
     // MARK: Pine (default — One Dark / Catppuccin Latte)
 
-    /// Pine's signature theme. The dark variant is One Dark (with the
-    /// ghost-text slot-0 override); the light variant is the contrast-adjusted
-    /// Catppuccin Latte palette. Both reproduce the colors Pine shipped before
-    /// themes were user-selectable, so this is a no-op visual change for
-    /// existing users.
+    /// Pine's signature theme. The dark variant is One Dark; the light variant
+    /// is the contrast-adjusted Catppuccin Latte palette. Both reproduce the
+    /// colors Pine shipped before themes were user-selectable, so this is a
+    /// no-op visual change for existing users.
     static let pine = TerminalTheme(
         id: "pine",
         nameKey: "terminal.theme.pine.name",
@@ -422,12 +421,12 @@ extension TerminalTheme {
     /// - every bright slot (8...15) is strictly lighter than its normal
     ///   counterpart (0...7), in both schemes;
     /// - slot 0 is a dim-but-legible grey-green rather than the background.
-    ///   Pine runs SwiftTerm with `useBrightColors = false`, which collapses
-    ///   the 256-color index 8 onto 0 (see `TerminalPalette.ghostTextOverride`),
-    ///   so a slot 0 that matches the background makes zsh-autosuggestions
-    ///   ghost text invisible — the defect tracked for Nord light in #1350.
-    ///   Slot 0 is kept dimmer than the foreground so ghost text still reads
-    ///   as a hint, not as body text.
+    ///   It was originally chosen because upstream SwiftTerm 1.19.0 collapsed
+    ///   the 256-color index 8 onto 0 in `useBrightColors = false` mode,
+    ///   making slot 0 the de-facto ghost-text color; Pine's SwiftTerm fork
+    ///   removed that collapse (#1650), so zsh-autosuggestions ghost text now
+    ///   reads slot 8. Slot 0 stays dim and legible by design — it doubles as
+    ///   the theme's "black" text on bright TUI backgrounds.
     ///
     /// The palette is authored from scratch and the name is deliberately
     /// neutral and non-trademarked — no third-party theme file is derived from.

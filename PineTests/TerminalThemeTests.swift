@@ -2,8 +2,8 @@
 //  TerminalThemeTests.swift
 //  PineTests
 //
-//  Tests for Pine's One Dark terminal palette — verifies the 16-entry palette,
-//  correct hex values, and ghost text override application.
+//  Tests for Pine's One Dark terminal palette — verifies the 16-entry palette
+//  and correct hex values.
 //
 
 import Foundation
@@ -20,30 +20,22 @@ struct OneDarkPaletteTests {
         #expect(TerminalPalette.oneDark.count == 16)
     }
 
-    @Test("macOSAligned uses One Dark as base")
-    func macOSAlignedIsOneDarkBased() {
-        // Slots 1..15 must match One Dark exactly
-        for idx in 1..<16 {
-            #expect(
-                TerminalPalette.macOSAligned[idx] == TerminalPalette.oneDark[idx],
-                "slot \(idx) drifted from One Dark"
-            )
-        }
+    @Test("macOSAligned is exactly One Dark, no slot substitutions")
+    func macOSAlignedIsOneDark() {
+        // Pine's SwiftTerm fork keeps bright foreground indexes addressable
+        // (#1650), so the former slot-0 ghost-text substitution is gone:
+        // every slot, including 0, matches One Dark.
+        #expect(TerminalPalette.macOSAligned == TerminalPalette.oneDark)
     }
 
-    @Test("macOSAligned slot 0 is ghost text override, not One Dark black")
-    func slot0IsGhostTextOverride() {
-        #expect(TerminalPalette.macOSAligned[0] == TerminalPalette.ghostTextOverride)
-        #expect(TerminalPalette.macOSAligned[0] != TerminalPalette.oneDark[0])
-    }
-
-    @Test("Ghost text override is One Dark's slot 8 value (#5C6370)")
-    func ghostTextOverrideIsOneDarkBrightBlack() {
-        let ghost = TerminalPalette.ghostTextOverride
+    @Test("Ghost text color is One Dark's slot 8 value (#5C6370)")
+    func ghostTextUsesSlot8() {
+        // zsh-autosuggestions ghost text (fg=8) reads the real bright-black
+        // slot now that the 8 -> 0 collapse is fixed (#1650).
+        let ghost = TerminalPalette.macOSAligned[8]
         #expect(ghost.red == 0x5C)
         #expect(ghost.green == 0x63)
         #expect(ghost.blue == 0x70)
-        // Must match One Dark slot 8 exactly
         #expect(ghost == TerminalPalette.oneDark[8])
     }
 }
