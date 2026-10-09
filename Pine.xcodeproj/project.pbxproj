@@ -782,10 +782,10 @@
 /* Begin XCRemoteSwiftPackageReference section */
 		9FA731792F61803400E91711 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			repositoryURL = "https://github.com/batonogov/SwiftTerm.git";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.5.0;
+				kind = exactVersion;
+				version = "1.19.0-pine.1";
 			};
 		};
 		CF0000030000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {

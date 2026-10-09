@@ -4,7 +4,7 @@
 //
 //  Tests for `TerminalPalette` — Pine's One Dark-based ANSI 16-color palette
 //  plus the non-ANSI background / foreground / cursor / selection colors for
-//  the embedded SwiftTerm terminal (issues #765, #816).
+//  the embedded SwiftTerm terminal (issues #765, #816, #1650).
 //
 
 import Testing
@@ -27,20 +27,18 @@ struct TerminalPaletteTests {
         #expect(!TerminalPalette.macOSAligned.isEmpty)
     }
 
-    @Test func defaultPaletteEqualsOneDarkExceptForSlot0Override() {
-        // The shipped default is One Dark for every slot EXCEPT slot 0 (black),
-        // which is overridden with `ghostTextOverride` (#5C6370 — One Dark's
-        // bright black). Slot 0 is chosen because SwiftTerm 1.13.0 collapses
-        // 256-color indices 8..15 -> 0..7 when `useBrightColors` is false
-        // (Pine's setting for #733).
-        #expect(TerminalPalette.macOSAligned[0] == TerminalPalette.ghostTextOverride)
-        #expect(TerminalPalette.macOSAligned[0] != TerminalPalette.oneDark[0])
-        for index in 1..<TerminalPalette.colorCount {
-            #expect(
-                TerminalPalette.macOSAligned[index] == TerminalPalette.oneDark[index],
-                "slot \(index) drifted from One Dark"
-            )
-        }
+    @Test func defaultPaletteIsExactlyOneDark() {
+        // Since Pine's SwiftTerm fork keeps bright foreground indexes
+        // addressable (#1650), no slot substitution is needed anymore:
+        // the shipped default is One Dark for ALL 16 slots, and slot 0 is
+        // One Dark's canonical black (#282C34) rather than the former
+        // ghost-text grey substitute.
+        #expect(TerminalPalette.macOSAligned == TerminalPalette.oneDark)
+        #expect(
+            TerminalPalette.macOSAligned[0]
+            == TerminalPaletteEntry(red: 0x28, green: 0x2C, blue: 0x34),
+            "slot 0 must be One Dark's true black"
+        )
     }
 
     // MARK: - Reference values (Terminal.app Basic — exact RGB, kept for tests)
@@ -239,20 +237,21 @@ struct TerminalPaletteTests {
         #expect(ratio >= 7.0)
     }
 
-    /// Regression test for the ghost-text contrast bug fixed in #733.
-    /// Slot 0 carries the ghost text override (#5C6370) which must be
+    /// Ghost text (zsh-autosuggestions `fg=8`) reads the real bright-black
+    /// slot 8 now that Pine's SwiftTerm fork no longer collapses bright
+    /// foreground indexes onto the base palette (#1650). Slot 8 must stay
     /// readable against the dark-mode background.
-    @Test func slot0OverrideHasReadableGhostTextContrast() {
-        let slot0 = TerminalPalette.macOSAligned[0]
-        let ratio = contrastRatio(slot0, TerminalPalette.darkModeBackgroundReference)
+    @Test func slot8HasReadableGhostTextContrast() {
+        let slot8 = TerminalPalette.macOSAligned[8]
+        let ratio = contrastRatio(slot8, TerminalPalette.darkModeBackgroundReference)
         // Ghost text is intentionally dim — 2.0:1 is sufficient for
         // non-essential hint text on One Dark background (#282C34).
-        #expect(ratio >= 2.0, "slot 0 (ghost text via SwiftTerm 8->0 collapse) contrast \(ratio) below 2.0:1")
+        #expect(ratio >= 2.0, "slot 8 (ghost text) contrast \(ratio) below 2.0:1")
     }
 
-    @Test func slot0OverrideIsDimmerThanRegularForeground() {
+    @Test func slot8IsDimmerThanRegularForeground() {
         #expect(
-            relativeLuminance(TerminalPalette.macOSAligned[0])
+            relativeLuminance(TerminalPalette.macOSAligned[8])
             < relativeLuminance(TerminalPalette.macOSAligned[7])
         )
     }
@@ -260,6 +259,14 @@ struct TerminalPaletteTests {
     @Test func backgroundIsDarkerThanEveryForeground() {
         let bgL = relativeLuminance(TerminalPalette.darkModeBackgroundReference)
         for (index, entry) in TerminalPalette.macOSAligned.enumerated() {
+            // Slot 0 IS One Dark's canonical black, which equals the One Dark
+            // background (#282C34): slot-0 text on the default background is
+            // invisible by design, as in every One Dark terminal. p10k-style
+            // black text sits on bright backgrounds, where it reads correctly.
+            if index == 0 {
+                #expect(entry == TerminalPalette.darkModeBackgroundReference)
+                continue
+            }
             #expect(
                 relativeLuminance(entry) > bgL,
                 "ANSI \(index) not lighter than dark-mode background"
@@ -268,16 +275,20 @@ struct TerminalPaletteTests {
     }
 
     /// One Dark colors all have good contrast against dark backgrounds.
-    /// Every slot in macOSAligned must clear 3:1.
+    /// Every slot in macOSAligned must clear 3:1, except slot 0 (which equals
+    /// the background by design) and slot 8 (dim ghost text).
     @Test func allAnsiSlotsClearThreeToOneAgainstDarkBackground() {
         let bg = TerminalPalette.darkModeBackgroundReference
         for index in 0..<16 {
             let entry = TerminalPalette.macOSAligned[index]
             let ratio = contrastRatio(entry, bg)
-            // Slots 0 and 8 carry ghost text / comment colors (#5C6370) —
-            // lower threshold acceptable for non-essential dim text on
-            // One Dark background (#282C34). All other slots must clear 3:1.
-            let threshold: Double = (index == 0 || index == 8) ? 2.0 : 3.0
+            // Slot 0 is the canonical One Dark black — identical to the
+            // background. Slot 8 carries ghost text / comment colors
+            // (#5C6370) — lower threshold acceptable for non-essential dim
+            // text on One Dark background (#282C34). All other slots must
+            // clear 3:1.
+            if index == 0 { continue }
+            let threshold: Double = index == 8 ? 2.0 : 3.0
             #expect(ratio >= threshold, "ANSI \(index) contrast \(ratio) below \(threshold):1")
         }
     }
@@ -285,6 +296,15 @@ struct TerminalPaletteTests {
     @Test @MainActor func newTerminalTabDisablesUseBrightColors() {
         let tab = TerminalTab(name: "test")
         #expect(tab.terminalView.useBrightColors == false)
+    }
+
+    /// Pine's SwiftTerm fork decouples the bright-index collapse from
+    /// `useBrightColors` (#1650). Every terminal tab must opt out of the
+    /// collapse so slots 8-15 stay addressable for foreground text.
+    @Test @MainActor func newTerminalTabDisablesBrightColorCollapse() {
+        let tab = TerminalTab(name: "test")
+        #expect(tab.terminalView.useBrightColors == false)
+        #expect(tab.terminalView.collapseBrightColorsToBase == false)
     }
 
     // MARK: - Light palette shape
@@ -297,15 +317,30 @@ struct TerminalPaletteTests {
         #expect(!TerminalPalette.lightPalette.isEmpty)
     }
 
-    @Test func lightPaletteSlot0EqualsLightGhostTextOverride() {
-        #expect(TerminalPalette.lightPalette[0] == TerminalPalette.lightGhostTextOverride)
+    @Test func lightPaletteSlot0IsCatppuccinLatteBlack() {
+        // Slot 0 is Catppuccin Latte's canonical terminal black (Subtext 1,
+        // #5C5F77) — no ghost-text substitution anymore (#1650).
+        #expect(
+            TerminalPalette.lightPalette[0]
+            == TerminalPaletteEntry(red: 0x5C, green: 0x5F, blue: 0x77)
+        )
+        // Ghost text reads the real bright-black slot 8 (Subtext 0, #6C6F85),
+        // which must stay brighter than slot 0.
+        #expect(
+            TerminalPalette.lightPalette[8]
+            == TerminalPaletteEntry(red: 0x6C, green: 0x6F, blue: 0x85)
+        )
+        #expect(
+            relativeLuminance(TerminalPalette.lightPalette[8])
+            > relativeLuminance(TerminalPalette.lightPalette[0])
+        )
     }
 
     // MARK: - Light palette reference values
 
     @Test func lightPalettePineReferenceIsPreserved() {
         let expected: [(UInt8, UInt8, UInt8)] = [
-            (0x6C, 0x6F, 0x85), // 0  black (ghost text override)
+            (0x5C, 0x5F, 0x77), // 0  black (Catppuccin Latte Subtext 1)
             (0xD2, 0x0F, 0x39), // 1  red
             (0x3F, 0x9E, 0x2B), // 2  green (contrast adjusted)
             (0xC0, 0x7A, 0x19), // 3  yellow (contrast adjusted)
@@ -365,7 +400,9 @@ struct TerminalPaletteTests {
         for index in 0..<16 {
             let entry = TerminalPalette.lightPalette[index]
             let ratio = contrastRatio(entry, bg)
-            let threshold: Double = (index == 0 || index == 8) ? 2.0 : 3.0
+            // Slot 8 carries dim ghost text (#6C6F85) — 2.0:1 is enough for
+            // non-essential hint text; every other slot must clear 3:1.
+            let threshold: Double = index == 8 ? 2.0 : 3.0
             #expect(
                 ratio >= threshold,
                 "Light ANSI \(index) contrast \(ratio) below \(threshold):1"
@@ -435,5 +472,149 @@ struct TerminalPaletteTests {
         } else {
             #expect(palette == TerminalPalette.lightPalette)
         }
+    }
+
+    // MARK: - Bright foreground resolution (issue #1650)
+
+    /// A terminal view configured the way `TerminalTab` configures it, with
+    /// the given palette installed, for direct color-resolution assertions.
+    @MainActor
+    private func makeResolvedPaletteView(
+        palette: [TerminalPaletteEntry] = TerminalPalette.macOSAligned
+    ) -> LocalProcessTerminalView {
+        let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
+        view.useBrightColors = false
+        view.collapseBrightColorsToBase = false
+        TerminalPalette.install(palette: palette, on: view)
+        return view
+    }
+
+    /// Compares a resolved `NSColor` against a palette entry (sRGB, tolerant).
+    private func expectColor(
+        _ actual: NSColor,
+        matches entry: TerminalPaletteEntry,
+        _ comment: Comment
+    ) {
+        let srgb = actual.usingColorSpace(.sRGB) ?? actual
+        #expect(abs(srgb.redComponent - CGFloat(entry.red) / 255.0) < 0.001, comment)
+        #expect(abs(srgb.greenComponent - CGFloat(entry.green) / 255.0) < 0.001, comment)
+        #expect(abs(srgb.blueComponent - CGFloat(entry.blue) / 255.0) < 0.001, comment)
+    }
+
+    @Test @MainActor func brightForegroundIndexesResolveToTheirOwnSlots() {
+        let view = makeResolvedPaletteView()
+        // Covers both SGR forms: \e[38;5;8m..\e[38;5;15m and \e[90m..\e[97m
+        // all arrive here as ansi256 codes 8-15.
+        for code: UInt8 in 8...15 {
+            let resolved = view.mapColor(
+                color: .ansi256(code: code), isFg: true, isBold: false, useBrightColors: false
+            )
+            expectColor(
+                resolved,
+                matches: TerminalPalette.macOSAligned[Int(code)],
+                "ansi \(code) must resolve to palette slot \(code), not \(code - 8)"
+            )
+        }
+    }
+
+    @Test @MainActor func boldTextKeepsItsBaseColor() {
+        let view = makeResolvedPaletteView()
+        // #733 preserved: bold must neither promote to bright nor collapse.
+        let resolved = view.mapColor(
+            color: .ansi256(code: 1), isFg: true, isBold: true, useBrightColors: false
+        )
+        expectColor(resolved, matches: TerminalPalette.macOSAligned[1], "bold red must stay slot 1")
+        let brightBold = view.mapColor(
+            color: .ansi256(code: 9), isFg: true, isBold: true, useBrightColors: false
+        )
+        expectColor(brightBold, matches: TerminalPalette.macOSAligned[9], "bold bright red must stay slot 9")
+    }
+
+    @Test @MainActor func slot0ForegroundIsTrueBlack() {
+        let view = makeResolvedPaletteView()
+        let resolved = view.mapColor(
+            color: .ansi256(code: 0), isFg: true, isBold: false, useBrightColors: false
+        )
+        // p10k-style segment text on bright backgrounds must be One Dark's
+        // canonical black (#282C34), not the former grey substitute.
+        expectColor(
+            resolved,
+            matches: TerminalPaletteEntry(red: 0x28, green: 0x2C, blue: 0x34),
+            "slot 0 must be One Dark's true black"
+        )
+    }
+
+    @Test @MainActor func ghostTextResolvesToSlot8() {
+        let view = makeResolvedPaletteView()
+        let resolved = view.mapColor(
+            color: .ansi256(code: 8), isFg: true, isBold: false, useBrightColors: false
+        )
+        // zsh-autosuggestions sends fg=8; it must read the real bright-black
+        // slot (#5C6370) rather than collapsing onto slot 0.
+        expectColor(
+            resolved,
+            matches: TerminalPaletteEntry(red: 0x5C, green: 0x63, blue: 0x70),
+            "ghost text must resolve to slot 8"
+        )
+    }
+
+    @Test @MainActor func extendedRangeIndexesAreNotShifted() {
+        let view = makeResolvedPaletteView()
+        // The upstream collapse shifted EVERY index above 7 down by 8,
+        // corrupting the 6x6x6 cube and grayscale ramp too. The default
+        // (`useBrightColors = true`) mapping is the identity for indexes
+        // above 7, so resolving through it yields the true slot-200 color.
+        let resolved = view.mapColor(
+            color: .ansi256(code: 200), isFg: true, isBold: false, useBrightColors: false
+        )
+        let identity = view.mapColor(color: .ansi256(code: 200), isFg: true, isBold: false)
+        #expect(resolved == identity, "ansi 200 must resolve to slot 200, not 192")
+
+        let legacy = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
+        legacy.useBrightColors = false
+        let collapsed = legacy.mapColor(
+            color: .ansi256(code: 200), isFg: true, isBold: false, useBrightColors: false
+        )
+        #expect(collapsed != resolved, "legacy mode must still shift ansi 200 down to slot 192")
+    }
+
+    @Test @MainActor func brightBackgroundsResolveToTheirOwnSlots() {
+        let view = makeResolvedPaletteView()
+        // Backgrounds always map with bright colors enabled; this must hold
+        // regardless of the foreground configuration.
+        let resolved = view.mapColor(color: .ansi256(code: 11), isFg: false, isBold: false)
+        expectColor(resolved, matches: TerminalPalette.macOSAligned[11], "bright yellow background")
+    }
+
+    @Test @MainActor func legacyCollapseRemainsTheUpstreamDefault() {
+        // Backward compatibility: a view Pine did not opt in must keep the
+        // historical collapse behavior.
+        let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
+        #expect(view.collapseBrightColorsToBase == true)
+        TerminalPalette.install(palette: TerminalPalette.macOSAligned, on: view)
+        let resolved = view.mapColor(
+            color: .ansi256(code: 9), isFg: true, isBold: false, useBrightColors: false
+        )
+        expectColor(
+            resolved,
+            matches: TerminalPalette.macOSAligned[1],
+            "legacy mode must collapse ansi 9 onto slot 1"
+        )
+    }
+
+    @Test @MainActor func sgrBrightFormsParseToAnsi256Codes8Through15() {
+        let view = makeResolvedPaletteView()
+        let terminal = view.getTerminal()
+        // SGR 90-97 and the 256-color form must land on the same codes 8-15
+        // that `mapColor` resolves above.
+        terminal.feed(text: "\u{1B}[90mA")
+        terminal.feed(text: "\u{1B}[0m\u{1B}[38;5;8mB")
+        terminal.feed(text: "\u{1B}[0m\u{1B}[97mC")
+        terminal.feed(text: "\u{1B}[0m\u{1B}[38;5;15mD")
+        let line = 0
+        #expect(terminal.getCharData(col: 0, row: line)?.attribute.fg == .ansi256(code: 8), "SGR 90 must parse to ansi256 8")
+        #expect(terminal.getCharData(col: 1, row: line)?.attribute.fg == .ansi256(code: 8), "38;5;8 must parse to ansi256 8")
+        #expect(terminal.getCharData(col: 2, row: line)?.attribute.fg == .ansi256(code: 15), "SGR 97 must parse to ansi256 15")
+        #expect(terminal.getCharData(col: 3, row: line)?.attribute.fg == .ansi256(code: 15), "38;5;15 must parse to ansi256 15")
     }
 }

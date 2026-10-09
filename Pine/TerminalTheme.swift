@@ -6,9 +6,9 @@
 //
 //  Each built-in theme is modelled as a light/dark pair covering the ANSI 16
 //  colors, the default foreground/background, cursor, selection, and link
-//  treatment. Pine's default theme ("Pine") reproduces the previous fixed
-//  One Dark / Catppuccin Latte palettes bit-for-bit, so existing users see no
-//  visual change unless they pick another theme.
+//  treatment. Pine's default theme ("Pine") carries the One Dark / Catppuccin
+//  Latte palettes Pine shipped before themes were user-selectable (slot 0 has
+//  since been restored to the canonical theme blacks in #1650).
 //
 //  The active variant (light or dark) is resolved by `TerminalThemeSettings`
 //  using the user's Appearance policy (Follow System / Always Light /
@@ -121,8 +121,8 @@ struct TerminalTheme: Equatable, Hashable, Identifiable, Sendable {
 extension TerminalTheme {
 
     /// All built-in themes, in display order. The first entry ("pine") is the
-    /// default and reproduces Pine's previous fixed One Dark / Catppuccin
-    /// Latte palettes bit-for-bit.
+    /// default and carries Pine's original One Dark / Catppuccin Latte
+    /// palettes.
     static let builtIn: [TerminalTheme] = [
         pine,
         solarized,
@@ -144,11 +144,11 @@ extension TerminalTheme {
 
     // MARK: Pine (default — One Dark / Catppuccin Latte)
 
-    /// Pine's signature theme. The dark variant is One Dark (with the
-    /// ghost-text slot-0 override); the light variant is the contrast-adjusted
-    /// Catppuccin Latte palette. Both reproduce the colors Pine shipped before
-    /// themes were user-selectable, so this is a no-op visual change for
-    /// existing users.
+    /// Pine's signature theme. The dark variant is One Dark; the light variant
+    /// is the contrast-adjusted Catppuccin Latte palette. Slot 0 is each
+    /// palette's canonical black (One Dark #282C34, Latte Subtext 1 #5C5F77)
+    /// since #1650 removed the ghost-text substitution; ghost text reads the
+    /// real bright-black slot 8.
     static let pine = TerminalTheme(
         id: "pine",
         nameKey: "terminal.theme.pine.name",
@@ -174,7 +174,11 @@ extension TerminalTheme {
 
     /// Solarized (Ethan Schoonover). The dark variant uses the Solarized
     /// "base03" background; the light variant uses "base3". ANSI slots map to
-    /// the canonical Solarized accent colors.
+    /// the canonical Solarized accent colors. Bright black (slot 8) is base01
+    /// in both variants: the classic mapping of bright black to base03/base3
+    /// makes zsh-autosuggestions ghost text (fg=8) identical to the background
+    /// — invisible — ever since the SwiftTerm fork made slot 8 addressable
+    /// for foreground text (#1650).
     static let solarized = TerminalTheme(
         id: "solarized",
         nameKey: "terminal.theme.solarized.name",
@@ -188,7 +192,7 @@ extension TerminalTheme {
                 .init(red: 0xD3, green: 0x36, blue: 0x82), // 5  magenta
                 .init(red: 0x2A, green: 0xA1, blue: 0x98), // 6  cyan
                 .init(red: 0x07, green: 0x36, blue: 0x42), // 7  base02 (white)
-                .init(red: 0x00, green: 0x2B, blue: 0x36), // 8  base03 (bright black)
+                .init(red: 0x58, green: 0x6E, blue: 0x75), // 8  base01 (bright black / ghost text)
                 .init(red: 0xCB, green: 0x4B, blue: 0x16), // 9  orange
                 .init(red: 0x58, green: 0x6E, blue: 0x75), // 10 base01
                 .init(red: 0x82, green: 0x84, blue: 0x00), // 11 base00
@@ -213,7 +217,7 @@ extension TerminalTheme {
                 .init(red: 0xD3, green: 0x36, blue: 0x82), // 5  magenta
                 .init(red: 0x2A, green: 0xA1, blue: 0x98), // 6  cyan
                 .init(red: 0xEE, green: 0xE8, blue: 0xD5), // 7  base2
-                .init(red: 0x00, green: 0x2B, blue: 0x36), // 8  base03
+                .init(red: 0x58, green: 0x6E, blue: 0x75), // 8  base01 (bright black / ghost text)
                 .init(red: 0xCB, green: 0x4B, blue: 0x16), // 9  orange
                 .init(red: 0x58, green: 0x6E, blue: 0x75), // 10 base01
                 .init(red: 0x82, green: 0x84, blue: 0x00), // 11 base00
@@ -292,7 +296,11 @@ extension TerminalTheme {
     // MARK: Nord
 
     /// Nord — an arctic, north-bluish color palette. Light variant uses the
-    /// "Snow Storm" neutrals.
+    /// "Snow Storm" neutrals; its bright black (slot 8) is Nord's canonical
+    /// comment grey (#616E88) instead of Snow Storm's #D8DEE9, which sat at
+    /// ~1.2:1 against the light background and rendered zsh-autosuggestions
+    /// ghost text (fg=8) invisible once the SwiftTerm fork made slot 8
+    /// addressable (#1650; the #1350 defect class).
     static let nord = TerminalTheme(
         id: "nord",
         nameKey: "terminal.theme.nord.name",
@@ -306,7 +314,7 @@ extension TerminalTheme {
                 .init(red: 0xB4, green: 0x8E, blue: 0xAD), // 5  magenta
                 .init(red: 0x8F, green: 0xBC, blue: 0xBB), // 6  cyan (frost)
                 .init(red: 0x2E, green: 0x34, blue: 0x40), // 7  white (dark)
-                .init(red: 0xD8, green: 0xDE, blue: 0xE9), // 8  bright black
+                .init(red: 0x61, green: 0x6E, blue: 0x88), // 8  bright black (comment grey — ghost text)
                 .init(red: 0xBF, green: 0x61, blue: 0x6A), // 9  bright red
                 .init(red: 0xA3, green: 0xBE, blue: 0x8C), // 10 bright green
                 .init(red: 0xEB, green: 0xCB, blue: 0x8B), // 11 bright yellow
@@ -422,12 +430,12 @@ extension TerminalTheme {
     /// - every bright slot (8...15) is strictly lighter than its normal
     ///   counterpart (0...7), in both schemes;
     /// - slot 0 is a dim-but-legible grey-green rather than the background.
-    ///   Pine runs SwiftTerm with `useBrightColors = false`, which collapses
-    ///   the 256-color index 8 onto 0 (see `TerminalPalette.ghostTextOverride`),
-    ///   so a slot 0 that matches the background makes zsh-autosuggestions
-    ///   ghost text invisible — the defect tracked for Nord light in #1350.
-    ///   Slot 0 is kept dimmer than the foreground so ghost text still reads
-    ///   as a hint, not as body text.
+    ///   It was originally chosen because upstream SwiftTerm 1.19.0 collapsed
+    ///   the 256-color index 8 onto 0 in `useBrightColors = false` mode,
+    ///   making slot 0 the de-facto ghost-text color; Pine's SwiftTerm fork
+    ///   removed that collapse (#1650), so zsh-autosuggestions ghost text now
+    ///   reads slot 8. Slot 0 stays dim and legible by design — it doubles as
+    ///   the theme's "black" text on bright TUI backgrounds.
     ///
     /// The palette is authored from scratch and the name is deliberately
     /// neutral and non-trademarked — no third-party theme file is derived from.
@@ -436,7 +444,7 @@ extension TerminalTheme {
         nameKey: "terminal.theme.digital-rain.name",
         light: TerminalColorScheme(
             ansiColors: [
-                .init(red: 0x5A, green: 0x78, blue: 0x62), // 0  black (ghost text — mid green-grey)
+                .init(red: 0x5A, green: 0x78, blue: 0x62), // 0  black (mid green-grey)
                 .init(red: 0xC0, green: 0x20, blue: 0x2E), // 1  red
                 .init(red: 0x1F, green: 0x7A, blue: 0x3A), // 2  green
                 .init(red: 0x9A, green: 0x67, blue: 0x00), // 3  yellow (dark gold)
@@ -461,7 +469,7 @@ extension TerminalTheme {
         ),
         dark: TerminalColorScheme(
             ansiColors: [
-                .init(red: 0x35, green: 0x6B, blue: 0x49), // 0  black (ghost text — dim green)
+                .init(red: 0x35, green: 0x6B, blue: 0x49), // 0  black (dim green)
                 .init(red: 0xFF, green: 0x33, blue: 0x44), // 1  red
                 .init(red: 0x00, green: 0xC8, blue: 0x53), // 2  green
                 .init(red: 0xFF, green: 0xD2, blue: 0x3F), // 3  yellow

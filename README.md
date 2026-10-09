@@ -43,7 +43,7 @@ See the [latest release](https://github.com/batonogov/pine/releases/latest) for 
 - **LSP code intelligence** — Diagnostics, completion, hover, go-to-definition, code actions, rename, and a Problems panel
 - **Syntax highlighting** — bundled grammars for Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
 - **Split panes** — Drag tabs to edges to split horizontally or vertically. Drag between panes to move. Resize with divider
-- **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Multiple tabs, themes, TUI apps, clickable file and OSC 8 links, send-to-terminal, pane maximize, a global quick-terminal hotkey, and display recovery that preserves the running shell
+- **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/batonogov/SwiftTerm) (Pine's pinned fork of the upstream emulator, carrying focused terminal-rendering patches). Multiple tabs, themes, TUI apps, clickable file and OSC 8 links, send-to-terminal, pane maximize, a global quick-terminal hotkey, and display recovery that preserves the running shell
 - **Lightweight extensibility** — User grammars, tasks, and keybindings without an extension marketplace
 - **Git integration** — File status in sidebar, diff markers in gutter, blame view, branch switching from title bar or Git menu
 - **Symbol navigation** — Jump to functions and classes with Cmd+R

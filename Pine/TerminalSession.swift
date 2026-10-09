@@ -2041,6 +2041,16 @@ final class TerminalTab: Identifiable, Hashable {
         // native macOS terminals (issue #733).
         terminalView.useBrightColors = false
 
+        // Upstream SwiftTerm ties a second behavior to `useBrightColors`:
+        // with it disabled, palette indexes above 7 collapse onto `index - 8`,
+        // which made the bright slots 8-15 unreachable for foreground text
+        // (and shifted the whole 16-255 extended range down by 8). Pine's
+        // SwiftTerm fork decouples the two via `collapseBrightColorsToBase`:
+        // bright indexes read their own palette slots while bold text keeps
+        // its base color (issues #733, #1650). Both renderers (CoreGraphics
+        // and Metal) resolve colors through this mapping.
+        terminalView.collapseBrightColorsToBase = false
+
         applyCurrentTerminalAppearance(forceRedraw: false)
 
         // Re-apply palette and background when system appearance changes.
