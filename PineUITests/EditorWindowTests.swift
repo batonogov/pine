@@ -461,35 +461,17 @@ final class EditorWindowTests: PineUITestCase {
         // the project's identity, so the name must be visible from the very
         // first screen, before any file is open and regardless of what the
         // window title says. The pill is a Menu, so macOS folds its label
-        // into a single accessibility element named after the visible text
-        // rather than publishing that text as a separate static text; accept
-        // the name on either surface.
-        let nameInSwitcherLabel = switcher.label.contains("SwitcherMetrics")
-        let nameAsStaticText = waitForExistence(
-            app.staticTexts["SwitcherMetrics"].firstMatch,
-            timeout: 5
-        )
-        // TEMP diagnostics for the macOS 27 runner (#1647): the assertion
-        // below fails there while passing on macOS 26, so dump where the
-        // project name actually landed in the accessibility tree.
-        if !nameInSwitcherLabel && !nameAsStaticText {
-            print("SWITCHER-DEBUG label: \(switcher.label)")
-            print("SWITCHER-DEBUG element: \(switcher.debugDescription)")
-            let named = app.descendants(matching: .any)
-                .matching(NSPredicate(
-                    format: "label CONTAINS[c] %@",
-                    "SwitcherMetrics"
-                ))
-            print("SWITCHER-DEBUG elements named like it: \(named.count)")
-            for index in 0..<min(named.count, 5) {
-                print(
-                    "SWITCHER-DEBUG match \(index): "
-                        + named.element(boundBy: index).debugDescription
-                )
-            }
-        }
+        // into a single accessibility element rather than publishing the text
+        // separately — but where the name lands differs: macOS 26 puts it in
+        // the element's label (or a static text), macOS 27 in its title.
+        // Accept the name on any of the three surfaces.
         XCTAssertTrue(
-            nameInSwitcherLabel || nameAsStaticText,
+            switcher.label.contains("SwitcherMetrics")
+                || switcher.title.contains("SwitcherMetrics")
+                || waitForExistence(
+                    app.staticTexts["SwitcherMetrics"].firstMatch,
+                    timeout: 5
+                ),
             "The pill should show the project name even with no file open"
         )
 
