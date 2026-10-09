@@ -78,6 +78,8 @@ final class QuickTerminalController {
     nonisolated(unsafe) private var settingsObserver: NSObjectProtocol?
     @ObservationIgnored
     nonisolated(unsafe) private var windowResignObserver: NSObjectProtocol?
+    @ObservationIgnored
+    nonisolated(unsafe) private var windowResizeObserver: NSObjectProtocol?
     private let settingsNotificationCenter: NotificationCenter
     private let windowNotificationCenter = NotificationCenter.default
 
@@ -109,6 +111,10 @@ final class QuickTerminalController {
     var agentScopeSurfaceForTesting: AgentTaskTerminalSurface? {
         agentScope?.surface
     }
+
+    /// Close-button tests drive `performClose` on the keep-alive panel
+    /// without spying on `NSApp.windows` (#1648).
+    var windowForTesting: NSWindow? { window }
 
     func waitForAgentScopeResolutionForTesting() async {
         await agentScopeResolutionTask?.value
@@ -165,6 +171,9 @@ final class QuickTerminalController {
         }
         if let windowResignObserver {
             windowNotificationCenter.removeObserver(windowResignObserver)
+        }
+        if let windowResizeObserver {
+            windowNotificationCenter.removeObserver(windowResizeObserver)
         }
     }
 
@@ -248,6 +257,10 @@ final class QuickTerminalController {
             windowNotificationCenter.removeObserver(windowResignObserver)
             self.windowResignObserver = nil
         }
+        if let windowResizeObserver {
+            windowNotificationCenter.removeObserver(windowResizeObserver)
+            self.windowResizeObserver = nil
+        }
         window?.close()
         window = nil
         isVisible = false
@@ -310,6 +323,15 @@ final class QuickTerminalController {
                 self?.handleWindowDidResignKey()
             }
         }
+        windowResizeObserver = windowNotificationCenter.addObserver(
+            forName: NSWindow.didEndLiveResizeNotification,
+            object: win,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.persistUserResize()
+            }
+        }
 
         // Host the shared terminal content below the same truthful agent badge
         // used by project terminal tabs. The NSViewRepresentable still starts
@@ -343,6 +365,28 @@ final class QuickTerminalController {
     private func repositionDropDown() {
         guard let window else { return }
         window.setFrame(dropDownRect(), display: true)
+    }
+
+    /// Writes the size the user dragged the panel to back into settings, so
+    /// the keep-alive panel reopens at the same size (#1648). Runs once per
+    /// live resize (`didEndLiveResize`), never mid-drag. The settings write
+    /// is clamped and re-applied through `applySettingsChange()`, which only
+    /// re-anchors the panel programmatically — `setFrame` never re-triggers
+    /// a live-resize notification, so there is no observation loop.
+    private func persistUserResize() {
+        guard let window,
+              let screenFrame = window.screen?.visibleFrame else { return }
+        let frame = window.frame
+        let fraction: Double
+        switch settings.screenEdge {
+        case .top, .bottom:
+            guard screenFrame.height > 0 else { return }
+            fraction = Double(frame.height / screenFrame.height)
+        case .left, .right:
+            guard screenFrame.width > 0 else { return }
+            fraction = Double(frame.width / screenFrame.width)
+        }
+        settings.heightFraction = fraction
     }
 
     /// Resolves which `NSScreen` the panel should appear on, honoring the
