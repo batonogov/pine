@@ -157,3 +157,64 @@ struct OneDarkSwiftTermColorsTests {
         #expect(colors?.count == 16)
     }
 }
+
+// MARK: - Ghost text (slot 8) guard across all bundled themes
+
+@Suite("Terminal theme ghost text")
+struct TerminalThemeGhostTextTests {
+
+    private func relativeLuminance(_ entry: TerminalPaletteEntry) -> Double {
+        func channel(_ raw: UInt8) -> Double {
+            let v = Double(raw) / 255.0
+            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        let r = channel(entry.red)
+        let g = channel(entry.green)
+        let b = channel(entry.blue)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    private func contrastRatio(_ a: TerminalPaletteEntry, _ b: TerminalPaletteEntry) -> Double {
+        let la = relativeLuminance(a)
+        let lb = relativeLuminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    /// Every bundled theme must keep ghost text (zsh-autosuggestions `fg=8`,
+    /// which reads ANSI slot 8 since the SwiftTerm fork fixed the bright-index
+    /// collapse in #1650) distinguishable from the theme background.
+    ///
+    /// The regression class this locks: Solarized dark shipped slot 8 == base03,
+    /// byte-identical to its background (1.0:1 — strictly invisible), and Nord
+    /// light sat at ~1.2:1. Ghost text is a non-essential hint and is dim by
+    /// design, so the bar is a modest 1.5:1 — enough to be seen, below body
+    /// text. Themes are expected to do better (Pine's own slot 8 clears 2:1).
+    @Test("Slot 8 is readable against the background in every bundled theme")
+    func slot8IsReadableInEveryTheme() {
+        for theme in TerminalTheme.builtIn {
+            for (schemeName, scheme) in [("light", theme.light), ("dark", theme.dark)] {
+                let slot8 = scheme.ansiColors[8]
+                #expect(
+                    slot8 != scheme.background,
+                    "\(theme.id) \(schemeName): slot 8 must not equal the background"
+                )
+                let ratio = contrastRatio(slot8, scheme.background)
+                #expect(
+                    ratio >= 1.5,
+                    "\(theme.id) \(schemeName): slot 8 ghost-text contrast \(ratio) below 1.5:1"
+                )
+            }
+        }
+    }
+
+    /// The Solarized fix is pinned exactly: bright black is base01 (#586E75)
+    /// in both variants, not the background-colored base03/base3.
+    @Test("Solarized slot 8 is base01 in both variants")
+    func solarizedSlot8IsBase01() {
+        let base01 = TerminalPaletteEntry(red: 0x58, green: 0x6E, blue: 0x75)
+        #expect(TerminalTheme.solarized.dark.ansiColors[8] == base01)
+        #expect(TerminalTheme.solarized.light.ansiColors[8] == base01)
+        #expect(TerminalTheme.solarized.dark.ansiColors[8] != TerminalTheme.solarized.dark.background)
+        #expect(TerminalTheme.solarized.light.ansiColors[8] != TerminalTheme.solarized.light.background)
+    }
+}
