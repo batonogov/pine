@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.0](https://github.com/batonogov/pine/compare/v2.9.3...v2.10.0) (2026-10-09)
+
+
+### Features
+
+* **ux:** remove the breadcrumb path bar ([#1646](https://github.com/batonogov/pine/issues/1646)) ([4dba84e](https://github.com/batonogov/pine/commit/4dba84ee119e27d9465de9e91796eb5141107dc5))
+* **ux:** restyle project switcher as a prominent toolbar pill ([#1643](https://github.com/batonogov/pine/issues/1643)) ([367d574](https://github.com/batonogov/pine/commit/367d5749a805f3ec9b8be4e7b84de9c5940a66dc))
+
 ## [2.9.3](https://github.com/batonogov/pine/compare/v2.9.2...v2.9.3) (2026-09-30)
 
 
