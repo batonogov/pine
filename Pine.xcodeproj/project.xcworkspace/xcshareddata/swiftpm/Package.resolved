@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/batonogov/SwiftTerm.git",
       "state" : {
-        "branch" : "pine/bright-ansi-fg",
-        "revision" : "19b1083373ae31ec45cd03a1b1ad3ececfaf8280"
+        "revision" : "19b1083373ae31ec45cd03a1b1ad3ececfaf8280",
+        "version" : "1.19.0-pine.1"
       }
     }
   ],

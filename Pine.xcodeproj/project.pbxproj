@@ -784,8 +784,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/batonogov/SwiftTerm.git";
 			requirement = {
-				kind = branch;
-				branch = "pine/bright-ansi-fg";
+				kind = exactVersion;
+				version = "1.19.0-pine.1";
 			};
 		};
 		CF0000030000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
