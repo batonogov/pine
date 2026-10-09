@@ -35,11 +35,17 @@ runs:
         else
           # Filter out beta builds — sort -V does not order them reliably
           # against stable releases, so picking "newest" could pick a beta
-          # on a runner that happens to have both.
+          # on a runner that happens to have both. Resolve symlinks first:
+          # images may alias a stable-looking name (e.g. Xcode_27.2.0.app)
+          # to a beta app, and the basename check alone would wave it through.
           candidates=(/Applications/Xcode*.app)
           stable=()
           for app in "${candidates[@]}"; do
-            case "$(basename "$app")" in
+            resolved="$app"
+            if [ -L "$app" ]; then
+              resolved="$(readlink "$app")"
+            fi
+            case "$(basename "$resolved")" in
               *beta*|*Beta*) continue ;;
               *) stable+=("$app") ;;
             esac

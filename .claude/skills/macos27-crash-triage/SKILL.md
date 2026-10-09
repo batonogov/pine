@@ -1,9 +1,9 @@
 ---
 name: macos27-crash-triage
-description: Use when the PineTests host crashes, hangs, or segfaults on the macOS 27 beta (issue #1509) — reading .ips diagnostic reports, pinning the OS build, injecting objc/malloc diagnostics through a copied .xctestrun, or interpreting an objc_autoreleasePoolPop backtrace. Not for ordinary test failures.
+description: Use when the PineTests host crashes, hangs, or segfaults on macOS 27 (issue #1509) — reading .ips diagnostic reports, pinning the OS build, injecting objc/malloc diagnostics through a copied .xctestrun, or interpreting an objc_autoreleasePoolPop backtrace. Not for ordinary test failures.
 ---
 
-# Diagnosing a test-host crash on the macOS 27 beta (#1509)
+# Diagnosing a test-host crash on macOS 27 (#1509)
 
 - Trust `~/Library/Logs/DiagnosticReports/`, not the console log — the beta drops log lines badly. Reports rotate into `Retired/` and only about twenty are kept there, so **copy a report out the moment you see the crash**; the two incidents #1509 was opened on were already gone by the time it was triaged.
 - Record the OS **build**, not the marketing version: `sw_vers` → `BuildVersion`, matched against `osVersion.build` in the `.ips`. `/var/log/install.log` (`Previous System Version … Current System Version …`) says when the machine changed builds, which is the first thing to check before calling a crash reproducible or fixed.

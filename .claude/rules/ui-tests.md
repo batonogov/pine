@@ -9,7 +9,7 @@ Every "known issue" below has already cost someone a debugging session.
 
 ## Targets and shards
 
-- UI test target: `PineUITests` (XCTest/XCUITest) — 41 test classes across 42 files, base class `PineUITestCase`. CI runs 7 parallel shards (Terminal, Welcome & Session, Navigation, Editor Chrome, Files & Save, Search & Panes, Security & Layout)
+- UI test target: `PineUITests` (XCTest/XCUITest) — 44 test classes, base class `PineUITestCase`. CI runs 7 parallel shards (Terminal, Welcome & Session, Navigation, Editor Chrome, Files & Save, Search & Panes, Security & Layout) on each of two OS axes (`xcode-27` primary, `macos-26` compatibility)
 
 ## Launch arguments and environment
 
