@@ -40,6 +40,7 @@ nonisolated struct DECSCUSRStreamTracker: Sendable {
     private var state = State.ground
     private var csiParameter = CSIParameter.omitted
     private var csiHasSingleSpaceIntermediate = false
+    private var utf8ContinuationBytesRemaining = 0
 
     /// Consumes one arbitrary PTY chunk and returns its last supported
     /// DECSCUSR directive. Parser state survives chunk boundaries.
@@ -47,6 +48,14 @@ nonisolated struct DECSCUSRStreamTracker: Sendable {
         var latestDirective: Directive?
 
         for byte in bytes {
+            // Framing applies only in the ground state. Control strings
+            // deliberately keep raw-byte termination: SwiftTerm's
+            // EscapeSequenceParser ends OSC/DCS on the raw byte 0x9C even
+            // when it is a UTF-8 continuation, so framing strings here
+            // would desynchronize DECSCUSR visibility from SwiftTerm.
+            if case .ground = state, consumeUTF8Byte(byte) {
+                continue
+            }
             switch state {
             case .controlString(let allowsBellTermination):
                 consumeControlStringByte(
@@ -69,8 +78,39 @@ nonisolated struct DECSCUSRStreamTracker: Sendable {
         return latestDirective
     }
 
+    /// Filters out UTF-8 continuation bytes in the ground state so they are
+    /// never mistaken for C1 controls: the Cyrillic "Л" is `D0 9B`, and its
+    /// 0x9B must not start CSI. A lead byte arms the expected continuation
+    /// count; a byte that is not a valid continuation cancels the sequence
+    /// and is processed normally, so a C0 control or ESC still aborts
+    /// truncated UTF-8. Continuation ranges are permissive rather than
+    /// RFC 3629-strict (e.g. `E0 80` is accepted) because SwiftTerm's print
+    /// path is equally byte-lax.
+    private mutating func consumeUTF8Byte(_ byte: UInt8) -> Bool {
+        if utf8ContinuationBytesRemaining > 0 {
+            switch byte {
+            case 0x80...0xBF:
+                utf8ContinuationBytesRemaining -= 1
+                return true
+            default:
+                utf8ContinuationBytesRemaining = 0
+            }
+        }
+        switch byte {
+        case 0xC2...0xDF:
+            utf8ContinuationBytesRemaining = 1
+        case 0xE0...0xEF:
+            utf8ContinuationBytesRemaining = 2
+        case 0xF0...0xF4:
+            utf8ContinuationBytesRemaining = 3
+        default:
+            break
+        }
+        return false
+    }
+
     /// Handles controls that cancel or start a sequence from any non-string
-    /// state. C1 controls are treated as controls, never as UTF-8 payload.
+    /// state. Bytes 0x80–0x9F are C1 controls only outside UTF-8 payload.
     private mutating func consumeAnywhereControl(_ byte: UInt8) -> Bool {
         switch byte {
         case 0x1B: // ESC
