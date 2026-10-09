@@ -34,8 +34,8 @@
 //      foreground text and shifted the whole 16-255 extended range down
 //      by 8 (issue #1650).
 //
-//      Pine ships a SwiftTerm fork (batonogov/SwiftTerm,
-//      branch `pine/bright-ansi-fg`) that decouples the two behaviors via
+//      Pine ships a SwiftTerm fork (batonogov/SwiftTerm, pinned to the
+//      exact tag `1.19.0-pine.1`) that decouples the two behaviors via
 //      `collapseBrightColorsToBase`. Pine sets it to `false`, so `\e[38;5;8m`
 //      (which is what zsh-autosuggestions / fish use for ghost text via
 //      `fg=8`) now reads the real slot 8, and bright themes (Dracula,
