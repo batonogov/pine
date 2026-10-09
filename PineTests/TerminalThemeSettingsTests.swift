@@ -666,6 +666,157 @@ struct TerminalThemeSettingsTests {
                 == .explicit(parameter: 6)
         )
     }
+
+    @Test("UTF-8 text never masquerades as DECSCUSR")
+    func decscusrTrackerIgnoresUTF8Payload() throws {
+        let explicitBar = Array("\u{1B}[6 q".utf8)
+        // "Л" is D0 9B: its continuation byte is a C1 CSI lookalike.
+        // "😀" is F0 9F 98 80: its second byte is a C1 APC lookalike.
+        // U+1750 is E1 9D 90: C1 OSC and C1 DCS lookalikes in one scalar.
+        let textLookalikes: [[UInt8]] = [
+            Array("Л5 q".utf8),
+            Array("Л1 q Л0 q".utf8),
+            Array("😀6 q".utf8),
+            Array("\u{1750}3 q".utf8),
+        ]
+        let realDirective = Array("\u{1B}[3 q".utf8)
+
+        for lookalike in textLookalikes {
+            var tracker = DECSCUSRStreamTracker()
+            let stream = explicitBar + lookalike
+            #expect(
+                tracker.consume(stream[...]) == .explicit(parameter: 6),
+                "UTF-8 text changed the decision: \(lookalike)"
+            )
+            #expect(tracker.consume(realDirective[...]) == .explicit(parameter: 3))
+        }
+
+        // Bytes 0x80–0x9F remain C1 controls outside UTF-8 payload, even
+        // immediately after Cyrillic text.
+        var c1Tracker = DECSCUSRStreamTracker()
+        #expect(
+            c1Tracker.consume([0x9B, 0x35, 0x20, 0x71])
+                == .explicit(parameter: 5)
+        )
+        var c1AfterText = DECSCUSRStreamTracker()
+        let c1Stream = Array("Л".utf8) + [0x9B, 0x32, 0x20, 0x71]
+        #expect(c1AfterText.consume(c1Stream[...]) == .explicit(parameter: 2))
+
+        // 0xC0/0xC1 are not lead bytes and never arm framing, so a
+        // following C1 CSI is still a control.
+        for invalidLeadByte: UInt8 in [0xC0, 0xC1] {
+            var invalidLeadTracker = DECSCUSRStreamTracker()
+            #expect(
+                invalidLeadTracker.consume(
+                    [invalidLeadByte, 0x9B, 0x35, 0x20, 0x71]
+                ) == .explicit(parameter: 5)
+            )
+        }
+
+        // Framing never arms outside the ground state: Cyrillic bytes
+        // right after ESC leave a following C1 CSI fully visible.
+        var escapeTracker = DECSCUSRStreamTracker()
+        #expect(
+            escapeTracker.consume([0x1B, 0xD0, 0x9B, 0x35, 0x20, 0x71])
+                == .explicit(parameter: 5)
+        )
+
+        // Live terminal: Cyrillic output keeps the configured cursor shape.
+        let fixture = try TerminalCursorSettingsFixture()
+        let settings = fixture.makeSettings()
+        settings.setCursorStyle(.steadyUnderline)
+        let tab = TerminalTab(name: "cursor-utf8", cursorSettings: settings)
+        let view = try #require(tab.terminalView as? PineTerminalView)
+        let terminal = view.getTerminal()
+
+        feed("Л5 q\r\n😀1 q \u{1750}6 q\r\n", to: view)
+        #expect(terminal.options.cursorStyle.tagName == "steadyUnderline")
+
+        feed("\u{1B}[5 q", to: view)
+        #expect(terminal.options.cursorStyle.tagName == "blinkBar")
+    }
+
+    @Test("UTF-8 and DECSCUSR survive every chunk boundary together")
+    func decscusrTrackerSurvivesUTF8ChunkSplits() {
+        let recognizedStream = Array("Л😀\u{1B}[4 q".utf8)
+        for splitIndex in 0...recognizedStream.count {
+            var tracker = DECSCUSRStreamTracker()
+            let first = tracker.consume(recognizedStream.prefix(splitIndex))
+            let second = tracker.consume(recognizedStream.dropFirst(splitIndex))
+            let directives = [first, second].compactMap { $0 }
+            #expect(
+                directives == [.explicit(parameter: 4)],
+                "Failed at split \(splitIndex) for \(recognizedStream)"
+            )
+        }
+
+        let lookalikeStream = Array("Л5 q".utf8)
+        for splitIndex in 0...lookalikeStream.count {
+            var tracker = DECSCUSRStreamTracker()
+            let first = tracker.consume(lookalikeStream.prefix(splitIndex))
+            let second = tracker.consume(lookalikeStream.dropFirst(splitIndex))
+            #expect(
+                first == nil && second == nil,
+                "Split UTF-8 text changed the decision at split \(splitIndex)"
+            )
+        }
+    }
+
+    @Test("Truncated UTF-8 and string payload stay in lockstep with SwiftTerm")
+    func decscusrTrackerHandlesTruncatedUTF8AndStrings() {
+        // ESC cancels a pending UTF-8 sequence, so a real directive wins.
+        var tracker = DECSCUSRStreamTracker()
+        #expect(
+            tracker.consume([0xD0, 0x1B, 0x5B, 0x35, 0x20, 0x71])
+                == .explicit(parameter: 5)
+        )
+
+        // A lead byte stranded at a chunk end does not swallow the next
+        // chunk once a byte that is not a continuation arrives.
+        var splitTracker = DECSCUSRStreamTracker()
+        #expect(splitTracker.consume([0xF0, 0x9F]) == nil)
+        #expect(
+            splitTracker.consume([0x1B, 0x5B, 0x34, 0x20, 0x71])
+                == .explicit(parameter: 4)
+        )
+
+        // Control strings are deliberately not UTF-8-framed: SwiftTerm's
+        // parser ends OSC/DCS on the raw byte 0x9C even when it is a
+        // continuation (Cyrillic "М" is D0 9C). The tracker must terminate
+        // the string there too and see the directive SwiftTerm applies.
+        var oscTracker = DECSCUSRStreamTracker()
+        let oscPayload: [UInt8] = [0x1B, 0x5D, 0x30, 0x3B]
+            + Array("М".utf8)
+            + [0x1B, 0x5B, 0x35, 0x20, 0x71, 0x07]
+        #expect(oscTracker.consume(oscPayload[...]) == .explicit(parameter: 5))
+        let reset = Array("\u{1B}[0 q".utf8)
+        #expect(oscTracker.consume(reset[...]) == .preferred)
+
+        // DCS strings (not BEL-terminated) follow the same raw-byte rule.
+        var dcsTracker = DECSCUSRStreamTracker()
+        let dcsPayload: [UInt8] = [0x1B, 0x50, 0x71]
+            + Array("М".utf8)
+            + [0x1B, 0x5B, 0x32, 0x20, 0x71, 0x1B, 0x5C]
+        #expect(dcsTracker.consume(dcsPayload[...]) == .explicit(parameter: 2))
+        #expect(dcsTracker.consume(reset[...]) == .preferred)
+    }
+
+    @Test("Cyrillic control strings stay in lockstep at every chunk boundary")
+    func decscusrTrackerStringsSurviveChunkSplits() {
+        let oscPayload: [UInt8] = [0x1B, 0x5D, 0x30, 0x3B]
+            + Array("М".utf8)
+            + [0x1B, 0x5B, 0x35, 0x20, 0x71, 0x07]
+        for splitIndex in 0...oscPayload.count {
+            var tracker = DECSCUSRStreamTracker()
+            let first = tracker.consume(oscPayload.prefix(splitIndex))
+            let second = tracker.consume(oscPayload.dropFirst(splitIndex))
+            let directives = [first, second].compactMap { $0 }
+            #expect(
+                directives == [.explicit(parameter: 5)],
+                "Failed at split \(splitIndex) for \(oscPayload)"
+            )
+        }
+    }
 }
 
 @MainActor
