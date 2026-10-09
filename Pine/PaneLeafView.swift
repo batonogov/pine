@@ -281,16 +281,6 @@ struct PaneLeafView: View {
                 overridePaneID: paneID
             )
 
-            if let tab = tabManager.activeTab,
-               let fileURL = tab.fileURL,
-               let rootURL = workspace.rootURL {
-                BreadcrumbPathBar(
-                    fileURL: fileURL,
-                    projectRoot: rootURL,
-                    onOpenFile: { url in tabManager.openTab(url: url) }
-                )
-            }
-
             if let tab = tabManager.activeTab {
                 Group {
                     let focusRequestID = tabManager.pendingFocusTabID == tab.id
