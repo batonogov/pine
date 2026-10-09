@@ -22,7 +22,7 @@
 -->
 
 - macOS 26: <!-- Tested / Not tested / N/A — version + build -->
-- macOS 27 beta: <!-- Tested / Not tested / N/A — version + build + Developer/Public beta/RC channel -->
+- macOS 27: <!-- Tested / Not tested / N/A — version + build -->
 - Xcode: <!-- version + build, or Not tested / N/A -->
 - macOS SDK: <!-- version + build, or Not tested / N/A -->
 

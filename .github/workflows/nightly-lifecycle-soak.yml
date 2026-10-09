@@ -19,7 +19,7 @@ permissions:
 jobs:
   lifecycle-soak:
     name: Lifecycle Resource Soak
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     concurrency:
       group: nightly-lifecycle-soak

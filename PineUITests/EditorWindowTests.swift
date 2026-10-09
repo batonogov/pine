@@ -461,11 +461,13 @@ final class EditorWindowTests: PineUITestCase {
         // the project's identity, so the name must be visible from the very
         // first screen, before any file is open and regardless of what the
         // window title says. The pill is a Menu, so macOS folds its label
-        // into a single accessibility element named after the visible text
-        // rather than publishing that text as a separate static text; accept
-        // the name on either surface.
+        // into a single accessibility element rather than publishing the text
+        // separately — but where the name lands differs: macOS 26 puts it in
+        // the element's label (or a static text), macOS 27 in its title.
+        // Accept the name on any of the three surfaces.
         XCTAssertTrue(
             switcher.label.contains("SwitcherMetrics")
+                || switcher.title.contains("SwitcherMetrics")
                 || waitForExistence(
                     app.staticTexts["SwitcherMetrics"].firstMatch,
                     timeout: 5

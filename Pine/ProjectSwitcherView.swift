@@ -37,6 +37,12 @@ struct ProjectSwitcherView: View {
                     // rendered as nothing, leaving the pill with a hole
                     // where its icon sits.
                     Image(systemName: MenuIcons.projectSwitcher)
+                        // Decorative: the project name beside it carries the
+                        // identity. macOS 27 otherwise lets the SF symbol's
+                        // own name ("Stack of squares") claim the menu
+                        // button's accessibility label slot, and VoiceOver
+                        // would announce the icon instead of the project.
+                        .accessibilityHidden(true)
                 }
                 Text(session.activeDisplayName)
                     .fontWeight(.semibold)
