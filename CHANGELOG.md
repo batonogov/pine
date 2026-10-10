@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.11.0](https://github.com/batonogov/pine/compare/v2.10.0...v2.11.0) (2026-10-10)
+
+
+### Features
+
+* **terminal:** add Terminal.app Basic theme ([#1663](https://github.com/batonogov/pine/issues/1663)) ([8d27722](https://github.com/batonogov/pine/commit/8d277223b67aa734d5fdb3845001a7b8e29900d7)), closes [#1651](https://github.com/batonogov/pine/issues/1651)
+* **terminal:** terminal font settings with Nerd Font auto-detection ([#1668](https://github.com/batonogov/pine/issues/1668)) ([fa4b0fe](https://github.com/batonogov/pine/commit/fa4b0fefe4bf02c561abcdc9a924367a69821c73)), closes [#1649](https://github.com/batonogov/pine/issues/1649)
+
+
+### Bug Fixes
+
+* **agent:** freeze inbox duration counters and sweep stale settled tasks ([#1671](https://github.com/batonogov/pine/issues/1671)) ([4485f17](https://github.com/batonogov/pine/commit/4485f17097be37bc9f2cb14fbe57d424e961bb1d)), closes [#1664](https://github.com/batonogov/pine/issues/1664)
+* **terminal:** balance saveGState/restoreGState in CaretView.drawCursor ([#1662](https://github.com/batonogov/pine/issues/1662)) ([53bb216](https://github.com/batonogov/pine/commit/53bb216098cdece0bd703cacd341201573ae850a)), closes [#1657](https://github.com/batonogov/pine/issues/1657)
+* **terminal:** make DECSCUSR stream tracker UTF-8-aware ([#1655](https://github.com/batonogov/pine/issues/1655)) ([c63f948](https://github.com/batonogov/pine/commit/c63f948d9d5e681bc719cb777dadfbe4a039c474)), closes [#1653](https://github.com/batonogov/pine/issues/1653)
+* **terminal:** make the quick terminal window closable and resizable ([#1656](https://github.com/batonogov/pine/issues/1656)) ([94f9b1f](https://github.com/batonogov/pine/commit/94f9b1fe66bced43f3f844238a9323b023f6014a)), closes [#1648](https://github.com/batonogov/pine/issues/1648)
+* **terminal:** resolve bright ANSI foreground colors to their own palette slots ([#1654](https://github.com/batonogov/pine/issues/1654)) ([c2a9189](https://github.com/batonogov/pine/commit/c2a918947cb4ac00ee8605e35e0abe684de24491)), closes [#1650](https://github.com/batonogov/pine/issues/1650)
+* **terminal:** seamless powerline glyphs via SwiftTerm fork 1.19.0-pine.2 ([#1660](https://github.com/batonogov/pine/issues/1660)) ([ca55e09](https://github.com/batonogov/pine/commit/ca55e09ca657f3c8ff82da92c7d558091df5faef)), closes [#1652](https://github.com/batonogov/pine/issues/1652)
+* **ux:** restore the agent inbox button to the trailing toolbar cluster ([#1670](https://github.com/batonogov/pine/issues/1670)) ([dd4aa8e](https://github.com/batonogov/pine/commit/dd4aa8e3df07ed577da27ad111bffc9f8f06184d))
+* **ux:** widen the project switcher pill horizontal padding ([#1669](https://github.com/batonogov/pine/issues/1669)) ([cbcc2d7](https://github.com/batonogov/pine/commit/cbcc2d7f1fda73b9390b10d965c53170878dcc4f)), closes [#1666](https://github.com/batonogov/pine/issues/1666)
+
 ## [2.10.0](https://github.com/batonogov/pine/compare/v2.9.3...v2.10.0) (2026-10-09)
 
 
