@@ -38,14 +38,14 @@ final class TerminalFontSettings {
         defaults: PineSettingsDefaults.shared()
     )
 
-    enum Keys {
+    nonisolated enum Keys {
         static let fontFamily = "terminal.font.family"
         static let fontSize = "terminal.font.size"
     }
 
-    static let defaultSize: Double = 13
-    static let minimumSize: Double = 8
-    static let maximumSize: Double = 24
+    nonisolated static let defaultSize: Double = 13
+    nonisolated static let minimumSize: Double = 8
+    nonisolated static let maximumSize: Double = 24
 
     /// Persisted value for the explicit "System (SF Mono)" choice. The key
     /// being absent means "Automatic" (Nerd Font auto-detection); this marker
@@ -245,7 +245,9 @@ final class TerminalFontSettings {
 
     /// Clamps to the supported range; non-finite values fall back to the
     /// default so a corrupt defaults entry can never reach AppKit.
-    static func normalizedSize(_ size: Double) -> Double {
+    /// `nonisolated`: pure value math shared with the UI-test seeding hook
+    /// in `PineSettingsDefaults`, which has no MainActor access.
+    nonisolated static func normalizedSize(_ size: Double) -> Double {
         guard size.isFinite else { return defaultSize }
         return min(max(size, minimumSize), maximumSize)
     }

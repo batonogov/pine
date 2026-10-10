@@ -1597,6 +1597,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             FontSizeSettings.shared.reset()
         }
 
+        // UI testing support: seed the terminal font size for the settings
+        // persistence UI test (#1649). Runs before any terminal or Settings
+        // view can read `TerminalFontSettings.shared`.
+        PineSettingsDefaults.seedUITestTerminalFontSize(
+            arguments: CommandLine.arguments,
+            environment: ProcessInfo.processInfo.environment
+        )
+
         // UI testing support: force dark appearance for marketing screenshots
         // regardless of the host machine's system theme.
         if CommandLine.arguments.contains("--ui-test-dark-appearance") {

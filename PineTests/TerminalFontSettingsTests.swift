@@ -395,6 +395,86 @@ struct TerminalFontSettingsTests {
         #expect(projectTab.terminalView === projectView)
         #expect(quickTab.terminalView === quickView)
     }
+
+    @Test("UI test font size seed is gated, normalized, and suite-scoped")
+    func uiTestFontSizeSeed() throws {
+        let suiteName = "PineUITests.Settings.\(UUID().uuidString)"
+        let suite = try #require(UserDefaults(suiteName: suiteName))
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        let environment = [
+            PineSettingsDefaults.uiTestSuiteEnvironmentKey: suiteName,
+        ]
+        let sizeKey = TerminalFontSettings.Keys.fontSize
+
+        // Without --reset-state the argument is ignored entirely.
+        PineSettingsDefaults.seedUITestTerminalFontSize(
+            arguments: [
+                "Pine",
+                PineSettingsDefaults.uiTestTerminalFontSizeArgument, "16",
+            ],
+            environment: environment
+        )
+        #expect(suite.object(forKey: sizeKey) == nil)
+
+        // With the full contract the value is seeded…
+        PineSettingsDefaults.seedUITestTerminalFontSize(
+            arguments: [
+                "Pine", "--reset-state",
+                PineSettingsDefaults.uiTestTerminalFontSizeArgument, "16",
+            ],
+            environment: environment
+        )
+        #expect(suite.double(forKey: sizeKey) == 16)
+
+        // …normalized through the settings clamp…
+        PineSettingsDefaults.seedUITestTerminalFontSize(
+            arguments: [
+                "Pine", "--reset-state",
+                PineSettingsDefaults.uiTestTerminalFontSizeArgument, "99",
+            ],
+            environment: environment
+        )
+        #expect(
+            suite.double(forKey: sizeKey) == TerminalFontSettings.maximumSize
+        )
+
+        // …and left untouched when the value is unparsable or missing.
+        PineSettingsDefaults.seedUITestTerminalFontSize(
+            arguments: [
+                "Pine", "--reset-state",
+                PineSettingsDefaults.uiTestTerminalFontSizeArgument, "banana",
+            ],
+            environment: environment
+        )
+        #expect(
+            suite.double(forKey: sizeKey) == TerminalFontSettings.maximumSize
+        )
+        PineSettingsDefaults.seedUITestTerminalFontSize(
+            arguments: [
+                "Pine", "--reset-state",
+                PineSettingsDefaults.uiTestTerminalFontSizeArgument,
+            ],
+            environment: environment
+        )
+        #expect(
+            suite.double(forKey: sizeKey) == TerminalFontSettings.maximumSize
+        )
+
+        // An untrusted suite name is rejected outright.
+        let untrustedName = "untrusted-\(UUID().uuidString)"
+        let untrusted = try #require(UserDefaults(suiteName: untrustedName))
+        defer { untrusted.removePersistentDomain(forName: untrustedName) }
+        PineSettingsDefaults.seedUITestTerminalFontSize(
+            arguments: [
+                "Pine", "--reset-state",
+                PineSettingsDefaults.uiTestTerminalFontSizeArgument, "16",
+            ],
+            environment: [
+                PineSettingsDefaults.uiTestSuiteEnvironmentKey: untrustedName,
+            ]
+        )
+        #expect(untrusted.object(forKey: sizeKey) == nil)
+    }
 }
 
 @Suite("Terminal font localization")

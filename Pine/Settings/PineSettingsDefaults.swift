@@ -48,4 +48,38 @@ nonisolated enum PineSettingsDefaults {
         }
         defaults.removePersistentDomain(forName: suiteName)
     }
+
+    /// Argument name a UI test uses to seed the terminal font size, e.g.
+    /// `-uitestTerminalFontSize 16`.
+    static let uiTestTerminalFontSizeArgument = "-uitestTerminalFontSize"
+
+    /// Seeds `terminal.font.size` in the UI-test settings suite (#1649).
+    ///
+    /// XCUITest provably cannot drive this SwiftUI slider (four idioms failed
+    /// on CI: `adjust(toNormalizedSliderPosition:)` misreads the raw
+    /// point-size AXValue as normalized, synthesized track clicks don't move
+    /// the knob, the min/max label buttons don't step under synthesized
+    /// clicks, and arrow keys after a knob click don't step), so the
+    /// persistence UI test seeds the value here and exercises the read +
+    /// persistence paths instead. Gated on the same suite contract as
+    /// `shared()` so a stray argument can never affect a normal launch.
+    static func seedUITestTerminalFontSize(
+        arguments: [String],
+        environment: [String: String]
+    ) {
+        guard let suiteName = uiTestSuiteName(
+            arguments: arguments,
+            environment: environment
+        ),
+        let index = arguments.firstIndex(of: uiTestTerminalFontSizeArgument),
+        arguments.indices.contains(index + 1),
+        let requestedSize = Double(arguments[index + 1]),
+        let defaults = UserDefaults(suiteName: suiteName) else {
+            return
+        }
+        defaults.set(
+            TerminalFontSettings.normalizedSize(requestedSize),
+            forKey: TerminalFontSettings.Keys.fontSize
+        )
+    }
 }

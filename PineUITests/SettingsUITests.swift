@@ -288,10 +288,21 @@ final class SettingsUITests: PineUITestCase {
         )
     }
 
-    /// Font family/size persistence is driven end-to-end through the real
-    /// Settings UI: the picker defaults to Automatic (Nerd Font detection),
-    /// and a slider adjustment survives an app relaunch (#1649).
+    /// Font settings persistence, driven through a launch-argument seed
+    /// (#1649). XCUITest provably cannot move this SwiftUI slider — four
+    /// drive idioms failed on CI (`adjust(toNormalizedSliderPosition:)`
+    /// misreads the raw point-size AXValue as normalized, synthesized track
+    /// clicks don't move the knob, the min/max label buttons don't step under
+    /// synthesized clicks, and arrow keys after a knob click don't step) — so
+    /// the first launch seeds `terminal.font.size` into the isolated settings
+    /// suite via `-uitestTerminalFontSize` (see
+    /// `PineSettingsDefaults.seedUITestTerminalFontSize`). The test then
+    /// exercises the settings→UI read path and persistence across a relaunch
+    /// without the seed. The slider→settings write path stays covered in the
+    /// unit lane by TerminalFontAccessibilityTests, whose hosted step buttons
+    /// drive the persisted fontSize.
     func testTerminalFontSettingsPersistAcrossRelaunch() throws {
+        app.launchArguments.append(contentsOf: ["-uitestTerminalFontSize", "16"])
         launchClean()
         openSettings()
 
@@ -323,33 +334,23 @@ final class SettingsUITests: PineUITestCase {
             sizeSlider.waitForExistence(timeout: 5),
             "The font size slider should be reachable"
         )
-        XCTAssertTrue(sizeSlider.isHittable)
-
-        // Driving this slider is constrained on three sides, all observed on
-        // CI: XCUI's `adjust(toNormalizedSliderPosition:)` cannot normalize
-        // the raw point-size AXValue (SwiftUI drops custom accessibility
-        // values on sliders, so it reads 13 — out of the assumed 0...1); a
-        // synthesized track click does not move a SwiftUI slider knob; and
-        // clicking the min/max label buttons (AXButtons that answer AXPress)
-        // does not step the value under mouse synthesis. What does work is
-        // the keyboard: focus the knob, then arrow-step it.
-        //
-        // The click targets the knob itself (default 13 in 8...24 → 31.25%
-        // across the track) so focusing cannot jump the value. The assertions
-        // compare pre- vs post-arrow values, so they hold even if the focus
-        // click ever does nudge the knob.
-        let knobOffset = CGVector(dx: 0.3125, dy: 0.5)
-        sizeSlider.coordinate(withNormalizedOffset: knobOffset).click()
-        let focusedSize = String(describing: sizeSlider.value)
-        sizeSlider.typeKey(.rightArrow, modifierFlags: [])
-        let adjustedSize = String(describing: sizeSlider.value)
-        XCTAssertNotEqual(
-            adjustedSize,
-            focusedSize,
-            "Arrow-stepping the focused font size slider should update its accessible value"
+        XCTAssertEqual(
+            fontSizeSliderValue(sizeSlider),
+            16,
+            "The seeded font size should be reflected in the slider"
         )
 
+        // Relaunch WITHOUT the seed argument; the isolated suite persists on
+        // disk across the terminate.
         app.terminate()
+        if let index = app.launchArguments.firstIndex(
+            of: "-uitestTerminalFontSize"
+        ) {
+            app.launchArguments.remove(at: index)
+            if app.launchArguments.indices.contains(index) {
+                app.launchArguments.remove(at: index)
+            }
+        }
         launchClean()
         openSettings()
 
@@ -361,8 +362,8 @@ final class SettingsUITests: PineUITestCase {
         ].firstMatch
         XCTAssertTrue(relaunchedSlider.waitForExistence(timeout: 5))
         XCTAssertEqual(
-            String(describing: relaunchedSlider.value),
-            adjustedSize,
+            fontSizeSliderValue(relaunchedSlider),
+            16,
             "The terminal font size should persist across relaunch"
         )
         let relaunchedPicker = app.descendants(matching: .any)[
@@ -611,6 +612,19 @@ final class SettingsUITests: PineUITestCase {
             return true
         case "0", "false", "off":
             return false
+        default:
+            return nil
+        }
+    }
+
+    /// The font size slider publishes its raw point size; XCTest bridges it
+    /// as NSNumber or String depending on the runner/runtime combination.
+    private func fontSizeSliderValue(_ slider: XCUIElement) -> Double? {
+        switch slider.value {
+        case let number as NSNumber:
+            return number.doubleValue
+        case let string as String:
+            return Double(string)
         default:
             return nil
         }
