@@ -114,7 +114,13 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         projectURLs.append(url)
         launchWithProject(url)
 
-        let window = projectWindows(for: url).firstMatch
+        // Bound by content, not by title: opening a file retitles the window
+        // to the file name (#1643's title chain), so a title-bound query dies
+        // mid-test. Only a project window ever contains the inbox button —
+        // Welcome does not, and no popover is opened in this test.
+        let window = app.windows.containing(
+            .button, identifier: "agentInboxToolbarButton"
+        ).firstMatch
         XCTAssertTrue(waitForExistence(window, timeout: 10))
         XCTAssertTrue(
             waitForExistence(toolbarButton, timeout: 10),
@@ -201,22 +207,57 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
             "The toolbar button should open the Agent Inbox popover"
         )
 
-        // Bottom-left of the project window: clear of a 520x540 popover
-        // hanging below the trailing-edge toolbar button, and clear of the
-        // single file row at the top of the sidebar, so the window keeps its
-        // title and this element keeps resolving.
-        window.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.1, dy: 0.93)
-        ).click()
+        // Click a window point provably outside the popover, whichever side
+        // of the toolbar the button sits on: candidates along the window's
+        // bottom edge are checked against the popover's live frame (plus
+        // its chrome) instead of assuming an anchor edge. dy 0.9 stays above
+        // the status bar (its trailing edge holds the Terminal toggle), and
+        // the strip is clear of the single file row at the top of the
+        // sidebar, so the window keeps its title and keeps resolving.
+        let windowFrame = window.frame
+        let popoverFrame = inbox.frame.insetBy(dx: -24, dy: -24)
+        var outsideClick: XCUICoordinate?
+        for dx in [0.08, 0.92, 0.5] {
+            // AX frames are screen coordinates, so the candidate's absolute
+            // point comes straight from the window's frame.
+            let point = CGPoint(
+                x: windowFrame.minX + dx * windowFrame.width,
+                y: windowFrame.minY + 0.9 * windowFrame.height
+            )
+            if !popoverFrame.contains(point) {
+                outsideClick = window.coordinate(
+                    withNormalizedOffset: CGVector(dx: dx, dy: 0.9)
+                )
+                break
+            }
+        }
+        let clickPoint = try XCTUnwrap(
+            outsideClick,
+            "A 520-wide popover cannot cover all of the window's bottom edge"
+        )
+        clickPoint.click()
 
         XCTAssertTrue(
             inbox.waitForNonExistence(timeout: 5),
             "Clicking outside should dismiss the Agent Inbox popover"
         )
 
+        // The AX element leaves the tree early in AppKit's close animation,
+        // and the binding is only lowered when `popoverDidClose` lands a
+        // runloop turn after that (#1486's anchor state machine). A click
+        // issued inside that window toggles a binding that still reads as up
+        // and is swallowed, so let the dismissal settle before reopening.
+        Thread.sleep(forTimeInterval: 0.5)
+
         // If the binding had not followed AppKit's dismissal, the anchor would
         // still believe it is presenting and refuse the next request.
         toolbarButton.click()
+        if !waitForExistence(inbox, timeout: 5) {
+            // Defence against the settle above losing to a loaded CI shard:
+            // once the dismissal has fully retired, a second click is a
+            // clean reopen rather than a double-toggle.
+            toolbarButton.click()
+        }
         XCTAssertTrue(
             waitForExistence(inbox, timeout: 5),
             "The same window should host the Inbox again after a dismissal"
