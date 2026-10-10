@@ -52,7 +52,7 @@ struct ProjectSwitcherView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 14)
             .padding(.vertical, 4)
             // `.borderlessButton` stretches its label to fill the toolbar
             // item's height — with a navigation subtitle the pill ballooned
