@@ -130,6 +130,7 @@ extension TerminalTheme {
         nord,
         github,
         digitalRain,
+        terminalAppBasic,
     ]
 
     /// The default theme identifier.
@@ -491,6 +492,49 @@ extension TerminalTheme {
             cursor: TerminalPaletteEntry(red: 0x00, green: 0xFF, blue: 0x66),
             selection: TerminalPaletteEntry(red: 0x14, green: 0x30, blue: 0x18),
             link: TerminalPaletteEntry(red: 0x3D, green: 0xFF, blue: 0xE0)
+        )
+    )
+
+    // MARK: Terminal.app Basic
+
+    /// Terminal.app "Basic" — the standard xterm palette that ships with
+    /// macOS Terminal.app (#1651). Both variants use the exact 16 ANSI colors
+    /// pinned by `TerminalPalette.terminalAppBasic` (red #990000, green
+    /// #00A600, blue #0000B2, …), so prompts tuned for Terminal.app or xterm
+    /// (Powerlevel10k and friends) render with the hues their authors picked.
+    ///
+    /// The light variant matches the Basic profile end-to-end: black text on
+    /// a white background with a black cursor. Terminal.app ships no dark
+    /// Basic profile, so the dark variant keeps the identical ANSI palette on
+    /// the classic xterm dark arrangement — white text on a black background
+    /// with a white cursor — rather than inventing new colors. Slot 0 (black)
+    /// therefore equals the dark background, exactly as ANSI black does in
+    /// xterm with a black background (and as One Dark's slot 0 does); p10k
+    /// black segment text sits on bright backgrounds, where it reads
+    /// correctly. Ghost text (zsh-autosuggestions `fg=8`) reads bright black
+    /// #666666, which stays clearly visible on both backgrounds now that the
+    /// SwiftTerm fork keeps slot 8 addressable (#1650). The dark variant's
+    /// ANSI blue (#0000B2 on black, ~1.64:1) is deliberately low-contrast —
+    /// bit-for-bit Terminal.app / xterm fidelity is the point of this theme;
+    /// users who want a contrast-tuned palette have the other themes.
+    static let terminalAppBasic = TerminalTheme(
+        id: "terminal-app-basic",
+        nameKey: "terminal.theme.terminal-app-basic.name",
+        light: TerminalColorScheme(
+            ansiColors: TerminalPalette.terminalAppBasic,
+            background: TerminalPaletteEntry(red: 0xFF, green: 0xFF, blue: 0xFF),
+            foreground: TerminalPaletteEntry(red: 0x00, green: 0x00, blue: 0x00),
+            cursor: TerminalPaletteEntry(red: 0x00, green: 0x00, blue: 0x00),
+            selection: TerminalPaletteEntry(red: 0xAC, green: 0xCE, blue: 0xF7),
+            link: TerminalPaletteEntry(red: 0x00, green: 0x00, blue: 0xB2)
+        ),
+        dark: TerminalColorScheme(
+            ansiColors: TerminalPalette.terminalAppBasic,
+            background: TerminalPaletteEntry(red: 0x00, green: 0x00, blue: 0x00),
+            foreground: TerminalPaletteEntry(red: 0xFF, green: 0xFF, blue: 0xFF),
+            cursor: TerminalPaletteEntry(red: 0xFF, green: 0xFF, blue: 0xFF),
+            selection: TerminalPaletteEntry(red: 0x40, green: 0x40, blue: 0x40),
+            link: TerminalPaletteEntry(red: 0x00, green: 0x00, blue: 0xFF)
         )
     )
 }

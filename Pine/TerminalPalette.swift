@@ -100,10 +100,12 @@ enum TerminalPalette {
     /// Number of ANSI colors expected by SwiftTerm's `installColors`.
     static let colorCount = 16
 
-    // MARK: - Terminal.app "Basic" (reference for tests)
+    // MARK: - Terminal.app "Basic" palette
 
     /// Exact sRGB values from `Basic.terminal` shipped with macOS — kept
-    /// bit-for-bit so the unit tests can pin against the canonical profile.
+    /// bit-for-bit against the canonical profile. This is production theme
+    /// data: the "Terminal.app Basic" theme (#1651) installs it verbatim in
+    /// both variants, and the unit tests pin against the same source of truth.
     static let terminalAppBasic: [TerminalPaletteEntry] = [
         .init(red: 0x00, green: 0x00, blue: 0x00), // 0  black
         .init(red: 0x99, green: 0x00, blue: 0x00), // 1  red
