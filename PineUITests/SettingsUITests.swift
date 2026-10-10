@@ -326,17 +326,26 @@ final class SettingsUITests: PineUITestCase {
         XCTAssertTrue(sizeSlider.isHittable)
 
         let defaultSize = String(describing: sizeSlider.value)
-        // XCUI's `adjust(toNormalizedSliderPosition:)` cannot normalize a
-        // point-sized AXValue (13), so drive the NSSlider track directly —
-        // a track click jumps the thumb to the clicked position.
-        sizeSlider.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)
-        ).click()
+        // SwiftUI drops custom accessibility values on sliders, so the
+        // slider exposes its raw point size (13), which XCUI's
+        // `adjust(toNormalizedSliderPosition:)` cannot normalize — the
+        // Quick Terminal slider only tolerates `adjust` because its fraction
+        // is already in 0...1. The slider's maximum-value label is a real
+        // AXButton that steps the value (verified against the hosted AX
+        // tree in TerminalFontAccessibilityTests); drive that instead.
+        let stepUpButton = scrollView.buttons["24"].firstMatch
+        XCTAssertTrue(
+            stepUpButton.waitForExistence(timeout: 5),
+            "The font size slider should expose its maximum step button"
+        )
+        scrollDownUntilHittable(stepUpButton, in: scrollView)
+        XCTAssertTrue(stepUpButton.isHittable)
+        stepUpButton.click()
         let adjustedSize = String(describing: sizeSlider.value)
         XCTAssertNotEqual(
             adjustedSize,
             defaultSize,
-            "Clicking the font size slider track should update its accessible value"
+            "Stepping the font size slider should update its accessible value"
         )
 
         app.terminate()
@@ -398,7 +407,6 @@ final class SettingsUITests: PineUITestCase {
                     "Blink cursor",
                     "Font",
                     "Font family",
-                    "Automatic",
                     "Size",
                 ],
                 expectedIdentifiers: [
@@ -467,7 +475,6 @@ final class SettingsUITests: PineUITestCase {
                     "Мигание курсора",
                     "Шрифт",
                     "Семейство шрифтов",
-                    "Автоматически",
                     "Размер",
                 ],
                 expectedIdentifiers: [

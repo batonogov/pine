@@ -199,6 +199,12 @@ struct TerminalSettingsView: View {
                             .tag(String?.some(selection))
                     }
                 }
+                // SwiftUI's menu-style Picker drops its label from the
+                // accessibility tree (the popup publishes AXLabel "" and
+                // the label text is not published as a static text on every
+                // OS), so set it explicitly — the same pattern the cursor
+                // shape picker uses.
+                .accessibilityLabel(Strings.settingsTerminalFontFamily)
                 .accessibilityIdentifier(
                     AccessibilityID.terminalFontFamilyPicker
                 )
@@ -220,6 +226,7 @@ struct TerminalSettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    .accessibilityLabel(Strings.settingsTerminalFontSize)
                     .accessibilityIdentifier(
                         AccessibilityID.terminalFontSizeSlider
                     )

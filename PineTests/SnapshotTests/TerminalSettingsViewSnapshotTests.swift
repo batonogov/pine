@@ -79,12 +79,16 @@ struct TerminalSettingsViewSnapshotTests {
 
     @Test("Combined Terminal Settings honors a non-English environment locale")
     func russianLocale() throws {
+        // The long Russian help caption under the font size slider wraps at
+        // different word positions between macOS 26 and 27 (text-layout
+        // drift, the documented #1620 case), so this reference is per-OS.
         try assertSnapshot(
             of: makeView(locale: "ru"),
             size: NSSize(width: 720, height: 1_080),
             appearance: .light,
             named: "TerminalSettingsView.ru.light",
-            tolerance: 0.01
+            tolerance: 0.01,
+            osSpecific: true
         )
     }
 
