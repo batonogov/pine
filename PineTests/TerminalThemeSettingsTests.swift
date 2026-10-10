@@ -20,7 +20,7 @@ struct TerminalThemeSettingsTests {
 
         #expect(
             themes.map(\.id)
-                == ["pine", "solarized", "dracula", "nord", "github", "digital-rain"]
+                == ["pine", "solarized", "dracula", "nord", "github", "digital-rain", "terminal-app-basic"]
         )
         #expect(Set(themes.map(\.id)).count == themes.count)
         #expect(themes.allSatisfy { !$0.nameKey.isEmpty })
@@ -941,6 +941,7 @@ struct TerminalThemeLocalizationTests {
         "terminal.theme.nord.name",
         "terminal.theme.pine.name",
         "terminal.theme.solarized.name",
+        "terminal.theme.terminal-app-basic.name",
     ]
 
     @Test("Every terminal theme string is translated in all supported languages")

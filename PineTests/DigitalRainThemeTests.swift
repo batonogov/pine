@@ -160,7 +160,7 @@ struct DigitalRainThemeTests {
     func registrationOrder() {
         #expect(
             TerminalTheme.builtIn.map(\.id)
-                == ["pine", "solarized", "dracula", "nord", "github", "digital-rain"]
+                == ["pine", "solarized", "dracula", "nord", "github", "digital-rain", "terminal-app-basic"]
         )
     }
 
