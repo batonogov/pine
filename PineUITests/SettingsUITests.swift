@@ -325,27 +325,28 @@ final class SettingsUITests: PineUITestCase {
         )
         XCTAssertTrue(sizeSlider.isHittable)
 
-        let defaultSize = String(describing: sizeSlider.value)
-        // SwiftUI drops custom accessibility values on sliders, so the
-        // slider exposes its raw point size (13), which XCUI's
-        // `adjust(toNormalizedSliderPosition:)` cannot normalize — the
-        // Quick Terminal slider only tolerates `adjust` because its fraction
-        // is already in 0...1. The slider's maximum-value label is a real
-        // AXButton that steps the value (verified against the hosted AX
-        // tree in TerminalFontAccessibilityTests); drive that instead.
-        let stepUpButton = scrollView.buttons["24"].firstMatch
-        XCTAssertTrue(
-            stepUpButton.waitForExistence(timeout: 5),
-            "The font size slider should expose its maximum step button"
-        )
-        scrollDownUntilHittable(stepUpButton, in: scrollView)
-        XCTAssertTrue(stepUpButton.isHittable)
-        stepUpButton.click()
+        // Driving this slider is constrained on three sides, all observed on
+        // CI: XCUI's `adjust(toNormalizedSliderPosition:)` cannot normalize
+        // the raw point-size AXValue (SwiftUI drops custom accessibility
+        // values on sliders, so it reads 13 — out of the assumed 0...1); a
+        // synthesized track click does not move a SwiftUI slider knob; and
+        // clicking the min/max label buttons (AXButtons that answer AXPress)
+        // does not step the value under mouse synthesis. What does work is
+        // the keyboard: focus the knob, then arrow-step it.
+        //
+        // The click targets the knob itself (default 13 in 8...24 → 31.25%
+        // across the track) so focusing cannot jump the value. The assertions
+        // compare pre- vs post-arrow values, so they hold even if the focus
+        // click ever does nudge the knob.
+        let knobOffset = CGVector(dx: 0.3125, dy: 0.5)
+        sizeSlider.coordinate(withNormalizedOffset: knobOffset).click()
+        let focusedSize = String(describing: sizeSlider.value)
+        sizeSlider.typeKey(.rightArrow, modifierFlags: [])
         let adjustedSize = String(describing: sizeSlider.value)
         XCTAssertNotEqual(
             adjustedSize,
-            defaultSize,
-            "Stepping the font size slider should update its accessible value"
+            focusedSize,
+            "Arrow-stepping the focused font size slider should update its accessible value"
         )
 
         app.terminate()
