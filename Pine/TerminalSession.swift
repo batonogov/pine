@@ -1988,6 +1988,10 @@ final class TerminalTab: Identifiable, Hashable {
     @ObservationIgnored
     nonisolated(unsafe) private var cursorStyleChangeObserver: NSObjectProtocol?
 
+    /// Observer for explicit font preference changes (#1649).
+    @ObservationIgnored
+    nonisolated(unsafe) private var fontChangeObserver: NSObjectProtocol?
+
     /// The theme/appearance settings source. Defaults to the shared singleton
     /// but is injectable so unit tests can drive resolution deterministically.
     private let themeSettings: TerminalThemeSettings
@@ -1998,6 +2002,10 @@ final class TerminalTab: Identifiable, Hashable {
     /// separate from theme repainting preserves TUI-issued cursor styles.
     private let cursorSettings: TerminalCursorSettings
     private let cursorNotificationCenter: NotificationCenter
+    /// Font preference source and observer center (#1649). Changing the font
+    /// recomputes the grid and repaints live without restarting the shell.
+    private let fontSettings: TerminalFontSettings
+    private let fontNotificationCenter: NotificationCenter
     /// Value-only lifecycle callback installed by the terminal coordinator.
     /// The tab never exposes its process or view to the durable task registry.
     @ObservationIgnored
@@ -2008,7 +2016,8 @@ final class TerminalTab: Identifiable, Hashable {
         shellSettings: ShellSettings = .shared,
         agentHandoffSettings: AgentHandoffSettings = .shared,
         themeSettings: TerminalThemeSettings = .shared,
-        cursorSettings: TerminalCursorSettings = .shared
+        cursorSettings: TerminalCursorSettings = .shared,
+        fontSettings: TerminalFontSettings = .shared
     ) {
         self.name = name
         self.stableLabel = name
@@ -2018,6 +2027,8 @@ final class TerminalTab: Identifiable, Hashable {
         self.themeNotificationCenter = themeSettings.notificationCenter
         self.cursorSettings = cursorSettings
         self.cursorNotificationCenter = cursorSettings.notificationCenter
+        self.fontSettings = fontSettings
+        self.fontNotificationCenter = fontSettings.notificationCenter
         let terminalView = PineTerminalView(
             frame: TerminalContainerView.defaultTerminalFrame,
             options: TerminalOptions(cursorStyle: cursorSettings.cursorStyle)
@@ -2032,7 +2043,7 @@ final class TerminalTab: Identifiable, Hashable {
         self.terminalView.processDelegate = self.delegate
 
         // Настраиваем внешний вид сразу — шрифт определяет размер ячейки
-        terminalView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        terminalView.font = fontSettings.resolvedFont
 
         // Match Ghostty / modern terminal behaviour: do NOT auto-promote bold
         // text to the bright color variant. SwiftTerm's default of `true`
@@ -2084,6 +2095,16 @@ final class TerminalTab: Identifiable, Hashable {
             }
         }
 
+        fontChangeObserver = fontNotificationCenter.addObserver(
+            forName: .terminalFontChanged,
+            object: fontSettings,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.applyFontSettings()
+            }
+        }
+
         // The terminal had a role and an identifier but no name at all, so
         // VoiceOver announced every terminal in the window as "text area".
         // Supplied as a closure rather than a pushed string because both
@@ -2104,6 +2125,9 @@ final class TerminalTab: Identifiable, Hashable {
         if let cursorStyleChangeObserver {
             cursorNotificationCenter.removeObserver(cursorStyleChangeObserver)
         }
+        if let fontChangeObserver {
+            fontNotificationCenter.removeObserver(fontChangeObserver)
+        }
     }
 
     /// Applies the user's preference at tab creation and when that preference
@@ -2116,6 +2140,22 @@ final class TerminalTab: Identifiable, Hashable {
             return
         }
         terminalView.applyPreferredCursorStyle(cursorSettings.cursorStyle)
+    }
+
+    /// Applies the current font preference to the live terminal view (#1649).
+    ///
+    /// SwiftTerm's `font` setter re-runs `resetFont()`, which recomputes the
+    /// cell metrics and calls `resize(cols:rows:)`; the existing size-changed
+    /// delegate chain then delivers the new geometry to the PTY via
+    /// `TIOCSWINSZ` (raising `SIGWINCH` in the child), so TUIs reflow on
+    /// their own. `forceFullRedraw()` is required afterwards because
+    /// `resetFont()` only flags the outer view's `needsDisplay`, which is a
+    /// no-op under the Metal renderer — `requestRendererDisplay()` is what
+    /// actually presents the frame. Scrollback is not reflowed (SwiftTerm
+    /// limitation); only newly drawn content uses the new metrics.
+    internal func applyFontSettings() {
+        terminalView.font = fontSettings.resolvedFont
+        forceFullRedraw()
     }
 
     /// Applies the terminal's appearance-aware colors and keeps SwiftTerm's

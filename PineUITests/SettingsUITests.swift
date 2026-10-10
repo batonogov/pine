@@ -288,6 +288,82 @@ final class SettingsUITests: PineUITestCase {
         )
     }
 
+    /// Font family/size persistence is driven end-to-end through the real
+    /// Settings UI: the picker defaults to Automatic (Nerd Font detection),
+    /// and a slider adjustment survives an app relaunch (#1649).
+    func testTerminalFontSettingsPersistAcrossRelaunch() throws {
+        launchClean()
+        openSettings()
+
+        let terminalTab = app.buttons["Terminal"].firstMatch
+        XCTAssertTrue(
+            terminalTab.waitForExistence(timeout: 10),
+            "The consolidated Settings scene should expose Terminal"
+        )
+        terminalTab.click()
+
+        let scrollView = app.scrollViews["terminalSettingsScrollView"].firstMatch
+        XCTAssertTrue(scrollView.exists, "Terminal settings should be scrollable")
+        let familyPicker = app.descendants(matching: .any)[
+            "terminalFontFamilyPicker"
+        ].firstMatch
+        let sizeSlider = app.descendants(matching: .any)[
+            "terminalFontSizeSlider"
+        ].firstMatch
+        scrollDownUntilHittable(sizeSlider, in: scrollView)
+        XCTAssertTrue(
+            familyPicker.waitForExistence(timeout: 5),
+            "The font family picker should be reachable"
+        )
+        XCTAssertTrue(
+            String(describing: familyPicker.value).contains("Automatic"),
+            "Fresh settings should default the font family picker to Automatic"
+        )
+        XCTAssertTrue(
+            sizeSlider.waitForExistence(timeout: 5),
+            "The font size slider should be reachable"
+        )
+        XCTAssertTrue(sizeSlider.isHittable)
+
+        let defaultSize = String(describing: sizeSlider.value)
+        // XCUI's `adjust(toNormalizedSliderPosition:)` cannot normalize a
+        // point-sized AXValue (13), so drive the NSSlider track directly —
+        // a track click jumps the thumb to the clicked position.
+        sizeSlider.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)
+        ).click()
+        let adjustedSize = String(describing: sizeSlider.value)
+        XCTAssertNotEqual(
+            adjustedSize,
+            defaultSize,
+            "Clicking the font size slider track should update its accessible value"
+        )
+
+        app.terminate()
+        launchClean()
+        openSettings()
+
+        let relaunchedTerminalTab = app.buttons["Terminal"].firstMatch
+        XCTAssertTrue(relaunchedTerminalTab.waitForExistence(timeout: 10))
+        relaunchedTerminalTab.click()
+        let relaunchedSlider = app.descendants(matching: .any)[
+            "terminalFontSizeSlider"
+        ].firstMatch
+        XCTAssertTrue(relaunchedSlider.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            String(describing: relaunchedSlider.value),
+            adjustedSize,
+            "The terminal font size should persist across relaunch"
+        )
+        let relaunchedPicker = app.descendants(matching: .any)[
+            "terminalFontFamilyPicker"
+        ].firstMatch
+        XCTAssertTrue(
+            String(describing: relaunchedPicker.value).contains("Automatic"),
+            "The Automatic family choice should persist across relaunch"
+        )
+    }
+
     func testEverySettingsPaneUsesLocalizedLabels() throws {
         launchClean()
         openSettings(
@@ -320,10 +396,16 @@ final class SettingsUITests: PineUITestCase {
                     "Block",
                     "Underline",
                     "Blink cursor",
+                    "Font",
+                    "Font family",
+                    "Automatic",
+                    "Size",
                 ],
                 expectedIdentifiers: [
                     "terminalCursorShapePicker",
                     "terminalCursorBlinkToggle",
+                    "terminalFontFamilyPicker",
+                    "terminalFontSizeSlider",
                 ]
             ),
             (
@@ -383,10 +465,16 @@ final class SettingsUITests: PineUITestCase {
                     "Блок",
                     "Подчёркивание",
                     "Мигание курсора",
+                    "Шрифт",
+                    "Семейство шрифтов",
+                    "Автоматически",
+                    "Размер",
                 ],
                 expectedIdentifiers: [
                     "terminalCursorShapePicker",
                     "terminalCursorBlinkToggle",
+                    "terminalFontFamilyPicker",
+                    "terminalFontSizeSlider",
                 ]
             ),
             (

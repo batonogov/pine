@@ -33,6 +33,12 @@ struct TerminalSettingsViewSnapshotTests {
             shell: shell,
             theme: theme,
             cursor: TerminalCursorSettings(defaults: defaults),
+            // No Nerd Fonts on the injected probe: keeps the detection
+            // caption deterministic regardless of the runner's fonts.
+            font: TerminalFontSettings(
+                defaults: defaults,
+                availableFontFamilies: { [] }
+            ),
             quickTerminal: QuickTerminalSettings(defaults: defaults),
             viewportHeight: 1_080
         )

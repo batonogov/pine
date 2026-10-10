@@ -80,6 +80,22 @@ enum Strings {
         "settings.terminal.cursor.blink"
     static let terminalCursorHelp: LocalizedStringKey =
         "settings.terminal.cursor.help"
+    static let settingsTerminalFontTitle: LocalizedStringKey =
+        "settings.terminal.font.title"
+    static let settingsTerminalFontFamily: LocalizedStringKey =
+        "settings.terminal.font.family"
+    static let settingsTerminalFontFamilyAutomatic: LocalizedStringKey =
+        "settings.terminal.font.familyAutomatic"
+    static let settingsTerminalFontFamilySystem: LocalizedStringKey =
+        "settings.terminal.font.familySystem"
+    static let settingsTerminalFontSize: LocalizedStringKey =
+        "settings.terminal.font.size"
+    static let settingsTerminalFontHelp: LocalizedStringKey =
+        "settings.terminal.font.help"
+    static let settingsTerminalFontNerdDetected: LocalizedStringKey =
+        "settings.terminal.font.nerdDetected"
+    static let settingsTerminalFontNerdMissing: LocalizedStringKey =
+        "settings.terminal.font.nerdMissing"
 
     static let settingsKeyBindingsTitle: LocalizedStringKey =
         "settings.keyBindings.title"

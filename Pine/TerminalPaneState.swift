@@ -18,6 +18,9 @@ final class TerminalPaneState {
     private let themeSettings: TerminalThemeSettings
     /// Cursor preferences inherited by every tab, including Quick Terminal.
     private let cursorSettings: TerminalCursorSettings
+    /// Font preferences inherited by every tab, including Quick Terminal
+    /// (#1649).
+    private let fontSettings: TerminalFontSettings
     /// The AppKit host currently presenting this pane's active terminal.
     ///
     /// SwiftUI may temporarily keep outgoing and incoming representables
@@ -72,10 +75,12 @@ final class TerminalPaneState {
 
     init(
         themeSettings: TerminalThemeSettings = .shared,
-        cursorSettings: TerminalCursorSettings = .shared
+        cursorSettings: TerminalCursorSettings = .shared,
+        fontSettings: TerminalFontSettings = .shared
     ) {
         self.themeSettings = themeSettings
         self.cursorSettings = cursorSettings
+        self.fontSettings = fontSettings
     }
 
     /// Opens the terminal search bar and directs first responder into its
@@ -150,7 +155,8 @@ final class TerminalPaneState {
         let tab = TerminalTab(
             name: Strings.terminalNumberedName(number),
             themeSettings: themeSettings,
-            cursorSettings: cursorSettings
+            cursorSettings: cursorSettings,
+            fontSettings: fontSettings
         )
         tab.configure(
             workingDirectory: workingDirectory,

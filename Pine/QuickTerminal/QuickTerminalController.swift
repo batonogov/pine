@@ -125,6 +125,7 @@ final class QuickTerminalController {
         settings: QuickTerminalSettings = .shared,
         themeSettings: TerminalThemeSettings = .shared,
         cursorSettings: TerminalCursorSettings = .shared,
+        fontSettings: TerminalFontSettings = .shared,
         agentScopeResolver: @escaping @MainActor (
             ProjectRegistry,
             URL,
@@ -139,7 +140,8 @@ final class QuickTerminalController {
         self.settings = settings
         self.paneState = TerminalPaneState(
             themeSettings: themeSettings,
-            cursorSettings: cursorSettings
+            cursorSettings: cursorSettings,
+            fontSettings: fontSettings
         )
         self.agentDetection = QuickTerminalAgentDetection()
         self.agentScopeResolver = agentScopeResolver
