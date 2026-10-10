@@ -463,8 +463,24 @@ struct AgentInboxView: View {
 
     private func timingDetails(_ row: AgentInboxRow) -> some View {
         VStack(alignment: .trailing, spacing: 3) {
-            Text(row.startedAt, style: .timer)
+            if let durationEnd = row.durationEndedAt {
+                // A settled run must not keep ticking: pin the counter to the
+                // frozen end instead of `style: .timer`, which counts up
+                // forever (#1664). `showsHours: true` is verified on macOS 26+
+                // to render identically to `style: .timer` in both regimes —
+                // "7:32" below one hour, "1:07:32" above — while
+                // `showsHours: false` would fold hours into minutes ("67:32").
+                Text(
+                    timerInterval: row.startedAt...durationEnd,
+                    pauseTime: durationEnd,
+                    countsDown: false,
+                    showsHours: true
+                )
                 .monospacedDigit()
+            } else {
+                Text(row.startedAt, style: .timer)
+                    .monospacedDigit()
+            }
             HStack(spacing: 4) {
                 Text(Strings.agentInboxLastVerified)
                 Text(row.lastVerifiedActivityAt, style: .relative)

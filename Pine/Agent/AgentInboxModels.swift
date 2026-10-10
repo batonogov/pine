@@ -32,6 +32,11 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     let routeAvailability: AgentTaskRouteAvailability
     let startedAt: Date
     let lastVerifiedActivityAt: Date
+    /// Frozen end of the duration counter for a settled run. `nil` means the
+    /// run is still live and the counter keeps ticking; a settled run (ended,
+    /// stale evidence, or never started) pins the counter to its last honest
+    /// timestamp instead of letting it grow forever (#1664).
+    let durationEndedAt: Date?
     let isUnread: Bool
 
     var canNavigateToLiveRun: Bool {
@@ -202,6 +207,10 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
                 startedAt: latestRun?.startedAt ?? task.createdAt,
                 lastVerifiedActivityAt:
                     latestRun?.lastObservedAt ?? task.lastActivityAt,
+                durationEndedAt: Self.durationEnd(
+                    for: task,
+                    latestRun: latestRun
+                ),
                 isUnread: task.isUnread
             ))
         }
@@ -409,6 +418,28 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
             return latestRun.state
         }
         return .idle
+    }
+
+    /// The moment a row's duration counter stops at. Only a live run keeps
+    /// ticking; a terminated run freezes at its recorded end, a stale run at
+    /// the last verified observation, and a task that never produced a run at
+    /// its last recorded activity (#1664). Both branches clamp to the counter
+    /// start so corrupt persistence can never hand `Text(timerInterval:)`
+    /// an inverted range.
+    private static func durationEnd(
+        for task: AgentTask,
+        latestRun: AgentTaskRun?
+    ) -> Date? {
+        guard let latestRun else {
+            // The row's counter starts at `task.createdAt` when no run
+            // exists, so that is the symmetric clamp bound here.
+            return max(task.lastActivityAt, task.createdAt)
+        }
+        guard latestRun.liveness != .live else { return nil }
+        return max(
+            latestRun.endedAt ?? latestRun.lastObservedAt,
+            latestRun.startedAt
+        )
     }
 
     private static func rowPrecedes(

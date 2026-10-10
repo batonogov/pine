@@ -178,7 +178,7 @@ struct AgentTaskRegistryTests {
             routeSeed: 50,
             origin: .pineLaunched
         )
-        let original = makeSession(pid: 601, generation: 1)
+        let original = makeSession(pid: 601, generation: 1, observedAt: Date())
         guard case .reserved(let launch) = registry.preparePineLaunch(
             descriptor: AgentDescriptor(
                 agentType: original.agentType,
@@ -777,6 +777,7 @@ struct AgentTaskRegistryTests {
         let session = makeSession(
             pid: 803,
             generation: 1,
+            observedAt: Date(),
             agentType: .codex,
             state: .waitingInput,
             lifecycleAccuracy: .verifiedLifecycleTransitions
@@ -833,7 +834,7 @@ struct AgentTaskRegistryTests {
         writer.registerProject(identity)
         #expect(await writer.flushPersistence() == .saved)
 
-        let session = makeSession(pid: 805, generation: 1)
+        let session = makeSession(pid: 805, generation: 1, observedAt: Date())
         writer.bridge(
             session,
             replacing: nil,
@@ -2064,11 +2065,11 @@ struct AgentTaskRegistryTests {
             routeSeed: 110,
             origin: .pineLaunched
         )
-        let initialStartedAt = Date(timeIntervalSince1970: 1)
+        let initialStartedAt = Date()
         var previous = makeSession(
             pid: 1_201,
             generation: 1,
-            preciseStartedAt: initialStartedAt
+            observedAt: initialStartedAt
         )
         guard case .reserved(let initial) = registry.preparePineLaunch(
             descriptor: AgentDescriptor(
@@ -2099,13 +2100,14 @@ struct AgentTaskRegistryTests {
                 accuracy: .processTerminationOnly
             )
             registry.refresh(sessions: [previous])
-            let nextStartedAt = Date(
-                timeIntervalSince1970: TimeInterval(sequence)
-            )
+            // Recent, strictly increasing dates: the runs chain through
+            // resume, and the retention sweep (#1664) must not treat this
+            // fixture's settled runs as weeks old.
+            let nextStartedAt = Date()
             let next = makeSession(
                 pid: 1_200 + Int32(sequence),
                 generation: UInt64(sequence),
-                preciseStartedAt: nextStartedAt
+                observedAt: nextStartedAt
             )
             let resumeContext = AgentTaskBridgeContext(
                 project: identity,
@@ -3618,7 +3620,7 @@ struct AgentTaskRegistryTests {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
         let identity = project(fixture.project.path)
-        let session = makeSession(pid: 1_650, generation: 1)
+        let session = makeSession(pid: 1_650, generation: 1, observedAt: Date())
         let writer = AgentTaskRegistry()
         writer.bridge(
             session,
@@ -3668,7 +3670,7 @@ struct AgentTaskRegistryTests {
             return
         }
         #expect(writer.armLaunch(launch))
-        let original = makeSession(pid: 1_651, generation: 1)
+        let original = makeSession(pid: 1_651, generation: 1, observedAt: Date())
         writer.bridge(
             original,
             replacing: nil,
@@ -3703,7 +3705,7 @@ struct AgentTaskRegistryTests {
         let resumed = makeSession(
             pid: 1_652,
             generation: 2,
-            preciseStartedAt: Date(timeIntervalSince1970: 2)
+            observedAt: Date()
         )
         reader.bridge(
             resumed,
@@ -3889,6 +3891,277 @@ struct AgentTaskRegistryTests {
         #expect(await store.saveCallCount() == 3)
     }
 
+    @Test("retention sweep dismisses settled tasks older than the horizon")
+    func retentionSweepDismissesOldSettledTasks() throws {
+        let registry = AgentTaskRegistry()
+        let now = Date()
+        let settled = makeSettledTask(
+            seed: 201,
+            project: "/tmp/pine-agent-retention-old",
+            settledAt: now.addingTimeInterval(
+                -AgentTaskRegistry.terminalRetentionInterval - 60
+            ),
+            unread: true
+        )
+        registry.setTasksForTesting([settled])
+
+        #expect(registry.reconcileTerminalRetention(at: now) == 1)
+        let task = try #require(registry.task(for: settled.id))
+        #expect(task.lifecycle == .dismissed)
+        #expect(task.attention == .none)
+        #expect(!task.isUnread)
+        // Dismissed rows leave the user-facing Inbox entirely (#1664).
+        #expect(AgentInboxSnapshot(tasks: registry.tasks).isEmpty)
+    }
+
+    @Test("retention sweep keeps settled tasks below the horizon")
+    func retentionSweepKeepsRecentSettledTasks() throws {
+        let registry = AgentTaskRegistry()
+        let now = Date()
+        let recent = makeSettledTask(
+            seed: 202,
+            project: "/tmp/pine-agent-retention-recent",
+            settledAt: now.addingTimeInterval(
+                -AgentTaskRegistry.terminalRetentionInterval + 60
+            ),
+            unread: true
+        )
+        registry.setTasksForTesting([recent])
+
+        #expect(registry.reconcileTerminalRetention(at: now) == 0)
+        let task = try #require(registry.task(for: recent.id))
+        #expect(task.lifecycle == .paused)
+        #expect(task.isUnread)
+        #expect(!AgentInboxSnapshot(tasks: registry.tasks).isEmpty)
+    }
+
+    @Test("retention sweep never touches live or routed tasks")
+    func retentionSweepKeepsLiveTasks() throws {
+        let registry = AgentTaskRegistry()
+        let identity = project("/tmp/pine-agent-retention-live")
+        let liveContext = context(project: identity, routeSeed: 203)
+        registry.bridge(
+            makeSession(pid: 2_003, generation: 1),
+            replacing: nil,
+            context: liveContext
+        )
+        let liveTask = try #require(registry.tasks.first)
+        // A stale run whose route is still reachable may come back live once
+        // the detector recovers, so it must survive the sweep as well.
+        var staleButRouted = makeSettledTask(
+            seed: 204,
+            project: "/tmp/pine-agent-retention-routed",
+            settledAt: Date().addingTimeInterval(
+                -AgentTaskRegistry.terminalRetentionInterval - 3_600
+            ),
+            unread: false
+        )
+        staleButRouted.route.availability = .available
+        registry.setTasksForTesting([liveTask, staleButRouted])
+
+        #expect(registry.reconcileTerminalRetention() == 0)
+        #expect(registry.task(for: liveTask.id)?.lifecycle == .active)
+        #expect(
+            registry.task(for: staleButRouted.id)?.lifecycle == .paused
+        )
+    }
+
+    @Test("pending launch claim protects its task from retention")
+    func pendingClaimBlocksRetention() throws {
+        let registry = AgentTaskRegistry()
+        let identity = project("/tmp/pine-agent-retention-claim")
+        let old = Date().addingTimeInterval(
+            -AgentTaskRegistry.terminalRetentionInterval - 3_600
+        )
+        let launchContext = AgentTaskBridgeContext(
+            project: identity,
+            route: AgentTaskRoute(
+                paneID: uuid(205),
+                tabID: uuid(2_205),
+                terminalID: uuid(2_205)
+            ),
+            origin: .pineLaunched,
+            observedAt: old
+        )
+        guard case .reserved = registry.preparePineLaunch(
+            descriptor: AgentDescriptor(agentType: .claudeCode),
+            context: launchContext,
+            title: nil,
+            objective: nil
+        ) else {
+            Issue.record("launch reservation was rejected")
+            return
+        }
+
+        // The task is old enough for the horizon, but an in-flight launch
+        // claim still references it, so the sweep must leave it alone.
+        #expect(registry.reconcileTerminalRetention() == 0)
+        #expect(registry.tasks.first?.lifecycle == .paused)
+    }
+
+    @Test("load reconciles orphaned terminal tasks past the horizon")
+    func loadReconcilesOrphanedTerminalTasks() async throws {
+        let identity = project("/tmp/pine-agent-retention-load")
+        let now = Date()
+        let orphaned = makeSettledTask(
+            seed: 206,
+            project: identity.canonicalProjectPath,
+            settledAt: now.addingTimeInterval(
+                -AgentTaskRegistry.terminalRetentionInterval - 3_600
+            ),
+            unread: true
+        )
+        let recent = makeSettledTask(
+            seed: 207,
+            project: identity.canonicalProjectPath,
+            settledAt: now.addingTimeInterval(-3_600),
+            unread: false
+        )
+        let store = LoadedAgentTaskStore(tasks: [orphaned, recent])
+        let registry = AgentTaskRegistry(persistence: store)
+
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+
+        // A session orphaned by a previous launch is dismissed at load once
+        // it is past the horizon, while a recently settled one is kept.
+        #expect(registry.task(for: orphaned.id)?.lifecycle == .dismissed)
+        #expect(registry.task(for: recent.id)?.lifecycle == .paused)
+    }
+
+    @Test("retention sweep is throttled between detector refreshes")
+    func retentionSweepThrottledAcrossRefreshes() throws {
+        let clock = ControllableMonotonicClock()
+        let registry = AgentTaskRegistry(
+            monotonicNow: { clock.now },
+            retentionSweepInterval: .seconds(600)
+        )
+        let identity = project("/tmp/pine-agent-retention-throttle")
+        let old = Date().addingTimeInterval(
+            -AgentTaskRegistry.terminalRetentionInterval - 3_600
+        )
+
+        // A live session keeps refreshes meaningful while the throttle is
+        // probed; it is never sweep-eligible itself.
+        let live = makeSession(pid: 2_201, generation: 1, observedAt: Date())
+        registry.bridge(
+            live,
+            replacing: nil,
+            context: context(project: identity, routeSeed: 220)
+        )
+
+        // The first refresh settles the old session and runs the first
+        // sweep: the task is past the horizon and leaves the Inbox at once.
+        let first = makeSession(pid: 2_202, generation: 2, observedAt: old)
+        registry.bridge(
+            first,
+            replacing: nil,
+            context: context(project: identity, routeSeed: 221)
+        )
+        let firstTaskID = try #require(registry.taskID(forSessionID: first.id))
+        first.applyLiveness(.terminated)
+        registry.refresh(sessions: [first, live])
+        #expect(registry.task(for: firstTaskID)?.lifecycle == .dismissed)
+
+        // A second task settled (via bridge, which never sweeps) after the
+        // first sweep is past the horizon too, but the throttle interval has
+        // not elapsed, so the next refresh leaves it listed.
+        let second = makeSession(pid: 2_203, generation: 3, observedAt: old)
+        let secondContext = context(project: identity, routeSeed: 222)
+        registry.bridge(second, replacing: nil, context: secondContext)
+        second.applyLiveness(.terminated)
+        registry.bridge(second, replacing: second, context: secondContext)
+        let secondTaskID = try #require(
+            registry.historicalTask(forSessionID: second.id)?.id
+        )
+        #expect(registry.task(for: secondTaskID)?.lifecycle == .paused)
+
+        registry.refresh(sessions: [live])
+        #expect(registry.task(for: secondTaskID)?.lifecycle == .paused)
+
+        // Past the interval, the next refresh sweeps again.
+        clock.advance(bySeconds: 601)
+        registry.refresh(sessions: [live])
+        #expect(registry.task(for: secondTaskID)?.lifecycle == .dismissed)
+    }
+
+    @Test("load-time sweep stamps the refresh throttle clock")
+    func loadSweepStampsThrottleClock() async throws {
+        let clock = ControllableMonotonicClock()
+        let identity = project("/tmp/pine-agent-retention-load-stamp")
+        let store = LoadedAgentTaskStore(tasks: [])
+        let registry = AgentTaskRegistry(
+            persistence: store,
+            monotonicNow: { clock.now },
+            retentionSweepInterval: .seconds(600)
+        )
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+
+        // Settled past the horizon right after the load sweep. The stamp
+        // acceptLoad left at load keeps the next refresh from immediately
+        // re-sweeping the same tasks.
+        let old = Date().addingTimeInterval(
+            -AgentTaskRegistry.terminalRetentionInterval - 3_600
+        )
+        let session = makeSession(pid: 2_205, generation: 1, observedAt: old)
+        let routeContext = context(project: identity, routeSeed: 225)
+        registry.bridge(session, replacing: nil, context: routeContext)
+        session.applyLiveness(.terminated)
+        registry.bridge(session, replacing: session, context: routeContext)
+        let taskID = try #require(
+            registry.historicalTask(forSessionID: session.id)?.id
+        )
+
+        registry.refresh(sessions: [])
+        #expect(registry.task(for: taskID)?.lifecycle == .paused)
+
+        clock.advance(bySeconds: 601)
+        registry.refresh(sessions: [])
+        #expect(registry.task(for: taskID)?.lifecycle == .dismissed)
+    }
+
+    /// Builds a paused, unrouted task whose single run settled at a chosen
+    /// moment — the shape the Inbox accumulates for finished or unreachable
+    /// sessions (#1664).
+    private func makeSettledTask(
+        seed: Int,
+        project path: String,
+        settledAt: Date,
+        unread: Bool
+    ) -> AgentTask {
+        let identity = project(path)
+        let bridgeContext = context(project: identity, routeSeed: seed)
+        var task = AgentTask(
+            descriptor: AgentDescriptor(agentType: .claudeCode),
+            context: bridgeContext,
+            title: "Settled task \(seed)",
+            createdAt: settledAt.addingTimeInterval(-300)
+        )
+        task.runs = [AgentTaskRun(AgentTaskRunInput(
+            id: uuid(seed + 5_000),
+            terminalID: bridgeContext.route.terminalID,
+            process: AgentProcessEvidence(
+                processIdentifier: Int32(seed),
+                processGeneration: UInt64(seed),
+                startIdentifier: "settled-\(seed)",
+                observedStartedAt: settledAt.addingTimeInterval(-300),
+                startIsAuthoritative: true
+            ),
+            status: AgentTaskRunStatus(
+                state: .done,
+                liveness: .terminated,
+                observedAt: settledAt
+            )
+        ))]
+        task.lifecycle = .paused
+        task.route.availability = .missing
+        task.isUnread = unread
+        task.lastActivityAt = settledAt
+        task.updatedAt = settledAt
+        return task
+    }
+
     private func metadataWithoutRuns(_ data: Data) throws -> Data {
         guard var root = try JSONSerialization.jsonObject(with: data)
                 as? [String: Any],
@@ -3940,23 +4213,29 @@ struct AgentTaskRegistryTests {
         generation: UInt64,
         start: String = "Mon Aug 3 10:00:00 2026",
         preciseStartedAt: Date = Date(timeIntervalSince1970: 0),
+        observedAt: Date? = nil,
         startIsAuthoritative: Bool = true,
         agentType: AgentType = .claudeCode,
         state: AgentState = .idle,
         lifecycleAccuracy: FirstPartyAgentNotificationAccuracy = .processTerminationOnly
     ) -> AgentSession {
+        // `observedAt` pins every wall-clock timestamp to one recent moment.
+        // Tests that load or refresh settled runs need it so the retention
+        // sweep (#1664) does not treat their fixtures as weeks old.
         let session = AgentSession(
             agentType: agentType,
             state: state,
             lifecycleAccuracy: lifecycleAccuracy,
-            startedAt: Date(timeIntervalSince1970: TimeInterval(generation))
+            startedAt: observedAt
+                ?? Date(timeIntervalSince1970: TimeInterval(generation)),
+            lastObservedAt: observedAt
         )
         _ = session.bindProcessEvidence(
             AgentProcessEvidence(
                 processIdentifier: pid,
                 processGeneration: generation,
                 startIdentifier: start,
-                observedStartedAt: preciseStartedAt,
+                observedStartedAt: observedAt ?? preciseStartedAt,
                 startIsAuthoritative: startIsAuthoritative
             )
         )
@@ -4121,6 +4400,27 @@ private actor PostPublicationBlockingStore: AgentTaskPersisting {
     }
 
     func retryUsedPublishedRevision() -> Bool { retryMatchedRevision }
+}
+
+/// Test-controlled monotonic clock for the retention sweep throttle (#1664).
+/// Each read advances one millisecond so deadline-driven registry loops stay
+/// convergent even when a test never advances the clock explicitly, while
+/// explicit jumps dominate the throttled intervals under test.
+nonisolated private final class ControllableMonotonicClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private let base = ContinuousClock().now
+    private var offsetMilliseconds: Int64 = 0
+
+    var now: ContinuousClock.Instant {
+        lock.withLock {
+            offsetMilliseconds += 1
+            return base.advanced(by: .milliseconds(offsetMilliseconds))
+        }
+    }
+
+    func advance(bySeconds seconds: Int64) {
+        lock.withLock { offsetMilliseconds += seconds * 1_000 }
+    }
 }
 
 nonisolated private final class OneShotStorageSyncFault: @unchecked Sendable {

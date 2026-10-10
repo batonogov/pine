@@ -397,6 +397,115 @@ struct AgentInboxTests {
         #expect(working.rows.map(\.id) == expected)
     }
 
+    @Test("live row keeps a ticking duration counter")
+    func liveRowKeepsTickingDuration() throws {
+        let task = makeTask(
+            seed: 31,
+            project: "/tmp/inbox-duration-live",
+            state: .executing,
+            liveness: .live,
+            observedAt: Date(timeIntervalSince1970: 20_000)
+        )
+
+        let row = try #require(AgentInboxSnapshot(tasks: [task]).rows.first)
+        #expect(row.durationEndedAt == nil)
+    }
+
+    @Test("terminated row freezes its duration at the recorded end")
+    func terminatedRowFreezesDurationAtEnd() throws {
+        let observedAt = Date(timeIntervalSince1970: 20_000)
+        let task = makeTask(
+            seed: 32,
+            project: "/tmp/inbox-duration-terminated",
+            state: .done,
+            liveness: .terminated,
+            observedAt: observedAt
+        )
+
+        let row = try #require(AgentInboxSnapshot(tasks: [task]).rows.first)
+        // The run's `endedAt` equals its terminal observation, so the counter
+        // stops there instead of growing for weeks (#1664).
+        #expect(row.durationEndedAt == observedAt)
+    }
+
+    @Test("stale row freezes its duration at the last verified observation")
+    func staleRowFreezesDurationAtLastObservation() throws {
+        let observedAt = Date(timeIntervalSince1970: 20_000)
+        let task = makeTask(
+            seed: 33,
+            project: "/tmp/inbox-duration-stale",
+            state: .idle,
+            liveness: .stale,
+            observedAt: observedAt
+        )
+
+        let row = try #require(AgentInboxSnapshot(tasks: [task]).rows.first)
+        #expect(row.durationEndedAt == observedAt)
+    }
+
+    @Test("task without runs freezes its duration at last activity")
+    func runlessTaskFreezesDurationAtLastActivity() throws {
+        let observedAt = Date(timeIntervalSince1970: 20_000)
+        let identity = project("/tmp/inbox-duration-runless")
+        let routeContext = context(identity: identity, seed: 34)
+        var task = AgentTask(
+            descriptor: AgentDescriptor(agentType: .codex),
+            context: routeContext,
+            title: "Interrupted launch",
+            createdAt: observedAt.addingTimeInterval(-5)
+        )
+        task.lifecycle = .paused
+        task.route.availability = .missing
+        task.lastActivityAt = observedAt
+        task.updatedAt = observedAt
+
+        let row = try #require(AgentInboxSnapshot(tasks: [task]).rows.first)
+        #expect(row.startedAt == observedAt.addingTimeInterval(-5))
+        #expect(row.durationEndedAt == observedAt)
+    }
+
+    @Test("duration freeze never precedes the run start")
+    func durationFreezeNeverPrecedesRunStart() throws {
+        let observedAt = Date(timeIntervalSince1970: 20_000)
+        var task = makeTask(
+            seed: 35,
+            project: "/tmp/inbox-duration-clamped",
+            state: .done,
+            liveness: .terminated,
+            observedAt: observedAt
+        )
+        // Clock skew recorded an end before the start; the frozen counter
+        // clamps to the start so the row never renders a negative duration.
+        task.runs[0].endedAt = task.runs[0].startedAt
+            .addingTimeInterval(-1)
+
+        let row = try #require(AgentInboxSnapshot(tasks: [task]).rows.first)
+        #expect(row.durationEndedAt == row.startedAt)
+    }
+
+    @Test("runless duration freeze clamps to the task creation date")
+    func runlessDurationFreezeClampsToCreation() throws {
+        let createdAt = Date(timeIntervalSince1970: 20_000)
+        let identity = project("/tmp/inbox-duration-runless-clamp")
+        let routeContext = context(identity: identity, seed: 36)
+        var task = AgentTask(
+            descriptor: AgentDescriptor(agentType: .codex),
+            context: routeContext,
+            title: "Corrupt timestamps",
+            createdAt: createdAt
+        )
+        task.lifecycle = .paused
+        task.route.availability = .missing
+        // Corrupt persistence: last activity predates creation. The clamp
+        // keeps `Text(timerInterval:)` from receiving an inverted range.
+        task.lastActivityAt = createdAt.addingTimeInterval(-10)
+        task.updatedAt = createdAt
+
+        let row = try #require(AgentInboxSnapshot(tasks: [task]).rows.first)
+        #expect(row.startedAt == createdAt)
+        #expect(row.durationEndedAt == createdAt)
+    }
+
     @Test("render projection never marks unread tasks reviewed")
     func projectionHasNoReviewSideEffect() throws {
         let registry = AgentTaskRegistry(
@@ -667,6 +776,10 @@ struct AgentInboxTests {
         let state = try #require(manager.paneManager.terminalState(for: pane))
         let originalTab = try #require(state.activeTab)
         let projectIdentity = project(fixture.project.standardizedFileURL.path)
+        // Recent dates: registering the project runs the launch-time
+        // retention sweep (#1664), which would auto-dismiss a run that
+        // settled at the epoch fixtures used before.
+        let launchedAt = Date()
         let routeContext = AgentTaskBridgeContext(
             project: projectIdentity,
             route: AgentTaskRoute(
@@ -675,7 +788,7 @@ struct AgentInboxTests {
                 terminalID: originalTab.id
             ),
             origin: .pineLaunched,
-            observedAt: Date(timeIntervalSince1970: 50)
+            observedAt: launchedAt
         )
         let descriptor = AgentDescriptor(
             agentType: .codex,
@@ -698,7 +811,11 @@ struct AgentInboxTests {
         }
         reservation = value
         #expect(taskRegistry.armLaunch(reservation))
-        let session = makeSession(seed: 51, state: .executing)
+        let session = makeSession(
+            seed: 51,
+            state: .executing,
+            observedAt: launchedAt.addingTimeInterval(1)
+        )
         taskRegistry.bridge(
             session,
             replacing: nil,
@@ -1218,8 +1335,11 @@ struct AgentInboxTests {
             terminalID: terminalID,
             availability: .missing
         )
-        let startedAt = Date(timeIntervalSince1970: 100)
-        let endedAt = Date(timeIntervalSince1970: 110)
+        // Recent dates: loading this fixture runs the launch-time retention
+        // sweep (#1664), which would auto-dismiss a task that settled weeks
+        // ago and make the recovery scenarios unrecoverable.
+        let endedAt = Date().addingTimeInterval(-10)
+        let startedAt = endedAt.addingTimeInterval(-10)
         var task = AgentTask(
             descriptor: AgentDescriptor(
                 agentType: .codex,
@@ -1399,6 +1519,7 @@ struct AgentInboxTests {
             routeAvailability: .available,
             startedAt: Date(timeIntervalSince1970: 100),
             lastVerifiedActivityAt: Date(timeIntervalSince1970: 101),
+            durationEndedAt: nil,
             isUnread: unread
         )
     }
@@ -1435,19 +1556,23 @@ struct AgentInboxTests {
     private func makeSession(
         seed: Int,
         state: AgentState,
-        lifecycleAccuracy: FirstPartyAgentNotificationAccuracy = .processTerminationOnly
+        lifecycleAccuracy: FirstPartyAgentNotificationAccuracy = .processTerminationOnly,
+        observedAt: Date? = nil
     ) -> AgentSession {
         let session = AgentSession(
             agentType: .codex,
             state: state,
             lifecycleAccuracy: lifecycleAccuracy,
-            startedAt: Date(timeIntervalSince1970: TimeInterval(seed))
+            startedAt: observedAt
+                ?? Date(timeIntervalSince1970: TimeInterval(seed)),
+            lastObservedAt: observedAt
         )
         _ = session.bindProcessEvidence(AgentProcessEvidence(
             processIdentifier: Int32(1_000 + seed),
             processGeneration: UInt64(seed),
             startIdentifier: "verified-session-\(seed)",
-            observedStartedAt: Date(timeIntervalSince1970: TimeInterval(seed)),
+            observedStartedAt: observedAt
+                ?? Date(timeIntervalSince1970: TimeInterval(seed)),
             startIsAuthoritative: true
         ))
         return session

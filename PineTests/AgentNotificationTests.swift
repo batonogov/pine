@@ -568,6 +568,14 @@ struct AgentNotificationTests {
         )
     }
 
+    /// Recent base for fixture timestamps. The registry's retention sweep
+    /// (#1664) dismisses settled tasks older than seven days, so fixtures
+    /// anchored at the 1970 epoch would be dismissed mid-test by the first
+    /// `refresh`; seed offsets keep intra-test ordering unchanged.
+    private func fixtureDate(seed: Int) -> Date {
+        Date(timeIntervalSinceNow: -20_000 + TimeInterval(seed))
+    }
+
     private func task(
         seed: Int,
         state: AgentRunState,
@@ -575,7 +583,7 @@ struct AgentNotificationTests {
         title: String? = "Review tests"
     ) -> AgentTask {
         let context = context(seed: seed, project: project)
-        let started = Date(timeIntervalSince1970: TimeInterval(1_000 + seed))
+        let started = fixtureDate(seed: 1_000 + seed)
         var task = AgentTask(
             descriptor: AgentDescriptor(agentType: .codex),
             context: context,
@@ -623,7 +631,7 @@ struct AgentNotificationTests {
         let session = AgentSession(
             agentType: .codex,
             state: .executing,
-            startedAt: Date(timeIntervalSince1970: TimeInterval(seed))
+            startedAt: fixtureDate(seed: seed)
         )
         _ = session.bindProcessEvidence(AgentProcessEvidence(
             processIdentifier: Int32(seed),
@@ -647,7 +655,7 @@ struct AgentNotificationTests {
                 terminalID: uuid(seed + 1_000)
             ),
             origin: .discoveredInTerminal,
-            observedAt: Date(timeIntervalSince1970: TimeInterval(seed))
+            observedAt: fixtureDate(seed: seed)
         )
     }
 

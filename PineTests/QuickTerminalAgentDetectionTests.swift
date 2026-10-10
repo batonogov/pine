@@ -2366,7 +2366,10 @@ private func quickProjectRecoveryTask(
     identity: AgentTaskProjectIdentity
 ) -> AgentTask {
     let terminalID = UUID()
-    let timestamp = Date(timeIntervalSince1970: 8_100)
+    // Recent timestamp: project registration runs the launch-time retention
+    // sweep (#1664), which would auto-dismiss a recovery task that settled
+    // weeks ago and make these scenarios unrecoverable.
+    let timestamp = Date()
     let context = AgentTaskBridgeContext(
         project: identity,
         route: AgentTaskRoute(

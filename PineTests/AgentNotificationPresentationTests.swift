@@ -246,10 +246,13 @@ struct AgentNotificationPresentationTests {
     }
 
     private func makeSession(seed: Int) -> AgentSession {
+        // Recent timestamps: `refresh` runs the throttled retention sweep
+        // (#1664), which would auto-dismiss a run terminated at the epoch
+        // fixtures used before.
         let session = AgentSession(
             agentType: .codex,
             state: .executing,
-            startedAt: Date(timeIntervalSince1970: TimeInterval(seed))
+            startedAt: Date()
         )
         _ = session.bindProcessEvidence(AgentProcessEvidence(
             processIdentifier: Int32(seed),
