@@ -288,6 +288,93 @@ final class SettingsUITests: PineUITestCase {
         )
     }
 
+    /// Font settings persistence, driven through a launch-argument seed
+    /// (#1649). XCUITest provably cannot move this SwiftUI slider — four
+    /// drive idioms failed on CI (`adjust(toNormalizedSliderPosition:)`
+    /// misreads the raw point-size AXValue as normalized, synthesized track
+    /// clicks don't move the knob, the min/max label buttons don't step under
+    /// synthesized clicks, and arrow keys after a knob click don't step) — so
+    /// the first launch seeds `terminal.font.size` into the isolated settings
+    /// suite via `-uitestTerminalFontSize` (see
+    /// `PineSettingsDefaults.seedUITestTerminalFontSize`). The test then
+    /// exercises the settings→UI read path and persistence across a relaunch
+    /// without the seed. The slider→settings write path stays covered in the
+    /// unit lane by TerminalFontAccessibilityTests, whose hosted step buttons
+    /// drive the persisted fontSize.
+    func testTerminalFontSettingsPersistAcrossRelaunch() throws {
+        app.launchArguments.append(contentsOf: ["-uitestTerminalFontSize", "16"])
+        launchClean()
+        openSettings()
+
+        let terminalTab = app.buttons["Terminal"].firstMatch
+        XCTAssertTrue(
+            terminalTab.waitForExistence(timeout: 10),
+            "The consolidated Settings scene should expose Terminal"
+        )
+        terminalTab.click()
+
+        let scrollView = app.scrollViews["terminalSettingsScrollView"].firstMatch
+        XCTAssertTrue(scrollView.exists, "Terminal settings should be scrollable")
+        let familyPicker = app.descendants(matching: .any)[
+            "terminalFontFamilyPicker"
+        ].firstMatch
+        let sizeSlider = app.descendants(matching: .any)[
+            "terminalFontSizeSlider"
+        ].firstMatch
+        scrollDownUntilHittable(sizeSlider, in: scrollView)
+        XCTAssertTrue(
+            familyPicker.waitForExistence(timeout: 5),
+            "The font family picker should be reachable"
+        )
+        XCTAssertTrue(
+            String(describing: familyPicker.value).contains("Automatic"),
+            "Fresh settings should default the font family picker to Automatic"
+        )
+        XCTAssertTrue(
+            sizeSlider.waitForExistence(timeout: 5),
+            "The font size slider should be reachable"
+        )
+        XCTAssertEqual(
+            fontSizeSliderValue(sizeSlider),
+            16,
+            "The seeded font size should be reflected in the slider"
+        )
+
+        // Relaunch WITHOUT the seed argument; the isolated suite persists on
+        // disk across the terminate.
+        app.terminate()
+        if let index = app.launchArguments.firstIndex(
+            of: "-uitestTerminalFontSize"
+        ) {
+            app.launchArguments.remove(at: index)
+            if app.launchArguments.indices.contains(index) {
+                app.launchArguments.remove(at: index)
+            }
+        }
+        launchClean()
+        openSettings()
+
+        let relaunchedTerminalTab = app.buttons["Terminal"].firstMatch
+        XCTAssertTrue(relaunchedTerminalTab.waitForExistence(timeout: 10))
+        relaunchedTerminalTab.click()
+        let relaunchedSlider = app.descendants(matching: .any)[
+            "terminalFontSizeSlider"
+        ].firstMatch
+        XCTAssertTrue(relaunchedSlider.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            fontSizeSliderValue(relaunchedSlider),
+            16,
+            "The terminal font size should persist across relaunch"
+        )
+        let relaunchedPicker = app.descendants(matching: .any)[
+            "terminalFontFamilyPicker"
+        ].firstMatch
+        XCTAssertTrue(
+            String(describing: relaunchedPicker.value).contains("Automatic"),
+            "The Automatic family choice should persist across relaunch"
+        )
+    }
+
     func testEverySettingsPaneUsesLocalizedLabels() throws {
         launchClean()
         openSettings(
@@ -320,10 +407,15 @@ final class SettingsUITests: PineUITestCase {
                     "Block",
                     "Underline",
                     "Blink cursor",
+                    "Font",
+                    "Font family",
+                    "Size",
                 ],
                 expectedIdentifiers: [
                     "terminalCursorShapePicker",
                     "terminalCursorBlinkToggle",
+                    "terminalFontFamilyPicker",
+                    "terminalFontSizeSlider",
                 ]
             ),
             (
@@ -383,10 +475,15 @@ final class SettingsUITests: PineUITestCase {
                     "Блок",
                     "Подчёркивание",
                     "Мигание курсора",
+                    "Шрифт",
+                    "Семейство шрифтов",
+                    "Размер",
                 ],
                 expectedIdentifiers: [
                     "terminalCursorShapePicker",
                     "terminalCursorBlinkToggle",
+                    "terminalFontFamilyPicker",
+                    "terminalFontSizeSlider",
                 ]
             ),
             (
@@ -515,6 +612,19 @@ final class SettingsUITests: PineUITestCase {
             return true
         case "0", "false", "off":
             return false
+        default:
+            return nil
+        }
+    }
+
+    /// The font size slider publishes its raw point size; XCTest bridges it
+    /// as NSNumber or String depending on the runner/runtime combination.
+    private func fontSizeSliderValue(_ slider: XCUIElement) -> Double? {
+        switch slider.value {
+        case let number as NSNumber:
+            return number.doubleValue
+        case let string as String:
+            return Double(string)
         default:
             return nil
         }

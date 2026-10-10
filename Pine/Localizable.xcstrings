@@ -37785,6 +37785,486 @@
         }
       }
     },
+    "settings.terminal.font.family" : {
+      "comment" : "Label for the terminal font family picker.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schriftfamilie"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Font family"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Familia de fuentes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Famille de police"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォントファミリー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "서체 패밀리"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Família da fonte"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Семейство шрифтов"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字体系列"
+          }
+        }
+      }
+    },
+    "settings.terminal.font.familyAutomatic" : {
+      "comment" : "Terminal font picker item enabling Nerd Font auto-detection.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatisch"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automático"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatique"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automático"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автоматически"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动"
+          }
+        }
+      }
+    },
+    "settings.terminal.font.familySystem" : {
+      "comment" : "Terminal font picker item for the explicit SF Mono system font choice.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System (SF Mono)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System (SF Mono)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sistema (SF Mono)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Système (SF Mono)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム (SF Mono)"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시스템 (SF Mono)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sistema (SF Mono)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Системный (SF Mono)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统 (SF Mono)"
+          }
+        }
+      }
+    },
+    "settings.terminal.font.help" : {
+      "comment" : "Explains terminal font scope and recommends Mono Nerd Font variants.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gilt sofort für geöffnete Terminal- und Quick-Terminal-Sitzungen. Bevorzuge „Mono“-Nerd-Font-Varianten — andere Nerd Fonts können einzellige Symbole über die Zelle hinausragen lassen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies immediately to open terminal and Quick Terminal sessions. Prefer “Mono” Nerd Font variants — other Nerd Fonts can let single-cell icons overflow."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica de inmediato a las sesiones abiertas del terminal y de Quick Terminal. Prefiere las variantes «Mono» de Nerd Font: otras Nerd Fonts pueden hacer que los iconos de una celda se desborden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S’applique immédiatement aux sessions de terminal et de Quick Terminal ouvertes. Préférez les variantes « Mono » de Nerd Font — les autres polices Nerd Font peuvent laisser les icônes d’une cellule déborder."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開いているターミナルとクイックターミナルのセッションにすぐ反映されます。Nerd Font は「Mono」バリアントを推奨します。それ以外の Nerd Font では 1 セルのアイコンがはみ出すことがあります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "열린 터미널 및 빠른 터미널 세션에 즉시 적용됩니다. Nerd Font는 “Mono” 변형을 권장합니다. 그 외의 Nerd Font에서는 한 셀 아이콘이 넘칠 수 있습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aplica-se imediatamente às sessões abertas do terminal e do Quick Terminal. Prefira as variantes “Mono” das Nerd Fonts — outras Nerd Fonts podem fazer com que ícones de uma célula transbordem."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Применяется сразу к открытым сессиям терминала и Quick Terminal. Предпочитайте «Mono»-варианты Nerd Font — в других Nerd Font односимвольные значки могут выходить за границы ячейки."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即应用于已打开的终端和 Quick Terminal 会话。建议使用 “Mono” 版 Nerd Font——其他 Nerd Font 可能导致单格图标溢出。"
+          }
+        }
+      }
+    },
+    "settings.terminal.font.nerdDetected" : {
+      "comment" : "Caption shown when a Nerd Font is installed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font gefunden — Prompt-Symbole (Powerlevel10k, Starship) werden dargestellt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font detected — prompt icons (Powerlevel10k, Starship) will render."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font detectada — los iconos del prompt (Powerlevel10k, Starship) se mostrarán."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font détectée — les icônes de prompt (Powerlevel10k, Starship) s’afficheront."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font を検出しました — プロンプトアイコン (Powerlevel10k、Starship) が表示されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font를 감지했습니다 — 프롬프트 아이콘(Powerlevel10k, Starship)이 표시됩니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font detectada — os ícones do prompt (Powerlevel10k, Starship) serão exibidos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font обнаружен — значки в командной строке (Powerlevel10k, Starship) будут отображаться."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已检测到 Nerd Font——提示符图标 (Powerlevel10k、Starship) 将正常显示。"
+          }
+        }
+      }
+    },
+    "settings.terminal.font.nerdMissing" : {
+      "comment" : "Caption shown when no Nerd Font is installed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Nerd Font gefunden — Symbole in Powerlevel10k/Starship werden möglicherweise als leere Kästchen angezeigt. Installiere eine „Mono“-Nerd-Font-Variante für beste Ergebnisse."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Nerd Font found — Powerlevel10k/Starship icons may show as empty boxes. Install a “Mono” Nerd Font variant for best results."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encontró ninguna Nerd Font — los iconos de Powerlevel10k/Starship pueden aparecer como cuadros vacíos. Instala una variante «Mono» de Nerd Font para obtener mejores resultados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune Nerd Font trouvée — les icônes de Powerlevel10k/Starship peuvent s’afficher sous forme de cases vides. Installez une variante « Mono » de Nerd Font pour de meilleurs résultats."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font が見つかりません — Powerlevel10k/Starship のアイコンが空の四角として表示される場合があります。最良の結果を得るには「Mono」バリアントの Nerd Font をインストールしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font를 찾을 수 없습니다 — Powerlevel10k/Starship 아이콘이 빈 상자로 표시될 수 있습니다. 최상의 결과를 위해 “Mono” Nerd Font 변형을 설치하세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhuma Nerd Font encontrada — os ícones do Powerlevel10k/Starship podem aparecer como caixas vazias. Instale uma variante “Mono” da Nerd Font para obter melhores resultados."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nerd Font не найден — значки Powerlevel10k/Starship могут отображаться пустыми квадратами. Для лучшего результата установите «Mono»-вариант Nerd Font."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未检测到 Nerd Font——Powerlevel10k/Starship 图标可能显示为方框。建议安装 “Mono” 版 Nerd Font 以获得最佳效果。"
+          }
+        }
+      }
+    },
+    "settings.terminal.font.size" : {
+      "comment" : "Label for the terminal font size slider.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Größe"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Size"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamaño"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taille"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サイズ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "크기"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamanho"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Размер"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大小"
+          }
+        }
+      }
+    },
+    "settings.terminal.font.title" : {
+      "comment" : "Heading for terminal font settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schrift"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Font"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fuente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Police"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォント"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "서체"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fonte"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Шрифт"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字体"
+          }
+        }
+      }
+    },
     "settings.terminal.quickTerminal" : {
       "comment" : "Heading for Quick Terminal controls embedded in Terminal Settings.",
       "extractionState" : "manual",

@@ -250,6 +250,10 @@ struct SettingsWindowMetricsTests {
                     ),
                     theme: TerminalThemeSettings(defaults: defaults),
                     cursor: TerminalCursorSettings(defaults: defaults),
+                    font: TerminalFontSettings(
+                        defaults: defaults,
+                        availableFontFamilies: { [] }
+                    ),
                     quickTerminal: QuickTerminalSettings(defaults: defaults)
                 )
             ),
@@ -301,6 +305,10 @@ struct SettingsWindowMetricsTests {
             editorSettings: EditorSettings(defaults: defaults),
             terminalThemeSettings: TerminalThemeSettings(defaults: defaults),
             terminalCursorSettings: TerminalCursorSettings(defaults: defaults),
+            terminalFontSettings: TerminalFontSettings(
+                defaults: defaults,
+                availableFontFamilies: { [] }
+            ),
             quickTerminalSettings: QuickTerminalSettings(defaults: defaults)
         )
         .environment(\.locale, Locale(identifier: identifier))

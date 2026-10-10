@@ -25,6 +25,8 @@ nonisolated enum AccessibilityID {
     static let terminalAppearancePicker = "terminalAppearancePicker"
     static let terminalCursorShapePicker = "terminalCursorShapePicker"
     static let terminalCursorBlinkToggle = "terminalCursorBlinkToggle"
+    static let terminalFontFamilyPicker = "terminalFontFamilyPicker"
+    static let terminalFontSizeSlider = "terminalFontSizeSlider"
     static let terminalThemeGrid = "terminalThemeGrid"
     static func terminalThemeRow(_ id: String) -> String {
         "terminalThemeRow_\(id)"

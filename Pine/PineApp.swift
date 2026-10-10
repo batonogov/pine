@@ -18,6 +18,18 @@ import os
 struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    init() {
+        // UI testing support: seed the terminal font size for the settings
+        // persistence UI test (#1649). This must run in `init` — the earliest
+        // app-code point — because the delegate adaptor creates `AppDelegate`
+        // (whose `quickTerminalCoordinator` property initializes
+        // `TerminalFontSettings.shared`) before `applicationWillFinishLaunching`.
+        PineSettingsDefaults.seedUITestTerminalFontSize(
+            arguments: CommandLine.arguments,
+            environment: ProcessInfo.processInfo.environment
+        )
+    }
+
     private var registry: ProjectRegistry { appDelegate.registry }
 
     var body: some Scene {

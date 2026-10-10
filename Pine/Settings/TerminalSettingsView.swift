@@ -18,20 +18,28 @@ struct TerminalSettingsView: View {
     @Bindable var shell: ShellSettings
     @Bindable var theme: TerminalThemeSettings
     @Bindable var cursor: TerminalCursorSettings
+    @Bindable var font: TerminalFontSettings
     @Bindable var quickTerminal: QuickTerminalSettings
     @State private var customArgsText: String
+    /// Fixed-pitch family list and Nerd Font detection status, computed once
+    /// per pane lifetime: enumerating every installed family costs ~65 ms,
+    /// and the size slider would otherwise drive it on every tick.
+    @State private var fontFamilies: [String] = []
+    @State private var nerdFontDetected = false
     private let viewportHeight: CGFloat
 
     init(
         shell: ShellSettings,
         theme: TerminalThemeSettings = .shared,
         cursor: TerminalCursorSettings = .shared,
+        font: TerminalFontSettings = .shared,
         quickTerminal: QuickTerminalSettings = .shared,
         viewportHeight: CGFloat = SettingsWindowMetrics.paneHeight
     ) {
         self.shell = shell
         self.theme = theme
         self.cursor = cursor
+        self.font = font
         self.quickTerminal = quickTerminal
         self.viewportHeight = viewportHeight
         _customArgsText = State(
@@ -50,6 +58,8 @@ struct TerminalSettingsView: View {
                 argumentSettings
 
                 appearanceSettings
+
+                fontSettings
 
                 cursorSettings
 
@@ -161,6 +171,90 @@ struct TerminalSettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
+        }
+    }
+
+    private var fontSettings: some View {
+        GroupBox(Strings.settingsTerminalFontTitle) {
+            VStack(alignment: .leading, spacing: 10) {
+                Picker(
+                    Strings.settingsTerminalFontFamily,
+                    selection: $font.fontFamilySelection
+                ) {
+                    Text(Strings.settingsTerminalFontFamilyAutomatic)
+                        .tag(String?.none)
+                    Text(Strings.settingsTerminalFontFamilySystem)
+                        .tag(String?.some(TerminalFontSettings.systemFamilyMarker))
+                    Divider()
+                    ForEach(fontFamilies, id: \.self) { family in
+                        Text(family)
+                            .tag(String?.some(family))
+                    }
+                    // A previously chosen family that was uninstalled stays
+                    // selectable so the picker never silently drops it.
+                    if let selection = font.fontFamilySelection,
+                       selection != TerminalFontSettings.systemFamilyMarker,
+                       !fontFamilies.contains(selection) {
+                        Text(selection)
+                            .tag(String?.some(selection))
+                    }
+                }
+                // SwiftUI's menu-style Picker drops its label from the
+                // accessibility tree (the popup publishes AXLabel "" and
+                // the label text is not published as a static text on every
+                // OS), so set it explicitly — the same pattern the cursor
+                // shape picker uses.
+                .accessibilityLabel(Strings.settingsTerminalFontFamily)
+                .accessibilityIdentifier(
+                    AccessibilityID.terminalFontFamilyPicker
+                )
+
+                HStack(alignment: .center, spacing: 12) {
+                    Slider(
+                        value: $font.fontSize,
+                        in: TerminalFontSettings.minimumSize
+                            ... TerminalFontSettings.maximumSize,
+                        step: 1
+                    ) {
+                        Text(Strings.settingsTerminalFontSize)
+                    } minimumValueLabel: {
+                        Text("\(Int(TerminalFontSettings.minimumSize))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } maximumValueLabel: {
+                        Text("\(Int(TerminalFontSettings.maximumSize))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel(Strings.settingsTerminalFontSize)
+                    .accessibilityIdentifier(
+                        AccessibilityID.terminalFontSizeSlider
+                    )
+                    Text(verbatim: "\(Int(font.fontSize)) pt")
+                        .monospacedDigit()
+                        .frame(minWidth: 48, alignment: .trailing)
+                }
+
+                Text(Strings.settingsTerminalFontHelp)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text(
+                    nerdFontDetected
+                        ? Strings.settingsTerminalFontNerdDetected
+                        : Strings.settingsTerminalFontNerdMissing
+                )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+        }
+        .task {
+            // The snapshot fixture injects an empty family probe, so this
+            // stays deterministic no matter when the task lands.
+            fontFamilies = TerminalFontSettings.fixedPitchFontFamilies()
+            nerdFontDetected = font.detectedNerdFontFamily != nil
         }
     }
 
