@@ -21,6 +21,17 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         app.descendants(matching: .any)["agentInbox"].firstMatch
     }
 
+    /// The project search field — the `NSSearchToolbarItem` that `.searchable`
+    /// installs in the project window's toolbar. Matched by placeholder, not
+    /// `firstMatch`: the sidebar can surface a search field of its own, and
+    /// the two must not be confused. The placeholder string is stable in UI
+    /// tests because the launch arguments force the English locale.
+    private var projectSearchField: XCUIElement {
+        app.searchFields.matching(
+            NSPredicate(format: "placeholderValue == %@", "Search in Project")
+        ).firstMatch
+    }
+
     /// Binds the project window by its title.
     ///
     /// `app.windows.firstMatch` must never be used here: AX window lists run
@@ -85,6 +96,98 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         )
     }
 
+    /// #1665: the button belongs on the trailing edge of the toolbar, next to
+    /// the search field. When #1643 hid the window title for good, the
+    /// `.primaryAction` item collapsed into the leading cluster beside the
+    /// project-switcher pill — only a live window shows it, because the
+    /// misplacement is the toolbar's layout, not the item's existence.
+    ///
+    /// The assertions are geometric rather than tied to an absolute offset:
+    /// the button must sit in the window's trailing half, right of the pill,
+    /// and immediately left of the project search field — the neighbours it
+    /// had in every release before 2.10.0. They run twice: once at rest, and
+    /// again after opening a file, because the retitling that follows churns
+    /// `.navigationTitle` and re-applies the toolbar configuration on
+    /// macOS 27 — the moment a placement that only holds at rest would slip.
+    func testToolbarButtonSitsAtTrailingEdgeNextToSearch() throws {
+        // A short project name on purpose: the default UUID fixture makes the
+        // pill ~380pt wide, and on a narrow CI window the toolbar then has no
+        // slack — the flexible space collapses and the button packs against
+        // the pill even with the correct pin, failing the geometry for
+        // reasons unrelated to the regression (#1665).
+        let url = try createTempProject(
+            files: ["hello.swift": "// hi\n"],
+            projectName: "InboxPosition"
+        )
+        projectURLs.append(url)
+        launchWithProject(url)
+
+        // Bound by content, not by title: opening a file retitles the window
+        // to the file name (#1643's title chain), so a title-bound query dies
+        // mid-test. Only a project window ever contains the inbox button —
+        // Welcome does not, and no popover is opened in this test.
+        let window = app.windows.containing(
+            .button, identifier: "agentInboxToolbarButton"
+        ).firstMatch
+        XCTAssertTrue(waitForExistence(window, timeout: 10))
+        XCTAssertTrue(
+            waitForExistence(toolbarButton, timeout: 10),
+            "The Agent Inbox toolbar button should be present"
+        )
+
+        let pill = app.descendants(matching: .any)["projectSwitcher"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(pill, timeout: 10),
+            "The project switcher pill should be visible in the toolbar"
+        )
+        XCTAssertTrue(
+            waitForExistence(projectSearchField, timeout: 10),
+            "The project search field should be visible in the toolbar"
+        )
+
+        assertTrailingPlacement(window: window, pill: pill)
+
+        openFile("hello.swift")
+        assertTrailingPlacement(window: window, pill: pill)
+    }
+
+    /// Asserts the inbox button sits in the window's trailing half, right of
+    /// the switcher pill, and left of the project search field.
+    private func assertTrailingPlacement(
+        window: XCUIElement,
+        pill: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let buttonFrame = toolbarButton.frame
+        XCTAssertGreaterThan(
+            buttonFrame.minX,
+            window.frame.midX,
+            "The Agent Inbox button belongs to the toolbar's trailing half, "
+                + "not the leading cluster (button at \(buttonFrame), window "
+                + "at \(window.frame))",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThan(
+            buttonFrame.minX,
+            pill.frame.maxX,
+            "The Agent Inbox button must sit right of the project-switcher "
+                + "pill (button at \(buttonFrame), pill at \(pill.frame))",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            buttonFrame.maxX,
+            projectSearchField.frame.minX,
+            "The Agent Inbox button must sit left of the search field — the "
+                + "trailing-edge pair it was part of before 2.10.0 (button "
+                + "at \(buttonFrame), search at \(projectSearchField.frame))",
+            file: file,
+            line: line
+        )
+    }
+
     /// AppKit owns transient dismissal: no unit seam can prove that clicking
     /// outside really closes the popover, that SwiftUI's binding follows it,
     /// or that the window stays usable afterwards.
@@ -112,18 +215,49 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
             "The toolbar button should open the Agent Inbox popover"
         )
 
-        // Bottom-left of the project window: clear of a 520x540 popover
-        // hanging below the trailing-edge toolbar button, and clear of the
-        // single file row at the top of the sidebar, so the window keeps its
-        // title and this element keeps resolving.
-        window.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.1, dy: 0.93)
-        ).click()
+        // Click a window point provably outside the popover, whichever side
+        // of the toolbar the button sits on: candidates along the window's
+        // bottom edge are checked against the popover's live frame (plus
+        // its chrome) instead of assuming an anchor edge. dy 0.9 stays above
+        // the status bar (its trailing edge holds the Terminal toggle), and
+        // the strip is clear of the single file row at the top of the
+        // sidebar, so the window keeps its title and keeps resolving.
+        let windowFrame = window.frame
+        let popoverFrame = inbox.frame.insetBy(dx: -24, dy: -24)
+        var outsideClick: XCUICoordinate?
+        for dx in [0.08, 0.92, 0.5] {
+            // AX frames are screen coordinates, so the candidate's absolute
+            // point comes straight from the window's frame.
+            let point = CGPoint(
+                x: windowFrame.minX + dx * windowFrame.width,
+                y: windowFrame.minY + 0.9 * windowFrame.height
+            )
+            if !popoverFrame.contains(point) {
+                outsideClick = window.coordinate(
+                    withNormalizedOffset: CGVector(dx: dx, dy: 0.9)
+                )
+                break
+            }
+        }
+        let clickPoint = try XCTUnwrap(
+            outsideClick,
+            "A 520-wide popover cannot cover all of the window's bottom edge"
+        )
+        clickPoint.click()
 
         XCTAssertTrue(
             inbox.waitForNonExistence(timeout: 5),
             "Clicking outside should dismiss the Agent Inbox popover"
         )
+
+        // The AX element leaves the tree early in AppKit's close animation,
+        // and the binding is only lowered when `popoverDidClose` lands a
+        // runloop turn after that (#1486's anchor state machine). Let the
+        // dismissal settle before reopening so the click reads as
+        // open-intent; from here on the coordinator resolves it against the
+        // live popover state (#1665), which is deterministic once the close
+        // has settled.
+        Thread.sleep(forTimeInterval: 0.5)
 
         // If the binding had not followed AppKit's dismissal, the anchor would
         // still believe it is presenting and refuse the next request.
@@ -208,8 +342,10 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         let helpButton = app.buttons[
             "agentInboxHelpButton"
         ].firstMatch
+        // 10s, not 5: the popover's first present on a cold launch can wait
+        // out the anchor's mount on a loaded CI shard (#1665).
         XCTAssertTrue(
-            waitForExistence(helpButton, timeout: 5),
+            waitForExistence(helpButton, timeout: 10),
             "Agent Inbox should expose its task-specific Apple Help topic"
         )
     }

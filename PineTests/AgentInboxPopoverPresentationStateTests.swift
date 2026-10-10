@@ -514,6 +514,176 @@ struct AgentInboxPopoverPresentationStateTests {
         #expect(update.effect == .close)
     }
 
+    // MARK: - Toolbar button toggle (#1665)
+
+    @Test("a toggle on a closed Inbox presents and raises the binding")
+    func toggleWhenClosedPresents() {
+        var state = State()
+
+        let resolution = state.toolbarButtonToggled(
+            bindingIsPresented: false,
+            isPopoverShown: false,
+            dismissedBySameGesture: false
+        )
+
+        #expect(resolution.effect == .present)
+        #expect(resolution.bindingIsPresented == true)
+        // The unserved marker is what lets a present that cannot complete
+        // right away be retried by the next update pass.
+        #expect(state.hasUnservedRouterRequest)
+    }
+
+    @Test("a toggle on a closed Inbox does not rewrite a raised binding")
+    func toggleWhenClosedLeavesRaisedBindingAlone() {
+        var state = State()
+
+        let resolution = state.toolbarButtonToggled(
+            bindingIsPresented: true,
+            isPopoverShown: false,
+            dismissedBySameGesture: false
+        )
+
+        #expect(resolution.effect == .present)
+        #expect(resolution.bindingIsPresented == nil)
+    }
+
+    @Test("a toggle on a visible Inbox closes it and lowers the binding")
+    func toggleWhenShownCloses() {
+        var state = State()
+        state.popoverWillShow()
+
+        let resolution = state.toolbarButtonToggled(
+            bindingIsPresented: true,
+            isPopoverShown: true,
+            dismissedBySameGesture: false
+        )
+
+        #expect(resolution.effect == .close)
+        #expect(resolution.bindingIsPresented == false)
+        #expect(!state.hasUnservedRouterRequest)
+    }
+
+    @Test("a toggle while the close animation runs means close, not reopen")
+    func toggleWhileClosingMeansClose() {
+        var state = State()
+        state.popoverWillShow()
+        state.popoverWillClose()
+
+        // The popover is visibly on its way out; the click reads as "close",
+        // never as a queued reopen — otherwise the button could never close
+        // the Inbox at all (AppKit's transient dismissal fires on the same
+        // click before the button's action does).
+        let resolution = state.toolbarButtonToggled(
+            bindingIsPresented: true,
+            isPopoverShown: false,
+            dismissedBySameGesture: false
+        )
+
+        #expect(resolution.effect == .close)
+        #expect(resolution.bindingIsPresented == false)
+        #expect(!state.hasUnservedRouterRequest)
+    }
+
+    @Test("a toggle from the very click that dismissed the Inbox stays closed")
+    func toggleFromDismissingGestureStaysClosed() {
+        var state = State()
+        state.popoverWillShow()
+        // Reduce Motion: AppKit's transient dismissal runs willClose AND
+        // didClose synchronously inside the click's mouseDown, so by action
+        // time the popover reads gone and settled — a plain state read would
+        // reopen what the user has just clicked away (#1665).
+        state.popoverWillClose()
+        state.popoverDidClose()
+
+        let resolution = state.toolbarButtonToggled(
+            bindingIsPresented: false,
+            isPopoverShown: false,
+            dismissedBySameGesture: true
+        )
+
+        #expect(resolution.effect == .close)
+        #expect(!state.hasUnservedRouterRequest)
+    }
+
+    @Test("a fast reopen after an outside-click dismissal still presents")
+    func reopenAfterOutsideClickDismissalPresents() {
+        var state = State()
+        state.popoverWillShow()
+        // The dismissal's mouse event landed outside the button, so the next
+        // click is a new gesture — however fast it follows.
+        state.popoverWillClose()
+        state.popoverDidClose()
+
+        let resolution = state.toolbarButtonToggled(
+            bindingIsPresented: false,
+            isPopoverShown: false,
+            dismissedBySameGesture: false
+        )
+
+        #expect(resolution.effect == .present)
+    }
+
+    @Test("a toggle after a settled dismissal reopens — the #1665 swallow")
+    func toggleAfterSettledDismissalReopens() {
+        var state = State()
+        var binding = false
+
+        // Open from the toolbar, then AppKit dismisses the transient popover
+        // behind SwiftUI's back (outside click) and the close settles.
+        let open = state.toolbarButtonToggled(
+            bindingIsPresented: binding,
+            isPopoverShown: false,
+            dismissedBySameGesture: false
+        )
+        if let value = open.bindingIsPresented { binding = value }
+        state.popoverWillShow()
+        state.popoverWillClose()
+        state.popoverDidClose()
+        let settled = state.settledClose(
+            bindingIsPresented: binding,
+            isPopoverShown: false
+        )
+        if let value = settled.bindingIsPresented { binding = value }
+        #expect(!binding)
+
+        // The reopen click. With the old raw binding toggle this read the
+        // still-true binding mid-close and wrote false — swallowed.
+        let reopen = state.toolbarButtonToggled(
+            bindingIsPresented: binding,
+            isPopoverShown: false,
+            dismissedBySameGesture: false
+        )
+
+        #expect(reopen.effect == .present)
+        #expect(reopen.bindingIsPresented == true)
+    }
+
+    @Test("a toggle whose present cannot complete is retried by the next update")
+    func unservedToggleIsRetriedByNextUpdate() {
+        var state = State()
+        // The click resolves to present, but the anchor cannot complete it
+        // (not mounted yet on a cold launch), so no popoverWillShow follows
+        // and the marker survives.
+        _ = state.toolbarButtonToggled(
+            bindingIsPresented: false,
+            isPopoverShown: false,
+            dismissedBySameGesture: false
+        )
+
+        let retry = state.viewDidUpdate(
+            bindingIsPresented: true,
+            isPopoverShown: false
+        )
+
+        #expect(retry.effect == .present)
+        #expect(retry.bindingIsPresented == nil)
+        #expect(state.hasUnservedRouterRequest)
+
+        // Once the popover does show, the marker is served and cleared.
+        state.popoverWillShow()
+        #expect(!state.hasUnservedRouterRequest)
+    }
+
     // MARK: - Sequences
 
     @Test("a full open, outside-dismiss, reopen cycle converges each time")

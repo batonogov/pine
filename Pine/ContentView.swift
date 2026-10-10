@@ -48,6 +48,10 @@ struct ContentView: View {
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
     @State var isAgentInboxPresented = false
+    /// Conduit from the inbox toolbar button to the popover anchor's
+    /// coordinator, so the click resolves against authoritative popover
+    /// state instead of the possibly-stale binding (#1665).
+    @State var agentInboxToggleRelay = AgentInboxPopoverToggleRelay()
     @State var isAgentWorktreesPresented = false
     #if DEBUG
     @State var didSeedAccessibilityDirtyBuffer = false
@@ -143,15 +147,31 @@ struct ContentView: View {
 
             // Agent Inbox entry point in the project window toolbar (#1337).
             // The popover remains additive to ⌘⇧I and the View menu (#1486).
+            //
+            // Placement is not declarable: with the window title permanently
+            // hidden (#1643), `.primaryAction` packs the button into the
+            // leading cluster beside the pill, and no spacer declaration puts
+            // a flexible space in between (#1665 — `ToolbarSpacer` sorts after
+            // primary-action items on a split-view toolbar; a `Spacer()` in a
+            // `ToolbarItem` additionally emits a trailing flex that floats the
+            // button mid-window). `AgentInboxToolbarLayoutTracker` inserts and
+            // pins the flexible space at the AppKit level instead.
             ToolbarItem(placement: .primaryAction) {
                 AgentInboxToolbarButton(
                     attentionCount: agentInboxAttentionCount
                 ) {
-                    isAgentInboxPresented.toggle()
+                    // The coordinator resolves the click against the live
+                    // popover state; the binding fallback only runs before
+                    // the anchor has mounted, where no popover can be up and
+                    // the raised binding is served when the anchor arrives.
+                    if !agentInboxToggleRelay.toggle() {
+                        isAgentInboxPresented = true
+                    }
                 }
                 .agentInboxPopover(
                     isPresented: $isAgentInboxPresented,
-                    registry: registry
+                    registry: registry,
+                    toggleRelay: agentInboxToggleRelay
                 )
             }
         }
@@ -161,6 +181,10 @@ struct ContentView: View {
                 url: activeTab?.fileURL ?? workspace.rootURL
             )
             WindowTitleVisibilityTracker()
+            // Pins the flexible space that keeps the Agent Inbox button in
+            // the toolbar's trailing cluster (#1665); re-pins after every
+            // SwiftUI toolbar rebuild.
+            AgentInboxToolbarLayoutTracker()
         }
         .task {
             reconcileKeyProjectPresentation()

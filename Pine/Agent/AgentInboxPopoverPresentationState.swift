@@ -78,6 +78,47 @@ struct AgentInboxPopoverPresentationState: Equatable {
         )
     }
 
+    /// The toolbar button was clicked (#1665).
+    ///
+    /// The button must not toggle the binding blindly: while a transient
+    /// dismissal's close animation is still running, the binding still reads
+    /// `true`, so `toggle()` would write `false` and the reopen the user
+    /// asked for is swallowed. Resolving the click against the authoritative
+    /// popover state instead: on screen or on its way out means *close*;
+    /// anything else means *present*.
+    ///
+    /// `dismissedBySameGesture` covers the Reduce Motion case: with the
+    /// close animation off, AppKit's transient dismissal retires the whole
+    /// popover synchronously inside the mouseDown of the very click on the
+    /// button, so by action time the state reads "closed, settled" — and a
+    /// plain state read would reopen the Inbox the user just clicked away.
+    /// The coordinator sets the flag only when the dismissal's own mouse
+    /// event landed on the button, so a fast reopen after an *outside-click*
+    /// dismissal still presents.
+    ///
+    /// The present half is deliberately the router request's: it leaves the
+    /// unserved marker behind, so a present that cannot complete right away —
+    /// the anchor has not mounted yet on a cold launch (#1665's flaky
+    /// help-button probe hit this) — is retried by the next update pass or
+    /// anchor reattachment instead of vanishing.
+    mutating func toolbarButtonToggled(
+        bindingIsPresented: Bool,
+        isPopoverShown: Bool,
+        dismissedBySameGesture: Bool
+    ) -> Resolution {
+        guard !isPopoverShown, !isClosing, !dismissedBySameGesture else {
+            return Resolution(
+                effect: .close,
+                bindingIsPresented: bindingIsPresented ? false : nil
+            )
+        }
+        hasUnservedRouterRequest = true
+        return Resolution(
+            effect: .present,
+            bindingIsPresented: bindingIsPresented ? nil : true
+        )
+    }
+
     /// A SwiftUI update pass. This is the only entry point that may close the
     /// popover on its own, because it is the only one that observes the
     /// binding turning false.
