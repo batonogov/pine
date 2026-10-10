@@ -21,6 +21,17 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         app.descendants(matching: .any)["agentInbox"].firstMatch
     }
 
+    /// The project search field — the `NSSearchToolbarItem` that `.searchable`
+    /// installs in the project window's toolbar. Matched by placeholder, not
+    /// `firstMatch`: the sidebar can surface a search field of its own, and
+    /// the two must not be confused. The placeholder string is stable in UI
+    /// tests because the launch arguments force the English locale.
+    private var projectSearchField: XCUIElement {
+        app.searchFields.matching(
+            NSPredicate(format: "placeholderValue == %@", "Search in Project")
+        ).firstMatch
+    }
+
     /// Binds the project window by its title.
     ///
     /// `app.windows.firstMatch` must never be used here: AX window lists run
@@ -82,6 +93,84 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         XCTAssertTrue(
             waitForExistence(inbox, timeout: 5),
             "The toolbar button should reopen the Inbox after Escape"
+        )
+    }
+
+    /// #1665: the button belongs on the trailing edge of the toolbar, next to
+    /// the search field. When #1643 hid the window title for good, the
+    /// `.primaryAction` item collapsed into the leading cluster beside the
+    /// project-switcher pill — only a live window shows it, because the
+    /// misplacement is the toolbar's layout, not the item's existence.
+    ///
+    /// The assertions are geometric rather than tied to an absolute offset:
+    /// the button must sit in the window's trailing half, right of the pill,
+    /// and immediately left of the project search field — the neighbours it
+    /// had in every release before 2.10.0. They run twice: once at rest, and
+    /// again after opening a file, because the retitling that follows churns
+    /// `.navigationTitle` and re-applies the toolbar configuration on
+    /// macOS 27 — the moment a placement that only holds at rest would slip.
+    func testToolbarButtonSitsAtTrailingEdgeNextToSearch() throws {
+        let url = try createTempProject(files: ["hello.swift": "// hi\n"])
+        projectURLs.append(url)
+        launchWithProject(url)
+
+        let window = projectWindows(for: url).firstMatch
+        XCTAssertTrue(waitForExistence(window, timeout: 10))
+        XCTAssertTrue(
+            waitForExistence(toolbarButton, timeout: 10),
+            "The Agent Inbox toolbar button should be present"
+        )
+
+        let pill = app.descendants(matching: .any)["projectSwitcher"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(pill, timeout: 10),
+            "The project switcher pill should be visible in the toolbar"
+        )
+        XCTAssertTrue(
+            waitForExistence(projectSearchField, timeout: 10),
+            "The project search field should be visible in the toolbar"
+        )
+
+        assertTrailingPlacement(window: window, pill: pill)
+
+        openFile("hello.swift")
+        assertTrailingPlacement(window: window, pill: pill)
+    }
+
+    /// Asserts the inbox button sits in the window's trailing half, right of
+    /// the switcher pill, and left of the project search field.
+    private func assertTrailingPlacement(
+        window: XCUIElement,
+        pill: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let buttonFrame = toolbarButton.frame
+        XCTAssertGreaterThan(
+            buttonFrame.minX,
+            window.frame.midX,
+            "The Agent Inbox button belongs to the toolbar's trailing half, "
+                + "not the leading cluster (button at \(buttonFrame), window "
+                + "at \(window.frame))",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThan(
+            buttonFrame.minX,
+            pill.frame.maxX,
+            "The Agent Inbox button must sit right of the project-switcher "
+                + "pill (button at \(buttonFrame), pill at \(pill.frame))",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            buttonFrame.maxX,
+            projectSearchField.frame.minX,
+            "The Agent Inbox button must sit left of the search field — the "
+                + "trailing-edge pair it was part of before 2.10.0 (button "
+                + "at \(buttonFrame), search at \(projectSearchField.frame))",
+            file: file,
+            line: line
         )
     }
 

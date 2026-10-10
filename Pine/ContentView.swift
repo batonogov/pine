@@ -143,6 +143,14 @@ struct ContentView: View {
 
             // Agent Inbox entry point in the project window toolbar (#1337).
             // The popover remains additive to ⌘⇧I and the View menu (#1486).
+            //
+            // The explicit flexible spacer is what keeps the button on the
+            // trailing edge, next to the search field (#1665): with the
+            // window title permanently hidden (#1643), `.primaryAction`
+            // alone packs into the leading cluster beside the
+            // project-switcher pill, while the `NSSearchToolbarItem` from
+            // `.searchable` stays anchored to the trailing edge on its own.
+            ToolbarSpacer(.flexible)
             ToolbarItem(placement: .primaryAction) {
                 AgentInboxToolbarButton(
                     attentionCount: agentInboxAttentionCount
