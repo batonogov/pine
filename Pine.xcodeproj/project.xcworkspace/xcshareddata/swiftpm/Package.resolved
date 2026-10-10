@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/batonogov/SwiftTerm.git",
       "state" : {
-        "revision" : "d8d26c2b63c139487bca1aad23d8b33989f2e587",
-        "version" : "1.19.0-pine.2"
+        "revision" : "435e9b1ccab8d15b915bad534d0057cc4adc68f2",
+        "version" : "1.19.0-pine.3"
       }
     }
   ],

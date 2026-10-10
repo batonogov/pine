@@ -785,7 +785,7 @@
 			repositoryURL = "https://github.com/batonogov/SwiftTerm.git";
 			requirement = {
 				kind = exactVersion;
-				version = "1.19.0-pine.2";
+				version = "1.19.0-pine.3";
 			};
 		};
 		CF0000030000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
