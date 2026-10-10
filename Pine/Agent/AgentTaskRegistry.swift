@@ -67,6 +67,16 @@ nonisolated private struct AgentTaskTerminationRollback: Sendable {
 @MainActor
 @Observable
 final class AgentTaskRegistry {
+    /// How long a fully settled task (finished or unreachable, no live route)
+    /// remains listed in the Inbox before the registry dismisses it
+    /// automatically (#1664). Mirrors the seven-day stale-entry horizon
+    /// `RecoveryManager.staleEntryRetentionDays` already applies to crash
+    /// recovery files. Dismissed metadata stays durable until the bounded
+    /// per-project cap reclaims it, so the sweep never destroys records — it
+    /// only takes settled rows out of the user-facing Inbox.
+    nonisolated static let terminalRetentionInterval: TimeInterval =
+        7 * 86_400
+
     private(set) var tasks: [AgentTask] = [] {
         didSet {
             guard oldValue != tasks else { return }
@@ -161,6 +171,10 @@ final class AgentTaskRegistry {
     @ObservationIgnored
     private let flushTail: Duration
     @ObservationIgnored
+    private let retentionSweepInterval: Duration
+    @ObservationIgnored
+    private var lastRetentionSweepAt: ContinuousClock.Instant?
+    @ObservationIgnored
     let lifecycleAccuracyPolicy: AgentLifecycleAccuracyPolicy
     @ObservationIgnored
     private let abandonedPersistenceLimit = 2
@@ -177,6 +191,7 @@ final class AgentTaskRegistry {
         claimTTL: Duration = .seconds(30),
         flushTotal: Duration = .seconds(5),
         flushTail: Duration = .seconds(2),
+        retentionSweepInterval: Duration = .seconds(3_600),
         limits: AgentTaskPersistenceLimits = AgentTaskPersistenceLimits(),
         accuracyPolicy: AgentLifecycleAccuracyPolicy = .production
     ) {
@@ -189,6 +204,7 @@ final class AgentTaskRegistry {
         self.claimTTL = claimTTL
         self.flushTotal = flushTotal
         self.flushTail = flushTail
+        self.retentionSweepInterval = retentionSweepInterval
         lifecycleAccuracyPolicy = accuracyPolicy
     }
 
@@ -431,6 +447,53 @@ final class AgentTaskRegistry {
         return true
     }
 
+    /// Automatically dismisses fully settled tasks whose last honest
+    /// timestamp is older than ``terminalRetentionInterval`` (#1664).
+    ///
+    /// "Settled" is deliberately conservative: the task is paused or
+    /// completed, its route is already missing, its latest run is not live,
+    /// and no pending launch/resume claim references it. Anything that can
+    /// still be interacted with live is left untouched, and dismissal keeps
+    /// the durable metadata until bounded retention reclaims it. Runs at load
+    /// (reconciling orphaned sessions from previous launches) and on a
+    /// throttled cadence while the detector polls. Returns the number of
+    /// tasks dismissed by this call.
+    @discardableResult
+    func reconcileTerminalRetention(at now: Date = Date()) -> Int {
+        guard !isTerminating else { return 0 }
+        let settledTaskIDs = tasks.compactMap { task in
+            isRetentionEligible(task, at: now) ? task.id : nil
+        }
+        var dismissed = 0
+        for taskID in settledTaskIDs where dismissTask(taskID, at: now) {
+            dismissed += 1
+        }
+        return dismissed
+    }
+
+    private func isRetentionEligible(_ task: AgentTask, at now: Date) -> Bool {
+        guard task.lifecycle == .paused || task.lifecycle == .completed,
+              task.route.availability == .missing,
+              task.runs.last?.liveness != .live,
+              !pendingClaims.values.contains(where: { $0.taskID == task.id })
+        else { return false }
+        let settledAt = task.runs.last.map {
+            $0.endedAt ?? $0.lastObservedAt
+        } ?? task.lastActivityAt
+        return now.timeIntervalSince(settledAt)
+            >= Self.terminalRetentionInterval
+    }
+
+    private func reconcileTerminalRetentionIfDue() {
+        let now = monotonicNow()
+        if let lastRetentionSweepAt,
+           now < lastRetentionSweepAt + retentionSweepInterval {
+            return
+        }
+        lastRetentionSweepAt = now
+        reconcileTerminalRetention()
+    }
+
     func taskID(forSessionID sessionID: UUID) -> UUID? {
         taskIDByRunID[sessionID]
     }
@@ -615,6 +678,7 @@ final class AgentTaskRegistry {
             changedProjects.insert(task.project)
         }
         changedProjects.forEach(markDirty)
+        reconcileTerminalRetentionIfDue()
     }
 
     /// Records detector unavailability without claiming process termination.
@@ -1357,6 +1421,14 @@ final class AgentTaskRegistry {
         historicalTaskIDByRunID = stagedHistorical
         loadedInterruptedTaskIDs.formUnion(stagedInterruptedTaskIDs)
         tasks.append(contentsOf: stagedTasks)
+        // Reconcile orphaned sessions from previous launches right at load:
+        // `normalizeLoadedTask` already settled their liveness honestly, and
+        // the retention sweep takes the ones past the horizon out of the
+        // Inbox instead of letting them pile up for weeks (#1664). Stamping
+        // the sweep clock here means the first post-launch detector refresh
+        // does not immediately re-sweep the same tasks.
+        lastRetentionSweepAt = monotonicNow()
+        reconcileTerminalRetention()
         if needsNormalizedSave { markDirty(project) }
         scheduleSaveIfReady(project)
     }
