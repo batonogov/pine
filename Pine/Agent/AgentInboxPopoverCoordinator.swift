@@ -168,6 +168,48 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         return lastWrittenIsPresented ?? (isPresented?.wrappedValue == true)
     }
 
+    /// True while the anchor is mounted. The toggle relay reads this so a
+    /// click landing in the gap between `detach()` and the coordinator's
+    /// teardown is not routed to a zombie (#1665).
+    private(set) var isAttached = false
+
+    /// When the last AppKit-initiated dismissal's mouse event landed on the
+    /// toolbar button itself, and at what uptime. `nil` in every other case:
+    /// programmatic closes never record (the coordinator's own
+    /// `closePopover()` has already raised `isClosing` before the delegate
+    /// fires, which is what tells the two apart), and neither do dismissals
+    /// caused by clicks elsewhere, by Escape, or by window deactivation.
+    /// Only a *left* mouseDown records: a right click dismisses the popover
+    /// but never fires the button's action, so a right-click record would
+    /// only ever go stale and swallow a later genuine click.
+    ///
+    /// This is the only signal that survives into the button's action: the
+    /// SwiftUI action is dispatched after event processing, so
+    /// `NSApp.currentEvent` is already gone by then — the dismissal's event
+    /// must be captured while it is still current, inside `popoverWillClose`.
+    private var dismissalOnButtonUptime: TimeInterval?
+
+    /// One-shot monitor armed while a dismissal record is pending. The
+    /// record belongs to one gesture; the gesture's end decides its fate:
+    /// a release on the button precedes the button's action, which consumes
+    /// the record itself, while any other mouse event means the gesture
+    /// ended without an action (drag-off release) or a new gesture has begun
+    /// — either way the record is stale and goes. This is what lets a
+    /// press-and-hold of any length still resolve to *close*: the record
+    /// survives untouched until the gesture's own action arrives.
+    private var dismissalGestureMonitor: Any?
+
+    /// Backstop for retiring a dismissal record whose gesture-end event was
+    /// lost entirely (the release landed in another app, so no local monitor
+    /// could observe it). Never gates a real gesture: no click — even the
+    /// slowest press-and-hold — spans it.
+    static let dismissalRecordStaleAfter: TimeInterval = 60
+
+    /// Injectable for tests: the event being processed right now.
+    private let currentEvent: @MainActor () -> NSEvent?
+    /// Injectable for tests: a monotonic clock.
+    private let now: @MainActor () -> TimeInterval
+
     init(
         router: AgentInboxPopoverRouter = .shared,
         makePopover: @escaping PopoverFactory = AgentInboxPopoverCoordinator
@@ -175,12 +217,18 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         resolveFocusHost: @escaping FocusHostResolver = { $0 },
         isApplicationActive: @escaping @MainActor () -> Bool = {
             NSApp.isActive
+        },
+        currentEvent: @escaping @MainActor () -> NSEvent? = { NSApp.currentEvent },
+        now: @escaping @MainActor () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
         }
     ) {
         self.router = router
         self.makePopover = makePopover
         self.resolveFocusHost = resolveFocusHost
         self.isApplicationActive = isApplicationActive
+        self.currentEvent = currentEvent
+        self.now = now
     }
 
     /// The production popover: a transient, Liquid-Glass-friendly `NSPopover`
@@ -213,6 +261,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
 
     func attach(to anchor: AgentInboxPopoverAnchorView) {
         self.anchor = anchor
+        isAttached = true
         updateRegistration(for: anchor.window)
     }
 
@@ -322,7 +371,43 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         ))
     }
 
+    /// The toolbar button's click, resolved against the authoritative popover
+    /// state rather than the possibly-stale binding (#1665).
+    ///
+    /// The button used to toggle the binding directly. While a transient
+    /// dismissal's close animation is still running the binding still reads
+    /// `true`, so the toggle wrote `false` and the reopen was swallowed —
+    /// and a click landing before the anchor had mounted was dropped just as
+    /// silently. The state machine's rule for this click leaves the same
+    /// unserved-request marker a router request would, so a present that
+    /// cannot complete immediately is retried by the next update pass.
+    func toolbarButtonToggled() {
+        // A dismissal whose own mouse event landed on this button and whose
+        // gesture has not produced its action yet belongs to the very click
+        // being resolved: the popover the user clicked away must not reopen
+        // under their finger. Consumed on read — a later, separate click
+        // reopens. The record is honored regardless of how long the press
+        // was held; the age check is only the lost-monitor-event backstop
+        // (see `dismissalRecordStaleAfter`).
+        var dismissedBySameGesture = false
+        if let uptime = dismissalOnButtonUptime {
+            dismissalOnButtonUptime = nil
+            dismissalGestureMonitor.map(NSEvent.removeMonitor)
+            dismissalGestureMonitor = nil
+            dismissedBySameGesture = now() - uptime < Self.dismissalRecordStaleAfter
+        }
+        apply(state.toolbarButtonToggled(
+            bindingIsPresented: bindingIsPresented,
+            isPopoverShown: isPopoverShown,
+            dismissedBySameGesture: dismissedBySameGesture
+        ))
+    }
+
     func detach() {
+        isAttached = false
+        dismissalGestureMonitor.map(NSEvent.removeMonitor)
+        dismissalGestureMonitor = nil
+        dismissalOnButtonUptime = nil
         if let registeredWindow {
             router.unregister(self, from: registeredWindow)
         }
@@ -354,7 +439,73 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// strong reference between them.
     func popoverWillClose(sender: AnyObject?) {
         guard let popover, sender === popover else { return }
+        // An AppKit-initiated dismissal arrives with `isClosing` still down —
+        // the anchor's own closes raise it before the delegate can fire. Only
+        // the AppKit kind can belong to the mouse click that is about to
+        // reach the toolbar button's action, so only it is recorded, and only
+        // when that click landed on the button itself. Right clicks dismiss
+        // the popover too but never fire the button's action, so recording
+        // one would only leave a stale record behind.
+        if !state.isClosing,
+           let event = currentEvent(),
+           event.type == .leftMouseDown,
+           let eventWindow = event.window,
+           isOnButton(screenPoint: eventWindow.convertPoint(
+               toScreen: event.locationInWindow
+           )) {
+            dismissalOnButtonUptime = now()
+            armDismissalGestureMonitor()
+        }
         state.popoverWillClose()
+    }
+
+    /// Whether a screen-space point lands on the toolbar button — i.e. on the
+    /// anchor that occupies the button's bounds.
+    private func isOnButton(screenPoint: NSPoint) -> Bool {
+        guard let anchor, let anchorWindow = anchor.window else {
+            return false
+        }
+        return anchorWindow.convertToScreen(
+            anchor.convert(anchor.bounds, to: nil)
+        ).contains(screenPoint)
+    }
+
+    /// Arms the one-shot monitor that retires a pending dismissal record when
+    /// its gesture ends without producing the button's action (#1665).
+    private func armDismissalGestureMonitor() {
+        dismissalGestureMonitor.map(NSEvent.removeMonitor)
+        dismissalGestureMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseUp, .leftMouseDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+            // The monitor's first event ends the gesture that armed it. A new
+            // mouseDown starts a new gesture; a mouseUp off the button means
+            // the press ended without the button's action — both retire the
+            // record. A release on the button keeps it: the action that
+            // consumes it follows within the same gesture.
+            if event.type == .leftMouseUp {
+                let screenPoint = event.window.map {
+                    $0.convertPoint(toScreen: event.locationInWindow)
+                } ?? NSEvent.mouseLocation
+                self.dismissalGestureDidEnd(
+                    onButton: self.isOnButton(screenPoint: screenPoint)
+                )
+            } else {
+                self.dismissalGestureDidEnd(onButton: false)
+            }
+            return event
+        }
+    }
+
+    /// The gesture monitor's body, extracted so tests can drive the gesture
+    /// end without posting real events. `onButton == true` keeps the record:
+    /// the click's action follows within the same gesture and consumes it.
+    func dismissalGestureDidEnd(onButton: Bool) {
+        dismissalGestureMonitor.map(NSEvent.removeMonitor)
+        dismissalGestureMonitor = nil
+        if !onButton {
+            dismissalOnButtonUptime = nil
+        }
     }
 
     /// A close has finished.

@@ -110,7 +110,15 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
     /// `.navigationTitle` and re-applies the toolbar configuration on
     /// macOS 27 — the moment a placement that only holds at rest would slip.
     func testToolbarButtonSitsAtTrailingEdgeNextToSearch() throws {
-        let url = try createTempProject(files: ["hello.swift": "// hi\n"])
+        // A short project name on purpose: the default UUID fixture makes the
+        // pill ~380pt wide, and on a narrow CI window the toolbar then has no
+        // slack — the flexible space collapses and the button packs against
+        // the pill even with the correct pin, failing the geometry for
+        // reasons unrelated to the regression (#1665).
+        let url = try createTempProject(
+            files: ["hello.swift": "// hi\n"],
+            projectName: "InboxPosition"
+        )
         projectURLs.append(url)
         launchWithProject(url)
 
@@ -244,20 +252,16 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
 
         // The AX element leaves the tree early in AppKit's close animation,
         // and the binding is only lowered when `popoverDidClose` lands a
-        // runloop turn after that (#1486's anchor state machine). A click
-        // issued inside that window toggles a binding that still reads as up
-        // and is swallowed, so let the dismissal settle before reopening.
+        // runloop turn after that (#1486's anchor state machine). Let the
+        // dismissal settle before reopening so the click reads as
+        // open-intent; from here on the coordinator resolves it against the
+        // live popover state (#1665), which is deterministic once the close
+        // has settled.
         Thread.sleep(forTimeInterval: 0.5)
 
         // If the binding had not followed AppKit's dismissal, the anchor would
         // still believe it is presenting and refuse the next request.
         toolbarButton.click()
-        if !waitForExistence(inbox, timeout: 5) {
-            // Defence against the settle above losing to a loaded CI shard:
-            // once the dismissal has fully retired, a second click is a
-            // clean reopen rather than a double-toggle.
-            toolbarButton.click()
-        }
         XCTAssertTrue(
             waitForExistence(inbox, timeout: 5),
             "The same window should host the Inbox again after a dismissal"
@@ -338,8 +342,10 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         let helpButton = app.buttons[
             "agentInboxHelpButton"
         ].firstMatch
+        // 10s, not 5: the popover's first present on a cold launch can wait
+        // out the anchor's mount on a loaded CI shard (#1665).
         XCTAssertTrue(
-            waitForExistence(helpButton, timeout: 5),
+            waitForExistence(helpButton, timeout: 10),
             "Agent Inbox should expose its task-specific Apple Help topic"
         )
     }

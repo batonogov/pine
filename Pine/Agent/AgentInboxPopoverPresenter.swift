@@ -174,11 +174,37 @@ final class AgentInboxPopoverAnchorView: NSView {
     }
 }
 
+/// Per-window conduit between the Agent Inbox toolbar button's action and
+/// the anchor's coordinator (#1665).
+///
+/// The button's action is created in `ContentView`, above the modifier that
+/// owns the coordinator, so neither can name the other directly. The relay
+/// sits in between: the anchor registers its coordinator while mounted, and
+/// the button's click is resolved against the coordinator's authoritative
+/// popover state instead of the possibly-stale SwiftUI binding.
+@MainActor
+final class AgentInboxPopoverToggleRelay {
+    /// The mounted anchor's coordinator. Weak: the representable owns it.
+    weak var coordinator: AgentInboxPopoverCoordinator?
+
+    /// Routes the click through the coordinator. Returns `false` while no
+    /// anchor is mounted — or once it has detached, so a click landing in the
+    /// gap between `detach()` and the coordinator's teardown is not routed to
+    /// a zombie — letting the caller's binding fallback own the click instead.
+    @discardableResult
+    func toggle() -> Bool {
+        guard let coordinator, coordinator.isAttached else { return false }
+        coordinator.toolbarButtonToggled()
+        return true
+    }
+}
+
 @MainActor
 private struct AgentInboxPopoverAnchor: NSViewRepresentable {
     @Binding var isPresented: Bool
     let registry: ProjectRegistry
     let explicitOpenProjectWindow: ((URL) -> Void)?
+    let toggleRelay: AgentInboxPopoverToggleRelay?
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -193,6 +219,7 @@ private struct AgentInboxPopoverAnchor: NSViewRepresentable {
         view.onWindowChange = { [weak coordinator = context.coordinator] anchor in
             coordinator?.anchorWindowDidChange(anchor)
         }
+        toggleRelay?.coordinator = context.coordinator
         context.coordinator.attach(to: view)
         return view
     }
@@ -202,6 +229,7 @@ private struct AgentInboxPopoverAnchor: NSViewRepresentable {
         context: Context
     ) {
         let environmentOpenWindow = openWindow
+        toggleRelay?.coordinator = context.coordinator
         context.coordinator.update(
             anchor: nsView,
             isPresented: $isPresented,
@@ -226,13 +254,15 @@ private struct AgentInboxPopoverModifier: ViewModifier {
     @Binding var isPresented: Bool
     let registry: ProjectRegistry
     let openProjectWindow: ((URL) -> Void)?
+    let toggleRelay: AgentInboxPopoverToggleRelay?
 
     func body(content: Content) -> some View {
         content.background {
             AgentInboxPopoverAnchor(
                 isPresented: $isPresented,
                 registry: registry,
-                explicitOpenProjectWindow: openProjectWindow
+                explicitOpenProjectWindow: openProjectWindow,
+                toggleRelay: toggleRelay
             )
         }
     }
@@ -242,12 +272,14 @@ extension View {
     func agentInboxPopover(
         isPresented: Binding<Bool>,
         registry: ProjectRegistry,
-        openProjectWindow: ((URL) -> Void)? = nil
+        openProjectWindow: ((URL) -> Void)? = nil,
+        toggleRelay: AgentInboxPopoverToggleRelay? = nil
     ) -> some View {
         modifier(AgentInboxPopoverModifier(
             isPresented: isPresented,
             registry: registry,
-            openProjectWindow: openProjectWindow
+            openProjectWindow: openProjectWindow,
+            toggleRelay: toggleRelay
         ))
     }
 }
