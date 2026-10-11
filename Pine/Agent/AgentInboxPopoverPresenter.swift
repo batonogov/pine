@@ -174,11 +174,12 @@ final class AgentInboxPopoverAnchorView: NSView {
     }
 }
 
-/// Per-window conduit between the Agent Inbox toolbar button's action and
-/// the anchor's coordinator (#1665).
+/// Per-window conduit between an Agent Inbox toggle button's action — the
+/// toolbar's or the Welcome window's — and the anchor's coordinator
+/// (#1665, #1672).
 ///
-/// The button's action is created in `ContentView`, above the modifier that
-/// owns the coordinator, so neither can name the other directly. The relay
+/// The button's action is created above the modifier that owns the
+/// coordinator, so neither can name the other directly. The relay
 /// sits in between: the anchor registers its coordinator while mounted, and
 /// the button's click is resolved against the coordinator's authoritative
 /// popover state instead of the possibly-stale SwiftUI binding.
@@ -194,7 +195,7 @@ final class AgentInboxPopoverToggleRelay {
     @discardableResult
     func toggle() -> Bool {
         guard let coordinator, coordinator.isAttached else { return false }
-        coordinator.toolbarButtonToggled()
+        coordinator.toggleButtonToggled()
         return true
     }
 }

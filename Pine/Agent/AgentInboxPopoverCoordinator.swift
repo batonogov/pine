@@ -174,7 +174,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     private(set) var isAttached = false
 
     /// When the last AppKit-initiated dismissal's mouse event landed on the
-    /// toolbar button itself, and at what uptime. `nil` in every other case:
+    /// toggle button itself, and at what uptime. `nil` in every other case:
     /// programmatic closes never record (the coordinator's own
     /// `closePopover()` has already raised `isClosing` before the delegate
     /// fires, which is what tells the two apart), and neither do dismissals
@@ -371,8 +371,9 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         ))
     }
 
-    /// The toolbar button's click, resolved against the authoritative popover
-    /// state rather than the possibly-stale binding (#1665).
+    /// A toggle button's click — the toolbar's or the Welcome window's —
+    /// resolved against the authoritative popover state rather than the
+    /// possibly-stale binding (#1665, #1672).
     ///
     /// The button used to toggle the binding directly. While a transient
     /// dismissal's close animation is still running the binding still reads
@@ -381,7 +382,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// silently. The state machine's rule for this click leaves the same
     /// unserved-request marker a router request would, so a present that
     /// cannot complete immediately is retried by the next update pass.
-    func toolbarButtonToggled() {
+    func toggleButtonToggled() {
         // A dismissal whose own mouse event landed on this button and whose
         // gesture has not produced its action yet belongs to the very click
         // being resolved: the popover the user clicked away must not reopen
@@ -396,7 +397,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
             dismissalGestureMonitor = nil
             dismissedBySameGesture = now() - uptime < Self.dismissalRecordStaleAfter
         }
-        apply(state.toolbarButtonToggled(
+        apply(state.toggleButtonToggled(
             bindingIsPresented: bindingIsPresented,
             isPopoverShown: isPopoverShown,
             dismissedBySameGesture: dismissedBySameGesture
@@ -442,7 +443,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         // An AppKit-initiated dismissal arrives with `isClosing` still down —
         // the anchor's own closes raise it before the delegate can fire. Only
         // the AppKit kind can belong to the mouse click that is about to
-        // reach the toolbar button's action, so only it is recorded, and only
+        // reach the toggle button's action, so only it is recorded, and only
         // when that click landed on the button itself. Right clicks dismiss
         // the popover too but never fire the button's action, so recording
         // one would only leave a stale record behind.
@@ -459,7 +460,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         state.popoverWillClose()
     }
 
-    /// Whether a screen-space point lands on the toolbar button — i.e. on the
+    /// Whether a screen-space point lands on the toggle button — i.e. on the
     /// anchor that occupies the button's bounds.
     private func isOnButton(screenPoint: NSPoint) -> Bool {
         guard let anchor, let anchorWindow = anchor.window else {

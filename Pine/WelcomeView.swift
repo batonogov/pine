@@ -106,6 +106,10 @@ struct WelcomeView: View {
     @State private var isSearchVisible = false
     @State private var isDragTargeted = false
     @State private var isAgentInboxPresented = false
+    /// Conduit from the inbox button to the popover anchor's coordinator, so
+    /// the click resolves against authoritative popover state instead of the
+    /// possibly-stale binding (#1672).
+    @State private var agentInboxToggleRelay = AgentInboxPopoverToggleRelay()
     @State private var recentSelection = RecentProjectsSelection()
     @FocusState private var focusedControl: WelcomeFocusTarget?
 
@@ -140,7 +144,13 @@ struct WelcomeView: View {
                 .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
 
                 Button {
-                    isAgentInboxPresented.toggle()
+                    // The coordinator resolves the click against the live
+                    // popover state; the binding fallback only runs before
+                    // the anchor has mounted, where no popover can be up and
+                    // the raised binding is served when the anchor arrives.
+                    if !agentInboxToggleRelay.toggle() {
+                        isAgentInboxPresented = true
+                    }
                 } label: {
                     Label(Strings.menuAgentInbox, systemImage: MenuIcons.agentInbox)
                 }
@@ -149,7 +159,8 @@ struct WelcomeView: View {
                 .agentInboxPopover(
                     isPresented: $isAgentInboxPresented,
                     registry: registry,
-                    openProjectWindow: openProjectWindow
+                    openProjectWindow: openProjectWindow,
+                    toggleRelay: agentInboxToggleRelay
                 )
 
                 Spacer()

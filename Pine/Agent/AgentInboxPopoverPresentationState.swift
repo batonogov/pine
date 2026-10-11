@@ -78,7 +78,8 @@ struct AgentInboxPopoverPresentationState: Equatable {
         )
     }
 
-    /// The toolbar button was clicked (#1665).
+    /// A toggle button was clicked — the toolbar's or the Welcome window's
+    /// (#1665, #1672).
     ///
     /// The button must not toggle the binding blindly: while a transient
     /// dismissal's close animation is still running, the binding still reads
@@ -101,7 +102,7 @@ struct AgentInboxPopoverPresentationState: Equatable {
     /// the anchor has not mounted yet on a cold launch (#1665's flaky
     /// help-button probe hit this) — is retried by the next update pass or
     /// anchor reattachment instead of vanishing.
-    mutating func toolbarButtonToggled(
+    mutating func toggleButtonToggled(
         bindingIsPresented: Bool,
         isPopoverShown: Bool,
         dismissedBySameGesture: Bool

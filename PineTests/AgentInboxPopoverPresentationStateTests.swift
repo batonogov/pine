@@ -514,13 +514,13 @@ struct AgentInboxPopoverPresentationStateTests {
         #expect(update.effect == .close)
     }
 
-    // MARK: - Toolbar button toggle (#1665)
+    // MARK: - Toggle button (#1665, #1672)
 
     @Test("a toggle on a closed Inbox presents and raises the binding")
     func toggleWhenClosedPresents() {
         var state = State()
 
-        let resolution = state.toolbarButtonToggled(
+        let resolution = state.toggleButtonToggled(
             bindingIsPresented: false,
             isPopoverShown: false,
             dismissedBySameGesture: false
@@ -537,7 +537,7 @@ struct AgentInboxPopoverPresentationStateTests {
     func toggleWhenClosedLeavesRaisedBindingAlone() {
         var state = State()
 
-        let resolution = state.toolbarButtonToggled(
+        let resolution = state.toggleButtonToggled(
             bindingIsPresented: true,
             isPopoverShown: false,
             dismissedBySameGesture: false
@@ -552,7 +552,7 @@ struct AgentInboxPopoverPresentationStateTests {
         var state = State()
         state.popoverWillShow()
 
-        let resolution = state.toolbarButtonToggled(
+        let resolution = state.toggleButtonToggled(
             bindingIsPresented: true,
             isPopoverShown: true,
             dismissedBySameGesture: false
@@ -573,7 +573,7 @@ struct AgentInboxPopoverPresentationStateTests {
         // never as a queued reopen — otherwise the button could never close
         // the Inbox at all (AppKit's transient dismissal fires on the same
         // click before the button's action does).
-        let resolution = state.toolbarButtonToggled(
+        let resolution = state.toggleButtonToggled(
             bindingIsPresented: true,
             isPopoverShown: false,
             dismissedBySameGesture: false
@@ -595,7 +595,7 @@ struct AgentInboxPopoverPresentationStateTests {
         state.popoverWillClose()
         state.popoverDidClose()
 
-        let resolution = state.toolbarButtonToggled(
+        let resolution = state.toggleButtonToggled(
             bindingIsPresented: false,
             isPopoverShown: false,
             dismissedBySameGesture: true
@@ -614,7 +614,7 @@ struct AgentInboxPopoverPresentationStateTests {
         state.popoverWillClose()
         state.popoverDidClose()
 
-        let resolution = state.toolbarButtonToggled(
+        let resolution = state.toggleButtonToggled(
             bindingIsPresented: false,
             isPopoverShown: false,
             dismissedBySameGesture: false
@@ -630,7 +630,7 @@ struct AgentInboxPopoverPresentationStateTests {
 
         // Open from the toolbar, then AppKit dismisses the transient popover
         // behind SwiftUI's back (outside click) and the close settles.
-        let open = state.toolbarButtonToggled(
+        let open = state.toggleButtonToggled(
             bindingIsPresented: binding,
             isPopoverShown: false,
             dismissedBySameGesture: false
@@ -648,7 +648,7 @@ struct AgentInboxPopoverPresentationStateTests {
 
         // The reopen click. With the old raw binding toggle this read the
         // still-true binding mid-close and wrote false — swallowed.
-        let reopen = state.toolbarButtonToggled(
+        let reopen = state.toggleButtonToggled(
             bindingIsPresented: binding,
             isPopoverShown: false,
             dismissedBySameGesture: false
@@ -664,7 +664,7 @@ struct AgentInboxPopoverPresentationStateTests {
         // The click resolves to present, but the anchor cannot complete it
         // (not mounted yet on a cold launch), so no popoverWillShow follows
         // and the marker survives.
-        _ = state.toolbarButtonToggled(
+        _ = state.toggleButtonToggled(
             bindingIsPresented: false,
             isPopoverShown: false,
             dismissedBySameGesture: false
