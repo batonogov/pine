@@ -550,7 +550,7 @@ struct AgentInboxPopoverCoordinatorTests {
         defer { fixture.cleanup() }
         fixture.mount()
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let first = try #require(fixture.popovers.last)
         #expect(first.isPopoverVisible)
         #expect(fixture.isPresented)
@@ -562,7 +562,7 @@ struct AgentInboxPopoverCoordinatorTests {
         await fixture.nextRunLoopTurn()
         #expect(!fixture.isPresented, "The settled close must lower the binding")
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let second = try #require(fixture.popovers.last)
         #expect(fixture.popovers.count == 2)
         #expect(second.isPopoverVisible)
@@ -582,14 +582,14 @@ struct AgentInboxPopoverCoordinatorTests {
         defer { fixture.cleanup() }
         fixture.mount()
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let popover = try #require(fixture.popovers.last)
 
         // AppKit starts the close; isShown already reads false mid-animation.
         fixture.coordinator.popoverWillClose(sender: popover)
         popover.isPopoverVisible = false
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         #expect(
             fixture.popovers.count == 1,
             "A click against a closing Inbox must not queue a reopen"
@@ -630,6 +630,77 @@ struct AgentInboxPopoverCoordinatorTests {
         )
     }
 
+    // MARK: - Welcome window toggle path (#1672)
+
+    /// #1672: the Welcome window's inbox button routes through its own relay
+    /// into the same coordinator rule. Its blind `toggle()` left the binding
+    /// stale across an outside dismissal's close animation, so the reopen
+    /// click was swallowed.
+    @Test("a Welcome toggle after an outside dismissal reopens the Inbox")
+    func welcomeToggleAfterOutsideDismissalReopens() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        fixture.mount()
+        let relay = AgentInboxPopoverToggleRelay()
+        relay.coordinator = fixture.coordinator
+
+        #expect(relay.toggle())
+        let first = try #require(fixture.popovers.last)
+        #expect(first.isPopoverVisible)
+        #expect(fixture.isPresented)
+
+        // AppKit dismisses the transient popover behind SwiftUI's back.
+        fixture.coordinator.popoverWillClose(sender: first)
+        first.isPopoverVisible = false
+        fixture.coordinator.popoverDidClose(sender: first)
+        await fixture.nextRunLoopTurn()
+        #expect(!fixture.isPresented, "The settled close must lower the binding")
+
+        #expect(relay.toggle())
+        let second = try #require(fixture.popovers.last)
+        #expect(fixture.popovers.count == 2)
+        #expect(second.isPopoverVisible)
+        #expect(fixture.isPresented)
+
+        await fixture.nextRunLoopTurn()
+        #expect(second.isPopoverVisible)
+        #expect(fixture.popovers.count == 2)
+    }
+
+    /// A Welcome-button click landing inside the close animation: the popover
+    /// is visibly on its way out, so the click reads as close — never a
+    /// queued reopen, or the button could never close the Inbox it opened.
+    @Test("a Welcome toggle inside the close animation does not reopen")
+    func welcomeToggleInsideCloseAnimationStaysClosed() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        fixture.mount()
+        let relay = AgentInboxPopoverToggleRelay()
+        relay.coordinator = fixture.coordinator
+
+        #expect(relay.toggle())
+        let popover = try #require(fixture.popovers.last)
+
+        // AppKit starts the close; isShown already reads false mid-animation.
+        fixture.coordinator.popoverWillClose(sender: popover)
+        popover.isPopoverVisible = false
+
+        #expect(relay.toggle())
+        #expect(
+            fixture.popovers.count == 1,
+            "A click against a closing Inbox must not queue a reopen"
+        )
+        #expect(!fixture.isPresented)
+
+        fixture.coordinator.popoverDidClose(sender: popover)
+        await fixture.nextRunLoopTurn()
+        #expect(
+            fixture.popovers.count == 1,
+            "The settled close must not turn the mid-close click into a reopen"
+        )
+        #expect(!fixture.isPresented)
+    }
+
     /// #1665 review: with Reduce Motion the transient dismissal runs
     /// `popoverWillClose` and `popoverDidClose` synchronously inside the
     /// mouseDown of the very click on the button, so by action time the
@@ -643,7 +714,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.mount()
         fixture.anchor.frame = NSRect(x: 0, y: 0, width: 36, height: 36)
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let popover = try #require(fixture.popovers.last)
         #expect(popover.isPopoverVisible)
 
@@ -657,7 +728,7 @@ struct AgentInboxPopoverCoordinatorTests {
         #expect(!fixture.isPresented)
 
         // The same gesture's action reaches the coordinator now.
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         #expect(
             fixture.popovers.count == 1,
             "The click that dismissed the Inbox must not reopen it"
@@ -675,7 +746,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.mount()
         fixture.anchor.frame = NSRect(x: 0, y: 0, width: 36, height: 36)
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let first = try #require(fixture.popovers.last)
 
         fixture.stubMouseDown(at: NSPoint(x: 200, y: 200))
@@ -684,7 +755,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.coordinator.popoverDidClose(sender: first)
         fixture.stubbedEvent = nil
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         #expect(fixture.popovers.count == 2)
         #expect(fixture.isPresented)
     }
@@ -699,7 +770,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.mount()
         fixture.anchor.frame = NSRect(x: 0, y: 0, width: 36, height: 36)
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let first = try #require(fixture.popovers.last)
 
         // Right mouseDown *on the button*: dismisses, but no action follows.
@@ -713,7 +784,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.stubbedEvent = nil
 
         // The next genuine left click must reopen, not be swallowed.
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         #expect(fixture.popovers.count == 2)
     }
 
@@ -727,7 +798,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.mount()
         fixture.anchor.frame = NSRect(x: 0, y: 0, width: 36, height: 36)
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let popover = try #require(fixture.popovers.last)
 
         fixture.stubMouseDown(at: NSPoint(x: 18, y: 18))
@@ -739,7 +810,7 @@ struct AgentInboxPopoverCoordinatorTests {
 
         // The user keeps holding; the action only fires on release.
         fixture.uptime += 2
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         #expect(
             fixture.popovers.count == 1,
             "A held click that dismissed the Inbox must not reopen it"
@@ -756,7 +827,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.mount()
         fixture.anchor.frame = NSRect(x: 0, y: 0, width: 36, height: 36)
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let popover = try #require(fixture.popovers.last)
 
         fixture.stubMouseDown(at: NSPoint(x: 18, y: 18))
@@ -768,7 +839,7 @@ struct AgentInboxPopoverCoordinatorTests {
         // The release lands off the button: the gesture ends with no action.
         fixture.coordinator.dismissalGestureDidEnd(onButton: false)
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         #expect(fixture.popovers.count == 2)
     }
 
@@ -782,7 +853,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.mount()
         fixture.anchor.frame = NSRect(x: 0, y: 0, width: 36, height: 36)
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let popover = try #require(fixture.popovers.last)
 
         fixture.stubMouseDown(at: NSPoint(x: 18, y: 18))
@@ -793,7 +864,7 @@ struct AgentInboxPopoverCoordinatorTests {
 
         fixture.uptime += AgentInboxPopoverCoordinator
             .dismissalRecordStaleAfter + 1
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         #expect(fixture.popovers.count == 2)
     }
 
@@ -807,7 +878,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.mount()
         fixture.anchor.frame = NSRect(x: 0, y: 0, width: 36, height: 36)
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         let popover = try #require(fixture.popovers.last)
 
         // The popover is closed through the binding (the content's own
@@ -822,7 +893,7 @@ struct AgentInboxPopoverCoordinatorTests {
         fixture.stubbedEvent = nil
         await fixture.nextRunLoopTurn()
 
-        fixture.coordinator.toolbarButtonToggled()
+        fixture.coordinator.toggleButtonToggled()
         #expect(
             fixture.popovers.count == 2,
             "A record taken from a programmatic close would swallow this reopen"
