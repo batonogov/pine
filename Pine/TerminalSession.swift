@@ -2166,7 +2166,7 @@ final class TerminalTab: Identifiable, Hashable {
     /// Resolves the active color scheme from `TerminalThemeSettings` (the
     /// selected theme + appearance policy vs. the system's effective
     /// appearance) and applies every slot: background, foreground, cursor,
-    /// selection, link, and the 16 ANSI colors (issue #1244).
+    /// selection, link, and the 16 ANSI colors (issue #1244, link #1661).
     ///
     /// `internal` (not `private`) so unit tests can pin the invariant that
     /// this method does NOT clear `layer.contents` without a synchronous
@@ -2179,6 +2179,9 @@ final class TerminalTab: Identifiable, Hashable {
         terminalView.nativeBackgroundColor = background
         terminalView.caretColor = scheme.cursorColor()
         terminalView.selectedTextBackgroundColor = scheme.selectionColor()
+        // Recolors the underline of OSC 8 hyperlinks and implicit link
+        // matches; the link text keeps its cell foreground (issue #1661).
+        terminalView.linkColor = scheme.linkColor()
 
         // Sync the layer's background colour WITHOUT clearing `contents`.
         // `prepareLayerForRedraw()` nils `layer.contents`, which is only safe

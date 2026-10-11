@@ -1509,6 +1509,19 @@ struct TerminalTabTests {
         #expect((tab.terminalView.layer?.contents as? NSString) != staleContents)
     }
 
+    /// `applyCurrentTerminalAppearance` must wire the theme's link color into
+    /// SwiftTerm's `linkColor`, so OSC 8 hyperlinks and implicit link matches
+    /// render their underline in the theme color. Before issue #1661 the
+    /// theme's `link` slot was dead configuration — applied nowhere.
+    @Test @MainActor func applyCurrentTerminalAppearanceAppliesLinkColor() {
+        let tab = TerminalTab(name: "test")
+
+        tab.applyCurrentTerminalAppearance(forceRedraw: false)
+
+        let expected = TerminalThemeSettings.shared.currentScheme().linkColor()
+        #expect(tab.terminalView.linkColor == expected)
+    }
+
     // MARK: - Backing-store recovery triggers (occlusion / hide / minimize)
 
     /// The terminal must recover its backing store on the occluded → visible
