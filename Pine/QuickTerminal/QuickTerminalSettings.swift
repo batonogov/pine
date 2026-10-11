@@ -73,6 +73,16 @@ final class QuickTerminalSettings {
     private var notificationSuppressionDepth = 0
     private var hasPendingNotification = false
 
+    /// Re-entrancy guard for the normalizing self-assignment in the
+    /// `heightFraction` observer. An `@Observable` property observer IS
+    /// re-entered when the property is assigned from inside its own `didSet`;
+    /// the normalization is idempotent so the re-entry terminates, but
+    /// without this guard the inner pass would persist a second time and the
+    /// notification would be emitted by the re-entered pass instead of the
+    /// outer one (same hazard as `TerminalFontSettings.isNormalizingFontSize`).
+    @ObservationIgnored
+    private var isNormalizingHeightFraction = false
+
     // MARK: - Stored properties (immediate-apply via didSet)
 
     /// Master switch. When `false` the global hotkey is unregistered and the
@@ -114,16 +124,24 @@ final class QuickTerminalSettings {
 
     /// Fraction of the screen's usable dimension the panel occupies
     /// (0.2 … 0.8). For top/bottom edges this is the height fraction; for
-    /// left/right edges it is the width fraction.
+    /// left/right edges it is the width fraction. Out-of-range and non-finite
+    /// writes are normalized and persisted; only an effective change notifies
+    /// observers.
     var heightFraction: Double {
         didSet {
+            guard !isNormalizingHeightFraction else { return }
             // Clamp to a finite, sane range so AppKit never receives a frame
             // containing NaN or infinity from corrupt defaults or callers.
             let normalized = Self.normalizedHeightFraction(heightFraction)
             if heightFraction.isFinite == false
                 || normalized != heightFraction {
                 defaults.set(normalized, forKey: Self.heightFractionKey)
+                isNormalizingHeightFraction = true
                 heightFraction = normalized
+                isNormalizingHeightFraction = false
+                if normalized != oldValue {
+                    notifyChange()
+                }
                 return
             }
             guard heightFraction != oldValue else { return }

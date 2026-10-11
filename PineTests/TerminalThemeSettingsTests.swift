@@ -1218,7 +1218,80 @@ struct QuickTerminalSettingsTests {
         settings.heightFraction = Double.infinity
         #expect(settings.heightFraction == 0.4)
         #expect(fixture.makeSettings().heightFraction == 0.4)
-        #expect(counter.value == 4)
+        // Infinity normalizes to the current value (0.4): the persisted entry
+        // is repaired but nothing changed, so no notification fires (#1667).
+        #expect(counter.value == 3)
+    }
+
+    @Test("Each heightFraction write persists and notifies exactly once")
+    func normalizingWritesPersistOnce() throws {
+        let fixture = try QuickTerminalSettingsFixture()
+        let settings = fixture.settings
+        let counter = NotificationCounter()
+        let token = fixture.notificationCenter.addObserver(
+            forName: QuickTerminalSettings.didChangeNotification,
+            object: settings,
+            queue: nil
+        ) { _ in
+            counter.increment()
+        }
+        defer { fixture.notificationCenter.removeObserver(token) }
+        let key = "quickTerminal.heightFraction"
+
+        // In-range effective change.
+        settings.heightFraction = 0.6
+        #expect(counter.value == 1)
+        #expect(fixture.defaults.setCount(forKey: key) == 1)
+
+        // Identical rewrite is a no-op: no persist, no notification.
+        settings.heightFraction = 0.6
+        #expect(counter.value == 1)
+        #expect(fixture.defaults.setCount(forKey: key) == 1)
+
+        // Out-of-range write clamps; without the #1667 re-entrancy guard the
+        // normalizing self-assignment persisted twice under `@Observable`.
+        settings.heightFraction = 5
+        #expect(settings.heightFraction == 0.8)
+        #expect(counter.value == 2)
+        #expect(fixture.defaults.setCount(forKey: key) == 2)
+        #expect(fixture.defaults.double(forKey: key) == 0.8)
+
+        // Non-finite write normalizes to the default, again exactly once.
+        settings.heightFraction = Double.nan
+        #expect(settings.heightFraction == 0.4)
+        #expect(counter.value == 3)
+        #expect(fixture.defaults.setCount(forKey: key) == 3)
+        #expect(fixture.defaults.double(forKey: key) == 0.4)
+    }
+
+    @Test("A clamp landing on the current value persists but stays silent")
+    func clampedNoOpPersistsWithoutNotifying() throws {
+        let fixture = try QuickTerminalSettingsFixture()
+        let settings = fixture.settings
+        settings.heightFraction = 0.8
+        let counter = NotificationCounter()
+        let token = fixture.notificationCenter.addObserver(
+            forName: QuickTerminalSettings.didChangeNotification,
+            object: settings,
+            queue: nil
+        ) { _ in
+            counter.increment()
+        }
+        defer { fixture.notificationCenter.removeObserver(token) }
+        fixture.defaults.resetCounts()
+
+        // 99 clamps to 0.8, which is already the effective value: the write
+        // is persisted once but nothing changed, so no notification fires.
+        settings.heightFraction = 99
+
+        #expect(settings.heightFraction == 0.8)
+        #expect(counter.value == 0)
+        #expect(
+            fixture.defaults.setCount(forKey: "quickTerminal.heightFraction") == 1
+        )
+        #expect(
+            fixture.defaults.double(forKey: "quickTerminal.heightFraction") == 0.8
+        )
     }
 
     @Test("Hotkey update persists atomically and notifies once")
@@ -1628,16 +1701,36 @@ private func waitForTerminalSettingsCondition(
     return true
 }
 
+/// Records every `set(_:forKey:)` so tests can pin "exactly one persist"
+/// against the re-entrant `didSet` hazard in `QuickTerminalSettings` (#1667).
+nonisolated private final class PersistCountingUserDefaults: UserDefaults {
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+
+    override func set(_ value: Any?, forKey defaultName: String) {
+        lock.withLock { counts[defaultName, default: 0] += 1 }
+        super.set(value, forKey: defaultName)
+    }
+
+    func setCount(forKey key: String) -> Int {
+        lock.withLock { counts[key] ?? 0 }
+    }
+
+    func resetCounts() {
+        lock.withLock { counts.removeAll() }
+    }
+}
+
 @MainActor
 private struct QuickTerminalSettingsFixture {
     let suiteName: String
-    let defaults: UserDefaults
+    let defaults: PersistCountingUserDefaults
     let notificationCenter = NotificationCenter()
     let settings: QuickTerminalSettings
 
     init() throws {
         suiteName = "QuickTerminalSettingsTests-\(UUID().uuidString)"
-        defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults = try #require(PersistCountingUserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         settings = QuickTerminalSettings(
             defaults: defaults,
