@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.11.1](https://github.com/batonogov/pine/compare/v2.11.0...v2.11.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **agent:** recover exhausted notification deliveries on activation ([#1678](https://github.com/batonogov/pine/issues/1678)) ([f88494c](https://github.com/batonogov/pine/commit/f88494c4246a7ba437887f1fc2b67b943b9dfbcd))
+
 ## [2.11.0](https://github.com/batonogov/pine/compare/v2.10.0...v2.11.0) (2026-10-11)
 
 
