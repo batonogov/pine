@@ -436,9 +436,30 @@ final class AgentNotificationController {
     private func flushDeferredEvents() {
         let pending = deferredEventOrder.compactMap { deferredEvents[$0] }
         clearDeferredEvents()
-        pending.forEach {
-            scheduleDelivery(event: $0.event, task: $0.task)
+        for deferred in pending {
+            // A delayed notification must still describe the current run:
+            // the user may have dismissed, resumed, or answered the task
+            // while the notification service was unavailable.
+            guard let task = currentTask(for: deferred.event) else { continue }
+            scheduleDelivery(event: deferred.event, task: task)
         }
+    }
+
+    private func currentTask(for event: AgentNotificationEvent) -> AgentTask? {
+        guard let task = registry.task(for: event.taskID),
+              task.lifecycle != .dismissed,
+              let run = task.runs.last,
+              run.id == event.runID,
+              run.process.processGeneration == event.processGeneration,
+              run.liveness != .stale else { return nil }
+        let isCurrent: Bool = switch event.kind {
+        case .processEnded: run.liveness == .terminated
+        case .waitingInput: run.liveness == .live && run.state == .waitingInput
+        case .failed: task.attention == .failed
+        case .completed:
+            task.attention == .completed || task.lifecycle == .completed || run.state == .done
+        }
+        return isCurrent ? task : nil
     }
 
     private func clearDeferredEvents() {
@@ -521,6 +542,12 @@ final class AgentNotificationController {
         Logger.agent.error(
             "Agent notification exhausted \(delays.count, privacy: .public) attempts (id=\(eventID, privacy: .public)); still undelivered"
         )
+        // Registry transitions are one-shot: an ended process will not emit
+        // its event again when the notification service recovers. Retain it
+        // in the bounded queue for the next activation/authorization refresh
+        // rather than requiring an impossible replay of the transition.
+        guard isRunning, settings.isEnabled, !Task.isCancelled else { return }
+        deferEvent(event, task: task)
     }
 
     private func handle(_ action: AgentNotificationResponseAction) {

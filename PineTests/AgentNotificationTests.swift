@@ -329,8 +329,8 @@ struct AgentNotificationTests {
         controller.stop()
     }
 
-    @Test("exhausted delivery remains eligible for the same event later")
-    func exhaustedDeliveryIsNotClaimed() async throws {
+    @Test("exhausted delivery recovers on activation without replaying the task transition")
+    func exhaustedDeliveryRecoversOnActivation() async throws {
         let fixture = DefaultsFixture()
         defer { fixture.cleanup() }
         let settings = AgentNotificationSettings(defaults: fixture.defaults)
@@ -347,8 +347,12 @@ struct AgentNotificationTests {
             isPresented: { _ in false },
             openTask: { _ in }
         )
+        delivery.suspendAuthorizationStatus = true
         controller.start()
-        await controller.refreshAuthorizationStatus()
+        defer { controller.stop() }
+        #expect(await waitUntil { delivery.hasPendingAuthorizationStatusRequest })
+        delivery.resumeAuthorizationStatus()
+        #expect(await waitUntil { controller.authorizationStatus == .authorized })
 
         let working = task(seed: 31, state: .executing)
         var ended = working
@@ -360,13 +364,155 @@ struct AgentNotificationTests {
         #expect(delivery.requests.isEmpty)
         #expect(settings.deliveredEventIDs.isEmpty)
 
-        registry.setTasksForTesting([working])
-        registry.setTasksForTesting([ended])
-        #expect(await waitUntil { delivery.deliveryAttemptCount == 3 })
+        // The task remains terminated. A real process cannot replay its exit
+        // just because Notification Center was temporarily unavailable.
+        NotificationCenter.default.post(
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        #expect(await waitUntil { settings.deliveredEventIDs.count == 1 })
+        #expect(delivery.deliveryAttemptCount == 3)
 
         let request = try #require(delivery.requests.first)
         #expect(settings.hasDelivered(request.identifier))
-        controller.stop()
+        let readsBeforeActivation = delivery.authorizationStatusRequestCount
+        NotificationCenter.default.post(
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        #expect(await waitUntil {
+            delivery.authorizationStatusRequestCount > readsBeforeActivation
+        })
+        await settle()
+        #expect(delivery.requests.count == 1)
+        #expect(delivery.deliveryAttemptCount == 3)
+    }
+
+    @Test(
+        "exhausted delivery respects mute, disable, stop, and visible-route suppression",
+        arguments: ["mute", "disable", "stop", "presented"]
+    )
+    func exhaustedDeliveryRespectsSuppression(_ suppression: String) async throws {
+        let fixture = DefaultsFixture()
+        defer { fixture.cleanup() }
+        let settings = AgentNotificationSettings(defaults: fixture.defaults)
+        settings.setEnabled(true)
+        let registry = AgentTaskRegistry()
+        let delivery = RecordingAgentNotificationDelivery(status: .authorized)
+        delivery.failuresRemaining = 2
+        delivery.suspendAuthorizationStatus = true
+        var presented = false
+        let controller = AgentNotificationController(
+            registry: registry,
+            settings: settings,
+            delivery: delivery,
+            accuracy: { _ in .processTerminationOnly },
+            deliveryRetryDelays: [.zero],
+            isPresented: { _ in presented },
+            openTask: { _ in }
+        )
+        controller.start()
+        defer { controller.stop() }
+        #expect(await waitUntil { delivery.hasPendingAuthorizationStatusRequest })
+        delivery.resumeAuthorizationStatus()
+        #expect(await waitUntil { controller.authorizationStatus == .authorized })
+
+        let working = task(seed: 32, state: .executing)
+        var ended = working
+        update(&ended, state: .done, liveness: .terminated, offset: 1)
+        registry.setTasksForTesting([working])
+        registry.setTasksForTesting([ended])
+        #expect(await waitUntil { delivery.deliveryAttemptCount == 2 })
+        #expect(delivery.requests.isEmpty)
+
+        switch suppression {
+        case "mute":
+            settings.muteTask(ended.id)
+        case "disable":
+            controller.disable()
+            // Re-enabling must not revive events explicitly cleared by disable.
+            settings.setEnabled(true)
+        case "stop":
+            controller.stop()
+            controller.start()
+        case "presented":
+            presented = true
+        default:
+            Issue.record("Unknown notification suppression scenario")
+        }
+        await controller.refreshAuthorizationStatus()
+        await settle()
+        #expect(delivery.deliveryAttemptCount == 2)
+        #expect(delivery.requests.isEmpty)
+        #expect(settings.deliveredEventIDs.isEmpty)
+    }
+
+    @Test(
+        "deferred notifications are discarded when their task or waiting state is no longer current",
+        arguments: ["dismissed", "missing", "generation", "run", "answered", "stale"]
+    )
+    func exhaustedDeliveryDiscardsObsoleteTask(_ change: String) async {
+        let fixture = DefaultsFixture()
+        defer { fixture.cleanup() }
+        let settings = AgentNotificationSettings(defaults: fixture.defaults)
+        settings.setEnabled(true)
+        let registry = AgentTaskRegistry()
+        let delivery = RecordingAgentNotificationDelivery(status: .authorized)
+        delivery.failuresRemaining = 2
+        delivery.suspendAuthorizationStatus = true
+        let controller = AgentNotificationController(
+            registry: registry,
+            settings: settings,
+            delivery: delivery,
+            accuracy: { _ in .verifiedLifecycleTransitions },
+            deliveryRetryDelays: [.zero],
+            isPresented: { _ in false },
+            openTask: { _ in }
+        )
+        controller.start()
+        defer { controller.stop() }
+        #expect(await waitUntil { delivery.hasPendingAuthorizationStatusRequest })
+        delivery.resumeAuthorizationStatus()
+        #expect(await waitUntil { controller.authorizationStatus == .authorized })
+
+        let working = task(seed: 33, state: .executing)
+        var waiting = working
+        update(&waiting, state: .waitingInput, offset: 1)
+        registry.setTasksForTesting([working])
+        registry.setTasksForTesting([waiting])
+        #expect(await waitUntil { delivery.deliveryAttemptCount == 2 })
+        #expect(delivery.requests.isEmpty)
+
+        var current = waiting
+        switch change {
+        case "dismissed":
+            current.lifecycle = .dismissed
+        case "generation":
+            let previous = current.runs[0].process
+            current.runs[0].process = AgentProcessEvidence(
+                processIdentifier: previous.processIdentifier,
+                processGeneration: previous.processGeneration + 1,
+                startIdentifier: previous.startIdentifier,
+                observedStartedAt: previous.observedStartedAt,
+                startIsAuthoritative: previous.startIsAuthoritative
+            )
+        case "run":
+            current.runs = task(seed: 34, state: .waitingInput).runs
+        case "answered":
+            update(&current, state: .executing, offset: 2)
+        case "stale":
+            current.runs[0].liveness = .stale
+        case "missing":
+            break
+        default:
+            Issue.record("Unknown deferred notification task change")
+        }
+        registry.setTasksForTesting(change == "missing" ? [] : [current])
+        await controller.refreshAuthorizationStatus()
+        await settle()
+        #expect(delivery.deliveryAttemptCount == 2)
+        #expect(delivery.requests.isEmpty)
+        #expect(settings.deliveredEventIDs.isEmpty)
     }
 
     @Test("denied authorization gates delivery at runtime but keeps the user's preference")
@@ -710,6 +856,7 @@ private final class RecordingAgentNotificationDelivery: AgentNotificationDeliver
     var suspendAuthorizationStatus = false
     private(set) var requests: [AgentNotificationRequest] = []
     private(set) var deliveryAttemptCount = 0
+    private(set) var authorizationStatusRequestCount = 0
     // More than one caller can park here: an activation-notification refresh
     // posted by another test in the parallel suite can arrive while the
     // startup refresh is still suspended.
@@ -726,6 +873,7 @@ private final class RecordingAgentNotificationDelivery: AgentNotificationDeliver
 
     func registerActions() {}
     func authorizationStatus() async -> AgentNotificationAuthorizationStatus {
+        authorizationStatusRequestCount += 1
         guard suspendAuthorizationStatus else { return status }
         return await withCheckedContinuation { continuation in
             authorizationStatusContinuations.append(continuation)
