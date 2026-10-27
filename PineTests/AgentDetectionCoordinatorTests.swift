@@ -516,6 +516,149 @@ struct AgentDetectionCoordinatorTests {
         ).isEmpty)
     }
 
+    @Test func fallbackReplacementRestoresOwnershipAndConsumesPendingLaunch()
+        throws {
+        let taskRegistry = AgentTaskRegistry(claimTTL: .seconds(30))
+        let project = configuredProject(
+            path: "/tmp/pine-precise-recovery-claim",
+            registry: taskRegistry
+        )
+        let pane = project.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let tab = try #require(
+            project.paneManager.terminalState(for: pane)?.activeTab
+        )
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        guard case .reserved(let reservation) =
+                project.terminal.prepareAgentLaunch(
+                    in: tab,
+                    descriptor: AgentDescriptor(
+                        agentType: .claudeCode,
+                        launchExecutable: "claude"
+                    ),
+                    title: nil,
+                    objective: nil
+                ) else {
+            Issue.record("terminal launch reservation was rejected")
+            return
+        }
+        #expect(taskRegistry.armLaunch(reservation))
+        let agent = process(
+            pid: 505,
+            parent: 400,
+            group: 505,
+            command: "claude",
+            startedAt: Date().addingTimeInterval(1).timeIntervalSince1970,
+            startIdentifier: "same-coarse-second"
+        )
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+
+        coordinator.applySnapshotForTesting(processes: [
+            replacing(agent, preciseStartedAt: nil, cpuTime: 0),
+        ])
+        let fallback = try #require(
+            project.terminal.agentDetector.session(forPID: agent.pid)
+        )
+        let fallbackGeneration = try #require(
+            fallback.processEvidence?.processGeneration
+        )
+        #expect(fallback.processEvidence?.startIsAuthoritative == false)
+        #expect(tab.agentSession == nil)
+        #expect(taskRegistry.isLaunchPending(reservation))
+        #expect(taskRegistry.task(for: reservation.taskID)?.runs.isEmpty == true)
+
+        let pendingTasks = taskRegistry.tasks
+        coordinator.applySnapshotForTesting(processes: [agent])
+
+        let recovered = try #require(tab.agentSession)
+        let recoveredEvidence = try #require(recovered.processEvidence)
+        let task = try #require(taskRegistry.task(for: reservation.taskID))
+        #expect(recovered !== fallback)
+        #expect(fallback.state == .done)
+        #expect(recoveredEvidence.processGeneration == fallbackGeneration + 1)
+        #expect(recoveredEvidence.startIdentifier == agent.startIdentifier)
+        #expect(recoveredEvidence.startIsAuthoritative == true)
+        #expect(!taskRegistry.isLaunchPending(reservation))
+        #expect(taskRegistry.taskID(forSessionID: fallback.id) == nil)
+        #expect(taskRegistry.taskID(forSessionID: recovered.id) == reservation.taskID)
+        #expect(task.origin == .pineLaunched)
+        #expect(task.lifecycle == .active)
+        #expect(task.runs.map(\.id) == [recovered.id])
+        #expect(task.runs.first?.liveness == .live)
+        #expect(task.runs.first?.endedAt == nil)
+        #expect(AgentNotificationTransitionResolver.events(
+            from: pendingTasks,
+            to: taskRegistry.tasks,
+            accuracy: { _ in .processTerminationOnly }
+        ).isEmpty)
+    }
+
+    @Test func fallbackRecoveryWithoutStartIdentifierFailsClosed() throws {
+        let taskRegistry = AgentTaskRegistry(claimTTL: .seconds(30))
+        let project = configuredProject(
+            path: "/tmp/pine-precise-recovery-no-start",
+            registry: taskRegistry
+        )
+        let pane = project.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let tab = try #require(
+            project.paneManager.terminalState(for: pane)?.activeTab
+        )
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        guard case .reserved(let reservation) =
+                project.terminal.prepareAgentLaunch(
+                    in: tab,
+                    descriptor: AgentDescriptor(
+                        agentType: .pi,
+                        launchExecutable: "pi"
+                    ),
+                    title: nil,
+                    objective: nil
+                ) else {
+            Issue.record("terminal launch reservation was rejected")
+            return
+        }
+        #expect(taskRegistry.armLaunch(reservation))
+        let agent = DetectedProcess(
+            pid: 512,
+            parentProcessID: 400,
+            processGroupID: 512,
+            command: "pi",
+            cpuTime: 1,
+            preciseStartedAt: Date().addingTimeInterval(1)
+        )
+        setLiveAgent(agent, on: tab)
+        setForeground(agent, on: tab)
+        coordinator.applySnapshotForTesting(processes: [
+            replacing(agent, preciseStartedAt: nil, cpuTime: 0),
+        ])
+        let fallback = try #require(
+            project.terminal.agentDetector.session(forPID: agent.pid)
+        )
+
+        coordinator.applySnapshotForTesting(processes: [agent])
+
+        let recovered = try #require(
+            project.terminal.agentDetector.session(forPID: agent.pid)
+        )
+        #expect(recovered !== fallback)
+        #expect(recovered.processEvidence?.startIdentifier == nil)
+        #expect(recovered.processEvidence?.startIsAuthoritative == true)
+        #expect(tab.agentSession == nil)
+        #expect(taskRegistry.isLaunchPending(reservation))
+        #expect(taskRegistry.task(for: reservation.taskID)?.runs.isEmpty == true)
+        #expect(taskRegistry.taskID(forSessionID: recovered.id) == nil)
+    }
+
     @Test func preciseLossIsIsolatedAcrossAgentsAndProjects() throws {
         let taskRegistry = AgentTaskRegistry()
         let firstProject = configuredProject(

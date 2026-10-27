@@ -508,6 +508,140 @@ struct AgentDetectorTests {
         #expect(fallback.processEvidence?.startIsAuthoritative == false)
     }
 
+    @Test func unavailableToAuthoritativeTransitionReplacesFallbackGeneration()
+        throws {
+        let detector = AgentDetector()
+        let coarse = "Mon Jul 20 10:00:00 2026"
+        let precise = Date(timeIntervalSince1970: 7_050.125)
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 516,
+                command: "pi",
+                cpuTime: 3
+            ),
+        ])
+        let fallback = try #require(detector.session(forPID: 516))
+        let fallbackGeneration = try #require(
+            fallback.processEvidence?.processGeneration
+        )
+        #expect(fallback.processEvidence?.startIsAuthoritative == false)
+
+        let recoveryTermination = detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 516,
+                command: "pi",
+                cpuTime: 4,
+                startIdentifier: coarse,
+                preciseStartedAt: precise
+            ),
+        ])
+
+        let authoritative = try #require(detector.session(forPID: 516))
+        #expect(recoveryTermination == [fallback.id])
+        #expect(fallback.state == .done)
+        #expect(fallback.liveness == .terminated)
+        #expect(authoritative !== fallback)
+        #expect(
+            authoritative.processEvidence?.processGeneration
+                == fallbackGeneration + 1
+        )
+        #expect(authoritative.processEvidence?.startIdentifier == coarse)
+        #expect(authoritative.processEvidence?.observedStartedAt == precise)
+        #expect(authoritative.processEvidence?.startIsAuthoritative == true)
+
+        let repeatedTermination = detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 516,
+                command: "pi",
+                cpuTime: 5,
+                startIdentifier: coarse,
+                preciseStartedAt: precise
+            ),
+        ])
+        #expect(repeatedTermination.isEmpty)
+        #expect(detector.session(forPID: 516) === authoritative)
+    }
+
+    @Test func staleAuthoritativeSnapshotCannotReplaceFallbackGeneration()
+        throws {
+        let detector = AgentDetector()
+        let baseline = Date(timeIntervalSince1970: 6_750)
+        let fallbackProcess = DetectedProcess(
+            pid: 516,
+            command: "pi",
+            cpuTime: 3,
+            startIdentifier: "same-coarse-second"
+        )
+        detector.processSnapshotDidUpdate(
+            [fallbackProcess],
+            observation: stamp(
+                baseline,
+                uptime: 200,
+                generation: 2,
+                sequence: 2
+            )
+        )
+        let fallback = try #require(detector.session(forPID: 516))
+        let fallbackEvidence = try #require(fallback.processEvidence)
+
+        let terminated = detector.processSnapshotDidUpdate(
+            [DetectedProcess(
+                pid: 516,
+                command: "pi",
+                cpuTime: 4,
+                startIdentifier: "same-coarse-second",
+                preciseStartedAt: Date(timeIntervalSince1970: 7_050.125)
+            )],
+            observation: stamp(
+                baseline.addingTimeInterval(100),
+                uptime: 300,
+                generation: 2,
+                sequence: 1
+            )
+        )
+
+        #expect(terminated.isEmpty)
+        #expect(detector.session(forPID: 516) === fallback)
+        #expect(fallback.processEvidence == fallbackEvidence)
+        #expect(detector.detectedSessions == [fallback])
+    }
+
+    @Test func pidReuseWithIdenticalCoarseEvidenceCannotKeepFallbackSession()
+        throws {
+        let detector = AgentDetector()
+        let coarse = "Mon Jul 20 10:00:00 2026"
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 516,
+                command: "pi",
+                cpuTime: 4,
+                startIdentifier: coarse
+            ),
+        ])
+        let fallback = try #require(detector.session(forPID: 516))
+        let fallbackGeneration = try #require(
+            fallback.processEvidence?.processGeneration
+        )
+
+        let terminated = detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 516,
+                command: "pi",
+                cpuTime: 4,
+                startIdentifier: coarse,
+                preciseStartedAt: Date(timeIntervalSince1970: 7_050.125)
+            ),
+        ])
+
+        let reused = try #require(detector.session(forPID: 516))
+        #expect(terminated == [fallback.id])
+        #expect(fallback.state == .done)
+        #expect(reused !== fallback)
+        #expect(reused.processEvidence?.processGeneration == fallbackGeneration + 1)
+        #expect(reused.processEvidence?.startIdentifier == coarse)
+        #expect(reused.processEvidence?.startIsAuthoritative == true)
+    }
+
     @Test func transientMissingPreciseEvidencePreservesAuthoritativeGeneration()
         throws {
         let detector = AgentDetector()

@@ -249,14 +249,21 @@ final class AgentDetector {
                     current: process.preciseStartedAt
                 )
 
+                let fallbackBecameAuthoritative = preciseStartObservation == .consistent
+                    && preciseStartByPID[process.pid] == nil
+                    && existing.processEvidence?.startIsAuthoritative == false
+                    && process.preciseStartedAt != nil
+
                 // A pid may exec another agent or be recycled for the same
                 // command. A changed lstart value proves a new generation;
                 // cumulative CPU regression is the conservative fallback. A
-                // missing precise enrichment is not replacement evidence: the
-                // last authoritative witness remains immutable until a later
-                // sample either confirms or positively contradicts it.
+                // missing precise enrichment is not replacement evidence for
+                // an authoritative generation. A fallback generation instead
+                // gets replaced when its first precise witness arrives, because
+                // its immutable evidence cannot be promoted in place safely.
                 if existing.agentType != resolved || startChanged
                     || preciseStartObservation == .contradictory
+                    || fallbackBecameAuthoritative
                     || cpuRegressed {
                     if let terminatedID = markDone(pid: process.pid) {
                         newlyTerminated.insert(terminatedID)
