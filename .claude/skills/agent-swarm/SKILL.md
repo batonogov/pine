@@ -5,7 +5,7 @@ description: Use when distributing a backlog or milestone across subagents in th
 
 # Maintainer-directed issue swarm
 
-These three sections used to sit in `CLAUDE.md`. They are a procedure rather
+These three sections used to sit in `AGENTS.md`. They are a procedure rather
 than standing context, so they load when a swarm is actually being run.
 
 When the maintainer asks the parent agent to distribute a backlog across

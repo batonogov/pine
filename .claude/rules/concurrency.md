@@ -6,7 +6,7 @@ paths:
 
 # Concurrency, debounce, and reentrancy
 
-`CLAUDE.md` carries the rules that must hold before you open a file. This is
+`AGENTS.md` carries the rules that must hold before you open a file. This is
 the detail behind them.
 
 Pine uses GCD for background work, bridged to async/await via `withCheckedContinuation` at API boundaries.

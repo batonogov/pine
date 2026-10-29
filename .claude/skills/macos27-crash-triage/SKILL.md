@@ -12,6 +12,6 @@ description: Use when the PineTests host crashes, hangs, or segfaults on macOS 2
 
 ## Before you blame the diff
 
-A local failure on this runtime is not a pass/fail signal — CI is. `CLAUDE.md`
+A local failure on this runtime is not a pass/fail signal — CI is. `AGENTS.md`
 names the two standing failures that reproduce there regardless of the diff in
 the tree. Confirm a failure on an idle machine first.
