@@ -313,9 +313,8 @@ struct TerminalFontSettingsTests {
         let view = try #require(tab.terminalView as? PineTerminalView)
         #expect(view.font.familyName == "Menlo")
         #expect(view.font.pointSize == 15)
-        let terminal = view.getTerminal()
-        let initialCols = terminal.cols
-        let initialRows = terminal.rows
+        let initialCols = view.terminalDimensions.cols
+        let initialRows = view.terminalDimensions.rows
 
         var redrawRequests = 0
         view.backendRedrawRequestObserver = { redrawRequests += 1 }
@@ -329,8 +328,8 @@ struct TerminalFontSettingsTests {
         #expect(view.font.pointSize == 20)
         #expect(redrawRequests == 1)
         // Larger cells recompute the grid — the resize that drives SIGWINCH.
-        #expect(terminal.cols < initialCols)
-        #expect(terminal.rows < initialRows)
+        #expect(view.terminalDimensions.cols < initialCols)
+        #expect(view.terminalDimensions.rows < initialRows)
 
         settings.fontFamilySelection = "Monaco"
         #expect(view.font.familyName == "Monaco")

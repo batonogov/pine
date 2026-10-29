@@ -32,7 +32,7 @@ paths:
 
 ## Adding a dependency
 
-- **Dependency:** SwiftTerm added via Xcode SPM (File > Add Package Dependencies > `https://github.com/batonogov/SwiftTerm.git` — Pine's fork, pinned to an exact `1.19.0-pine.N` tag; patches ride on top of upstream 1.19.0, so bumping means cutting a new fork tag, not floating a branch)
+- **Dependency:** SwiftTerm added via Xcode SPM (File > Add Package Dependencies > `https://github.com/migueldeicaza/SwiftTerm.git` — upstream, pinned to an exact tag; Pine's rendering patches were upstreamed in 1.99.2, so bumping means updating the pin, not cutting a fork tag)
 
 ## Utility scripts
 

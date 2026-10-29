@@ -19,30 +19,15 @@ enum MouseScrollForwarder {
         let row: Int
     }
 
-    /// Encodes a scroll wheel direction and modifiers into VT100 mouse button flags.
+    /// Returns the VT100 wheel button for a scroll direction.
     ///
-    /// In the VT100 mouse protocol:
-    /// - Button 4 (scroll up) = 64
-    /// - Button 5 (scroll down) = 65
-    /// - Shift adds 4, Meta/Option adds 8, Control adds 16
+    /// In the VT100 mouse protocol button 4 is scroll up and button 5 is
+    /// scroll down. Modifiers are passed separately to
+    /// `TerminalView.sendMouseEvent`, which owns the flag encoding.
     ///
-    /// - Parameters:
-    ///   - deltaY: Positive = scroll up, negative = scroll down.
-    ///   - shift: Whether the Shift key is pressed.
-    ///   - option: Whether the Option/Meta key is pressed.
-    ///   - control: Whether the Control key is pressed.
-    /// - Returns: Encoded button flags suitable for `Terminal.sendEvent`.
-    static func encodeScrollButton(
-        deltaY: CGFloat,
-        shift: Bool,
-        option: Bool,
-        control: Bool
-    ) -> Int {
-        var value = deltaY > 0 ? 64 : 65
-        if shift { value |= 4 }
-        if option { value |= 8 }
-        if control { value |= 16 }
-        return value
+    /// - Parameter deltaY: Positive = scroll up, negative = scroll down.
+    static func scrollButton(deltaY: CGFloat) -> Int {
+        deltaY > 0 ? 4 : 5
     }
 
     /// Converts a point in view coordinates to terminal grid coordinates.
@@ -107,10 +92,10 @@ enum MouseScrollForwarder {
     /// `TerminalSession.swift`; it documents that the arrow cadence intentionally
     /// matches normal-mode scrollback. The helper itself is an identity pass-through
     /// over `result.lines`, so the count it returns is already covered by the
-    /// `normalScrollLines` tests. The actual `sendResponse` emission loop and the
+    /// `normalScrollLines` tests. The actual `send` emission loop and the
     /// per-call arrow direction selection live in the caller and are not
-    /// unit-tested here: the project has no SwiftTerm `Terminal` spy or integration
-    /// harness, so they are verified manually per the PR's manual-test checklist.
+    /// unit-tested here: they are verified manually per the PR's manual-test
+    /// checklist.
     ///
     /// - Parameter result: The result of `normalScrollLines` for the scroll event.
     /// - Returns: Number of arrow key sequences to emit.

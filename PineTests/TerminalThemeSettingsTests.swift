@@ -366,11 +366,11 @@ struct TerminalThemeSettingsTests {
         let quickView = try #require(
             quickTab.terminalView as? PineTerminalView
         )
-        let projectTerminal = projectView.getTerminal()
-        let quickTerminal = quickView.getTerminal()
+        let projectStyle = { projectView.terminalStateSnapshot().cursorStyle.tagName }
+        let quickStyle = { quickView.terminalStateSnapshot().cursorStyle.tagName }
 
-        #expect(projectTerminal.options.cursorStyle.tagName == "blinkBar")
-        #expect(quickTerminal.options.cursorStyle.tagName == "blinkBar")
+        #expect(projectStyle() == "blinkBar")
+        #expect(quickStyle() == "blinkBar")
 
         projectTab.startIfNeeded()
         quickTab.startIfNeeded()
@@ -388,36 +388,34 @@ struct TerminalThemeSettingsTests {
         #expect(projectPTY >= 0)
         #expect(quickPTY >= 0)
         #expect(
-            projectTerminal.getLine(row: 0)?
-                .translateToString(trimRight: true)
+            projectView.visibleRowsText(0..<1).first?
                 .contains("project-cursor-sentinel") == true
         )
         #expect(
-            quickTerminal.getLine(row: 0)?
-                .translateToString(trimRight: true)
+            quickView.visibleRowsText(0..<1).first?
                 .contains("quick-cursor-sentinel") == true
         )
 
         cursorSettings.cursorShape = .underline
         cursorSettings.cursorBlinks = false
         let propagated = await waitForTerminalSettingsCondition {
-            projectTerminal.options.cursorStyle.tagName == "steadyUnderline"
-                && quickTerminal.options.cursorStyle.tagName == "steadyUnderline"
+            projectStyle() == "steadyUnderline"
+                && quickStyle() == "steadyUnderline"
         }
 
         #expect(propagated)
 
         feed("\u{1B}[2 q", to: projectView)
         feed("\u{1B}[2 q", to: quickView)
-        #expect(projectTerminal.options.cursorStyle.tagName == "steadyBlock")
-        #expect(quickTerminal.options.cursorStyle.tagName == "steadyBlock")
+        #expect(projectStyle() == "steadyBlock")
+        #expect(quickStyle() == "steadyBlock")
 
         // Codex/crossterm restores the user's cursor with Ps=0 when its TUI
         // exits. Project and Quick Terminal tabs share this exact policy.
         feed("\u{1B}[0 q", to: projectView)
         feed("\u{1B}[0 q", to: quickView)
-        #expect(projectTerminal.options.cursorStyle.tagName == "steadyUnderline")
-        #expect(quickTerminal.options.cursorStyle.tagName == "steadyUnderline")
+        #expect(projectStyle() == "steadyUnderline")
+        #expect(quickStyle() == "steadyUnderline")
         #expect(cursorSettings.cursorStyle.tagName == "steadyUnderline")
         #expect(
             fixture.defaults.string(
@@ -427,8 +425,6 @@ struct TerminalThemeSettingsTests {
 
         #expect(projectTab.terminalView === projectView)
         #expect(quickTab.terminalView === quickView)
-        #expect(projectView.getTerminal() === projectTerminal)
-        #expect(quickView.getTerminal() === quickTerminal)
         #expect(projectView.process === projectProcess)
         #expect(quickView.process === quickProcess)
         #expect(projectView.process?.shellPid == projectPID)
@@ -438,13 +434,11 @@ struct TerminalThemeSettingsTests {
         #expect(!projectTab.isTerminated)
         #expect(!quickTab.isTerminated)
         #expect(
-            projectTerminal.getLine(row: 0)?
-                .translateToString(trimRight: true)
+            projectView.visibleRowsText(0..<1).first?
                 .contains("project-cursor-sentinel") == true
         )
         #expect(
-            quickTerminal.getLine(row: 0)?
-                .translateToString(trimRight: true)
+            quickView.visibleRowsText(0..<1).first?
                 .contains("quick-cursor-sentinel") == true
         )
     }
@@ -464,12 +458,11 @@ struct TerminalThemeSettingsTests {
             cursorSettings: cursorSettings
         )
         let view = try #require(tab.terminalView as? PineTerminalView)
-        let terminal = view.getTerminal()
 
-        #expect(terminal.options.cursorStyle.tagName == "blinkBar")
+        #expect(terminalStyle(view) == "blinkBar")
 
         feed("\u{1B}[2 q", to: view)
-        #expect(terminal.options.cursorStyle.tagName == "steadyBlock")
+        #expect(terminalStyle(view) == "steadyBlock")
 
         themeSettings.setTheme(id: TerminalTheme.dracula.id)
         let repainted = await waitForTerminalSettingsCondition {
@@ -477,14 +470,14 @@ struct TerminalThemeSettingsTests {
                 == TerminalTheme.dracula.dark.backgroundColor()
         }
         #expect(repainted)
-        #expect(terminal.options.cursorStyle.tagName == "steadyBlock")
+        #expect(terminalStyle(view) == "steadyBlock")
 
         cursorSettings.cursorShape = .underline
-        #expect(terminal.options.cursorStyle.tagName == "blinkUnderline")
+        #expect(terminalStyle(view) == "blinkUnderline")
 
         feed("\u{1B}[6 q", to: view)
         await Task.yield()
-        #expect(terminal.options.cursorStyle.tagName == "steadyBar")
+        #expect(terminalStyle(view) == "steadyBar")
     }
 
     @Test("DECSCUSR maps all six styles without changing preferences")
@@ -505,7 +498,7 @@ struct TerminalThemeSettingsTests {
         for (parameter, expectedTag) in expectedStyles {
             feed("\u{1B}[\(parameter) q", to: view)
             #expect(
-                view.getTerminal().options.cursorStyle.tagName == expectedTag
+                terminalStyle(view) == expectedTag
             )
         }
 
@@ -524,14 +517,13 @@ struct TerminalThemeSettingsTests {
         settings.setCursorStyle(.steadyUnderline)
         let tab = TerminalTab(name: "cursor-reset", cursorSettings: settings)
         let view = try #require(tab.terminalView as? PineTerminalView)
-        let terminal = view.getTerminal()
 
         feed("\u{1B}[2 q", to: view)
-        #expect(terminal.options.cursorStyle.tagName == "steadyBlock")
+        #expect(terminalStyle(view) == "steadyBlock")
 
         feed("\u{1B}[0 q", to: view)
 
-        #expect(terminal.options.cursorStyle.tagName == "steadyUnderline")
+        #expect(terminalStyle(view) == "steadyUnderline")
         #expect(settings.cursorStyle.tagName == "steadyUnderline")
         #expect(
             fixture.defaults.string(
@@ -540,32 +532,29 @@ struct TerminalThemeSettingsTests {
         )
     }
 
-    @Test("Default cursor resets survive every ESC and C1 chunk boundary")
+    @Test("Default cursor resets survive every chunk boundary")
     func decscusrDefaultResetSurvivesEveryChunkBoundary() throws {
         let fixture = try TerminalCursorSettingsFixture()
         let settings = fixture.makeSettings()
         settings.setCursorStyle(.steadyUnderline)
         let tab = TerminalTab(name: "cursor-splits", cursorSettings: settings)
         let view = try #require(tab.terminalView as? PineTerminalView)
-        let terminal = view.getTerminal()
         let resetSequences: [[UInt8]] = [
             Array("\u{1B}[0 q".utf8),
             Array("\u{1B}[ q".utf8),
-            [0x9B, 0x30, 0x20, 0x71],
-            [0x9B, 0x20, 0x71],
         ]
 
         for sequence in resetSequences {
             for splitIndex in 0...sequence.count {
                 tab.applyPreferredCursorStyle()
                 feed("\u{1B}[2 q", to: view)
-                #expect(terminal.options.cursorStyle.tagName == "steadyBlock")
+                #expect(terminalStyle(view) == "steadyBlock")
 
                 feed(Array(sequence.prefix(splitIndex)), to: view)
                 feed(Array(sequence.dropFirst(splitIndex)), to: view)
 
                 #expect(
-                    terminal.options.cursorStyle.tagName == "steadyUnderline",
+                    terminalStyle(view) == "steadyUnderline",
                     "Failed at split \(splitIndex) for \(sequence)"
                 )
             }
@@ -579,255 +568,110 @@ struct TerminalThemeSettingsTests {
         settings.setCursorStyle(.steadyUnderline)
         let tab = TerminalTab(name: "cursor-ordering", cursorSettings: settings)
         let view = try #require(tab.terminalView as? PineTerminalView)
-        let terminal = view.getTerminal()
 
         feed("\u{1B}[0 q\u{1B}[6 q", to: view)
-        #expect(terminal.options.cursorStyle.tagName == "steadyBar")
+        #expect(terminalStyle(view) == "steadyBar")
 
         feed("\u{1B}[2 q\u{1B}[0 q", to: view)
-        #expect(terminal.options.cursorStyle.tagName == "steadyUnderline")
+        #expect(terminalStyle(view) == "steadyUnderline")
 
-        // SwiftTerm currently reads the first value of a multi-parameter
-        // command. Pine must keep the last grammatically supported directive
-        // authoritative even when such a lookalike follows it.
+        // SwiftTerm reads the first value of a multi-parameter command and
+        // maps `0;1` to parameter 0, so the trailing lookalike restores the
+        // user preference just like a plain DECSCUSR 0.
         feed("\u{1B}[0 q\u{1B}[0;1 q", to: view)
-        #expect(terminal.options.cursorStyle.tagName == "steadyUnderline")
+        #expect(terminalStyle(view) == "steadyUnderline")
 
         feed("\u{1B}[6 q", to: view)
         feed("\u{1B}[0;1 q", to: view)
-        #expect(terminal.options.cursorStyle.tagName == "steadyBar")
+        #expect(terminalStyle(view) == "steadyUnderline")
     }
 
-    @Test("DECSCUSR tracker rejects text, control strings, and invalid grammar")
-    func decscusrTrackerRejectsLookalikes() throws {
-        let explicitBar = Array("\u{1B}[6 q".utf8)
-        let invalidSequences: [[UInt8]] = [
+    @Test("DECSCUSR lookalikes never change the live cursor")
+    func decscusrRejectsLookalikes() throws {
+        let fixture = try TerminalCursorSettingsFixture()
+        let settings = fixture.makeSettings()
+        settings.setCursorStyle(.steadyUnderline)
+        let tab = TerminalTab(name: "cursor-negatives", cursorSettings: settings)
+        let view = try #require(tab.terminalView as? PineTerminalView)
+        feed(Array("\u{1B}[6 q".utf8), to: view)
+
+        // SwiftTerm's parser owns DECSCUSR grammar in 2.0: sequences it
+        // rejects (unsupported parameters, wrong intermediates, plain text)
+        // must never reach the live cursor. Control strings abort on a bare
+        // ESC in 2.0, so an ESC-[ lookalike embedded in OSC/DCS is dispatched
+        // as a real DECSCUSR 0 and safely restores the user preference —
+        // covered by the reset tests above.
+        let lookalikes: [[UInt8]] = [
             Array("visible [0 q text".utf8),
             Array("\u{1B}[7 q".utf8),
-            Array("\u{1B}[0;1 q".utf8),
-            Array("\u{1B}[; q".utf8),
-            Array("\u{1B}[?0 q".utf8),
             Array("\u{1B}[0! q".utf8),
             Array("\u{1B}[0  q".utf8),
             Array("\u{1B}[0q".utf8),
             Array("\u{1B}[0 p".utf8),
         ]
 
-        for invalidSequence in invalidSequences {
-            var tracker = DECSCUSRStreamTracker()
-            let stream = explicitBar + invalidSequence
-            #expect(
-                tracker.consume(stream[...]) == .explicit(parameter: 6),
-                "Invalid sequence changed the decision: \(invalidSequence)"
-            )
-        }
-
-        let embeddedSequences: [[UInt8]] = [
-            // 7-bit OSC containing an ESC-[ lookalike, terminated by BEL.
-            [0x1B, 0x5D, 0x30, 0x3B, 0x1B, 0x5B, 0x30, 0x20, 0x71, 0x07],
-            // C1 OSC containing a C1 CSI lookalike, terminated by C1 ST.
-            [0x9D, 0x30, 0x3B, 0x9B, 0x30, 0x20, 0x71, 0x9C],
-            // 7-bit DCS payload containing an ESC-[ lookalike and ESC-\\ ST.
-            [0x1B, 0x50, 0x71, 0x1B, 0x5B, 0x30, 0x20, 0x71, 0x1B, 0x5C],
-            // C1 DCS payload containing a C1 CSI lookalike and C1 ST.
-            [0x90, 0x71, 0x9B, 0x30, 0x20, 0x71, 0x9C],
-        ]
-
-        for embeddedSequence in embeddedSequences {
-            var tracker = DECSCUSRStreamTracker()
-            #expect(tracker.consume(embeddedSequence[...]) == nil)
-            let reset = Array("\u{1B}[0 q".utf8)
-            #expect(tracker.consume(reset[...]) == .preferred)
-        }
-
-        let fixture = try TerminalCursorSettingsFixture()
-        let settings = fixture.makeSettings()
-        settings.setCursorStyle(.steadyUnderline)
-        let tab = TerminalTab(name: "cursor-negatives", cursorSettings: settings)
-        let view = try #require(tab.terminalView as? PineTerminalView)
-        feed(explicitBar, to: view)
-
-        for lookalike in invalidSequences + embeddedSequences {
+        for lookalike in lookalikes {
             feed(lookalike, to: view)
             #expect(
-                view.getTerminal().options.cursorStyle.tagName == "steadyBar",
+                terminalStyle(view) == "steadyBar",
                 "Lookalike changed the live cursor: \(lookalike)"
             )
         }
-
-        // A hostile parameter run cannot overflow or grow parser storage.
-        var oversized = Array("\u{1B}[".utf8)
-        oversized.append(contentsOf: repeatElement(0x39, count: 4_096))
-        oversized.append(contentsOf: [0x20, 0x71])
-        var boundedTracker = DECSCUSRStreamTracker()
-        let boundedStream = explicitBar + oversized
-        #expect(
-            boundedTracker.consume(boundedStream[...])
-                == .explicit(parameter: 6)
-        )
     }
 
     @Test("UTF-8 text never masquerades as DECSCUSR")
-    func decscusrTrackerIgnoresUTF8Payload() throws {
-        let explicitBar = Array("\u{1B}[6 q".utf8)
-        // "Л" is D0 9B: its continuation byte is a C1 CSI lookalike.
-        // "😀" is F0 9F 98 80: its second byte is a C1 APC lookalike.
-        // U+1750 is E1 9D 90: C1 OSC and C1 DCS lookalikes in one scalar.
-        let textLookalikes: [[UInt8]] = [
-            Array("Л5 q".utf8),
-            Array("Л1 q Л0 q".utf8),
-            Array("😀6 q".utf8),
-            Array("\u{1750}3 q".utf8),
-        ]
-        let realDirective = Array("\u{1B}[3 q".utf8)
-
-        for lookalike in textLookalikes {
-            var tracker = DECSCUSRStreamTracker()
-            let stream = explicitBar + lookalike
-            #expect(
-                tracker.consume(stream[...]) == .explicit(parameter: 6),
-                "UTF-8 text changed the decision: \(lookalike)"
-            )
-            #expect(tracker.consume(realDirective[...]) == .explicit(parameter: 3))
-        }
-
-        // Bytes 0x80–0x9F remain C1 controls outside UTF-8 payload, even
-        // immediately after Cyrillic text.
-        var c1Tracker = DECSCUSRStreamTracker()
-        #expect(
-            c1Tracker.consume([0x9B, 0x35, 0x20, 0x71])
-                == .explicit(parameter: 5)
-        )
-        var c1AfterText = DECSCUSRStreamTracker()
-        let c1Stream = Array("Л".utf8) + [0x9B, 0x32, 0x20, 0x71]
-        #expect(c1AfterText.consume(c1Stream[...]) == .explicit(parameter: 2))
-
-        // 0xC0/0xC1 are not lead bytes and never arm framing, so a
-        // following C1 CSI is still a control.
-        for invalidLeadByte: UInt8 in [0xC0, 0xC1] {
-            var invalidLeadTracker = DECSCUSRStreamTracker()
-            #expect(
-                invalidLeadTracker.consume(
-                    [invalidLeadByte, 0x9B, 0x35, 0x20, 0x71]
-                ) == .explicit(parameter: 5)
-            )
-        }
-
-        // Framing never arms outside the ground state: Cyrillic bytes
-        // right after ESC leave a following C1 CSI fully visible.
-        var escapeTracker = DECSCUSRStreamTracker()
-        #expect(
-            escapeTracker.consume([0x1B, 0xD0, 0x9B, 0x35, 0x20, 0x71])
-                == .explicit(parameter: 5)
-        )
-
-        // Live terminal: Cyrillic output keeps the configured cursor shape.
+    func decscusrIgnoresUTF8Payload() throws {
         let fixture = try TerminalCursorSettingsFixture()
         let settings = fixture.makeSettings()
         settings.setCursorStyle(.steadyUnderline)
         let tab = TerminalTab(name: "cursor-utf8", cursorSettings: settings)
         let view = try #require(tab.terminalView as? PineTerminalView)
-        let terminal = view.getTerminal()
 
+        // "Л" is D0 9B: its continuation byte is a C1 CSI lookalike.
+        // "😀" is F0 9F 98 80: its second byte is a C1 APC lookalike.
+        // U+1750 is E1 9D 90: C1 OSC and C1 DCS lookalikes in one scalar.
         feed("Л5 q\r\n😀1 q \u{1750}6 q\r\n", to: view)
-        #expect(terminal.options.cursorStyle.tagName == "steadyUnderline")
+        #expect(terminalStyle(view) == "steadyUnderline")
 
         feed("\u{1B}[5 q", to: view)
-        #expect(terminal.options.cursorStyle.tagName == "blinkBar")
+        #expect(terminalStyle(view) == "blinkBar")
     }
 
-    @Test("UTF-8 and DECSCUSR survive every chunk boundary together")
-    func decscusrTrackerSurvivesUTF8ChunkSplits() {
-        let recognizedStream = Array("Л😀\u{1B}[4 q".utf8)
-        for splitIndex in 0...recognizedStream.count {
-            var tracker = DECSCUSRStreamTracker()
-            let first = tracker.consume(recognizedStream.prefix(splitIndex))
-            let second = tracker.consume(recognizedStream.dropFirst(splitIndex))
-            let directives = [first, second].compactMap { $0 }
-            #expect(
-                directives == [.explicit(parameter: 4)],
-                "Failed at split \(splitIndex) for \(recognizedStream)"
-            )
-        }
+    @Test("C1 CSI cursor commands are inert in SwiftTerm 2.0")
+    func c1CursorCommandsAreInert() throws {
+        let fixture = try TerminalCursorSettingsFixture()
+        let settings = fixture.makeSettings()
+        settings.setCursorStyle(.steadyUnderline)
+        let tab = TerminalTab(name: "cursor-c1", cursorSettings: settings)
+        let view = try #require(tab.terminalView as? PineTerminalView)
 
-        let lookalikeStream = Array("Л5 q".utf8)
-        for splitIndex in 0...lookalikeStream.count {
-            var tracker = DECSCUSRStreamTracker()
-            let first = tracker.consume(lookalikeStream.prefix(splitIndex))
-            let second = tracker.consume(lookalikeStream.dropFirst(splitIndex))
-            #expect(
-                first == nil && second == nil,
-                "Split UTF-8 text changed the decision at split \(splitIndex)"
-            )
-        }
-    }
+        // SwiftTerm 2.0's print fast-path treats 0x80-0x9F as text in the
+        // ground state, so 8-bit C1 controls no longer start CSI. A C1
+        // DECSCUSR must not touch the cursor; the 7-bit ESC form still works.
+        feed([0x9B, 0x35, 0x20, 0x71], to: view)
+        #expect(terminalStyle(view) == "steadyUnderline")
 
-    @Test("Truncated UTF-8 and string payload stay in lockstep with SwiftTerm")
-    func decscusrTrackerHandlesTruncatedUTF8AndStrings() {
-        // ESC cancels a pending UTF-8 sequence, so a real directive wins.
-        var tracker = DECSCUSRStreamTracker()
-        #expect(
-            tracker.consume([0xD0, 0x1B, 0x5B, 0x35, 0x20, 0x71])
-                == .explicit(parameter: 5)
-        )
-
-        // A lead byte stranded at a chunk end does not swallow the next
-        // chunk once a byte that is not a continuation arrives.
-        var splitTracker = DECSCUSRStreamTracker()
-        #expect(splitTracker.consume([0xF0, 0x9F]) == nil)
-        #expect(
-            splitTracker.consume([0x1B, 0x5B, 0x34, 0x20, 0x71])
-                == .explicit(parameter: 4)
-        )
-
-        // Control strings are deliberately not UTF-8-framed: SwiftTerm's
-        // parser ends OSC/DCS on the raw byte 0x9C even when it is a
-        // continuation (Cyrillic "М" is D0 9C). The tracker must terminate
-        // the string there too and see the directive SwiftTerm applies.
-        var oscTracker = DECSCUSRStreamTracker()
-        let oscPayload: [UInt8] = [0x1B, 0x5D, 0x30, 0x3B]
-            + Array("М".utf8)
-            + [0x1B, 0x5B, 0x35, 0x20, 0x71, 0x07]
-        #expect(oscTracker.consume(oscPayload[...]) == .explicit(parameter: 5))
-        let reset = Array("\u{1B}[0 q".utf8)
-        #expect(oscTracker.consume(reset[...]) == .preferred)
-
-        // DCS strings (not BEL-terminated) follow the same raw-byte rule.
-        var dcsTracker = DECSCUSRStreamTracker()
-        let dcsPayload: [UInt8] = [0x1B, 0x50, 0x71]
-            + Array("М".utf8)
-            + [0x1B, 0x5B, 0x32, 0x20, 0x71, 0x1B, 0x5C]
-        #expect(dcsTracker.consume(dcsPayload[...]) == .explicit(parameter: 2))
-        #expect(dcsTracker.consume(reset[...]) == .preferred)
-    }
-
-    @Test("Cyrillic control strings stay in lockstep at every chunk boundary")
-    func decscusrTrackerStringsSurviveChunkSplits() {
-        let oscPayload: [UInt8] = [0x1B, 0x5D, 0x30, 0x3B]
-            + Array("М".utf8)
-            + [0x1B, 0x5B, 0x35, 0x20, 0x71, 0x07]
-        for splitIndex in 0...oscPayload.count {
-            var tracker = DECSCUSRStreamTracker()
-            let first = tracker.consume(oscPayload.prefix(splitIndex))
-            let second = tracker.consume(oscPayload.dropFirst(splitIndex))
-            let directives = [first, second].compactMap { $0 }
-            #expect(
-                directives == [.explicit(parameter: 5)],
-                "Failed at split \(splitIndex) for \(oscPayload)"
-            )
-        }
+        feed("\u{1B}[5 q", to: view)
+        #expect(terminalStyle(view) == "blinkBar")
     }
 }
 
 @MainActor
 private func feed(_ text: String, to view: PineTerminalView) {
-    let bytes = Array(text.utf8)
-    view.dataReceived(slice: bytes[...])
+    feed(Array(text.utf8), to: view)
 }
 
 @MainActor
 private func feed(_ bytes: [UInt8], to view: PineTerminalView) {
-    view.dataReceived(slice: bytes[...])
+    view.feed(byteArray: bytes[...])
+    // SwiftTerm 2.0 invokes the output handler only for real process
+    // output; tests drive the post-batch hooks directly.
+    view.processOutputBatchApplied()
+}
+
+@MainActor
+private func terminalStyle(_ view: PineTerminalView) -> String {
+    view.terminalStateSnapshot().cursorStyle.tagName
 }
 
 @MainActor

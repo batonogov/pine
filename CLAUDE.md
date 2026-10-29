@@ -7,10 +7,10 @@ Guidance for AI coding agents (Claude Code, pi, and others) working in this repo
 Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Its minimum deployment target is macOS 26.0 (Tahoe), and compatibility work must cover both macOS 26 and macOS 27.
 
 **Dependencies** (via Xcode SPM):
-- [SwiftTerm](https://github.com/batonogov/SwiftTerm) — terminal emulator; Pine consumes its own fork, pinned to an exact `1.19.0-pine.N` tag (upstream [migueldeicaza/SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) 1.19.0 plus Pine patches, e.g. the #1650 bright-foreground fix)
+- [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) — terminal emulator, pinned to an exact upstream tag (currently 1.99.2, which includes Pine's upstreamed patches: #1650 bright-foreground slots, #1652 powerline glyphs, link underline tinting)
 - [Sparkle](https://sparkle-project.org/Sparkle) — auto-updates
 - [swift-markdown](https://github.com/swiftlang/swift-markdown) — markdown preview rendering
-- No other third-party dependencies
+- No other direct third-party dependencies (SwiftTerm 1.99.2 transitively pins `swift-png` and `h` — review them in `Package.resolved` on bumps)
 
 ## Build & Run
 

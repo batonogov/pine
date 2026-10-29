@@ -1,6 +1,15 @@
 {
-  "originHash" : "831c3911fcbea7b912a02de6330877fa157318e4e33e3d35ee9229cffc12214a",
+  "originHash" : "7c5bb3d5ca3b259f76411556c9f651db70b07bc7f4cddc910018635e0ce5e690",
   "pins" : [
+    {
+      "identity" : "h",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/rarestype/h",
+      "state" : {
+        "revision" : "aa3626829160917d4378330617971977cbd78f5b",
+        "version" : "1.0.1"
+      }
+    },
     {
       "identity" : "sparkle",
       "kind" : "remoteSourceControl",
@@ -38,12 +47,21 @@
       }
     },
     {
+      "identity" : "swift-png",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tayloraswift/swift-png",
+      "state" : {
+        "revision" : "2d17c6c51c098628574c0383f1119892655a73a2",
+        "version" : "4.5.2"
+      }
+    },
+    {
       "identity" : "swiftterm",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/batonogov/SwiftTerm.git",
+      "location" : "https://github.com/migueldeicaza/SwiftTerm.git",
       "state" : {
-        "revision" : "089f6ebd711cf744f6722dda078bf8346aed5227",
-        "version" : "1.19.0-pine.4"
+        "revision" : "a183c15b52858530a17de57dcc72b93eeebc9857",
+        "version" : "1.99.2"
       }
     }
   ],

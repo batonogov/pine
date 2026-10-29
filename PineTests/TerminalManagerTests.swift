@@ -204,8 +204,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchFindsMatches() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "hello world\r\nhello pine\r\ngoodbye\r\n")
+        tab.terminalView.feed(text: "hello world\r\nhello pine\r\ngoodbye\r\n")
 
         await tab.search(for: "hello")
 
@@ -223,8 +222,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchMultipleMatchesSameLine() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "abc abc abc\r\n")
+        tab.terminalView.feed(text: "abc abc abc\r\n")
 
         await tab.search(for: "abc")
 
@@ -236,8 +234,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchCaseInsensitive() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "Hello HELLO hello\r\n")
+        tab.terminalView.feed(text: "Hello HELLO hello\r\n")
 
         await tab.search(for: "hello")
 
@@ -248,8 +245,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchCaseSensitive() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "Hello HELLO hello\r\n")
+        tab.terminalView.feed(text: "Hello HELLO hello\r\n")
 
         await tab.search(for: "hello", caseSensitive: true)
 
@@ -262,8 +258,7 @@ struct TerminalManagerTests {
     @MainActor
     func nextMatchWraps() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "aaa\r\naaa\r\n")
+        tab.terminalView.feed(text: "aaa\r\naaa\r\n")
 
         await tab.search(for: "aaa")
 
@@ -278,8 +273,7 @@ struct TerminalManagerTests {
     @MainActor
     func previousMatchWraps() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "aaa\r\naaa\r\n")
+        tab.terminalView.feed(text: "aaa\r\naaa\r\n")
 
         await tab.search(for: "aaa")
 
@@ -310,8 +304,7 @@ struct TerminalManagerTests {
     @MainActor
     func newSearchReplacesOld() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "foo bar baz\r\n")
+        tab.terminalView.feed(text: "foo bar baz\r\n")
 
         await tab.search(for: "foo")
         #expect(tab.searchMatches.count == 1)
@@ -326,8 +319,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchNoResults() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "hello world\r\n")
+        tab.terminalView.feed(text: "hello world\r\n")
 
         await tab.search(for: "xyz")
 
@@ -349,8 +341,7 @@ struct TerminalManagerTests {
     @MainActor
     func singleCharSearch() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "abcabc\r\n")
+        tab.terminalView.feed(text: "abcabc\r\n")
 
         await tab.search(for: "a")
 
@@ -366,8 +357,7 @@ struct TerminalManagerTests {
     @MainActor
     func singleMatchNavigation() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "unique\r\n")
+        tab.terminalView.feed(text: "unique\r\n")
 
         await tab.search(for: "unique")
 
@@ -382,8 +372,7 @@ struct TerminalManagerTests {
     @MainActor
     func nonOverlappingMatches() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "aaaa\r\n")
+        tab.terminalView.feed(text: "aaaa\r\n")
 
         await tab.search(for: "aa")
 
@@ -395,8 +384,7 @@ struct TerminalManagerTests {
     @MainActor
     func unicodeSearch() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "привет мир привет\r\n")
+        tab.terminalView.feed(text: "привет мир привет\r\n")
 
         await tab.search(for: "привет")
 
@@ -407,8 +395,7 @@ struct TerminalManagerTests {
     @MainActor
     func specialAsciiSearch() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "path/to/file:123 path/to/file:456\r\n")
+        tab.terminalView.feed(text: "path/to/file:123 path/to/file:456\r\n")
 
         await tab.search(for: "path/to/file:")
 
@@ -419,8 +406,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchWithEmptyLines() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "match\r\n\r\n\r\nmatch\r\n")
+        tab.terminalView.feed(text: "match\r\n\r\n\r\nmatch\r\n")
 
         await tab.search(for: "match")
 
@@ -435,8 +421,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchAfterClear() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "foo bar\r\n")
+        tab.terminalView.feed(text: "foo bar\r\n")
 
         await tab.search(for: "foo")
         #expect(tab.searchMatches.count == 1)
@@ -454,8 +439,7 @@ struct TerminalManagerTests {
     @MainActor
     func caseSensitiveExact() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "Error error ERROR\r\n")
+        tab.terminalView.feed(text: "Error error ERROR\r\n")
 
         await tab.search(for: "Error", caseSensitive: true)
 
@@ -468,8 +452,7 @@ struct TerminalManagerTests {
     @MainActor
     func toggleCaseSensitivity() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "Foo foo FOO\r\n")
+        tab.terminalView.feed(text: "Foo foo FOO\r\n")
 
         await tab.search(for: "foo", caseSensitive: false)
         #expect(tab.searchMatches.count == 3)
@@ -482,8 +465,7 @@ struct TerminalManagerTests {
     @MainActor
     func specialCharactersAsLiterals() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "file.txt [test] (foo)\r\n")
+        tab.terminalView.feed(text: "file.txt [test] (foo)\r\n")
 
         await tab.search(for: "[test]")
         #expect(tab.searchMatches.count == 1)
@@ -498,8 +480,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchWithAnsiEscapes() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "\u{1B}[31merror\u{1B}[0m: something failed\r\n")
+        tab.terminalView.feed(text: "\u{1B}[31merror\u{1B}[0m: something failed\r\n")
 
         await tab.search(for: "error")
         #expect(tab.searchMatches.count >= 1, "ANSI escapes must not prevent finding text")
@@ -509,8 +490,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchWithFormattingAnsi() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "\u{1B}[1mbold text\u{1B}[0m and \u{1B}[4munderlined\u{1B}[0m\r\n")
+        tab.terminalView.feed(text: "\u{1B}[1mbold text\u{1B}[0m and \u{1B}[4munderlined\u{1B}[0m\r\n")
 
         await tab.search(for: "bold text")
         #expect(tab.searchMatches.count >= 1)
@@ -523,12 +503,11 @@ struct TerminalManagerTests {
     @MainActor
     func searchManyRows() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
         for i in 0..<100 {
             if i % 10 == 0 {
-                terminal.feed(text: "match line \(i)\r\n")
+                tab.terminalView.feed(text: "match line \(i)\r\n")
             } else {
-                terminal.feed(text: "other line \(i)\r\n")
+                tab.terminalView.feed(text: "other line \(i)\r\n")
             }
         }
 
@@ -541,8 +520,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchQueryLongerThanLine() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "short\r\n")
+        tab.terminalView.feed(text: "short\r\n")
 
         let longQuery = String(repeating: "x", count: 200)
         await tab.search(for: longQuery)
@@ -555,8 +533,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchWhitespaceOnly() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "hello world\r\n")
+        tab.terminalView.feed(text: "hello world\r\n")
 
         await tab.search(for: " ")
         #expect(tab.searchMatches.count >= 1, "Space character is a valid search query")
@@ -566,8 +543,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchTabCharacter() async {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "col1\tcol2\tcol3\r\n")
+        tab.terminalView.feed(text: "col1\tcol2\tcol3\r\n")
 
         await tab.search(for: "col2")
         #expect(tab.searchMatches.count == 1)
@@ -577,8 +553,7 @@ struct TerminalManagerTests {
     @MainActor
     func rapidSequentialSearches() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "alpha beta gamma\r\n")
+        tab.terminalView.feed(text: "alpha beta gamma\r\n")
 
         await tab.search(for: "alpha")
         #expect(tab.searchMatches.count == 1)
@@ -598,8 +573,7 @@ struct TerminalManagerTests {
     @MainActor
     func navigationThroughAllMatches() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "a a a a a\r\n")
+        tab.terminalView.feed(text: "a a a a a\r\n")
 
         await tab.search(for: "a")
         // Hard gate, not a soft `#expect`: `1..<count` traps with "Range
@@ -644,8 +618,7 @@ struct TerminalManagerTests {
     @MainActor
     func searchWithLeadingSpaces() async throws {
         let tab = TerminalTab(name: "Test")
-        let terminal = tab.terminalView.getTerminal()
-        terminal.feed(text: "    indented\r\n")
+        tab.terminalView.feed(text: "    indented\r\n")
 
         await tab.search(for: "indented")
         #expect(tab.searchMatches.count == 1)

@@ -178,7 +178,7 @@ extension TerminalTheme {
     /// the canonical Solarized accent colors. Bright black (slot 8) is base01
     /// in both variants: the classic mapping of bright black to base03/base3
     /// makes zsh-autosuggestions ghost text (fg=8) identical to the background
-    /// — invisible — ever since the SwiftTerm fork made slot 8 addressable
+    /// — invisible — ever since SwiftTerm made slot 8 addressable
     /// for foreground text (#1650).
     static let solarized = TerminalTheme(
         id: "solarized",
@@ -300,7 +300,7 @@ extension TerminalTheme {
     /// "Snow Storm" neutrals; its bright black (slot 8) is Nord's canonical
     /// comment grey (#616E88) instead of Snow Storm's #D8DEE9, which sat at
     /// ~1.2:1 against the light background and rendered zsh-autosuggestions
-    /// ghost text (fg=8) invisible once the SwiftTerm fork made slot 8
+    /// ghost text (fg=8) invisible once SwiftTerm made slot 8
     /// addressable (#1650; the #1350 defect class).
     static let nord = TerminalTheme(
         id: "nord",
@@ -433,7 +433,7 @@ extension TerminalTheme {
     /// - slot 0 is a dim-but-legible grey-green rather than the background.
     ///   It was originally chosen because upstream SwiftTerm 1.19.0 collapsed
     ///   the 256-color index 8 onto 0 in `useBrightColors = false` mode,
-    ///   making slot 0 the de-facto ghost-text color; Pine's SwiftTerm fork
+    ///   making slot 0 the de-facto ghost-text color; upstream SwiftTerm
     ///   removed that collapse (#1650), so zsh-autosuggestions ghost text now
     ///   reads slot 8. Slot 0 stays dim and legible by design — it doubles as
     ///   the theme's "black" text on bright TUI backgrounds.
@@ -513,7 +513,7 @@ extension TerminalTheme {
     /// black segment text sits on bright backgrounds, where it reads
     /// correctly. Ghost text (zsh-autosuggestions `fg=8`) reads bright black
     /// #666666, which stays clearly visible on both backgrounds now that the
-    /// SwiftTerm fork keeps slot 8 addressable (#1650). The dark variant's
+    /// SwiftTerm keeps slot 8 addressable (#1650). The dark variant's
     /// ANSI blue (#0000B2 on black, ~1.64:1) is deliberately low-contrast —
     /// bit-for-bit Terminal.app / xterm fidelity is the point of this theme;
     /// users who want a contrast-tuned palette have the other themes.

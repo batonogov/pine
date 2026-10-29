@@ -1366,25 +1366,19 @@ struct TerminalTabTests {
     // and (for alternate screen) raises SIGWINCH via `kickPTYWindowSize` to
     // nudge the TUI into redrawing.
 
-    /// `forceFullRedraw` must seed SwiftTerm's dirty range so a subsequent
-    /// `updateDisplay` (or our own synchronous `setNeedsDisplay`) repaints
-    /// the entire visible buffer. Without this, an idle TUI in alternate
-    /// screen leaves `getUpdateRange()` empty and SwiftTerm's throttled
-    /// path never schedules a redraw.
+    /// `forceFullRedraw` must route a repaint through Pine's backend-aware
+    /// bridge so SwiftTerm's frame driver repaints the visible buffer.
+    /// Without this, an idle TUI in alternate screen keeps a stale frame.
     @Test @MainActor func forceFullRedrawSeedsDirtyRange() {
         let tab = TerminalTab(name: "test")
         tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
-        let term = tab.terminalView.getTerminal()
-
-        term.clearUpdateRange()
-        #expect(term.getUpdateRange() == nil, "Precondition: dirty range must start empty")
+        let view = tab.terminalView as? PineTerminalView
+        var redrawRequested = false
+        view?.backendRedrawRequestObserver = { redrawRequested = true }
 
         tab.forceFullRedraw()
 
-        let range = term.getUpdateRange()
-        #expect(range != nil, "forceFullRedraw must seed a non-empty dirty range")
-        #expect(range?.startY == 0)
-        #expect(range?.endY == term.rows)
+        #expect(redrawRequested, "forceFullRedraw must request a renderer display")
     }
 
     /// `forceFullRedraw` must not crash when the terminal view has no
@@ -1399,18 +1393,18 @@ struct TerminalTabTests {
     }
 
     /// `forceFullRedraw` is idempotent: calling it twice in a row must
-    /// behave like calling it once — same dirty range, no crashes.
+    /// behave like calling it once — a repaint request per call, no crashes.
     @Test @MainActor func forceFullRedrawIdempotent() {
         let tab = TerminalTab(name: "test")
         tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
-        let term = tab.terminalView.getTerminal()
+        let view = tab.terminalView as? PineTerminalView
+        var redrawRequests = 0
+        view?.backendRedrawRequestObserver = { redrawRequests += 1 }
 
         tab.forceFullRedraw()
         tab.forceFullRedraw()
 
-        let range = term.getUpdateRange()
-        #expect(range?.startY == 0)
-        #expect(range?.endY == term.rows)
+        #expect(redrawRequests == 2)
     }
 
     /// SwiftTerm's layer background can drift from Pine's appearance-aware
@@ -1588,23 +1582,23 @@ struct TerminalTabTests {
         let tab2 = state.addTab(workingDirectory: nil)
         container.showTab(state.activeTab) // installs tab2
 
-        // Imagine tab1's TUI has been idle on alternate screen for a while —
-        // its dirty range was consumed by SwiftTerm's last paint.
-        tab1.terminalView.getTerminal().clearUpdateRange()
-        #expect(tab1.terminalView.getTerminal().getUpdateRange() == nil)
+        // Returning to tab1 must route a repaint through Pine's
+        // backend-aware bridge so the buffer becomes visible again.
+        var redrawRequested = false
+        (tab1.terminalView as? PineTerminalView)?.backendRedrawRequestObserver = {
+            redrawRequested = true
+        }
 
         // User clicks tab1 in the tab bar — Pine flips active and re-shows.
         state.activeTerminalID = tab1.id
         container.showTab(state.activeTab)
 
-        let range = tab1.terminalView.getTerminal().getUpdateRange()
-        #expect(range != nil, "Returning to tab1 must seed its dirty range so the buffer repaints")
-        #expect(range?.startY == 0)
+        #expect(redrawRequested, "Returning to tab1 must repaint its buffer")
         _ = tab2 // suppress unused warning
     }
 
     /// The first time a `TerminalContainerView` enters a window, the
-    /// active tab's buffer must be marked dirty — `displayIfNeeded`
+    /// active tab's buffer must be repainted — `displayIfNeeded`
     /// inside `showTab` is a no-op while the container has no window,
     /// so `viewDidMoveToWindow` is the first chance to actually paint.
     @Test @MainActor func viewDidMoveToWindowSeedsDirtyRange() throws {
@@ -1615,10 +1609,12 @@ struct TerminalTabTests {
         container.terminalPaneState = state
         container.showTab(state.activeTab)
 
-        // Drain the dirty range that `showTab` already seeded so the
-        // assertion below is about `viewDidMoveToWindow` specifically.
-        tab.terminalView.getTerminal().clearUpdateRange()
-        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil)
+        // Arm the observer after `showTab` so the assertion below is about
+        // `viewDidMoveToWindow` specifically.
+        var redrawRequested = false
+        (tab.terminalView as? PineTerminalView)?.backendRedrawRequestObserver = {
+            redrawRequested = true
+        }
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
@@ -1628,9 +1624,7 @@ struct TerminalTabTests {
         )
         window.contentView = container
 
-        let range = tab.terminalView.getTerminal().getUpdateRange()
-        #expect(range != nil, "Attaching to a window must seed the dirty range")
-        #expect(range?.startY == 0)
+        #expect(redrawRequested, "Attaching to a window must repaint the buffer")
     }
 
     /// `layout()` with the same bounds twice must NOT re-trigger a
@@ -1646,18 +1640,21 @@ struct TerminalTabTests {
         container.showTab(state.activeTab)
         container.layout() // first layout pass — frame changed from showTab fallback to real
 
-        // Drain the dirty range so we can detect a re-seed unambiguously.
-        tab.terminalView.getTerminal().clearUpdateRange()
-        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil)
+        // Arm the observer after the first pass so a re-trigger is detected
+        // unambiguously.
+        var redrawRequested = false
+        (tab.terminalView as? PineTerminalView)?.backendRedrawRequestObserver = {
+            redrawRequested = true
+        }
 
         // Second layout with identical bounds — must be a no-op for redraw.
         container.layout()
 
-        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil,
-                "Layout with unchanged bounds must not re-seed the dirty range")
+        #expect(!redrawRequested,
+                "Layout with unchanged bounds must not request a repaint")
     }
 
-    /// `layout()` with new bounds must re-seed the dirty range so a TUI
+    /// `layout()` with new bounds must request a repaint so a TUI
     /// app's alternate-screen content repaints after a sub-cell pixel
     /// resize that did NOT trigger SwiftTerm's own size-change path.
     @Test @MainActor func layoutWithChangedBoundsReseedsDirtyRange() throws {
@@ -1670,22 +1667,24 @@ struct TerminalTabTests {
         container.showTab(state.activeTab)
         container.layout()
 
-        tab.terminalView.getTerminal().clearUpdateRange()
+        var redrawRequested = false
+        (tab.terminalView as? PineTerminalView)?.backendRedrawRequestObserver = {
+            redrawRequested = true
+        }
 
         // Resize the container — frame size differs from previous layout.
         container.frame = NSRect(x: 0, y: 0, width: 1000, height: 400)
         container.layout()
 
-        let range = tab.terminalView.getTerminal().getUpdateRange()
-        #expect(range != nil, "Layout with new bounds must re-seed the dirty range")
+        #expect(redrawRequested, "Layout with new bounds must request a repaint")
     }
 
     /// After `removeFromSuperview` the container must clean up EVERY
     /// backing-store recovery observer (become-key, change-screen,
     /// change-occlusion-state, app-become-active, deminiaturize) so none
     /// can fire against a now-detached terminal view. Verified indirectly:
-    /// posting each notification does not crash and does not re-seed the
-    /// dirty range (issue #1094 recovery-trigger family).
+    /// posting each notification does not crash and does not request a
+    /// repaint (issue #1094 recovery-trigger family).
     @Test @MainActor func removeFromSuperviewClearsAllRecoveryObservers() throws {
         let state = TerminalPaneState()
         let tab = state.addTab(workingDirectory: nil)
@@ -1704,24 +1703,26 @@ struct TerminalTabTests {
         window.contentView = container
 
         container.removeFromSuperview()
-        tab.terminalView.getTerminal().clearUpdateRange()
-        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil)
+        var redrawRequested = false
+        (tab.terminalView as? PineTerminalView)?.backendRedrawRequestObserver = {
+            redrawRequested = true
+        }
 
         // Posting becomeKey on the (now-orphaned) window must not retrigger
         // a redraw on the detached container.
         NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
 
-        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil,
+        #expect(!redrawRequested,
                 "Detached container must not respond to becomeKey notifications")
 
         // The three new recovery triggers added for occlusion/hide/minimize
         // (issue #1094) must likewise be torn down — posting any of them
-        // against the orphaned window/app must not re-seed the dirty range.
+        // against the orphaned window/app must not request a repaint.
         NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
         NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.post(name: NSWindow.didDeminiaturizeNotification, object: window)
 
-        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil,
+        #expect(!redrawRequested,
                 "Detached container must not respond to occlusion/app-active/deminimize notifications")
     }
 
@@ -1745,15 +1746,17 @@ struct TerminalTabTests {
         )
         window.contentView = container
 
-        // Drain the dirty range that `viewDidMoveToWindow` just seeded.
-        tab.terminalView.getTerminal().clearUpdateRange()
-        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil)
+        // Arm the observer after `viewDidMoveToWindow` so the assertion is
+        // about the become-key notification specifically.
+        var redrawRequested = false
+        (tab.terminalView as? PineTerminalView)?.backendRedrawRequestObserver = {
+            redrawRequested = true
+        }
 
         // Simulate user returning focus to the window via Cmd+Tab.
         NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
 
-        let range = tab.terminalView.getTerminal().getUpdateRange()
-        #expect(range != nil, "didBecomeKey must trigger a buffer repaint on the active terminal")
+        #expect(redrawRequested, "didBecomeKey must trigger a buffer repaint on the active terminal")
     }
 
     /// Stress test: rapidly creating, switching, and closing tabs must keep

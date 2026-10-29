@@ -175,17 +175,17 @@ struct TerminalMetalRendererTests {
         #expect(!view.isUsingMetalRenderer)
         let caret = try swiftTermCaret(in: view)
         settings.cursorShape = .verticalBar
-        let bar = try coreGraphicsCursorFootprint(in: caret)
+        let bar = try await waitForCursorFootprint(in: caret) { $0.height > $0.width * 2 }
         settings.cursorShape = .underline
         feed("\u{1B}[2 q", to: view)
         feed("\u{1B}[0 q", to: view)
         #expect(
-            view.getTerminal().options.cursorStyle.tagName
+            view.terminalStateSnapshot().cursorStyle.tagName
                 == "steadyUnderline"
         )
-        let underline = try coreGraphicsCursorFootprint(in: caret)
+        let underline = try await waitForCursorFootprint(in: caret) { $0.width > $0.height * 2 }
         settings.cursorShape = .block
-        let block = try coreGraphicsCursorFootprint(in: caret)
+        let block = try await waitForCursorFootprint(in: caret) { $0.pixelCount > bar.pixelCount }
 
         #expect(bar.height > bar.width * 2)
         #expect(underline.width > underline.height * 2)
@@ -194,11 +194,11 @@ struct TerminalMetalRendererTests {
         #expect(block.pixelCount > bar.pixelCount)
         #expect(block.pixelCount > underline.pixelCount)
 
-        settings.cursorBlinks = true
         let cursorAnimationLayer = try #require(caret.layer)
-        #expect(cursorAnimationLayer.animation(forKey: "opacity") != nil)
+        settings.cursorBlinks = true
+        #expect(await waitForCaretBlinkAnimation(cursorAnimationLayer, present: true))
         settings.cursorBlinks = false
-        #expect(cursorAnimationLayer.animation(forKey: "opacity") == nil)
+        #expect(await waitForCaretBlinkAnimation(cursorAnimationLayer, present: false))
     }
 
     @Test(
@@ -214,6 +214,9 @@ struct TerminalMetalRendererTests {
         let tab = TerminalTab(name: "cursor-metal", cursorSettings: settings)
         let view = try #require(tab.terminalView as? PineTerminalView)
         view.metalScaleFactorOverride = 1
+        // The MTKView surface keeps the delegate/drawable capture this test
+        // relies on; SwiftTerm 2.0's default layer surface has neither.
+        view.usesMetalLayerSurface = false
         let window = makeWindow(containing: view)
         defer {
             window.orderOut(nil)
@@ -267,7 +270,7 @@ struct TerminalMetalRendererTests {
         let window = makeWindow(containing: view)
 
         guard view.isUsingMetalRenderer,
-              let metalView = firstMetalView(in: view) else {
+              let metalView = firstMetalSurface(in: view) else {
             window.contentView = nil
             return
         }
@@ -340,7 +343,7 @@ struct TerminalMetalRendererTests {
             window.contentView = nil
             return
         }
-        guard let originalMetalView = firstMetalView(in: view) else {
+        guard let originalMetalView = firstMetalSurface(in: view) else {
             Issue.record("Attached terminal has no Metal view")
             window.contentView = nil
             return
@@ -355,7 +358,7 @@ struct TerminalMetalRendererTests {
         try? await Task.sleep(for: .milliseconds(450))
 
         #expect(redrawRequests == UITimings.Render.terminalFirstFrameRetryDelays.count)
-        guard let reattachedMetalView = firstMetalView(in: view) else {
+        guard let reattachedMetalView = firstMetalSurface(in: view) else {
             Issue.record("Reattached terminal lost its Metal view")
             window.contentView = nil
             return
@@ -386,7 +389,7 @@ struct TerminalMetalRendererTests {
             return
         }
         guard view.isUsingMetalRenderer,
-              let originalMetalView = firstMetalView(in: view) else {
+              let originalMetalView = firstMetalSurface(in: view) else {
             return
         }
 
@@ -395,7 +398,7 @@ struct TerminalMetalRendererTests {
         state.activeTerminalID = firstTab.id
         container.showTab(firstTab)
 
-        #expect(firstMetalView(in: view) === originalMetalView)
+        #expect(firstMetalSurface(in: view) === originalMetalView)
         #expect(view.superview === container)
         #expect(view.isUsingMetalRenderer)
     }
@@ -426,10 +429,10 @@ struct TerminalMetalRendererTests {
             return
         }
         guard view.isUsingMetalRenderer,
-              var previousMetalView = firstMetalView(in: view) else {
+              var previousMetalView = firstMetalSurface(in: view) else {
             return
         }
-        let originalTerminal = view.getTerminal()
+        view.feed(text: "terminal-identity-sentinel")
 
         // Direct same-window moves keep both the terminal view's immediate
         // superview and its NSWindow unchanged. Exercise both directions
@@ -437,12 +440,16 @@ struct TerminalMetalRendererTests {
         for index in 0..<20 {
             let destination = index.isMultiple(of: 2) ? secondHost : firstHost
             destination.addSubview(container)
-            guard let recreatedMetalView = firstMetalView(in: view) else {
+            guard let recreatedMetalView = firstMetalSurface(in: view) else {
                 Issue.record("Reparented terminal lost its Metal view")
                 return
             }
             #expect(recreatedMetalView !== previousMetalView)
-            #expect(view.getTerminal() === originalTerminal)
+            #expect(
+                String(data: view.getBufferAsData(), encoding: .utf8)?
+                    .contains("terminal-identity-sentinel") == true,
+                "Reparenting must preserve the terminal session"
+            )
             #expect(view.superview === container)
             #expect(container.superview === destination)
             #expect(view.isUsingMetalRenderer)
@@ -492,10 +499,10 @@ struct TerminalMetalRendererTests {
             return
         }
         guard view.isUsingMetalRenderer,
-              let originalMetalView = firstMetalView(in: view) else {
+              let originalMetalView = firstMetalSurface(in: view) else {
             return
         }
-        let originalTerminal = view.getTerminal()
+        view.feed(text: "terminal-identity-sentinel")
 
         // Mirror PaneManager's add-before-remove transfer while both pane
         // hosts are already committed to the same window. The destination
@@ -507,12 +514,16 @@ struct TerminalMetalRendererTests {
         destination.showTab(movedTab)
         source.showTab(remainingTab)
 
-        guard let recreatedMetalView = firstMetalView(in: view) else {
+        guard let recreatedMetalView = firstMetalSurface(in: view) else {
             Issue.record("Cross-pane terminal move lost its Metal view")
             return
         }
         #expect(recreatedMetalView !== originalMetalView)
-        #expect(view.getTerminal() === originalTerminal)
+        #expect(
+            String(data: view.getBufferAsData(), encoding: .utf8)?
+                .contains("terminal-identity-sentinel") == true,
+            "Reparenting must preserve the terminal session"
+        )
         #expect(view.isUsingMetalRenderer)
         #expect(view.superview === destination)
         #expect(destinationState.presentationOwner === destination)
@@ -545,20 +556,24 @@ struct TerminalMetalRendererTests {
             return
         }
         guard view.isUsingMetalRenderer,
-              let originalMetalView = firstMetalView(in: view) else { return }
-        let originalTerminal = view.getTerminal()
+              let originalMetalView = firstMetalSurface(in: view) else { return }
+        view.feed(text: "terminal-identity-sentinel")
 
         // Neither the terminal nor its container changes immediate superview;
         // only the ancestor presentation subtree leaves and re-enters window.
         window.contentView = nil
         window.contentView = root
 
-        guard let recreatedMetalView = firstMetalView(in: view) else {
+        guard let recreatedMetalView = firstMetalSurface(in: view) else {
             Issue.record("Reattached terminal lost its Metal view")
             return
         }
         #expect(recreatedMetalView !== originalMetalView)
-        #expect(view.getTerminal() === originalTerminal)
+        #expect(
+            String(data: view.getBufferAsData(), encoding: .utf8)?
+                .contains("terminal-identity-sentinel") == true,
+            "Reparenting must preserve the terminal session"
+        )
         #expect(view.superview === container)
         #expect(container.superview === root)
         #expect(view.isUsingMetalRenderer)
@@ -591,8 +606,8 @@ struct TerminalMetalRendererTests {
             return
         }
         guard view.isUsingMetalRenderer,
-              let originalMetalView = firstMetalView(in: view) else { return }
-        let originalTerminal = view.getTerminal()
+              let originalMetalView = firstMetalSurface(in: view) else { return }
+        view.feed(text: "terminal-identity-sentinel")
 
         // Moving the ancestor directly within one window leaves both the
         // terminal and container immediate superviews unchanged. AppKit only
@@ -600,12 +615,16 @@ struct TerminalMetalRendererTests {
         // same-window viewDidMoveToWindow callback.
         secondHost.addSubview(ancestor)
 
-        guard let recreatedMetalView = firstMetalView(in: view) else {
+        guard let recreatedMetalView = firstMetalSurface(in: view) else {
             Issue.record("Ancestor-reparented terminal lost its Metal view")
             return
         }
         #expect(recreatedMetalView !== originalMetalView)
-        #expect(view.getTerminal() === originalTerminal)
+        #expect(
+            String(data: view.getBufferAsData(), encoding: .utf8)?
+                .contains("terminal-identity-sentinel") == true,
+            "Reparenting must preserve the terminal session"
+        )
         #expect(view.superview === container)
         #expect(container.superview === ancestor)
         #expect(ancestor.superview === secondHost)
@@ -641,7 +660,7 @@ struct TerminalMetalRendererTests {
         if view.isUsingMetalRenderer {
             try view.setUseMetal(false)
         }
-        let originalTerminal = view.getTerminal()
+        view.feed(text: "terminal-identity-sentinel")
         feed("core-graphics-probe", to: view)
         var redrawRequests = 0
         view.backendRedrawRequestObserver = { redrawRequests += 1 }
@@ -649,7 +668,11 @@ struct TerminalMetalRendererTests {
         secondHost.addSubview(ancestor)
 
         #expect(!view.isUsingMetalRenderer)
-        #expect(view.getTerminal() === originalTerminal)
+        #expect(
+            String(data: view.getBufferAsData(), encoding: .utf8)?
+                .contains("terminal-identity-sentinel") == true,
+            "Reparenting must preserve the terminal session"
+        )
         #expect(view.superview === container)
         #expect(container.superview === ancestor)
         #expect(ancestor.superview === secondHost)
@@ -662,7 +685,7 @@ struct TerminalMetalRendererTests {
         let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let window = makeWindow(containing: view)
         guard view.isUsingMetalRenderer,
-              let originalMetalView = firstMetalView(in: view) else {
+              let originalMetalView = firstMetalSurface(in: view) else {
             window.contentView = nil
             return
         }
@@ -671,7 +694,7 @@ struct TerminalMetalRendererTests {
         view.layoutSubtreeIfNeeded()
         view.requestRendererDisplay()
 
-        #expect(firstMetalView(in: view) === originalMetalView)
+        #expect(firstMetalSurface(in: view) === originalMetalView)
         #expect(view.isUsingMetalRenderer)
         window.contentView = nil
     }
@@ -720,7 +743,8 @@ struct TerminalMetalRendererTests {
         view.backendRedrawRequestObserver = { redrawRequests += 1 }
 
         let emptyBytes: [UInt8] = []
-        view.dataReceived(slice: emptyBytes[...])
+        view.feed(byteArray: emptyBytes[...])
+        view.processOutputBatchApplied()
         #expect(redrawRequests == 0)
 
         feed("first", to: view)
@@ -825,10 +849,11 @@ struct TerminalMetalRendererTests {
             feed("\u{1B}[2 q", to: terminalView)
             feed("\u{1B}[0 q", to: terminalView)
             #expect(
-                terminalView.getTerminal().options.cursorStyle.tagName
+                terminalView.terminalStateSnapshot().cursorStyle.tagName
                     == "steadyUnderline"
             )
         }
+        await drainMainQueue()
         metalView.needsDisplay = false
         metalView.drawableSize = metalView.bounds.size
         terminalView.window?.displayIfNeeded()
@@ -836,19 +861,20 @@ struct TerminalMetalRendererTests {
             metalView.currentRenderPassDescriptor != nil
         }, "Metal render pass did not become ready")
 
-        let renderer = try #require(metalView.delegate)
-        let captureDelegate = MetalDrawableCaptureDelegate(renderer: renderer)
-        metalView.delegate = captureDelegate
-        defer { metalView.delegate = renderer }
-        terminalView.drawMetalFrameNow()
-        let drawable = try #require(captureDelegate.drawable)
-        let texture = drawable.texture
+        // SwiftTerm 2.0 renders into the surface's drawable directly — the
+        // MTKView delegate is no longer on the frame path, so capture is
+        // impossible. Read the presented drawable's texture instead, retrying
+        // until the GPU work lands in the readback.
         let device = try #require(metalView.device)
-        try #require(
-            waitForMetalRendererCompletion(renderer),
-            "SwiftTerm Metal frame did not complete"
-        )
-        let footprint = try metalCursorFootprint(in: texture, device: device)
+        let deadline = Date().addingTimeInterval(2)
+        var footprint: CursorFootprint?
+        while footprint == nil && Date() < deadline {
+            terminalView.drawMetalFrameNow()
+            try? await Task.sleep(for: .milliseconds(50))
+            if let texture = metalView.currentDrawable?.texture {
+                footprint = try metalCursorFootprint(in: texture, device: device)
+            }
+        }
         return try #require(footprint, "Metal cursor pixels were not rendered")
     }
 
@@ -906,23 +932,6 @@ struct TerminalMetalRendererTests {
         return commandBuffer.status
     }
 
-    /// SwiftTerm signals this semaphore from the renderer command buffer's
-    /// completion handler. Waiting for and restoring its permit creates an
-    /// explicit producer-completion boundary before the independent readback.
-    private func waitForMetalRendererCompletion(
-        _ renderer: any MTKViewDelegate
-    ) -> Bool {
-        let semaphore = Mirror(reflecting: renderer).children.first {
-            $0.label == "frameSemaphore"
-        }?.value as? DispatchSemaphore
-        guard let semaphore,
-              semaphore.wait(timeout: .now() + .seconds(2)) == .success else {
-            return false
-        }
-        semaphore.signal()
-        return true
-    }
-
     private func cursorFootprint(
         width: Int,
         height: Int,
@@ -961,6 +970,18 @@ struct TerminalMetalRendererTests {
         return window
     }
 
+    /// Finds SwiftTerm's Metal surface for identity assertions. SwiftTerm 2.0
+    /// draws into a layer-backed NSView by default (`usesMetalLayerSurface`);
+    /// the legacy `MTKView` surface is used only when a test opts out. Both
+    /// own a `CAMetalLayer`.
+    private func firstMetalSurface(in view: NSView) -> NSView? {
+        if view.layer is CAMetalLayer { return view }
+        for subview in view.subviews {
+            if let metalView = firstMetalSurface(in: subview) { return metalView }
+        }
+        return nil
+    }
+
     private func firstMetalView(in view: NSView) -> MTKView? {
         if let metalView = view as? MTKView { return metalView }
         for subview in view.subviews {
@@ -971,7 +992,54 @@ struct TerminalMetalRendererTests {
 
     private func feed(_ text: String, to view: PineTerminalView) {
         let bytes = Array(text.utf8)
-        view.dataReceived(slice: bytes[...])
+        view.feed(byteArray: bytes[...])
+        // SwiftTerm 2.0 invokes the output handler only for real process
+        // output; tests drive the recovery observation directly.
+        view.processOutputBatchApplied()
+    }
+
+    /// SwiftTerm 2.0 applies caret-style changes through an async hop to the
+    /// main queue (`cursorStyleChanged` → `onMain`). Poll the footprint instead
+    /// of relying on a fixed delay, which flakes under load. The wait must
+    /// suspend the test task (`Task.sleep`): a synchronous
+    /// `RunLoop.current.run` on the main actor does not drain the queued
+    /// main-actor hop.
+    private func waitForCursorFootprint(
+        in caret: NSView,
+        matches predicate: (CursorFootprint) -> Bool
+    ) async throws -> CursorFootprint {
+        let deadline = Date().addingTimeInterval(2)
+        var footprint = try coreGraphicsCursorFootprint(in: caret)
+        while !predicate(footprint) && Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+            footprint = try coreGraphicsCursorFootprint(in: caret)
+        }
+        return footprint
+    }
+
+    /// Waits for the caret's blink animation to appear or disappear after a
+    /// settings change (applied through SwiftTerm's async main-queue hop).
+    private func waitForCaretBlinkAnimation(
+        _ layer: CALayer,
+        present: Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if (layer.animation(forKey: "opacity") != nil) == present {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return false
+    }
+
+    /// SwiftTerm 2.0 applies caret-style changes through an async hop to the
+    /// main queue (`cursorStyleChanged` → `onMain`). Suspend briefly so the
+    /// hop lands before a test measures the caret. The wait must suspend the
+    /// task: a synchronous `RunLoop.current.run` on the main actor does not
+    /// drain the queued hop.
+    private func drainMainQueue() async {
+        try? await Task.sleep(for: .milliseconds(50))
     }
 
     private func makeThemeSettings() throws -> TerminalThemeSettings {
@@ -1005,23 +1073,5 @@ struct TerminalMetalRendererTests {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return true
-    }
-}
-
-private final class MetalDrawableCaptureDelegate: NSObject, MTKViewDelegate {
-    let renderer: any MTKViewDelegate
-    private(set) var drawable: (any CAMetalDrawable)?
-
-    init(renderer: any MTKViewDelegate) {
-        self.renderer = renderer
-    }
-
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        renderer.mtkView(view, drawableSizeWillChange: size)
-    }
-
-    func draw(in view: MTKView) {
-        drawable = view.currentDrawable
-        renderer.draw(in: view)
     }
 }
