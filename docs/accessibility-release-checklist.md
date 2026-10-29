@@ -5,7 +5,7 @@ Run this short manual pass for release candidates after the automated unit and
 supported locales across four configurations, each exercised on both the
 macOS 27 and macOS 26 CI axes, covers a keyboard-only critical
 journey, and retains double-length/representative layout screenshots plus AX
-trees. Record the exact macOS and Xcode/SDK versions described in `CLAUDE.md`,
+trees. Record the exact macOS and Xcode/SDK versions described in `AGENTS.md`,
 plus the language, appearance, and accessibility settings used.
 
 ## Representative configurations
