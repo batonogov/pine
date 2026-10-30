@@ -161,7 +161,7 @@ jobs:
 
       # SwiftLint loads sourcekitdInProc from the active Xcode toolchain; if
       # xcode-select resolves CommandLineTools instead, the binary aborts with
-      # a "Loading sourcekitdInProc ... failed" fatal error (see CLAUDE.md).
+      # a "Loading sourcekitdInProc ... failed" fatal error (see AGENTS.md).
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
 
