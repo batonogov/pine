@@ -453,7 +453,11 @@ final class PineTerminalView: LocalProcessTerminalView {
     private func installProcessOutputObserver() {
         lastVisibleRowsText = visibleRowsText(0..<terminalDimensions.rows)
         setProcessOutputHandler { [weak self] in
-            self?.processOutputBatchApplied()
+            // SwiftTerm delivers this on its I/O thread. Pine's view state
+            // and recovery hooks belong to the main actor.
+            DispatchQueue.main.async { [weak self] in
+                self?.processOutputBatchApplied()
+            }
         }
     }
 
@@ -463,10 +467,9 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// bounded attachment retries: OSC title/working-directory sequences can
     /// arrive well before the prompt and must not consume the one-shot.
     ///
-    /// Runs on SwiftTerm's I/O parse thread after the batch has been applied,
-    /// so the bytes (including the prompt) are already represented in the
-    /// display buffer before Pine requests a frame. The recovery hop keeps
-    /// the AppKit/Metal work main-thread-safe.
+    /// Runs on the main thread after the output observer queues the applied
+    /// batch notification, so the display buffer already contains the output
+    /// before Pine requests a frame.
     ///
     /// Internal (not private) so tests can drive it directly: SwiftTerm 2.0
     /// invokes the output handler only for real process output, not for
