@@ -18,81 +18,15 @@ struct TerminalScrollForwardingTests {
 
     // MARK: - MouseScrollForwarder unit tests
 
-    @Test func encodesScrollUpAsButton64() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: 1.0,
-            shift: false,
-            option: false,
-            control: false
-        )
-        // Button 4 (scroll up) = 64
-        #expect(flags == 64)
+    @Test func encodesScrollUpAsButton4() {
+        // VT100 wheel button 4 = scroll up; flag encoding belongs to
+        // SwiftTerm's `sendMouseEvent`.
+        #expect(MouseScrollForwarder.scrollButton(deltaY: 1.0) == 4)
     }
 
-    @Test func encodesScrollDownAsButton65() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: -1.0,
-            shift: false,
-            option: false,
-            control: false
-        )
-        // Button 5 (scroll down) = 65
-        #expect(flags == 65)
-    }
-
-    @Test func encodesShiftModifier() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: 1.0,
-            shift: true,
-            option: false,
-            control: false
-        )
-        // 64 (scroll up) | 4 (shift) = 68
-        #expect(flags == 68)
-    }
-
-    @Test func encodesOptionModifier() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: 1.0,
-            shift: false,
-            option: true,
-            control: false
-        )
-        // 64 (scroll up) | 8 (meta/option) = 72
-        #expect(flags == 72)
-    }
-
-    @Test func encodesControlModifierScrollDown() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: -1.0,
-            shift: false,
-            option: false,
-            control: true
-        )
-        // 65 (scroll down) | 16 (control) = 81
-        #expect(flags == 81)
-    }
-
-    @Test func encodesControlModifierScrollUp() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: 1.0,
-            shift: false,
-            option: false,
-            control: true
-        )
-        // 64 (scroll up) | 16 (control) = 80
-        #expect(flags == 80)
-    }
-
-    @Test func encodesAllModifiersCombined() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: 1.0,
-            shift: true,
-            option: true,
-            control: true
-        )
-        // 64 (scroll up) | 4 (shift) | 8 (meta) | 16 (control) = 92
-        #expect(flags == 92)
+    @Test func encodesScrollDownAsButton5() {
+        // VT100 wheel button 5 = scroll down.
+        #expect(MouseScrollForwarder.scrollButton(deltaY: -1.0) == 5)
     }
 
     @Test func calculatesGridPositionTopLeft() {
@@ -221,28 +155,9 @@ struct TerminalScrollForwardingTests {
     }
 
     // MARK: - Modifier combinations for scroll encoding
-
-    @Test func encodesShiftAndControlCombined() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: -1.0,
-            shift: true,
-            option: false,
-            control: true
-        )
-        // 65 (scroll down) | 4 (shift) | 16 (control) = 85
-        #expect(flags == 85)
-    }
-
-    @Test func encodesOptionAndControlCombined() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: 1.0,
-            shift: false,
-            option: true,
-            control: true
-        )
-        // 64 (scroll up) | 8 (option) | 16 (control) = 88
-        #expect(flags == 88)
-    }
+    //
+    // Modifier flag encoding moved into SwiftTerm's `sendMouseEvent`; Pine
+    // only maps the scroll direction to a wheel button.
 
     // MARK: - TerminalContainerView scroll forwarding integration
 
@@ -267,59 +182,22 @@ struct TerminalScrollForwardingTests {
 
     // MARK: - Scroll encoding boundary tests (#551)
 
-    @Test func encodeScrollButtonWithExactZeroDelta() {
-        // Zero delta should still produce a value (treated as scroll down since deltaY <= 0)
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: 0.0, shift: false, option: false, control: false
-        )
-        // deltaY > 0 → 64 (up), else 65 (down). 0.0 is not > 0, so expect 65.
-        #expect(flags == 65)
+    @Test func scrollButtonWithExactZeroDelta() {
+        // Zero delta is treated as scroll down since deltaY <= 0.
+        #expect(MouseScrollForwarder.scrollButton(deltaY: 0.0) == 5)
     }
 
-    @Test func encodeScrollButtonWithVerySmallPositiveDelta() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: 0.001, shift: false, option: false, control: false
-        )
-        #expect(flags == 64) // scroll up
+    @Test func scrollButtonWithVerySmallPositiveDelta() {
+        #expect(MouseScrollForwarder.scrollButton(deltaY: 0.001) == 4) // scroll up
     }
 
-    @Test func encodeScrollButtonWithVerySmallNegativeDelta() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: -0.001, shift: false, option: false, control: false
-        )
-        #expect(flags == 65) // scroll down
+    @Test func scrollButtonWithVerySmallNegativeDelta() {
+        #expect(MouseScrollForwarder.scrollButton(deltaY: -0.001) == 5) // scroll down
     }
 
-    @Test func encodeScrollButtonWithLargeDelta() {
-        // Very large delta should still produce correct base value
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: 100.0, shift: false, option: false, control: false
-        )
-        #expect(flags == 64)
-    }
-
-    @Test func encodeScrollDownWithAllModifiers() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: -1.0, shift: true, option: true, control: true
-        )
-        // 65 (down) | 4 (shift) | 8 (option) | 16 (control) = 93
-        #expect(flags == 93)
-    }
-
-    @Test func encodeScrollDownWithShift() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: -1.0, shift: true, option: false, control: false
-        )
-        // 65 (down) | 4 (shift) = 69
-        #expect(flags == 69)
-    }
-
-    @Test func encodeScrollDownWithOption() {
-        let flags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: -1.0, shift: false, option: true, control: false
-        )
-        // 65 (down) | 8 (option) = 73
-        #expect(flags == 73)
+    @Test func scrollButtonWithLargeDelta() {
+        // Very large delta still maps to scroll up.
+        #expect(MouseScrollForwarder.scrollButton(deltaY: 100.0) == 4)
     }
 
     // MARK: - Mouse-reporting scroll forwarding (#978)

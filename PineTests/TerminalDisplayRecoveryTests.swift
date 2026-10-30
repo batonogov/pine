@@ -87,7 +87,7 @@ struct TerminalDisplayRecoveryTests {
         guard view.isUsingMetalRenderer else { return }
 
         let probe = "pine recovery probe"
-        view.getTerminal().feed(text: probe + "\r\n")
+        view.feed(text: probe + "\r\n")
         let before = Set(metalViewIdentities(in: view))
 
         view.recoverRendererNow()
@@ -114,7 +114,7 @@ struct TerminalDisplayRecoveryTests {
         guard view.isUsingMetalRenderer else { return }
 
         let probe = "repeat probe"
-        view.getTerminal().feed(text: probe + "\r\n")
+        view.feed(text: probe + "\r\n")
 
         // A user who sees nothing happen will press the shortcut repeatedly;
         // that must not degrade into a broken renderer or a lost buffer.
@@ -293,8 +293,10 @@ struct TerminalDisplayRecoveryTests {
 
     private func metalViewIdentities(in view: NSView) -> [ObjectIdentifier] {
         var found: [ObjectIdentifier] = []
-        if let metalView = view as? MTKView {
-            found.append(ObjectIdentifier(metalView))
+        // SwiftTerm 2.0's default Metal surface is a layer-backed NSView, not
+        // an MTKView; both own a CAMetalLayer.
+        if view.layer is CAMetalLayer {
+            found.append(ObjectIdentifier(view))
         }
         for subview in view.subviews {
             found.append(contentsOf: metalViewIdentities(in: subview))
@@ -303,9 +305,7 @@ struct TerminalDisplayRecoveryTests {
     }
 
     private func bufferText(of view: PineTerminalView) -> String {
-        let terminal = view.getTerminal()
-        return (0..<terminal.rows)
-            .compactMap { terminal.getLine(row: $0)?.translateToString() }
+        view.visibleRowsText(0..<view.terminalDimensions.rows)
             .joined(separator: "\n")
     }
 }

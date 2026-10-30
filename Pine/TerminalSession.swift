@@ -194,20 +194,54 @@ final class PineTerminalView: LocalProcessTerminalView {
 
     private var redrawBackgroundColor: CGColor?
     private var initialMetalRedrawWorkItems: [DispatchWorkItem] = []
-    /// Serializes Pine's cursor policy with SwiftTerm's PTY parser. Process
-    /// output may arrive away from MainActor while Settings changes arrive on
-    /// the main thread, so both the streaming parser and preferred style live
-    /// behind the same lock as the corresponding Terminal mutation.
+    /// Serializes Pine's cursor policy against SwiftTerm's parser callbacks.
+    /// `cursorStyleChanged` arrives from the I/O parse thread while Settings
+    /// changes arrive on the main thread, so the policy state lives behind
+    /// one lock.
     private let cursorStyleLock = NSLock()
-    private var cursorSequenceTracker = DECSCUSRStreamTracker()
+    /// The style chosen in Settings; DECSCUSR 0 restores it.
     private var preferredCursorStyle: CursorStyle?
-    private var activeCursorDirective: DECSCUSRStreamTracker.Directive?
+    /// SwiftTerm captures `defaultCursorStyle` from `TerminalOptions` at
+    /// creation and never updates it, so a DECSCUSR 0 issued after a Settings
+    /// change still reports the style the view was created with. Pine keeps
+    /// that initial style to recognize the restore command and re-apply the
+    /// current preference. Defaults to SwiftTerm's documented default.
+    private var initialCursorStyle: CursorStyle = .blinkBlock
+    /// The last style Pine applied itself; callbacks echoing it carry no new
+    /// directive and are ignored.
+    private var lastAppliedCursorStyle: CursorStyle?
+    /// Guards against re-entering the policy from the synchronous callback
+    /// that Pine's own `setCursorStyle` triggers.
+    private var applyingCursorStyle = false
+    /// Set when the parser restored the creation-time default after the user
+    /// changed the preference: the current preference must be re-applied from
+    /// the post-batch handler, because `cursorStyleChanged` can run under
+    /// SwiftTerm's non-re-entrant terminal lock where mutating the terminal
+    /// would deadlock.
+    private var needsPreferredCursorReapply = false
+
+    override init(frame: CGRect, font: NSFont? = nil, options: TerminalOptions) {
+        super.init(frame: frame, font: font, options: options)
+        initialCursorStyle = options.cursorStyle
+        installProcessOutputObserver()
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        installProcessOutputObserver()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
     #if DEBUG
     /// Per-view seam for exercising the production CoreGraphics fallback
     /// without mutating process-wide launch arguments or environment.
     var metalRendererDisabledForTesting = false
     #endif
-    /// SwiftTerm 1.15 rebuilds its nested `MTKView` only when the `NSWindow`
+    /// SwiftTerm rebuilds its Metal surface only when the `NSWindow`
     /// identity changes. Pine also reparents a terminal between AppKit hosts
     /// inside the same project window (pane maximize/restore and tab moves).
     /// That can leave the old `CAMetalLayer` bound to a retired presentation
@@ -226,34 +260,10 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// not consume recovery before there is anything to present.
     private let firstVisibleContentLock = NSLock()
     private var didObserveFirstVisibleContent = false
-
-    /// Lightweight snapshot of the visible cells SwiftTerm would render.
-    /// Buffer-line generations change on cell/attribute mutations, while OSC
-    /// metadata such as title and working directory leaves this state intact.
-    private struct VisibleContentState: Equatable {
-        struct Line: Equatable {
-            let identity: ObjectIdentifier?
-            let generation: UInt64
-        }
-
-        let bufferIdentity: ObjectIdentifier
-        let displayOffset: Int
-        let totalLinesTrimmed: Int
-        let lines: [Line]
-
-        init(terminal: Terminal) {
-            let buffer = terminal.buffer
-            bufferIdentity = ObjectIdentifier(buffer)
-            displayOffset = buffer.yDisp
-            totalLinesTrimmed = buffer.totalLinesTrimmed
-            lines = (0..<terminal.rows).map { row in
-                guard let line = terminal.getLine(row: row) else {
-                    return Line(identity: nil, generation: 0)
-                }
-                return Line(identity: ObjectIdentifier(line), generation: line.generation)
-            }
-        }
-    }
+    /// Visible-row text from the previous output batch. Buffer-line text
+    /// changes on cell mutations, while OSC metadata such as title and
+    /// working directory leaves it intact.
+    private var lastVisibleRowsText: [String]?
 
     #if DEBUG
     /// Test hook that observes every backend-aware redraw request without
@@ -268,8 +278,8 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// Enables SwiftTerm's Metal renderer once the view lands in a window.
     ///
     /// Metal replaces the layer-backed CoreGraphics raster (`layer.contents`
-    /// = CGImage) with a GPU swapchain (`CAMetalLayer` drawables owned by an
-    /// embedded `MTKView`). That eliminates the entire class of black-screen
+    /// = CGImage) with a GPU swapchain (`CAMetalLayer` drawables owned by
+    /// SwiftTerm's Metal surface view). That eliminates the entire class of black-screen
     /// bugs where AppKit purges `layer.contents` and a subsequent no-op
     /// `displayIfNeeded()` leaves the terminal black — #64, #661, #871, #918,
     /// #923, #966, #1094 (#1108). Under Metal, SwiftTerm's `draw(_:)` returns
@@ -315,7 +325,7 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// Binds the renderer to one committed AppKit presentation generation.
     ///
     /// The first binding records identity only. Later generations rebuild the
-    /// nested MTKView while preserving the Terminal, PTY, display buffer, and
+    /// Metal surface while preserving the Terminal, PTY, display buffer, and
     /// scrollback. If the hierarchy is temporarily detached, the pending
     /// rebuild runs after the next real window attachment.
     func bindPresentationHost(generation: UUID) {
@@ -341,9 +351,9 @@ final class PineTerminalView: LocalProcessTerminalView {
         enableMetalRendererIfNeeded()
         recreateMetalRendererAfterHostChangeIfNeeded()
 
-        // `MTKView` is on-demand (`isPaused = true`) and its CAMetalLayer may
-        // not have a drawable during the first display request. SwiftTerm
-        // 1.14.0 marks that frame pending, but the pending flag is consumed
+        // The Metal surface's CAMetalLayer may not have a drawable during the
+        // first display request. SwiftTerm
+        // marks that frame pending, but the pending flag is consumed
         // only by a successfully submitted command buffer — which does not
         // exist in this bootstrap failure. Retry after every real attachment,
         // including a detach/reattach within the same window: re-parenting
@@ -359,9 +369,9 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// change, including whole-container or ancestor detach/reattach inside
     /// the same `NSWindow`.
     ///
-    /// SwiftTerm exposes no public rebind API in 1.15, so the supported
+    /// SwiftTerm exposes no public rebind API, so the supported
     /// `setUseMetal(false/true)` pair is the narrow compatibility bridge.
-    /// It replaces only the nested `MTKView` and renderer; `Terminal` and the
+    /// It replaces only the Metal surface view and renderer; `Terminal` and the
     /// local process stay alive. Ordinary resize/focus/occlusion redraws never
     /// enter this path because they do not move the view between hosts.
     private func recreateMetalRendererAfterHostChangeIfNeeded() {
@@ -406,7 +416,7 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// `drawMetalFrameNow()` both re-enter the same refusal.
     ///
     /// Recreating the renderer is the only escape — it installs a fresh
-    /// `MTKView`, semaphore, and drawable chain while `Terminal`, the PTY, and
+    /// Metal surface, semaphore, and drawable chain while `Terminal`, the PTY, and
     /// the scrollback stay untouched. CoreGraphics has no such trap, so a
     /// repaint through the backend-aware bridge is both necessary and
     /// sufficient there.
@@ -436,27 +446,71 @@ final class PineTerminalView: LocalProcessTerminalView {
         requestRendererDisplay()
     }
 
+    /// Installs SwiftTerm 2.0's post-batch output notification. The 1.x
+    /// `dataReceived(slice:)` override is gone: process output is parsed on
+    /// the I/O thread and the view never calls it. The handler carries no
+    /// bytes; Pine only needs the moment visible content first changes.
+    private func installProcessOutputObserver() {
+        lastVisibleRowsText = visibleRowsText(0..<terminalDimensions.rows)
+        setProcessOutputHandler { [weak self] in
+            // SwiftTerm delivers this on its I/O thread. Pine's view state
+            // and recovery hooks belong to the main actor.
+            DispatchQueue.main.async { [weak self] in
+                self?.processOutputBatchApplied()
+            }
+        }
+    }
+
     /// Re-arms first-frame recovery when visible terminal content first
     /// changes, rather than relying solely on the earlier view-attachment
     /// window. This matters for shells whose startup takes longer than the
     /// bounded attachment retries: OSC title/working-directory sequences can
     /// arrive well before the prompt and must not consume the one-shot.
     ///
-    /// `super` must run first so the bytes (including the prompt) are already
-    /// represented in SwiftTerm's display buffer before Pine requests a frame.
-    /// SwiftTerm may deliver process output away from the main queue, so the
-    /// recovery hop keeps the AppKit/Metal work main-thread-safe.
-    override func dataReceived(slice: ArraySlice<UInt8>) {
+    /// Runs on the main thread after the output observer queues the applied
+    /// batch notification, so the display buffer already contains the output
+    /// before Pine requests a frame.
+    ///
+    /// Internal (not private) so tests can drive it directly: SwiftTerm 2.0
+    /// invokes the output handler only for real process output, not for
+    /// manual `feed` calls.
+    func processOutputBatchApplied() {
         let shouldInspectContent = firstVisibleContentLock.withLock {
             !didObserveFirstVisibleContent
         }
-        let contentBefore = slice.isEmpty || !shouldInspectContent
-            ? nil
-            : VisibleContentState(terminal: getTerminal())
-        feedTrackingCursorStyle(slice: slice)
-        guard let contentBefore,
-              VisibleContentState(terminal: getTerminal()) != contentBefore,
-              claimFirstVisibleContent() else { return }
+        let styleToReapply: CursorStyle? = cursorStyleLock.withLock {
+            guard needsPreferredCursorReapply, let preferredCursorStyle else { return nil }
+            needsPreferredCursorReapply = false
+            return preferredCursorStyle
+        }
+        // Both checks are cheap lock reads; the row-text snapshot only runs
+        // until the first real content change.
+        guard shouldInspectContent || styleToReapply != nil else { return }
+
+        // Deferred DECSCUSR-0 repair: the batch is fully applied and the
+        // terminal lock is released here, so mutating the cursor is safe.
+        // The handler runs on SwiftTerm's I/O parse thread while
+        // `setCursorStyle` is a main-actor API, so hop when needed.
+        if let styleToReapply {
+            if Thread.isMainThread {
+                applyCursorStyle(styleToReapply)
+            } else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.applyCursorStyle(styleToReapply)
+                }
+            }
+        }
+
+        guard shouldInspectContent else { return }
+        let rowsText = visibleRowsText(0..<terminalDimensions.rows)
+        let isFirstVisibleChange = firstVisibleContentLock.withLock {
+            if didObserveFirstVisibleContent { return false }
+            defer { lastVisibleRowsText = rowsText }
+            guard let previous = lastVisibleRowsText, previous != rowsText else { return false }
+            didObserveFirstVisibleContent = true
+            return true
+        }
+        guard isFirstVisibleChange else { return }
 
         if Thread.isMainThread {
             scheduleFirstVisibleContentRecoveryIfNeeded()
@@ -471,69 +525,59 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// cursor. A settings change also becomes the current authority until a
     /// later valid explicit DECSCUSR command arrives.
     func applyPreferredCursorStyle(_ style: CursorStyle) {
-        cursorStyleLock.lock()
-        defer { cursorStyleLock.unlock() }
-        preferredCursorStyle = style
-        activeCursorDirective = .preferred
-        getTerminal().setCursorStyle(style)
+        cursorStyleLock.withLock {
+            preferredCursorStyle = style
+            needsPreferredCursorReapply = false
+        }
+        applyCursorStyle(style)
     }
 
-    /// Runs SwiftTerm and Pine's cursor-policy resolution on the exact same
-    /// delivery path. Enforcing the last valid directive after `super` avoids
-    /// an asynchronous repair frame and also prevents unsupported or embedded
-    /// lookalikes from superseding a valid reset/explicit command.
-    private func feedTrackingCursorStyle(slice: ArraySlice<UInt8>) {
-        cursorStyleLock.lock()
-        defer { cursorStyleLock.unlock() }
-
-        if let directive = cursorSequenceTracker.consume(slice) {
-            activeCursorDirective = directive
+    /// Applies a style while marking the callback it triggers as Pine's own.
+    /// Must not be called from inside `cursorStyleChanged` — that callback
+    /// can run under SwiftTerm's non-re-entrant terminal lock.
+    private func applyCursorStyle(_ style: CursorStyle) {
+        cursorStyleLock.withLock {
+            applyingCursorStyle = true
+            lastAppliedCursorStyle = style
         }
-        super.dataReceived(slice: slice)
+        setCursorStyle(style)
+        cursorStyleLock.withLock {
+            applyingCursorStyle = false
+        }
+    }
 
-        switch activeCursorDirective {
-        case .preferred:
-            if let preferredCursorStyle {
-                getTerminal().setCursorStyle(preferredCursorStyle)
+    /// Resolves cursor-style changes reported by SwiftTerm's parser.
+    ///
+    /// SwiftTerm 1.x let Pine watch the raw PTY stream for DECSCUSR commands;
+    /// 2.0 never exposes those bytes and reports the outcome through this
+    /// callback instead. The mapping keeps the old rules:
+    ///
+    /// - A style equal to the current or the creation-time preference is
+    ///   DECSCUSR 0 ("restore the user's default") or an echo of Pine's own
+    ///   `setCursorStyle` — the Settings preference stays in charge. When the
+    ///   reported default is stale (captured before a Settings change), the
+    ///   current preference is re-applied from the post-batch handler; this
+    ///   callback can run under SwiftTerm's non-re-entrant terminal lock, so
+    ///   it never mutates the terminal itself.
+    /// - Any other style is an explicit DECSCUSR 1...6 and owns the cursor
+    ///   until a restore command or the next Settings change. SwiftTerm's
+    ///   parser already rejects malformed or unsupported parameters, so
+    ///   lookalike sequences never reach this callback.
+    override nonisolated func cursorStyleChanged(source: Terminal, newStyle: CursorStyle) {
+        super.cursorStyleChanged(source: source, newStyle: newStyle)
+
+        cursorStyleLock.withLock {
+            if applyingCursorStyle || newStyle == lastAppliedCursorStyle {
+                // Echo of Pine's own application — no new directive.
+                return
             }
-        case .explicit(let parameter):
-            if let style = Self.cursorStyle(forDECSCUSRParameter: parameter) {
-                getTerminal().setCursorStyle(style)
+            lastAppliedCursorStyle = newStyle
+            if let preferredCursorStyle,
+               newStyle == preferredCursorStyle || newStyle == initialCursorStyle {
+                needsPreferredCursorReapply = newStyle != preferredCursorStyle
+            } else {
+                needsPreferredCursorReapply = false
             }
-        case nil:
-            break
-        }
-    }
-
-    private static func cursorStyle(
-        forDECSCUSRParameter parameter: Int
-    ) -> CursorStyle? {
-        switch parameter {
-        case 1:
-            return .blinkBlock
-        case 2:
-            return .steadyBlock
-        case 3:
-            return .blinkUnderline
-        case 4:
-            return .steadyUnderline
-        case 5:
-            return .blinkBar
-        case 6:
-            return .steadyBar
-        default:
-            return nil
-        }
-    }
-
-    /// Claims the one-shot on SwiftTerm's delivery queue. This makes all
-    /// later PTY chunks bypass the visible-row snapshots; only the first real
-    /// cell mutation pays that bounded O(rows) comparison cost.
-    private func claimFirstVisibleContent() -> Bool {
-        firstVisibleContentLock.withLock {
-            guard !didObserveFirstVisibleContent else { return false }
-            didObserveFirstVisibleContent = true
-            return true
         }
     }
 
@@ -542,20 +586,19 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// SwiftTerm's CoreGraphics path draws in this outer NSView, so the
     /// synchronous `setNeedsDisplay` + `displayIfNeeded` sequence remains the
     /// right recovery operation. Under Metal, however, outer `draw(_:)`
-    /// returns immediately and a private nested `MTKView` owns presentation.
-    /// SwiftTerm does not expose `requestMetalDisplay()` publicly, so Pine
-    /// combines its public immediate-frame API with the existing invalidation
+    /// returns immediately and the GPU frame driver owns presentation, so
+    /// Pine combines its public invalidation API with the immediate-frame
     /// bridge:
     ///
-    /// - `selectionChanged(source:)` marks the full visible Metal range dirty
-    ///   and queues a display, ensuring cached rows are rebuilt when needed.
+    /// - `requestRedraw()` marks the frame driver dirty, ensuring cached rows
+    ///   are rebuilt on the next frame.
     /// - `drawMetalFrameNow()` attempts a frame synchronously while this
     ///   recovery boundary still has a drawable. This closes the gap where an
     ///   on-demand `setNeedsDisplay` is coalesced or discarded by AppKit.
     /// - same-size `setFrameSize(_:)` is harmless (`processSizeChange` no-ops
     ///   when cols/rows are unchanged) and queues a trailing request through
-    ///   SwiftTerm's internal `requestMetalDisplay()` if the immediate draw
-    ///   could not acquire a drawable.
+    ///   SwiftTerm's internal display request if the immediate draw could not
+    ///   acquire a drawable.
     ///
     /// Together they provide an immediate request plus a coalesced trailing
     /// request. Replace this compatibility bridge once SwiftTerm exposes a
@@ -569,7 +612,7 @@ final class PineTerminalView: LocalProcessTerminalView {
             #if DEBUG
             metalRedrawBridgeObserver?()
             #endif
-            selectionChanged(source: getTerminal())
+            requestRedraw()
             #if DEBUG
             metalImmediateDrawObserver?()
             #endif
@@ -619,7 +662,7 @@ final class PineTerminalView: LocalProcessTerminalView {
 
     func prepareLayerForRedraw(background: NSColor? = nil) {
         // Under the Metal renderer `layer.contents` holds no terminal raster
-        // (the MTKView owns the swapchain), so zeroing it is at best a no-op
+        // (SwiftTerm's Metal surface owns the swapchain), so zeroing it is at best a no-op
         // and at worst a source of flicker. Skip entirely when Metal is active.
         if isUsingMetalRenderer { return }
         if let background {
@@ -787,21 +830,21 @@ class TerminalScrollInterceptor: NSView {
     @discardableResult
     internal func handleFileLinkClick(_ event: NSEvent) -> Bool {
         guard let terminalView, let workingDirectory else { return false }
-        let term = terminalView.getTerminal()
+        let dimensions = terminalView.terminalDimensions
 
         // Map the click location to terminal grid coordinates.
         let point = convert(event.locationInWindow, from: nil)
         let grid = MouseScrollForwarder.gridPosition(
             point: point,
             viewBounds: terminalView.bounds,
-            cols: term.cols,
-            rows: term.rows,
+            cols: dimensions.cols,
+            rows: dimensions.rows,
             isFlipped: terminalView.isFlipped
         )
 
         // Extract the text of the clicked row from SwiftTerm's buffer.
-        guard let line = term.getLine(row: grid.row) else { return false }
-        let rowText = line.translateToString()
+        guard grid.row >= 0, grid.row < dimensions.rows else { return false }
+        let rowText = terminalView.visibleRowsText(grid.row..<(grid.row + 1)).first ?? ""
         guard !rowText.isEmpty else { return false }
 
         // Parse file:line references in the row text.
@@ -918,8 +961,8 @@ class TerminalScrollInterceptor: NSView {
 
         // Disable for TUI apps / alternate screen — selection there is
         // app-driven and an auto-scroll would corrupt mouse reporting.
-        let term = terminalView.getTerminal()
-        if term.mouseMode != .off || term.isCurrentBufferAlternate {
+        let inputState = terminalView.terminalInputStateSnapshot()
+        if inputState?.mouseMode != .off || inputState?.isAlternateBuffer == true {
             stopAutoScroll()
             return
         }
@@ -1013,8 +1056,8 @@ class TerminalScrollInterceptor: NSView {
             return
         }
 
-        let term = terminalView.getTerminal()
-        if term.mouseMode != .off || term.isCurrentBufferAlternate {
+        let inputState = terminalView.terminalInputStateSnapshot()
+        if inputState?.mouseMode != .off || inputState?.isAlternateBuffer == true {
             stopAutoScroll()
             return
         }
@@ -1268,7 +1311,7 @@ class TerminalContainerView: NSView {
         }
         if tabChanged {
             // Bind the new presentation generation before repainting so the
-            // redraw targets the replacement MTKView, not a retired layer.
+            // redraw targets the replacement Metal surface, not a retired layer.
             tab.refreshAfterReparent()
         }
 
@@ -1415,24 +1458,21 @@ class TerminalContainerView: NSView {
             let phaseEnded = scrollInfo.phaseEnded
             guard scrollInfo.shouldIntercept else { return event }
 
-            let term = terminalView.getTerminal()
+            guard let inputState = terminalView.terminalInputStateSnapshot() else { return event }
 
-            if term.mouseMode != .off {
+            if inputState.mouseMode != .off {
                 // TUI mouse reporting active — encode as VT100 mouse button events
                 let modifiers = event.modifierFlags
-                let buttonFlags = MouseScrollForwarder.encodeScrollButton(
-                    deltaY: scrollDelta,
-                    shift: modifiers.contains(.shift),
-                    option: modifiers.contains(.option),
-                    control: modifiers.contains(.control)
-                )
+                let shift = modifiers.contains(.shift)
+                let option = modifiers.contains(.option)
+                let control = modifiers.contains(.control)
 
                 let locationInTerminal = terminalView.convert(event.locationInWindow, from: nil)
                 let pos = MouseScrollForwarder.gridPosition(
                     point: locationInTerminal,
                     viewBounds: terminalView.bounds,
-                    cols: term.cols,
-                    rows: term.rows,
+                    cols: inputState.dimensions.cols,
+                    rows: inputState.dimensions.rows,
                     isFlipped: terminalView.isFlipped
                 )
 
@@ -1448,10 +1488,14 @@ class TerminalContainerView: NSView {
                 // using the SwiftTerm pixel overload so SGR-pixel-capable TUIs
                 // (mode 1016) can do sub-row scrolling.
                 for _ in 0..<velocity.events {
-                    term.sendEvent(
-                        buttonFlags: buttonFlags,
-                        x: pos.col,
-                        y: pos.row,
+                    terminalView.sendMouseEvent(
+                        button: MouseScrollForwarder.scrollButton(deltaY: scrollDelta),
+                        release: false,
+                        shift: shift,
+                        meta: option,
+                        control: control,
+                        col: pos.col,
+                        row: pos.row,
                         pixelX: Int(locationInTerminal.x),
                         pixelY: Int(locationInTerminal.y)
                     )
@@ -1466,17 +1510,15 @@ class TerminalContainerView: NSView {
                     if flushCount > 0 {
                         // Direction comes from the residual sign, not scrollDelta,
                         // because .ended markers often carry a zero delta.
-                        let flushButtonFlags = MouseScrollForwarder.encodeScrollButton(
-                            deltaY: residual,
-                            shift: modifiers.contains(.shift),
-                            option: modifiers.contains(.option),
-                            control: modifiers.contains(.control)
-                        )
                         for _ in 0..<flushCount {
-                            term.sendEvent(
-                                buttonFlags: flushButtonFlags,
-                                x: pos.col,
-                                y: pos.row,
+                            terminalView.sendMouseEvent(
+                                button: MouseScrollForwarder.scrollButton(deltaY: residual),
+                                release: false,
+                                shift: shift,
+                                meta: option,
+                                control: control,
+                                col: pos.col,
+                                row: pos.row,
                                 pixelX: Int(locationInTerminal.x),
                                 pixelY: Int(locationInTerminal.y)
                             )
@@ -1486,7 +1528,7 @@ class TerminalContainerView: NSView {
                 return nil
             }
 
-            if term.isCurrentBufferAlternate {
+            if inputState.isAlternateBuffer {
                 // Alternate screen (k9s, htop, vim, etc.) without mouse reporting —
                 // convert scroll to arrow keys like Ghostty/WezTerm/iTerm2.
                 // Reuse the shared `normalScrollLines` helper so the arrow-key
@@ -1503,7 +1545,7 @@ class TerminalContainerView: NSView {
                 self.accumulatedScrollDelta = result.remainingDelta
                 let arrowCount = MouseScrollForwarder.arrowKeyCount(for: result)
                 for _ in 0..<arrowCount {
-                    term.sendResponse(text: arrowKey)
+                    terminalView.send(Array(arrowKey.utf8))
                 }
                 // On gesture/momentum end, flush residual delta above the settle
                 // threshold so the final partial line is committed instead of
@@ -1517,7 +1559,7 @@ class TerminalContainerView: NSView {
                         // because .ended markers often carry a zero delta.
                         let flushKey = MouseScrollForwarder.arrowKeyForScroll(deltaY: residual)
                         for _ in 0..<flushCount {
-                            term.sendResponse(text: flushKey)
+                            terminalView.send(Array(flushKey.utf8))
                         }
                     }
                 }
@@ -2055,11 +2097,12 @@ final class TerminalTab: Identifiable, Hashable {
         // Upstream SwiftTerm ties a second behavior to `useBrightColors`:
         // with it disabled, palette indexes above 7 collapse onto `index - 8`,
         // which made the bright slots 8-15 unreachable for foreground text
-        // (and shifted the whole 16-255 extended range down by 8). Pine's
-        // SwiftTerm fork decouples the two via `collapseBrightColorsToBase`:
-        // bright indexes read their own palette slots while bold text keeps
-        // its base color (issues #733, #1650). Both renderers (CoreGraphics
-        // and Metal) resolve colors through this mapping.
+        // (and shifted the whole 16-255 extended range down by 8).
+        // `collapseBrightColorsToBase` (Pine's patch, upstreamed in SwiftTerm
+        // 1.99.2) decouples the two: bright indexes read their own palette
+        // slots while bold text keeps its base color (issues #733, #1650).
+        // Both renderers (CoreGraphics and Metal) resolve colors through this
+        // mapping.
         terminalView.collapseBrightColorsToBase = false
 
         applyCurrentTerminalAppearance(forceRedraw: false)
@@ -2136,7 +2179,7 @@ final class TerminalTab: Identifiable, Hashable {
     /// own the cursor until the next user-initiated settings change.
     internal func applyPreferredCursorStyle() {
         guard let terminalView = terminalView as? PineTerminalView else {
-            terminalView.getTerminal().setCursorStyle(cursorSettings.cursorStyle)
+            terminalView.setCursorStyle(cursorSettings.cursorStyle)
             return
         }
         terminalView.applyPreferredCursorStyle(cursorSettings.cursorStyle)
@@ -2472,10 +2515,10 @@ final class TerminalTab: Identifiable, Hashable {
     /// On CoreGraphics, `setNeedsDisplay(bounds)` + `displayIfNeeded()`
     /// repaints from `displayBuffer`. On Metal, the outer SwiftTerm view does
     /// not draw; `PineTerminalView.requestRendererDisplay()` routes the
-    /// recovery request to the nested `MTKView` instead (issue #1128).
-    /// `terminal.updateFullScreen()` additionally seeds the dirty range
-    /// in case SwiftTerm's own throttled `updateDisplay` is the next path
-    /// to fire (e.g. on incoming PTY data).
+    /// recovery request to SwiftTerm's Metal surface instead (issue #1128).
+    /// `requestRedraw()` additionally marks SwiftTerm's frame driver dirty
+    /// in case its own throttled display path is the next one to fire
+    /// (e.g. on incoming PTY data).
     ///
     /// Safe to call when the view is detached from a window — AppKit and
     /// SwiftTerm retain or safely coalesce the pending display request.
@@ -2485,8 +2528,7 @@ final class TerminalTab: Identifiable, Hashable {
         } else {
             terminalView.layer?.backgroundColor = terminalView.nativeBackgroundColor.cgColor
         }
-        let term = terminalView.getTerminal()
-        term.updateFullScreen()
+        terminalView.requestRedraw()
         if let pineTerminalView = terminalView as? PineTerminalView {
             pineTerminalView.requestRendererDisplay()
         } else {
@@ -2529,7 +2571,7 @@ final class TerminalTab: Identifiable, Hashable {
     /// `layout` on frame change, become-key observer).
     func refreshAfterReparent() {
         forceFullRedraw()
-        if terminalView.getTerminal().isCurrentBufferAlternate {
+        if terminalView.terminalInputStateSnapshot()?.isAlternateBuffer == true {
             kickPTYWindowSize()
         }
     }
@@ -2721,8 +2763,7 @@ final class TerminalTab: Identifiable, Hashable {
         lastSearchOptions = SearchOptions(caseSensitive: caseSensitive)
 
         // Extract full buffer text via public API on main thread
-        let terminal = terminalView.getTerminal()
-        let bufferData = terminal.getBufferAsData()
+        let bufferData = terminalView.getBufferAsData()
 
         // Search off main thread. The match-finding algorithm lives in the
         // pure `TerminalBufferSearch` helper so it can be unit-tested without

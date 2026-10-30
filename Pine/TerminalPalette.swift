@@ -34,9 +34,8 @@
 //      foreground text and shifted the whole 16-255 extended range down
 //      by 8 (issue #1650).
 //
-//      Pine ships a SwiftTerm fork (batonogov/SwiftTerm, pinned to an
-//      exact `1.19.0-pine.*` tag) that decouples the two behaviors via
-//      `collapseBrightColorsToBase`. Pine sets it to `false`, so `\e[38;5;8m`
+//      Pine upstreamed the decoupling as `collapseBrightColorsToBase`
+//      (SwiftTerm 1.99.2). Pine sets it to `false`, so `\e[38;5;8m`
 //      (which is what zsh-autosuggestions / fish use for ghost text via
 //      `fg=8`) now reads the real slot 8, and bright themes (Dracula,
 //      GitHub, Digital Rain) render their distinct bright variants. Bold
@@ -162,7 +161,7 @@ enum TerminalPalette {
     /// canonical black (#282C34), so text sent as ANSI 0 (e.g. p10k segment
     /// text on bright backgrounds) renders as the theme's true black rather
     /// than a grey substitute. zsh-autosuggestions ghost text reads the real
-    /// bright-black slot 8 (#5C6370) now that Pine's SwiftTerm fork no longer
+    /// bright-black slot 8 (#5C6370) now that SwiftTerm no longer
     /// collapses bright foreground indexes onto the base palette (issue
     /// #1650 — see the file header).
     static let macOSAligned: [TerminalPaletteEntry] = oneDark
@@ -173,7 +172,7 @@ enum TerminalPalette {
     /// equal their normal counterparts — canonical for Catppuccin Latte,
     /// not a copy-paste error. Slot 0 is Latte's canonical terminal black
     /// (Subtext 1, #5C5F77); zsh-autosuggestions ghost text reads the real
-    /// bright-black slot 8 now that the SwiftTerm fork keeps bright
+    /// bright-black slot 8 now that SwiftTerm keeps bright
     /// foreground indexes addressable (issue #1650).
     private static let catppuccinLatte: [TerminalPaletteEntry] = [
         .init(red: 0x5C, green: 0x5F, blue: 0x77), // 0  black (Subtext 1)

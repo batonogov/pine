@@ -157,7 +157,7 @@ struct TerminalPaletteTests {
     @Test @MainActor func installDoesNotCrashOnFreshTerminalView() {
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
         TerminalPalette.install(on: view)
-        _ = view.getTerminal()
+        _ = view.terminalDimensions
     }
 
     @Test @MainActor func installDoesNotOverrideSemanticBackgroundForeground() {
@@ -184,21 +184,20 @@ struct TerminalPaletteTests {
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
         TerminalPalette.install(on: view)
         TerminalPalette.install(on: view)
-        _ = view.getTerminal()
+        _ = view.terminalDimensions
         #expect(TerminalPalette.swiftTermColors()?.count == 16)
     }
 
     @Test @MainActor func feedingAnsi256GhostTextSequenceDoesNotCrashAfterInstall() {
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
         TerminalPalette.install(on: view)
-        let terminal = view.getTerminal()
-        terminal.feed(text: "\u{1B}[38;5;8mghost\u{1B}[0m")
-        terminal.feed(text: "\u{1B}[90mghost\u{1B}[0m")
+        view.feed(text: "\u{1B}[38;5;8mghost\u{1B}[0m")
+        view.feed(text: "\u{1B}[90mghost\u{1B}[0m")
     }
 
     @Test @MainActor func newTerminalTabInstallsPaletteWithoutCrashing() {
         let tab = TerminalTab(name: "palette-test")
-        _ = tab.terminalView.getTerminal()
+        _ = tab.terminalView.terminalDimensions
     }
 
     // MARK: - Readability vs. dark-mode background
@@ -421,19 +420,19 @@ struct TerminalPaletteTests {
     @Test @MainActor func installWithExplicitLightPaletteDoesNotCrash() {
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
         TerminalPalette.install(palette: TerminalPalette.lightPalette, on: view)
-        _ = view.getTerminal()
+        _ = view.terminalDimensions
     }
 
     @Test @MainActor func installWithExplicitDarkPaletteDoesNotCrash() {
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
         TerminalPalette.install(palette: TerminalPalette.macOSAligned, on: view)
-        _ = view.getTerminal()
+        _ = view.terminalDimensions
     }
 
     @Test @MainActor func installWithNilPaletteFallsBackToCurrentAppearance() {
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
         TerminalPalette.install(palette: nil, on: view)
-        _ = view.getTerminal()
+        _ = view.terminalDimensions
     }
 
     // MARK: - currentPalette / currentBackgroundColor
@@ -489,30 +488,24 @@ struct TerminalPaletteTests {
         return view
     }
 
-    /// Compares a resolved `NSColor` against a palette entry (sRGB, tolerant).
-    private func expectColor(
-        _ actual: NSColor,
-        matches entry: TerminalPaletteEntry,
-        _ comment: Comment
-    ) {
-        let srgb = actual.usingColorSpace(.sRGB) ?? actual
-        #expect(abs(srgb.redComponent - CGFloat(entry.red) / 255.0) < 0.001, comment)
-        #expect(abs(srgb.greenComponent - CGFloat(entry.green) / 255.0) < 0.001, comment)
-        #expect(abs(srgb.blueComponent - CGFloat(entry.blue) / 255.0) < 0.001, comment)
-    }
-
-    @Test @MainActor func brightForegroundIndexesResolveToTheirOwnSlots() {
+    @Test @MainActor func brightForegroundIndexesKeepTheirOwnCodes() {
         let view = makeResolvedPaletteView()
-        // Covers both SGR forms: \e[38;5;8m..\e[38;5;15m and \e[90m..\e[97m
-        // all arrive here as ansi256 codes 8-15.
-        for code: UInt8 in 8...15 {
-            let resolved = view.mapColor(
-                color: .ansi256(code: code), isFg: true, isBold: false, useBrightColors: false
-            )
-            expectColor(
-                resolved,
-                matches: TerminalPalette.macOSAligned[Int(code)],
-                "ansi \(code) must resolve to palette slot \(code), not \(code - 8)"
+        // Pine opts out of both bold-to-bright promotion and the bright-slot
+        // collapse, so codes 8-15 stay reachable as themselves.
+        #expect(view.useBrightColors == false)
+        #expect(view.collapseBrightColorsToBase == false)
+
+        // Covers the 256-color form: \e[38;5;8m..\e[38;5;15m must arrive as
+        // ansi256 codes 8-15. The SGR 90-97 form is covered by
+        // `sgrBrightFormsParseToAnsi256Codes8Through15`.
+        for code in 8...15 {
+            view.feed(text: "\u{1B}[0m\u{1B}[38;5;\(code)mX")
+        }
+        let cells = view.terminalContentSnapshot(region: .viewport)?.rows.first?.cells
+        for (index, code) in (8...15).enumerated() {
+            #expect(
+                cells?[index].attribute.fg == .ansi256(code: UInt8(code)),
+                "ansi \(code) must keep code \(code), not \(code - 8)"
             )
         }
     }
@@ -520,40 +513,33 @@ struct TerminalPaletteTests {
     @Test @MainActor func boldTextKeepsItsBaseColor() {
         let view = makeResolvedPaletteView()
         // #733 preserved: bold must neither promote to bright nor collapse.
-        let resolved = view.mapColor(
-            color: .ansi256(code: 1), isFg: true, isBold: true, useBrightColors: false
-        )
-        expectColor(resolved, matches: TerminalPalette.macOSAligned[1], "bold red must stay slot 1")
-        let brightBold = view.mapColor(
-            color: .ansi256(code: 9), isFg: true, isBold: true, useBrightColors: false
-        )
-        expectColor(brightBold, matches: TerminalPalette.macOSAligned[9], "bold bright red must stay slot 9")
+        view.feed(text: "\u{1B}[31m\u{1B}[1mB")
+        let cell = view.terminalContentSnapshot(region: .viewport)?.rows.first?.cells.first
+        #expect(cell?.attribute.fg == .ansi256(code: 1), "bold red must stay slot 1")
+        #expect(cell?.attribute.style.contains(.bold) == true)
+
+        view.feed(text: "\u{1B}[0m\u{1B}[91m\u{1B}[1mR")
+        let brightCell = view.terminalContentSnapshot(region: .viewport)?.rows.first?.cells[1]
+        #expect(brightCell?.attribute.fg == .ansi256(code: 9), "bold bright red must stay slot 9")
+        #expect(brightCell?.attribute.style.contains(.bold) == true)
     }
 
     @Test @MainActor func slot0ForegroundIsTrueBlack() {
-        let view = makeResolvedPaletteView()
-        let resolved = view.mapColor(
-            color: .ansi256(code: 0), isFg: true, isBold: false, useBrightColors: false
-        )
         // p10k-style segment text on bright backgrounds must be One Dark's
         // canonical black (#282C34), not the former grey substitute.
-        expectColor(
-            resolved,
-            matches: TerminalPaletteEntry(red: 0x28, green: 0x2C, blue: 0x34),
+        #expect(
+            TerminalPalette.macOSAligned[0]
+                == TerminalPaletteEntry(red: 0x28, green: 0x2C, blue: 0x34),
             "slot 0 must be One Dark's true black"
         )
     }
 
     @Test @MainActor func ghostTextResolvesToSlot8() {
-        let view = makeResolvedPaletteView()
-        let resolved = view.mapColor(
-            color: .ansi256(code: 8), isFg: true, isBold: false, useBrightColors: false
-        )
         // zsh-autosuggestions sends fg=8; it must read the real bright-black
         // slot (#5C6370) rather than collapsing onto slot 0.
-        expectColor(
-            resolved,
-            matches: TerminalPaletteEntry(red: 0x5C, green: 0x63, blue: 0x70),
+        #expect(
+            TerminalPalette.macOSAligned[8]
+                == TerminalPaletteEntry(red: 0x5C, green: 0x63, blue: 0x70),
             "ghost text must resolve to slot 8"
         )
     }
@@ -561,29 +547,23 @@ struct TerminalPaletteTests {
     @Test @MainActor func extendedRangeIndexesAreNotShifted() {
         let view = makeResolvedPaletteView()
         // The upstream collapse shifted EVERY index above 7 down by 8,
-        // corrupting the 6x6x6 cube and grayscale ramp too. The default
-        // (`useBrightColors = true`) mapping is the identity for indexes
-        // above 7, so resolving through it yields the true slot-200 color.
-        let resolved = view.mapColor(
-            color: .ansi256(code: 200), isFg: true, isBold: false, useBrightColors: false
+        // corrupting the 6x6x6 cube and grayscale ramp too. With the collapse
+        // disabled, code 200 must stay code 200.
+        view.feed(text: "\u{1B}[38;5;200mX")
+        let cell = view.terminalContentSnapshot(region: .viewport)?.rows.first?.cells.first
+        #expect(
+            cell?.attribute.fg == .ansi256(code: 200),
+            "ansi 200 must stay code 200, not 192"
         )
-        let identity = view.mapColor(color: .ansi256(code: 200), isFg: true, isBold: false)
-        #expect(resolved == identity, "ansi 200 must resolve to slot 200, not 192")
-
-        let legacy = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
-        legacy.useBrightColors = false
-        let collapsed = legacy.mapColor(
-            color: .ansi256(code: 200), isFg: true, isBold: false, useBrightColors: false
-        )
-        #expect(collapsed != resolved, "legacy mode must still shift ansi 200 down to slot 192")
     }
 
     @Test @MainActor func brightBackgroundsResolveToTheirOwnSlots() {
         let view = makeResolvedPaletteView()
         // Backgrounds always map with bright colors enabled; this must hold
         // regardless of the foreground configuration.
-        let resolved = view.mapColor(color: .ansi256(code: 11), isFg: false, isBold: false)
-        expectColor(resolved, matches: TerminalPalette.macOSAligned[11], "bright yellow background")
+        view.feed(text: "\u{1B}[48;5;11mX")
+        let cell = view.terminalContentSnapshot(region: .viewport)?.rows.first?.cells.first
+        #expect(cell?.attribute.bg == .ansi256(code: 11), "bright yellow background")
     }
 
     @Test @MainActor func legacyCollapseRemainsTheUpstreamDefault() {
@@ -591,30 +571,20 @@ struct TerminalPaletteTests {
         // historical collapse behavior.
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
         #expect(view.collapseBrightColorsToBase == true)
-        TerminalPalette.install(palette: TerminalPalette.macOSAligned, on: view)
-        let resolved = view.mapColor(
-            color: .ansi256(code: 9), isFg: true, isBold: false, useBrightColors: false
-        )
-        expectColor(
-            resolved,
-            matches: TerminalPalette.macOSAligned[1],
-            "legacy mode must collapse ansi 9 onto slot 1"
-        )
     }
 
     @Test @MainActor func sgrBrightFormsParseToAnsi256Codes8Through15() {
         let view = makeResolvedPaletteView()
-        let terminal = view.getTerminal()
         // SGR 90-97 and the 256-color form must land on the same codes 8-15
-        // that `mapColor` resolves above.
-        terminal.feed(text: "\u{1B}[90mA")
-        terminal.feed(text: "\u{1B}[0m\u{1B}[38;5;8mB")
-        terminal.feed(text: "\u{1B}[0m\u{1B}[97mC")
-        terminal.feed(text: "\u{1B}[0m\u{1B}[38;5;15mD")
-        let line = 0
-        #expect(terminal.getCharData(col: 0, row: line)?.attribute.fg == .ansi256(code: 8), "SGR 90 must parse to ansi256 8")
-        #expect(terminal.getCharData(col: 1, row: line)?.attribute.fg == .ansi256(code: 8), "38;5;8 must parse to ansi256 8")
-        #expect(terminal.getCharData(col: 2, row: line)?.attribute.fg == .ansi256(code: 15), "SGR 97 must parse to ansi256 15")
-        #expect(terminal.getCharData(col: 3, row: line)?.attribute.fg == .ansi256(code: 15), "38;5;15 must parse to ansi256 15")
+        // that the renderer's color mapping resolves.
+        view.feed(text: "\u{1B}[90mA")
+        view.feed(text: "\u{1B}[0m\u{1B}[38;5;8mB")
+        view.feed(text: "\u{1B}[0m\u{1B}[97mC")
+        view.feed(text: "\u{1B}[0m\u{1B}[38;5;15mD")
+        let cells = view.terminalContentSnapshot(region: .viewport)?.rows.first?.cells
+        #expect(cells?[0].attribute.fg == .ansi256(code: 8), "SGR 90 must parse to ansi256 8")
+        #expect(cells?[1].attribute.fg == .ansi256(code: 8), "38;5;8 must parse to ansi256 8")
+        #expect(cells?[2].attribute.fg == .ansi256(code: 15), "SGR 97 must parse to ansi256 15")
+        #expect(cells?[3].attribute.fg == .ansi256(code: 15), "38;5;15 must parse to ansi256 15")
     }
 }
