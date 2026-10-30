@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.11.2](https://github.com/batonogov/pine/compare/v2.11.1...v2.11.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* recover authoritative agent process ownership ([#1689](https://github.com/batonogov/pine/issues/1689)) ([c34d322](https://github.com/batonogov/pine/commit/c34d3227c19cd5c7e4114267ebfe42f653eaf18d))
+
+
+### Documentation
+
+* rename CLAUDE.md to AGENTS.md ([#1693](https://github.com/batonogov/pine/issues/1693)) ([c1e7464](https://github.com/batonogov/pine/commit/c1e74646b360c37c12348006676d0cf95d70ef12))
+
 ## [2.11.1](https://github.com/batonogov/pine/compare/v2.11.0...v2.11.1) (2026-10-26)
 
 
