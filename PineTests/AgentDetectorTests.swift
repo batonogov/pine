@@ -39,6 +39,22 @@ struct AgentDetectorTests {
         #expect(detector.detectedSessions[0].agentType == .codex)
     }
 
+    @Test func detectsEmpryoInTerminalAndHeadlessModes() {
+        for command in ["empryo", "/opt/homebrew/bin/empryo --headless --events task",
+                        "bun /opt/homebrew/bin/empryo --headless --chat"] {
+            let detector = AgentDetector()
+            detector.processSnapshotDidUpdate([DetectedProcess(pid: 150, command: command)])
+            #expect(detector.detectedSessions.count == 1)
+            #expect(detector.detectedSessions.first?.agentType == .empryo)
+            #expect(detector.detectedSessions.first?.state == .idle)
+            detector.processSnapshotDidUpdate([])
+            #expect(detector.activeSessions.isEmpty)
+            #expect(detector.session(forPID: 150) == nil)
+            #expect(detector.detectedSessions.first?.state == .done)
+            #expect(detector.detectedSessions.first?.liveness == .terminated)
+        }
+    }
+
     @Test func detectsAider() {
         let detector = AgentDetector()
         detector.processSnapshotDidUpdate([

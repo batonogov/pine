@@ -42,6 +42,8 @@ enum AgentType: Equatable, Sendable {
     case crush
     /// Moonshot AI Kimi Code (`kimi`).
     case kimiCode
+    /// Empry⊙ coding agent (`empryo`).
+    case empryo
     /// Any other/unrecognised agent, identified by a free-form name.
     case generic(name: String)
 
@@ -61,6 +63,7 @@ enum AgentType: Equatable, Sendable {
         case .qwenCode: "Qwen Code"
         case .crush: "Crush"
         case .kimiCode: "Kimi Code"
+        case .empryo: "Empry⊙"
         case .generic(let name): name
         }
     }
@@ -78,8 +81,8 @@ enum AgentType: Equatable, Sendable {
     }
 
     /// Color used for UI color-coding of this agent. Adaptive system colors
-    /// are preferred; `.kimiCode` uses the fixed `.magenta` because every
-    /// adaptive system color is already assigned to another agent.
+    /// are preferred; `.kimiCode` and `.empryo` use fixed colors because
+    /// every adaptive system color is already assigned to another agent.
     var color: NSColor {
         switch self {
         case .claudeCode: .systemOrange
@@ -95,6 +98,7 @@ enum AgentType: Equatable, Sendable {
         case .qwenCode: .systemRed
         case .crush: .systemBrown
         case .kimiCode: .magenta
+        case .empryo: .cyan
         case .generic: .systemGray
         }
     }
