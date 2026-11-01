@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.12.0](https://github.com/batonogov/pine/compare/v2.11.2...v2.12.0) (2026-11-01)
+
+
+### Features
+
+* **agent:** add Empry⊙ CLI detection ([#1702](https://github.com/batonogov/pine/issues/1702)) ([57ce480](https://github.com/batonogov/pine/commit/57ce4809bd94c122c9e1a182a584286184eaf17d))
+
+
+### Bug Fixes
+
+* **worktrees:** protect local data during integration and removal ([#1700](https://github.com/batonogov/pine/issues/1700)) ([991beb4](https://github.com/batonogov/pine/commit/991beb4d1a7bff8351b7f259d58b1160efbe6aaa))
+
+
+### Documentation
+
+* **agents:** make delivery autonomous and move guidance to .agents ([#1699](https://github.com/batonogov/pine/issues/1699)) ([7cf9279](https://github.com/batonogov/pine/commit/7cf92794ee32775e9ea729f625a9d909eedc2650))
+
 ## [2.11.2](https://github.com/batonogov/pine/compare/v2.11.1...v2.11.2) (2026-10-30)
 
 
