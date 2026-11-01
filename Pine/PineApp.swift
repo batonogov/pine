@@ -36,6 +36,8 @@ struct PineApp: App {
         WindowGroup(for: URL.self) { $projectURL in
             if let projectURL {
                 ProjectWindowView(projectURL: projectURL, registry: registry, appDelegate: appDelegate)
+            } else {
+                UnassignedProjectWindowView()
             }
         }
         .defaultSize(width: 1440, height: 900)
@@ -149,6 +151,22 @@ private struct AppDelegateBridge: View {
             }
 
         }
+    }
+}
+
+/// A restored value-based scene can have no URL. Keep a real view mounted so
+/// its task can replace that otherwise blank window with the named Welcome scene.
+struct UnassignedProjectWindowView: View {
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task {
+                openWindow(id: "welcome")
+                dismiss()
+            }
     }
 }
 

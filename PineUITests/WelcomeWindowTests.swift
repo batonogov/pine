@@ -25,6 +25,24 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(welcomeWindow), "Welcome window should appear on clean launch")
     }
 
+    func testRelaunchWithoutProjectShowsWelcomeContent() throws {
+        // Unlike launchClean, allow macOS to restore its saved scene state.
+        if let index = app.launchArguments.firstIndex(of: "-ApplePersistenceIgnoreState") {
+            app.launchArguments.removeSubrange(index...index + 1)
+        }
+        launchClean()
+        XCTAssertTrue(waitForExistence(app.buttons["welcomeOpenFolderButton"]))
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "--reset-state" }
+
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(waitForExistence(app.windows["welcome"]))
+        XCTAssertTrue(waitForExistence(app.buttons["welcomeOpenFolderButton"]))
+        XCTAssertEqual(app.windows.count, 1, "Relaunch must not leave an empty project window")
+    }
+
     func testWelcomeWindowShowsOpenFolderButton() throws {
         launchClean()
 
