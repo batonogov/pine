@@ -39,13 +39,12 @@ PineTests/SnapshotTests/__Snapshots__/*.actual.png
 # Sanitized process-level test diagnostics uploaded by CI
 LifecycleDiagnostics/
 
-# Agents
-# Ignore the whole directory except the instruction files, which are part of
-# the repository: rules load by path when Claude reads a matching file, skills
-# are invoked by name. Personal settings and worktrees stay ignored.
-.claude/*
-!.claude/rules/
-!.claude/skills/
+# Shared agent guidance; local settings, caches, and worktrees stay ignored.
+.agents/*
+!.agents/rules/
+!.agents/skills/
+# Claude-specific runtime state is local, not shared instructions.
+.claude/
 .pi/
 .pi-subagents/
 .pine/

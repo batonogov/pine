@@ -331,7 +331,7 @@ struct SidebarScrollRequest: Equatable, Sendable {
 
 /// Why the sidebar is about to reveal a row after an edit (#1537).
 ///
-/// The contract in `.claude/rules/architecture.md` reserves `.center` +
+/// The contract in `.agents/rules/architecture.md` reserves `.center` +
 /// animation for intentional reveals; a rename commits on a row that never
 /// left the viewport, so it must reveal like ordinary keyboard selection.
 enum SidebarRevealIntent: Equatable, Sendable {

@@ -41,10 +41,10 @@ Open `Pine.xcodeproj` in Xcode. SPM dependencies (SwiftTerm, Sparkle, swift-mark
 Press **Cmd+R** in Xcode, or build from the command line:
 
 ```bash
-xcodebuild -project Pine.xcodeproj -scheme Pine build
+xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine build
 ```
 
-> If `xcodebuild` can't find the SDK, run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` first.
+> If `xcodebuild` cannot find Xcode, prefix the command with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` (adjust the app path if needed); no machine-wide switch or sudo is required.
 
 New `.swift` files placed in `Pine/`, `PineTests/`, or `PineUITests/` are automatically picked up by Xcode (the project uses `PBXFileSystemSynchronizedRootGroup`). No manual `project.pbxproj` edits needed.
 
@@ -75,7 +75,7 @@ For terminal rendering bugs, perform a manual comparison after each code change:
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild test -project Pine.xcodeproj -scheme Pine \
+  xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
   -destination 'platform=macOS' -only-testing:PineTests
 ```
 
@@ -83,7 +83,7 @@ Run a single test class:
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild test -project Pine.xcodeproj -scheme Pine \
+  xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
   -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests
 ```
 
@@ -91,7 +91,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild test -project Pine.xcodeproj -scheme Pine \
+  xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
   -destination 'platform=macOS' -only-testing:PineUITests
 ```
 
@@ -141,9 +141,9 @@ Pine follows **MVVM** with SwiftUI views backed by AppKit via `NSViewRepresentab
 - **`CodeEditorView`** wraps NSScrollView + custom `GutterTextView` (NSTextView subclass) for the code editor
 - **`TerminalContentView`** wraps SwiftTerm's `LocalProcessTerminalView` for the integrated terminal
 - **`SyntaxHighlighter`** loads JSON grammar files from `Pine/Grammars/` for syntax highlighting
-- Menu commands are defined in `PineApp.swift` and dispatched via `NotificationCenter`
+- Menu commands are defined in `PineAppMenuCommands.swift`; notification names live in `PineAppNotifications.swift`
 
-For more details, see [`.claude/rules/architecture.md`](.claude/rules/architecture.md), and [AGENTS.md](AGENTS.md) for build, test, and workflow conventions.
+For more details, see [`.agents/rules/architecture.md`](.agents/rules/architecture.md), and [AGENTS.md](AGENTS.md) for build, test, and workflow conventions.
 
 ## Making Changes
 

@@ -5,7 +5,7 @@ paths:
 
 # Pine architecture
 
-How the app is put together. Loads when you open a file under `Pine/`.
+How the app is put together. Read this guide before architecture changes under `Pine/`; tool-independent discovery starts in `AGENTS.md`.
 
 **Pattern:** MVVM with SwiftUI views backed by AppKit via `NSViewRepresentable`.
 
@@ -33,7 +33,7 @@ How the app is put together. Loads when you open a file under `Pine/`.
 
 **Code folding:** `FoldRangeCalculator` identifies foldable ranges by scanning matched bracket pairs (`{}`, `[]`, `()`). `FoldState` tracks which ranges are folded for the active tab using a sorted set for O(1) hidden-line lookups. Fold/unfold/toggle operations are available via menu and gutter clicks.
 
-**Adding menu commands:** Menu items are defined in `PineApp.swift` inside `CommandGroup`. They post notifications via `NotificationCenter.default.post(name:)`. Notification names are defined as static properties in `extension Notification.Name` (bottom of `PineApp.swift`). `ContentView` listens via `.onReceive()` inside `GitAndNotificationObserver` ViewModifier. Strings go in `Strings.swift`, icons in `MenuIcons.swift`, localization in `Localizable.xcstrings` (targeted text insertion, not json.dump).
+**Adding menu commands:** Scene wiring lives in `PineApp.swift`; menu definitions live in `PineAppMenuCommands.swift`. Notification-based commands use names in `PineAppNotifications.swift` and post via `NotificationCenter.default.post(name:)`. `ContentView` listens via `.onReceive()` inside `GitAndNotificationObserver` ViewModifier. Strings go in `Strings.swift`, icons in `MenuIcons.swift`, localization in `Localizable.xcstrings` (targeted text insertion, not json.dump).
 
 **Find & Replace:** Uses NSTextView's native find bar (`usesFindBar = true`) triggered via NotificationCenter. Notifications: `findInFile` (Cmd+F), `findAndReplace` (Cmd+Option+F), `findNext` (Cmd+G), `findPrevious` (Cmd+Shift+G), `useSelectionForFind` (Cmd+E). The find bar is presented by `GutterTextView`'s coordinator in response to menu commands.
 
