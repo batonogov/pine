@@ -25,7 +25,7 @@
 //    2. The Go-to-Line overlay appears whenever any tab is active, so its
 //       presence does not prove routing — and cursor movement (the actual
 //       routing effect) is unverifiable via XCUITest due to the
-//       GutterTextView keyboard-input limitation (see .claude/rules/ui-tests.md).
+//       GutterTextView keyboard-input limitation (see .agents/rules/ui-tests.md).
 //
 //  XCUITest cannot create editor-pane splits via drag-and-drop (SwiftUI's
 //  onDrag/onDrop relies on the macOS pasteboard system, which synthetic

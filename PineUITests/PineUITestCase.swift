@@ -123,7 +123,7 @@ class PineUITestCase: XCTestCase {
     ///
     /// The ⌃⌘S shortcut is the obvious driver, but `typeKey` posts synthetic
     /// events down the accessibility path, which never reaches the split
-    /// view's toggle — this suite's launch notes (`.claude/rules/ui-tests.md`)
+    /// view's toggle — this suite's launch notes (`.agents/rules/ui-tests.md`)
     /// and the #1544 probe both document lost sidebar keystrokes, and CI lost
     /// this one three runs out of three. Menu clicks travel the real menu
     /// path every other command in the suite already uses. The item is
