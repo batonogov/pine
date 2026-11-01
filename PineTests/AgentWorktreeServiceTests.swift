@@ -584,6 +584,243 @@ struct AgentWorktreeServiceTests {
         ))
         return session
     }
+
+    @Test("Ignored target files survive preview and integration", arguments: [false, true])
+    func integrationProtectsIgnoredData(createdAfterPreview: Bool) async throws {
+        let fixture = try WorktreeFixture()
+        try fixture.write(".gitignore", "secret.txt\n")
+        try fixture.git(["add", ".gitignore"])
+        try fixture.git(["commit", "-m", "ignore local data"])
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(
+            taskID: id(30), branch: "agent/ignored-target"
+        )))
+        try fixture.write("secret.txt", "agent result\n", at: worktree.worktreeRoot)
+        try fixture.git(["add", "-f", "secret.txt"], at: worktree.worktreeRoot)
+        try fixture.git(["commit", "-m", "agent result"], at: worktree.worktreeRoot)
+        if !createdAfterPreview {
+            try fixture.write("secret.txt", "private user data\n")
+        }
+        let head = try fixture.git(["rev-parse", "HEAD"])
+        let result = await service.previewIntegration(worktree)
+        if createdAfterPreview {
+            let preview = try ready(result)
+            try fixture.write("secret.txt", "private user data\n")
+            let confirmation = AgentWorktreeIntegrationConfirmation(
+                previewID: preview.id, sourceCommit: preview.sourceCommit,
+                targetHead: preview.targetHead, targetBranch: preview.targetBranch,
+                changedPaths: preview.changedPaths
+            )
+            #expect(await service.integrate(preview, confirmation: confirmation)
+                == .failed(.targetChanged))
+        } else {
+            #expect(result == .failed(.targetCheckoutDirty(["secret.txt"])))
+        }
+        #expect(try String(contentsOf: fixture.repository.appendingPathComponent("secret.txt"),
+                           encoding: .utf8) == "private user data\n")
+        #expect(try fixture.git(["rev-parse", "HEAD"]) == head)
+        #expect(try fixture.git(["diff", "--cached", "--name-only"]).isEmpty)
+    }
+
+    @Test("Unrelated ignored data does not prevent integration")
+    func integrationPreservesUnrelatedIgnoredData() async throws {
+        let fixture = try WorktreeFixture()
+        try fixture.write(".gitignore", "secret.txt\n")
+        try fixture.git(["add", ".gitignore"])
+        try fixture.git(["commit", "-m", "ignore local data"])
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(
+            taskID: id(31), branch: "agent/unrelated-ignored"
+        )))
+        try fixture.write("tracked.txt", "agent result\n", at: worktree.worktreeRoot)
+        try fixture.git(["add", "tracked.txt"], at: worktree.worktreeRoot)
+        try fixture.git(["commit", "-m", "agent result"], at: worktree.worktreeRoot)
+        try fixture.write("secret.txt", "private user data\n")
+        let preview = try ready(await service.previewIntegration(worktree))
+        let confirmation = AgentWorktreeIntegrationConfirmation(
+            previewID: preview.id, sourceCommit: preview.sourceCommit,
+            targetHead: preview.targetHead, targetBranch: preview.targetBranch,
+            changedPaths: preview.changedPaths
+        )
+        #expect(await service.integrate(preview, confirmation: confirmation)
+            == .integratedWithoutCommit)
+        #expect(try String(contentsOf: fixture.repository.appendingPathComponent("secret.txt"),
+                           encoding: .utf8) == "private user data\n")
+    }
+
+    @Test("Removal discloses every ignored file", arguments: [false, true])
+    func removalRequiresIgnoredFileConsent(alsoDirty: Bool) async throws {
+        let fixture = try WorktreeFixture()
+        try fixture.write(".gitignore", "secret.txt\ncache/\n.pine/\n")
+        try fixture.git(["add", ".gitignore"])
+        try fixture.git(["commit", "-m", "ignore local data"])
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(
+            taskID: id(32), branch: "agent/ignored-removal"
+        )))
+        for directory in ["cache", ".pine"] {
+            try FileManager.default.createDirectory(
+                at: worktree.worktreeRoot.appendingPathComponent(directory),
+                withIntermediateDirectories: false
+            )
+        }
+        var paths = ["secret.txt", "cache/nested.txt", ".pine/agent-log.json", "cafe\u{301}.txt"]
+        for path in paths { try fixture.write(path, "user data\n", at: worktree.worktreeRoot) }
+        if alsoDirty {
+            try fixture.write("tracked.txt", "approved edit\n", at: worktree.worktreeRoot)
+            paths.append("tracked.txt")
+        }
+        let inspection = try inspected(await service.inspectRemoval(worktree))
+        #expect(inspection.dirtyPaths == paths.sorted())
+        #expect(await service.remove(worktree) == .failed(.confirmationRequired(inspection)))
+        #expect(FileManager.default.fileExists(atPath: worktree.worktreeRoot.path))
+        let confirmation = AgentWorktreeRemovalConfirmation(
+            worktreeRoot: worktree.worktreeRoot, dirtyPaths: inspection.dirtyPaths,
+            acknowledgesUnrecoverableDataLoss: true
+        )
+        #expect(await service.remove(worktree, confirmation: confirmation) == .removed)
+    }
+
+    @Test("A late file invalidates destructive removal consent")
+    func removalRechecksLateFiles() async throws {
+        let fixture = try WorktreeFixture()
+        let setup = AgentWorktreeService()
+        let worktree = try created(await setup.create(fixture.request(
+            taskID: id(33), branch: "agent/late-removal"
+        )))
+        try fixture.write("tracked.txt", "approved edit\n", at: worktree.worktreeRoot)
+        let inspection = try inspected(await setup.inspectRemoval(worktree))
+        let counter = WorktreeStatusCounter()
+        let runner = AgentWorktreeGitRunner { arguments, directory in
+            let result = await GitCommand.runAsync(arguments, at: directory)
+            if arguments.first == "status", directory == worktree.worktreeRoot,
+               await counter.isFirst() {
+                try? Data("unconfirmed data\n".utf8).write(
+                    to: directory.appendingPathComponent("late.txt")
+                )
+            }
+            return result
+        }
+        let service = AgentWorktreeService(runner: runner)
+        let confirmation = AgentWorktreeRemovalConfirmation(
+            worktreeRoot: worktree.worktreeRoot, dirtyPaths: inspection.dirtyPaths,
+            acknowledgesUnrecoverableDataLoss: true
+        )
+        let result = await service.remove(worktree, confirmation: confirmation)
+        guard case .failed(.confirmationRequired(let updated)) = result else {
+            Issue.record("Expected renewed consent, received \(result)")
+            return
+        }
+        #expect(updated.dirtyPaths == ["late.txt", "tracked.txt"])
+        #expect(try String(contentsOf: worktree.worktreeRoot.appendingPathComponent("late.txt"),
+                           encoding: .utf8) == "unconfirmed data\n")
+    }
+
+    @Test("Directory-rename merge destinations cannot overwrite ignored files")
+    func integrationProtectsRelocatedIgnoredData() async throws {
+        let fixture = try WorktreeFixture()
+        try fixture.git(["config", "merge.directoryRenames", "true"])
+        try FileManager.default.createDirectory(
+            at: fixture.repository.appendingPathComponent("old"),
+            withIntermediateDirectories: false
+        )
+        try fixture.write("old/base.txt", "base\n")
+        try fixture.write(".gitignore", "result.txt\n")
+        try fixture.git(["add", "."])
+        try fixture.git(["commit", "-m", "base directory"])
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(
+            taskID: id(34), branch: "agent/directory-rename"
+        )))
+        try fixture.git(["mv", "old", "new"])
+        try fixture.git(["commit", "-m", "rename directory"])
+        try fixture.write("old/result.txt", "agent result\n", at: worktree.worktreeRoot)
+        try fixture.git(["add", "-f", "old/result.txt"], at: worktree.worktreeRoot)
+        try fixture.git(["commit", "-m", "agent result"], at: worktree.worktreeRoot)
+        let preview = try ready(await service.previewIntegration(worktree))
+        #expect(preview.changedPaths == ["new/result.txt"])
+        try fixture.write("new/result.txt", "private user data\n")
+        let confirmation = AgentWorktreeIntegrationConfirmation(
+            previewID: preview.id, sourceCommit: preview.sourceCommit,
+            targetHead: preview.targetHead, targetBranch: preview.targetBranch,
+            changedPaths: preview.changedPaths
+        )
+        #expect(await service.integrate(preview, confirmation: confirmation)
+            == .failed(.targetChanged))
+        #expect(try String(contentsOf: fixture.repository.appendingPathComponent("new/result.txt"),
+                           encoding: .utf8) == "private user data\n")
+        #expect(await service.previewIntegration(worktree)
+            == .failed(.targetCheckoutDirty(["new/result.txt"])))
+    }
+
+    @Test("Ignored directories and file ancestors block overlapping merge paths",
+          arguments: [false, true])
+    func integrationProtectsIgnoredAncestors(directory: Bool) async throws {
+        let fixture = try WorktreeFixture()
+        try fixture.write(".gitignore", "cache\n")
+        try fixture.git(["add", ".gitignore"])
+        try fixture.git(["commit", "-m", "ignore cache"])
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(
+            taskID: id(35), branch: "agent/ignored-ancestor"
+        )))
+        try FileManager.default.createDirectory(
+            at: worktree.worktreeRoot.appendingPathComponent("cache"),
+            withIntermediateDirectories: false
+        )
+        try fixture.write("cache/result.txt", "agent result\n", at: worktree.worktreeRoot)
+        try fixture.git(["add", "-f", "cache/result.txt"], at: worktree.worktreeRoot)
+        try fixture.git(["commit", "-m", "agent result"], at: worktree.worktreeRoot)
+        if directory {
+            try FileManager.default.createDirectory(
+                at: fixture.repository.appendingPathComponent("cache"),
+                withIntermediateDirectories: false
+            )
+        }
+        let path = directory ? "cache/private.txt" : "cache"
+        try fixture.write(path, "private user data\n")
+        #expect(await service.previewIntegration(worktree)
+            == .failed(.targetCheckoutDirty(["cache"])))
+        #expect(try String(contentsOf: fixture.repository.appendingPathComponent(path),
+                           encoding: .utf8) == "private user data\n")
+    }
+
+    @Test("Incomplete ignored-path inspection blocks preview and integration")
+    func integrationFailsClosedOnIgnoredInspectionFailure() async throws {
+        let fixture = try WorktreeFixture()
+        let setup = AgentWorktreeService()
+        let worktree = try created(await setup.create(fixture.request(
+            taskID: id(36), branch: "agent/ignored-inspection-failure"
+        )))
+        try fixture.write("tracked.txt", "agent result\n", at: worktree.worktreeRoot)
+        try fixture.git(["add", "tracked.txt"], at: worktree.worktreeRoot)
+        try fixture.git(["commit", "-m", "agent result"], at: worktree.worktreeRoot)
+        let preview = try ready(await setup.previewIntegration(worktree))
+        let runner = AgentWorktreeGitRunner { arguments, directory in
+            if arguments.starts(with: ["ls-files", "--others", "--ignored"]) {
+                return GitCommandResult(
+                    output: "", errorOutput: "", exitCode: 0,
+                    timedOut: false, cancelled: false,
+                    outputTruncated: true, errorOutputTruncated: false,
+                    outputCaptureComplete: true, errorOutputCaptureComplete: true,
+                    outputReadError: nil, errorOutputReadError: nil
+                )
+            }
+            return await GitCommand.runAsync(arguments, at: directory)
+        }
+        let service = AgentWorktreeService(runner: runner)
+        #expect(await service.previewIntegration(worktree) == .failed(.targetSnapshotUnavailable))
+        let confirmation = AgentWorktreeIntegrationConfirmation(
+            previewID: preview.id, sourceCommit: preview.sourceCommit,
+            targetHead: preview.targetHead, targetBranch: preview.targetBranch,
+            changedPaths: preview.changedPaths
+        )
+        #expect(await service.integrate(preview, confirmation: confirmation)
+            == .failed(.targetChanged))
+        #expect(try String(contentsOf: fixture.repository.appendingPathComponent("tracked.txt"),
+                           encoding: .utf8) == "base\n")
+        #expect(try fixture.git(["diff", "--cached", "--name-only"]).isEmpty)
+    }
 }
 
 private enum WorktreeFixtureError: Error {
@@ -665,6 +902,15 @@ private final class WorktreeFixture {
             throw WorktreeFixtureError.commandFailed
         }
         return result.output
+    }
+}
+
+private actor WorktreeStatusCounter {
+    private var count = 0
+
+    func isFirst() -> Bool {
+        count += 1
+        return count == 1
     }
 }
 

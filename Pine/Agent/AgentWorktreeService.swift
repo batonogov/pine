@@ -551,6 +551,7 @@ actor AgentWorktreeService {
         }
         let result = await runner.run([
             "status", "--porcelain=v1", "-z", "--untracked-files=all",
+            "--ignored=traditional",
         ], worktree.worktreeRoot)
         guard result.succeeded else {
             return .failure(.inspectionFailed)
@@ -606,6 +607,22 @@ actor AgentWorktreeService {
             return .failed(.confirmationMismatch)
         }
 
+        // Recheck the complete disclosure immediately before deletion. This is
+        // not atomic with Git against arbitrary external writers; they must be
+        // quiescent during destructive removal. Never spend stale consent.
+        switch await inspectRemoval(worktree) {
+        case .failure(let failure): return .failed(failure)
+        case .success(let latest):
+            guard latest == inspection else {
+                return .failed(.confirmationRequired(latest))
+            }
+        }
+        guard inspection.directoryMissing
+            ? secureMissingManagedWorktree(worktree)
+            : secureManagedWorktree(worktree) else {
+            return .failed(.unsafeWorktree)
+        }
+
         arguments += ["--", worktree.worktreeRoot.path]
         let result = await runner.run(arguments, worktree.repositoryRoot)
         if result.timedOut || result.cancelled {
@@ -645,16 +662,6 @@ actor AgentWorktreeService {
             return .failed(.targetCheckoutDirty(targetDirtyPaths))
         }
 
-        let changes = await runner.run([
-            "diff", "--name-only", "-z",
-            "\(target.head)...\(sourceCommit)", "--",
-        ], worktree.repositoryRoot)
-        guard changes.succeeded else {
-            return .failed(.gitRejected(diagnostic(changes)))
-        }
-        let changedPaths = Self.canonicalNULPaths(changes.output)
-        guard !changedPaths.isEmpty else { return .failed(.noChanges) }
-
         let merge = await runner.run([
             "merge-tree", "--write-tree", "--name-only", "-z",
             target.head, sourceCommit,
@@ -673,6 +680,28 @@ actor AgentWorktreeService {
             : []
         guard merge.exitCode == 0 || !conflicts.isEmpty else {
             return .failed(.gitRejected("Git reported an unparseable conflict"))
+        }
+
+        // Source-side paths are insufficient: directory-rename resolution can
+        // relocate an addition. Disclose and protect the actual merge result.
+        guard let mergedTree = merge.output.split(separator: "\0").first,
+              mergedTree.count == 40 || mergedTree.count == 64,
+              mergedTree.allSatisfy({ $0.isHexDigit }) else {
+            return .failed(.gitRejected("Git reported an unparseable merge tree"))
+        }
+        let changes = await runner.run([
+            "diff", "--name-only", "-z", target.head, String(mergedTree), "--",
+        ], worktree.repositoryRoot)
+        guard changes.succeeded else {
+            return .failed(.gitRejected(diagnostic(changes)))
+        }
+        let changedPaths = Self.canonicalNULPaths(changes.output)
+        guard !changedPaths.isEmpty else { return .failed(.noChanges) }
+        guard let ignored = await ignoredTargetCollisions(
+            at: worktree.repositoryRoot, changedPaths: changedPaths
+        ) else { return .failed(.targetSnapshotUnavailable) }
+        guard ignored.isEmpty else {
+            return .failed(.targetCheckoutDirty(ignored))
         }
 
         return .ready(AgentWorktreeIntegrationPreview(
@@ -719,8 +748,15 @@ actor AgentWorktreeService {
             return .failed(.targetChanged)
         }
 
+        // With --no-ff, Git's ort strategy can overwrite ignored data even
+        // with --no-overwrite-ignore. Check collisions explicitly as well.
+        guard await ignoredTargetCollisions(
+            at: preview.targetRoot, changedPaths: preview.changedPaths
+        )?.isEmpty == true else { return .failed(.targetChanged) }
+
         let result = await runner.run([
             "merge", "--no-commit", "--no-ff", "--no-edit",
+            "--no-overwrite-ignore",
             preview.sourceCommit,
         ], preview.targetRoot)
         if result.timedOut || result.cancelled {
@@ -826,6 +862,32 @@ actor AgentWorktreeService {
               singleLine(branch.output) == "refs/heads/\(worktree.branchName)"
         else { return nil }
         return await resolvedCommit("HEAD", repository: worktree.worktreeRoot)
+    }
+
+    /// Collapse ignored directories to keep large build/dependency trees bounded.
+    /// A directory collision is deliberately conservative, including aliases on
+    /// case-insensitive and Unicode-normalizing filesystems. Unrelated ignored
+    /// data does not block integration. As with status, this is a preflight, not
+    /// a filesystem lock against external writers during the subsequent merge.
+    private func ignoredTargetCollisions(
+        at root: URL,
+        changedPaths: [String]
+    ) async -> [String]? {
+        let result = await runner.run([
+            "ls-files", "--others", "--ignored", "--exclude-standard",
+            "--directory", "-z",
+        ], root)
+        guard result.succeeded else { return nil }
+        let changes = changedPaths.map {
+            $0.precomposedStringWithCanonicalMapping.lowercased()
+        }
+        return result.output.split(separator: "\0").compactMap { rawPath in
+            let path = rawPath.hasSuffix("/") ? String(rawPath.dropLast()) : String(rawPath)
+            let key = path.precomposedStringWithCanonicalMapping.lowercased()
+            return changes.contains { change in
+                key == change || key.hasPrefix(change + "/") || change.hasPrefix(key + "/")
+            } ? path : nil
+        }.sorted()
     }
 
     private func statusPaths(at root: URL) async -> [String]? {
@@ -1017,12 +1079,23 @@ actor AgentWorktreeService {
         return paths.sorted()
     }
 
+    /// Git disclosure is not checked-undo authorization: ignored history files
+    /// and decomposed Unicode names must not silently disappear from consent.
+    private static func isGitRelativePath(_ path: String) -> Bool {
+        guard !path.isEmpty, !path.hasPrefix("/"), !path.utf8.contains(0) else {
+            return false
+        }
+        return path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy {
+            !$0.isEmpty && $0 != "." && $0 != ".."
+        }
+    }
+
     private static func appendCanonicalPath(
         _ path: String,
         seen: inout Set<String>,
         paths: inout [String]
     ) {
-        guard AgentHistoryUndoPreflight.isCanonicalRelativePath(path),
+        guard isGitRelativePath(path),
               seen.insert(path).inserted else { return }
         paths.append(path)
     }
@@ -1031,7 +1104,7 @@ actor AgentWorktreeService {
         var seen: Set<String> = []
         return output.split(separator: "\0").compactMap { rawPath in
             let path = String(rawPath)
-            guard AgentHistoryUndoPreflight.isCanonicalRelativePath(path),
+            guard isGitRelativePath(path),
                   seen.insert(path).inserted else { return nil }
             return path
         }.sorted()
