@@ -13,6 +13,7 @@ The checked-in catalog schema is version 1. The versions below were verified
 against sanitized command-shape fixtures; Pi, Codex, and OpenCode were also
 checked against locally installed binaries on August 3, 2026, and Kimi Code
 2.1.1 was checked against a locally installed binary on September 28, 2026.
+Empry⊙ 3.12.2-beta was checked locally with `empryo --version` and `empryo --help`; command shapes are covered by synthetic fixtures.
 Links point to the upstream projects used to verify the remaining current
 releases.
 
@@ -31,6 +32,7 @@ releases.
 | [Qwen Code](https://github.com/QwenLM/qwen-code) | `qwen` | 0.21.4 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Machine-readable output was reviewed but is not trusted from an ambient terminal. |
 | [Crush](https://github.com/charmbracelet/crush) | `crush` | 0.88.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Workspace/SSE is experimental and not enabled without a registry-minted authenticated connection. |
 | [Kimi Code](https://www.kimi.com/code/docs/en/) | `kimi`, `kimi-code` | 2.1.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. The CLI rewrites its process title to `kimi-code`, so both aliases are required for detection. |
+| [Empry⊙](https://empryo.com/) | `empryo` | 3.12.2-beta | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Headless `--events` is not enabled as a trusted lifecycle transport. |
 
 ## Tier meanings
 

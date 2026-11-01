@@ -338,6 +338,8 @@ final class AgentActivityStore {
             "crush"
         case .kimiCode:
             "kimi"
+        case .empryo:
+            "empryo"
         case .generic(let name):
             "generic:\(name)"
         }

@@ -37,7 +37,7 @@ struct FirstPartyAgentCompatibilityTests {
 
     @Test func catalogIsCompleteUniqueAndFailClosed() throws {
         let records = FirstPartyAgentCompatibilityCatalog.records
-        #expect(records.count == 13)
+        #expect(records.count == 14)
         #expect(Set(records.map(\.stableIdentifier)).count == records.count)
         #expect(records.allSatisfy { $0.schemaVersion == FirstPartyAgentCompatibilityCatalog.schemaVersion })
         #expect(records.allSatisfy { $0.supportTier == .detected })
@@ -181,5 +181,30 @@ struct FirstPartyAgentCompatibilityTests {
             .appending(path: "Fixtures/AgentAdapters/protocol-review-v1.json")
         let data = try Data(contentsOf: fixtureURL)
         return try JSONDecoder().decode(ProtocolReviewFixture.self, from: data)
+    }
+
+    @Test func empryoCommandsResolveAndPersistWithoutClaimingStructuredEvents() throws {
+        let commands = [
+            "empryo", "/opt/homebrew/bin/empryo --headless --events task",
+            "bun /opt/homebrew/bin/empryo --headless --chat",
+            "node /usr/local/bin/empryo.js --headless task",
+        ]
+        for command in commands {
+            let executable = AgentDetector.extractExecutableName(from: command)
+            let type = try #require(AgentType.resolve(fromProcessName: executable))
+            #expect(type.stableIdentifier == "empryo")
+            #expect(type.displayName == "Empry⊙")
+            #expect(AgentType(stableIdentifier: type.stableIdentifier) == type)
+        }
+        let record = try #require(FirstPartyAgentCompatibilityCatalog.record(stableIdentifier: "empryo"))
+        #expect(record.executableAliases == ["empryo"])
+        #expect(record.notificationAccuracy == .processTerminationOnly)
+        #expect(record.supportTier == .detected)
+        let presentation = try #require(try AgentPresentationCatalog.builtIn(stableIdentifier: "empryo"))
+        try AgentPresentationCatalog.validateBuiltIn(presentation)
+        #expect(presentation.displayName == "Empry⊙")
+        for lookalike in ["empryo-helper", "empryo-server", "empryo.com"] {
+            #expect(AgentType.resolve(fromProcessName: lookalike) == .generic(name: lookalike))
+        }
     }
 }

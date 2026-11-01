@@ -67,6 +67,11 @@
       "stableIdentifier": "kimiCode",
       "testedVersion": "2.1.1",
       "commands": ["kimi", "kimi-code", "/opt/homebrew/bin/kimi"]
+    },
+    {
+      "stableIdentifier": "empryo",
+      "testedVersion": "3.12.2-beta",
+      "commands": ["empryo", "/opt/homebrew/bin/empryo --headless --events task", "bun /opt/homebrew/bin/empryo --headless --chat", "node /usr/local/bin/empryo.js --headless task"]
     }
   ],
   "fakeExecutable": {

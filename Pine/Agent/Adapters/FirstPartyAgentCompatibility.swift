@@ -222,6 +222,13 @@ nonisolated enum FirstPartyAgentCompatibilityCatalog {
             upstream: "https://www.kimi.com/code/docs/en/",
             versions: ["2.1.1"]
         ),
+        record(
+            id: "empryo",
+            name: "Empry⊙",
+            aliases: ["empryo"],
+            upstream: "https://empryo.com/",
+            versions: ["3.12.2-beta"]
+        ),
     ]
 
     static func record(stableIdentifier: String) -> FirstPartyAgentCompatibilityRecord? {

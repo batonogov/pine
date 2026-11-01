@@ -28,6 +28,7 @@ struct AgentModelsTests {
         #expect(AgentType.qwenCode.displayName == "Qwen Code")
         #expect(AgentType.crush.displayName == "Crush")
         #expect(AgentType.kimiCode.displayName == "Kimi Code")
+        #expect(AgentType.empryo.displayName == "Empry⊙")
         #expect(AgentType.generic(name: "Custom").displayName == "Custom")
     }
 
@@ -47,6 +48,7 @@ struct AgentModelsTests {
         #expect(AgentType.qwenCode.cliNames == ["qwen"])
         #expect(AgentType.crush.cliNames == ["crush"])
         #expect(AgentType.kimiCode.cliNames == ["kimi", "kimi-code"])
+        #expect(AgentType.empryo.cliNames == ["empryo"])
         // Generic agents have no known CLI names.
         #expect(AgentType.generic(name: "Custom").cliNames.isEmpty)
     }
@@ -54,7 +56,7 @@ struct AgentModelsTests {
     @Test func color_isDistinctAndNotClearPerAgent() {
         let agents: [AgentType] = [
             .claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
-            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode,
+            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode, .empryo,
             .generic(name: "X"),
         ]
 
@@ -66,7 +68,7 @@ struct AgentModelsTests {
         // Known agents must return distinct colors so UI badges stay distinguishable.
         let known = [
             AgentType.claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
-            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode,
+            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode, .empryo,
         ]
         for i in known.indices {
             for j in (i + 1)..<known.count {

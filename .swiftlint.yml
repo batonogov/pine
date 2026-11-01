@@ -3,6 +3,7 @@
 excluded:
   - .build
   - .claude
+  - .empryo
   - Pine.xcodeproj
 
 disabled_rules:
