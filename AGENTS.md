@@ -81,18 +81,18 @@ Select Xcode per command rather than changing the machine-wide developer directo
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 DERIVED_DATA="$(mktemp -d "${TMPDIR:-/tmp}/pine-derived-data.XXXXXX")"
 
-xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' build
-xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineTests
-xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineUITests
+xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' build
+xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineTests
+xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineUITests
 # Focused iteration: replace the suite with the relevant Swift Testing/XCTest type.
-xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests
+xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests
 # When relevant; performance benchmarks are not part of the ordinary CI gate.
-xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PinePerformanceTests
+xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PinePerformanceTests
 swiftlint
 git diff --check
 ```
 
-The local examples use the same credential-free signing overrides as CI; they do not require access to the maintainer’s Apple Development team. If a particular test requires a signed/entitled host or GUI permission, diagnose and document that requirement rather than requesting signing secrets or weakening the test.
+The local examples keep signing enabled and use a credential-free ad-hoc identity; they do not require access to the maintainer’s Apple Development team. CI may disable signing on its controlled hosts, but copying `CODE_SIGNING_ALLOWED=NO` into a local UI run can leave the copied XCTest runner with an invalid bundle signature. Keep DerivedData outside tool-managed state directories that may attach Finder metadata. If macOS reports a damaged runner, inspect its generated bundle with `codesign --verify --deep --strict` and correct the build/signing location; do not disable Gatekeeper or modify the installed app. If a particular test requires a signed/entitled host or GUI permission, diagnose and document that requirement rather than requesting signing secrets or weakening the test.
 
 Install SwiftLint with Homebrew when authorized; match the version pinned in `.github/workflows/ci.yml` rather than assuming the latest Homebrew release matches CI. Standalone `swiftc -typecheck` is useful only where imports and compiler context are satisfied; it is not a substitute for a target build.
 

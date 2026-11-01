@@ -41,7 +41,7 @@ Open `Pine.xcodeproj` in Xcode. SPM dependencies (SwiftTerm, Sparkle, swift-mark
 Press **Cmd+R** in Xcode, or build from the command line:
 
 ```bash
-xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine build
+xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine build
 ```
 
 > If `xcodebuild` cannot find Xcode, prefix the command with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` (adjust the app path if needed); no machine-wide switch or sudo is required.
@@ -75,7 +75,7 @@ For terminal rendering bugs, perform a manual comparison after each code change:
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
+  xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
   -destination 'platform=macOS' -only-testing:PineTests
 ```
 
@@ -83,7 +83,7 @@ Run a single test class:
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
+  xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
   -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests
 ```
 
@@ -91,7 +91,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
+  xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
   -destination 'platform=macOS' -only-testing:PineUITests
 ```
 
