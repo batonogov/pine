@@ -170,16 +170,18 @@ struct AgentEventEnvelopeTests {
         #expect(decoded == payload)
     }
 
-    @Test func payload_unknownKind_failsClosedToNone() throws {
-        // A payload kind from a newer Pine must not throw; it degrades to none
-        // while provenance (identity/trust/source) stays intact.
+    @Test func payload_unknownKind_preservesUntypedIdentity() throws {
+        // A future payload remains distinct from trusted presence-only evidence.
         let json: [String: Any] = [
             "kind": "futurePayloadKind",
             "fileChange": ["relativePath": "x", "after": ["sha256Hex": String(repeating: "0", count: 64), "byteCount": 0]],
         ]
         let data = try JSONSerialization.data(withJSONObject: json)
-        let decoded = try JSONDecoder().decode(AgentEventPayload.self, from: data)
-        #expect(decoded == .none)
+        let decoded = try AgentEventJSON.decode(AgentEventPayload.self, from: data)
+        #expect(!decoded.isKnown)
+        #expect(decoded != .none)
+        let encoded = try JSONEncoder().encode(decoded)
+        #expect(try AgentEventJSON.decode(AgentEventPayload.self, from: encoded) == decoded)
     }
 
     // MARK: - Envelope Codable round-trip

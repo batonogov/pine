@@ -427,6 +427,8 @@ nonisolated enum VerifiedPatchVersionChainDetector {
     ) -> Int? {
         let strings: [String]
         switch envelope.payload {
+        case .unknown:
+            return nil
         case .none:
             strings = [
                 envelope.agentTypeRaw,

@@ -209,12 +209,12 @@ nonisolated final class SecureAgentEventJournal: @unchecked Sendable {
     }
 
     static func digest(of envelope: AgentEventEnvelope) throws -> String {
-        let data = try codecEncoder().encode(envelope)
+        let data = try encodePreservingPayload(envelope, payload: envelope.payload)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     static func encodedEventSize(_ record: StoredAgentEvent) -> Int {
-        guard let data = try? codecEncoder().encode(DiskEntry.event(record)) else {
+        guard let data = try? encodeEntry(.event(record)) else {
             return Int.max
         }
         return data.count
@@ -285,7 +285,7 @@ nonisolated final class SecureAgentEventJournal: @unchecked Sendable {
             byteCount: journalByteCount,
             offset: 0
         )
-        let parsed = parse(bytes)
+        let parsed = try parse(bytes)
         if let corruption = parsed.corruption {
             let report = try quarantineAndRecover(
                 validPrefixByteCount: parsed.validPrefixByteCount,
@@ -297,7 +297,7 @@ nonisolated final class SecureAgentEventJournal: @unchecked Sendable {
         return (parsed.state, .healthy)
     }
 
-    private func parse(_ data: Data) -> ParseResult {
+    private func parse(_ data: Data) throws -> ParseResult {
         var offset = 0
         var records: [StoredAgentEvent] = []
         var checkpoint: AgentEventJournalCheckpoint?
@@ -366,7 +366,13 @@ nonisolated final class SecureAgentEventJournal: @unchecked Sendable {
 
             let entry: DiskEntry
             do {
-                entry = try Self.codecDecoder().decode(DiskEntry.self, from: payload)
+                entry = try AgentEventJSON.decode(DiskEntry.self, from: payload, using: Self.codecDecoder())
+            } catch AgentEventJSON.Failure.unsupportedNumber,
+                    AgentEventJSON.Failure.ambiguousObjectKeys {
+                // This version cannot interpret valid JSON losslessly. It is
+                // not corruption: leave every byte/frame intact for a newer
+                // reader, rather than quarantining/truncating valid evidence.
+                throw AgentEventStorageFailure.unsupportedPayload
             } catch {
                 return result(corruption: .decodeFailure, validPrefix: frameStart)
             }
@@ -876,7 +882,7 @@ nonisolated final class SecureAgentEventJournal: @unchecked Sendable {
     private static let frameOverhead = headerByteCount + digestByteCount
 
     private static func frame(for entry: DiskEntry) throws -> Data {
-        let payload = try codecEncoder().encode(entry)
+        let payload = try encodeEntry(entry)
         guard payload.count <= Int(UInt32.max) else {
             throw AgentEventStorageFailure.storageLimit
         }
@@ -897,6 +903,39 @@ nonisolated final class SecureAgentEventJournal: @unchecked Sendable {
             )
         }
         return Int(UInt32(bigEndian: value))
+    }
+
+    private static func encodeEntry(_ entry: DiskEntry) throws -> Data {
+        switch entry {
+        case .checkpoint:
+            return try codecEncoder().encode(entry)
+        case .event(let record):
+            return try encodePreservingPayload(entry, payload: record.envelope.payload)
+        }
+    }
+
+    /// JSONEncoder cannot emit a raw numeric token. Replace only the encoded
+    /// payload fragment, retaining the original writer's validated number
+    /// spelling. The exact same path is used for identity, frames, and sizing.
+    private static func encodePreservingPayload<T: Encodable>(
+        _ value: T, payload: AgentEventPayload
+    ) throws -> Data {
+        let encoded = try codecEncoder().encode(value)
+        guard case .unknown(let json) = payload else { return encoded }
+        let plainPayload = try codecEncoder().encode(payload)
+        let exactPayload = try json.canonicalData()
+        guard let text = String(data: encoded, encoding: .utf8),
+              let plainText = String(data: plainPayload, encoding: .utf8),
+              let exactText = String(data: exactPayload, encoding: .utf8) else {
+            throw AgentEventJSON.Failure.invalidJSON
+        }
+        let needle = "\"payload\":" + plainText
+        // The model owns exactly one payload field. Quoted user text is escaped
+        // and cannot alias this structural fragment; reject any ambiguity anyway.
+        guard text.components(separatedBy: needle).count == 2 else {
+            throw AgentEventJSON.Failure.invalidJSON
+        }
+        return Data(text.replacingOccurrences(of: needle, with: "\"payload\":" + exactText).utf8)
     }
 
     private static func codecEncoder() -> JSONEncoder {
