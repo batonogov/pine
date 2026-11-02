@@ -69,6 +69,32 @@ final class SessionRestoreTests: PineUITestCase {
 
     // MARK: - Tests
 
+    func testRelaunchWithoutProjectShowsWelcomeContent() throws {
+        // Sparkle's first-run permission dialog is a second window on fresh
+        // runners. Scope its opt-out to both launches of this test, without
+        // changing persisted update preferences or relaxing the window count.
+        app.launchArguments += ["-SUEnableAutomaticChecks", "NO"]
+        // Seed only this test's Welcome state, not another test's restored scenes.
+        launchClean()
+        XCTAssertTrue(waitForExistence(app.buttons["welcomeOpenFolderButton"]))
+        XCTAssertEqual(app.windows.count, 1, app.debugDescription)
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "--reset-state" }
+        if let index = app.launchArguments.firstIndex(of: "-ApplePersistenceIgnoreState") {
+            app.launchArguments.removeSubrange(index...index + 1)
+        }
+
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(waitForExistence(app.windows["welcome"]))
+        XCTAssertTrue(waitForExistence(app.buttons["welcomeOpenFolderButton"]))
+        XCTAssertEqual(
+            app.windows.count, 1,
+            "Relaunch must not leave an empty project window: \(app.debugDescription)"
+        )
+    }
+
     func testMultipleTabsRestoredAfterReopen() throws {
         launchWithProject(projectURL)
 
