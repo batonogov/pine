@@ -1987,6 +1987,7 @@ final class TerminalTab: Identifiable, Hashable {
     /// Identity-qualified ownership for the exact shell generation and every
     /// observed descendant launched through this tab's real PTY.
     private var processTreeController: TerminalProcessTreeController?
+    private var workingDirectoryRetention: TerminalWorkingDirectoryRetention?
     private var processStartValidationTask: Task<Void, Never>?
     private var processStartValidationGeneration = UUID()
     private var workingDirectoryValidator:
@@ -1994,6 +1995,10 @@ final class TerminalTab: Identifiable, Hashable {
     #if DEBUG
     var validationCommitSeamForTesting:
         @Sendable () async -> Void = {}
+    var checkedProcessLaunchForTesting: (() -> Result<Void, LocalProcessError>)?
+    func finishWorkingDirectoryRetentionForTesting() {
+        workingDirectoryRetention?.finishCleanup(succeeded: true)
+    }
     var isStartValidationPendingForTesting: Bool {
         processStartValidationTask != nil
     }
@@ -2262,6 +2267,8 @@ final class TerminalTab: Identifiable, Hashable {
         // validation generation so a refusal recorded against the previous
         // directory cannot fast-fail a launch into this one.
         processStartValidationGeneration = UUID()
+        processStartValidationTask?.cancel()
+        processStartValidationTask = nil
         processStartAdmissionRefused = false
     }
 
@@ -2371,49 +2378,47 @@ final class TerminalTab: Identifiable, Hashable {
               processStartValidationTask == nil else { return }
         guard terminalView.frame.size.width > 0,
               terminalView.frame.size.height > 0 else { return }
-        if let workingDirectory, let workingDirectoryValidator {
-            let generation = processStartValidationGeneration
-            // The mark describes the *last* outcome; a fresh attempt is now
-            // underway, so it must not read as a standing refusal while this
-            // validation is pending.
-            processStartAdmissionRefused = false
-            processStartValidationTask = Task { @MainActor [weak self] in
-                guard await workingDirectoryValidator(workingDirectory) else {
-                    // Generation fence: a validator superseded by a rebind or
-                    // a re-admission must not poison the current attempt —
-                    // the same token rule that guards the spawn below.
-                    guard let self,
-                          !Task.isCancelled,
-                          self.processStartValidationGeneration == generation
-                    else { return }
-                    self.processStartValidationTask = nil
-                    self.markProcessStartRefused()
-                    return
-                }
-                #if DEBUG
-                await self?.validationCommitSeamForTesting()
-                #endif
-                let valid = await workingDirectoryValidator(workingDirectory)
-                guard let self else { return }
-                guard valid else {
-                    guard !Task.isCancelled,
-                          self.processStartValidationGeneration == generation
-                    else { return }
-                    self.processStartValidationTask = nil
-                    self.markProcessStartRefused()
-                    return
-                }
+        let workingDirectory = workingDirectory
+        let workingDirectoryValidator = workingDirectoryValidator
+        let directory = URL(fileURLWithPath: resolveWorkingDirectory(), isDirectory: true)
+        let generation = processStartValidationGeneration
+        // The mark describes the last outcome, not this pending attempt.
+        processStartAdmissionRefused = false
+        processStartValidationTask = Task { @MainActor [weak self] in
+            if let workingDirectory, let workingDirectoryValidator,
+               !(await workingDirectoryValidator(workingDirectory)) {
+                guard let self, !Task.isCancelled,
+                      self.processStartValidationGeneration == generation else { return }
                 self.processStartValidationTask = nil
-                guard !Task.isCancelled,
-                      !self.isTerminated,
-                      !self.processStarted,
-                      self.processStartValidationGeneration == generation,
-                      self.workingDirectory == workingDirectory else { return }
-                self.startProcessNow()
+                self.markProcessStartRefused()
+                return
             }
-            return
+            // Pin the identity off-main, including independent Quick Terminal
+            // aliases. Validate and launch this resolved path, not an alias
+            // that could have been retargeted during either suspension.
+            let canonicalDirectory = await Task.detached(priority: .utility) {
+                ProjectRegistry.canonicalProjectURL(directory)
+            }.value
+            #if DEBUG
+            await self?.validationCommitSeamForTesting()
+            #endif
+            let valid: Bool
+            if let workingDirectoryValidator {
+                valid = await workingDirectoryValidator(canonicalDirectory)
+            } else {
+                valid = true
+            }
+            guard let self, !Task.isCancelled,
+                  self.processStartValidationGeneration == generation else { return }
+            self.processStartValidationTask = nil
+            guard valid else {
+                self.markProcessStartRefused()
+                return
+            }
+            guard !self.isTerminated, !self.processStarted,
+                  self.workingDirectory == workingDirectory else { return }
+            self.startProcessNow(in: canonicalDirectory)
         }
-        startProcessNow()
     }
 
     /// A refused start is a dead end for this attempt, not a pause: surface it
@@ -2427,27 +2432,46 @@ final class TerminalTab: Identifiable, Hashable {
         )
     }
 
-    private func startProcessNow() {
+    private func startProcessNow(in canonicalDirectory: URL) {
         guard !isTerminated, !processStarted else { return }
         processStarted = true
         processStartAdmissionRefused = false
 
         let env = buildEnvironment()
         let envStrings = env.map { "\($0.key)=\($0.value)" }
-        let dir = resolveWorkingDirectory()
+        let dir = canonicalDirectory.path
+        let retention = TerminalWorkingDirectoryRetention(canonicalDirectory: canonicalDirectory)
+        workingDirectoryRetention = retention
 
         let executable = initialProcess?.executablePath
             ?? shellSettings.resolvedShellPath
         let arguments = initialProcess?.arguments ?? shellSettings.shellArgs
-        terminalView.startProcess(
-            executable: executable,
-            args: arguments,
-            environment: envStrings,
-            execName: nil,
-            currentDirectory: dir
+        let launch: Result<Void, LocalProcessError>
+        #if DEBUG
+        if let checkedProcessLaunchForTesting {
+            launch = checkedProcessLaunchForTesting()
+        } else {
+            launch = terminalView.process.startProcessChecked(
+                executable: executable, args: arguments,
+                environment: envStrings, execName: nil, currentDirectory: dir
+            )
+        }
+        #else
+        launch = terminalView.process.startProcessChecked(
+            executable: executable, args: arguments,
+            environment: envStrings, execName: nil, currentDirectory: dir
         )
+        #endif
+        retention.observeLaunchResult(launch)
+        if case .failure(let error) = launch {
+            terminalView.feed(text: "\r\nProcess launch failed: \(error)\r\n")
+            processDidTerminate()
+            return
+        }
+        kickPTYWindowSize()
         processTreeController = TerminalProcessTreeController(
-            rootProcessID: terminalView.process.shellPid
+            rootProcessID: terminalView.process.shellPid,
+            retention: retention
         )
         _ = acknowledgedPTYLease.acquire(
             borrowing: terminalView.process.childfd
@@ -2600,6 +2624,14 @@ final class TerminalTab: Identifiable, Hashable {
     /// Whether the shell process is still running.
     var isProcessRunning: Bool {
         !isTerminated && processStarted && terminalView.process.running
+    }
+
+    /// Shell exit is not descendant quiescence. The exact generation's fence
+    /// survives termination until asynchronous cleanup positively completes.
+    var requiresWorkingDirectoryRetention: Bool {
+        workingDirectoryRetention?.isRetained == true
+            || (!isTerminated && (processStartValidationTask != nil || isProcessRunning
+                || agentSession.map { $0.liveness != .terminated } == true))
     }
 
     /// Whether a foreground process (child of the shell) is currently running.
@@ -2877,6 +2909,11 @@ final class TerminalTab: Identifiable, Hashable {
 
     var processTreeControllerForTesting: TerminalProcessTreeController? {
         processTreeController
+    }
+
+    func installProcessTreeControllerForTesting(_ controller: TerminalProcessTreeController) {
+        processTreeController = controller
+        workingDirectoryRetention = controller.workingDirectoryRetention
     }
     #endif
 

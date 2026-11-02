@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Pine
@@ -18,6 +19,92 @@ import Testing
 @Suite("Agent Worktree Manager Model", .serialized)
 @MainActor
 struct AgentWorktreeManagerModelTests {
+
+    @Test("Alert binding dismissal preserves the captured Remove exactly once",
+          arguments: [false, true])
+    func dismissedRemovalExecutesCapturedPrompt(dismissFirst: Bool) async throws {
+        let worktree = makeWorktree(branch: "pine/agent/codex/binding")
+        let service = ScriptedWorktreeService()
+        await service.setInspection(.success(inspection(worktree, dirtyPaths: ["local"])), for: worktree)
+        await service.setRemoval(.removed, for: worktree)
+        let model = AgentWorktreeManagerModel(service: service)
+        await model.prepareRemoval(worktree)
+        let prompt = try #require(model.removalPrompt)
+        let task: Task<Void, Never>
+        if dismissFirst {
+            model.removalBinding.wrappedValue = false
+            task = Task { await model.confirmRemoval(prompt) }
+        } else {
+            task = Task { await model.confirmRemoval(prompt) }
+            model.removalBinding.wrappedValue = false
+        }
+        await task.value
+        await model.confirmRemoval(prompt)
+        #expect(await service.removeCalls.count == 1)
+        #expect(await service.removeCalls.first?.confirmation?.dirtyPaths == ["local"])
+    }
+
+    @Test("Alert binding dismissal preserves the captured Integrate exactly once",
+          arguments: [false, true])
+    func dismissedIntegrationExecutesCapturedPreview(dismissFirst: Bool) async throws {
+        let worktree = makeWorktree(branch: "pine/agent/codex/binding-merge")
+        let preview = makePreview(worktree, changedPaths: ["result"])
+        let service = ScriptedWorktreeService()
+        await service.setPreview(.ready(preview), for: worktree)
+        let model = AgentWorktreeManagerModel(service: service)
+        await model.prepareIntegration(worktree)
+        let captured = try #require(model.integrationPreview)
+        let task: Task<Void, Never>
+        if dismissFirst {
+            model.integrationBinding.wrappedValue = false
+            task = Task { await model.confirmIntegration(captured) }
+        } else {
+            task = Task { await model.confirmIntegration(captured) }
+            model.integrationBinding.wrappedValue = false
+        }
+        await task.value
+        await model.confirmIntegration(captured)
+        #expect(await service.integrateCalls.count == 1)
+        #expect(await service.integrateCalls.first?.previewID == preview.id)
+    }
+
+    @Test("Explicit Cancel revokes captured confirmation")
+    func cancellationRevokesCapturedOperations() async throws {
+        let worktree = makeWorktree(branch: "pine/agent/codex/cancel")
+        let service = ScriptedWorktreeService()
+        await service.setInspection(.success(inspection(worktree, dirtyPaths: [])), for: worktree)
+        await service.setPreview(.ready(makePreview(worktree, changedPaths: ["result"])), for: worktree)
+        let model = AgentWorktreeManagerModel(service: service)
+        await model.prepareRemoval(worktree)
+        let prompt = try #require(model.removalPrompt)
+        model.cancelRemoval()
+        await model.confirmRemoval(prompt)
+        await model.prepareIntegration(worktree)
+        let preview = try #require(model.integrationPreview)
+        model.cancelIntegration()
+        await model.confirmIntegration(preview)
+        #expect(await service.removeCalls.isEmpty)
+        #expect(await service.integrateCalls.isEmpty)
+    }
+
+    @Test("Every initialized submodule is disclosed beyond the dirty-path limit")
+    func submodulesAreNotTruncated() async throws {
+        let worktree = makeWorktree(branch: "pine/agent/codex/submodules")
+        let modules = (0..<15).map { "module-\($0)" }
+        let paths = (0..<15).map { "dirty-\($0)" }
+        let service = ScriptedWorktreeService()
+        await service.setInspection(.success(AgentWorktreeRemovalInspection(
+            worktree: worktree, dirtyPaths: paths, initializedSubmodules: modules
+        )), for: worktree)
+        let model = AgentWorktreeManagerModel(service: service)
+        await model.prepareRemoval(worktree)
+        let prompt = try #require(model.removalPrompt)
+        let text = AgentWorktreeManagerModel.removalMessage(for: prompt)
+        for path in modules { #expect(text.contains(path)) }
+        #expect(text.contains("cannot be undone"))
+        await model.confirmRemoval(prompt)
+        #expect(await service.removeCalls.first?.confirmation?.initializedSubmodules == modules)
+    }
 
     // MARK: - Listing
 

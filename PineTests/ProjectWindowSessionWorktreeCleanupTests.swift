@@ -9,6 +9,7 @@
 //  dropped and the set it accounted for are the same set.
 //
 
+import AppKit
 import Foundation
 import Testing
 
@@ -24,6 +25,234 @@ struct ProjectWindowSessionWorktreeCleanupTests {
             exitCode: 0,
             timedOut: false
         )
+    }
+
+    @Test("Nested admitted projects block ancestor worktree removal", arguments: ["Sources", "Sources/Nested"])
+    func nestedOwnerBlocksRemoval(path: String) async throws {
+        let fixture = try WorktreeCleanupFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let worktree = fixture.worktree(for: fixture.firstProject, branch: "pine/agent/codex/nested")
+        let nested = worktree.worktreeRoot.appendingPathComponent(path, isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        let manager = try #require(registry.projectManager(for: nested))
+        let tabs = try #require(manager.paneManager.allTabManagers.first)
+        _ = tabs.createUntitledTab(displayName: "Unsaved nested work")
+        tabs.updateContent("Unsaved nested work")
+        #expect(tabs.tabs.contains { $0.isDirty })
+        let result = await registry.withWorktreeRemoval(worktree) {
+            Issue.record("Removal admitted with a nested dirty editor")
+            return .removed
+        }
+        #expect(result == .failed(.liveProject))
+        #expect(tabs.tabs[0].isDirty)
+        #expect(registry.projectManagerIfAdmitted(for: nested) === manager)
+    }
+
+    @Test("Quick Terminal ownership survives without any ProjectManager", arguments: [false, true])
+    func quickTerminalOwnerBlocksRemoval(pendingStart: Bool) async throws {
+        let fixture = try WorktreeCleanupFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let worktree = fixture.worktree(for: fixture.firstProject, branch: "pine/agent/codex/quick")
+        let nested = worktree.worktreeRoot.appendingPathComponent("Sources", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        let controller = QuickTerminalController(settings: QuickTerminalSettings(defaults: fixture.defaults))
+        controller.registry = registry
+        registry.quickTerminalAgentRouter = controller
+        controller.paneState.addTab(workingDirectory: nested)
+        let tab = try #require(controller.agentTerminalTabs.first)
+        let gate = WorktreeStartValidationGate()
+        if pendingStart {
+            tab.configureWorkingDirectoryValidation { _ in
+                await gate.wait()
+                return false
+            }
+            tab.terminalView.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
+            tab.startIfNeeded()
+            #expect(tab.isStartValidationPendingForTesting)
+        } else {
+            tab.agentSession = AgentSession(id: UUID(), agentType: .codex, state: .executing, startedAt: Date())
+        }
+        #expect(registry.projectManagerIfAdmitted(for: nested) == nil)
+        #expect(controller.retainsWorkingDirectory(in: registry.canonicalProjectURL(worktree.worktreeRoot)))
+        let result = await registry.withWorktreeRemoval(worktree) {
+            Issue.record("Removal admitted with an independent Quick Terminal agent")
+            return .removed
+        }
+        #expect(result == .failed(.liveProject))
+        if !pendingStart { #expect(tab.agentSession?.liveness != .terminated) }
+        await gate.release()
+        controller.shutdown()
+    }
+
+    @Test("Shell exit keeps the exact cleanup fence, including after tab removal",
+          arguments: [false, true], [false, true])
+    func shellExitRetainsUntilCleanupCompletes(removeTab: Bool, cleanupSucceeded: Bool) async throws {
+        let fixture = try WorktreeCleanupFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let worktree = fixture.worktree(for: fixture.firstProject, branch: "pine/agent/codex/cleanup")
+        let nested = worktree.worktreeRoot.appendingPathComponent("Sources", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        let controller = QuickTerminalController(settings: QuickTerminalSettings(defaults: fixture.defaults))
+        controller.registry = registry
+        registry.quickTerminalAgentRouter = controller
+        defer { controller.shutdown() }
+        let tab = controller.paneState.addTab(workingDirectory: nested)
+        let retention = TerminalWorkingDirectoryRetention(canonicalDirectory: registry.canonicalProjectURL(nested))
+        // Test teardown only: failed production cleanup must never release this fence.
+        defer { retention.finishCleanup(succeeded: true) }
+        let enteredCleanup = DispatchSemaphore(value: 0)
+        let releaseCleanup = DispatchSemaphore(value: 0)
+        defer { releaseCleanup.signal() }
+        let processController = TerminalProcessTreeController(retention: retention) {
+            enteredCleanup.signal()
+            guard releaseCleanup.wait(timeout: .now() + 30) == .success else { return false }
+            return cleanupSucceeded
+        }
+        tab.installProcessTreeControllerForTesting(processController)
+        // The shell exits now; its descendant cleanup is deterministically paused.
+        tab.processDidTerminate()
+        let waitForEntry: @Sendable () -> Bool = {
+            enteredCleanup.wait(timeout: .now() + 10) == .success
+        }
+        let entered = await Task.detached { waitForEntry() }.value
+        #expect(entered)
+        #expect(!tab.isProcessRunning)
+        #expect(tab.requiresWorkingDirectoryRetention)
+        #expect(controller.retainsWorkingDirectory(in: registry.canonicalProjectURL(worktree.worktreeRoot)))
+        #expect(registry.projectManagerIfAdmitted(for: nested) == nil)
+        if removeTab { controller.paneState.removeTab(id: tab.id) }
+        let pausedResult = await registry.withWorktreeRemoval(worktree) { .removed }
+        #expect(pausedResult == .failed(.liveProject))
+
+        releaseCleanup.signal()
+        let completed = await Task.detached {
+            processController.waitForTermination(timeout: 10)
+        }.value
+        #expect(completed == cleanupSucceeded)
+        #expect(tab.requiresWorkingDirectoryRetention == !cleanupSucceeded)
+        let completedResult = await registry.withWorktreeRemoval(worktree) { .removed }
+        #expect(completedResult == (cleanupSucceeded ? .removed : .failed(.liveProject)))
+    }
+
+    @Test("Detached process cleanup prevents both explicit and automatic project reclamation",
+          arguments: [false, true])
+    func detachedCleanupRetainsProjectOwner(automaticReclaim: Bool) throws {
+        let fixture = try WorktreeCleanupFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let manager = try #require(registry.projectManager(for: fixture.firstProject))
+        let retention = TerminalWorkingDirectoryRetention(
+            canonicalDirectory: registry.canonicalProjectURL(fixture.firstProject)
+        )
+        defer { retention.finishCleanup(succeeded: true) }
+        registry.closeProjectWindow(
+            fixture.firstProject, expectedManager: manager, expectedWindowGeneration: nil
+        )
+        #expect(!registry.releaseIdleWorktreeProject(fixture.firstProject))
+        registry.runBackgroundReclamationPassForTesting()
+        #expect(registry.projectManagerIfAdmitted(for: fixture.firstProject) === manager)
+        retention.finishCleanup(succeeded: false)
+        #expect(!registry.releaseIdleWorktreeProject(fixture.firstProject))
+
+        retention.finishCleanup(succeeded: true)
+        if automaticReclaim {
+            registry.runBackgroundReclamationPassForTesting()
+        } else {
+            #expect(registry.releaseIdleWorktreeProject(fixture.firstProject))
+        }
+        #expect(registry.projectManagerIfAdmitted(for: fixture.firstProject) == nil)
+    }
+
+    @Test("Quick Terminal scope resolution, commit, and validation share the removal fence")
+    func quickTerminalAdmissionIsFenced() async throws {
+        let fixture = try WorktreeCleanupFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let worktree = fixture.worktree(for: fixture.firstProject, branch: "pine/agent/codex/quick-fence")
+        let nested = worktree.worktreeRoot.appendingPathComponent("Sources", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        let registration = try #require(await registry.resolveQuickTerminalAgentScope(
+            workingDirectory: nested, surface: .quickTerminalStandalone
+        ))
+        let result = await registry.withWorktreeRemoval(worktree) {
+            #expect(await registry.resolveQuickTerminalAgentScope(
+                workingDirectory: nested, surface: .quickTerminalStandalone
+            ) == nil)
+            #expect(!(await registry.commitQuickTerminalAgentScope(
+                registration, workingDirectory: nested, requestedSurface: .quickTerminalStandalone
+            )))
+            #expect(!(await registry.validateQuickTerminalAgentScope(registration, workingDirectory: nested)))
+            return .failed(.inspectionFailed)
+        }
+        #expect(result == .failed(.inspectionFailed))
+        #expect(await registry.commitQuickTerminalAgentScope(
+            registration, workingDirectory: nested, requestedSurface: .quickTerminalStandalone
+        ))
+    }
+
+    @Test("An admitted worktree cannot lose its directory, even when currently idle")
+    func admittedWorktreeBlocksRemoval() async throws {
+        let fixture = try WorktreeCleanupFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let worktree = fixture.worktree(for: fixture.firstProject, branch: "pine/agent/codex/live")
+        try FileManager.default.createDirectory(at: worktree.worktreeRoot, withIntermediateDirectories: false)
+        let manager = try #require(registry.projectManager(for: worktree.worktreeRoot))
+        var called = false
+        let result = await registry.withWorktreeRemoval(worktree) {
+            called = true
+            return .removed
+        }
+        #expect(result == .failed(.liveProject))
+        #expect(!called)
+        #expect(registry.projectManagerIfAdmitted(for: worktree.worktreeRoot) === manager)
+        #expect(FileManager.default.fileExists(atPath: worktree.worktreeRoot.path))
+    }
+
+    @Test("Admission and a second removal are fenced until the first removal completes")
+    func removalFencesReadmission() async throws {
+        let fixture = try WorktreeCleanupFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let worktree = fixture.worktree(for: fixture.firstProject, branch: "pine/agent/codex/reserved")
+        try FileManager.default.createDirectory(at: worktree.worktreeRoot, withIntermediateDirectories: false)
+        let result = await registry.withWorktreeRemoval(worktree) {
+            #expect(registry.projectManager(for: worktree.worktreeRoot) == nil)
+            let nested = worktree.worktreeRoot.appendingPathComponent("Sources/Nested", isDirectory: true)
+            try? FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+            #expect(registry.projectManager(for: nested) == nil)
+            let sibling = worktree.worktreeRoot.deletingLastPathComponent().appendingPathComponent(
+                worktree.worktreeRoot.lastPathComponent + "-sibling", isDirectory: true
+            )
+            try? FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: false)
+            #expect(registry.projectManager(for: sibling) != nil)
+            let second = await registry.withWorktreeRemoval(worktree) {
+                Issue.record("A second destructive operation was admitted")
+                return .removed
+            }
+            #expect(second == .failed(.liveProject))
+            return .failed(.inspectionFailed)
+        }
+        #expect(result == .failed(.inspectionFailed))
+        #expect(registry.projectManager(for: worktree.worktreeRoot) != nil)
+    }
+
+    @Test("Refused worktree admission leaves a persisted, manageable recovery record")
+    func refusedAdmissionRetainsRecoveryRecord() async throws {
+        let fixture = try WorktreeCleanupFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let session = ProjectWindowSession(initialProjectURL: fixture.firstProject, defaults: fixture.defaults)
+        let worktree = fixture.worktree(for: fixture.firstProject, branch: "pine/agent/codex/refused")
+        session.retainWorktreeForRecovery(worktree)
+        #expect(await registry.projectManager(for: worktree) == nil)
+        let reloaded = ProjectWindowSession(initialProjectURL: fixture.firstProject, defaults: fixture.defaults)
+        #expect(reloaded.allManagedWorktrees == [worktree])
+        #expect(session.allManagedWorktrees == [worktree])
+        #expect(reloaded.activeProjectURL == fixture.firstProject.standardizedFileURL)
     }
 
     @Test("Closing a project reports every worktree it left on disk")
@@ -276,6 +505,23 @@ struct ProjectWindowSessionWorktreeCleanupTests {
             "pine/agent/claude/eeeeffff",
             "pine/agent/codex/ccccdddd",
         ])
+    }
+}
+
+private actor WorktreeStartValidationGate {
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !released else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        let pending = waiters
+        waiters = []
+        for waiter in pending { waiter.resume() }
     }
 }
 

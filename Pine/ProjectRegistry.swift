@@ -1061,6 +1061,7 @@ protocol QuickTerminalAgentRouting: AnyObject {
     func resolveQuickTerminalAgentRoute(for task: AgentTask) -> AgentTaskRoute?
     func revealQuickTerminalAgentRoute(for task: AgentTask) -> AgentTaskRoute?
     func isQuickTerminalAgentTaskPresented(_ task: AgentTask) -> Bool
+    func retainsWorkingDirectory(in root: URL) -> Bool
 }
 
 #if DEBUG
@@ -1276,6 +1277,8 @@ final class ProjectRegistry: LSPSettingsObserver {
     private(set) var isProjectAdmissionFrozenForTermination = false
     @ObservationIgnored
     private var isAutoSaveFrozenForTermination = false
+    @ObservationIgnored
+    private var worktreeRemovalReservations: Set<URL> = []
 
     init(
         lspSettings: LSPSettings = .shared,
@@ -1452,6 +1455,60 @@ final class ProjectRegistry: LSPSettingsObserver {
         openProjects[canonicalProjectURL(projectURL)]
     }
 
+    /// A removal must never race an admitted editor/process owner, even one
+    /// that is idle at inspection time: new work could start at any Git await.
+    /// Require the user to close the project first, and fence all admission
+    /// paths until Git finishes. No user work is saved, discarded, or stopped.
+    func withWorktreeRemoval(
+        _ worktree: AgentManagedWorktree,
+        operation: () async -> AgentWorktreeRemovalResult
+    ) async -> AgentWorktreeRemovalResult {
+        let root = canonicalProjectURL(worktree.worktreeRoot)
+        guard !openProjects.keys.contains(where: { Self.contains(root, $0) }),
+              quickTerminalAgentRouter?.retainsWorkingDirectory(in: root) != true,
+              !hasTerminalWorkingDirectoryRetention(in: root),
+              !worktreeRemovalReservations.contains(where: {
+                  Self.contains(root, $0) || Self.contains($0, root)
+              }),
+              worktreeRemovalReservations.insert(root).inserted else {
+            return .failed(.liveProject)
+        }
+        defer { worktreeRemovalReservations.remove(root) }
+        return await operation()
+    }
+
+    nonisolated static func contains(_ root: URL, _ candidate: URL) -> Bool {
+        candidate.standardizedFileURL.pathComponents.starts(with: root.standardizedFileURL.pathComponents)
+    }
+
+    private func isReservedForWorktreeRemoval(_ candidate: URL) -> Bool {
+        worktreeRemovalReservations.contains { Self.contains($0, candidate) }
+    }
+
+    /// Includes detached/removed tabs: the process generation, not the UI,
+    /// owns this fence until its cleanup completion is positively witnessed.
+    private func hasTerminalWorkingDirectoryRetention(in root: URL) -> Bool {
+        TerminalWorkingDirectoryRetention.retainsDirectory(in: root)
+    }
+
+    /// An explicit Close Idle Project action may reclaim only a background,
+    /// unleased, quiescent owner. Never stop, save, or discard user work here.
+    func releaseIdleWorktreeProject(_ root: URL) -> Bool {
+        let root = canonicalProjectURL(root)
+        guard let manager = openProjects[root] else { return true }
+        guard backgroundProjects.contains(root),
+              backgroundPresentationLeases[root]?.isEmpty != false,
+              !manager.requiresBackgroundRetention,
+              !hasTerminalWorkingDirectoryRetention(in: root) else { return false }
+        manager.saveSession()
+        manager.shutdownReclaimableProject()
+        openProjects.removeValue(forKey: root)
+        agentTaskProjectsByRoot.removeValue(forKey: root)
+        agentTaskRepositoryProofsByRoot.removeValue(forKey: root)
+        backgroundProjects.remove(root)
+        return true
+    }
+
     /// Whether an admitted URL is an ordinary folder project rather than a
     /// linked-worktree scope that requires its persisted exact proof.
     func isOrdinaryProjectScope(_ projectURL: URL) -> Bool {
@@ -1491,7 +1548,8 @@ final class ProjectRegistry: LSPSettingsObserver {
         let isStillValid = await Task.detached(priority: .utility) {
             prepared.lease.revalidate()
         }.value
-        guard !Task.isCancelled, isStillValid else { return nil }
+        guard !Task.isCancelled, isStillValid,
+              !isReservedForWorktreeRemoval(canonical) else { return nil }
         if prepared.registration.surface == .quickTerminalProject {
             guard exactAgentTaskProjectRecord(for: canonical)
                 == exactProjectRecord else { return nil }
@@ -1534,7 +1592,8 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard !Task.isCancelled,
               isStillValid,
               exactAgentTaskProjectRecord(for: canonical)
-                == exactProjectRecord else { return false }
+                == exactProjectRecord,
+                !isReservedForWorktreeRemoval(canonical) else { return false }
         agentTasks.registerProject(registration.project)
         return true
     }
@@ -1569,6 +1628,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         return !Task.isCancelled
             && valid
             && exactAgentTaskProjectRecord(for: canonical) == record
+            && !isReservedForWorktreeRemoval(canonical)
     }
 
     private func exactAgentTaskProjectRecord(
@@ -1710,6 +1770,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         reopenBackgroundProject: Bool = true,
         admitMissingProjectInBackground: Bool = false
     ) -> ProjectManager? {
+        guard !isReservedForWorktreeRemoval(canonical) else { return nil }
         // Retain descriptor ownership through the entire synchronous commit.
         // Distinct project/worktree callers cannot enter without this lease.
         guard identity.canonicalProjectPath == identity.canonicalWorktreePath
@@ -2242,7 +2303,8 @@ final class ProjectRegistry: LSPSettingsObserver {
                 continue
             }
             guard backgroundPresentationLeases[canonical]?.isEmpty != false,
-                  !manager.requiresBackgroundRetention else {
+                  !manager.requiresBackgroundRetention,
+                  !hasTerminalWorkingDirectoryRetention(in: canonical) else {
                 enqueueBackgroundReclamationCandidate(canonical)
                 continue
             }

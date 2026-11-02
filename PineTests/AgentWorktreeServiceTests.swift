@@ -10,6 +10,154 @@ import Testing
 
 @Suite("Agent Worktree Service", .serialized)
 struct AgentWorktreeServiceTests {
+    @Test("Close Idle Project preserves live work and releases only idle checkouts",
+          arguments: ["idle", "dirty", "agent", "reservation"])
+    @MainActor
+    func idleWorktreeHasExplicitRemovalPath(state: String) async throws {
+        let fixture = try WorktreeFixture()
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(taskID: id(44), branch: "agent/close-idle")))
+        let suite = "WorktreeIdleClose-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let taskRegistry = AgentTaskRegistry(persistence: AgentTaskMetadataStore(
+            storageRoot: fixture.root.appendingPathComponent("idle-close-tasks")
+        ))
+        let registry = ProjectRegistry(defaults: defaults, agentTasks: taskRegistry)
+        _ = try #require(registry.projectManager(for: fixture.repository))
+        let session = ProjectWindowSession(initialProjectURL: fixture.repository, defaults: defaults)
+        session.adoptWorktreeForTesting(worktree)
+        await session.activate(worktree.worktreeRoot, registry: registry)
+        #expect(session.activeProjectURL == worktree.worktreeRoot)
+        let manager = try #require(registry.projectManagerIfAdmitted(for: worktree.worktreeRoot))
+        if state == "dirty" {
+            let tabs = try #require(manager.paneManager.allTabManagers.first)
+            _ = tabs.createUntitledTab(displayName: "Unsaved work")
+            tabs.updateContent("Unsaved work")
+            #expect(tabs.tabs.contains { $0.isDirty })
+        } else if state == "agent" || state == "reservation" {
+            let tab = try terminalTab(in: manager, at: worktree.worktreeRoot)
+            if state == "agent" {
+                tab.agentSession = self.session(id: id(45), processIdentifier: 1_345)
+            } else {
+                _ = try reservation(manager.terminal.prepareAgentLaunch(
+                    in: tab, descriptor: AgentDescriptor(agentType: .codex, launchExecutable: "codex"), objective: "Pending work"
+                ))
+            }
+        }
+        if state != "idle" {
+            #expect(manager.requiresBackgroundRetention)
+            #expect(!(await session.closeIdleWorktree(worktree, registry: registry)))
+            #expect(session.activeProjectURL == worktree.worktreeRoot)
+            #expect(registry.projectManagerIfAdmitted(for: worktree.worktreeRoot) === manager)
+            #expect(await session.removeWorktree(worktree, confirmation: nil, registry: registry) == .failed(.liveProject))
+            #expect(FileManager.default.fileExists(atPath: worktree.worktreeRoot.path))
+            return
+        }
+        #expect(await session.closeIdleWorktree(worktree, registry: registry))
+        #expect(session.activeProjectURL == worktree.repositoryRoot)
+        #expect(registry.projectManagerIfAdmitted(for: worktree.worktreeRoot) == nil)
+        #expect(session.managedWorktrees[worktree.worktreeRoot] == worktree)
+        #expect(await session.removeWorktree(worktree, confirmation: nil, registry: registry) == .removed)
+        #expect(registry.projectManagerIfAdmitted(for: worktree.repositoryRoot) != nil)
+    }
+
+    @Test("Both Git object formats support the worktree lifecycle", arguments: ["sha1", "sha256"])
+    func supportsBothObjectFormats(format: String) async throws {
+        let fixture = try WorktreeFixture(objectFormat: format)
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(taskID: id(40), branch: "agent/object-format")))
+        #expect(worktree.baseCommit?.utf8.count == (format == "sha1" ? 40 : 64))
+        try fixture.write("tracked.txt", "agent result\n", at: worktree.worktreeRoot)
+        try fixture.git(["add", "."], at: worktree.worktreeRoot)
+        try fixture.git(["commit", "-m", "agent result"], at: worktree.worktreeRoot)
+        let preview = try ready(await service.previewIntegration(worktree))
+        let consent = AgentWorktreeIntegrationConfirmation(
+            previewID: preview.id, sourceCommit: preview.sourceCommit,
+            targetHead: preview.targetHead, targetBranch: preview.targetBranch, changedPaths: preview.changedPaths
+        )
+        #expect(await service.integrate(preview, confirmation: consent) == .integratedWithoutCommit)
+        #expect(await service.remove(worktree) == .removed)
+    }
+
+    @Test("Clean initialized submodules require exact consent and double force")
+    func initializedSubmodulesRequireConsent() async throws {
+        let fixture = try WorktreeFixture()
+        let source = try WorktreeFixture()
+        let service = AgentWorktreeService()
+        let worktree = try created(await service.create(fixture.request(taskID: id(41), branch: "agent/submodule")))
+        try fixture.git(["-c", "protocol.file.allow=always", "submodule", "add",
+                         source.repository.path, "module with spaces"], at: worktree.worktreeRoot)
+        let module = worktree.worktreeRoot.appendingPathComponent("module with spaces", isDirectory: true)
+        try fixture.git(["-c", "protocol.file.allow=always", "submodule", "add", source.repository.path, "nested"], at: module)
+        try fixture.git(["config", "user.name", "Pine Tests"], at: module)
+        try fixture.git(["config", "user.email", "pine-tests@example.invalid"], at: module)
+        try fixture.git(["commit", "-am", "nested module"], at: module)
+        try fixture.git(["add", "."], at: worktree.worktreeRoot)
+        try fixture.git(["commit", "-m", "modules"], at: worktree.worktreeRoot)
+        let inspection = try inspected(await service.inspectRemoval(worktree))
+        #expect(inspection.dirtyPaths.isEmpty)
+        #expect(inspection.initializedSubmodules == ["module with spaces", "module with spaces/nested"])
+        #expect(await service.remove(worktree) == .failed(.confirmationRequired(inspection)))
+        let stale = AgentWorktreeRemovalConfirmation(
+            worktreeRoot: worktree.worktreeRoot, dirtyPaths: [], acknowledgesUnrecoverableDataLoss: true
+        )
+        #expect(await service.remove(worktree, confirmation: stale) == .failed(.confirmationMismatch))
+        let consent = AgentWorktreeRemovalConfirmation(
+            worktreeRoot: worktree.worktreeRoot, dirtyPaths: [], acknowledgesUnrecoverableDataLoss: true,
+            initializedSubmodules: inspection.initializedSubmodules
+        )
+        #expect(await service.remove(worktree, confirmation: consent) == .removed)
+        #expect(!FileManager.default.fileExists(atPath: worktree.worktreeRoot.path))
+    }
+
+    @Test("Post-add validation failures retain an actionable record", arguments: [0, 1, 2])
+    func postAddFailureRetainsWorktree(failure: Int) async throws {
+        let fixture = try WorktreeFixture()
+        let repository = fixture.repository
+        let runner = AgentWorktreeGitRunner { arguments, directory in
+            let result = await GitCommand.runAsync(arguments, at: directory)
+            if arguments.starts(with: ["worktree", "add"]), result.completedSuccessfully {
+                if failure == 0 {
+                    try? Data("late user data".utf8).write(to: repository.appendingPathComponent("late.txt"))
+                } else if failure == 1 {
+                    return interruptedGitResult()
+                }
+            }
+            if failure == 2, arguments.contains("--show-toplevel"), directory != repository {
+                return interruptedGitResult()
+            }
+            return result
+        }
+        let service = AgentWorktreeService(runner: runner)
+        let result = await service.create(fixture.request(taskID: id(42), branch: "agent/post-add"))
+        guard case .retained(let worktree, _) = result else {
+            Issue.record("Expected an actionable retained checkout, received \(result)")
+            return
+        }
+        #expect(FileManager.default.fileExists(atPath: worktree.worktreeRoot.path))
+        #expect(worktree.baseCommit != nil)
+        #expect(await AgentWorktreeService().remove(worktree) == .removed)
+        if failure == 0 {
+            let contents = try String(contentsOf: repository.appendingPathComponent("late.txt"), encoding: .utf8)
+            #expect(contents == "late user data")
+        }
+    }
+
+    @Test("Submodule inspection failure cannot authorize deletion")
+    func submoduleInspectionFailsClosed() async throws {
+        let fixture = try WorktreeFixture()
+        let worktree = try created(await AgentWorktreeService().create(fixture.request(
+            taskID: id(43), branch: "agent/submodule-inspection"
+        )))
+        let service = AgentWorktreeService(runner: AgentWorktreeGitRunner { arguments, directory in
+            if arguments.first == "submodule" { return interruptedGitResult() }
+            return await GitCommand.runAsync(arguments, at: directory)
+        })
+        #expect(await service.remove(worktree) == .failed(.inspectionFailed))
+        #expect(FileManager.default.fileExists(atPath: worktree.worktreeRoot.path))
+    }
+
     @Test("Creation preserves primary branch, HEAD, index, and dirty state")
     func createsWithoutContaminatingPrimaryCheckout() async throws {
         let fixture = try WorktreeFixture()
@@ -415,6 +563,7 @@ struct AgentWorktreeServiceTests {
             Issue.record("Expected interrupted creation, received \(result)")
             return
         }
+
         #expect(path.lastPathComponent == id(13).uuidString.lowercased())
         #expect(!FileManager.default.fileExists(atPath: path.path))
     }
@@ -832,7 +981,7 @@ private final class WorktreeFixture {
     let repository: URL
     let managedRoot: URL
 
-    init() throws {
+    init(objectFormat: String = "sha1") throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent(
             "PineAgentWorktree-\(UUID().uuidString)",
             isDirectory: true
@@ -847,7 +996,7 @@ private final class WorktreeFixture {
             at: managedRoot,
             withIntermediateDirectories: false
         )
-        _ = try git(["init", "-b", "main"], at: repository)
+        _ = try git(["init", "--object-format=\(objectFormat)", "-b", "main"], at: repository)
         _ = try git(["config", "user.email", "pine-tests@example.invalid"])
         _ = try git(["config", "user.name", "Pine Tests"])
         try write("tracked.txt", "base\n")

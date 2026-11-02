@@ -1181,6 +1181,41 @@ enum Strings {
         )
     }
 
+    static let agentWorktreesCloseIdleProject: LocalizedStringKey = "agentWorktrees.closeIdleProject"
+
+    static func agentWorktreesLiveProjectText(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.liveProject",
+            fallback: """
+                Close this worktree project before removing it. Unsaved editors, \
+                terminals, agents, launch reservations, and user tasks must be preserved.
+                """,
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesRetainedCreationText(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentWorktrees.error.retainedCreation",
+            fallback: """
+                Worktree creation could not be verified. Its managed record was retained \
+                for recovery. Use Manage Agent Worktrees to inspect or remove it:
+                """,
+            locale: locale
+        )
+    }
+
+    static func agentWorktreesSubmoduleRemovalText(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "agentWorktrees.remove.submodules",
+            fallback: """
+                Initialized submodules will also be deleted, including their local \
+                files and history. This cannot be undone:
+                """,
+            locale: locale
+        )
+    }
+
     static func agentWorktreesRemoveDirtyText(
         _ path: String,
         _ listing: String,

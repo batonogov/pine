@@ -577,8 +577,9 @@ final class QuickTerminalController {
               let registry,
               let agentScope,
               let target = agentScopeTarget,
-              target.workingDirectory.standardizedFileURL
-                == directory.standardizedFileURL else { return false }
+              target.workingDirectory.standardizedFileURL == directory.standardizedFileURL
+                || agentScope.project.canonicalWorktreePath
+                    == directory.standardizedFileURL.path else { return false }
         return await registry.validateQuickTerminalAgentScope(
             QuickTerminalAgentScopeRegistration(
                 project: agentScope.project,
@@ -649,6 +650,16 @@ final class QuickTerminalController {
 }
 
 extension QuickTerminalController: QuickTerminalAgentRouting {
+    func retainsWorkingDirectory(in root: URL) -> Bool {
+        guard !isPermanentlyShutDown else { return false }
+        return paneState.terminalTabs.contains { tab in
+            guard tab.requiresWorkingDirectoryRetention,
+                  let directory = tab.workingDirectoryURL,
+                  let registry else { return false }
+            return ProjectRegistry.contains(root, registry.canonicalProjectURL(directory))
+        }
+    }
+
     func resolveQuickTerminalAgentRoute(
         for task: AgentTask
     ) -> AgentTaskRoute? {

@@ -15204,6 +15204,81 @@
         }
       }
     },
+    "agentWorktrees.closeIdleProject" : {
+      "comment" : "Explicitly release an idle managed project before removing its checkout, without stopping live user work.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Inaktives Projekt schließen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Close Idle Project" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cerrar proyecto inactivo" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Fermer le projet inactif" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "待機中のプロジェクトを閉じる" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "유휴 프로젝트 닫기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar projeto inativo" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Закрыть неактивный проект" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭空闲项目" } }
+      }
+    },
+    "agentWorktrees.error.liveProject" : {
+      "comment" : "Removal is blocked until the admitted worktree project is closed, preserving live user work.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Schließen Sie dieses Worktree-Projekt vor dem Entfernen. Ungespeicherte Editoren, Terminals, Agenten, Startreservierungen und Benutzeraufgaben müssen erhalten bleiben." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cierra este proyecto de worktree antes de eliminarlo. Deben conservarse los editores sin guardar, terminales, agentes, reservas de inicio y tareas del usuario." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Fermez ce projet worktree avant de le supprimer. Les éditeurs non enregistrés, terminaux, agents, réservations de lancement et tâches utilisateur doivent être préservés." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "削除する前にこのワークツリープロジェクトを閉じてください。未保存のエディタ、ターミナル、エージェント、起動予約、ユーザータスクを保持する必要があります。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "제거하기 전에 이 워크트리 프로젝트를 닫으세요. 저장하지 않은 편집기, 터미널, 에이전트, 실행 예약 및 사용자 작업을 보존해야 합니다." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Feche este projeto de worktree antes de removê-lo. Editores não salvos, terminais, agentes, reservas de inicialização e tarefas do usuário devem ser preservados." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Перед удалением закройте этот проект рабочего дерева. Необходимо сохранить несохранённые редакторы, терминалы, агентов, резервирования запуска и пользовательские задачи." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移除前请关闭此工作树项目。必须保留未保存的编辑器、终端、代理、启动预留和用户任务。" } },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close this worktree project before removing it. Unsaved editors, terminals, agents, launch reservations, and user tasks must be preserved."
+          }
+        }
+      }
+    },
+    "agentWorktrees.error.retainedCreation" : {
+      "comment" : "A failed post-add validation retained a recoverable managed record instead of abandoning a checkout.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Worktree-Erstellung konnte nicht überprüft werden. Der verwaltete Eintrag wurde zur Wiederherstellung beibehalten. Unter „Agent-Worktrees verwalten“ können Sie ihn prüfen oder entfernen:" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No se pudo verificar la creación del worktree. Su registro administrado se conservó para recuperarlo. Usa Administrar worktrees de agentes para inspeccionarlo o eliminarlo:" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La création du worktree n’a pas pu être vérifiée. Son enregistrement géré a été conservé pour la récupération. Utilisez Gérer les worktrees des agents pour l’inspecter ou le supprimer :" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ワークツリーの作成を検証できませんでした。復旧用の管理レコードは保持されています。「エージェントのワークツリーを管理」で確認または削除してください：" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "워크트리 생성을 확인하지 못했습니다. 복구를 위해 관리 레코드를 보존했습니다. 에이전트 워크트리 관리에서 검사하거나 제거하세요:" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível verificar a criação do worktree. Seu registro gerenciado foi mantido para recuperação. Use Gerenciar worktrees de agentes para inspecioná-lo ou removê-lo:" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Не удалось проверить создание рабочего дерева. Управляемая запись сохранена для восстановления. Проверьте или удалите её в разделе управления рабочими деревьями агентов:" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法验证工作树的创建。已保留其托管记录以供恢复。请使用“管理代理工作树”检查或移除它：" } },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Worktree creation could not be verified. Its managed record was retained for recovery. Use Manage Agent Worktrees to inspect or remove it:"
+          }
+        }
+      }
+    },
+    "agentWorktrees.remove.submodules" : {
+      "comment" : "Warning preceding the complete, untruncated list of initialized submodules that removal will delete.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Initialisierte Submodule werden ebenfalls gelöscht, einschließlich ihrer lokalen Dateien und ihres Verlaufs. Dies kann nicht rückgängig gemacht werden:" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "También se eliminarán los submódulos inicializados, incluidos sus archivos locales e historial. Esta acción no se puede deshacer:" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les sous-modules initialisés seront également supprimés, y compris leurs fichiers locaux et leur historique. Cette action est irréversible :" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "初期化済みのサブモジュールも、ローカルファイルと履歴を含めて削除されます。この操作は取り消せません：" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "초기화된 하위 모듈도 로컬 파일 및 기록과 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다:" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os submódulos inicializados também serão excluídos, incluindo arquivos locais e histórico. Esta ação não pode ser desfeita:" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Инициализированные подмодули также будут удалены вместе с локальными файлами и историей. Это действие нельзя отменить:" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还将删除已初始化的子模块，包括其本地文件和历史记录。此操作无法撤销：" } },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Initialized submodules will also be deleted, including their local files and history. This cannot be undone:"
+          }
+        }
+      }
+    },
     "agentWorktrees.emptyMessage" : {
       "comment" : "Explains where agent worktrees come from when the manager list is empty.",
       "extractionState" : "manual",
