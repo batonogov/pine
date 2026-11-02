@@ -2381,6 +2381,13 @@ final class TerminalTab: Identifiable, Hashable {
         let workingDirectory = workingDirectory
         let workingDirectoryValidator = workingDirectoryValidator
         let directory = URL(fileURLWithPath: resolveWorkingDirectory(), isDirectory: true)
+        // Project-owned tabs receive the admitted canonical root. Preserve their
+        // synchronous PTY-start contract; Quick Terminal installs a validator
+        // and resolves potentially aliased directories off-main below.
+        if workingDirectoryValidator == nil {
+            startProcessNow(in: directory)
+            return
+        }
         let generation = processStartValidationGeneration
         // The mark describes the last outcome, not this pending attempt.
         processStartAdmissionRefused = false

@@ -8,6 +8,24 @@ import Testing
 @Suite("Terminal working-directory launch fences", .serialized)
 @MainActor
 struct TerminalWorkingDirectoryRetentionTests {
+    @Test("Project-owned terminal launch remains synchronous")
+    func projectOwnedLaunchIsSynchronous() {
+        let directory = URL(fileURLWithPath: "/pine-sync-\(UUID())", isDirectory: true)
+        let tab = TerminalTab(name: "Synchronous project launch")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 640, height: 320)
+        tab.configure(workingDirectory: directory)
+        var launched = false
+        tab.checkedProcessLaunchForTesting = {
+            launched = true
+            return .failure(.forkFailed(EAGAIN))
+        }
+        defer { tab.stop(); tab.finishWorkingDirectoryRetentionForTesting() }
+        tab.startIfNeeded()
+        #expect(launched)
+        #expect(!tab.isStartValidationPendingForTesting)
+        #expect(!TerminalWorkingDirectoryRetention.retainsDirectory(in: directory))
+    }
+
     @Test("Only checked fork failure proves no child", arguments: 0..<4)
     func checkedLaunchOutcome(outcome: Int) async throws {
         let directory = URL(fileURLWithPath: "/pine-launch-fence-\(UUID())", isDirectory: true)
@@ -47,6 +65,7 @@ struct TerminalWorkingDirectoryRetentionTests {
         let tab = TerminalTab(name: "Pending reconfiguration")
         tab.terminalView.frame = NSRect(x: 0, y: 0, width: 640, height: 320)
         tab.configure(workingDirectory: directory)
+        tab.configureWorkingDirectoryValidation { _ in true }
         let gate = PendingDirectoryStartGate()
         tab.validationCommitSeamForTesting = { await gate.suspend() }
         var launches = 0
@@ -86,6 +105,7 @@ struct TerminalWorkingDirectoryRetentionTests {
         let canonicalSibling = await Task.detached { ProjectRegistry.canonicalProjectURL(sibling) }.value
         let tab = TerminalTab(name: "Aliased launch")
         tab.configure(workingDirectory: alias)
+        tab.configureWorkingDirectoryValidation { _ in true }
         var launched = false
         tab.checkedProcessLaunchForTesting = {
             #expect(TerminalWorkingDirectoryRetention.retainsDirectory(in: canonicalOwner))
