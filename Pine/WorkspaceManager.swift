@@ -87,6 +87,10 @@ final class WorkspaceManager {
     /// (shallow → full phase) trigger only one rebuild.
     private(set) var onRootNodesChanged: (([FileNode]) -> Void)?
 
+    /// Accepted git/tree refresh, independent of structural tree publication.
+    /// Called once after fresh git state is applied, including unchanged trees.
+    private(set) var onRefreshAccepted: ((URL) -> Void)?
+
     /// Debouncer for `onRootNodesChanged` notifications.
     private var rootNodesChangedDebouncer: Debouncer?
 
@@ -115,6 +119,10 @@ final class WorkspaceManager {
     /// Sets the callback invoked when `rootNodes` changes.
     func setOnRootNodesChanged(_ handler: (([FileNode]) -> Void)?) {
         onRootNodesChanged = handler
+    }
+
+    func setOnRefreshAccepted(_ handler: ((URL) -> Void)?) {
+        onRefreshAccepted = handler
     }
 
     /// Tracks the in-flight directory-load task. Cancelled and replaced on
@@ -461,6 +469,10 @@ final class WorkspaceManager {
                     branches: gitInfo.branches,
                     isRepository: gitInfo.isRepository
                 )
+
+                // Content-only edits need correlation even when the shallow
+                // tree is unchanged and no structural notification is emitted.
+                self.onRefreshAccepted?(url)
 
                 // For shallow projects, loading is done — no Phase 2 needed.
                 if !shallowResult.wasDepthLimited {

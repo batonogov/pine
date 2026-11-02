@@ -181,11 +181,19 @@ final class AgentActivityStore {
 
     // MARK: - Recording
 
-    /// Appends an action unless it duplicates the most recent action (same
-    /// session, kind, file URL, and summary) within the dedupe window. Keeps
-    /// the feed capped at `maxActions`.
+    /// Updates lifecycle events in place, preserving identity and chronology.
+    /// Content-confirmed file changes bypass time-based dedupe: two real edits
+    /// inside the window are distinct work, not repeated watcher notifications.
     func record(_ action: AgentAction) {
-        if isDuplicateOfLast(action) { return }
+        record(action, deduplicate: true)
+    }
+
+    private func record(_ action: AgentAction, deduplicate: Bool) {
+        if let index = actions.firstIndex(where: { $0.id == action.id }) {
+            actions[index].status = action.status
+            return
+        }
+        if deduplicate && isDuplicateOfLast(action) { return }
         actions.append(action)
         trimToCapacity()
     }
@@ -193,12 +201,17 @@ final class AgentActivityStore {
     /// Returns `true` when `action` matches the last recorded action in every
     /// dedupe-relevant field and happened within `dedupeWindow`.
     private func isDuplicateOfLast(_ action: AgentAction) -> Bool {
-        guard let last = actions.last else { return false }
+        // Distinct in-flight IDs must survive: collapsing them would orphan
+        // the second lifecycle's identity before its completion arrives.
+        guard action.status == .completed || action.status == .failed,
+              let last = actions.last else { return false }
         guard last.attribution == action.attribution,
               last.kind == action.kind,
               last.fileURL == action.fileURL,
-              last.summary == action.summary else { return false }
-        return action.timestamp.timeIntervalSince(last.timestamp) <= Self.dedupeWindow
+              last.summary == action.summary,
+              last.status == action.status else { return false }
+        let elapsed = action.timestamp.timeIntervalSince(last.timestamp)
+        return elapsed >= 0 && elapsed <= Self.dedupeWindow
     }
 
     /// Drops the oldest actions while `actions.count > maxActions`.
@@ -259,7 +272,11 @@ final class AgentActivityStore {
     ///   - url: The file URL reported by the file-system watcher.
     ///   - activeSessions: Live non-`.done` agent sessions, typically
     ///     `TerminalManager.agentDetector.activeSessions`.
-    func noteFileSystemChange(at url: URL, activeSessions: [AgentSession]) {
+    func noteFileSystemChange(
+        at url: URL,
+        activeSessions: [AgentSession],
+        contentChanged: Bool = false
+    ) {
         // Attribution requires fresh process evidence. A stale session is
         // visible uncertainty, never a candidate owner for a new file event.
         let live = activeSessions.filter {
@@ -274,7 +291,8 @@ final class AgentActivityStore {
                 status: .completed,
                 fileURL: url,
                 summary: Strings.agentActivityFileChanged(url.lastPathComponent)
-            )
+            ),
+            deduplicate: !contentChanged
         )
     }
 
