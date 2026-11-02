@@ -212,6 +212,7 @@ nonisolated fileprivate final class OneShotAuthorityGate: Sendable {
 nonisolated private final class OneShotAuthorityReservation: Sendable {
     private let gate: OneShotAuthorityGate
     private let reservationID: UUID
+    private let cleanupRequired = Mutex(false)
 
     init(gate: OneShotAuthorityGate, reservationID: UUID) {
         self.gate = gate
@@ -223,13 +224,29 @@ nonisolated private final class OneShotAuthorityReservation: Sendable {
         gate.commit(reservationID)
     }
 
+    func requireCleanup() {
+        cleanupRequired.withLock { $0 = true }
+    }
+
+    func confirmCleanup() {
+        cleanupRequired.withLock {
+            $0 = false
+            gate.rollback(reservationID)
+        }
+    }
+
     @discardableResult
     func rollback() -> Bool {
-        gate.rollback(reservationID)
+        cleanupRequired.withLock {
+            // A failed start may already own a process. Neither failure, stop,
+            // nor lease deinit may reopen its authority before actual cleanup.
+            guard !$0 else { return false }
+            return gate.rollback(reservationID)
+        }
     }
 
     deinit {
-        gate.rollback(reservationID)
+        if !cleanupRequired.withLock({ $0 }) { gate.rollback(reservationID) }
     }
 }
 
@@ -335,6 +352,7 @@ private actor SourceSessionState {
     private var inFlightCount = 0
     private var drainWaiters: [UUID: AsyncContinuationGate] = [:]
     private var stopCompletion: BoundedAdapterStop?
+    private var startSettlement: BoundedAdapterStop?
     private let authority: OneShotAuthorityReservation
     private let pendingLimit = AgentAdapterRegistry.startBufferLimit
 
@@ -345,8 +363,18 @@ private actor SourceSessionState {
 
     func beginStart() -> Bool {
         guard lifecycle == .ready else { return false }
+        authority.requireCleanup()
+        startSettlement = BoundedAdapterStop()
         lifecycle = .starting
         return true
+    }
+
+    func settleStart() async {
+        await startSettlement?.complete()
+    }
+
+    func waitUntilStartSettled() async {
+        await startSettlement?.wait()
     }
 
     func canAcceptPayload() -> Bool {
@@ -465,6 +493,10 @@ private actor SourceSessionState {
         guard pendingCheckpointPosition != nil else { return false }
         pendingCheckpointPosition = nil
         return true
+    }
+
+    func confirmCleanup() {
+        authority.confirmCleanup()
     }
 
     func failStart() {
@@ -685,6 +717,13 @@ nonisolated private final class AdapterCleanupPermit: Sendable {
     let reservationID: UUID
     private let capacity: AdapterCleanupCapacity
     private let state = Mutex(State.reserved)
+    private let cancellationRequested = Mutex(false)
+
+    var isCancellationRequested: Bool { cancellationRequested.withLock { $0 } }
+
+    func requestCancellation() {
+        cancellationRequested.withLock { $0 = true }
+    }
 
     init(capacity: AdapterCleanupCapacity, reservationID: UUID) {
         self.capacity = capacity
@@ -729,16 +768,21 @@ nonisolated private final class AdapterCleanupPermit: Sendable {
 private actor AdapterStopCountdown {
     private var remaining: Int
     private let completion: BoundedAdapterStop
+    private let state: SourceSessionState
 
-    init(remaining: Int, completion: BoundedAdapterStop) {
+    init(remaining: Int, completion: BoundedAdapterStop, state: SourceSessionState) {
         self.remaining = remaining
         self.completion = completion
+        self.state = state
     }
 
     func arrive() async {
         guard remaining > 0 else { return }
         remaining -= 1
-        if remaining == 0 { await completion.complete() }
+        if remaining == 0 {
+            await state.confirmCleanup()
+            await completion.complete()
+        }
     }
 }
 
@@ -765,11 +809,15 @@ private actor AdapterCleanupSupervisor {
             await supervisor.finished(ticket.operationID)
         }
         operations[ticket.operationID] = task
+        // Start settlement can defer registration past the cleanup deadline.
+        // Replay cancellation without treating it as proof that stop finished.
+        if permit.isCancellationRequested { task.cancel() }
         return ticket
     }
 
-    func cancel(_ ticket: AdapterCleanupTicket) {
-        operations[ticket.operationID]?.cancel()
+    func cancel(_ permit: AdapterCleanupPermit) {
+        permit.requestCancellation()
+        operations[permit.reservationID]?.cancel()
     }
 
     private func finished(_ operationID: UUID) {
@@ -904,14 +952,18 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
             let boundedWork = BoundedAdapterStop()
             let countdown = AdapterStopCountdown(
                 remaining: 2,
-                completion: context.confirmedCleanup
-            )
-            let ticket = await AdapterCleanupSupervisor.shared.submit(
-                context.underlying,
-                permit: context.cleanupPermit,
-                deadline: deadline
+                completion: context.confirmedCleanup,
+                state: context.state
             )
             let adapterWait = Task.detached {
+                // A stop before start settles could see no child, then miss a later
+                // spawn. Keep this waiter uncancelled even after the caller times out.
+                await context.state.waitUntilStartSettled()
+                let ticket = await AdapterCleanupSupervisor.shared.submit(
+                    context.underlying,
+                    permit: context.cleanupPermit,
+                    deadline: deadline
+                )
                 await ticket.completion.wait()
                 await countdown.arrive()
             }
@@ -928,7 +980,7 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
                 await boundedWork.complete()
             }
             await boundedWork.wait()
-            await AdapterCleanupSupervisor.shared.cancel(ticket)
+            await AdapterCleanupSupervisor.shared.cancel(context.cleanupPermit)
             confirmedWait.cancel()
             timeout.cancel()
             await context.state.revoke()
@@ -993,17 +1045,24 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
         guard await lifetime.state.beginStart() else {
             throw AdapterSessionError.invalidLifecycle
         }
-        do { try await lifetime.underlying.start() } catch {
+        do {
+            try await lifetime.underlying.start()
+            await lifetime.state.settleStart()
+            switch await sink.activate() {
+            case .committed:
+                return
+            case .cancelled:
+                throw CancellationError()
+            case .rejected:
+                throw AdapterSessionError.invalidLifecycle
+            }
+        } catch {
+            await lifetime.state.settleStart()
             await lifetime.state.failStart()
+            _ = await lifetime.requestStop(
+                deadline: ContinuousClock.now.advanced(by: CoreBoundSessionLifetime.cleanupGrace)
+            )
             throw error
-        }
-        switch await sink.activate() {
-        case .committed:
-            return
-        case .cancelled:
-            throw CancellationError()
-        case .rejected:
-            throw AdapterSessionError.invalidLifecycle
         }
     }
 
