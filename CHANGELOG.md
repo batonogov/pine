@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.12.1](https://github.com/batonogov/pine/compare/v2.12.0...v2.12.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **agent:** preserve Kimi process identity after title rewrite ([#1706](https://github.com/batonogov/pine/issues/1706)) ([760cce5](https://github.com/batonogov/pine/commit/760cce5388e5dc31ec28162a36a1f283d86adad5))
+* **startup:** recover blank project windows on relaunch ([#1697](https://github.com/batonogov/pine/issues/1697)) ([d6f4c7b](https://github.com/batonogov/pine/commit/d6f4c7b3dd3833f71cbc1d6fe0e0281586c1fb29))
+
 ## [2.12.0](https://github.com/batonogov/pine/compare/v2.11.2...v2.12.0) (2026-11-01)
 
 
