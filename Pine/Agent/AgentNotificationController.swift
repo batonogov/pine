@@ -211,9 +211,10 @@ final class SystemAgentNotificationCenter: NSObject,
 @MainActor
 @Observable
 final class AgentNotificationController {
-    private struct DeferredEvent {
+    private struct PendingDelivery {
         let event: AgentNotificationEvent
-        let task: AgentTask
+        let token: UUID
+        let task: Task<Void, Never>
     }
 
     private(set) var authorizationStatus: AgentNotificationAuthorizationStatus =
@@ -239,13 +240,27 @@ final class AgentNotificationController {
     @ObservationIgnored
     private var isRunning = false
     @ObservationIgnored
-    private var pendingDeliveryIDs: Set<String> = []
+    private var runGeneration: UInt64 = 0
     @ObservationIgnored
-    private var deliveryTasks: [String: Task<Void, Never>] = [:]
+    private var lifecycleGeneration: UInt64 = 0
+    @ObservationIgnored
+    private var authorizationSequence: UInt64 = 0
+    @ObservationIgnored
+    private var permissionSequence: UInt64 = 0
+    @ObservationIgnored
+    private var authorizationPending = false
+    @ObservationIgnored
+    private var authorizationWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored
+    private var deliveryTasks: [String: PendingDelivery] = [:]
     @ObservationIgnored
     private var deferredEventOrder: [String] = []
     @ObservationIgnored
-    private var deferredEvents: [String: DeferredEvent] = [:]
+    private var deferredEvents: [String: AgentNotificationEvent] = [:]
+    @ObservationIgnored
+    private let notificationCenter: NotificationCenter
+    @ObservationIgnored
+    private let retrySleep: (Duration) async throws -> Void
 
     init(
         registry: AgentTaskRegistry,
@@ -258,6 +273,10 @@ final class AgentNotificationController {
             .milliseconds(250),
             .seconds(1),
         ],
+        notificationCenter: NotificationCenter = .default,
+        retrySleep: @escaping (Duration) async throws -> Void = { delay in
+            try await ContinuousClock().sleep(for: delay)
+        },
         isPresented: @escaping (UUID) -> Bool,
         openTask: @escaping (AgentNotificationRouteIdentity) -> Void
     ) {
@@ -266,6 +285,8 @@ final class AgentNotificationController {
         self.delivery = delivery
         self.accuracy = accuracy
         self.deliveryRetryDelays = deliveryRetryDelays
+        self.notificationCenter = notificationCenter
+        self.retrySleep = retrySleep
         self.isPresented = isPresented
         self.openTask = openTask
     }
@@ -285,39 +306,49 @@ final class AgentNotificationController {
         }
         // Permission can change in System Settings while Pine runs; re-read
         // it on activation so delivery recovers without a relaunch.
-        activationObserver = NotificationCenter.default.addObserver(
+        let generation = runGeneration
+        activationObserver = notificationCenter.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: nil
-        ) { _ in
+        ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.isRunning else { return }
+                guard let self, self.isRunning,
+                      self.runGeneration == generation else { return }
                 await self.refreshAuthorizationStatus()
             }
         }
-        Task { await refreshAuthorizationStatus() }
+        Task { [weak self] in
+            guard let self, self.isRunning,
+                  self.runGeneration == generation else { return }
+            await self.refreshAuthorizationStatus()
+        }
     }
 
     func stop() {
         guard isRunning else { return }
         isRunning = false
+        runGeneration &+= 1
         if let observerToken { registry.removeTaskChangeObserver(observerToken) }
         observerToken = nil
         if let activationObserver {
-            NotificationCenter.default.removeObserver(activationObserver)
+            notificationCenter.removeObserver(activationObserver)
         }
         activationObserver = nil
         delivery.responseHandler = nil
         delivery.presentationSuppression = nil
-        deliveryTasks.values.forEach { $0.cancel() }
-        deliveryTasks.removeAll()
-        pendingDeliveryIDs.removeAll()
-        clearDeferredEvents()
+        invalidateDeliveries()
     }
 
     func refreshAuthorizationStatus() async {
-        let previous = authorizationStatus
+        let generation = lifecycleGeneration
+        authorizationSequence &+= 1
+        let sequence = authorizationSequence
+        authorizationPending = true
         let current = await delivery.authorizationStatus()
+        guard generation == lifecycleGeneration,
+              sequence == authorizationSequence else { return }
+        let previous = authorizationStatus
         authorizationStatus = current
         if current != previous {
             let transition = "\(String(describing: previous)) -> \(String(describing: current))"
@@ -331,12 +362,24 @@ final class AgentNotificationController {
         if current == .authorized {
             flushDeferredEvents()
         }
+        finishAuthorizationSettlement()
     }
 
     @discardableResult
     func requestAuthorization() async -> Bool {
+        let generation = lifecycleGeneration
+        permissionSequence &+= 1
+        let intent = permissionSequence
+        authorizationSequence &+= 1
+        authorizationPending = true
         do {
             let granted = try await delivery.requestAuthorization()
+            guard generation == lifecycleGeneration,
+                  intent == permissionSequence else { return false }
+            // An observational read cannot cancel an explicit enable intent.
+            // The permission result also supersedes reads begun during the
+            // prompt, which may have sampled the pre-prompt OS status.
+            authorizationSequence &+= 1
             authorizationStatus = granted ? .authorized : .denied
             if granted {
                 settings.setEnabled(true)
@@ -346,8 +389,11 @@ final class AgentNotificationController {
                     "Agent notification authorization request was denied; the user's enabled preference is kept"
                 )
             }
+            finishAuthorizationSettlement()
             return granted
         } catch {
+            guard generation == lifecycleGeneration,
+                  intent == permissionSequence else { return false }
             Logger.agent.error(
                 "Agent notification authorization request failed: \(error.localizedDescription, privacy: .public)"
             )
@@ -358,7 +404,7 @@ final class AgentNotificationController {
 
     func disable() {
         settings.setEnabled(false)
-        clearDeferredEvents()
+        invalidateDeliveries()
     }
 
     private func process(oldTasks: [AgentTask], newTasks: [AgentTask]) {
@@ -374,6 +420,7 @@ final class AgentNotificationController {
                 "Agent notification event resolved: kind=\(event.kind.rawValue, privacy: .public) id=\(event.id, privacy: .public)"
             )
             guard let task = tasks[event.taskID] else { continue }
+            supersedeOlderEvents(with: event)
             switch authorizationStatus {
             case .authorized:
                 scheduleDelivery(event: event, task: task)
@@ -414,16 +461,19 @@ final class AgentNotificationController {
             )
             return
         }
-        guard pendingDeliveryIDs.insert(event.id).inserted else { return }
-        let request = Self.request(for: event)
-        deliveryTasks[event.id] = Task { @MainActor [weak self] in
-            await self?.deliver(request, event: event, task: task)
+        guard deliveryTasks[event.id] == nil else { return }
+        let token = UUID()
+        let generation = lifecycleGeneration
+        let operation = Task<Void, Never> { @MainActor [weak self] in
+            await self?.deliver(event: event, token: token, generation: generation)
         }
+        deliveryTasks[event.id] = PendingDelivery(event: event, token: token, task: operation)
     }
 
     private func deferEvent(_ event: AgentNotificationEvent, task: AgentTask) {
         guard deferredEvents[event.id] == nil else { return }
-        deferredEvents[event.id] = DeferredEvent(event: event, task: task)
+        guard currentTask(for: event) != nil else { return }
+        deferredEvents[event.id] = event
         deferredEventOrder.append(event.id)
         if deferredEventOrder.count > 512 {
             let discardCount = deferredEventOrder.count - 384
@@ -436,12 +486,12 @@ final class AgentNotificationController {
     private func flushDeferredEvents() {
         let pending = deferredEventOrder.compactMap { deferredEvents[$0] }
         clearDeferredEvents()
-        for deferred in pending {
+        for event in pending {
             // A delayed notification must still describe the current run:
             // the user may have dismissed, resumed, or answered the task
             // while the notification service was unavailable.
-            guard let task = currentTask(for: deferred.event) else { continue }
-            scheduleDelivery(event: deferred.event, task: task)
+            guard let task = currentTask(for: event) else { continue }
+            scheduleDelivery(event: event, task: task)
         }
     }
 
@@ -467,22 +517,81 @@ final class AgentNotificationController {
         deferredEvents.removeAll()
     }
 
+    private func finishAuthorizationSettlement() {
+        authorizationPending = false
+        let waiters = authorizationWaiters
+        authorizationWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    private func waitForAuthorizationSettlement(generation: UInt64) async {
+        // A newer read merely starting is not evidence of permission. In
+        // particular an old post-add denial must not claim against the cached
+        // grant while the newer authoritative read is still suspended.
+        while generation == lifecycleGeneration, authorizationPending, !Task.isCancelled {
+            await withCheckedContinuation { authorizationWaiters.append($0) }
+        }
+    }
+
+    private func invalidateDeliveries() {
+        lifecycleGeneration &+= 1
+        authorizationSequence &+= 1
+        permissionSequence &+= 1
+        finishAuthorizationSettlement()
+        deliveryTasks.values.forEach { $0.task.cancel() }
+        deliveryTasks.removeAll()
+        clearDeferredEvents()
+    }
+
+    private func supersedeOlderEvents(with event: AgentNotificationEvent) {
+        // Only resolved transitions supersede events. A waiting-to-waiting poll
+        // advances lastObservedAt but must not invalidate a recoverable wait.
+        func isOlder(_ previous: AgentNotificationEvent) -> Bool {
+            previous.taskID == event.taskID && previous.runID == event.runID
+                && previous.processGeneration == event.processGeneration
+                && previous.kind == event.kind && previous.observedAt < event.observedAt
+        }
+        for (id, previous) in deferredEvents where isOlder(previous) {
+            deferredEvents[id] = nil
+        }
+        deferredEventOrder.removeAll { deferredEvents[$0] == nil }
+        for (id, pending) in deliveryTasks where isOlder(pending.event) {
+            pending.task.cancel()
+            deliveryTasks[id] = nil
+        }
+    }
+
     private func deliver(
-        _ request: AgentNotificationRequest,
         event: AgentNotificationEvent,
-        task: AgentTask
+        token: UUID,
+        generation: UInt64
     ) async {
         let eventID = event.id
         defer {
-            pendingDeliveryIDs.remove(eventID)
-            deliveryTasks[eventID] = nil
+            // A cancelled completion must not remove a restarted job's claim.
+            if deliveryTasks[eventID]?.token == token { deliveryTasks[eventID] = nil }
+        }
+        func isActive() -> Bool {
+            isRunning && generation == lifecycleGeneration && !Task.isCancelled
+                && deliveryTasks[eventID]?.token == token
+        }
+        func eligibleTask() -> AgentTask? {
+            guard isActive(), let task = currentTask(for: event),
+                  settings.allows(event, task: task), !isPresented(event.taskID),
+                  !settings.hasDelivered(eventID) else { return nil }
+            return task
         }
 
+        let request = Self.request(for: event)
         let delays = [Duration.zero] + deliveryRetryDelays
         for (attempt, delay) in delays.enumerated() {
-            guard isRunning,
-                  settings.isEnabled,
-                  !Task.isCancelled else { return }
+            guard isActive() else { return }
+            if delay > .zero {
+                do { try await retrySleep(delay) } catch { return }
+            }
+            // This check is deliberately AFTER the backoff and before every
+            // attempt, rather than against the original task/settings snapshot.
+            guard let task = eligibleTask() else { return }
             guard authorizationStatus == .authorized else {
                 // Authorization was revoked or reset before this attempt
                 // ran; re-arm the event so the flush that follows an
@@ -494,14 +603,7 @@ final class AgentNotificationController {
                 deferEvent(event, task: task)
                 return
             }
-            if delay > .zero {
-                do {
-                    try await ContinuousClock().sleep(for: delay)
-                } catch {
-                    return
-                }
-                guard isRunning, !Task.isCancelled else { return }
-            }
+
             do {
                 try await delivery.deliver(request)
             } catch {
@@ -514,23 +616,17 @@ final class AgentNotificationController {
             // `UNUserNotificationCenter.add` does not throw when permission
             // was revoked in System Settings while Pine is running; re-read
             // the status so a revoked grant is not claimed as delivered.
-            let currentStatus = await delivery.authorizationStatus()
-            if currentStatus != authorizationStatus {
-                let transition =
-                    "\(String(describing: authorizationStatus)) -> \(String(describing: currentStatus))"
-                Logger.agent.info(
-                    "Agent notification authorization changed: \(transition, privacy: .public)"
-                )
-                authorizationStatus = currentStatus
-                if currentStatus == .authorized {
-                    flushDeferredEvents()
-                }
-            }
-            guard currentStatus == .authorized else {
+            guard isActive() else { return }
+            await refreshAuthorizationStatus()
+            await waitForAuthorizationSettlement(generation: generation)
+            guard isActive() else { return }
+            // A superseded status response still finishes this one-shot event
+            // using the newest accepted authorization, never its stale result.
+            guard authorizationStatus == .authorized else {
                 Logger.agent.warning(
                     "Agent notification delivery re-armed: authorization revoked at delivery time (id=\(eventID, privacy: .public))"
                 )
-                deferEvent(event, task: task)
+                if let task = eligibleTask() { deferEvent(event, task: task) }
                 return
             }
             _ = settings.claimDelivery(of: eventID)
@@ -546,7 +642,7 @@ final class AgentNotificationController {
         // its event again when the notification service recovers. Retain it
         // in the bounded queue for the next activation/authorization refresh
         // rather than requiring an impossible replay of the transition.
-        guard isRunning, settings.isEnabled, !Task.isCancelled else { return }
+        guard let task = eligibleTask() else { return }
         deferEvent(event, task: task)
     }
 

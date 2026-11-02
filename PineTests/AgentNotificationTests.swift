@@ -11,6 +11,8 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct AgentNotificationTests {
+    private let notificationCenter = NotificationCenter()
+
     @Test("verified waiting, failure, and completion transitions are actionable")
     func verifiedTransitions() throws {
         let working = task(seed: 1, state: .executing)
@@ -210,6 +212,7 @@ struct AgentNotificationTests {
             registry: registry,
             settings: settings,
             delivery: delivery,
+            notificationCenter: notificationCenter,
             isPresented: { presented.contains($0) },
             openTask: { opened = $0 }
         )
@@ -269,6 +272,7 @@ struct AgentNotificationTests {
             registry: registry,
             settings: settings,
             delivery: delivery,
+            notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
         )
@@ -308,6 +312,7 @@ struct AgentNotificationTests {
             settings: settings,
             delivery: delivery,
             deliveryRetryDelays: [.zero],
+            notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
         )
@@ -344,6 +349,7 @@ struct AgentNotificationTests {
             delivery: delivery,
             accuracy: { _ in .processTerminationOnly },
             deliveryRetryDelays: [.zero],
+            notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
         )
@@ -366,7 +372,7 @@ struct AgentNotificationTests {
 
         // The task remains terminated. A real process cannot replay its exit
         // just because Notification Center was temporarily unavailable.
-        NotificationCenter.default.post(
+        notificationCenter.post(
             name: NSApplication.didBecomeActiveNotification,
             object: nil
         )
@@ -376,7 +382,7 @@ struct AgentNotificationTests {
         let request = try #require(delivery.requests.first)
         #expect(settings.hasDelivered(request.identifier))
         let readsBeforeActivation = delivery.authorizationStatusRequestCount
-        NotificationCenter.default.post(
+        notificationCenter.post(
             name: NSApplication.didBecomeActiveNotification,
             object: nil
         )
@@ -408,6 +414,7 @@ struct AgentNotificationTests {
             delivery: delivery,
             accuracy: { _ in .processTerminationOnly },
             deliveryRetryDelays: [.zero],
+            notificationCenter: notificationCenter,
             isPresented: { _ in presented },
             openTask: { _ in }
         )
@@ -466,6 +473,7 @@ struct AgentNotificationTests {
             delivery: delivery,
             accuracy: { _ in .verifiedLifecycleTransitions },
             deliveryRetryDelays: [.zero],
+            notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
         )
@@ -526,6 +534,7 @@ struct AgentNotificationTests {
             registry: AgentTaskRegistry(),
             settings: settings,
             delivery: delivery,
+            notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
         )
@@ -554,6 +563,7 @@ struct AgentNotificationTests {
             registry: registry,
             settings: settings,
             delivery: delivery,
+            notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
         )
@@ -577,7 +587,7 @@ struct AgentNotificationTests {
         #expect(delivery.requests.isEmpty)
 
         delivery.status = .authorized
-        NotificationCenter.default.post(
+        notificationCenter.post(
             name: NSApplication.didBecomeActiveNotification,
             object: nil
         )
@@ -621,6 +631,7 @@ struct AgentNotificationTests {
             registry: registry,
             settings: settings,
             delivery: delivery,
+            notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
         )
@@ -653,7 +664,7 @@ struct AgentNotificationTests {
         // On the activation refresh back to authorized the re-armed event
         // flushes and is claimed exactly once.
         delivery.status = .authorized
-        NotificationCenter.default.post(
+        notificationCenter.post(
             name: NSApplication.didBecomeActiveNotification,
             object: nil
         )
@@ -674,6 +685,7 @@ struct AgentNotificationTests {
             registry: AgentTaskRegistry(),
             settings: settings,
             delivery: delivery,
+            notificationCenter: notificationCenter,
             isPresented: { $0 == presentedTaskID },
             openTask: { _ in }
         )
