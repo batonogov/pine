@@ -760,6 +760,56 @@ struct AgentDetectorTests {
         #expect(replacement.processEvidence?.startIsAuthoritative == true)
     }
 
+    @Test func rewrittenKimiTitleRetainsProcessGeneration() {
+        let coarse = Date(timeIntervalSince1970: 1_722_000_000)
+        let precise = coarse.addingTimeInterval(0.125)
+        for executable in ["node", "python", "python3"] {
+            #expect(AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+                observedCommand: "kimi-code ",
+                kernelArguments: ["kimi-code", ""],
+                currentExecutable: executable
+            ))
+            #expect(AgentDetectionCoordinator.processSampleIsCoherentForTesting(
+                coarseStart: coarse,
+                beforeStart: precise,
+                afterStart: precise,
+                observedExecutable: "kimi-code",
+                currentExecutable: executable
+            ))
+        }
+        #expect(!AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+            observedCommand: "kimi-code",
+            kernelArguments: ["node", "/tmp/benign.js"],
+            currentExecutable: "node"
+        ))
+        #expect(!AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+            observedCommand: "kimi-code",
+            kernelArguments: ["other-agent"],
+            currentExecutable: "node"
+        ))
+        #expect(!AgentDetectionCoordinator.processSampleIsCoherentForTesting(
+            coarseStart: coarse,
+            beforeStart: precise,
+            afterStart: precise.addingTimeInterval(0.001),
+            observedExecutable: "kimi-code",
+            currentExecutable: "node"
+        ))
+        #expect(!AgentDetectionCoordinator.processSampleIsCoherentForTesting(
+            coarseStart: coarse.addingTimeInterval(-1),
+            beforeStart: precise,
+            afterStart: precise,
+            observedExecutable: "kimi-code",
+            currentExecutable: "node"
+        ))
+        #expect(!AgentDetectionCoordinator.processSampleIsCoherentForTesting(
+            coarseStart: coarse,
+            beforeStart: precise,
+            afterStart: precise,
+            observedExecutable: "kimi-code",
+            currentExecutable: "sh"
+        ))
+    }
+
     @Test func kernelArgumentsBindInterpreterScriptIdentity() {
         #expect(AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
             observedCommand: "node /opt/agents/claude.js --verbose",
