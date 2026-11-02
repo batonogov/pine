@@ -70,6 +70,10 @@ final class SessionRestoreTests: PineUITestCase {
     // MARK: - Tests
 
     func testRelaunchWithoutProjectShowsWelcomeContent() throws {
+        // Sparkle's first-run permission dialog is a second window on fresh
+        // runners. Scope its opt-out to both launches of this test, without
+        // changing persisted update preferences or relaxing the window count.
+        app.launchArguments += ["-SUEnableAutomaticChecks", "NO"]
         // Seed only this test's Welcome state, not another test's restored scenes.
         launchClean()
         XCTAssertTrue(waitForExistence(app.buttons["welcomeOpenFolderButton"]))
