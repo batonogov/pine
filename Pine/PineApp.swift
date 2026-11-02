@@ -213,7 +213,9 @@ struct ProjectWindowView: View {
             if let pm = registry.projectManagerIfAdmitted(
                 for: windowSession.activeProjectURL
             ) {
-                ContentView()
+                ContentView(onInboxSuccessfulNavigation: { [weak appDelegate] in
+                    appDelegate?.hideWelcome()
+                })
                     .id(ObjectIdentifier(pm))
                     .environment(pm)
                     .environment(pm.workspace)
@@ -1181,6 +1183,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         welcomeWindow: NSWindow?
     ) -> [AgentInboxHostOption] {
         let mostRecentProject = mostRecentlyActiveProjectManager()
+        let keyWindow = AgentInboxWindowOwner.resolve(keyWindow, among: windows)
         var options: [AgentInboxHostOption] = windows.compactMap { window in
             guard let delegate = window.delegate as? CloseDelegate else {
                 return nil

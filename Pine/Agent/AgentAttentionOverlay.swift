@@ -46,7 +46,12 @@ struct AgentAttentionOverlay: View {
     /// terminated evidence is demoted below actionable rows so stale logical
     /// state never masquerades as a current request for attention.
     private var ranked: [AgentStatusSummary] {
-        summaries.sorted { Self.rank($0) < Self.rank($1) }
+        Self.attentionSummaries(summaries)
+    }
+
+    /// Filter at the presentation boundary, not in status-bar aggregation.
+    static func attentionSummaries(_ summaries: [AgentStatusSummary]) -> [AgentStatusSummary] {
+        summaries.filter { $0.state != .idle }.sorted { rank($0) < rank($1) }
     }
 
     private static func rank(_ summary: AgentStatusSummary) -> Int {

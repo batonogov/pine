@@ -74,6 +74,12 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     private let makePopover: PopoverFactory
     private let resolveFocusHost: FocusHostResolver
     private let isApplicationActive: @MainActor () -> Bool
+    private let windows: @MainActor () -> [NSWindow]
+    private let keyWindow: @MainActor () -> NSWindow?
+    private let onSuccessfulNavigation: @MainActor () -> Void
+    private var focusChoiceMonitor: Any?
+    private var hasNewerFocusChoice = false
+    private var focusGeneration: UInt64 = 0
     private weak var anchor: AgentInboxPopoverAnchorView?
     private weak var registeredWindow: NSWindow?
     private var isPresented: Binding<Bool>?
@@ -221,7 +227,10 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         currentEvent: @escaping @MainActor () -> NSEvent? = { NSApp.currentEvent },
         now: @escaping @MainActor () -> TimeInterval = {
             ProcessInfo.processInfo.systemUptime
-        }
+        },
+        windows: @escaping @MainActor () -> [NSWindow] = { NSApp.windows },
+        keyWindow: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow },
+        onSuccessfulNavigation: @escaping @MainActor () -> Void = {}
     ) {
         self.router = router
         self.makePopover = makePopover
@@ -229,6 +238,9 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         self.isApplicationActive = isApplicationActive
         self.currentEvent = currentEvent
         self.now = now
+        self.windows = windows
+        self.keyWindow = keyWindow
+        self.onSuccessfulNavigation = onSuccessfulNavigation
     }
 
     /// The production popover: a transient, Liquid-Glass-friendly `NSPopover`
@@ -406,6 +418,8 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
 
     func detach() {
         isAttached = false
+        focusChoiceMonitor.map(NSEvent.removeMonitor)
+        focusChoiceMonitor = nil
         dismissalGestureMonitor.map(NSEvent.removeMonitor)
         dismissalGestureMonitor = nil
         dismissalOnButtonUptime = nil
@@ -440,6 +454,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// strong reference between them.
     func popoverWillClose(sender: AnyObject?) {
         guard let popover, sender === popover else { return }
+        if let event = currentEvent() { recordFocusChoice(event) }
         // An AppKit-initiated dismissal arrives with `isClosing` still down —
         // the anchor's own closes raise it before the delegate can fire. Only
         // the AppKit kind can belong to the mouse click that is about to
@@ -529,6 +544,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         unreportedCloseCount = 0
         state.popoverDidClose()
         isCloseSettling = true
+        let closingFocusGeneration = focusGeneration
         // `@State` written inside AppKit's own notification re-enters the live
         // view update, so the SwiftUI half lands a turn later — and is derived
         // there, because by then a newer request may have opened a new popover
@@ -540,7 +556,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
                 bindingIsPresented: self.bindingIsPresented,
                 isPopoverShown: self.isPopoverShown
             ))
-            self.returnFocusToHost()
+            self.returnFocusToHost(generation: closingFocusGeneration)
         }
     }
 
@@ -572,6 +588,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     }
 
     private func updateRegistration(for window: NSWindow?) {
+        let window = AgentInboxWindowOwner.resolve(window, among: windows())
         guard registeredWindow !== window else { return }
         if let registeredWindow {
             router.unregister(self, from: registeredWindow)
@@ -612,11 +629,21 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// the one before it — the cause resets to the in-place dismissal, which
     /// is what Escape and an outside click arrive as.
     private func recordFocusToReturnTo(in window: NSWindow?) {
+        focusGeneration &+= 1
         dismissalCause = .userDismissedInPlace
-        focusHostWindow = window
-        focusedResponderBeforePresentation = window
+        let owner = AgentInboxWindowOwner.resolve(window, among: windows())
+        focusHostWindow = owner
+        focusedResponderBeforePresentation = owner
             .map(resolveFocusHost)?
             .captureFocusedResponder()
+        hasNewerFocusChoice = false
+        focusChoiceMonitor.map(NSEvent.removeMonitor)
+        focusChoiceMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            self?.recordFocusChoice(event)
+            return event
+        }
     }
 
     /// Hands keyboard focus back to the window the popover was anchored in,
@@ -627,11 +654,17 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// same re-entrancy the binding write avoids, and the turn is what lets a
     /// newer request overtake this one — a popover that is on screen again by
     /// then owns focus, and this dismissal no longer speaks for the window.
-    private func returnFocusToHost() {
-        guard !isPopoverShown else { return }
+    private func returnFocusToHost(generation: UInt64) {
+        guard focusGeneration == generation, popover == nil else { return }
+        focusChoiceMonitor.map(NSEvent.removeMonitor)
+        focusChoiceMonitor = nil
         let cause = dismissalCause
         let responder = focusedResponderBeforePresentation
         let host = focusHostWindow.map(resolveFocusHost)
+        let newerChoice = hasNewerFocusChoice || AgentInboxFocusRestoration.hasNewerFocusChoice(
+            host: focusHostWindow, responder: responder,
+            keyWindow: keyWindow(), windows: windows()
+        )
         // Defence in depth, and knowingly uncovered: no path calls this twice
         // for one presentation — `retireClosedPopover()` is the only caller,
         // it drops the popover reference synchronously, and only
@@ -641,7 +674,7 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         dismissalCause = .userDismissedInPlace
         focusHostWindow = nil
         focusedResponderBeforePresentation = nil
-        guard let host,
+        guard !newerChoice, let host,
               AgentInboxFocusRestoration.decision(
                   cause: cause,
                   hostCanTakeFocus: host.canTakeFocus,
@@ -659,6 +692,20 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         apply(state.contentRequestedDismiss(
             bindingIsPresented: bindingIsPresented
         ))
+        onSuccessfulNavigation()
+    }
+
+    /// Observe actual user clicks, including those during the deferred close.
+    /// Merely becoming key is not a user choice: AppKit routinely returns key
+    /// to the owner's full-screen toolbar before the editor is restored.
+    private func recordFocusChoice(_ event: NSEvent) {
+        guard [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type),
+              let window = event.window else { return }
+        if let systemPopover = popover as? NSPopover,
+           window === systemPopover.contentViewController?.view.window { return }
+        if window === anchor?.window,
+           isOnButton(screenPoint: window.convertPoint(toScreen: event.locationInWindow)) { return }
+        hasNewerFocusChoice = true
     }
 
     private func closePopover() {

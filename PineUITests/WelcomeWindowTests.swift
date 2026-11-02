@@ -67,6 +67,53 @@ final class WelcomeWindowTests: PineUITestCase {
         )
     }
 
+    func testSuccessfulInboxRecoveryClosesWelcome() throws {
+        try launchWelcomeWithRecovery(vendor: false)
+        let welcome = app.windows["welcome"]
+        let inboxButton = app.buttons["welcomeAgentInboxButton"]
+        XCTAssertTrue(inboxButton.waitForExistence(timeout: 5))
+        inboxButton.click()
+        XCTAssertTrue(recoveryRow.waitForExistence(timeout: 8))
+        recoveryRow.click()
+        let newSession = app.buttons["agentInboxNewSession"].firstMatch
+        XCTAssertTrue(newSession.waitForExistence(timeout: 3))
+        newSession.click()
+        XCTAssertTrue(app.buttons["terminalTab_Terminal 1"].firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(welcome.waitForNonExistence(timeout: 5))
+    }
+
+    func testFailedInboxRecoveryLeavesWelcomeOpen() throws {
+        try launchWelcomeWithRecovery(vendor: true)
+        let welcome = app.windows["welcome"]
+        let inboxButton = app.buttons["welcomeAgentInboxButton"]
+        XCTAssertTrue(inboxButton.waitForExistence(timeout: 5))
+        inboxButton.click()
+        XCTAssertTrue(recoveryRow.waitForExistence(timeout: 8))
+        recoveryRow.click()
+        let resume = app.buttons["agentInboxResumeSession"].firstMatch
+        XCTAssertTrue(resume.waitForExistence(timeout: 3))
+        resume.click()
+        XCTAssertTrue(app.descendants(matching: .any)["agentInboxNavigationStatus"]
+            .firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(welcome.exists)
+        XCTAssertTrue(resume.exists)
+        XCTAssertFalse(app.buttons["terminalTab_Terminal 1"].exists)
+    }
+
+    private func launchWelcomeWithRecovery(vendor: Bool) throws {
+        let url = try createTempProject(files: ["release.md": "# Release\n"])
+        projectURLs.append(url)
+        app.launchArguments.append("--ui-test-agent-recovery")
+        if vendor { app.launchArguments.append("--ui-test-agent-vendor-recovery") }
+        launchWithProject(url)
+        openAgentInbox()
+        XCTAssertTrue(recoveryRow.waitForExistence(timeout: 8))
+        app.terminate()
+        app.launchEnvironment.removeValue(forKey: "PINE_OPEN_PROJECT")
+        launchClean()
+        XCTAssertTrue(app.windows["welcome"].waitForExistence(timeout: 10))
+    }
+
     func testAgentInboxOpensFromWindowMenuInProject() throws {
         let url = try createTempProject(files: ["hello.swift": "// hi\n"])
         projectURLs.append(url)

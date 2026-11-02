@@ -118,6 +118,15 @@ struct WelcomeView: View {
         RecentProjectsFilter.filter(registry.recentProjects, query: searchText)
     }
 
+    /// The production anchor configuration, also exercised by composition tests.
+    var agentInboxAnchor: AgentInboxPopoverAnchor {
+        AgentInboxPopoverAnchor(
+            isPresented: $isAgentInboxPresented, registry: registry,
+            explicitOpenProjectWindow: openProjectWindow, toggleRelay: agentInboxToggleRelay,
+            onSuccessfulNavigation: closeWelcome
+        )
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Left: logo and actions
@@ -156,12 +165,7 @@ struct WelcomeView: View {
                 }
                 .buttonStyle(.borderless)
                 .accessibilityIdentifier(AccessibilityID.welcomeAgentInboxButton)
-                .agentInboxPopover(
-                    isPresented: $isAgentInboxPresented,
-                    registry: registry,
-                    openProjectWindow: openProjectWindow,
-                    toggleRelay: agentInboxToggleRelay
-                )
+                .background { agentInboxAnchor }
 
                 Spacer()
             }
