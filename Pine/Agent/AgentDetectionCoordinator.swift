@@ -673,7 +673,10 @@ nonisolated final class AgentDetectionCoordinator:
         let kernelBase = URL(fileURLWithPath: kernelFirst)
             .lastPathComponent.lowercased()
         guard observedBase == kernelBase,
-              kernelBase == currentExecutable,
+              processExecutableMatches(
+                  observedExecutable: kernelBase,
+                  currentExecutable: currentExecutable
+              ),
               AgentDetector.extractExecutableName(arguments: observedArguments)
                 .lowercased()
                 == AgentDetector.extractExecutableName(arguments: kernelArguments)
@@ -688,6 +691,19 @@ nonisolated final class AgentDetectionCoordinator:
         )
     }
 
+    // Kimi rewrites argv[0] to "kimi-code" while libproc still reports its
+    // interpreter. Keep this exception narrow; argv agreement and both start
+    // witnesses are checked separately before accepting the generation.
+    nonisolated private static func processExecutableMatches(
+        observedExecutable: String,
+        currentExecutable: String
+    ) -> Bool {
+        observedExecutable == currentExecutable || (
+            observedExecutable == "kimi-code"
+                && ["node", "python", "python3"].contains(currentExecutable)
+        )
+    }
+
     nonisolated private static func processSampleIsCoherent(
         coarseStart: Date,
         beforeStart: Date,
@@ -695,8 +711,10 @@ nonisolated final class AgentDetectionCoordinator:
         observedExecutable: String,
         currentExecutable: String
     ) -> Bool {
-        observedExecutable == currentExecutable
-            && beforeStart == afterStart
+        processExecutableMatches(
+            observedExecutable: observedExecutable,
+            currentExecutable: currentExecutable
+        ) && beforeStart == afterStart
             && coarseStart.timeIntervalSince1970
                 == afterStart.timeIntervalSince1970.rounded(.down)
     }
