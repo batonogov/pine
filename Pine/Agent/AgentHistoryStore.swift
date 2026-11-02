@@ -175,8 +175,8 @@ final class AgentHistoryStore {
             loggedSessionIDs = Set(entries.map(\.sessionID))
         } catch {
             // Corrupt or unreadable log: never crash — start empty and log.
-            // The damaged file is left in place; the next successful persist
-            // overwrites it atomically.
+            // The damaged file is left in place. Persistence also refuses to
+            // overwrite an unreadable log, preserving evidence for recovery.
             NSLog("AgentHistoryStore: failed to decode agent-log.json — starting empty. \(error.localizedDescription)")
             entries = []
             loggedSessionIDs = []
@@ -923,7 +923,7 @@ final class AgentHistoryStore {
     /// Removes every row participating in an identity collision. Keeping the
     /// first row would make project-controlled JSON ordering an authority
     /// decision; quarantining the complete collision set stays fail-closed.
-    private static func quarantiningDuplicateIdentities(
+    nonisolated static func quarantiningDuplicateIdentities(
         _ decoded: [AgentHistoryEntry]
     ) -> [AgentHistoryEntry] {
         let changeSets = decoded.compactMap(\.verifiedChangeSet)
@@ -953,7 +953,7 @@ final class AgentHistoryStore {
         return filtered
     }
 
-    private static func duplicateValues<Value: Hashable>(_ values: [Value]) -> Set<Value> {
+    nonisolated private static func duplicateValues<Value: Hashable>(_ values: [Value]) -> Set<Value> {
         var seen: Set<Value> = []
         var duplicates: Set<Value> = []
         for value in values where !seen.insert(value).inserted {
@@ -995,11 +995,9 @@ final class AgentHistoryStore {
 /// itself own the queue without tripping the guard's crash-class detector.
 /// Instead it hands this writer immutable `[AgentHistoryEntry]` snapshots.
 ///
-/// Writes are atomic (temp file + `FileManager.replaceItem`) so a crash
-/// mid-write never leaves a truncated log. The serial queue guarantees writes
-/// land in submission order, so the last snapshot for a burst always wins —
-/// sufficient for this low-frequency log (written on session finalize / revert,
-/// not on every keystroke).
+/// The queue preserves local submission order; descriptor-relative persistence
+/// locks and merges with the latest disk state across independent writers.
+/// A synced exclusive temporary file is atomically renamed over the projection.
 nonisolated final class AgentHistoryLogWriter {
     /// `.workItem` gives every persist work item an autorelease pool (#1548)
     /// — encoding and file-manager temporaries drain per write instead of
@@ -1013,8 +1011,18 @@ nonisolated final class AgentHistoryLogWriter {
     /// Schedules an atomic write of `snapshot` to `<root>/.pine/agent-log.json`.
     /// A `nil` root (no project open) is a no-op — the in-memory log suffices.
     func persist(snapshot: [AgentHistoryEntry], root: URL?) {
-        writeQueue.async { [weak self] in
-            self?.write(snapshot: snapshot, root: root)
+        // Bound waiting from submission, not execution: a held project lock
+        // must not charge another two seconds for every queued quit snapshot.
+        let lockDeadline = DispatchTime.now() + .seconds(2)
+        writeQueue.async {
+            guard let root else { return }
+            do {
+                try AgentHistoryLogPersistence.persist(
+                    snapshot: snapshot, root: root, lockDeadline: lockDeadline
+                )
+            } catch {
+                NSLog("AgentHistoryLogWriter: refused to persist agent-log.json. \(error)")
+            }
         }
     }
 
@@ -1023,43 +1031,5 @@ nonisolated final class AgentHistoryLogWriter {
     /// calls back onto its own thread (writes are fire-and-forget from main).
     func flush() {
         writeQueue.sync {}
-    }
-
-    private func write(snapshot: [AgentHistoryEntry], root: URL?) {
-        guard let root else { return }
-        let pineDir = root.appendingPathComponent(".pine", isDirectory: true)
-        let logURL = pineDir.appendingPathComponent("agent-log.json", isDirectory: false)
-
-        guard let data = try? AgentHistoryStore.makeEncoder().encode(snapshot) else { return }
-
-        // Create .pine/ if missing (the store may persist after a fresh clone).
-        if !FileManager.default.fileExists(atPath: pineDir.path) {
-            do {
-                try FileManager.default.createDirectory(at: pineDir, withIntermediateDirectories: true)
-            } catch {
-                NSLog("AgentHistoryLogWriter: failed to create .pine during persist. \(error.localizedDescription)")
-                return
-            }
-        }
-
-        // Atomic write: temp file in the same directory, then replace the
-        // destination so a crash mid-write never leaves a truncated log.
-        let tempURL = pineDir.appendingPathComponent(".agent-log.json.tmp", isDirectory: false)
-        do {
-            try data.write(to: tempURL, options: [.atomic])
-            if FileManager.default.fileExists(atPath: logURL.path) {
-                _ = try FileManager.default.replaceItemAt(
-                    logURL,
-                    withItemAt: tempURL,
-                    backupItemName: nil,
-                    options: []
-                )
-            } else {
-                try FileManager.default.moveItem(at: tempURL, to: logURL)
-            }
-        } catch {
-            try? FileManager.default.removeItem(at: tempURL)
-            NSLog("AgentHistoryLogWriter: failed to persist agent-log.json. \(error.localizedDescription)")
-        }
     }
 }

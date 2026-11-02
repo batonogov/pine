@@ -670,6 +670,64 @@ struct AgentHistoryCheckedUndoEngineTests {
         #expect(try env.read(file: "alias.swift") == "base\nagent\n")
     }
 
+    @Test("An authority marker failure retains the inverse and verifies late mutations", arguments: [false, true])
+    func authorityMarkerFailureDoesNotRollBackConsumedUndo(lateMutation: Bool) async throws {
+        let target = LockedFileURL()
+        let env = try makeEnv(beforeConsume: {
+            if lateMutation {
+                try Data("human after inverse\n".utf8).write(to: target.requiredURL())
+            }
+        })
+        defer { env.cleanup() }
+        target.set(env.url("App.swift"))
+        try env.write(file: "App.swift", contents: "base\n")
+        try env.git(["add", "App.swift"])
+        try env.git(["commit", "-m", "initial"])
+        try env.write(file: "App.swift", contents: "base\nagent\n")
+        let entry = try await env.captureModify(
+            path: "App.swift", before: "base\n", after: "base\nagent\n"
+        )
+        let changeSet = try #require(entry.verifiedChangeSet)
+        let privateStore = env.privateStore
+        let root = env.repo
+        let result = try await runOnBackground {
+            try privateStore.withAuthorityLock(recordID: changeSet.authority.recordID) {
+                let manifest = try #require(privateStore.loadAuthority(recordID: changeSet.authority.recordID))
+                let payload = try #require(privateStore.loadPayload(
+                    blobID: changeSet.inversePayload.blobID,
+                    expectedSHA256: changeSet.inversePayload.sha256,
+                    expectedByteCount: changeSet.inversePayload.byteCount,
+                    expectedFormatVersion: changeSet.inversePayload.formatVersion
+                ))
+                let backup = try privateStore.createRecoveryBackup(recordID: manifest.recordID)
+                // Exclusive marker creation must fail after markConsumed succeeds.
+                try FileManager.default.createDirectory(
+                    atPath: backup.path + "/phase-authority-consumed.json",
+                    withIntermediateDirectories: false
+                )
+                return AgentHistoryCheckedUndoEngine.apply(
+                    changeSet: changeSet, payload: payload,
+                    context: AgentHistoryCheckedUndoContext(
+                        root: root, backup: backup, manifest: manifest, privateStore: privateStore
+                    )
+                )
+            }
+        }
+        #expect(result.allSucceeded == !lateMutation)
+        #expect(result.blockedReason == (lateMutation ? .applyFailed(path: "App.swift") : nil))
+        #expect(try env.read(file: "App.swift") == (lateMutation ? "human after inverse\n" : "base\n"))
+        #expect(privateStore.loadAuthority(recordID: changeSet.authority.recordID)?.consumed == true)
+        let backupPath = try #require(result.recoveryBackupPath)
+        #expect(try String(contentsOfFile: backupPath + "/0.bin", encoding: .utf8) == "base\nagent\n")
+        #expect(!result.recoveryQuarantinePaths.isEmpty)
+        #expect(try String(contentsOfFile: #require(result.recoveryQuarantinePaths.first), encoding: .utf8)
+            == "base\nagent\n")
+        let records = privateStore.discoverRecoveryRecords()
+        #expect(records.count == 1)
+        #expect(records.first?.state == .corrupt(.invalidPhaseMarkers))
+        #expect(!records[0].validatedPaths.isEmpty)
+    }
+
     @Test("A consumption failure rolls back and preserves an owner-only recovery backup")
     func consumptionFailureIsRecoverable() async throws {
         let probe = ThreadProbe()
