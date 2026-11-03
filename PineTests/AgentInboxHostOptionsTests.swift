@@ -124,6 +124,23 @@ struct AgentInboxHostOptionsTests {
         #expect(options.map(\.candidate.isKeyWindow) == [false, true, false])
     }
 
+    @Test("an owned auxiliary key window selects its existing project, not Welcome")
+    func ownedAuxiliaryMarksProjectKey() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let alpha = try fixture.makeProjectWindow(named: "alpha")
+        let beta = try fixture.makeProjectWindow(named: "beta")
+        let auxiliary = fixture.makeWindow()
+        let welcome = fixture.makeWindow()
+        alpha.addChildWindow(auxiliary, ordered: .above)
+        defer { alpha.removeChildWindow(auxiliary) }
+        let options = fixture.appDelegate.agentInboxHostOptions(
+            windows: [beta, auxiliary, alpha], keyWindow: auxiliary, welcomeWindow: welcome
+        )
+        #expect(options.map(\.candidate.isKeyWindow) == [false, true, false])
+        #expect(AgentInboxHostRouting.decision(among: options.map(\.candidate)) == .existingHost(index: 1))
+    }
+
     @Test("an auxiliary key window leaves no candidate marked key")
     func auxiliaryKeyWindowMarksNothing() throws {
         let fixture = try Fixture()

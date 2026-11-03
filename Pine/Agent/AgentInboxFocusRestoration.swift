@@ -100,6 +100,19 @@ extension NSWindow: AgentInboxFocusHost {
 /// The two rules behind returning focus after the Inbox closes: whether to
 /// return it at all, and what inside the host is still a legitimate target.
 enum AgentInboxFocusRestoration {
+    /// A different project/window or a different responder in the owner wins.
+    /// Returning key to the same owner's auxiliary toolbar is not a new choice.
+    @MainActor
+    static func hasNewerFocusChoice(
+        host: NSWindow?, responder: NSResponder?, keyWindow: NSWindow?, windows: [NSWindow]
+    ) -> Bool {
+        guard let host, let keyWindow else { return false }
+        guard AgentInboxWindowOwner.resolve(keyWindow, among: windows) === host else { return true }
+        guard keyWindow === host,
+              let current = host.captureFocusedResponder() else { return false }
+        return current !== responder
+    }
+
     enum Decision: Equatable {
         /// Make the host key again and put focus back where it was.
         case restoreHostFocus

@@ -545,6 +545,22 @@ final class AgentTaskRegistry {
         loadTasks[project] = load
     }
 
+    /// Inbox may read recent metadata before any project is admitted. Do not
+    /// claim the scope until the caller revalidates it after the store suspends:
+    /// cancellation, removal from Recents, and repository replacement must not
+    /// publish stale cards. A concurrent explicit project registration wins.
+    func loadMetadataForInbox(
+        _ project: AgentTaskProjectIdentity,
+        ifCurrent: @MainActor () async -> Bool
+    ) async {
+        guard !Task.isCancelled, !isTerminating,
+              !registeredProjects.contains(project) else { return }
+        let result = await persistence.load(project: project)
+        guard await ifCurrent(), !Task.isCancelled, !isTerminating,
+              registeredProjects.insert(project).inserted else { return }
+        acceptLoad(result, project: project)
+    }
+
     /// Bridges the legacy terminal `AgentSession` model into durable identity.
     /// Repeated observations retain both IDs. A detector replacement ends the
     /// old run; only a Pine-owned reservation may inherit the durable task.

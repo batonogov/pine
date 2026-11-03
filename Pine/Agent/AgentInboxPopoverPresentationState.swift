@@ -107,7 +107,10 @@ struct AgentInboxPopoverPresentationState: Equatable {
         isPopoverShown: Bool,
         dismissedBySameGesture: Bool
     ) -> Resolution {
-        guard !isPopoverShown, !isClosing, !dismissedBySameGesture else {
+        guard !isPopoverShown, !isClosing, !dismissedBySameGesture,
+              !(hasUnservedRouterRequest && bindingIsPresented) else {
+            // This click is newer than any reopen queued during the animation.
+            hasUnservedRouterRequest = false
             return Resolution(
                 effect: .close,
                 bindingIsPresented: bindingIsPresented ? false : nil

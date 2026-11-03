@@ -201,17 +201,23 @@ final class AgentInboxPopoverToggleRelay {
 }
 
 @MainActor
-private struct AgentInboxPopoverAnchor: NSViewRepresentable {
+struct AgentInboxPopoverAnchor: NSViewRepresentable {
     @Binding var isPresented: Bool
     let registry: ProjectRegistry
     let explicitOpenProjectWindow: ((URL) -> Void)?
     let toggleRelay: AgentInboxPopoverToggleRelay?
+    var onSuccessfulNavigation: @MainActor () -> Void = {}
+    var makePopover: AgentInboxPopoverCoordinator.PopoverFactory =
+        AgentInboxPopoverCoordinator.makeSystemPopover
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeCoordinator() -> AgentInboxPopoverCoordinator {
-        AgentInboxPopoverCoordinator(router: .shared)
+        AgentInboxPopoverCoordinator(
+            router: .shared, makePopover: makePopover,
+            onSuccessfulNavigation: onSuccessfulNavigation
+        )
     }
 
     func makeNSView(context: Context) -> AgentInboxPopoverAnchorView {
@@ -256,6 +262,7 @@ private struct AgentInboxPopoverModifier: ViewModifier {
     let registry: ProjectRegistry
     let openProjectWindow: ((URL) -> Void)?
     let toggleRelay: AgentInboxPopoverToggleRelay?
+    let onSuccessfulNavigation: @MainActor () -> Void
 
     func body(content: Content) -> some View {
         content.background {
@@ -263,7 +270,8 @@ private struct AgentInboxPopoverModifier: ViewModifier {
                 isPresented: $isPresented,
                 registry: registry,
                 explicitOpenProjectWindow: openProjectWindow,
-                toggleRelay: toggleRelay
+                toggleRelay: toggleRelay,
+                onSuccessfulNavigation: onSuccessfulNavigation
             )
         }
     }
@@ -274,13 +282,15 @@ extension View {
         isPresented: Binding<Bool>,
         registry: ProjectRegistry,
         openProjectWindow: ((URL) -> Void)? = nil,
-        toggleRelay: AgentInboxPopoverToggleRelay? = nil
+        toggleRelay: AgentInboxPopoverToggleRelay? = nil,
+        onSuccessfulNavigation: @escaping @MainActor () -> Void = {}
     ) -> some View {
         modifier(AgentInboxPopoverModifier(
             isPresented: isPresented,
             registry: registry,
             openProjectWindow: openProjectWindow,
-            toggleRelay: toggleRelay
+            toggleRelay: toggleRelay,
+            onSuccessfulNavigation: onSuccessfulNavigation
         ))
     }
 }

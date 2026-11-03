@@ -12,6 +12,9 @@ nonisolated private final class BlockingInboxProcessRunner: @unchecked Sendable 
     private let condition = NSCondition()
     private var didEnter = false
     private var isReleased = false
+    private var inspectionCount = 0
+
+    var calls: Int { condition.withLock { inspectionCount } }
 
     var hasEntered: Bool {
         condition.withLock { didEnter }
@@ -19,10 +22,15 @@ nonisolated private final class BlockingInboxProcessRunner: @unchecked Sendable 
 
     func run() -> ProcessRunResult {
         condition.lock()
-        didEnter = true
-        condition.broadcast()
-        while !isReleased {
-            condition.wait()
+        inspectionCount += 1
+        // The first probe is the non-admitting preflight. Block the second,
+        // post-presentation probe so this test still exercises the live lease.
+        if inspectionCount > 1 {
+            didEnter = true
+            condition.broadcast()
+            while !isReleased {
+                condition.wait()
+            }
         }
         condition.unlock()
         return ProcessRunResult(
@@ -1230,8 +1238,9 @@ struct AgentInboxTests {
         }
         try #require(
             await waitUntilMainActor { blocker.hasEntered },
-            "vendor resume must reach its canonicalization blocker"
+            "vendor resume must reach its post-presentation version probe"
         )
+        #expect(blocker.calls == 2, "A successful preflight must not replace the late inspection")
 
         projectRegistry.closeProjectWindow(
             canonical,

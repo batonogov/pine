@@ -10,6 +10,7 @@ import SwiftUI
 // MARK: - Main ContentView (composition root)
 
 struct ContentView: View {
+    var onInboxSuccessfulNavigation: @MainActor () -> Void = {}
     @Environment(ProjectManager.self) var projectManager
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TerminalManager.self) var terminal
@@ -171,7 +172,8 @@ struct ContentView: View {
                 .agentInboxPopover(
                     isPresented: $isAgentInboxPresented,
                     registry: registry,
-                    toggleRelay: agentInboxToggleRelay
+                    toggleRelay: agentInboxToggleRelay,
+                    onSuccessfulNavigation: onInboxSuccessfulNavigation
                 )
             }
         }

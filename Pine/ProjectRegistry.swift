@@ -160,8 +160,11 @@ nonisolated private final class StablePathDescriptor: @unchecked Sendable {
     }
 
     init?(url: URL, kind: UInt16) {
-        let flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW
-            | (kind == S_IFDIR ? O_DIRECTORY : 0)
+        // Traversal and fstat need search permission, not directory listing.
+        // Requesting read access also rejects sandbox-granted descendants when
+        // an ancestor is searchable but its contents are private.
+        let flags = O_CLOEXEC | O_NOFOLLOW
+            | (kind == S_IFDIR ? O_SEARCH : O_RDONLY)
         let descriptor = Darwin.open(url.path, flags)
         guard descriptor >= 0 else { return nil }
         var information = stat()
@@ -191,8 +194,8 @@ nonisolated private final class StablePathDescriptor: @unchecked Sendable {
         url: URL,
         kind: UInt16
     ) {
-        let flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW
-            | (kind == S_IFDIR ? O_DIRECTORY : 0)
+        let flags = O_CLOEXEC | O_NOFOLLOW
+            | (kind == S_IFDIR ? O_SEARCH : O_RDONLY)
         let descriptor = entryName.withCString {
             Darwin.openat(parent.descriptor, $0, flags)
         }
@@ -1448,6 +1451,40 @@ final class ProjectRegistry: LSPSettingsObserver {
         )
     }
 
+    /// Reads only persisted recent scopes for Inbox, without creating managers,
+    /// windows, terminals, or editor services. The same descriptor-backed proof
+    /// as an explicit Recent open must survive both metadata I/O and suspension.
+    func loadRecentAgentTasksForInbox() async {
+        let generation = recentAgentTaskRecordsGeneration
+        let records = recentProjects.compactMap { root in
+            recentAgentTaskProjectsByRoot[root].map { (root, $0) }
+        }
+
+        for (root, record) in records {
+            guard !Task.isCancelled, !isProjectAdmissionFrozenForTermination,
+                  recentAgentTaskRecordsGeneration == generation else { return }
+            let lease = await Task.detached(priority: .utility) {
+                RecentAgentTaskFilesystemValidator.validationLease(
+                    for: record.identity, expectedProof: record.repositoryProof
+                )
+            }.value
+            guard let lease else { continue }
+            await agentTasks.loadMetadataForInbox(record.identity) { [weak self] in
+                guard let self else { return false }
+                await self.agentTaskFilesystemValidationCommitSeam()
+                let valid = await Task.detached(priority: .utility) {
+                    lease.revalidate()
+                }.value
+
+                return !Task.isCancelled && valid
+                    && !self.isProjectAdmissionFrozenForTermination
+                    && self.recentAgentTaskRecordsGeneration == generation
+                    && self.recentProjects.contains(root)
+                    && self.recentAgentTaskProjectsByRoot[root] == record
+            }
+        }
+    }
+
     /// Non-admitting lookup for SwiftUI scene roots that may outlive their
     /// native window. A stale hidden `ProjectWindowView` must never recreate a
     /// manager after bounded reclamation.
@@ -2670,6 +2707,25 @@ final class ProjectRegistry: LSPSettingsObserver {
         // project manager from durable path metadata.
         guard initialTask.route.surface == .projectWindow else {
             return .launchRejected
+        }
+        // An unavailable vendor resume must fail inside the current Inbox, not
+        // raise a project window that dismisses its transient error surface.
+        // Keep the inspection below too: this preflight grants no launch
+        // authority across the asynchronous presentation boundary.
+        if action == .resumeVendorSession {
+            let preflight = await agentRecoveryInspector.inspect(
+                task: initialTask, action: action
+            )
+            guard !Task.isCancelled,
+                  agentTasks.task(for: taskID) == initialTask else {
+                return .changedWhilePreparing
+            }
+            guard case .ready = preflight else {
+                if case .unavailable(let reason) = preflight {
+                    return .unavailable(reason)
+                }
+                return .launchRejected
+            }
         }
         let rawURL = URL(
             fileURLWithPath: initialTask.project.canonicalWorktreePath,
