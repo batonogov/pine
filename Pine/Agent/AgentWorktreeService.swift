@@ -107,11 +107,15 @@ nonisolated enum AgentWorktreeCreateFailure: Error, Sendable, Equatable {
 nonisolated enum AgentWorktreeCreateResult: Sendable, Equatable {
     case created(AgentManagedWorktree)
     case failed(AgentWorktreeCreateFailure)
+    /// Git may have created data before validation failed. Keep an actionable
+    /// identity; never silently abandon it or retry creation over it.
+    case retained(AgentManagedWorktree, AgentWorktreeCreateFailure)
 }
 
 nonisolated struct AgentWorktreeRemovalInspection: Sendable, Equatable {
     let worktree: AgentManagedWorktree
     let dirtyPaths: [String]
+    let initializedSubmodules: [String]
     /// The managed root and the record's path shape validated, but the
     /// worktree directory itself is gone — the state `git worktree list`
     /// reports as `prunable` (#1603). There is no working tree left to
@@ -121,14 +125,18 @@ nonisolated struct AgentWorktreeRemovalInspection: Sendable, Equatable {
     init(
         worktree: AgentManagedWorktree,
         dirtyPaths: [String],
-        directoryMissing: Bool = false
+        directoryMissing: Bool = false,
+        initializedSubmodules: [String] = []
     ) {
         self.worktree = worktree
         self.dirtyPaths = dirtyPaths
         self.directoryMissing = directoryMissing
+        self.initializedSubmodules = initializedSubmodules
     }
 
-    var requiresDestructiveConfirmation: Bool { !dirtyPaths.isEmpty }
+    var requiresDestructiveConfirmation: Bool {
+        !dirtyPaths.isEmpty || !initializedSubmodules.isEmpty
+    }
 }
 
 /// Exact, short-lived user intent. Presentation must show both `worktreeRoot`
@@ -137,6 +145,7 @@ nonisolated struct AgentWorktreeRemovalInspection: Sendable, Equatable {
 nonisolated struct AgentWorktreeRemovalConfirmation: Sendable, Equatable {
     let worktreeRoot: URL
     let dirtyPaths: [String]
+    let initializedSubmodules: [String]
     let acknowledgesUnrecoverableDataLoss: Bool
     /// Set only when the alert disclosed a *missing* directory (#1603): the
     /// consent is for pruning git's registration, and the service fails
@@ -147,17 +156,20 @@ nonisolated struct AgentWorktreeRemovalConfirmation: Sendable, Equatable {
         worktreeRoot: URL,
         dirtyPaths: [String],
         acknowledgesUnrecoverableDataLoss: Bool,
-        expectsMissingDirectory: Bool = false
+        expectsMissingDirectory: Bool = false,
+        initializedSubmodules: [String] = []
     ) {
         self.worktreeRoot = worktreeRoot
         self.dirtyPaths = dirtyPaths
         self.acknowledgesUnrecoverableDataLoss = acknowledgesUnrecoverableDataLoss
         self.expectsMissingDirectory = expectsMissingDirectory
+        self.initializedSubmodules = initializedSubmodules
     }
 }
 
 nonisolated enum AgentWorktreeRemovalFailure: Error, Sendable, Equatable {
     case unsafeWorktree
+    case liveProject
     case inspectionFailed
     case confirmationRequired(AgentWorktreeRemovalInspection)
     case confirmationMismatch
@@ -309,20 +321,36 @@ actor AgentWorktreeService {
             "worktree", "add", "--no-track", "-b", request.branchName,
             "--", destination.path, baseCommit,
         ], repository)
+        // Capture a recoverable record even if Git returned an ambiguous result.
+        let retained = AgentManagedWorktree(
+            taskID: request.taskID, repositoryRoot: repository,
+            managedRoot: managedRoot, worktreeRoot: destination,
+            branchName: request.branchName, baseCommit: baseCommit,
+            repositoryProof: RecentAgentTaskFilesystemValidator.repositoryProof(
+                for: AgentTaskProjectIdentity(
+                    canonicalProjectPath: repository.path,
+                    canonicalWorktreePath: destination.path
+                )
+            )
+        )
         if result.timedOut || result.cancelled {
-            return .failed(.creationInterrupted(destination))
+            return Self.isAbsentFileSystemEntry(destination.path)
+                ? .failed(.creationInterrupted(destination))
+                : .retained(retained, .creationInterrupted(destination))
         }
         guard result.completedSuccessfully else {
-            return .failed(.gitRejected(diagnostic(result)))
+            return Self.isAbsentFileSystemEntry(destination.path)
+                ? .failed(.gitRejected(diagnostic(result)))
+                : .retained(retained, .gitRejected(diagnostic(result)))
         }
         guard let createdRoot = await canonicalRepository(destination),
               createdRoot == destination.resolvingSymlinksInPath()
                 .standardizedFileURL else {
-            return .failed(.createdWorktreeInvalid(destination))
+            return .retained(retained, .createdWorktreeInvalid(destination))
         }
         guard let after = await primarySnapshot(repository),
               before == after else {
-            return .failed(.primaryCheckoutChanged(destination))
+            return .retained(retained, .primaryCheckoutChanged(destination))
         }
 
         let identity = AgentTaskProjectIdentity(
@@ -335,7 +363,7 @@ actor AgentWorktreeService {
                 ), finalRepositoryProof.identifiesSameRepository(
                     as: initialRepositoryProof
                 ) else {
-            return .failed(.createdWorktreeInvalid(destination))
+            return .retained(retained, .createdWorktreeInvalid(destination))
         }
         return .created(AgentManagedWorktree(
             taskID: request.taskID,
@@ -556,9 +584,24 @@ actor AgentWorktreeService {
         guard result.succeeded else {
             return .failure(.inspectionFailed)
         }
+        // Status alone cannot detect clean initialized submodules, and Git
+        // requires double force to delete them. Enumerate recursively, NUL-
+        // delimited, independently of the dirty-path display limit.
+        let modules = await runner.run([
+            "submodule", "foreach", "--quiet", "--recursive",
+            "printf '%s\\0' \"$displaypath\"",
+        ], worktree.worktreeRoot)
+        guard modules.succeeded,
+              modules.output.isEmpty || modules.output.hasSuffix("\0"),
+              modules.output.split(separator: "\0").allSatisfy({
+                  Self.isGitRelativePath(String($0))
+              }) else {
+            return .failure(.inspectionFailed)
+        }
         return .success(AgentWorktreeRemovalInspection(
             worktree: worktree,
-            dirtyPaths: Self.dirtyPaths(result.output)
+            dirtyPaths: Self.dirtyPaths(result.output),
+            initializedSubmodules: Self.canonicalNULPaths(modules.output)
         ))
     }
 
@@ -585,7 +628,8 @@ actor AgentWorktreeService {
             guard confirmation.expectsMissingDirectory,
                   confirmation.worktreeRoot.standardizedFileURL
                     == worktree.worktreeRoot.standardizedFileURL,
-                  confirmation.dirtyPaths.isEmpty else {
+                  confirmation.dirtyPaths.isEmpty,
+                  confirmation.initializedSubmodules.isEmpty else {
                 return .failed(.confirmationMismatch)
             }
             // There is no working tree left to be dirty; `--force` is what
@@ -599,10 +643,14 @@ actor AgentWorktreeService {
                   !confirmation.expectsMissingDirectory,
                   confirmation.worktreeRoot.standardizedFileURL
                     == worktree.worktreeRoot.standardizedFileURL,
-                  confirmation.dirtyPaths == inspection.dirtyPaths else {
+                  confirmation.dirtyPaths == inspection.dirtyPaths,
+                  confirmation.initializedSubmodules == inspection.initializedSubmodules else {
                 return .failed(.confirmationMismatch)
             }
             arguments.append("--force")
+            if !inspection.initializedSubmodules.isEmpty {
+                arguments.append("--force")
+            }
         } else if confirmation != nil {
             return .failed(.confirmationMismatch)
         }
@@ -813,8 +861,11 @@ actor AgentWorktreeService {
         ], repository)
         guard result.succeeded,
               let commit = singleLine(result.output),
-              commit.count == 40,
-              commit.allSatisfy({ $0.isHexDigit }) else { return nil }
+              [40, 64].contains(commit.utf8.count),
+              commit.utf8.allSatisfy({
+                  (48...57).contains($0) || (65...70).contains($0)
+                      || (97...102).contains($0)
+              }) else { return nil }
         return commit.lowercased()
     }
 

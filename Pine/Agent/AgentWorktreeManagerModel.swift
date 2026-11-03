@@ -12,6 +12,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 /// What ``AgentWorktreeManagerModel`` needs from the git-facing service.
 ///
@@ -78,6 +79,8 @@ nonisolated struct AgentWorktreeRemovalPrompt: Identifiable, Equatable,
     Sendable {
     let worktree: AgentManagedWorktree
     let dirtyPaths: [String]
+    let initializedSubmodules: [String]
+    let confirmationID = UUID()
     /// The inspection found the directory already deleted (#1603): the alert
     /// offers to prune git's registration instead of deleting a tree.
     let directoryMissing: Bool
@@ -85,15 +88,19 @@ nonisolated struct AgentWorktreeRemovalPrompt: Identifiable, Equatable,
     init(
         worktree: AgentManagedWorktree,
         dirtyPaths: [String],
-        directoryMissing: Bool = false
+        directoryMissing: Bool = false,
+        initializedSubmodules: [String] = []
     ) {
         self.worktree = worktree
         self.dirtyPaths = dirtyPaths
         self.directoryMissing = directoryMissing
+        self.initializedSubmodules = initializedSubmodules
     }
 
     var id: URL { worktree.worktreeRoot }
-    var destroysUncommittedWork: Bool { !dirtyPaths.isEmpty }
+    var destroysUncommittedWork: Bool {
+        !dirtyPaths.isEmpty || !initializedSubmodules.isEmpty
+    }
 }
 
 /// Outcome banner shown under the list.
@@ -131,6 +138,11 @@ final class AgentWorktreeManagerModel {
     @ObservationIgnored
     private let onRemoved: (AgentManagedWorktree) async -> Void
     @ObservationIgnored private var refreshGeneration = 0
+    @ObservationIgnored private var pendingRemovalID: UUID?
+    @ObservationIgnored private var pendingIntegrationID: UUID?
+    @ObservationIgnored private let removeWorktree: @MainActor (
+        AgentManagedWorktree, AgentWorktreeRemovalConfirmation?
+    ) async -> AgentWorktreeRemovalResult
 
     /// Injected suspension inside ``refresh(_:)``, between the git inspection
     /// and the generation re-read that decides whether to apply it. No-op in
@@ -147,10 +159,16 @@ final class AgentWorktreeManagerModel {
 
     init(
         service: any AgentWorktreeManaging,
-        onRemoved: @escaping (AgentManagedWorktree) async -> Void = { _ in }
+        onRemoved: @escaping (AgentManagedWorktree) async -> Void = { _ in },
+        removeWorktree: (@MainActor (
+            AgentManagedWorktree, AgentWorktreeRemovalConfirmation?
+        ) async -> AgentWorktreeRemovalResult)? = nil
     ) {
         self.service = service
         self.onRemoved = onRemoved
+        self.removeWorktree = removeWorktree ?? { worktree, confirmation in
+            await service.remove(worktree, confirmation: confirmation)
+        }
     }
 
     // MARK: - Listing
@@ -213,8 +231,10 @@ final class AgentWorktreeManagerModel {
             removalPrompt = AgentWorktreeRemovalPrompt(
                 worktree: worktree,
                 dirtyPaths: inspection.dirtyPaths,
-                directoryMissing: inspection.directoryMissing
+                directoryMissing: inspection.directoryMissing,
+                initializedSubmodules: inspection.initializedSubmodules
             )
+            pendingRemovalID = removalPrompt?.confirmationID
         case .failure(let failure):
             message = .failure(Self.describe(removalFailure: failure))
         }
@@ -222,6 +242,21 @@ final class AgentWorktreeManagerModel {
 
     func cancelRemoval() {
         removalPrompt = nil
+        pendingRemovalID = nil
+    }
+
+    // SwiftUI lowers this binding automatically when an alert button fires.
+    // Hide the alert, but do not revoke the operation captured by that button.
+    var removalBinding: Binding<Bool> {
+        Binding(get: { self.removalPrompt != nil }, set: { shown in
+            if !shown { self.removalPrompt = nil }
+        })
+    }
+
+    var integrationBinding: Binding<Bool> {
+        Binding(get: { self.integrationPreview != nil }, set: { shown in
+            if !shown { self.integrationPreview = nil }
+        })
     }
 
     /// Answers the raised prompt affirmatively.
@@ -233,8 +268,11 @@ final class AgentWorktreeManagerModel {
     /// "yes, delete my changes" from being replayed against a different tree.
     /// A missing directory (#1603) consents to the prune instead: the value
     /// pins "the directory was gone" so the service refuses if one reappeared.
-    func confirmRemoval() async {
-        guard !isBusy, let prompt = removalPrompt else { return }
+    func confirmRemoval(_ capturedPrompt: AgentWorktreeRemovalPrompt? = nil) async {
+        guard !isBusy, let prompt = capturedPrompt ?? removalPrompt,
+              pendingRemovalID == prompt.confirmationID else { return }
+        pendingRemovalID = nil
+        removalPrompt = nil
         isBusy = true
         defer { isBusy = false }
 
@@ -250,16 +288,14 @@ final class AgentWorktreeManagerModel {
             confirmation = AgentWorktreeRemovalConfirmation(
                 worktreeRoot: prompt.worktree.worktreeRoot,
                 dirtyPaths: prompt.dirtyPaths,
-                acknowledgesUnrecoverableDataLoss: true
+                acknowledgesUnrecoverableDataLoss: true,
+                initializedSubmodules: prompt.initializedSubmodules
             )
         } else {
             confirmation = nil
         }
 
-        switch await service.remove(
-            prompt.worktree,
-            confirmation: confirmation
-        ) {
+        switch await removeWorktree(prompt.worktree, confirmation) {
         case .removed:
             removalPrompt = nil
             rows.removeAll { $0.id == prompt.worktree.worktreeRoot }
@@ -275,8 +311,10 @@ final class AgentWorktreeManagerModel {
             removalPrompt = AgentWorktreeRemovalPrompt(
                 worktree: prompt.worktree,
                 dirtyPaths: inspection.dirtyPaths,
-                directoryMissing: inspection.directoryMissing
+                directoryMissing: inspection.directoryMissing,
+                initializedSubmodules: inspection.initializedSubmodules
             )
+            pendingRemovalID = removalPrompt?.confirmationID
         case .failed(let failure):
             removalPrompt = nil
             message = .failure(Self.describe(removalFailure: failure))
@@ -298,6 +336,7 @@ final class AgentWorktreeManagerModel {
         ) {
         case .ready(let preview):
             integrationPreview = preview
+            pendingIntegrationID = preview.id
         case .failed(let failure):
             message = .failure(Self.describe(previewFailure: failure))
         }
@@ -305,6 +344,7 @@ final class AgentWorktreeManagerModel {
 
     func cancelIntegration() {
         integrationPreview = nil
+        pendingIntegrationID = nil
     }
 
     /// Whether the raised preview can be merged. A preview with conflicts is
@@ -318,10 +358,13 @@ final class AgentWorktreeManagerModel {
 
     /// Merges the previewed commit into the project's checkout, staged and
     /// uncommitted. Pine deliberately does not commit or push.
-    func confirmIntegration() async {
+    func confirmIntegration(_ capturedPreview: AgentWorktreeIntegrationPreview? = nil) async {
         guard !isBusy,
-              let preview = integrationPreview,
+              let preview = capturedPreview ?? integrationPreview,
+              pendingIntegrationID == preview.id,
               !preview.hasConflicts else { return }
+        pendingIntegrationID = nil
+        integrationPreview = nil
         isBusy = true
         defer { isBusy = false }
 
@@ -350,6 +393,10 @@ final class AgentWorktreeManagerModel {
         message = nil
     }
 
+    func reportLiveWorktree() {
+        message = .failure(Self.describe(removalFailure: .liveProject))
+    }
+
     // MARK: - Presentation
 
     /// Body of the removal alert. Names the directory that is deleted and,
@@ -368,12 +415,15 @@ final class AgentWorktreeManagerModel {
                 locale: locale
             )
         }
-        guard prompt.destroysUncommittedWork else {
+        let submodules = prompt.initializedSubmodules.isEmpty ? "" : "\n\n"
+            + Strings.agentWorktreesSubmoduleRemovalText(locale: locale)
+            + "\n" + prompt.initializedSubmodules.map { "• \($0)" }.joined(separator: "\n")
+        guard !prompt.dirtyPaths.isEmpty else {
             return Strings.agentWorktreesRemoveCleanText(
                 prompt.worktree.worktreeRoot.path,
                 prompt.worktree.branchName,
                 locale: locale
-            )
+            ) + submodules
         }
         let shown = prompt.dirtyPaths.prefix(disclosedDirtyPathLimit)
         var listing = shown.map { "• \($0)" }.joined(separator: "\n")
@@ -388,7 +438,7 @@ final class AgentWorktreeManagerModel {
             prompt.worktree.worktreeRoot.path,
             listing,
             locale: locale
-        )
+        ) + submodules
     }
 
     /// Body of the integration alert. Discloses the source commit, the branch
@@ -453,6 +503,8 @@ final class AgentWorktreeManagerModel {
         locale: Locale = .current
     ) -> String {
         switch removalFailure {
+        case .liveProject:
+            return Strings.agentWorktreesLiveProjectText(locale: locale)
         case .unsafeWorktree:
             return Strings.agentWorktreesUnsafeText(locale: locale)
         case .inspectionFailed:

@@ -39,8 +39,31 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     private var terminationRequested = false
     private var terminationFinished = false
     private var terminationSucceeded = true
+    let workingDirectoryRetention: TerminalWorkingDirectoryRetention
+    #if DEBUG
+    private var cleanupForTesting: (@Sendable () -> Bool)?
 
-    init?(rootProcessID: pid_t) {
+    /// Pauses/completes the same asynchronous completion path without a PTY.
+    init(
+        retention: TerminalWorkingDirectoryRetention,
+        cleanupForTesting: @escaping @Sendable () -> Bool
+    ) {
+        rootIdentity = UserTaskProcessIdentity(
+            processID: 0, startSeconds: 0, startMicroseconds: 0
+        )
+        processGroupIdentifier = nil
+        processGroup = nil
+        descendantTracker = UserTaskDescendantTracker(rootProcessID: 0)
+        stateQueue = DispatchQueue(label: "com.pine.terminal-process-tree.test")
+        workingDirectoryRetention = retention
+        self.cleanupForTesting = cleanupForTesting
+    }
+    #endif
+
+    init?(
+        rootProcessID: pid_t,
+        retention: TerminalWorkingDirectoryRetention
+    ) {
         guard let rootIdentity = UserTaskProcessInspector.identity(
             for: rootProcessID
         ) else {
@@ -48,6 +71,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         }
 
         self.rootIdentity = rootIdentity
+        workingDirectoryRetention = retention
         // `forkpty` makes its child a session and process-group leader. Never
         // claim a broader inherited group if a future SwiftTerm path changes
         // that invariant; individual descendant identities remain safe.
@@ -91,6 +115,12 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         guard shouldStart else { return }
 
         stateQueue.async { [self] in
+            #if DEBUG
+            if let cleanupForTesting {
+                finishTermination(succeeded: cleanupForTesting())
+                return
+            }
+            #endif
             captureTimer?.cancel()
             captureTimer = nil
             captureOwnedProcesses()
@@ -102,16 +132,11 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
             )
             let descendantsStopped = descendantTracker
                 .terminateTrackedProcesses()
-            reapRootAfterTerminationRequest()
+            let rootStopped = reapRootAfterTerminationRequest()
             let groupStopped = processGroup?
                 .waitForRequestedTermination() ?? true
-            let succeeded = descendantsStopped && groupStopped
-
-            lock.withLock {
-                terminationSucceeded = succeeded
-                terminationFinished = true
-            }
-            terminationCompletion.leave()
+            let succeeded = rootStopped && descendantsStopped && groupStopped
+            finishTermination(succeeded: succeeded)
 
             guard !succeeded else { return }
             Logger.terminal.error(
@@ -149,6 +174,17 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         return lock.withLock { terminationSucceeded }
     }
 
+    private func finishTermination(succeeded: Bool) {
+        // Publish the deletion-fence release before waking background waiters.
+        // Deferred/failed cleanup has no positive quiescence witness.
+        workingDirectoryRetention.finishCleanup(succeeded: succeeded)
+        lock.withLock {
+            terminationSucceeded = succeeded
+            terminationFinished = true
+        }
+        terminationCompletion.leave()
+    }
+
     private func captureOwnedProcesses() {
         processGroup?.captureKnownMembers()
         descendantTracker.captureDescendants()
@@ -158,7 +194,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     /// the monitor can call `waitpid`, so Pine becomes responsible for reaping
     /// that exact direct child. `waitpid` cannot target an unrelated reused
     /// PID: after the owned child is reaped it returns `ECHILD` instead.
-    private func reapRootAfterTerminationRequest() {
+    private func reapRootAfterTerminationRequest() -> Bool {
         let deadline = DispatchTime.now() + Self.completionWaitPeriod
         var status: Int32 = 0
         repeat {
@@ -169,10 +205,11 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
             )
             if result == rootIdentity.processID
                 || (result == -1 && errno == ECHILD) {
-                return
+                return true
             }
             Darwin.usleep(10_000)
         } while DispatchTime.now() < deadline
+        return false
     }
 
     deinit {

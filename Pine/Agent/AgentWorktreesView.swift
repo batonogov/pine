@@ -90,7 +90,8 @@ struct AgentWorktreesView: View {
                     : Strings.agentWorktreesRemoveConfirm,
                 role: .destructive
             ) {
-                Task { @MainActor in await model?.confirmRemoval() }
+                guard let model else { return }
+                Task { @MainActor in await model.confirmRemoval(prompt) }
             }
             .accessibilityIdentifier(
                 AccessibilityID.agentWorktreesConfirmRemove
@@ -112,13 +113,14 @@ struct AgentWorktreesView: View {
             Strings.agentWorktreesIntegrateTitle,
             isPresented: integrationBinding,
             presenting: model?.integrationPreview
-        ) { _ in
+        ) { preview in
             Button(Strings.dialogCancel, role: .cancel) {
                 model?.cancelIntegration()
             }
             if model?.canConfirmIntegration == true {
                 Button(Strings.agentWorktreesIntegrateConfirm) {
-                    Task { @MainActor in await model?.confirmIntegration() }
+                    guard let model else { return }
+                    Task { @MainActor in await model.confirmIntegration(preview) }
                 }
                 .accessibilityIdentifier(
                     AccessibilityID.agentWorktreesConfirmIntegrate
@@ -221,6 +223,20 @@ struct AgentWorktreesView: View {
             }
 
             Spacer()
+
+            if session.managedWorktrees[presentation.id] != nil,
+               registry.projectManagerIfAdmitted(for: presentation.id) != nil {
+                Button(Strings.agentWorktreesCloseIdleProject) {
+                    guard let worktree = worktree(for: presentation.id) else { return }
+                    Task { @MainActor in
+                        if !(await session.closeIdleWorktree(worktree, registry: registry)) {
+                            model?.reportLiveWorktree()
+                        }
+                    }
+                }
+                .controlSize(.small)
+                .disabled(model?.isBusy == true)
+            }
 
             Button {
                 guard let worktree = worktree(for: presentation.id) else {
@@ -369,25 +385,20 @@ struct AgentWorktreesView: View {
             service: session.agentWorktreeManager,
             onRemoved: { [session, registry] worktree in
                 await session.forgetWorktree(worktree, registry: registry)
+            },
+            removeWorktree: { [session, registry] worktree, confirmation in
+                await session.removeWorktree(
+                    worktree, confirmation: confirmation, registry: registry
+                )
             }
         )
     }
 
     private var removalBinding: Binding<Bool> {
-        Binding(
-            get: { model?.removalPrompt != nil },
-            set: { isShown in
-                if !isShown { model?.cancelRemoval() }
-            }
-        )
+        model?.removalBinding ?? .constant(false)
     }
 
     private var integrationBinding: Binding<Bool> {
-        Binding(
-            get: { model?.integrationPreview != nil },
-            set: { isShown in
-                if !isShown { model?.cancelIntegration() }
-            }
-        )
+        model?.integrationBinding ?? .constant(false)
     }
 }

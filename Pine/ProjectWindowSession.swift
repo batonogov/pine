@@ -315,6 +315,43 @@ final class ProjectWindowSession {
         worktreeService
     }
 
+    func removeWorktree(
+        _ worktree: AgentManagedWorktree,
+        confirmation: AgentWorktreeRemovalConfirmation?,
+        registry: ProjectRegistry
+    ) async -> AgentWorktreeRemovalResult {
+        await registry.withWorktreeRemoval(worktree) {
+            await worktreeService.remove(worktree, confirmation: confirmation)
+        }
+    }
+
+    /// Explicit user action: detach only an idle managed checkout, keeping its
+    /// record for subsequent removal. Live work is never stopped or discarded.
+    func closeIdleWorktree(
+        _ worktree: AgentManagedWorktree,
+        registry: ProjectRegistry
+    ) async -> Bool {
+        let root = worktree.worktreeRoot.standardizedFileURL
+        guard !isLaunchingAgent, managedWorktrees[root] != nil else { return false }
+        if let manager = registry.projectManagerIfAdmitted(for: root),
+           manager.requiresBackgroundRetention { return false }
+        if activeProjectURL == root {
+            await activate(worktree.repositoryRoot.standardizedFileURL, registry: registry)
+            guard activeProjectURL != root else { return false }
+        }
+        // Activation suspends the old owner; recheck liveness after that await
+        // in the registry's synchronous, no-user-work reclamation boundary.
+        releaseBackgroundLease(for: root, registry: registry)
+        return registry.releaseIdleWorktreeProject(root)
+    }
+
+    /// Preserve an actionable record before any admission attempt. A refused
+    /// admission must not strand the checkout outside the manager's inventory.
+    func retainWorktreeForRecovery(_ worktree: AgentManagedWorktree) {
+        managedWorktrees[worktree.worktreeRoot.standardizedFileURL] = worktree
+        saveState()
+    }
+
     /// Drops a worktree the user removed from disk. Not a destructive call —
     /// by the time this runs `git worktree remove` has already succeeded, and
     /// this is the in-memory record catching up.
@@ -752,6 +789,12 @@ final class ProjectWindowSession {
             branchName: branch,
             startPoint: "HEAD"
         ))
+        if case .retained(let worktree, _) = result {
+            retainWorktreeForRecovery(worktree)
+            alertMessage = Strings.agentWorktreesRetainedCreationText()
+                + "\n" + worktree.worktreeRoot.path
+            return
+        }
         guard case .created(let worktree) = result else {
             Logger.agent.error(
                 "Worktree creation failed: \(Self.worktreeFailureDescription(result), privacy: .public)"
@@ -764,6 +807,7 @@ final class ProjectWindowSession {
         Logger.agent.debug(
             "Worktree created at \(worktree.worktreeRoot.path, privacy: .public)"
         )
+        retainWorktreeForRecovery(worktree)
         guard let manager = await registry.projectManager(for: worktree) else {
             Logger.agent.error(
                 "Registry refused to admit fresh worktree \(worktree.worktreeRoot.path, privacy: .public)"
