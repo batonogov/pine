@@ -657,14 +657,13 @@ jobs:
               -only-testing:PineUITests/SessionRestoreTests
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
               -only-testing:PineUITests/AgentMenuBarCommandsUITests
-          # Shard 2 — Welcome & Session (37 tests)
+          # Shard 2 — Welcome & Session (36 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
-              -only-testing:PineUITests/CheckForUpdatesTests
           # Shard 3 — Navigation (35 tests; accessibility matrix skips here)
           - shard-name: "Navigation"
             test-classes: >-
@@ -682,7 +681,7 @@ jobs:
               -only-testing:PineUITests/SplitPaneRoutingUITests
               -only-testing:PineUITests/BlameViewTests
               -only-testing:PineUITests/ToggleCommentTests
-          # Shard 5 — Files & Save (34 tests, release smoke skips outside release CI)
+          # Shard 5 — Files & Save (37 tests, release smoke skips outside release CI)
           - shard-name: "Files & Save"
             test-classes: >-
               -only-testing:PineUITests/EditorSaveFlowTests
@@ -692,6 +691,7 @@ jobs:
               -only-testing:PineUITests/UserTaskExecutionUITests
               -only-testing:PineUITests/UnsavedChangesUITests
               -only-testing:PineUITests/ReleaseArtifactSmokeTests
+              -only-testing:PineUITests/CheckForUpdatesTests
           # Shard 6 — Search & Panes (37 tests)
           - shard-name: "Search & Panes"
             test-classes: >-

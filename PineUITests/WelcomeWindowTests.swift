@@ -10,6 +10,8 @@ import XCTest
 final class WelcomeWindowTests: PineUITestCase {
 
     private var projectURLs: [URL] = []
+    private var restoredRecoveryRowIdentifier: String?
+    private var recoveryProjectName: String?
 
     override func tearDownWithError() throws {
         for url in projectURLs { cleanupProject(url) }
@@ -97,17 +99,27 @@ final class WelcomeWindowTests: PineUITestCase {
             .firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(welcome.exists)
         XCTAssertTrue(resume.exists)
+        XCTAssertTrue(recoveryRow.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["agentInbox"].firstMatch.exists)
+        let projectName = try XCTUnwrap(recoveryProjectName)
+        XCTAssertFalse(app.windows[projectName].exists)
         XCTAssertFalse(app.buttons["terminalTab_Terminal 1"].exists)
     }
 
     private func launchWelcomeWithRecovery(vendor: Bool) throws {
         let url = try createTempProject(files: ["release.md": "# Release\n"])
         projectURLs.append(url)
+        recoveryProjectName = url.lastPathComponent
         app.launchArguments.append("--ui-test-agent-recovery")
         if vendor { app.launchArguments.append("--ui-test-agent-vendor-recovery") }
         launchWithProject(url)
+        XCTAssertTrue(app.windows[url.lastPathComponent].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.scrollViews["sidebar"].firstMatch.waitForExistence(timeout: 10))
         openAgentInbox()
         XCTAssertTrue(recoveryRow.waitForExistence(timeout: 8))
+        let identifier = recoveryRow.identifier
+        XCTAssertTrue(identifier.hasPrefix("agentInboxRow_"))
+        restoredRecoveryRowIdentifier = identifier
         app.terminate()
         app.launchEnvironment.removeValue(forKey: "PINE_OPEN_PROJECT")
         launchClean()
@@ -284,7 +296,16 @@ final class WelcomeWindowTests: PineUITestCase {
     }
 
     private var recoveryRow: XCUIElement {
-        app.buttons.matching(
+        if let restoredRecoveryRowIdentifier {
+            return app.buttons[restoredRecoveryRowIdentifier].firstMatch
+        }
+        if let recoveryProjectName {
+            return app.buttons.matching(NSPredicate(
+                format: "label CONTAINS 'Recovery fixture' AND label CONTAINS %@",
+                recoveryProjectName
+            )).firstMatch
+        }
+        return app.buttons.matching(
             NSPredicate(format: "label CONTAINS 'Recovery fixture'")
         ).firstMatch
     }

@@ -948,7 +948,10 @@ struct AgentInboxPopoverCoordinatorTests {
                 return popover
             },
             currentEvent: { [weak self] in self?.stubbedEvent },
-            now: { [weak self] in self?.uptime ?? 0 }
+            now: { [weak self] in self?.uptime ?? 0 },
+            // Fake popovers must not observe key windows left by other suites.
+            windows: { [weak self] in self.map { [$0.window] } ?? [] },
+            keyWindow: { nil }
         )
 
         /// A mouse event as AppKit reports it while the transient-dismissal

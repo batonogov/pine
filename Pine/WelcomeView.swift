@@ -248,6 +248,9 @@ struct WelcomeView: View {
                     .allowsHitTesting(false)
             }
         }
+        .task(id: registry.recentProjects) {
+            await registry.loadRecentAgentTasksForInbox()
+        }
         .task {
             // Open pending project from PINE_OPEN_PROJECT env var.
             guard let url = appDelegate?.pendingProjectURL else { return }

@@ -292,6 +292,29 @@ struct AgentInboxFocusReturnTests {
         #expect(!fixture.resolvedWindows.isEmpty)
     }
 
+    @Test("a different key window at deferred close is a real newer focus choice")
+    func differentKeyWindowPreventsRestoration() async throws {
+        let fixture = try Fixture()
+        let other = NSWindow(contentRect: .zero, styleMask: [.titled],
+                             backing: .buffered, defer: false)
+        defer { fixture.cleanup(); other.orderOut(nil) }
+        fixture.mount()
+        fixture.coordinator.presentAgentInbox()
+        let popover = try #require(fixture.popovers.last)
+        fixture.dismissFromAppKit(popover)
+        fixture.keyWindow = other
+        await fixture.settle()
+        #expect(fixture.focusHost.returnedResponders.isEmpty)
+
+        // A fake popover has no AppKit key window of its own. With no newer
+        // choice in the simulated environment the next dismissal must restore.
+        fixture.keyWindow = nil
+        fixture.coordinator.presentAgentInbox()
+        fixture.dismissFromAppKit(try #require(fixture.popovers.last))
+        await fixture.settle()
+        #expect(fixture.focusHost.returnedResponders.count == 1)
+    }
+
     // MARK: - Fixture
 
     @MainActor
@@ -300,6 +323,7 @@ struct AgentInboxFocusReturnTests {
         let registry: ProjectRegistry
         let focusHost = FakeFocusHost()
         var isApplicationActive = true
+        var keyWindow: NSWindow?
         private(set) var popovers: [FakePopover] = []
         private(set) var contexts: [AgentInboxPopoverCoordinator.Context] = []
         /// The order AppKit-visible work happened in, which is the only way to
@@ -333,7 +357,10 @@ struct AgentInboxFocusReturnTests {
             },
             isApplicationActive: { [weak self] in
                 self?.isApplicationActive ?? true
-            }
+            },
+            currentEvent: { nil },
+            windows: { [weak self] in self.map { [$0.window] } ?? [] },
+            keyWindow: { [weak self] in self?.keyWindow }
         )
 
         init() throws {
