@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.12.2](https://github.com/batonogov/pine/compare/v2.12.1...v2.12.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* **agent:** clean up failed adapter starts before releasing authority ([#1711](https://github.com/batonogov/pine/issues/1711)) ([9181061](https://github.com/batonogov/pine/commit/9181061edc4348fc6c7d304f04cf03a3e74c0964))
+* **agent:** fence notification retries and authorization races ([#1708](https://github.com/batonogov/pine/issues/1708)) ([14763ec](https://github.com/batonogov/pine/commit/14763ecba706eba56a1a125cbd9397051eed3898))
+* **agent:** preserve future provenance payload identities across compaction ([#1713](https://github.com/batonogov/pine/issues/1713)) ([524bea5](https://github.com/batonogov/pine/commit/524bea5e104f6c03087fcb41b10c42c45279f926))
+* **agent:** preserve Inbox window ownership and focus intent ([#1710](https://github.com/batonogov/pine/issues/1710)) ([c07acda](https://github.com/batonogov/pine/commit/c07acda053bc2b59c8c2187f0cf6609e9b885f60))
+* **agent:** protect worktree lifecycle ownership and confirmation paths ([#1714](https://github.com/batonogov/pine/issues/1714)) ([6294a44](https://github.com/batonogov/pine/commit/6294a444c2598e7a60646431e3f9582144df0ce8))
+* **agent:** retain Activity lifecycle and repeated content changes ([#1712](https://github.com/batonogov/pine/issues/1712)) ([db6d644](https://github.com/batonogov/pine/commit/db6d6446788ea36723cfc81d00b3d60767829742))
+* **agent:** secure history persistence and preserve committed undo recovery ([#1709](https://github.com/batonogov/pine/issues/1709)) ([4cc12f3](https://github.com/batonogov/pine/commit/4cc12f37757d810b1ea65f3ae98c5fa987b1d7e6))
+
 ## [2.12.1](https://github.com/batonogov/pine/compare/v2.12.0...v2.12.1) (2026-11-02)
 
 
