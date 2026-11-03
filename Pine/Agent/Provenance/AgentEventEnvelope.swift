@@ -231,11 +231,20 @@ nonisolated enum AgentEventPayload: Codable, Sendable, Equatable {
     /// An exact file change, identified by content hashes — never content.
     case fileChange(AgentFileChange)
 
+    /// Preserved for identity only, never interpreted as trusted evidence.
+    case unknown(AgentEventJSON)
+
+    var isKnown: Bool {
+        if case .unknown = self { return false }
+        return true
+    }
+
     private enum CodingKeys: String, CodingKey {
         case kind, commandResult, fileChange
     }
 
-    private init(fromKnown container: KeyedDecodingContainer<Self.CodingKeys>) throws {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try container.decode(String.self, forKey: .kind)
         switch kind {
         case "none":
@@ -245,20 +254,17 @@ nonisolated enum AgentEventPayload: Codable, Sendable, Equatable {
         case "fileChange":
             self = .fileChange(try container.decode(AgentFileChange.self, forKey: .fileChange))
         default:
-            // Unknown payload kinds are preserved as `.none` rather than
-            // throwing: a future Pine may record payload kinds this build
-            // cannot interpret, and the provenance (identity/trust/source)
-            // remains useful without the payload.
-            self = .none
+            self = .unknown(try AgentEventJSON(from: decoder))
         }
     }
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        try self.init(fromKnown: container)
-    }
-
     func encode(to encoder: Encoder) throws {
+        if case .unknown(let value) = self {
+            // In-memory unknown values cannot alias a known kind on restart.
+            guard value.isFuturePayload else { throw AgentEventJSON.Failure.invalidJSON }
+            try value.encode(to: encoder)
+            return
+        }
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .none:
@@ -269,6 +275,8 @@ nonisolated enum AgentEventPayload: Codable, Sendable, Equatable {
         case .fileChange(let change):
             try container.encode("fileChange", forKey: .kind)
             try container.encode(change, forKey: .fileChange)
+        case .unknown:
+            break // Handled before creating the keyed container.
         }
     }
 }
@@ -419,6 +427,9 @@ nonisolated struct AgentEventEnvelope: Codable, Identifiable, Sendable, Equatabl
                 forKey: .payload
             ) ?? .none
             payloadIsValid = true
+        } catch let failure as AgentEventJSON.Failure {
+            // Unsupported exact numbers must not silently become `.none`.
+            throw failure
         } catch {
             payload = .none
             payloadIsValid = false

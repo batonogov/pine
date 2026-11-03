@@ -164,6 +164,9 @@ nonisolated enum AgentEventStorageFailure: String, Error, Codable, Sendable, Equ
     case compact
     case quarantine
     case storageLimit
+    /// Valid JSON outside this version's lossless payload representation.
+    /// Opening fails without rewriting or quarantining the journal.
+    case unsupportedPayload
 }
 
 /// Why an otherwise structured envelope was refused.
@@ -620,6 +623,8 @@ nonisolated enum AgentEventEnvelopeNormalizer {
         switch payload {
         case .none:
             return true
+        case .unknown(let value):
+            return value.isFuturePayload // Identity only, not typed authority.
         case .commandResult(let result):
             return !result.command.utf8.contains(0)
                 && result.command.utf8.count <= limits.maxCommandBytes

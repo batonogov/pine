@@ -54,6 +54,28 @@ struct VerifiedPatchIngressTests {
         }
     }
 
+    @Test("Future payloads never become trusted presence-only evidence")
+    func futurePayloadCannotAuthorizePatch() throws {
+        let valid = record(envelopeID: id(99), cursor: 1, journalSequence: 1, changes: [])
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(valid.envelope)
+        let text = try #require(String(data: data, encoding: .utf8)).replacingOccurrences(
+            of: #""payload":{"kind":"none"}"#,
+            with: #""payload":{"kind":"future","fileChange":{"relativePath":"file.txt"}}"#
+        )
+        let future = try AgentEventJSON.decode(AgentEventEnvelope.self, from: Data(text.utf8))
+        // Preserve the source's declared provenance for digest identity, without
+        // allowing an unfamiliar payload through the trusted ingress boundary.
+        #expect(future.trustLevel == .verified)
+        let untrusted = VerifiedPatchUntrustedEventRecord(
+            envelope: future, durableIdentity: valid.durableIdentity,
+            mediatedWriterReceipt: valid.mediatedWriterReceipt, transitions: valid.transitions
+        )
+        #expect(throws: VerifiedPatchValidationError.unverifiedEnvelope(future.id)) {
+            try receipt([untrusted])
+        }
+    }
+
     @Test("Authenticated external-write evidence is audit-only")
     func externalWriteCannotAuthorizePatch() {
         let external = record(

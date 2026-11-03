@@ -60,7 +60,8 @@ nonisolated enum VerifiedPatchIngressCoordinator {
                 )
             }
             guard envelope.source == .explicitAgentEvent,
-                  envelope.trustLevel == .verified else {
+                  envelope.trustLevel == .verified,
+                  envelope.payload.isKnown else {
                 throw VerifiedPatchValidationError.unverifiedEnvelope(
                     envelope.id
                 )
@@ -333,6 +334,8 @@ nonisolated enum VerifiedPatchIngressCoordinator {
         var result = 0
         let strings: [String]
         switch envelope.payload {
+        case .unknown:
+            return nil
         case .none:
             strings = [
                 envelope.agentTypeRaw,
@@ -2016,8 +2019,9 @@ nonisolated enum VerifiedPatchEngine {
     private static func preparedMetadataByteCount(
         _ envelope: AgentEventEnvelope
     ) -> Int? {
+        guard envelope.payload.isKnown else { return nil }
         let strings: [String] = switch envelope.payload {
-        case .none:
+        case .none, .unknown:
             [
                 envelope.agentTypeRaw,
                 envelope.location.worktreePath,
