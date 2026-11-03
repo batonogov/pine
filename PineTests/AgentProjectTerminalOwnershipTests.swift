@@ -12,7 +12,7 @@ import Testing
 @MainActor
 struct AgentProjectTerminalOwnershipTests {
     @Test("Activity candidates stay inside exact owning project terminals")
-    func activityCandidatesAreProjectScoped() throws {
+    func activityCandidatesAreProjectScoped() async throws {
         let fixtureA = try makeProjectFixture(name: "A", terminalCount: 2)
         let fixtureB = try makeProjectFixture(name: "B", terminalCount: 1)
         defer {
@@ -71,8 +71,8 @@ struct AgentProjectTerminalOwnershipTests {
         #expect(fixtureA.project.terminal.agentDetector.activeSessions.count == 1)
         #expect(fixtureB.project.terminal.agentDetector.activeSessions.count == 1)
 
-        recordNewChange("A.swift", in: fixtureA)
-        recordNewChange("B.swift", in: fixtureB)
+        try await recordNewChange("A.swift", in: fixtureA)
+        try await recordNewChange("B.swift", in: fixtureB)
 
         let actionA = try #require(fixtureA.project.agentActivity.actions.first)
         let actionB = try #require(fixtureB.project.agentActivity.actions.first)
@@ -196,7 +196,7 @@ struct AgentProjectTerminalOwnershipTests {
     }
 
     @Test("Coordinator production reconciliation attests the exact binding")
-    func coordinatorAutomaticallyAttestsBinding() throws {
+    func coordinatorAutomaticallyAttestsBinding() async throws {
         let fixture = try makeProjectFixture(name: "Coordinator", terminalCount: 1)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let tab = fixture.tabs[0]
@@ -219,7 +219,7 @@ struct AgentProjectTerminalOwnershipTests {
             fixture.project.terminal.projectOwnedActiveAgentSessions.first
                 === session
         )
-        recordNewChange("Coordinator.swift", in: fixture)
+        try await recordNewChange("Coordinator.swift", in: fixture)
         let action = try #require(fixture.project.agentActivity.actions.first)
         #expect(candidateIDs(action) == [session.id])
     }
@@ -444,6 +444,56 @@ struct AgentProjectTerminalOwnershipTests {
         )
     }
 
+    @Test("Production workspace refresh wiring records repeated edits without structural publication")
+    func contentOnlyRefreshUsesProductionWiring() async throws {
+        let root = try makeTemporaryRoot(name: "refresh")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let initialized = await GitStatusProvider.runGitAsync(["init"], at: root)
+        try #require(initialized.succeeded)
+        let file = root.appendingPathComponent("dirty.txt")
+        try Data("aaaa".utf8).write(to: file)
+        let project = ProjectManager()
+        // No watcher: drive exactly the production external-refresh entry point.
+        project.workspace.rootURL = root
+        project.terminal.configureAgentTaskProject(root)
+        try #require(!project.workspace.isSuspended)
+        let paneID = project.paneManager.createTerminalPaneAtBottom(workingDirectory: root)
+        let state = try #require(project.paneManager.terminalState(for: paneID))
+        let tab = try #require(state.terminalTabs.first)
+        let session = exactSession(type: .codex, pid: 601, generation: 1)
+        tab.agentSession = session
+        project.terminal.captureProjectAgentOwnership(of: session, in: tab)
+        let ownedSessions = project.terminal.projectOwnedActiveAgentSessions
+        try #require(ownedSessions.count == 1)
+        try #require(ownedSessions.first === session)
+        let productionHandler = try #require(project.workspace.onRefreshAccepted)
+        var accepted = 0
+        project.workspace.setOnRefreshAccepted { url in
+            productionHandler(url)
+            accepted += 1
+        }
+        project.workspace.refreshFileTreeAsync()
+        try #require(await waitUntilMainActor { accepted == 1 })
+        await project.waitForAgentActivityCorrelation()
+        #expect(project.agentActivity.actions.isEmpty)
+        #expect(project.gitProvider.fileStatuses["dirty.txt"] == .untracked)
+        let revision = project.workspace.rootNodesRevision
+        for (index, text) in ["bbbb", "cccc"].enumerated() {
+            try Data(text.utf8).write(to: file)
+            project.workspace.refreshFileTreeAsync()
+            try #require(await waitUntilMainActor { accepted == index + 2 })
+            await project.waitForAgentActivityCorrelation()
+            #expect(project.agentActivity.actions.count == index + 1)
+            #expect(project.workspace.rootNodesRevision == revision)
+        }
+        project.workspace.refreshFileTreeAsync()
+        try #require(await waitUntilMainActor { accepted == 4 })
+        await project.waitForAgentActivityCorrelation()
+        #expect(project.agentActivity.actions.count == 2)
+        #expect(project.agentActivity.actions.allSatisfy { $0.sessionID == session.id })
+        project.workspace.suspend()
+    }
+
     private func makeProjectFixture(
         name: String,
         terminalCount: Int
@@ -451,6 +501,10 @@ struct AgentProjectTerminalOwnershipTests {
         let root = try makeTemporaryRoot(name: name)
         let project = ProjectManager()
         project.loadDirectory(url: root)
+        // Manual-status fixtures must not accept a live refresh after yielding.
+        project.workspace.suspend()
+        try #require(project.workspace.isSuspended)
+        try #require(project.workspace.rootURL == root)
         let paneID = project.paneManager.createTerminalPaneAtBottom(
             workingDirectory: root
         )
@@ -507,11 +561,13 @@ struct AgentProjectTerminalOwnershipTests {
     private func recordNewChange(
         _ path: String,
         in fixture: ProjectOwnershipFixture
-    ) {
+    ) async throws {
+        try Data("seed".utf8).write(to: fixture.root.appendingPathComponent("seed.txt"))
         fixture.project.gitProvider.fileStatuses = ["seed.txt": .modified]
-        fixture.project.correlateAgentActivity(rootURL: fixture.root)
+        await fixture.project.correlateAgentActivity(rootURL: fixture.root)?.value
+        try Data("changed".utf8).write(to: fixture.root.appendingPathComponent(path))
         fixture.project.gitProvider.fileStatuses[path] = .modified
-        fixture.project.correlateAgentActivity(rootURL: fixture.root)
+        await fixture.project.correlateAgentActivity(rootURL: fixture.root)?.value
     }
 
     private func candidateIDs(_ action: AgentAction) -> Set<UUID> {

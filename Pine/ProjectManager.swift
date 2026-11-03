@@ -1857,10 +1857,9 @@ final class ProjectManager {
         workspace.setOnRootNodesChanged { [weak self] nodes in
             guard let self, let rootURL = self.workspace.rootURL else { return }
             self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)
-            // Agent activity correlation (#1072): when the file tree refreshes
-            // (typically a FileSystemWatcher event) and ≥1 agent session is
-            // active, attribute newly-modified files to the active session(s).
-            self.correlateAgentActivity(rootURL: rootURL)
+        }
+        workspace.setOnRefreshAccepted { [weak self] rootURL in
+            self?.correlateAgentActivity(rootURL: rootURL)
         }
         workspace.progressTracker = progress
         workspace.gitProvider.progressTracker = progress
@@ -2627,14 +2626,13 @@ final class ProjectManager {
 
     // MARK: - Agent activity file-system correlation (#1072)
 
-    /// Modified paths (relative to the project root) already attributed to an
-    /// agent session, so the same change isn't recorded repeatedly while the
-    /// `FileSystemWatcher` keeps firing for the same edit.
-    private var attributedModifiedPaths: Set<String> = []
-    /// Whether `attributedModifiedPaths` has been seeded with pre-existing
-    /// modifications since an agent became active. Cleared when no agent is
-    /// active, so a fresh run attributes only files changed *during* it.
-    private var agentActivitySeeded = false
+    @ObservationIgnored
+    private lazy var activityCorrelation = AgentActivityCorrelation(
+        store: agentActivity,
+        currentSessionIDs: { [weak self] in
+            Set(self?.terminal.projectOwnedActiveAgentSessions.map(\.id) ?? [])
+        }
+    )
 
     #if DEBUG
     /// Seeds deterministic rows only when an explicit UI-test launch argument
@@ -2782,9 +2780,9 @@ final class ProjectManager {
     /// file — so the changed set is read from `gitProvider.fileStatuses`.
     ///
     /// Conservative heuristic: ignored when no agent is active; the first
-    /// refresh after an agent appears seeds the seen-set with whatever was
-    /// already changed (so pre-existing changes aren't misattributed), and
-    /// only subsequently-changed files are recorded. With several live
+    /// accepted refresh for each exact session set seeds content fingerprints
+    /// (so pre-existing changes aren't misattributed), and only subsequent
+    /// content changes are recorded, even on already-dirty files. With several live
     /// sessions the action retains every candidate as ambiguous and selects
     /// no owner (see `AgentActivityStore`).
     ///
@@ -2792,32 +2790,20 @@ final class ProjectManager {
     /// routinely create brand-new files (` .untracked`), `git add` files
     /// (`.staged`), and modify already-staged files (`.mixed`); dropping any
     /// of those would make the panel miss the most common agent action.
-    func correlateAgentActivity(rootURL: URL) {
-        let active = terminal.projectOwnedActiveAgentSessions
-        guard !active.isEmpty else {
-            attributedModifiedPaths = []
-            agentActivitySeeded = false
-            return
-        }
-        let changed = gitProvider.fileStatuses
-            .filter { Self.isAttributableStatus($0.value) }
-            .map(\.key)
-        if !agentActivitySeeded {
-            // Seed: treat currently-changed files as pre-existing.
-            attributedModifiedPaths = Set(changed)
-            agentActivitySeeded = true
-            return
-        }
-        // Prune paths no longer changed (e.g. an agent reverted a file) so a
-        // later re-modification is recorded instead of silently dropped.
-        attributedModifiedPaths.formIntersection(changed)
-        for path in changed where !attributedModifiedPaths.contains(path) {
-            attributedModifiedPaths.insert(path)
-            agentActivity.noteFileSystemChange(
-                at: rootURL.appendingPathComponent(path),
-                activeSessions: active
-            )
-        }
+    @discardableResult
+    func correlateAgentActivity(rootURL: URL) -> Task<Void, Never>? {
+        activityCorrelation.submit(
+            rootURL: rootURL,
+            paths: gitProvider.fileStatuses
+                .filter { Self.isAttributableStatus($0.value) }
+                .map(\.key),
+            sessions: terminal.projectOwnedActiveAgentSessions
+        )
+    }
+
+    /// Lets integration tests await fingerprint work started by a real refresh.
+    func waitForAgentActivityCorrelation() async {
+        await activityCorrelation.waitUntilIdle()
     }
 
     /// `true` for working-tree states that represent a change an agent could
