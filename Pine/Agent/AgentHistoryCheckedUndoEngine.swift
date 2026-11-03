@@ -93,6 +93,59 @@ nonisolated private struct AgentHistoryRollbackSummary: Sendable {
 /// never touching `@MainActor` state itself.
 nonisolated enum AgentHistoryCheckedUndoEngine {
 
+    /// Once authority is consumed, preserve the applied inverse even if a
+    /// recovery marker cannot be written. Discovery exposes the prepared or
+    /// corrupt backup for manual review; it never claims a completed rollback.
+    private static func retainedCommittedInverse(
+        changeSet: VerifiedAgentChangeSet,
+        mutations: [AgentHistorySafeMutation],
+        workspace: AgentHistorySafeWorkspace,
+        context: AgentHistoryCheckedUndoContext,
+        payload: AgentHistoryValidatedInversePayload
+    ) -> AgentHistoryCheckedUndoResult {
+        let backup = context.backup
+        let root = context.root
+        let retainedPaths = absoluteRecoveryPaths(
+            retainedRecoveryRelativePaths(mutations: mutations, workspace: workspace),
+            root: root
+        )
+        let metadataSucceeded = writeRetainedQuarantineMetadata(retainedPaths, backup: backup)
+        let inverseVerified = metadataSucceeded && backup.isDurablyLinked()
+            && context.privateStore.loadAuthority(recordID: context.manifest.recordID)?.consumed == true
+            && workspace.isStillBoundToCanonicalPath()
+            && workspaceGitStateMatches(root: root, manifest: context.manifest)
+            && changeSet.changes.allSatisfy { change in
+                guard let entry = payload[change.relativePath] else { return false }
+                return inverseStateMatches(change: change, entry: entry, workspace: workspace)
+            }
+            && mutations.allSatisfy { mutation in
+                if mutation.kind != .removed, !workspace.matchesInstalledState(mutation) { return false }
+                guard mutation.quarantineName != nil else { return true }
+                guard let path = workspace.retainedQuarantinePath(for: mutation),
+                      let snapshot = try? workspace.snapshot(
+                        relativePath: path, expectedByteCount: mutation.quarantinedByteCount
+                      ),
+                      let data = snapshot.data else { return false }
+                return snapshot.device == mutation.quarantinedDevice
+                    && snapshot.inode == mutation.quarantinedInode
+                    && snapshot.permissions == mutation.quarantinedPermissions
+                    && AgentHistoryContentHash.sha256Hex(data) == mutation.quarantinedContentSHA256
+            }
+        return AgentHistoryCheckedUndoResult(
+            allSucceeded: inverseVerified,
+            outcomes: changeSet.changes.map {
+                AgentHistoryFileUndoOutcome(
+                    relativePath: $0.relativePath,
+                    succeeded: inverseVerified,
+                    message: "inverse retained; authority finalization needs review; backup: \(backup.path)"
+                )
+            },
+            blockedReason: inverseVerified ? nil : .applyFailed(path: changeSet.changes.last?.relativePath ?? ""),
+            recoveryBackupPath: backup.path,
+            recoveryQuarantinePaths: retainedPaths
+        )
+    }
+
     // MARK: - Canonical projection digest
 
     /// Recomputes the canonical projection digest of a verified change set,
@@ -391,8 +444,8 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
                 }
             }
 
-            // Consumption is part of the transaction. If it cannot be
-            // confirmed durable, restore every path and report failure.
+            // Successful consumption is the commit point. Rollback is legal
+            // only while the private authority is confirmed unconsumed.
             guard workspace.isStillBoundToCanonicalPath(),
                   workspaceGitStateMatches(root: root, manifest: manifest) else {
                 throw AgentHistoryCheckedUndoError.workspaceChanged
@@ -400,6 +453,16 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
             do {
                 try privateStore.markConsumed(recordID: manifest.recordID)
             } catch {
+                // A rename may have installed consumed=true before a later
+                // fsync/verification failed. Never undo the inverse unless the
+                // authority is still positively known to be reusable.
+                let consumed = privateStore.loadAuthority(recordID: manifest.recordID)?.consumed
+                guard consumed == false else {
+                    return retainedCommittedInverse(
+                        changeSet: changeSet, mutations: mutations, workspace: workspace,
+                        context: context, payload: validatedPayload
+                    )
+                }
                 let rollbackSummary = rollback(
                     mutations: mutations,
                     workspace: workspace,
@@ -435,10 +498,19 @@ nonisolated enum AgentHistoryCheckedUndoEngine {
             // this marker before deleting any quarantine inode so a restart
             // can distinguish a prepared transaction from one that crossed
             // the irreversible authority boundary.
-            try backup.markPhase(
-                .authorityConsumed,
-                transactionID: transactionID
-            )
+            do {
+                try backup.markPhase(
+                    .authorityConsumed,
+                    transactionID: transactionID
+                )
+            } catch {
+                // The marker is recovery metadata, not permission to roll back
+                // an already-consumed authority. Keep all recovery inodes.
+                return retainedCommittedInverse(
+                    changeSet: changeSet, mutations: mutations, workspace: workspace,
+                    context: context, payload: validatedPayload
+                )
+            }
 
             var cleanupSucceeded = true
             var retainedQuarantines: [String] = []
