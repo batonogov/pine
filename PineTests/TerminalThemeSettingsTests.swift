@@ -352,10 +352,18 @@ struct TerminalThemeSettingsTests {
             workingDirectory: nil,
             initialProcess: inertProcess
         )
+        // This fixture seeds a tab without presenting the Quick Terminal
+        // window, so it must establish the standalone scope normally committed
+        // by the controller before its lazy process-start admission.
+        let directory = URL(fileURLWithPath: projectTab.resolveWorkingDirectory(), isDirectory: true)
+        let admission = try await makeTerminalSettingsAdmission(
+            defaults: fixture.defaults, directory: directory
+        )
         let quickTab = quickController.paneState.addTab(
-            workingDirectory: nil,
+            workingDirectory: directory,
             initialProcess: inertProcess
         )
+        quickTab.configureWorkingDirectoryValidation(admission)
         defer {
             projectTab.stop()
             quickTab.stop()
@@ -374,6 +382,11 @@ struct TerminalThemeSettingsTests {
 
         projectTab.startIfNeeded()
         quickTab.startIfNeeded()
+        // Admission canonicalizes and revalidates off-main. Capture identities
+        // only after both real PTYs exist, not while validation is queued.
+        try #require(await waitUntilMainActor {
+            projectTab.isProcessRunning && quickTab.isProcessRunning
+        })
         let projectProcess = try #require(projectView.process)
         let quickProcess = try #require(quickView.process)
         let projectPID = projectProcess.shellPid
@@ -441,6 +454,21 @@ struct TerminalThemeSettingsTests {
             quickView.visibleRowsText(0..<1).first?
                 .contains("quick-cursor-sentinel") == true
         )
+
+        // Reusing the scope for an unadmitted directory must still refuse a
+        // launch; this windowless fixture must not become an admission bypass.
+        let refusedTab = quickController.paneState.addTab(
+            workingDirectory: directory.appendingPathComponent("unadmitted-\(UUID())"),
+            initialProcess: inertProcess
+        )
+        defer { refusedTab.stop() }
+        refusedTab.configureWorkingDirectoryValidation(admission)
+        refusedTab.startIfNeeded()
+        try #require(await waitUntilMainActor { refusedTab.processStartAdmissionRefused })
+        #expect(!refusedTab.isProcessRunning)
+        #expect(refusedTab.terminalView.process.shellPid == 0)
+        #expect(refusedTab.terminalView.process.childfd == -1)
+        #expect(!refusedTab.requiresWorkingDirectoryRetention)
     }
 
     @Test("Theme repaints preserve application-issued DECSCUSR styles")
@@ -1528,6 +1556,42 @@ private extension QuickTerminalHotkeyCaptureDecision {
     var acceptedHotkey: (keyCode: UInt32, modifiers: UInt32)? {
         guard case let .accept(keyCode, modifiers) = self else { return nil }
         return (keyCode, modifiers)
+    }
+}
+
+/// The cursor fixture has no panel/scope-resolution lifecycle. Use the same
+/// standalone registration, commit and lazy-launch lease checks without UI.
+@MainActor
+private func makeTerminalSettingsAdmission(
+    defaults: UserDefaults,
+    directory: URL
+) async throws -> @Sendable (URL) async -> Bool {
+    let registry = ProjectRegistry(
+        defaults: defaults,
+        agentTasks: AgentTaskRegistry(persistence: TerminalSettingsAgentTaskStore())
+    )
+    let scope = try #require(await registry.resolveQuickTerminalAgentScope(
+        workingDirectory: directory, surface: .quickTerminalStandalone
+    ))
+    try #require(await registry.commitQuickTerminalAgentScope(
+        scope, workingDirectory: directory, requestedSurface: .quickTerminalStandalone
+    ))
+    return { directory in
+        await registry.validateQuickTerminalAgentScope(scope, workingDirectory: directory)
+    }
+}
+
+private actor TerminalSettingsAgentTaskStore: AgentTaskPersisting {
+    func load(project: AgentTaskProjectIdentity) async -> AgentTaskMetadataLoadResult {
+        AgentTaskMetadataLoadResult(status: .missing, tasks: [])
+    }
+
+    func save(
+        tasks: [AgentTask],
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult {
+        .saved(taskCount: tasks.count)
     }
 }
 
