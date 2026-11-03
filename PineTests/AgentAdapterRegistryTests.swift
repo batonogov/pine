@@ -1368,6 +1368,8 @@ struct AgentAdapterRegistryTests {
         await #expect(throws: AdapterSessionError.launchFailed(.transient)) {
             try await failedStart.start()
         }
+        // Failed start only reopens checkpoint authority after confirmed cleanup.
+        await failedStart.stop(deadline: .now.advanced(by: .seconds(5)))
         let resumed = try await registry.makeSession(
             contract: contract,
             resumeFrom: checkpoint
