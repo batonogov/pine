@@ -258,6 +258,8 @@ final class AgentNotificationController {
     @ObservationIgnored
     private var deferredEvents: [String: AgentNotificationEvent] = [:]
     @ObservationIgnored
+    private var provisionalEventIDs: Set<String> = []
+    @ObservationIgnored
     private let notificationCenter: NotificationCenter
     @ObservationIgnored
     private let retrySleep: (Duration) async throws -> Void
@@ -427,6 +429,13 @@ final class AgentNotificationController {
             case .notDetermined:
                 deferEvent(event, task: task)
             case .denied:
+                if authorizationPending {
+                    // The cached denial may predate a grant in System Settings.
+                    // Wait for the authoritative read, but never replay these
+                    // events if that read confirms the denial.
+                    deferEvent(event, task: task, discardIfDenied: true)
+                    continue
+                }
                 // Deliberate drop, not defer: events resolved while denied
                 // are discarded so a later re-grant cannot replay arbitrarily
                 // old history. Only events already in flight when revocation
@@ -470,16 +479,22 @@ final class AgentNotificationController {
         deliveryTasks[event.id] = PendingDelivery(event: event, token: token, task: operation)
     }
 
-    private func deferEvent(_ event: AgentNotificationEvent, task: AgentTask) {
+    private func deferEvent(
+        _ event: AgentNotificationEvent, task: AgentTask, discardIfDenied: Bool = false
+    ) {
         guard deferredEvents[event.id] == nil else { return }
         guard currentTask(for: event) != nil else { return }
         deferredEvents[event.id] = event
+        if discardIfDenied { provisionalEventIDs.insert(event.id) }
         deferredEventOrder.append(event.id)
         if deferredEventOrder.count > 512 {
             let discardCount = deferredEventOrder.count - 384
             let discarded = Array(deferredEventOrder.prefix(discardCount))
             deferredEventOrder.removeFirst(discardCount)
-            discarded.forEach { deferredEvents[$0] = nil }
+            discarded.forEach {
+                deferredEvents[$0] = nil
+                provisionalEventIDs.remove($0)
+            }
         }
     }
 
@@ -515,9 +530,15 @@ final class AgentNotificationController {
     private func clearDeferredEvents() {
         deferredEventOrder.removeAll()
         deferredEvents.removeAll()
+        provisionalEventIDs.removeAll()
     }
 
     private func finishAuthorizationSettlement() {
+        if authorizationStatus == .denied {
+            for id in provisionalEventIDs { deferredEvents[id] = nil }
+            deferredEventOrder.removeAll { deferredEvents[$0] == nil }
+        }
+        provisionalEventIDs.removeAll()
         authorizationPending = false
         let waiters = authorizationWaiters
         authorizationWaiters.removeAll()
@@ -553,6 +574,7 @@ final class AgentNotificationController {
         }
         for (id, previous) in deferredEvents where isOlder(previous) {
             deferredEvents[id] = nil
+            provisionalEventIDs.remove(id)
         }
         deferredEventOrder.removeAll { deferredEvents[$0] == nil }
         for (id, pending) in deliveryTasks where isOlder(pending.event) {

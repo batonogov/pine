@@ -50,6 +50,60 @@ struct AgentNotificationRaceTests {
         #expect(fixture.settings.deliveredEventIDs.isEmpty)
     }
 
+    @Test(arguments: [true, false])
+    func eventDuringAuthorizationRecoveryUsesFreshStatus(_ granted: Bool) async {
+        let fixture = NotificationRaceFixture()
+        defer { fixture.close() }
+        await fixture.ready()
+        await fixture.refresh(.denied)
+        let refresh = Task { await fixture.controller.refreshAuthorizationStatus() }
+        #expect(await waitUntilMainActor { fixture.delivery.statusIDs.contains(3) })
+        fixture.waiting(offset: 1)
+        fixture.delivery.finishStatus(3, granted ? .authorized : .denied)
+        await refresh.value
+        if granted {
+            #expect(await waitUntilMainActor { fixture.delivery.statusIDs.contains(4) })
+            fixture.delivery.finishStatus(4, .authorized)
+            #expect(await waitUntilMainActor { fixture.settings.deliveredEventIDs.count == 1 })
+            #expect(fixture.delivery.attempts == 1)
+        } else {
+            await fixture.activate()
+            #expect(fixture.delivery.attempts == 0)
+            #expect(fixture.settings.deliveredEventIDs.isEmpty)
+        }
+    }
+
+    @Test func deniedRefreshDiscardsOnlyProvisionalEvents() async {
+        let fixture = NotificationRaceFixture()
+        defer { fixture.close() }
+        await fixture.ready()
+        fixture.waiting(offset: 1)
+        #expect(await waitUntilMainActor { fixture.delivery.statusIDs.contains(2) })
+        fixture.delivery.finishStatus(2, .denied)
+        #expect(await waitUntilMainActor { fixture.controller.authorizationStatus == .denied })
+        await fixture.settle()
+
+        let other = NotificationRaceFixture.makeTask()
+        fixture.registry.setTasksForTesting([fixture.current, other])
+        let refresh = Task { await fixture.controller.refreshAuthorizationStatus() }
+        #expect(await waitUntilMainActor { fixture.delivery.statusIDs.contains(3) })
+        var waiting = other
+        waiting.runs[0].state = .waitingInput
+        waiting.runs[0].lastObservedAt.addTimeInterval(1)
+        fixture.registry.setTasksForTesting([fixture.current, waiting])
+        fixture.delivery.finishStatus(3, .denied)
+        await refresh.value
+
+        await fixture.activate()
+        #expect(await waitUntilMainActor { fixture.delivery.statusIDs.contains(5) })
+        fixture.delivery.finishStatus(5, .authorized)
+        #expect(await waitUntilMainActor { fixture.settings.deliveredEventIDs.count == 1 })
+        #expect(fixture.delivery.attempts == 2)
+        #expect(fixture.delivery.requests.allSatisfy {
+            $0.userInfo["taskID"] == fixture.current.id.uuidString
+        })
+    }
+
     @Test func refreshResponsesAreOrdered() async {
         let fixture = NotificationRaceFixture()
         defer { fixture.close() }
