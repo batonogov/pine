@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.3](https://github.com/batonogov/pine/compare/v2.12.2...v2.12.3) (2026-11-04)
+
+
+### Bug Fixes
+
+* **agent:** preserve events during authorization recovery ([#1716](https://github.com/batonogov/pine/issues/1716)) ([6fd1759](https://github.com/batonogov/pine/commit/6fd17594f77ae11ad3c36f36c1a42b9848a720bc))
+
 ## [2.12.2](https://github.com/batonogov/pine/compare/v2.12.1...v2.12.2) (2026-11-03)
 
 
