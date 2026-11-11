@@ -7,8 +7,9 @@ import Foundation
 import SwiftTerm
 
 /// A process-generation deletion fence, independent of tab/pane lifetime.
-/// Only positive cleanup completion releases it; bounded failure (including
-/// deferred cleanup) and loss of the UI/controller reference fail closed.
+/// Only positive cleanup completion releases it; bounded failure and loss of
+/// the UI/controller reference fail closed. Application Quit can explicitly
+/// await deferred cleanup and release the fence after actual completion.
 nonisolated final class TerminalWorkingDirectoryRetention: Sendable {
     nonisolated private final class Storage: @unchecked Sendable {
         let lock = NSLock()

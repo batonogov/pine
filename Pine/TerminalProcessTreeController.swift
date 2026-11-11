@@ -35,6 +35,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     private let descendantTracker: UserTaskDescendantTracker
     private let lock = NSLock()
     private let terminationCompletion = DispatchGroup()
+    private let deferredCleanupCompletion = DispatchGroup()
     private var captureTimer: DispatchSourceTimer?
     private var terminationRequested = false
     private var terminationFinished = false
@@ -42,11 +43,13 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     let workingDirectoryRetention: TerminalWorkingDirectoryRetention
     #if DEBUG
     private var cleanupForTesting: (@Sendable () -> Bool)?
+    private var deferredCleanupForTesting: (@Sendable () -> Void)?
 
     /// Pauses/completes the same asynchronous completion path without a PTY.
     init(
         retention: TerminalWorkingDirectoryRetention,
-        cleanupForTesting: @escaping @Sendable () -> Bool
+        cleanupForTesting: @escaping @Sendable () -> Bool,
+        deferredCleanupForTesting: (@Sendable () -> Void)? = nil
     ) {
         rootIdentity = UserTaskProcessIdentity(
             processID: 0, startSeconds: 0, startMicroseconds: 0
@@ -57,6 +60,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         stateQueue = DispatchQueue(label: "com.pine.terminal-process-tree.test")
         workingDirectoryRetention = retention
         self.cleanupForTesting = cleanupForTesting
+        self.deferredCleanupForTesting = deferredCleanupForTesting
     }
     #endif
 
@@ -117,7 +121,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         stateQueue.async { [self] in
             #if DEBUG
             if let cleanupForTesting {
-                finishTermination(succeeded: cleanupForTesting())
+                finishBoundedTermination(succeeded: cleanupForTesting())
                 return
             }
             #endif
@@ -136,18 +140,10 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
             let groupStopped = processGroup?
                 .waitForRequestedTermination() ?? true
             let succeeded = rootStopped && descendantsStopped && groupStopped
-            finishTermination(succeeded: succeeded)
-
-            guard !succeeded else { return }
-            Logger.terminal.error(
-                "Terminal process-tree cleanup exceeded its bounded phase for root \(self.rootIdentity.processID)"
+            finishBoundedTermination(
+                succeeded: succeeded,
+                rootNeedsCleanup: !rootStopped
             )
-            Self.deferredCleanupQueue.async { [processGroup] in
-                processGroup?.finishDeferredCleanup()
-            }
-            Self.deferredCleanupQueue.async { [descendantTracker] in
-                descendantTracker.finishDeferredCleanup()
-            }
         }
     }
 
@@ -174,9 +170,96 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         return lock.withLock { terminationSucceeded }
     }
 
+    /// Application Quit can await the already-running deferred cleanup after
+    /// the ordinary bounded close fails. The caller supplies the outer deadline.
+    func waitForApplicationTermination(timeout: TimeInterval) -> Bool {
+        let deadline = DispatchTime.now() + max(timeout, 0)
+        guard DispatchTime.now() < deadline else { return false }
+        if waitForTermination(timeout: timeout) {
+            return DispatchTime.now() < deadline
+        }
+        let state = lock.withLock {
+            (requested: terminationRequested, finished: terminationFinished)
+        }
+        guard DispatchTime.now() < deadline,
+              state.requested, state.finished,
+              deferredCleanupCompletion.wait(timeout: deadline) == .success,
+              DispatchTime.now() < deadline
+        else { return false }
+        workingDirectoryRetention.finishCleanup(succeeded: true)
+        lock.withLock { terminationSucceeded = true }
+        return true
+    }
+
+    private func finishBoundedTermination(
+        succeeded: Bool,
+        rootNeedsCleanup: Bool = true
+    ) {
+        if !succeeded {
+            startDeferredCleanup(rootNeedsCleanup: rootNeedsCleanup)
+        }
+        finishTermination(succeeded: succeeded)
+        guard !succeeded else { return }
+        Logger.terminal.error(
+            "Terminal process-tree cleanup exceeded its bounded phase for root \(self.rootIdentity.processID)"
+        )
+    }
+
+    private func startDeferredCleanup(rootNeedsCleanup: Bool) {
+        #if DEBUG
+        if let deferredCleanupForTesting {
+            scheduleDeferredCleanup(deferredCleanupForTesting)
+            return
+        }
+        #endif
+        scheduleDeferredCleanup { [processGroup] in
+            processGroup?.finishDeferredCleanup()
+        }
+        scheduleDeferredCleanup { [descendantTracker] in
+            descendantTracker.finishDeferredCleanup()
+        }
+        if rootNeedsCleanup {
+            scheduleDeferredCleanup { [self] in
+                finishDeferredRootCleanup()
+            }
+        }
+    }
+
+    private func scheduleDeferredCleanup(
+        _ work: @escaping @Sendable () -> Void
+    ) {
+        deferredCleanupCompletion.enter()
+        Self.deferredCleanupQueue.async { [self] in
+            work()
+            deferredCleanupCompletion.leave()
+        }
+    }
+
+    private func finishDeferredRootCleanup() {
+        guard rootIdentity.processID > 1 else { return }
+        var status: Int32 = 0
+        while true {
+            let result = Darwin.waitpid(
+                rootIdentity.processID,
+                &status,
+                WNOHANG
+            )
+            if result == rootIdentity.processID
+                || (result == -1 && errno == ECHILD) {
+                return
+            }
+            if UserTaskProcessInspector.identity(
+                for: rootIdentity.processID
+            ) == rootIdentity {
+                Darwin.kill(rootIdentity.processID, SIGKILL)
+            }
+            Darwin.usleep(10_000)
+        }
+    }
+
     private func finishTermination(succeeded: Bool) {
         // Publish the deletion-fence release before waking background waiters.
-        // Deferred/failed cleanup has no positive quiescence witness.
+        // A bounded failure retains the fence until deferred cleanup completes.
         workingDirectoryRetention.finishCleanup(succeeded: succeeded)
         lock.withLock {
             terminationSucceeded = succeeded

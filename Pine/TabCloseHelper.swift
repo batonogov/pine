@@ -282,8 +282,8 @@ struct TerminalTabCloseAuthorization {
         return runningTreeWasUnowned ? nil : controllers
     }
 
-    /// Waits off-main for every exact process tree to finish its bounded
-    /// TERM-to-KILL cleanup under one absolute application-Quit deadline.
+    /// Waits off-main for every exact process tree to finish bounded and, when
+    /// needed, deferred cleanup under one absolute application-Quit deadline.
     static func waitForAuthorizedStops(
         _ controllers: [TerminalProcessTreeController],
         until deadline: DispatchTime
@@ -297,7 +297,9 @@ struct TerminalTabCloseAuthorization {
                 let remaining = Double(
                     deadline.uptimeNanoseconds - now
                 ) / 1_000_000_000
-                guard controller.waitForTermination(timeout: remaining) else {
+                guard controller.waitForApplicationTermination(
+                    timeout: remaining
+                ) else {
                     return false
                 }
             }

@@ -250,6 +250,93 @@ struct TerminalPTYProcessTreeTests {
         #expect(!harness.tab.hasAcknowledgedPTYLeaseForTesting)
     }
 
+    @Test("application Quit awaits deferred cleanup after bounded failure")
+    func applicationQuitAwaitsDeferredCleanup() async throws {
+        let retention = TerminalWorkingDirectoryRetention(
+            canonicalDirectory: FileManager.default.temporaryDirectory
+        )
+        defer { retention.finishCleanup(succeeded: true) }
+        let controller = TerminalProcessTreeController(
+            retention: retention,
+            cleanupForTesting: { false },
+            deferredCleanupForTesting: { Darwin.usleep(100_000) }
+        )
+        controller.requestTermination()
+
+        let boundedResult = await Task.detached(priority: .utility) {
+            controller.waitForTermination(timeout: 1)
+        }.value
+        #expect(!boundedResult)
+        let applicationResult = await TerminalTabCloseAuthorization
+            .waitForAuthorizedStops(
+                [controller],
+                until: .now() + 1
+            )
+
+        #expect(applicationResult)
+        #expect(controller.waitForTermination(timeout: 0))
+        #expect(!retention.isRetained)
+    }
+
+    @Test("application Quit still fails when deferred cleanup exceeds its deadline")
+    func applicationQuitHonorsDeadlineDuringDeferredCleanup() async throws {
+        let retention = TerminalWorkingDirectoryRetention(
+            canonicalDirectory: FileManager.default.temporaryDirectory
+        )
+        let releaseCleanup = DispatchSemaphore(value: 0)
+        defer {
+            releaseCleanup.signal()
+            retention.finishCleanup(succeeded: true)
+        }
+        let controller = TerminalProcessTreeController(
+            retention: retention,
+            cleanupForTesting: { false },
+            deferredCleanupForTesting: {
+                _ = releaseCleanup.wait(timeout: .now() + 5)
+            }
+        )
+        controller.requestTermination()
+
+        let applicationResult = await TerminalTabCloseAuthorization
+            .waitForAuthorizedStops(
+                [controller],
+                until: .now() + 0.05
+            )
+
+        #expect(!applicationResult)
+        #expect(retention.isRetained)
+    }
+
+    @Test("completed cleanup cannot rescue an expired application deadline")
+    func applicationQuitRejectsExpiredDeadline() async throws {
+        let retention = TerminalWorkingDirectoryRetention(
+            canonicalDirectory: FileManager.default.temporaryDirectory
+        )
+        defer { retention.finishCleanup(succeeded: true) }
+        let deferredFinished = DispatchSemaphore(value: 0)
+        let controller = TerminalProcessTreeController(
+            retention: retention,
+            cleanupForTesting: { false },
+            deferredCleanupForTesting: { deferredFinished.signal() }
+        )
+        controller.requestTermination()
+
+        let boundedResult = await Task.detached(priority: .utility) {
+            controller.waitForTermination(timeout: 1)
+        }.value
+        #expect(!boundedResult)
+        let waitForDeferred: @Sendable () -> Bool = {
+            deferredFinished.wait(timeout: .now() + 1) == .success
+        }
+        let deferredCompleted = await Task.detached(
+            priority: .utility,
+            operation: waitForDeferred
+        ).value
+        #expect(deferredCompleted)
+        #expect(!controller.waitForApplicationTermination(timeout: 0))
+        #expect(retention.isRetained)
+    }
+
     @Test("replacement records a new exact process generation")
     func processReplacementChangesOwnedGeneration() async throws {
         let harness = try TerminalPTYFixtureHarness(scenario: "tree")
