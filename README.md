@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/github/license/batonogov/pine)](https://github.com/batonogov/pine/blob/main/LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](https://github.com/batonogov/pine)
 
-> A native macOS code editor for CLI-agent workflows.
+> A native macOS code editor for CLI-agent workflows — heading toward an outcome-first Agentic Development Environment (ADE) in Pine 3.0.
 
 <p align="center">
   <img src="assets/screenshot-terminal.png" width="800" alt="Pine — code editor with a built-in terminal running the agent workflow">
@@ -34,6 +34,20 @@ Pine reflects agent activity, file changes, diagnostics, and Git context across 
 - **Resilient terminal presentation** can rebuild a stalled display without restarting the shell or losing scrollback
 
 See the [latest release](https://github.com/batonogov/pine/releases/latest) for the current changelog.
+
+## Pine 3.0: the ADE direction
+
+Pine 3.0 is heading toward an outcome-first **Agentic Development Environment (ADE)**: a workspace built around directing coding agents through durable tasks, not an editor with a chat panel attached. Where orchestration-centric tools optimize for agent throughput and visible activity, Pine optimizes for verified results and clear decisions.
+
+These capabilities are **direction, not current functionality**, until they ship:
+
+- **Durable tasks** — a task owns its goal, environment, checks, and result across navigation and relaunches
+- **Verified results** — every Ready result carries Pine-observed checks and independent-review evidence bound to the exact code and environment
+- **Attention over supervision** — the Inbox becomes an attention queue for Ready results and decisions that need you
+- **Task-owned environments** — agents manage worktrees; Pine validates and binds the environment before implementation, checks, review, or result execution
+- **Bounded parallelism** — independent same-repository tasks with validated routing and documented concurrency limits
+
+See the [Pine 3.0 product vision](docs/pine-3.0-product-vision.md) for the full direction.
 
 ## Features
 

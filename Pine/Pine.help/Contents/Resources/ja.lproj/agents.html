@@ -4,9 +4,9 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
-    <meta name="description" content="Pineのエージェント受信トレイ、非公開通知、復旧、完了概要、分離ワークツリーの使い方を説明します。" />
+    <meta name="description" content="Pineのエージェント受信トレイ、非公開通知、復旧、完了概要、分離ワークツリーの使い方を説明します。Pine 3.0のADE方向性（現在の機能ではありません）も紹介しています。" />
     <meta name="KEYWORDS" content="エージェント受信トレイ, 通知, 復旧, 完了概要, ワークツリー, エージェント検出, 履歴, プライバシー, Pine" />
-    <title>エージェント受信トレイとワークフロー — Pineヘルプ</title>
+    <title>エージェント受信トレイ、ワークフローと ADE の方向性 — Pineヘルプ</title>
     <link rel="stylesheet" type="text/css" href="../style.css" />
 </head>
 <body>
@@ -50,6 +50,10 @@
             <div class="card">
                 <h3>プライバシー</h3>
                 <p>エージェントへのコンテキスト受け渡しは任意かつ読み取り専用です。操作なしにコードやターミナル出力を送信することはありません。</p>
+            </div>
+            <div class="card">
+                <h3>Pine 3.0: ADE への方向性</h3>
+                <p>今後の方向性であり、現在の機能ではありません。Pine 3.0 は、成果を重視する Agentic Development Environment（ADE）に向かって進化します。永続タスク、Pine が観測したチェックと独立したレビュアーによる検証済み結果、Ready な結果と判断をキューイングする Inbox、タスク独自の環境での制限付き並列作業。このページの他のカードは、Pine 2.x で提供されているエージェントワークフローを説明しています。</p>
             </div>
         </div>
         <p class="tip"><strong>重要：</strong>Pineは実行中タスクの正確な世代にのみ移動し、それ以外では安全に拒否します。タスクのメタデータが復元されても、ベンダーセッションが再開されたことにはなりません。クイックターミナルはまだエージェント検出の対象外です。</p>
