@@ -36,7 +36,7 @@ Pine launches and communicates with existing CLI agents. Planning, reasoning, an
 
 ## New application icon directions
 
-A completely new identity is requested for Pine 3. No direction below is selected, and the application icon is not changed by this archive.
+A completely new identity is requested for Pine 3. The original A/B/C directions below are historical and rejected; see the maintainer selection update for the retained candidate. No final production identity is selected, and the application icon is not changed by this archive.
 
 ### A — Fold
 
@@ -56,7 +56,7 @@ Three forms on charcoal: separate work becoming a coherent result.
 
 ![Assembly icon concept](icon-c-assembly.png)
 
-A and B are promising exploration directions. C currently resembles familiar cube/block marks and needs more differentiation. All require original production geometry, similarity review, and actual small-size testing. The small examples painted into each board are illustrative, not measured Dock or 16/32/64 px exports. These are presentation boards with backgrounds, not drop-in icon assets.
+These initial directions were rejected by the maintainer. A resembles Excel, B feels heavy and its lighter variants miss the product vision, and C lacks a meaningful identity. All require original production geometry, similarity review, and actual small-size testing. The small examples painted into each board are illustrative, not measured Dock or 16/32/64 px exports. These are presentation boards with backgrounds, not drop-in icon assets.
 
 ## Generation briefs
 
@@ -72,4 +72,18 @@ Tool: built-in ImageGen. No CLI/API fallback. These concise briefs record the vi
 - Aperture: an indigo rounded architectural opening, pale blue interior, and one warm peach light plane.
 - Assembly: three broad interlocking pearl, teal, and burnt-orange forms on charcoal with clear central negative space.
 
-All seven PNGs are preserved as generated, without raster edits. The selected brand direction should be rebuilt as editable production artwork rather than promoting a presentation-board crop into the app.
+All PNGs are preserved as generated, without raster edits. The selected brand direction should be rebuilt as editable production artwork rather than promoting a presentation-board crop into the app.
+
+## Maintainer selection update
+
+The original A/B/C directions are historical, rejected exploration: A resembles Excel, B is too heavy (lighter doorway/glass variants also miss the vision), and C lacks a meaningful identity. They are not shortlisted.
+
+### Candidate 1 — Intent taking form
+
+The maintainer explicitly requested preserving this candidate for further exploration. A warm coral gesture resolves into a shaped object; the maintainer also sees a torch and a snake. Preserve the energy and fluidity while evaluating those associations. This is approval to retain a candidate, not final production-icon selection.
+
+![Candidate 1: intent taking form](icon-01-intent-taking-form.png)
+
+Generation brief (built-in ImageGen): one original macOS icon, a broad fluid gesture becoming a precise crafted form, warm vermilion/coral with amber inner light on porcelain, restrained dimensionality, strong silhouette. No text, tree, robot, terminal glyph, doorway, or generic AI sparkle. The resulting shape is exploratory.
+
+Target: three maintainer-approved candidates in #1736. Show further concepts individually and add them only after explicit approval.
