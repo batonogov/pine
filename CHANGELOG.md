@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.4](https://github.com/batonogov/pine/compare/v2.12.3...v2.12.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **terminal:** await deferred cleanup during Quit ([#1731](https://github.com/batonogov/pine/issues/1731)) ([23ac0c2](https://github.com/batonogov/pine/commit/23ac0c2b10a279aef4224208fd3a206b520a1853))
+
 ## [2.12.3](https://github.com/batonogov/pine/compare/v2.12.2...v2.12.3) (2026-11-04)
 
 
