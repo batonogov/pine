@@ -55,6 +55,109 @@ struct AgentDetectorTests {
         }
     }
 
+    @Test func detectsNewAgentsFromExactPathAndWrapperForms() {
+        let agents: [(AgentType, [String])] = [
+            (.antigravity, ["agy", "/opt/homebrew/bin/agy -p --output-format json"]),
+            (.droid, ["droid", "node /opt/homebrew/bin/droid", "/opt/homebrew/bin/droid exec -o json"]),
+            (.cline, ["cline", "node /usr/local/bin/cline --json", "/opt/homebrew/bin/cline --acp"]),
+            (.grokBuild, ["grok", "/opt/homebrew/bin/grok -p --output-format json"]),
+            (.kiloCode, [
+                "kilo",
+                "kilocode",
+                "bun /opt/homebrew/bin/kilo run --auto",
+                "/opt/homebrew/bin/kilo acp",
+            ]),
+        ]
+        for (expected, commands) in agents {
+            for command in commands {
+                let detector = AgentDetector()
+                detector.processSnapshotDidUpdate([DetectedProcess(pid: 160, command: command)])
+                #expect(detector.detectedSessions.count == 1)
+                #expect(detector.detectedSessions.first?.agentType == expected)
+                #expect(detector.detectedSessions.first?.state == .idle)
+                // Process observation only: detection never claims a prompt,
+                // success, or approval from terminal text.
+                #expect(detector.detectedSessions.first?.lifecycleAccuracy == .processTerminationOnly)
+            }
+        }
+    }
+
+    @Test func detectsNewAgentTerminationOnNextSnapshot() {
+        for command in [
+            "agy", "droid", "node /opt/homebrew/bin/droid",
+            "cline", "grok", "kilo", "kilocode",
+        ] {
+            let detector = AgentDetector()
+            detector.processSnapshotDidUpdate([DetectedProcess(pid: 161, command: command)])
+            #expect(detector.detectedSessions.count == 1)
+            #expect(detector.activeCount == 1)
+            // A successful snapshot without the pid is authoritative termination.
+            detector.processSnapshotDidUpdate([])
+            #expect(detector.detectedSessions.count == 1)
+            #expect(detector.detectedSessions.first?.state == .done)
+            #expect(detector.detectedSessions.first?.liveness == .terminated)
+            #expect(detector.session(forPID: 161) == nil)
+            // A pid reused later starts a fresh generation, not a resurrection.
+            detector.processSnapshotDidUpdate([DetectedProcess(pid: 161, command: "agy")])
+            #expect(detector.detectedSessions.count == 2)
+            #expect(detector.detectedSessions.last?.state == .idle)
+            #expect(detector.detectedSessions.last?.liveness == .live)
+        }
+    }
+
+    @Test func newAgentProcessReplacementCreatesFreshGeneration() throws {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 162,
+                command: "agy",
+                startIdentifier: "Mon Jul 20 10:00:00 2026"
+            ),
+        ])
+        let original = try #require(detector.session(forPID: 162))
+        #expect(original.agentType == .antigravity)
+        let originalGeneration = try #require(
+            original.processEvidence?.processGeneration
+        )
+
+        // The same pid is replaced by a different agent with a new start.
+        let terminated = detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 162,
+                command: "grok",
+                startIdentifier: "Tue Jul 21 10:00:00 2026"
+            ),
+        ])
+
+        #expect(terminated == [original.id])
+        #expect(original.state == .done)
+        #expect(original.liveness == .terminated)
+        let replacement = try #require(detector.session(forPID: 162))
+        #expect(replacement.agentType == .grokBuild)
+        #expect(replacement.processEvidence?.processGeneration == originalGeneration + 1)
+    }
+
+    @Test func newAgentLookalikeProcessesStayUntracked() {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 163, command: "agy-cli"),
+            DetectedProcess(pid: 164, command: "antigravity"),
+            DetectedProcess(pid: 165, command: "droid-cli"),
+            DetectedProcess(pid: 166, command: "factory"),
+            DetectedProcess(pid: 167, command: "cline-code"),
+            DetectedProcess(pid: 168, command: "grok-build"),
+            DetectedProcess(pid: 169, command: "kilo-code"),
+            DetectedProcess(pid: 170, command: "node /opt/homebrew/bin/kilocode-helper"),
+            DetectedProcess(pid: 171, command: "xgrok"),
+            DetectedProcess(pid: 172, command: "grok2"),
+            DetectedProcess(pid: 173, command: "notclined"),
+            DetectedProcess(pid: 174, command: "kilocode-backup"),
+            DetectedProcess(pid: 175, command: "/usr/local/bin/my-grok"),
+        ])
+        #expect(detector.detectedSessions.isEmpty)
+        #expect(detector.activeCount == 0)
+    }
+
     @Test func detectsAider() {
         let detector = AgentDetector()
         detector.processSnapshotDidUpdate([

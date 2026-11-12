@@ -44,6 +44,16 @@ enum AgentType: Equatable, Sendable {
     case kimiCode
     /// Empry⊙ coding agent (`empryo`).
     case empryo
+    /// Google Antigravity CLI (`agy`).
+    case antigravity
+    /// Factory Droid CLI (`droid`).
+    case droid
+    /// Cline CLI (`cline`).
+    case cline
+    /// xAI Grok Build (`grok`).
+    case grokBuild
+    /// Kilo Code CLI (`kilo`, `kilocode`).
+    case kiloCode
     /// Any other/unrecognised agent, identified by a free-form name.
     case generic(name: String)
 
@@ -64,6 +74,11 @@ enum AgentType: Equatable, Sendable {
         case .crush: "Crush"
         case .kimiCode: "Kimi Code"
         case .empryo: "Empry⊙"
+        case .antigravity: "Antigravity"
+        case .droid: "Droid"
+        case .cline: "Cline"
+        case .grokBuild: "Grok Build"
+        case .kiloCode: "Kilo Code"
         case .generic(let name): name
         }
     }
@@ -81,8 +96,11 @@ enum AgentType: Equatable, Sendable {
     }
 
     /// Color used for UI color-coding of this agent. Adaptive system colors
-    /// are preferred; `.kimiCode` and `.empryo` use fixed colors because
-    /// every adaptive system color is already assigned to another agent.
+    /// are preferred; `.kimiCode`, `.empryo`, and the Pine 3.0 additions use
+    /// fixed, appearance-stable hues (distinct from the same-named adaptive
+    /// color already assigned to another agent, though red/brown pairs are
+    /// perceptually close as small dots) because every adaptive system color
+    /// is already assigned.
     var color: NSColor {
         switch self {
         case .claudeCode: .systemOrange
@@ -99,6 +117,11 @@ enum AgentType: Equatable, Sendable {
         case .crush: .systemBrown
         case .kimiCode: .magenta
         case .empryo: .cyan
+        case .antigravity: .brown
+        case .droid: .red
+        case .cline: .blue
+        case .grokBuild: .green
+        case .kiloCode: .purple
         case .generic: .systemGray
         }
     }

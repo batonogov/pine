@@ -29,6 +29,11 @@ struct AgentModelsTests {
         #expect(AgentType.crush.displayName == "Crush")
         #expect(AgentType.kimiCode.displayName == "Kimi Code")
         #expect(AgentType.empryo.displayName == "Empry⊙")
+        #expect(AgentType.antigravity.displayName == "Antigravity")
+        #expect(AgentType.droid.displayName == "Droid")
+        #expect(AgentType.cline.displayName == "Cline")
+        #expect(AgentType.grokBuild.displayName == "Grok Build")
+        #expect(AgentType.kiloCode.displayName == "Kilo Code")
         #expect(AgentType.generic(name: "Custom").displayName == "Custom")
     }
 
@@ -49,6 +54,13 @@ struct AgentModelsTests {
         #expect(AgentType.crush.cliNames == ["crush"])
         #expect(AgentType.kimiCode.cliNames == ["kimi", "kimi-code"])
         #expect(AgentType.empryo.cliNames == ["empryo"])
+        #expect(AgentType.antigravity.cliNames == ["agy"])
+        #expect(AgentType.droid.cliNames == ["droid"])
+        #expect(AgentType.cline.cliNames == ["cline"])
+        #expect(AgentType.grokBuild.cliNames == ["grok"])
+        // Kilo Code ships both `kilo` and `kilocode` executables from the
+        // official npm package.
+        #expect(AgentType.kiloCode.cliNames == ["kilo", "kilocode"])
         // Generic agents have no known CLI names.
         #expect(AgentType.generic(name: "Custom").cliNames.isEmpty)
     }
@@ -57,6 +69,7 @@ struct AgentModelsTests {
         let agents: [AgentType] = [
             .claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
             .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode, .empryo,
+            .antigravity, .droid, .cline, .grokBuild, .kiloCode,
             .generic(name: "X"),
         ]
 
@@ -65,10 +78,13 @@ struct AgentModelsTests {
             #expect(agent.color != .clear)
         }
 
-        // Known agents must return distinct colors so UI badges stay distinguishable.
+        // Known agents must return distinct colors so UI badges stay
+        // distinguishable — including against the generic fallback color.
         let known = [
             AgentType.claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
             .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode, .empryo,
+            .antigravity, .droid, .cline, .grokBuild, .kiloCode,
+            .generic(name: "X"),
         ]
         for i in known.indices {
             for j in (i + 1)..<known.count {
@@ -118,6 +134,20 @@ struct AgentModelsTests {
         #expect(AgentType.resolve(fromProcessName: "kimi-code") == .kimiCode)
     }
 
+    @Test func resolveReturnsNewDetectedAgentsForExactNames() {
+        #expect(AgentType.resolve(fromProcessName: "agy") == .antigravity)
+        #expect(AgentType.resolve(fromProcessName: "droid") == .droid)
+        #expect(AgentType.resolve(fromProcessName: "cline") == .cline)
+        #expect(AgentType.resolve(fromProcessName: "grok") == .grokBuild)
+        #expect(AgentType.resolve(fromProcessName: "kilo") == .kiloCode)
+        // The official npm package installs both `kilo` and `kilocode`.
+        #expect(AgentType.resolve(fromProcessName: "kilocode") == .kiloCode)
+        // Product names and other lookalikes are not executable aliases.
+        #expect(AgentType.resolve(fromProcessName: "antigravity") == .generic(name: "antigravity"))
+        #expect(AgentType.resolve(fromProcessName: "grok-build") == .generic(name: "grok-build"))
+        #expect(AgentType.resolve(fromProcessName: "kilo-code") == .generic(name: "kilo-code"))
+    }
+
     @Test func pi_isDistinctFromGenericNamedPi() {
         // .pi is a first-class case and must not collapse into a generic
         // agent whose free-form name happens to be "pi".
@@ -138,6 +168,12 @@ struct AgentModelsTests {
         #expect(AgentType.resolve(fromProcessName: "CRUSH") == .crush)
         #expect(AgentType.resolve(fromProcessName: "KIMI") == .kimiCode)
         #expect(AgentType.resolve(fromProcessName: "KIMI-CODE") == .kimiCode)
+        #expect(AgentType.resolve(fromProcessName: "AGY") == .antigravity)
+        #expect(AgentType.resolve(fromProcessName: "DROID") == .droid)
+        #expect(AgentType.resolve(fromProcessName: "CLINE") == .cline)
+        #expect(AgentType.resolve(fromProcessName: "GROK") == .grokBuild)
+        #expect(AgentType.resolve(fromProcessName: "KILO") == .kiloCode)
+        #expect(AgentType.resolve(fromProcessName: "KILOCODE") == .kiloCode)
     }
 
     @Test func resolve_trimsWhitespace() {
