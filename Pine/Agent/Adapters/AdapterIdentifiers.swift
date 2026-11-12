@@ -53,6 +53,7 @@ nonisolated struct AgentID: CanonicalAdapterIdentifier {
         guard [
             "claudeCode", "codex", "aider", "copilot", "pi", "openCode", "gemini",
             "amp", "cursorAgent", "goose", "qwenCode", "crush", "kimiCode", "empryo",
+            "antigravity", "droid", "cline", "grokBuild", "kiloCode",
         ].contains(value) else {
             throw AdapterValueError.invalidCharacters("legacyAgentID")
         }

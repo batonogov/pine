@@ -358,6 +358,16 @@ final class AgentActivityStore {
             "kimi"
         case .empryo:
             "empryo"
+        case .antigravity:
+            "antigravity"
+        case .droid:
+            "droid"
+        case .cline:
+            "cline"
+        case .grokBuild:
+            "grok-build"
+        case .kiloCode:
+            "kilo"
         case .generic(let name):
             "generic:\(name)"
         }

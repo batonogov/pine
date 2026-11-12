@@ -218,6 +218,11 @@ extension AgentType {
         case .crush: "crush"
         case .kimiCode: "kimiCode"
         case .empryo: "empryo"
+        case .antigravity: "antigravity"
+        case .droid: "droid"
+        case .cline: "cline"
+        case .grokBuild: "grokBuild"
+        case .kiloCode: "kiloCode"
         case .generic(let name): "generic:\(name)"
         }
     }
@@ -243,6 +248,11 @@ extension AgentType {
         case "crush": self = .crush
         case "kimiCode": self = .kimiCode
         case "empryo": self = .empryo
+        case "antigravity": self = .antigravity
+        case "droid": self = .droid
+        case "cline": self = .cline
+        case "grokBuild": self = .grokBuild
+        case "kiloCode": self = .kiloCode
         default:
             guard stableIdentifier.hasPrefix("generic:") else { return nil }
             let name = String(stableIdentifier.dropFirst("generic:".count))

@@ -1354,7 +1354,12 @@ nonisolated enum AgentPresentationCatalog {
         "qwenCode": ("Qwen Code", .generic, ["qwen"]),
         "crush": ("Crush", .generic, ["crush"]),
         "kimiCode": ("Kimi Code", .generic, ["kimi", "kimi-code"]),
-        "empryo": ("Empry⊙", .generic, ["empryo"])
+        "empryo": ("Empry⊙", .generic, ["empryo"]),
+        "antigravity": ("Antigravity", .generic, ["agy"]),
+        "droid": ("Droid", .generic, ["droid"]),
+        "cline": ("Cline", .generic, ["cline"]),
+        "grokBuild": ("Grok Build", .generic, ["grok"]),
+        "kiloCode": ("Kilo Code", .generic, ["kilo", "kilocode"])
     ]
 
     static var builtInStableIdentifiers: Set<String> { Set(builtIns.keys) }

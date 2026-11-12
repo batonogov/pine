@@ -37,7 +37,7 @@ struct FirstPartyAgentCompatibilityTests {
 
     @Test func catalogIsCompleteUniqueAndFailClosed() throws {
         let records = FirstPartyAgentCompatibilityCatalog.records
-        #expect(records.count == 14)
+        #expect(records.count == 19)
         #expect(Set(records.map(\.stableIdentifier)).count == records.count)
         #expect(records.allSatisfy { $0.schemaVersion == FirstPartyAgentCompatibilityCatalog.schemaVersion })
         #expect(records.allSatisfy { $0.supportTier == .detected })
@@ -49,6 +49,16 @@ struct FirstPartyAgentCompatibilityTests {
         let aliases = records.flatMap(\.executableAliases)
         #expect(Set(aliases).count == aliases.count)
         #expect(Set(records.map(\.stableIdentifier)) == AgentPresentationCatalog.builtInStableIdentifiers)
+        // Every presentation/reservation record must also be resolvable
+        // through the legacy migration path: `builtIn` throws when the ID is
+        // missing from the `AgentID` legacy allowlist and returns nil when it
+        // is missing from the built-in presentation table, so a drift between
+        // the two coupled records fails here.
+        for stableIdentifier in AgentPresentationCatalog.builtInStableIdentifiers {
+            _ = try #require(
+                try AgentPresentationCatalog.builtIn(stableIdentifier: stableIdentifier)
+            )
+        }
         for record in records {
             #expect(!record.testedVersions.isEmpty)
             #expect(record.upstreamURL.hasPrefix("https://"))
@@ -120,7 +130,13 @@ struct FirstPartyAgentCompatibilityTests {
     }
 
     @Test func unknownAndLookalikeCommandsStayGeneric() {
-        for command in ["gemini-server", "opencode-helper", "claude-code", "server.js"] {
+        for command in [
+            "gemini-server", "opencode-helper", "claude-code", "server.js",
+            "agy-cli", "antigravity", "droid-cli", "factory", "cline-code",
+            "grok-build", "kilo-code", "kilocode-helper",
+            "xgrok", "grok2", "notclined", "kilocode-backup",
+            "/usr/local/bin/my-grok",
+        ] {
             let executable = AgentDetector.extractExecutableName(from: command)
             let resolved = AgentType.resolve(fromProcessName: executable)
             guard let resolved, case .generic(let name) = resolved else {
@@ -206,5 +222,109 @@ struct FirstPartyAgentCompatibilityTests {
         for lookalike in ["empryo-helper", "empryo-server", "empryo.com"] {
             #expect(AgentType.resolve(fromProcessName: lookalike) == .generic(name: lookalike))
         }
+    }
+
+    @Test func newDetectedAgentsResolveAndPersistWithoutClaimingStructuredEvents() throws {
+        let agents: [(
+            stableIdentifier: String,
+            displayName: String,
+            commands: [String],
+            lookalikes: [String]
+        )] = [
+            (
+                "antigravity", "Antigravity",
+                ["agy", "/opt/homebrew/bin/agy -p --output-format json"],
+                ["agy-cli", "antigravity"]
+            ),
+            (
+                "droid", "Droid",
+                ["droid", "node /opt/homebrew/bin/droid", "/opt/homebrew/bin/droid exec -o json"],
+                ["droid-cli", "factory"]
+            ),
+            (
+                "cline", "Cline",
+                ["cline", "node /usr/local/bin/cline --json", "/opt/homebrew/bin/cline --acp"],
+                ["cline-code", "cline-helper", "notclined"]
+            ),
+            (
+                "grokBuild", "Grok Build",
+                ["grok", "/opt/homebrew/bin/grok -p --output-format json"],
+                ["grok-build", "grok-helper", "xgrok", "grok2", "/usr/local/bin/my-grok"]
+            ),
+            (
+                "kiloCode", "Kilo Code",
+                ["kilo", "kilocode", "bun /opt/homebrew/bin/kilo run --auto", "/opt/homebrew/bin/kilo acp"],
+                ["kilo-code", "kilocode-helper", "kilocode-backup"]
+            ),
+        ]
+
+        for agent in agents {
+            for command in agent.commands {
+                let executable = AgentDetector.extractExecutableName(from: command)
+                let type = try #require(AgentType.resolve(fromProcessName: executable))
+                #expect(type.stableIdentifier == agent.stableIdentifier)
+                #expect(type.displayName == agent.displayName)
+                #expect(AgentType(stableIdentifier: type.stableIdentifier) == type)
+            }
+            let record = try #require(
+                FirstPartyAgentCompatibilityCatalog.record(
+                    stableIdentifier: agent.stableIdentifier
+                )
+            )
+            #expect(!record.executableAliases.isEmpty)
+            for alias in record.executableAliases {
+                #expect(
+                    AgentPresentationCatalog.stableIdentifier(
+                        forExecutableAlias: alias
+                    ) == agent.stableIdentifier
+                )
+                let type = try #require(AgentType.resolve(fromProcessName: alias))
+                #expect(type.stableIdentifier == agent.stableIdentifier)
+                #expect(type.displayName == agent.displayName)
+            }
+            #expect(record.notificationAccuracy == .processTerminationOnly)
+            #expect(record.supportTier == .detected)
+            #expect(record.eventSource == .processSnapshot)
+            #expect(record.resumeCapability == .newSessionOnly)
+            let presentation = try #require(
+                try AgentPresentationCatalog.builtIn(
+                    stableIdentifier: agent.stableIdentifier
+                )
+            )
+            try AgentPresentationCatalog.validateBuiltIn(presentation)
+            #expect(presentation.displayName == agent.displayName)
+            for lookalike in agent.lookalikes {
+                #expect(AgentType.resolve(fromProcessName: lookalike) == .generic(name: lookalike))
+            }
+        }
+    }
+
+    @Test func kiloCodeDoesNotShareOpenCodeExecutableIdentity() {
+        // Kilo is an OpenCode fork, but its installed executables are `kilo`
+        // and `kilocode`. The `opencode` executable must keep resolving to the
+        // OpenCode agent instead of leaking into Kilo Code.
+        #expect(AgentType.resolve(fromProcessName: "opencode") == .openCode)
+        #expect(AgentType.resolve(fromProcessName: "kilo") == .kiloCode)
+        #expect(AgentType.resolve(fromProcessName: "kilocode") == .kiloCode)
+        #expect(
+            AgentPresentationCatalog.stableIdentifier(
+                forExecutableAlias: "opencode"
+            ) == "openCode"
+        )
+        #expect(
+            FirstPartyAgentCompatibilityCatalog.record(
+                executableAlias: "opencode"
+            )?.stableIdentifier == "openCode"
+        )
+        #expect(
+            FirstPartyAgentCompatibilityCatalog.record(
+                executableAlias: "kilo"
+            )?.stableIdentifier == "kiloCode"
+        )
+        #expect(
+            FirstPartyAgentCompatibilityCatalog.record(
+                executableAlias: "kilocode"
+            )?.stableIdentifier == "kiloCode"
+        )
     }
 }

@@ -229,6 +229,41 @@ nonisolated enum FirstPartyAgentCompatibilityCatalog {
             upstream: "https://empryo.com/",
             versions: ["3.12.2-beta"]
         ),
+        reviewedRecord(
+            id: "antigravity",
+            name: "Antigravity",
+            aliases: ["agy"],
+            source: ("https://antigravity.google/docs/cli/headless", ["1.5.6"]),
+            interface: "--output-format json|stream-json headless events"
+        ),
+        reviewedRecord(
+            id: "droid",
+            name: "Droid",
+            aliases: ["droid"],
+            source: ("https://docs.factory.com/droid-cli/cli-reference", ["1.9.0"]),
+            interface: "droid exec json|stream-json|stream-jsonrpc and ACP"
+        ),
+        reviewedRecord(
+            id: "cline",
+            name: "Cline",
+            aliases: ["cline"],
+            source: ("https://github.com/cline/cline", ["3.0.74"]),
+            interface: "--json output, --acp mode, and lifecycle hooks"
+        ),
+        reviewedRecord(
+            id: "grokBuild",
+            name: "Grok Build",
+            aliases: ["grok"],
+            source: ("https://github.com/xai-org/grok-build", ["1.0.77"]),
+            interface: "headless --output-format json|streaming-json and ACP"
+        ),
+        reviewedRecord(
+            id: "kiloCode",
+            name: "Kilo Code",
+            aliases: ["kilo", "kilocode"],
+            source: ("https://github.com/Kilo-Org/kilocode", ["7.8.27"]),
+            interface: "kilo acp, kilo serve, and kilo run --format json"
+        ),
     ]
 
     static func record(stableIdentifier: String) -> FirstPartyAgentCompatibilityRecord? {
