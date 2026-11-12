@@ -21,12 +21,14 @@ nonisolated struct AgentTaskPersistenceLimits: Sendable {
     let maxExecutableVersionBytes: Int
     let maxTitleBytes: Int
     let maxObjectiveBytes: Int
+    let maxEvidenceFactsPerTask: Int
 
     init(
         maxTasksPerProject: Int = 200,
         maxRunsPerTask: Int = 50,
         maxHistoricalRunIDs: Int = 8_192,
-        maxFileBytes: Int = 1_048_576
+        maxFileBytes: Int = 1_048_576,
+        maxEvidenceFactsPerTask: Int = 64
     ) {
         self.maxTasksPerProject = max(1, maxTasksPerProject)
         self.maxRunsPerTask = max(1, maxRunsPerTask)
@@ -39,6 +41,7 @@ nonisolated struct AgentTaskPersistenceLimits: Sendable {
         maxExecutableVersionBytes = 256
         maxTitleBytes = 256
         maxObjectiveBytes = 2_048
+        self.maxEvidenceFactsPerTask = max(1, maxEvidenceFactsPerTask)
     }
 }
 
@@ -422,7 +425,7 @@ nonisolated private final class AgentTaskStorageHandle {
 /// Serializes all metadata I/O away from MainActor. Files are scoped by a hash
 /// of the canonical project path and contain value metadata only.
 actor AgentTaskMetadataStore: AgentTaskPersisting {
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
     private static let directoryName = ".pine-agent-tasks-private"
 
     private let storageRoot: URL?
@@ -471,28 +474,63 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 == project.canonicalProjectPath else {
             return .rejected(.missingProject)
         }
-        let bounded: [AgentTask]
+        var bounded: [AgentTask]
         switch boundedTasks(tasks, project: project) {
         case .success(let value): bounded = value
         case .failure(let rejection): return .rejected(rejection)
         }
         let nextDiskRevision = authorization?.ticket.nextDiskRevision ?? UUID()
-        let envelope = AgentTaskMetadataEnvelope(
-            schemaVersion: Self.currentSchemaVersion,
-            revision: nextDiskRevision,
-            canonicalProjectPath: project.canonicalProjectPath,
-            canonicalWorktreePath: project.canonicalWorktreePath,
-            tasks: bounded
-        )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
         encoder.outputFormatting = [.sortedKeys]
-        guard var data = try? encoder.encode(envelope) else {
+        func encodeEnvelope(_ tasks: [AgentTask]) -> Data? {
+            guard var data = try? encoder.encode(
+                AgentTaskMetadataEnvelope(
+                    schemaVersion: Self.currentSchemaVersion,
+                    revision: nextDiskRevision,
+                    canonicalProjectPath: project.canonicalProjectPath,
+                    canonicalWorktreePath: project.canonicalWorktreePath,
+                    tasks: tasks
+                )
+            ) else {
+                return nil
+            }
+            data.append(0x0A)
+            return data
+        }
+        var retained = bounded
+        guard var data = encodeEnvelope(retained) else {
             return .rejected(.invalidMetadata)
         }
-        data.append(0x0A)
-        guard data.count <= limits.maxFileBytes else {
-            return .rejected(.storageLimit)
+        if data.count > limits.maxFileBytes {
+            // Shed bounded evidence toward the file budget before failing
+            // closed. Shedding only removes facts, so every validation that
+            // already passed still holds for the shed state. A task's
+            // latest-run facts are never touched (they keep its settlement
+            // and Ready projections intact); oldest tasks are shed first.
+            for index in retained.indices
+            where retained[index].runs.count > 1 {
+                let latestRunID = retained[index].runs.last?.id
+                retained[index].evidence.removeAll {
+                    $0.runID != latestRunID
+                }
+            }
+            data = encodeEnvelope(retained) ?? data
+            if data.count > limits.maxFileBytes {
+                // Still over: shed whole latest-run fact sets, oldest
+                // task first. A task whose settled outcome needs its facts
+                // (lifecycle .completed) is never shed.
+                for index in retained.indices
+                where retained[index].lifecycle != .completed {
+                    retained[index].evidence.removeAll()
+                    data = encodeEnvelope(retained) ?? data
+                    if data.count <= limits.maxFileBytes { break }
+                }
+            }
+            guard data.count <= limits.maxFileBytes else {
+                return .rejected(.storageLimit)
+            }
+            bounded = retained
         }
 
         do {
@@ -701,6 +739,21 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             storedWorktreePath = envelope.canonicalWorktreePath
             storedTasks = envelope.tasks
             revision = .legacySHA256(Data(SHA256.hash(data: data)))
+            requiresMigration = true
+        case 2:
+            // Schema v2 predates the ADE evidence contract (#1722). The
+            // envelope shape is identical; the task-level fields decode to
+            // their fail-closed defaults and the next save migrates the file.
+            guard let envelope = try? decoder.decode(
+                AgentTaskMetadataEnvelope.self,
+                from: data
+            ) else {
+                return rejectedLoad(.corrupt)
+            }
+            storedProjectPath = envelope.canonicalProjectPath
+            storedWorktreePath = envelope.canonicalWorktreePath
+            storedTasks = envelope.tasks
+            revision = .versioned(envelope.revision)
             requiresMigration = true
         case Self.currentSchemaVersion:
             guard let envelope = try? decoder.decode(
@@ -1505,7 +1558,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             if header.schemaVersion == 1, header.revision == nil {
                 return expected == .legacySHA256(Data(SHA256.hash(data: data)))
             }
-            guard header.schemaVersion == Self.currentSchemaVersion,
+            // Every versioned schema (v2 and up) carries the revision UUID
+            // used for the publication fence.
+            guard header.schemaVersion >= 2,
+                  header.schemaVersion <= Self.currentSchemaVersion,
                   let revision = header.revision else { return false }
             return expected == .versioned(revision)
         }
@@ -1920,6 +1976,12 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 bounded.runs = Array(
                     bounded.runs.suffix(limits.maxRunsPerTask)
                 )
+                // Facts must stay bound to runs that survive the trim; an
+                // orphaned runID would fail validateEvidence on re-save.
+                let retainedRunIDs = Set(bounded.runs.map(\.id))
+                bounded.evidence = bounded.evidence.filter {
+                    retainedRunIDs.contains($0.runID)
+                }
             }
             candidates.append(bounded)
         }
@@ -1977,10 +2039,6 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               validDate(task.lastActivityAt),
               task.updatedAt >= task.createdAt,
               task.lastActivityAt >= task.createdAt,
-              task.completedAt == nil,
-              task.lifecycle != .completed,
-              task.attention != .completed,
-              task.attention != .failed,
               task.launchInterruption == nil
                 || (task.origin == .pineLaunched
                     && task.runs.isEmpty
@@ -1989,10 +2047,59 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                     && task.attention == .none),
               validOptionalDate(task.completedAt),
               task.runs.allSatisfy(validateRun),
+              validateADEState(task),
+              validateEvidence(task),
               validateChronology(task) else {
             return false
         }
         return true
+    }
+
+    /// Outcome-state persistence preconditions (#1722).
+    ///
+    /// The legacy guards rejected outcome states unconditionally, so
+    /// `lifecycle == .completed`, `attention == .completed/.failed`, and a
+    /// non-nil `completedAt` had no production write path. They are now an
+    /// evidence basis instead of a blanket reject: the state is writable only
+    /// when the latest run is settled with a recorded outcome, the completion
+    /// timestamp is exactly the settled run's end, and at least one durable
+    /// evidence fact is bound to that run. A settled run without evidence
+    /// stays `paused` with an `unverified` outcome and no outcome attention.
+    private func validateADEState(_ task: AgentTask) -> Bool {
+        // `completedAt` and `lifecycle == .completed` are one state: both or
+        // neither.
+        guard (task.lifecycle == .completed) == (task.completedAt != nil) else {
+            return false
+        }
+        if task.lifecycle == .completed {
+            guard let last = task.runs.last,
+                  last.liveness == .terminated,
+                  last.endedAt != nil,
+                  let outcome = last.outcome,
+                  outcome != .superseded,
+                  task.completedAt == last.endedAt,
+                  // The settled run must carry a durable evidence basis;
+                  // outcome states without one are rejected.
+                  task.evidence.contains(where: { $0.runID == last.id }) else {
+                return false
+            }
+            switch task.attention {
+            case .none, .completed, .failed:
+                break
+            case .waitingInput:
+                return false
+            }
+            if task.attention == .completed,
+               outcome != .unverified && outcome != .success {
+                return false
+            }
+            if task.attention == .failed, outcome != .failure {
+                return false
+            }
+            return true
+        }
+        // No settled triple: no outcome attention is allowed either.
+        return task.attention != .completed && task.attention != .failed
     }
 
     private func validPresentationContext(
@@ -2046,7 +2153,155 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         guard (run.liveness == .terminated) == (run.endedAt != nil) else {
             return false
         }
+        // An outcome is a settled-attempt fact: a live run can never carry
+        // one, and a terminated run may (#1722).
+        if run.outcome != nil {
+            guard run.liveness == .terminated, run.endedAt != nil else {
+                return false
+            }
+        }
         return true
+    }
+
+    /// Fencing and bound checks for durable evidence facts (#1722).
+    ///
+    /// Every fact must bind to a real run of this task with a matching
+    /// process incarnation and, when both carry one, a matching provider
+    /// session reference. Facts may not predate their run, may not duplicate
+    /// an admitted event identity, may not exceed the bounded maximum, and
+    /// may not request more trust than their kind allows.
+    private func validateEvidence(_ task: AgentTask) -> Bool {
+        guard task.evidence.count <= limits.maxEvidenceFactsPerTask else {
+            return false
+        }
+        // A duplicated run ID is corrupt metadata, not a collision to
+        // collapse: fail closed BEFORE building the run index, whose
+        // unique-keys initializer would trap the process on a user-editable
+        // 0600 file.
+        guard task.runs.count == Set(task.runs.map(\.id)).count else {
+            return false
+        }
+        let runByID: [UUID: AgentTaskRun] = Dictionary(
+            uniqueKeysWithValues: task.runs.map { ($0.id, $0) }
+        )
+        var seen = Set<AgentTaskEvidenceEventIdentity>()
+        for fact in task.evidence {
+            guard let run = runByID[fact.runID],
+                  fact.kind.allows(result: fact.result),
+                  fact.kind.allowsVerifiedTrust || fact.trust != .verified,
+                  fact.processGeneration > 0,
+                  fact.processGeneration == run.process.processGeneration,
+                  fact.observedAt.timeIntervalSinceReferenceDate.isFinite,
+                  fact.observedAt >= run.startedAt,
+                  fact.sourceSequence.map({ $0 > 0 }) ?? true,
+                  seen.insert(fact.eventIdentity).inserted else {
+                return false
+            }
+            if let codeState = fact.codeState,
+               !validCodeState(codeState) {
+                return false
+            }
+            if let environment = fact.environment,
+               !validEnvironment(environment) {
+                return false
+            }
+            if let vendorSession = fact.vendorSession {
+                guard validText(
+                    vendorSession.provider,
+                    maximum: limits.maxVendorProviderBytes,
+                    allowsEmpty: false
+                ), validText(
+                    vendorSession.opaqueIdentifier,
+                    maximum: limits.maxVendorIdentityBytes,
+                    allowsEmpty: false
+                ), validOptionalText(
+                    vendorSession.executableVersion,
+                    maximum: limits.maxExecutableVersionBytes
+                ) else { return false }
+                if let runIdentity = run.vendorIdentity,
+                   vendorSession.provider != runIdentity.provider
+                       || vendorSession.opaqueIdentifier
+                           != runIdentity.opaqueIdentifier {
+                    return false
+                }
+            }
+        }
+        return validateSnapshot(task.reviewedSnapshot)
+            && validateSnapshot(task.acceptedSnapshot)
+    }
+
+    private func validateSnapshot(_ snapshot: AgentTaskResultSnapshot?) -> Bool {
+        guard let snapshot else { return true }
+        guard validDate(snapshot.recordedAt) else { return false }
+        if let codeState = snapshot.codeState, !validCodeState(codeState) {
+            return false
+        }
+        if let environment = snapshot.environment,
+           !validEnvironment(environment) {
+            return false
+        }
+        return true
+    }
+
+    private func validCodeState(_ value: AgentTaskCodeStateIdentity) -> Bool {
+        guard value.scheme == AgentTaskCodeStateIdentity.currentScheme,
+              validLowerHex(
+                  value.trackedFingerprint,
+                  length: AgentTaskCodeStateIdentity.fingerprintBytes
+              ),
+              validLowerHex(
+                  value.untrackedFingerprint,
+                  length: AgentTaskCodeStateIdentity.fingerprintBytes
+              ),
+              validLowerHex(
+                  value.ignoredRelevantFingerprint,
+                  length: AgentTaskCodeStateIdentity.fingerprintBytes
+              ) else {
+            return false
+        }
+        guard let headCommit = value.headCommit else { return true }
+        return validLowerHex(
+            headCommit,
+            length: AgentTaskCodeStateIdentity.maximumHeadCommitBytes
+        )
+    }
+
+    private func validEnvironment(_ value: AgentTaskEnvironmentIdentity) -> Bool {
+        guard value.scheme == AgentTaskEnvironmentIdentity.currentScheme,
+              validOptionalBoundedText(
+                  value.osBuild,
+                  maximum: AgentTaskEnvironmentIdentity.maximumComponentBytes
+              ),
+              validOptionalBoundedText(
+                  value.toolchain,
+                  maximum: AgentTaskEnvironmentIdentity.maximumComponentBytes
+              ) else {
+            return false
+        }
+        guard let fingerprint = value.configurationFingerprint else {
+            return true
+        }
+        return validLowerHex(
+            fingerprint,
+            length: AgentTaskCodeStateIdentity.fingerprintBytes
+        )
+    }
+
+    private func validLowerHex(_ value: String, length: Int) -> Bool {
+        guard value.utf8.count == length else { return false }
+        return value.allSatisfy {
+            // Hex digits are numerals (for which `isLowercase` is false)
+            // or lowercase a–f; uppercase A–F is rejected.
+            $0.isASCII && $0.isHexDigit && ($0.isNumber || $0.isLowercase)
+        }
+    }
+
+    private func validOptionalBoundedText(
+        _ value: String?,
+        maximum: Int
+    ) -> Bool {
+        guard let value else { return true }
+        return validText(value, maximum: maximum, allowsEmpty: false)
     }
 
     private func validateChronology(_ task: AgentTask) -> Bool {
@@ -2098,8 +2353,13 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             let waitingIsAllowed = task.lifecycle == .active
                 && last.liveness == .live
                 && last.state == .waitingInput
+            // Settled outcome attention belongs to a completed task; its
+            // outcome basis is checked by `validateADEState`.
+            let settledAttentionAllowed = task.lifecycle == .completed
+                && (task.attention == .completed || task.attention == .failed)
             guard task.attention == .none
-                    || (waitingIsAllowed && task.attention == .waitingInput) else {
+                    || (waitingIsAllowed && task.attention == .waitingInput)
+                    || settledAttentionAllowed else {
                 return false
             }
         } else if task.lifecycle == .active {

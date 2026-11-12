@@ -98,6 +98,95 @@ Vendor references, resume positions, and checkpoints are bounded, non-Codable,
 and redacted from description, debug description, and reflection. Process exit
 is not successful agent completion.
 
+## Lifecycle and evidence contract (#1722)
+
+Durable task state uses one versioned lifecycle/evidence contract built on
+the #1302 registry and metadata store (schema v3). Every ADE surface —
+Inbox, notifications, recovery, result views — projects the same durable
+fields; none keeps a parallel status store.
+
+**State dimensions.** A task tracks, as distinct dimensions:
+
+- `executionState` (`working` / `blocked` / `idle` / `unknown`): the current
+  view of the latest attempt. `working` is an unresolved active turn;
+  `blocked` is a live, authenticated, unresolved question or approval;
+  `idle` is a live session with no active turn or outstanding request,
+  established by provider state or reconciliation — idle is not task
+  completion; `unknown` is missing, stale, contradictory, or unsupported
+  evidence. Terminal silence and process exit never establish `idle`.
+- `outcome` per settled run (`success` / `failure` / `cancellation` /
+  `superseded` / `unverified`), `nil` while in flight. `success` requires an
+  agent-reported completion plus all required independent evidence
+  (independent check and reviewer outcome) bound to one shared code-state
+  identity. Process exit, terminal silence, and an agent claim alone settle
+  `unverified`, never `success`.
+- `attention` / `isUnread`: the legacy review dimensions, unchanged.
+- `verificationState` (`none` / `pending` / `verified` / `stale`): the
+  current validity of independent verification for the latest result.
+  `pending` is produced by the verification layer while a re-run is in
+  flight; `stale` is left only by the explicit re-verification action
+  described under Ready.
+- `acceptanceState` (`notAccepted` / `accepted`) plus
+  `acceptedSnapshot`: user acceptance as a separate fact; the recorded
+  state identity is preserved so later edits can prove they do not inherit
+  it. Acceptance may also be recorded against an `unverified` outcome: it
+  closes the work and snapshots the identity, but never upgrades the
+  outcome or the verification state.
+
+**Evidence facts.** `AgentTaskEvidenceFact` is one bounded fact bound to one
+attempt: kind (`processCompletion`, `agentReportedCompletion`,
+`independentCheck`, `reviewerOutcome`, `userAcceptance`,
+`userCancellation`), the provenance `TrustLevel` (process observations are
+at most `observed`; user actions and structured reports may be `verified`),
+a bounded result, observed time, code-state identity, environment identity,
+an optional provider session reference, and an optional source sequence.
+Observed process completion, agent-reported completion, independent checks,
+reviewer outcomes, and user acceptance remain separate facts; no fact
+establishes any other. Facts store hashes and identifiers only — never
+transcripts, prompts, file contents, environment values, or credentials.
+
+**Fencing.** Facts are fenced by attempt identity (run ID), process
+incarnation (process generation), provider session reference, source
+sequence, and observed chronology; duplicate event identities are rejected.
+Ordered delivery deduplicates by source sequence ALONE — a reconnect
+re-emission (or clock skew) with a different observed timestamp is a
+duplicate, never a new event — while unordered delivery deduplicates by the
+observed timestamp quantized to millisecond precision, stable across the
+persistence encoding. Facts are also bounded (64 per task) at admission.
+Late, duplicate, replayed, nested, and foreign-provider events cannot settle
+a different or newer attempt.
+
+**Ready.** Ready is derived, never stored, and exists only from current
+required evidence: a settled `success` outcome, current `verified`
+verification state, and every required evidence fact passing and bound to
+the current code-state and environment identities. Process exit, terminal
+silence, and an agent claim never map to Ready. Invalidation — relevant
+edits, environment changes, or relaunch — fails closed and names the repeat
+work (`staleEvidence(.independentCheck)`, `staleEvidence(.reviewerOutcome)`),
+while reviewed and accepted snapshots stay identifiable.
+
+**Re-verification.** `.stale` (and `.pending`) is left only by an explicit
+re-verification action, owned by the verification layer (#1724) under a
+persisted grant; no later fact alone re-upgrades a stale result. The layer
+re-runs the required evidence against the current identities, records the
+new bound facts (`recordEvidence`), optionally marks in-flight verification
+(`markVerificationPending`), and then restores the current state
+(`markVerificationCurrent`, reducer `reverify`) — which requires a settled
+`success` attempt and every required fact passing bound to the
+caller-proven code-state and environment identities. Those current
+identities are computed and proven by the verification layer; the registry
+seams take caller-proven identities only.
+
+**Persistence.** Task metadata is schema v3. Outcome state is writable only
+with an evidence basis: a settled run carrying a recorded outcome plus at
+least one durable evidence fact bound to it. Relaunch normalization marks
+live evidence stale, invalidates current verified and accepted state, and
+preserves the snapshots; it is applied and durable before any surface
+presents the task. Invalidation and the evidence recorded after it land in
+the same durable task snapshot, so a persisted write can never contain
+dependent positive evidence without its invalidation; a crash between a
+mutation and the metadata write leaves only the previous consistent state.
+
 ## Authority and deferred work
 
 Pine creates and lifecycle-binds a session-contract validating sink before the

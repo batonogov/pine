@@ -45,6 +45,27 @@ releases.
 - **Structured:** Pine negotiates a documented, authenticated structured
   lifecycle contract. No first-party adapter currently claims this tier.
 
+## Lifecycle and evidence contract (#1722)
+
+The tier decides what the shared ADE lifecycle/evidence contract can
+establish for a durable task:
+
+- Terminal-hosted (detected/attention-aware) sessions project process
+  observations only. Execution state is bounded by what the process snapshot
+  proves (observed activity is `working`; anything else, including terminal
+  silence, is `unknown`). A terminated attempt settles as `unverified`;
+  process exit, terminal silence, and an agent claim alone can never produce
+  a verified result or Ready.
+- Structured sessions (future) may additionally record agent-reported
+  completion claims with provider session references and source sequences.
+  Even then, `success` and Ready require independent check and reviewer
+  outcome facts bound to one code-state identity, so a structured claim
+  without independent verification remains `unverified`.
+
+The contract, its fencing keys, invalidation rules, and persistence schema
+v3 are specified in the
+[adapter core boundary](agent-adapter-core.md#lifecycle-and-evidence-contract-1722).
+
 ## Security and privacy boundary
 
 The presentation catalog may assign a stable name and color, but it cannot

@@ -3,5 +3,46 @@
   "revision": "00000000-0000-0000-0000-000000000002",
   "canonicalProjectPath": "{{PROJECT_PATH}}",
   "canonicalWorktreePath": "{{PROJECT_PATH}}",
-  "tasks": []
+  "tasks": [
+    {
+      "id": "00000000-0000-0000-0000-0000000000a2",
+      "project": {
+        "canonicalProjectPath": "{{PROJECT_PATH}}",
+        "canonicalWorktreePath": "{{PROJECT_PATH}}"
+      },
+      "route": {
+        "surface": "projectWindow",
+        "paneID": "00000000-0000-0000-0000-0000000000a3",
+        "tabID": "00000000-0000-0000-0000-0000000000a4",
+        "terminalID": "00000000-0000-0000-0000-0000000000a4",
+        "availability": "missing"
+      },
+      "descriptor": {
+        "typeIdentifier": "claude-code"
+      },
+      "origin": "discoveredInTerminal",
+      "lifecycle": "paused",
+      "runs": [
+        {
+          "id": "00000000-0000-0000-0000-0000000000a5",
+          "terminalID": "00000000-0000-0000-0000-0000000000a4",
+          "process": {
+            "processGeneration": 1,
+            "observedStartedAt": 1760000000.0
+          },
+          "state": "done",
+          "liveness": "terminated",
+          "startedAt": 1760000000.0,
+          "lastObservedAt": 1760000300.0,
+          "endedAt": 1760000300.0,
+          "lifecycleAccuracy": "processTerminationOnly"
+        }
+      ],
+      "createdAt": 1760000000.0,
+      "updatedAt": 1760000300.0,
+      "lastActivityAt": 1760000300.0,
+      "isUnread": false,
+      "attention": "none"
+    }
+  ]
 }

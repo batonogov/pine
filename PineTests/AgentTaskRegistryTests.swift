@@ -2908,9 +2908,11 @@ struct AgentTaskRegistryTests {
         ])
         let task = try #require((root["tasks"] as? [[String: Any]])?.first)
         #expect(Set(task.keys) == [
-            "attention", "createdAt", "descriptor", "id", "isUnread",
-            "lastActivityAt", "lifecycle", "origin", "project", "route",
-            "runs", "title", "objective", "updatedAt",
+            "acceptanceState", "attention", "createdAt", "descriptor",
+            "evidence", "executionState", "id", "isUnread",
+            "lastActivityAt", "lifecycle", "objective", "origin",
+            "project", "route", "runs", "title", "updatedAt",
+            "verificationState",
         ])
         let projectObject = try #require(task["project"] as? [String: Any])
         #expect(Set(projectObject.keys) == [
@@ -3024,7 +3026,7 @@ struct AgentTaskRegistryTests {
                 with: Data(contentsOf: fileURL)
             ) as? [String: Any]
         )
-        #expect(root["schemaVersion"] as? Int == 2)
+        #expect(root["schemaVersion"] as? Int == 3)
         #expect(UUID(uuidString: root["revision"] as? String ?? "") != nil)
     }
 

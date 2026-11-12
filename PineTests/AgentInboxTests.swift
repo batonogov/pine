@@ -1529,7 +1529,9 @@ struct AgentInboxTests {
             startedAt: Date(timeIntervalSince1970: 100),
             lastVerifiedActivityAt: Date(timeIntervalSince1970: 101),
             durationEndedAt: nil,
-            isUnread: unread
+            isUnread: unread,
+            executionState: .working,
+            outcome: nil
         )
     }
 
