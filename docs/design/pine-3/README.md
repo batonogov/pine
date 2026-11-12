@@ -87,3 +87,13 @@ The maintainer explicitly requested preserving this candidate for further explor
 Generation brief (built-in ImageGen): one original macOS icon, a broad fluid gesture becoming a precise crafted form, warm vermilion/coral with amber inner light on porcelain, restrained dimensionality, strong silhouette. No text, tree, robot, terminal glyph, doorway, or generic AI sparkle. The resulting shape is exploratory.
 
 Target: three maintainer-approved candidates in #1736. Show further concepts individually and add them only after explicit approval.
+
+### Candidate 2 — Growing an idea
+
+Explicitly retained by the maintainer: “выращиваем идею” (growing an idea). A pale jade sprout emerges from a deep blue seed shell, giving this candidate its own living silhouette and metaphor. This is a retained direction, not final production selection.
+
+![Candidate 2: growing an idea](icon-02-growing-an-idea.png)
+
+Generation brief (built-in ImageGen): one compact original macOS icon; two substantial deep-blue seed-shell halves reveal one wide pale-jade leaf on warm ivory. Three broad shapes, restrained shallow depth, no long stem, flame, ribbon, or generic AI symbols.
+
+The third direction remains open: “Pine — the quintessence of ADE”, inspired by Malevich's reduction to essential forms. The initial flat square/circle/bar composition was not selected. The maintainer requested further exploration with Liquid Glass material, transparency, and refraction while preserving a clear, simple silhouette. No third image is approved yet.
