@@ -26,7 +26,7 @@ import XCTest
 /// the base implementation and the candidate and compared. Output is written
 /// as JSON under the `PINE_1718_ARTIFACTS` environment variable when that
 /// variable reaches the test host; otherwise under a unique per-run
-/// `.../opencode/1718/run-<tag>` directory, which the local runner script
+/// `<temporaryDirectory>/pine-1718/run-<tag>` directory, which the local runner script
 /// moves into the run directory afterwards. This is local measurement
 /// evidence, not a CI benchmark gate.
 final class ProcessTreePollingHarnessTests: XCTestCase {
@@ -43,7 +43,8 @@ final class ProcessTreePollingHarnessTests: XCTestCase {
 
     static var defaultArtifactRoot: String {
         let runTag = ProcessInfo.processInfo.globallyUniqueString.prefix(8)
-        return "/private/var/folders/89/bn09k77s7m738nqtp29mklhm0000gn/T/opencode/1718/run-\(runTag)"
+        return FileManager.default.temporaryDirectory
+            .appending(path: "pine-1718/run-\(runTag)").path
     }
 
     private static let workloadTemplate = """
@@ -131,7 +132,9 @@ final class ProcessTreePollingHarnessTests: XCTestCase {
             Double(snapshot.bsdInfoLookups) / Double(durationSeconds)
         }
 
-        var monitoringCpuSeconds: Double {
+        // This is accumulated elapsed time, including scheduling and syscall
+        // waits, rather than CPU consumption.
+        var captureWallSeconds: Double {
             Double(snapshot.captureDurationNanoseconds) / 1e9
         }
 
@@ -142,7 +145,7 @@ final class ProcessTreePollingHarnessTests: XCTestCase {
             listPgrpPerSec=\(String(format: "%.1f", listPgrpPidsCallsPerSecond)) \
             bsdInfoPerSec=\(String(format: "%.1f", bsdInfoLookupsPerSecond)) \
             meanCaptureUs=\(String(format: "%.1f", meanCaptureMicroseconds)) \
-            monitoringCpuSec=\(String(format: "%.3f", monitoringCpuSeconds))
+            captureWallSec=\(String(format: "%.3f", captureWallSeconds))
             """
         }
     }
@@ -208,6 +211,8 @@ final class ProcessTreePollingHarnessTests: XCTestCase {
             throw error
         }
 
+        defer { terminateAll(terminals) }
+
         UserTaskProcessTelemetry.reset()
         let sampleURL = runDirectory.appending(path: "sample.txt")
         let sampler = try? startSampler(
@@ -234,7 +239,6 @@ final class ProcessTreePollingHarnessTests: XCTestCase {
         )
         try writeJSON(report, to: runDirectory.appending(path: "report.json"))
 
-        terminateAll(terminals)
         return report
     }
 
@@ -294,9 +298,9 @@ final class ProcessTreePollingHarnessTests: XCTestCase {
             throw HarnessError.spawnFailed(Int32(errno))
         }
         defer { posix_spawn_file_actions_destroy(&fileActions) }
-        guard posix_spawn_file_actions_adddup2(&fileActions, 0, devnull) == 0,
-              posix_spawn_file_actions_adddup2(&fileActions, 1, devnull) == 0,
-              posix_spawn_file_actions_adddup2(&fileActions, 2, devnull) == 0
+        guard posix_spawn_file_actions_adddup2(&fileActions, devnull, STDIN_FILENO) == 0,
+              posix_spawn_file_actions_adddup2(&fileActions, devnull, STDOUT_FILENO) == 0,
+              posix_spawn_file_actions_adddup2(&fileActions, devnull, STDERR_FILENO) == 0
         else {
             throw HarnessError.spawnFailed(Int32(errno))
         }
