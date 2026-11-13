@@ -9,6 +9,19 @@ import Darwin
 import os
 import SwiftUI
 
+nonisolated private func filesystemBirthtimeMatches(
+    _ lhs: Int64,
+    _ rhs: Int64
+) -> Bool {
+    // macOS can report small sub-microsecond variations for the same
+    // directory's st_birthtimespec. Admission tolerates only that drift;
+    // persisted-record Equatable stays exact for generation and ABA fencing.
+    let difference = lhs >= rhs
+        ? UInt64(truncatingIfNeeded: lhs) &- UInt64(truncatingIfNeeded: rhs)
+        : UInt64(truncatingIfNeeded: rhs) &- UInt64(truncatingIfNeeded: lhs)
+    return difference < 1_000
+}
+
 nonisolated struct RecentAgentTaskFilesystemObjectProof:
     Codable, Equatable, Sendable {
     let device: UInt64
@@ -17,6 +30,34 @@ nonisolated struct RecentAgentTaskFilesystemObjectProof:
     let birthSeconds: Int64
     let birthNanoseconds: Int64
     let kind: UInt16
+
+    func identifiesSameObject(
+        as other: RecentAgentTaskFilesystemObjectProof
+    ) -> Bool {
+        device == other.device
+            && inode == other.inode
+            && generation == other.generation
+            && birthSeconds == other.birthSeconds
+            && filesystemBirthtimeMatches(
+                birthNanoseconds,
+                other.birthNanoseconds
+            )
+            && kind == other.kind
+    }
+}
+
+nonisolated private func filesystemObjectProofMatches(
+    _ lhs: RecentAgentTaskFilesystemObjectProof?,
+    _ rhs: RecentAgentTaskFilesystemObjectProof?
+) -> Bool {
+    switch (lhs, rhs) {
+    case (nil, nil):
+        true
+    case let (lhs?, rhs?):
+        lhs.identifiesSameObject(as: rhs)
+    default:
+        false
+    }
 }
 
 nonisolated struct RecentAgentTaskRepositoryProof:
@@ -70,8 +111,26 @@ nonisolated struct RecentAgentTaskRepositoryProof:
             && commonDirectoryGeneration == other.commonDirectoryGeneration
             && commonDirectoryBirthSeconds
                 == other.commonDirectoryBirthSeconds
-            && commonDirectoryBirthNanoseconds
-                == other.commonDirectoryBirthNanoseconds
+            && filesystemBirthtimeMatches(
+                commonDirectoryBirthNanoseconds,
+                other.commonDirectoryBirthNanoseconds
+            )
+    }
+
+    func identifiesSameWorktreeInstance(
+        as other: RecentAgentTaskRepositoryProof
+    ) -> Bool {
+        identifiesSameRepository(as: other)
+            && filesystemObjectProofMatches(projectRoot, other.projectRoot)
+            && filesystemObjectProofMatches(
+                projectGitDirectory,
+                other.projectGitDirectory
+            )
+            && filesystemObjectProofMatches(worktreeRoot, other.worktreeRoot)
+            && filesystemObjectProofMatches(
+                worktreeGitDirectory,
+                other.worktreeGitDirectory
+            )
     }
 }
 
@@ -121,6 +180,18 @@ nonisolated private struct StableFilesystemObjectIdentity: Equatable, Sendable {
         self.birthSeconds = birthSeconds
         self.birthNanoseconds = birthNanoseconds
         self.kind = kind
+    }
+
+    func identifiesSameObject(as other: Self) -> Bool {
+        device == other.device
+            && inode == other.inode
+            && generation == other.generation
+            && birthSeconds == other.birthSeconds
+            && filesystemBirthtimeMatches(
+                birthNanoseconds,
+                other.birthNanoseconds
+            )
+            && kind == other.kind
     }
 
     var persistedProof: RecentAgentTaskFilesystemObjectProof {
@@ -535,15 +606,17 @@ nonisolated enum RecentAgentTaskFilesystemValidator {
                 == worktree.commonDirectory.url.path,
               StableFilesystemObjectIdentity(
                   project.commonDirectory.information
-              ) == StableFilesystemObjectIdentity(
+              ).identifiesSameObject(as: StableFilesystemObjectIdentity(
                   worktree.commonDirectory.information
-              ) else { return nil }
+              )) else { return nil }
         let proof = repositoryProof(
             project: project,
             worktree: worktree
         )
         guard expectedProof.hasExactWorktreeInstance,
-              proof == expectedProof else { return nil }
+              proof.identifiesSameWorktreeInstance(as: expectedProof) else {
+            return nil
+        }
         let lease = RecentAgentTaskFilesystemValidationLease(
             identity: identity,
             proof: proof,
@@ -578,9 +651,9 @@ nonisolated enum RecentAgentTaskFilesystemValidator {
                 == worktree.commonDirectory.url.path,
               StableFilesystemObjectIdentity(
                   project.commonDirectory.information
-              ) == StableFilesystemObjectIdentity(
+              ).identifiesSameObject(as: StableFilesystemObjectIdentity(
                   worktree.commonDirectory.information
-              ) else { return nil }
+              )) else { return nil }
         let proof = repositoryProof(
             project: project,
             worktree: worktree
@@ -1030,7 +1103,7 @@ nonisolated enum RecentAgentTaskFilesystemValidator {
     ) -> Bool {
         let left = StableFilesystemObjectIdentity(lhs)
         let right = StableFilesystemObjectIdentity(rhs)
-        return left == right && left.kind == kind
+        return left.identifiesSameObject(as: right) && left.kind == kind
     }
 }
 
