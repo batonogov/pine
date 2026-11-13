@@ -3,6 +3,18 @@
 Status: working product direction; not an implementation or compatibility promise.
 Scope reference: [Pine 3.0 — ADE milestone](https://github.com/batonogov/pine/milestone/16).
 
+## Explore the direction
+
+**Describe it. Try it. Refine it.** The
+[interactive concept on the landing page](https://batonogov.github.io/pine/#future)
+explores project → task → result → contextual feedback. Code and terminal are
+available when needed rather than occupying the foreground.
+
+The Web, Go, Python, and DevOps examples are a Russian-language design study
+with simulated agents, commands, and checks, not the downloadable application.
+[Source and captures](design/pine-3/prototype/README.md) record one composition;
+[design validation #1735](https://github.com/batonogov/pine/issues/1735) remains open.
+
 ## ADE positioning
 
 Pine 3.0 is the ADE release. Pine becomes a native macOS Agentic Development
