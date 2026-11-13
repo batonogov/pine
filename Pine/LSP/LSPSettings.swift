@@ -134,7 +134,7 @@ final class LSPSettings {
     private var observers: [WeakLSPSettingsObserver] = []
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         fileManager: FileManager = .default
     ) {
         self.defaults = defaults

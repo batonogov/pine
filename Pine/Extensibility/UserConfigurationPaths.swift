@@ -18,8 +18,7 @@ import Foundation
 nonisolated enum UserConfigurationPaths {
     /// `~/Library/Application Support/Pine/`
     static var applicationSupportDirectory: URL {
-        FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        PineStorageContext.applicationSupportDirectory
             .appendingPathComponent("Pine", isDirectory: true)
     }
 

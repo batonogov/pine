@@ -42,7 +42,7 @@ final class SplitPaneRoutingUITests: PineUITestCase {
     private var projectURL: URL!
     private let primaryPaneID = UUID()
     private let secondaryPaneID = UUID()
-    private let bundleID = "io.github.batonogov.pine"
+    private var bundleID: String { isolatedDefaultsSuiteName }
 
     // MARK: - Setup / Teardown
 

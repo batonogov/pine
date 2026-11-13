@@ -22,7 +22,7 @@ final class HCLFormatOnSaveTests: PineUITestCase {
         // reads with `object(forKey:) as? Bool` which returns nil for strings.
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        proc.arguments = ["write", "io.github.batonogov.pine", "editor.formatOnSave", "-bool", "YES"]
+        proc.arguments = ["write", isolatedDefaultsSuiteName, "editor.formatOnSave", "-bool", "YES"]
         proc.environment = ["DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer"]
         try proc.run()
         proc.waitUntilExit()
@@ -36,7 +36,7 @@ final class HCLFormatOnSaveTests: PineUITestCase {
         // Restore formatOnSave to its default (off)
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        proc.arguments = ["delete", "io.github.batonogov.pine", "editor.formatOnSave"]
+        proc.arguments = ["delete", isolatedDefaultsSuiteName, "editor.formatOnSave"]
         proc.environment = ["DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer"]
         try? proc.run()
         proc.waitUntilExit()

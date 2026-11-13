@@ -52,7 +52,7 @@ enum UserCommandInvocationRouter {
             )
 
         case .toggleAutoSave:
-            let defaults = UserDefaults.standard
+            let defaults = PineStorageContext.defaults
             let key = TabManager.autoSaveKey
             defaults.set(!defaults.bool(forKey: key), forKey: key)
 
@@ -165,7 +165,7 @@ enum UserCommandInvocationRouter {
 
         case .toggleBlame:
             let key = BlameConstants.storageKey
-            let defaults = UserDefaults.standard
+            let defaults = PineStorageContext.defaults
             defaults.set(!defaults.bool(forKey: key), forKey: key)
 
         case .togglePreview:

@@ -51,7 +51,7 @@ final class EditorSettings {
         didSet { defaults.set(smartListContinuation, forKey: Keys.smartListContinuation) }
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PineStorageContext.defaults) {
         self.defaults = defaults
         // `object(forKey:)` returns nil for missing keys so we can distinguish "unset" from
         // "explicitly false" and default unset flags to `true`.

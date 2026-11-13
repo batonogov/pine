@@ -9,7 +9,23 @@ import XCTest
 
 /// Base class providing common setup and helpers for Pine UI tests.
 class PineUITestCase: XCTestCase {
-    var app: XCUIApplication!
+    var app: XCUIApplication! {
+        didSet { configureIsolatedState() }
+    }
+    private let stateNamespace = UUID()
+    var isolatedDefaultsSuiteName: String { "PineUITests.State." + stateNamespace.uuidString }
+
+    /// Also runs whenever a relaunch fixture replaces its XCUIApplication.
+    private func configureIsolatedState() {
+        app?.launchEnvironment["PINE_TEST_STATE_NAMESPACE"] = stateNamespace.uuidString
+    }
+
+    override func tearDownWithError() throws {
+        app?.terminate()
+        UserDefaults(suiteName: isolatedDefaultsSuiteName)?
+            .removePersistentDomain(forName: isolatedDefaultsSuiteName)
+        try super.tearDownWithError()
+    }
 
     override func setUpWithError() throws {
         continueAfterFailure = false

@@ -88,7 +88,7 @@ final class ShellSettings {
     }
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         fileManager: FileManager = .default,
         defaultShellPath: String? = nil
     ) {

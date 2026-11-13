@@ -47,7 +47,7 @@ struct PineSettingsView: View {
     let quickTerminalSettings: QuickTerminalSettings
 
     /// Persists the last-selected pane across sessions (issue #337).
-    @AppStorage(Self.selectedPaneKey) private var selectedPane: SettingsPane.SettingsPaneID = .general
+    @AppStorage(Self.selectedPaneKey, store: PineStorageContext.defaults) private var selectedPane: SettingsPane.SettingsPaneID = .general
 
     /// The tab strip is sized from the titles it is about to draw, so the
     /// window follows the locale instead of a fixed 720 pt (#1531).

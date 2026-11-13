@@ -170,9 +170,12 @@ final class ApplicationLifecycleProcessDriver {
     }
 
     private init?(configuration: ApplicationLifecycleProcessConfiguration) {
-        guard let defaults = UserDefaults(
-            suiteName: configuration.defaultsSuiteName
-        ) else { return nil }
+        guard PineStorageContext.isTestHost,
+              configuration.defaultsSuiteName.hasPrefix("PineTests.ApplicationLifecycle."),
+              let suffix = configuration.defaultsSuiteName.components(separatedBy: ".").last,
+              UUID(uuidString: suffix) != nil,
+              let defaults = UserDefaults(suiteName: configuration.defaultsSuiteName)
+        else { return nil }
         self.configuration = configuration
         self.defaults = defaults
         stateDirectory = URL(

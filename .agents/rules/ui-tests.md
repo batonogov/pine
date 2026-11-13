@@ -13,10 +13,24 @@ Every "known issue" below has already cost someone a debugging session.
 
 ## Launch arguments and environment
 
+- The scheme's Test action uses the `Testing` build configuration. Its app has
+  bundle identifier `io.github.batonogov.pine.test-host`; normal Debug and Release
+  builds retain the production identifier. Keep local/CI test commands on the
+  scheme configuration: overriding `-configuration Debug` cannot run reset or
+  lifecycle fixtures. The ordinary app rejects private test flags and test environment markers before
+  SwiftUI or application persistence initializes.
+- `PineUITestCase` assigns one UUID `PINE_TEST_STATE_NAMESPACE` for each test,
+  including replacement `XCUIApplication` instances and relaunches. Preferences
+  use `PineUITests.State.<UUID>` and application-support stores use a private
+  `PineTestState/<UUID>` subtree. Missing or malformed UUIDs in the test host get
+  a fresh private process scope; they never select production state. Lifecycle
+  child fixtures explicitly propagate their owned namespace. Cocoa/SwiftUI saved
+  state also uses the separate test-host application identity.
+
 - Launch arguments for UI testing: `--reset-state` (clears persisted sessions), `--disable-agent-detection` (disables the `ps`-polling agent detector — avoids the macOS-26 fork/spawn hang #1060), `--disable-metal` (pins the terminal to SwiftTerm's CoreGraphics renderer — Metal may be unavailable on CI virtual displays #1108), `--disable-quick-terminal` (disables the global ⌃⌥Space hotkey so it does not grab key events on CI #1113), `-ApplePersistenceIgnoreState YES` (ignores macOS saved window state), `-AppleLanguages (en)`, `-AppleLocale en_US` (force English locale so menu item names are predictable)
 - `ScreenshotTests` additionally passes `--ui-test-dark-appearance` (forces `NSAppearance.darkAqua` regardless of the host system theme) so marketing captures always match the dark landing page
 - Environment variable for UI testing: `PINE_OPEN_PROJECT=<path>` (opens project without file dialog — uses env var because macOS interprets bare paths in launch arguments as files to open)
-- **Known issue:** XCUITest launch arguments (`-key YES`) store values as strings in NSArgumentDomain. `UserDefaults.object(forKey:) as? Bool` returns nil for strings. To set boolean UserDefaults for UI tests, use `defaults write <bundle-id> <key> -bool YES` via `Process` in setUp, and `defaults delete` in tearDown
+- **Known issue:** XCUITest launch arguments (`-key YES`) store values as strings in NSArgumentDomain. `UserDefaults.object(forKey:) as? Bool` returns nil for strings. To set boolean UserDefaults for UI tests, use `defaults write <isolatedDefaultsSuiteName> <key> -bool YES` via `Process` in setUp, and `defaults delete` in tearDown. Never seed the production bundle identifier; the base class exposes this test-owned suite name
 
 ## What XCUITest cannot do
 

@@ -125,7 +125,7 @@ final class TerminalCursorSettings {
     }
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         notificationCenter: NotificationCenter = .default
     ) {
         self.defaults = defaults

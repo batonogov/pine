@@ -128,10 +128,7 @@ struct AgentWorktreeDiscoveryTests {
             root.deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                == FileManager.default.urls(
-                    for: .applicationSupportDirectory,
-                    in: .userDomainMask
-                )[0]
+                == PineStorageContext.applicationSupportDirectory
         )
         // Pure derivation: the directory is not created.
         #expect(

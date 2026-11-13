@@ -2335,8 +2335,7 @@ final class TerminalTab: Identifiable, Hashable {
             env["PINE_PROJECT_ROOT"] = wd.path
             if readOnlyContextEnabled {
                 let hash = ContextFileWriter.hashedFileName(for: wd)
-                let contextsDir = FileManager.default
-                    .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                let contextsDir = PineStorageContext.applicationSupportDirectory
                     .appendingPathComponent(ContextFileWriter.contextsDirName)
                 env["PINE_CONTEXT_FILE"] = contextsDir
                     .appendingPathComponent(hash).path

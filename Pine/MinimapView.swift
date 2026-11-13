@@ -14,17 +14,17 @@ import os
 enum MinimapSettings {
     private static let key = "minimapVisible"
 
-    static func isVisible(in defaults: UserDefaults = .standard) -> Bool {
+    static func isVisible(in defaults: UserDefaults = PineStorageContext.defaults) -> Bool {
         // Default to true if key is not set
         if defaults.object(forKey: key) == nil { return true }
         return defaults.bool(forKey: key)
     }
 
-    static func setVisible(_ visible: Bool, in defaults: UserDefaults = .standard) {
+    static func setVisible(_ visible: Bool, in defaults: UserDefaults = PineStorageContext.defaults) {
         defaults.set(visible, forKey: key)
     }
 
-    static func toggle(in defaults: UserDefaults = .standard) {
+    static func toggle(in defaults: UserDefaults = PineStorageContext.defaults) {
         setVisible(!isVisible(in: defaults), in: defaults)
     }
 }
