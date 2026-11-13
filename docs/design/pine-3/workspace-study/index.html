@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Pine 3 — Workspace composition study</title>
+  <link rel="stylesheet" href="study.css">
+  <script src="study.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">Skip to workspace</a>
+  <header class="study-header">
+    <div><p class="eyebrow">Pine 3 · Design exploration #1735</p><h1>Two ways to return to your work.</h1></div>
+    <p>Interactive concepts, not shipped UI. All activity and evidence are simulated. No agents, commands, API calls, or file writes run.</p>
+  </header>
+  <section class="study-controls" aria-label="Composition comparison">
+    <div class="segmented" aria-label="Composition">
+      <button type="button" data-layout="focus" aria-pressed="true">A · Focus workspace</button>
+      <button type="button" data-layout="table" aria-pressed="false">B · Project table</button>
+    </div>
+    <p id="composition-description">Projects and tasks stay in a compact sidebar. One selected task owns the canvas.</p>
+  </section>
+  <div class="window" id="app"></div>
+  <section class="fixture-controls" aria-label="Prototype scenarios">
+    <strong>Prototype controls</strong>
+    <button type="button" data-scenario="question">Show a question</button>
+    <button type="button" data-scenario="ready">Show checked result</button>
+    <button type="button" data-scenario="stale">Simulate a later edit</button>
+    <button type="button" data-scenario="relaunch">Simulate relaunch</button>
+    <button type="button" data-scenario="cancelled">Show cancelled</button>
+    <label for="other-state">Other state</label>
+    <select id="other-state"><option value="">Choose…</option><option value="unknown">Execution unknown</option><option value="unverified">Unverified result</option><option value="failed">Failed check</option><option value="unavailable">Environment unavailable</option></select>
+    <p>These controls substitute illustrative provider/check events. They do not model a Pine-owned agent.</p>
+  </section>
+  <p class="status-message" id="announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+  <footer>Compare spatial models, then choose a direction. Keyboard and semantic controls are included; native macOS, VoiceOver, and all-locale acceptance remain implementation work.</footer>
+</body>
+</html>
