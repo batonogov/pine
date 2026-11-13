@@ -166,8 +166,9 @@ work (`staleEvidence(.independentCheck)`, `staleEvidence(.reviewerOutcome)`),
 while reviewed and accepted snapshots stay identifiable.
 
 **Re-verification.** `.stale` (and `.pending`) is left only by an explicit
-re-verification action, owned by the verification layer (#1724) under a
-persisted grant; no later fact alone re-upgrades a stale result. The layer
+re-verification action, which the verification layer (#1724) will drive
+through these seams; the grant mechanism is #1724's to define. No later
+fact alone re-upgrades a stale result. The layer
 re-runs the required evidence against the current identities, records the
 new bound facts (`recordEvidence`), optionally marks in-flight verification
 (`markVerificationPending`), and then restores the current state
@@ -181,8 +182,9 @@ seams take caller-proven identities only.
 with an evidence basis: a settled run carrying a recorded outcome plus at
 least one durable evidence fact bound to it. Relaunch normalization marks
 live evidence stale, invalidates current verified and accepted state, and
-preserves the snapshots; it is applied and durable before any surface
-presents the task. Invalidation and the evidence recorded after it land in
+preserves the snapshots: surfaces never see un-normalized state, and
+un-normalized state is never persisted (the re-save is scheduled after
+normalization). Invalidation and the evidence recorded after it land in
 the same durable task snapshot, so a persisted write can never contain
 dependent positive evidence without its invalidation; a crash between a
 mutation and the metadata write leaves only the previous consistent state.

@@ -501,6 +501,7 @@ final class AgentTaskRegistry {
     ) -> Bool {
         guard !isTerminating,
               let index = taskIndex(for: taskID),
+              tasks[index].lifecycle != .dismissed,
               let runIndex = tasks[index].runs.indices.last,
               AgentTaskLifecycleReducer.isSettled(tasks[index].runs[runIndex]),
               let outcome = tasks[index].runs[runIndex].outcome,
@@ -1750,8 +1751,9 @@ final class AgentTaskRegistry {
             }
         }
         // Relaunch makes current positive evidence stale but preserves the
-        // reviewed and accepted history. The normalized (stale) state is
-        // durable before any surface may present it (#1722).
+        // reviewed and accepted history. Surfaces never see un-normalized
+        // state, and un-normalized state is never persisted: the re-save is
+        // scheduled after normalization (#1722).
         if task.verificationState == .verified
             || task.verificationState == .pending {
             task.verificationState = .stale
@@ -1993,8 +1995,14 @@ final class AgentTaskRegistry {
             )
             tasks[index].runs[runIndex].liveness = .terminated
             tasks[index].runs[runIndex].endedAt = end
-            // The resumed attempt replaces the interrupted one.
-            tasks[index].runs[runIndex].outcome = .superseded
+            // The resumed attempt replaces the interrupted one. Only an
+            // UNSETTLED run is superseded here: a run already settled from
+            // its bound evidence keeps that outcome, matching endRun (the
+            // outcome is a pure function of the facts, never of the
+            // replacement).
+            if tasks[index].runs[runIndex].outcome == nil {
+                tasks[index].runs[runIndex].outcome = .superseded
+            }
             advanceTaskChronology(at: index, through: end)
         }
         return appendRun(session, to: claim.taskID, context: context)

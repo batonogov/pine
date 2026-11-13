@@ -2964,7 +2964,7 @@ struct AgentTaskRegistryTests {
         )
     }
 
-    @Test("schema v1 metadata migrates to revisioned v2")
+    @Test("schema v1 metadata migrates to revisioned v3")
     func legacyMetadataMigratesToRevisionedEnvelope() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }

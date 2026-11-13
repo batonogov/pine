@@ -9,7 +9,7 @@
 //
 //  - Process exit, terminal silence, and an agent completion claim never map
 //    to Ready; they settle an attempt as `unverified` (or `failure` when an
-//    independent fact says so).
+//    independent fact bound to the claim's code state says so).
 //  - A finished attempt without all required independent evidence is
 //    explicitly `unverified`.
 //  - Missing positive idle evidence is `unknown`, never `idle`.
@@ -36,8 +36,10 @@ nonisolated enum AgentTaskLifecycleReducer {
     /// Bounded maximum of durable evidence facts per task. This is the ONE
     /// admission bound: every entry path (recorded facts, user acceptance,
     /// observed settlement) fences through `admit`, and the metadata store
-    /// keeps an equivalent count guard as a persistence backstop.
-    static let maxEvidenceFacts = 64
+    /// keeps an equivalent count guard as a persistence backstop. Derived
+    /// from the persistence limits so both bounds stay one constant.
+    static let maxEvidenceFacts =
+        AgentTaskPersistenceLimits().maxEvidenceFactsPerTask
 
     // MARK: - Execution state
 
@@ -156,11 +158,17 @@ nonisolated enum AgentTaskLifecycleReducer {
     /// Settles the outcome of one terminated run from its evidence.
     ///
     /// The outcome is a pure function of the bound facts: cancellation wins
-    /// over failure; any failing independent fact makes the attempt a
-    /// failure; a success requires an agent-reported completion and every
-    /// required independent fact passing against one shared code-state
-    /// identity. Everything else — exit, silence, a claim without
-    /// verification — is `unverified`.
+    /// over failure. The agent-reported completion with the latest observed
+    /// time is the claim the attempt settles against. A failing independent
+    /// fact vetoes the claim only when it is bound to the claim's own
+    /// code state — a failure recorded against an older code state is
+    /// recorded history, never a rejection of the current claim, so the
+    /// documented re-verification flow stays reachable. A success requires
+    /// the claim plus every required independent fact passing against the
+    /// claim's shared code-state identity. Without a claim there is no
+    /// result to reject: failing checks are recorded evidence and settle
+    /// `unverified`, never `failure`. Everything else — exit, silence, a
+    /// claim without verification — is `unverified`.
     static func settleOutcome(
         for run: AgentTaskRun,
         evidence: [AgentTaskEvidenceFact]
@@ -169,30 +177,98 @@ nonisolated enum AgentTaskLifecycleReducer {
         if facts.contains(where: { $0.kind == .userCancellation }) {
             return .cancellation
         }
-        if facts.contains(where: { fact in
-            (fact.kind == .independentCheck || fact.kind == .reviewerOutcome)
-                && !fact.kind.isPassing(fact.result)
-        }) {
-            return .failure
-        }
         // Re-emitted completion claims: the LATEST observed claim wins
         // deterministically, so an older claim bound to a different
         // code state cannot mask a newer, current one.
-        if let claim = facts
-            .filter({ $0.kind == .agentReportedCompletion })
-            .max(by: { $0.observedAt < $1.observedAt }) {
-            let requiredSatisfied = Self.requiredEvidenceForSuccess.allSatisfy { kind in
-                facts.contains(where: { fact in
-                    fact.kind == kind
-                        && fact.kind.isPassing(fact.result)
-                        && Self.sameCodeState(fact, claim)
-                })
-            }
-            if requiredSatisfied {
-                return .success
-            }
+        let claims = facts.filter { $0.kind == .agentReportedCompletion }
+        guard let claim = claims.max(by: Self.claimIsEarlier) else {
+            // No completion claim: the attempt has no result to reject.
+            return .unverified
+        }
+        if facts.contains(where: { fact in
+            (fact.kind == .independentCheck || fact.kind == .reviewerOutcome)
+                && !fact.kind.isPassing(fact.result)
+                && Self.sameCodeState(fact, claim)
+        }) {
+            return .failure
+        }
+        let requiredSatisfied = Self.requiredEvidenceForSuccess.allSatisfy {
+            kind in
+            facts.contains(where: { fact in
+                fact.kind == kind
+                    && fact.kind.isPassing(fact.result)
+                    && Self.sameCodeState(fact, claim)
+            })
+        }
+        if requiredSatisfied {
+            return .success
         }
         return .unverified
+    }
+
+    /// "Latest claim" ordering, independent of admission order: the maximum
+    /// observed time wins; when the times tie and both claims carry a source
+    /// sequence, the higher sequence wins; otherwise the canonical event
+    /// identity breaks the tie.
+    private static func claimIsEarlier(
+        _ lhs: AgentTaskEvidenceFact,
+        _ rhs: AgentTaskEvidenceFact
+    ) -> Bool {
+        if lhs.observedAt != rhs.observedAt {
+            return lhs.observedAt < rhs.observedAt
+        }
+        if let lhsSequence = lhs.sourceSequence,
+           let rhsSequence = rhs.sourceSequence,
+           lhsSequence != rhsSequence {
+            return lhsSequence < rhsSequence
+        }
+        return isEarlierEvent(lhs, rhs)
+    }
+
+    /// Canonical, admission-order-independent comparison of event
+    /// identities, field by field in a fixed order. An absent optional
+    /// component sorts before a present one; equal identities tie.
+    private static func isEarlierEvent(
+        _ lhs: AgentTaskEvidenceFact,
+        _ rhs: AgentTaskEvidenceFact
+    ) -> Bool {
+        let lhsIdentity = lhs.eventIdentity
+        let rhsIdentity = rhs.eventIdentity
+        if lhsIdentity.kind != rhsIdentity.kind {
+            return lhsIdentity.kind.rawValue < rhsIdentity.kind.rawValue
+        }
+        if lhsIdentity.runID != rhsIdentity.runID {
+            return lhsIdentity.runID.uuidString < rhsIdentity.runID.uuidString
+        }
+        if lhsIdentity.processGeneration != rhsIdentity.processGeneration {
+            return lhsIdentity.processGeneration
+                < rhsIdentity.processGeneration
+        }
+        if lhsIdentity.sourceSequence != rhsIdentity.sourceSequence {
+            switch (lhsIdentity.sourceSequence, rhsIdentity.sourceSequence) {
+            case let (lhsSequence?, rhsSequence?):
+                return lhsSequence < rhsSequence
+            case (nil, _?):
+                return true
+            case (_?, nil):
+                return false
+            case (nil, nil):
+                break
+            }
+        }
+        if lhsIdentity.observedAt != rhsIdentity.observedAt {
+            switch (lhsIdentity.observedAt, rhsIdentity.observedAt) {
+            case let (lhsObservedAt?, rhsObservedAt?):
+                return lhsObservedAt < rhsObservedAt
+            case (nil, _?):
+                return true
+            case (_?, nil):
+                return false
+            case (nil, nil):
+                break
+            }
+        }
+        return false
     }
 
     /// Two bound facts share one code-state identity only when both recorded
@@ -293,6 +369,9 @@ nonisolated enum AgentTaskLifecycleReducer {
             task.lifecycle = .completed
             task.attention = .failed
             task.completedAt = latest.endedAt
+            // A failed result cannot stay verified: the verification
+            // dimension resets like an unverified settlement.
+            task.verificationState = .none
             task.reviewedSnapshot = Self.latestSnapshot(
                 forKind: .reviewerOutcome,
                 run: latest,
@@ -529,6 +608,16 @@ nonisolated enum AgentTaskLifecycleReducer {
                 }
                 for kind in Self.requiredEvidenceForSuccess {
                     let kindFacts = facts.filter { $0.kind == kind }
+                    // Mirror the settlement veto scope: a fact bound to the
+                    // CURRENT code state that does not pass names the gap;
+                    // no passing fact lookup can override it.
+                    if kindFacts.contains(where: {
+                        $0.codeState == codeState
+                            && !kind.isPassing($0.result)
+                    }) {
+                        gaps.append(.failingEvidence(kind))
+                        continue
+                    }
                     // Prefer a passing fact bound to the current code state;
                     // only when none is, the kind's newest passing fact
                     // proves staleness (or the absence of any, failure).
@@ -574,6 +663,16 @@ nonisolated enum AgentTaskLifecycleReducer {
             let facts = Self.facts(forRun: latest.id, in: task)
             for kind in Self.requiredEvidenceForSuccess {
                 let kindFacts = facts.filter { $0.kind == kind }
+                // Mirror the settlement veto scope: a fact bound to the
+                // CURRENT code state that does not pass names the gap; no
+                // passing fact lookup can override it.
+                if kindFacts.contains(where: {
+                    $0.codeState == codeState
+                        && !kind.isPassing($0.result)
+                }) {
+                    gaps.append(.failingEvidence(kind))
+                    continue
+                }
                 guard !kindFacts.isEmpty else {
                     gaps.append(.missingEvidence(kind))
                     continue

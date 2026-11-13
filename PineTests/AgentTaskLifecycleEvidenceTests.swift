@@ -346,6 +346,8 @@ struct AgentTaskLifecycleEvidenceTests {
         )
         #expect(!readiness.isReady)
         #expect(readiness.gaps.contains(.unverifiedOutcome))
+        #expect(readiness.gaps.contains(.missingEvidence(.independentCheck)))
+        #expect(readiness.gaps.contains(.missingEvidence(.reviewerOutcome)))
     }
 
     @Test("an agent claim alone settles unverified")
@@ -366,11 +368,15 @@ struct AgentTaskLifecycleEvidenceTests {
         AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
         #expect(task.runs.last?.outcome == .unverified)
         #expect(task.lifecycle == .paused)
-        #expect(!AgentTaskLifecycleReducer.readiness(
+        let readiness = AgentTaskLifecycleReducer.readiness(
             for: task,
             codeState: codeState("a"),
             environment: environment
-        ).isReady)
+        )
+        #expect(!readiness.isReady)
+        #expect(readiness.gaps.contains(.unverifiedOutcome))
+        #expect(readiness.gaps.contains(.missingEvidence(.independentCheck)))
+        #expect(readiness.gaps.contains(.missingEvidence(.reviewerOutcome)))
     }
 
     @Test("verified evidence settles success and Ready")
@@ -473,6 +479,187 @@ struct AgentTaskLifecycleEvidenceTests {
         )
         #expect(!readiness.isReady)
         #expect(readiness.gaps.contains(.failedAttempt))
+    }
+
+    @Test("a failing check from an older code state does not veto the claim")
+    func staleStateFailureDoesNotVetoCurrentClaim() throws {
+        let run = AgentTaskRun(makeAttempt(
+            seed: 121,
+            liveness: .terminated,
+            now: Date(timeIntervalSince1970: 7_000_000)
+        ))
+        let t = Date(timeIntervalSince1970: 7_000_000)
+        // The check failed against an older code state (B)...
+        let staleFailure = fact(
+            .independentCheck,
+            runID: run.id,
+            generation: 121,
+            result: .failed,
+            at: t,
+            codeState: codeState("b"),
+            environment: environment,
+            sequence: 1
+        )
+        // ...then the agent claimed completion at the current state (A) and
+        // the required evidence passed at A.
+        let claim = fact(
+            .agentReportedCompletion,
+            runID: run.id,
+            generation: 121,
+            result: .reported,
+            at: t.addingTimeInterval(1),
+            codeState: codeState("a"),
+            environment: environment,
+            sequence: 2
+        )
+        let check = fact(
+            .independentCheck,
+            runID: run.id,
+            generation: 121,
+            result: .succeeded,
+            at: t.addingTimeInterval(2),
+            codeState: codeState("a"),
+            environment: environment,
+            sequence: 3
+        )
+        let review = fact(
+            .reviewerOutcome,
+            runID: run.id,
+            generation: 121,
+            result: .succeeded,
+            at: t.addingTimeInterval(3),
+            codeState: codeState("a"),
+            environment: environment,
+            sequence: 4
+        )
+        // The stale failure is recorded history, not a rejection of the
+        // current claim: the attempt settles success in any admission
+        // order.
+        #expect(
+            AgentTaskLifecycleReducer.settleOutcome(
+                for: run,
+                evidence: [staleFailure, claim, check, review]
+            ) == .success
+        )
+        #expect(
+            AgentTaskLifecycleReducer.settleOutcome(
+                for: run,
+                evidence: [review, check, claim, staleFailure]
+            ) == .success
+        )
+    }
+
+    @Test("a failing check without a completion claim settles unverified")
+    func failingCheckWithoutClaimSettlesUnverified() throws {
+        var task = settledTask(seed: 122)
+        let run = try #require(task.runs.first)
+        let now = task.lastActivityAt
+        task.evidence.append(fact(
+            .independentCheck,
+            runID: run.id,
+            generation: UInt64(122),
+            result: .failed,
+            at: now,
+            codeState: codeState("a"),
+            environment: environment,
+            sequence: 1
+        ))
+        AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
+        // A failing check without a claim is recorded evidence, never a
+        // rejected result.
+        #expect(task.runs.last?.outcome == .unverified)
+        #expect(task.lifecycle == .paused)
+        let readiness = AgentTaskLifecycleReducer.readiness(
+            for: task,
+            codeState: codeState("a"),
+            environment: environment
+        )
+        #expect(!readiness.isReady)
+        #expect(readiness.gaps.contains(.unverifiedOutcome))
+        #expect(readiness.gaps.contains(.failingEvidence(.independentCheck)))
+        #expect(readiness.gaps.contains(.missingEvidence(.reviewerOutcome)))
+        #expect(
+            readiness.gaps.contains(.missingEvidence(.agentReportedCompletion))
+        )
+    }
+
+    @Test("an unbound late failure cannot flip a settled success")
+    func unboundLateFailureCannotFlipSuccess() throws {
+        var task = try verifiedSuccessTask(
+            seed: 123,
+            codeState: codeState("a"),
+            environment: environment
+        )
+        let run = try #require(task.runs.first)
+        let now = task.lastActivityAt
+        // A late failing review with no code-state binding: it cannot prove
+        // relevance, so it cannot veto the bound passing review.
+        task.evidence.append(fact(
+            .reviewerOutcome,
+            runID: run.id,
+            generation: 123,
+            result: .failed,
+            at: now.addingTimeInterval(60),
+            sequence: 9
+        ))
+        AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
+        #expect(task.runs.last?.outcome == .success)
+        #expect(task.verificationState == .verified)
+    }
+
+    @Test("readiness names failing evidence bound to the current state")
+    func readinessNamesFailingEvidenceForCurrentState() throws {
+        // The attempt succeeded at A. A failing check bound to the CURRENT
+        // state B does not re-settle the attempt (the claim's state is A),
+        // but readiness at B must name the failing evidence.
+        var task = try verifiedSuccessTask(
+            seed: 124,
+            codeState: codeState("a"),
+            environment: environment
+        )
+        let run = try #require(task.runs.first)
+        let now = task.lastActivityAt
+        task.evidence.append(fact(
+            .independentCheck,
+            runID: run.id,
+            generation: 124,
+            result: .failed,
+            at: now.addingTimeInterval(60),
+            codeState: codeState("b"),
+            environment: environment,
+            sequence: 9
+        ))
+        AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
+        #expect(task.runs.last?.outcome == .success)
+        let readiness = AgentTaskLifecycleReducer.readiness(
+            for: task,
+            codeState: codeState("b"),
+            environment: environment
+        )
+        #expect(!readiness.isReady)
+        #expect(readiness.gaps.contains(.failingEvidence(.independentCheck)))
+        #expect(readiness.gaps.contains(.staleEvidence(.reviewerOutcome)))
+    }
+
+    @Test("readiness names an environment change on a verified success")
+    func readinessNamesEnvironmentChangeExactly() throws {
+        let task = try verifiedSuccessTask(
+            seed: 125,
+            codeState: codeState("a"),
+            environment: environment
+        )
+        let otherEnvironment = AgentTaskEnvironmentIdentity(
+            osBuild: "26A5388g",
+            toolchain: "Xcode 27.0",
+            configurationFingerprint: hex("d")
+        )
+        let readiness = AgentTaskLifecycleReducer.readiness(
+            for: task,
+            codeState: codeState("a"),
+            environment: otherEnvironment
+        )
+        #expect(!readiness.isReady)
+        #expect(Set(readiness.gaps) == [.environmentChanged])
     }
 
     @Test("cancellation settles cancellation")
@@ -929,6 +1116,45 @@ struct AgentTaskLifecycleEvidenceTests {
                 environment: environment
             ) == false
         )
+
+        // Acceptance refuses a dismissed task: dismissal is an Inbox
+        // decision, not an invitation to re-open the work.
+        var dismissed = settledTask(seed: 126)
+        dismissed.lifecycle = .dismissed
+        dismissed.route.availability = .missing
+        registry.setTasksForTesting([dismissed])
+        let beforeDismissed = try #require(registry.task(for: dismissed.id))
+        #expect(
+            registry.recordUserAcceptance(
+                taskID: dismissed.id,
+                codeState: codeState("a"),
+                environment: environment
+            ) == false
+        )
+        #expect(beforeDismissed == registry.task(for: dismissed.id))
+
+        // Acceptance may also be recorded against an `unverified` outcome:
+        // it closes the work and snapshots the identity, but never upgrades
+        // the outcome or the verification state.
+        let unverified = settledTask(seed: 127)
+        registry.setTasksForTesting([unverified])
+        #expect(unverified.runs.last?.outcome == .unverified)
+        #expect(
+            registry.recordUserAcceptance(
+                taskID: unverified.id,
+                codeState: codeState("a"),
+                environment: environment
+            ) == true
+        )
+        let acceptedUnverified = try #require(
+            registry.task(for: unverified.id)
+        )
+        #expect(acceptedUnverified.acceptanceState == .accepted)
+        #expect(acceptedUnverified.runs.last?.outcome == .unverified)
+        #expect(acceptedUnverified.verificationState == .none)
+        #expect(acceptedUnverified.acceptedSnapshot?.outcome == .unverified)
+        #expect(acceptedUnverified.acceptedSnapshot?.codeState == codeState("a"))
+        #expect(acceptedUnverified.lifecycle == .completed)
     }
 
     // MARK: - Registry settlement and persistence (schema v3)
@@ -2411,7 +2637,7 @@ struct AgentTaskLifecycleEvidenceTests {
         )
     }
 
-    @Test("re-settling away from acceptance resets the acceptance state")
+    @Test("re-settling away from a verified success resets verification and acceptance")
     func reSettleAwayFromAcceptanceResetsState() throws {
         let cs = codeState("h")
         var task = try verifiedSuccessTask(
@@ -2429,19 +2655,26 @@ struct AgentTaskLifecycleEvidenceTests {
             environment: environment,
             recordedAt: now
         )
-        // A late failing review re-settles the attempt to failure.
+        // A late failing review bound to the claim's code state re-settles
+        // the attempt to failure.
         task.evidence.append(fact(
             .reviewerOutcome,
             runID: run.id,
             generation: 109,
             result: .failed,
             at: now.addingTimeInterval(60),
+            codeState: cs,
             sequence: 9
         ))
         AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
         #expect(task.runs.last?.outcome == .failure)
+        // A failed result cannot stay verified: the verification dimension
+        // resets, while the reviewed and accepted snapshots stay
+        // identifiable.
+        #expect(task.verificationState == .none)
         #expect(task.acceptanceState == .notAccepted)
         #expect(task.acceptedSnapshot?.runID == run.id)
+        #expect(task.reviewedSnapshot?.runID == run.id)
     }
 
     @Test("the latest agent claim wins when claims disagree")
