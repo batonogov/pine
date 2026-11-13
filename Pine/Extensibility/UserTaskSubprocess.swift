@@ -741,6 +741,15 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
 /// Start timestamps protect against signalling an unrelated process after PID
 /// reuse. A descendant that daemonizes between snapshots can still escape, so
 /// callers must also bound pipe draining and direct-child waiting.
+///
+/// Queue affinity: `descendants` is not lock-protected; each instance is
+/// serialized only by its own explicit dispatch handoff chain. For
+/// terminal-owned instances the creating thread (init) hands off to the
+/// shared capture-wave queue, which hands off to the per-terminal teardown
+/// queue, and finally to the deferred-cleanup queue; `UserTaskRunner`
+/// instances are phase-ordered on the runner's own queues. Calling
+/// `captureDescendants` (or any terminate/cleanup method) from a queue
+/// outside that instance's handoff chain races its captures.
 nonisolated final class UserTaskDescendantTracker: @unchecked Sendable {
     private static let maximumTrackedProcesses = 1_024
     private static let termGracePeriod: TimeInterval = 0.25
@@ -871,14 +880,12 @@ nonisolated final class UserTaskDescendantTracker: @unchecked Sendable {
     }
 
     private static func childProcessIDs(of parent: pid_t) -> [pid_t] {
-        errno = 0
-        let requestedCount = proc_listchildpids(parent, nil, 0)
-        guard requestedCount > 0 else { return [] }
-        let capacity = min(
-            max(Int(requestedCount) + 16, 16),
-            maximumTrackedProcesses
-        )
-        var processIDs = [pid_t](repeating: 0, count: capacity)
+        // A single fill-sized call: the former sizing query also scanned the
+        // system process list (and on some releases reported the system-wide
+        // capacity rather than the child count), so it only doubled the
+        // enumeration cost (#1718). A full buffer is a capped, valid result:
+        // the caller stops tracking at `maximumTrackedProcesses` anyway.
+        var processIDs = [pid_t](repeating: 0, count: maximumTrackedProcesses)
         errno = 0
         let returnedCount = processIDs.withUnsafeMutableBytes { buffer in
             proc_listchildpids(
@@ -887,10 +894,10 @@ nonisolated final class UserTaskDescendantTracker: @unchecked Sendable {
                 Int32(buffer.count)
             )
         }
-        guard returnedCount > 0,
-              Int(returnedCount) < processIDs.count else {
-            return []
-        }
+        #if DEBUG
+        UserTaskProcessTelemetry.recordListChildPidsCall(sizing: false)
+        #endif
+        guard returnedCount > 0 else { return [] }
         return Array(
             processIDs
                 .prefix(Int(returnedCount))
@@ -928,6 +935,9 @@ nonisolated enum UserTaskProcessInspector {
         expectedParent: pid_t? = nil
     ) -> UserTaskProcessIdentity? {
         guard processID > 1 else { return nil }
+        #if DEBUG
+        UserTaskProcessTelemetry.recordBsdInfoLookup()
+        #endif
         var info = proc_bsdinfo()
         let expectedSize = Int32(MemoryLayout<proc_bsdinfo>.size)
         let result = proc_pidinfo(
@@ -956,15 +966,11 @@ nonisolated enum UserTaskProcessInspector {
     static func processIDs(
         inGroup identifier: pid_t
     ) -> UserTaskProcessGroupSnapshot {
-        errno = 0
-        let requestedCount = proc_listpgrppids(identifier, nil, 0)
-        guard requestedCount > 0 else { return .unknown }
-        let capacity = min(
-            max(Int(requestedCount) + 16, 16),
-            maximumGroupMembers
-        )
-
-        var processIDs = [pid_t](repeating: 0, count: capacity)
+        // A single fill-sized call: the former sizing query scanned the
+        // system process list without changing which conservative fallback
+        // applied (#1718). A full buffer stays unknowable, so it keeps the
+        // `.unknown` result and the callers' identity-qualified fallback.
+        var processIDs = [pid_t](repeating: 0, count: maximumGroupMembers)
         errno = 0
         let returnedCount = processIDs.withUnsafeMutableBytes { buffer in
             proc_listpgrppids(
@@ -973,8 +979,11 @@ nonisolated enum UserTaskProcessInspector {
                 Int32(buffer.count)
             )
         }
+        #if DEBUG
+        UserTaskProcessTelemetry.recordListPgrpPidsCall(sizing: false)
+        #endif
         guard groupCountsAreComplete(
-            requestedCount: requestedCount,
+            requestedCount: returnedCount,
             returnedCount: returnedCount,
             capacity: processIDs.count
         ) else {
