@@ -170,6 +170,75 @@ struct AgentTaskFilesystemAdmissionDriftTests {
         )
     }
 
+    // MARK: - Birthtime precision drift
+
+    @Test("Proof admission matching tolerates only sub-microsecond birthtime drift")
+    func proofAdmissionMatchingToleratesSubMicrosecondBirthtimeDrift() {
+        func proof(birthNanoseconds: Int64) -> RecentAgentTaskFilesystemObjectProof {
+            RecentAgentTaskFilesystemObjectProof(
+                device: 1,
+                inode: 2,
+                generation: 3,
+                birthSeconds: 4,
+                birthNanoseconds: birthNanoseconds,
+                kind: 16_384
+            )
+        }
+
+        #expect(proof(birthNanoseconds: 735_573_291).identifiesSameObject(
+            as: proof(birthNanoseconds: 735_573_386)
+        ))
+        #expect(proof(birthNanoseconds: 735_573_999).identifiesSameObject(
+            as: proof(birthNanoseconds: 735_574_094)
+        ))
+        #expect(!proof(birthNanoseconds: 735_573_291).identifiesSameObject(
+            as: proof(birthNanoseconds: 735_574_291)
+        ))
+        #expect(proof(birthNanoseconds: 735_573_291) != proof(
+            birthNanoseconds: 735_573_386
+        ))
+    }
+
+    @Test("Sub-microsecond Git directory birthtime drift keeps admission valid")
+    func gitDirectoryBirthtimeDriftKeepsAdmissionValid() async throws {
+        let fixture = try makeDriftFixture(name: "BirthtimePrecision")
+        defer { removeFixture(fixture.root) }
+        let (proof, _) = try await makeProofAndLease(for: fixture)
+        let gitDirectory = try #require(proof.worktreeGitDirectory)
+        let drift: Int64 = gitDirectory.birthNanoseconds % 1_000 <= 904 ? 95 : -95
+        let driftedGitDirectory = RecentAgentTaskFilesystemObjectProof(
+            device: gitDirectory.device,
+            inode: gitDirectory.inode,
+            generation: gitDirectory.generation,
+            birthSeconds: gitDirectory.birthSeconds,
+            birthNanoseconds: gitDirectory.birthNanoseconds + drift,
+            kind: gitDirectory.kind
+        )
+        let driftedProof = RecentAgentTaskRepositoryProof(
+            commonDirectoryDevice: proof.commonDirectoryDevice,
+            commonDirectoryInode: proof.commonDirectoryInode,
+            commonDirectoryGeneration: proof.commonDirectoryGeneration,
+            commonDirectoryBirthSeconds: proof.commonDirectoryBirthSeconds,
+            commonDirectoryBirthNanoseconds: proof.commonDirectoryBirthNanoseconds,
+            projectRoot: proof.projectRoot,
+            projectGitDirectory: proof.projectGitDirectory,
+            worktreeRoot: proof.worktreeRoot,
+            worktreeGitDirectory: driftedGitDirectory
+        )
+
+        let lease = await Task.detached(priority: .utility) {
+            RecentAgentTaskFilesystemValidator.validationLease(
+                for: fixture.identity,
+                expectedProof: driftedProof
+            )
+        }.value
+        #expect(lease != nil)
+        let valid = await Task.detached(priority: .utility) {
+            lease?.revalidate()
+        }.value
+        #expect(valid == true)
+    }
+
     // MARK: - Descriptor drift tolerance
 
     @Test("OS provenance restamp keeps the lease valid")
