@@ -3482,6 +3482,132 @@ struct AgentTaskLifecycleEvidenceTests {
         )
     }
 
+    @Test("code-state and environment shape validation rejects malformed identities")
+    func codeStateAndEnvironmentShapeValidation() throws {
+        let valid = codeState("a")
+        #expect(AgentTaskMetadataStore.validCodeState(valid))
+
+        // Uppercase hex is rejected: fingerprints are lowercase only.
+        #expect(
+            !AgentTaskMetadataStore.validCodeState(
+                AgentTaskCodeStateIdentity(
+                    headCommit: valid.headCommit,
+                    trackedFingerprint: valid.trackedFingerprint.uppercased(),
+                    untrackedFingerprint: valid.untrackedFingerprint,
+                    ignoredRelevantFingerprint: valid.ignoredRelevantFingerprint
+                )
+            )
+        )
+        // A non-hex digit is rejected.
+        #expect(
+            !AgentTaskMetadataStore.validCodeState(
+                AgentTaskCodeStateIdentity(
+                    headCommit: valid.headCommit,
+                    trackedFingerprint: valid.trackedFingerprint,
+                    untrackedFingerprint: String(repeating: "g", count: 64),
+                    ignoredRelevantFingerprint: valid.ignoredRelevantFingerprint
+                )
+            )
+        )
+        // Fingerprints must be exactly 64 bytes.
+        #expect(
+            !AgentTaskMetadataStore.validCodeState(
+                AgentTaskCodeStateIdentity(
+                    headCommit: valid.headCommit,
+                    trackedFingerprint: String(valid.trackedFingerprint.dropLast()),
+                    untrackedFingerprint: valid.untrackedFingerprint,
+                    ignoredRelevantFingerprint: valid.ignoredRelevantFingerprint
+                )
+            )
+        )
+        #expect(
+            !AgentTaskMetadataStore.validCodeState(
+                AgentTaskCodeStateIdentity(
+                    headCommit: valid.headCommit,
+                    trackedFingerprint: valid.trackedFingerprint + "a",
+                    untrackedFingerprint: valid.untrackedFingerprint,
+                    ignoredRelevantFingerprint: valid.ignoredRelevantFingerprint
+                )
+            )
+        )
+        // A future (or zero) scheme is rejected fail-closed.
+        #expect(
+            !AgentTaskMetadataStore.validCodeState(
+                AgentTaskCodeStateIdentity(
+                    scheme: 2,
+                    headCommit: valid.headCommit,
+                    trackedFingerprint: valid.trackedFingerprint,
+                    untrackedFingerprint: valid.untrackedFingerprint,
+                    ignoredRelevantFingerprint: valid.ignoredRelevantFingerprint
+                )
+            )
+        )
+        // The head commit must be exactly 40 lowercase hex bytes, or absent.
+        #expect(
+            !AgentTaskMetadataStore.validCodeState(
+                AgentTaskCodeStateIdentity(
+                    headCommit: String(repeating: "b", count: 41),
+                    trackedFingerprint: valid.trackedFingerprint,
+                    untrackedFingerprint: valid.untrackedFingerprint,
+                    ignoredRelevantFingerprint: valid.ignoredRelevantFingerprint
+                )
+            )
+        )
+        #expect(
+            AgentTaskCodeStateIdentity(
+                headCommit: nil,
+                trackedFingerprint: valid.trackedFingerprint,
+                untrackedFingerprint: valid.untrackedFingerprint,
+                ignoredRelevantFingerprint: valid.ignoredRelevantFingerprint
+            )
+                .headCommit == nil
+        )
+        #expect(
+            AgentTaskMetadataStore.validCodeState(
+                AgentTaskCodeStateIdentity(
+                    headCommit: nil,
+                    trackedFingerprint: valid.trackedFingerprint,
+                    untrackedFingerprint: valid.untrackedFingerprint,
+                    ignoredRelevantFingerprint: valid.ignoredRelevantFingerprint
+                )
+            )
+        )
+
+        // Environment identities: bounded components, lowercase config
+        // fingerprint, current scheme only.
+        let validEnvironment = environment
+        #expect(AgentTaskMetadataStore.validEnvironment(validEnvironment))
+        #expect(
+            !AgentTaskMetadataStore.validEnvironment(
+                AgentTaskEnvironmentIdentity(
+                    scheme: 99,
+                    osBuild: validEnvironment.osBuild,
+                    toolchain: validEnvironment.toolchain,
+                    configurationFingerprint: validEnvironment
+                        .configurationFingerprint
+                )
+            )
+        )
+        #expect(
+            !AgentTaskMetadataStore.validEnvironment(
+                AgentTaskEnvironmentIdentity(
+                    osBuild: String(repeating: "x", count: 65),
+                    toolchain: nil,
+                    configurationFingerprint: nil
+                )
+            )
+        )
+        #expect(
+            !AgentTaskMetadataStore.validEnvironment(
+                AgentTaskEnvironmentIdentity(
+                    osBuild: nil,
+                    toolchain: nil,
+                    configurationFingerprint: hex("d").uppercased()
+                )
+            )
+        )
+    }
+
     @Test("relaunch preserves the complete durable ADE relationship")
     func relaunchPreservesCompleteDurableRelationship() async throws {
         let fixture = try ADEPersistenceFixture()
