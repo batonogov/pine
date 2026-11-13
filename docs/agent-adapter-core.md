@@ -264,10 +264,13 @@ The delta adds no log lines; the pre-existing rejection-enum log lines
 emit valueless diagnostics only — no field value, path, or identifier is
 logged.
 
-**Known asymmetries.** A fact bound to a code state but not to an
-environment is invisible to the `environmentChanged` dimension — the
-normative rule binds success to the code-state identity, while `reverify`
-does require the environment binding to leave `.stale`. A fact's
+**Legacy evidence.** Facts without an environment or operation fingerprints
+remain admissible as historical metadata. They cannot establish Ready or
+restore current verification: each required check and reviewer fact must
+bind the caller-proven current environment and matching pre/post code-state
+identities. Missing environment binding reports `environmentChanged`;
+missing operation fingerprints report stale evidence for that kind.
+A fact's
 vendor-session reference is fenced only when the bound run carries a vendor
 identity; on an identity-less run the field is inert and never influences
 outcome or readiness.
