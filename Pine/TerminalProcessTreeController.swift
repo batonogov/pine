@@ -12,14 +12,12 @@ import os
 ///
 /// SwiftTerm closes the PTY and sends `SIGTERM` to only its direct child.
 /// Interactive jobs normally move into separate foreground process groups,
-/// and background children can outlive that shell. This controller samples
-/// the identity-qualified descendant tree while the tab is alive, then runs a
-/// bounded TERM-to-KILL cleanup away from the main actor. Start timestamps in
-/// the shared process inspectors prevent PID/PGID reuse from redirecting a
-/// signal to an unrelated process.
+/// and background children can outlive that shell. While the tab is alive,
+/// the shared capture wave samples the identity-qualified descendant tree on
+/// a 25 ms cadence; teardown then runs a bounded TERM-to-KILL cleanup away
+/// from the main actor. Start timestamps in the shared process inspectors
+/// prevent PID/PGID reuse from redirecting a signal to an unrelated process.
 nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
-    private static let captureInterval: DispatchTimeInterval = .milliseconds(25)
-    private static let captureLeeway: DispatchTimeInterval = .milliseconds(5)
     private static let completionWaitPeriod: TimeInterval = 2.0
     private static let deferredCleanupQueue = DispatchQueue(
         label: "com.pine.terminal-process-tree.deferred-cleanup",
@@ -30,20 +28,28 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     let rootIdentity: UserTaskProcessIdentity
     let processGroupIdentifier: pid_t?
 
+    /// Serial queue for the bounded TERM-to-KILL teardown phase. Scheduled
+    /// captures run on the shared capture wave, never on this queue, so a
+    /// delayed or slow capture cannot postpone teardown.
     private let stateQueue: DispatchQueue
     private let processGroup: UserTaskProcessGroup?
     private let descendantTracker: UserTaskDescendantTracker
     private let lock = NSLock()
     private let terminationCompletion = DispatchGroup()
     private let deferredCleanupCompletion = DispatchGroup()
-    private var captureTimer: DispatchSourceTimer?
     private var terminationRequested = false
     private var terminationFinished = false
     private var terminationSucceeded = true
     let workingDirectoryRetention: TerminalWorkingDirectoryRetention
     #if DEBUG
+    private let scheduledCaptureCount = UserTaskProcessTelemetryCounter()
     private var cleanupForTesting: (@Sendable () -> Bool)?
     private var deferredCleanupForTesting: (@Sendable () -> Void)?
+
+    /// Observes how often the shared wave captured this controller.
+    var scheduledCaptureCountForTesting: UInt64 {
+        scheduledCaptureCount.current
+    }
 
     /// Pauses/completes the same asynchronous completion path without a PTY.
     init(
@@ -94,18 +100,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
             label: "com.pine.terminal-process-tree.\(rootProcessID)",
             qos: .utility
         )
-
-        let timer = DispatchSource.makeTimerSource(queue: stateQueue)
-        timer.schedule(
-            deadline: .now(),
-            repeating: Self.captureInterval,
-            leeway: Self.captureLeeway
-        )
-        timer.setEventHandler { [weak self] in
-            self?.captureOwnedProcesses()
-        }
-        captureTimer = timer
-        timer.activate()
+        TerminalProcessTreeCaptureScheduler.shared.register(self)
     }
 
     /// Starts teardown exactly once without blocking the main actor.
@@ -118,33 +113,40 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         }
         guard shouldStart else { return }
 
-        stateQueue.async { [self] in
-            #if DEBUG
-            if let cleanupForTesting {
+        #if DEBUG
+        if let cleanupForTesting {
+            stateQueue.async { [self] in
                 finishBoundedTermination(succeeded: cleanupForTesting())
-                return
             }
-            #endif
-            captureTimer?.cancel()
-            captureTimer = nil
-            captureOwnedProcesses()
-
-            processGroup?.requestTermination(
-                beforeMemberCapture: { [descendantTracker] in
-                    descendantTracker.captureDescendants()
-                }
-            )
-            let descendantsStopped = descendantTracker
-                .terminateTrackedProcesses()
-            let rootStopped = reapRootAfterTerminationRequest()
-            let groupStopped = processGroup?
-                .waitForRequestedTermination() ?? true
-            let succeeded = rootStopped && descendantsStopped && groupStopped
-            finishBoundedTermination(
-                succeeded: succeeded,
-                rootNeedsCleanup: !rootStopped
-            )
+            return
         }
+        #endif
+
+        // The prologue runs on the shared capture queue, so the final capture
+        // is ordered after every scheduled capture of this controller. The
+        // bounded TERM-to-KILL sequence then moves to this controller's own
+        // queue so a slow cleanup cannot delay other terminals' waves.
+        TerminalProcessTreeCaptureScheduler.shared
+            .assumeOwnershipForTermination(self) { [self] in
+                stateQueue.async { [self] in
+                    processGroup?.requestTermination(
+                        beforeMemberCapture: { [descendantTracker] in
+                            descendantTracker.captureDescendants()
+                        }
+                    )
+                    let descendantsStopped = descendantTracker
+                        .terminateTrackedProcesses()
+                    let rootStopped = reapRootAfterTerminationRequest()
+                    let groupStopped = processGroup?
+                        .waitForRequestedTermination() ?? true
+                    let succeeded = rootStopped
+                        && descendantsStopped && groupStopped
+                    finishBoundedTermination(
+                        succeeded: succeeded,
+                        rootNeedsCleanup: !rootStopped
+                    )
+                }
+            }
     }
 
     /// Waits only on a caller-selected background thread. Production teardown
@@ -268,7 +270,35 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         terminationCompletion.leave()
     }
 
+    /// Runs one ownership-capture pass. Called from the shared capture wave
+    /// and from the scheduler's teardown prologue; both run on the scheduler's
+    /// capture queue.
+    func performScheduledCapture() {
+        #if DEBUG
+        scheduledCaptureCount.increment()
+        #endif
+        captureOwnedProcesses()
+    }
+
+    /// Final capture ordered after every scheduled capture of this
+    /// controller. Runs on the scheduler's capture queue, immediately before
+    /// the bounded teardown sequence moves to this controller's queue.
+    func performFinalScheduledCapture() {
+        captureOwnedProcesses()
+    }
+
     private func captureOwnedProcesses() {
+        #if DEBUG
+        let startedNanoseconds = DispatchTime.now().uptimeNanoseconds
+        defer {
+            let nowNanoseconds = DispatchTime.now().uptimeNanoseconds
+            UserTaskProcessTelemetry.recordScheduledCapture(
+                durationNanoseconds: nowNanoseconds >= startedNanoseconds
+                    ? nowNanoseconds - startedNanoseconds
+                    : 0
+            )
+        }
+        #endif
         processGroup?.captureKnownMembers()
         descendantTracker.captureDescendants()
     }
@@ -293,9 +323,5 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
             Darwin.usleep(10_000)
         } while DispatchTime.now() < deadline
         return false
-    }
-
-    deinit {
-        captureTimer?.cancel()
     }
 }
