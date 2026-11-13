@@ -573,6 +573,12 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
     /// Source sequence for ordered structured delivery. `nil` for unordered
     /// or non-structured sources.
     let sourceSequence: UInt64?
+    /// Code-state fingerprints recorded before and after the checked
+    /// operation (D4). For check and reviewer facts, both are present or
+    /// both absent; when present they must be equal to each other and to
+    /// this fact's `codeState`. Every other fact kind carries neither.
+    let preOperationCodeState: AgentTaskCodeStateIdentity?
+    let postOperationCodeState: AgentTaskCodeStateIdentity?
 
     init(
         kind: AgentTaskEvidenceKind,
@@ -584,7 +590,9 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
         codeState: AgentTaskCodeStateIdentity? = nil,
         environment: AgentTaskEnvironmentIdentity? = nil,
         vendorSession: AgentVendorSessionIdentity? = nil,
-        sourceSequence: UInt64? = nil
+        sourceSequence: UInt64? = nil,
+        preOperationCodeState: AgentTaskCodeStateIdentity? = nil,
+        postOperationCodeState: AgentTaskCodeStateIdentity? = nil
     ) {
         self.kind = kind
         self.runID = runID
@@ -596,6 +604,8 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
         self.environment = environment
         self.vendorSession = vendorSession
         self.sourceSequence = sourceSequence
+        self.preOperationCodeState = preOperationCodeState
+        self.postOperationCodeState = postOperationCodeState
     }
 
     var eventIdentity: AgentTaskEvidenceEventIdentity {
@@ -620,6 +630,33 @@ nonisolated struct AgentTaskResultSnapshot: Codable, Hashable, Sendable {
     let codeState: AgentTaskCodeStateIdentity?
     let environment: AgentTaskEnvironmentIdentity?
     let recordedAt: Date
+}
+
+/// One bounded, content-free feedback record for a task (#1722).
+///
+/// `reference` is a bounded redacted reference — a provider message
+/// identifier or a hash of one — never feedback text, a path, or a secret.
+/// The record names the code state the feedback referred to, when known.
+nonisolated struct AgentTaskFeedbackRecord: Codable, Hashable, Sendable {
+    static let currentScheme: UInt8 = 1
+    static let maximumReferenceBytes = 256
+
+    let scheme: UInt8
+    let reference: String
+    let observedAt: Date
+    /// The code state the feedback referred to, or `nil` when unknown.
+    let codeState: AgentTaskCodeStateIdentity?
+
+    init(
+        reference: String,
+        observedAt: Date,
+        codeState: AgentTaskCodeStateIdentity? = nil
+    ) {
+        scheme = Self.currentScheme
+        self.reference = reference
+        self.observedAt = observedAt
+        self.codeState = codeState
+    }
 }
 
 /// Why a task is not Ready. Ready is derived only from current required
@@ -874,6 +911,11 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     var acceptanceState: AgentTaskAcceptanceState
     var reviewedSnapshot: AgentTaskResultSnapshot?
     var acceptedSnapshot: AgentTaskResultSnapshot?
+    // Durable ADE relationship (#1722): task-level bindings that survive
+    // individual runs. Additive: metadata persisted before these fields
+    // decodes to nil/empty.
+    var environment: AgentTaskEnvironmentIdentity?
+    var feedback: [AgentTaskFeedbackRecord]
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -899,6 +941,8 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case acceptanceState
         case reviewedSnapshot
         case acceptedSnapshot
+        case environment
+        case feedback
     }
 
     init(
@@ -932,6 +976,8 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         acceptanceState = .notAccepted
         reviewedSnapshot = nil
         acceptedSnapshot = nil
+        environment = nil
+        feedback = []
     }
 
     init(from decoder: Decoder) throws {
@@ -1005,6 +1051,14 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             AgentTaskResultSnapshot.self,
             forKey: .acceptedSnapshot
         )
+        environment = try values.decodeIfPresent(
+            AgentTaskEnvironmentIdentity.self,
+            forKey: .environment
+        )
+        feedback = try values.decodeIfPresent(
+            [AgentTaskFeedbackRecord].self,
+            forKey: .feedback
+        ) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1041,6 +1095,8 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             acceptedSnapshot,
             forKey: .acceptedSnapshot
         )
+        try values.encodeIfPresent(environment, forKey: .environment)
+        try values.encode(feedback, forKey: .feedback)
     }
 }
 

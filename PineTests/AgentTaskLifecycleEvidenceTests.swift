@@ -133,7 +133,9 @@ struct AgentTaskLifecycleEvidenceTests {
         codeState: AgentTaskCodeStateIdentity? = nil,
         environment: AgentTaskEnvironmentIdentity? = nil,
         sequence: UInt64? = nil,
-        vendorSession: AgentVendorSessionIdentity? = nil
+        vendorSession: AgentVendorSessionIdentity? = nil,
+        pre: AgentTaskCodeStateIdentity? = nil,
+        post: AgentTaskCodeStateIdentity? = nil
     ) -> AgentTaskEvidenceFact {
         AgentTaskEvidenceFact(
             kind: kind,
@@ -145,7 +147,9 @@ struct AgentTaskLifecycleEvidenceTests {
             codeState: codeState,
             environment: environment,
             vendorSession: vendorSession,
-            sourceSequence: sequence
+            sourceSequence: sequence,
+            preOperationCodeState: pre,
+            postOperationCodeState: post
         )
     }
 
@@ -2911,6 +2915,764 @@ struct AgentTaskLifecycleEvidenceTests {
 
         let loaded = await store.load(project: identity)
         #expect(loaded.status == .rejected(.invalidMetadata))
+    }
+
+    // MARK: - Durable ADE relationship (#1722 C1/C2/D4)
+
+    @Test("the task environment binding persists and validates")
+    func environmentBindingPersistsAndValidates() async throws {
+        let fixture = try ADEPersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let writer = AgentTaskRegistry(persistence: store)
+        writer.registerProject(identity)
+        #expect(await writer.flushPersistence() == .saved)
+        let context = AgentTaskBridgeContext(
+            project: identity,
+            route: AgentTaskRoute(
+                paneID: uuid(133),
+                tabID: uuid(133 + 100),
+                terminalID: uuid(133 + 100)
+            ),
+            origin: .discoveredInTerminal,
+            observedAt: Date()
+        )
+        let session = ADESessionFixture.make(
+            pid: 1_330_001,
+            generation: 1,
+            observedAt: Date()
+        )
+        writer.bridge(session, replacing: nil, context: context)
+        let taskID = try #require(writer.taskID(forSessionID: session.id))
+
+        // A valid binding is stamped and durable.
+        let env = AgentTaskEnvironmentIdentity(
+            osBuild: "26A5388g",
+            toolchain: "Xcode 27.0",
+            configurationFingerprint: hex("e")
+        )
+        #expect(writer.bindEnvironment(env, to: taskID))
+        #expect(writer.task(for: taskID)?.environment == env)
+        #expect(await writer.flushPersistence() == .saved)
+        let loaded = await store.load(project: identity)
+        #expect(loaded.status == .loaded)
+        #expect(loaded.tasks.first?.environment == env)
+
+        // A v3 file without the key decodes to nil.
+        let fileURL = AgentTaskMetadataStore.metadataURL(
+            for: identity,
+            storageRoot: fixture.storage
+        )
+        var root = try #require(
+            JSONSerialization.jsonObject(
+                with: Data(contentsOf: fileURL)
+            ) as? [String: Any]
+        )
+        var tasks = try #require(root["tasks"] as? [[String: Any]])
+        tasks[0].removeValue(forKey: "environment")
+        root["tasks"] = tasks
+        let stripped = try JSONSerialization.data(withJSONObject: root)
+        try stripped.write(to: fileURL, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+        let strippedLoaded = await store.load(project: identity)
+        #expect(strippedLoaded.status == .loaded)
+        #expect(strippedLoaded.tasks.first?.environment == nil)
+
+        // Invalid environments are rejected; the task is unchanged.
+        let before = try #require(writer.task(for: taskID))
+        #expect(
+            !writer.bindEnvironment(
+                AgentTaskEnvironmentIdentity(
+                    scheme: 99,
+                    osBuild: nil,
+                    toolchain: nil,
+                    configurationFingerprint: nil
+                ),
+                to: taskID
+            )
+        )
+        #expect(
+            !writer.bindEnvironment(
+                AgentTaskEnvironmentIdentity(
+                    osBuild: String(repeating: "x", count: 65),
+                    toolchain: nil,
+                    configurationFingerprint: nil
+                ),
+                to: taskID
+            )
+        )
+        #expect(
+            !writer.bindEnvironment(
+                AgentTaskEnvironmentIdentity(
+                    osBuild: nil,
+                    toolchain: nil,
+                    configurationFingerprint: "nothex"
+                ),
+                to: taskID
+            )
+        )
+        #expect(before == writer.task(for: taskID))
+    }
+
+    @Test("feedback records are bounded, content-free, and durable")
+    func feedbackRecordsAreBoundedAndDurable() async throws {
+        let fixture = try ADEPersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let writer = AgentTaskRegistry(persistence: store)
+        writer.registerProject(identity)
+        #expect(await writer.flushPersistence() == .saved)
+        let context = AgentTaskBridgeContext(
+            project: identity,
+            route: AgentTaskRoute(
+                paneID: uuid(134),
+                tabID: uuid(134 + 100),
+                terminalID: uuid(134 + 100)
+            ),
+            origin: .discoveredInTerminal,
+            observedAt: Date()
+        )
+        let session = ADESessionFixture.make(
+            pid: 1_340_001,
+            generation: 1,
+            observedAt: Date()
+        )
+        writer.bridge(session, replacing: nil, context: context)
+        let taskID = try #require(writer.taskID(forSessionID: session.id))
+        let stateA = codeState("a")
+        let longReference = String(repeating: "x", count: 256)
+
+        // The reference is bounded at admission: empty and over-long
+        // references reject, the 256-byte boundary is accepted.
+        #expect(!writer.recordFeedback("", codeState: nil, for: taskID))
+        #expect(
+            !writer.recordFeedback(
+                String(repeating: "x", count: 257),
+                codeState: nil,
+                for: taskID
+            )
+        )
+        #expect(
+            writer.recordFeedback(longReference, codeState: nil, for: taskID)
+        )
+
+        // Append + durable round-trip, with the code-state binding.
+        #expect(writer.recordFeedback("ref-1", codeState: stateA, for: taskID))
+        #expect(writer.recordFeedback("ref-2", codeState: nil, for: taskID))
+        #expect(await writer.flushPersistence() == .saved)
+        let loaded = await store.load(project: identity)
+        #expect(loaded.status == .loaded)
+        #expect(
+            loaded.tasks.first?.feedback.map(\.reference)
+                == [longReference, "ref-1", "ref-2"]
+        )
+        #expect(
+            loaded.tasks.first?.feedback[1].codeState == stateA
+        )
+        #expect(loaded.tasks.first?.feedback[0].codeState == nil)
+
+        // A v3 file without the key decodes to [].
+        let fileURL = AgentTaskMetadataStore.metadataURL(
+            for: identity,
+            storageRoot: fixture.storage
+        )
+        var root = try #require(
+            JSONSerialization.jsonObject(
+                with: Data(contentsOf: fileURL)
+            ) as? [String: Any]
+        )
+        var tasks = try #require(root["tasks"] as? [[String: Any]])
+        tasks[0].removeValue(forKey: "feedback")
+        root["tasks"] = tasks
+        let stripped = try JSONSerialization.data(withJSONObject: root)
+        try stripped.write(to: fileURL, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+        let strippedLoaded = await store.load(project: identity)
+        #expect(strippedLoaded.status == .loaded)
+        #expect(strippedLoaded.tasks.first?.feedback.isEmpty == true)
+
+        // Admission is bounded at one point: fill to the per-task limit,
+        // then the next record is fenced and the count stays put.
+        for index in 4...32 {
+            #expect(
+                writer.recordFeedback("ref-\(index)", codeState: nil, for: taskID)
+            )
+        }
+        #expect(writer.task(for: taskID)?.feedback.count == 32)
+        #expect(
+            !writer.recordFeedback("ref-33", codeState: nil, for: taskID)
+        )
+        #expect(writer.task(for: taskID)?.feedback.count == 32)
+        #expect(await writer.flushPersistence() == .saved)
+    }
+
+    @Test("the remembered default agent persists per project")
+    func rememberedAgentPersistsPerProject() async throws {
+        let fixture = try ADEPersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+
+        // Store-level envelope round-trip.
+        let descriptorD1 = AgentDescriptor(
+            agentType: .claudeCode,
+            launchExecutable: "claude"
+        )
+        let updatedAt = Date(timeIntervalSince1970: 1_760_000_000.0)
+        let envelope = AgentTaskEnvelopeState(
+            rememberedAgent: descriptorD1,
+            rememberedAgentUpdatedAt: updatedAt
+        )
+        let honest = settledTask(
+            seed: 131,
+            now: Date(),
+            projectPath: fixture.project.path
+        )
+        #expect(
+            await store.save(
+                tasks: [honest],
+                envelope: envelope,
+                project: identity
+            ) == .saved(taskCount: 1)
+        )
+        let loadedEnvelope = await store.load(project: identity)
+        #expect(loadedEnvelope.status == .loaded)
+        #expect(loadedEnvelope.envelope.rememberedAgent == descriptorD1)
+        #expect(
+            loadedEnvelope.envelope.rememberedAgentUpdatedAt
+                == updatedAt
+        )
+
+        // A file without the fields decodes to the empty envelope.
+        let fileURL = AgentTaskMetadataStore.metadataURL(
+            for: identity,
+            storageRoot: fixture.storage
+        )
+        var root = try #require(
+            JSONSerialization.jsonObject(
+                with: Data(contentsOf: fileURL)
+            ) as? [String: Any]
+        )
+        root.removeValue(forKey: "rememberedAgent")
+        root.removeValue(forKey: "rememberedAgentUpdatedAt")
+        let stripped = try JSONSerialization.data(withJSONObject: root)
+        try stripped.write(to: fileURL, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+        let strippedLoaded = await store.load(project: identity)
+        #expect(strippedLoaded.status == .loaded)
+        #expect(strippedLoaded.envelope == .empty)
+
+        // A file with an unbounded remembered agent rejects fail-closed.
+        var invalid = root
+        invalid["rememberedAgent"] = [
+            "typeIdentifier": String(repeating: "x", count: 256),
+        ]
+        invalid["rememberedAgentUpdatedAt"] =
+            updatedAt.timeIntervalSince1970
+        let invalidData = try JSONSerialization.data(withJSONObject: invalid)
+        try invalidData.write(to: fileURL, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+        #expect(
+            (await store.load(project: identity)).status
+                == .rejected(.invalidMetadata)
+        )
+    }
+
+    @Test("preparePineLaunch remembers the explicit agent choice per project")
+    func preparePineLaunchRemembersAgentChoice() async throws {
+        let fixture = try ADEPersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let writer = AgentTaskRegistry(persistence: store)
+        writer.registerProject(identity)
+        #expect(await writer.flushPersistence() == .saved)
+        #expect(writer.rememberedAgentDescriptor(for: identity) == nil)
+
+        func launch(
+            routeSeed: Int,
+            descriptor: AgentDescriptor
+        ) throws -> AgentTaskLaunchReservation {
+            let route = AgentTaskRoute(
+                paneID: uuid(routeSeed),
+                tabID: uuid(routeSeed + 100),
+                terminalID: uuid(routeSeed + 100)
+            )
+            let context = AgentTaskBridgeContext(
+                project: identity,
+                route: route,
+                origin: .pineLaunched,
+                observedAt: Date()
+            )
+            guard case .reserved(let reservation) = writer.preparePineLaunch(
+                descriptor: descriptor,
+                context: context,
+                title: nil,
+                objective: nil,
+                boundary: AgentTaskLaunchBoundary(
+                    generationFloor: 0,
+                    capturedAt: .distantPast
+                )
+            ) else {
+                throw CocoaError(.coderInvalidValue)
+            }
+            return reservation
+        }
+
+        // The first launch records the explicit choice...
+        let d1 = AgentDescriptor(
+            agentType: .claudeCode,
+            launchExecutable: "claude"
+        )
+        let first = try launch(routeSeed: 141, descriptor: d1)
+        #expect(writer.rememberedAgentDescriptor(for: identity) == d1)
+        #expect(await writer.flushPersistence() == .saved)
+
+        // ...an explicit second launch with a DIFFERENT descriptor updates
+        // it: the explicit choice always wins.
+        let d2 = AgentDescriptor(
+            agentType: .codex,
+            launchExecutable: "codex"
+        )
+        let second = try launch(routeSeed: 142, descriptor: d2)
+        #expect(writer.rememberedAgentDescriptor(for: identity) == d2)
+        #expect(await writer.flushPersistence() == .saved)
+
+        // A resume of the first task does not change it.
+        #expect(writer.armLaunch(first))
+        #expect(writer.isLaunchPending(first))
+        let session = ADESessionFixture.make(
+            pid: 1_410_001,
+            generation: 1,
+            observedAt: Date()
+        )
+        let route1 = AgentTaskRoute(
+            paneID: uuid(141),
+            tabID: uuid(141 + 100),
+            terminalID: uuid(141 + 100)
+        )
+        let context1 = AgentTaskBridgeContext(
+            project: identity,
+            route: route1,
+            origin: .pineLaunched,
+            observedAt: Date()
+        )
+        writer.bridge(
+            session,
+            replacing: nil,
+            context: context1,
+            reservation: first
+        )
+        let firstTaskID = try #require(
+            writer.taskID(forSessionID: session.id)
+        )
+        session.applyLiveness(.terminated)
+        writer.refresh(sessions: [session])
+        let resumeResult = writer.prepareResume(
+            taskID: firstTaskID,
+            context: context1,
+            boundary: AgentTaskLaunchBoundary(
+                generationFloor: 0,
+                capturedAt: .distantPast
+            )
+        )
+        #expect(resumeResult != .rejected)
+        if case .reserved(let resumeReservation) = resumeResult {
+            writer.cancelLaunch(resumeReservation)
+        }
+        #expect(writer.rememberedAgentDescriptor(for: identity) == d2)
+        _ = second
+
+        // The remembered agent is envelope-level: it survives the retention
+        // sweep dismissing every task in the project.
+        #expect(
+            writer.reconcileTerminalRetention(
+                at: Date().addingTimeInterval(8 * 86_400)
+            ) >= 1
+        )
+        #expect(await writer.flushPersistence() == .saved)
+        let reloaded = AgentTaskRegistry(persistence: store)
+        reloaded.registerProject(identity)
+        #expect(await reloaded.flushPersistence() == .saved)
+        #expect(
+            reloaded.rememberedAgentDescriptor(for: identity) == d2
+        )
+    }
+
+    @Test("operation fingerprints must be consistent with the fact code state")
+    func operationFingerprintsMustBeConsistent() throws {
+        let registry = AgentTaskRegistry()
+        let task = settledTask(seed: 135)
+        registry.setTasksForTesting([task])
+        let run = try #require(task.runs.first)
+        let now = task.lastActivityAt
+        let csA = codeState("a")
+        let csB = codeState("b")
+
+        // pre == post == the fact's code state: admitted.
+        #expect(
+            registry.recordEvidence(fact(
+                .independentCheck,
+                runID: run.id,
+                generation: UInt64(135),
+                result: .succeeded,
+                at: now,
+                codeState: csA,
+                sequence: 1,
+                pre: csA,
+                post: csA,
+            ), taskID: task.id) == .accepted
+        )
+        // pre != post: fenced.
+        #expect(
+            registry.recordEvidence(fact(
+                .reviewerOutcome,
+                runID: run.id,
+                generation: UInt64(135),
+                result: .succeeded,
+                at: now.addingTimeInterval(1),
+                codeState: csA,
+                sequence: 2,
+                pre: csA,
+                post: csB,
+            ), taskID: task.id) == .fencedOut(.invalidFact)
+        )
+        // Only pre present: fenced.
+        #expect(
+            registry.recordEvidence(fact(
+                .independentCheck,
+                runID: run.id,
+                generation: UInt64(135),
+                result: .succeeded,
+                at: now.addingTimeInterval(2),
+                codeState: csA,
+                sequence: 3,
+                pre: csA,
+            ), taskID: task.id) == .fencedOut(.invalidFact)
+        )
+        // Fingerprints that differ from the fact's own code state: fenced.
+        #expect(
+            registry.recordEvidence(fact(
+                .independentCheck,
+                runID: run.id,
+                generation: UInt64(135),
+                result: .succeeded,
+                at: now.addingTimeInterval(3),
+                codeState: csA,
+                sequence: 4,
+                pre: csB,
+                post: csB,
+            ), taskID: task.id) == .fencedOut(.invalidFact)
+        )
+        // Fingerprints on a non-check fact: fenced.
+        #expect(
+            registry.recordEvidence(fact(
+                .processCompletion,
+                runID: run.id,
+                generation: UInt64(135),
+                result: .exited(status: nil),
+                at: now.addingTimeInterval(4),
+                trust: .observed,
+                sequence: 5,
+                pre: csA,
+                post: csA,
+            ), taskID: task.id) == .fencedOut(.invalidFact)
+        )
+        // Legacy facts without fingerprints remain valid.
+        #expect(
+            registry.recordEvidence(fact(
+                .independentCheck,
+                runID: run.id,
+                generation: UInt64(135),
+                result: .succeeded,
+                at: now.addingTimeInterval(5),
+                codeState: csA,
+                sequence: 6
+            ), taskID: task.id) == .accepted
+        )
+    }
+
+    @Test("operation fingerprints persist and reject fail-closed")
+    func operationFingerprintsPersistAndRejectFailClosed() async throws {
+        let fixture = try ADEPersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let projectPath = fixture.project.path
+        let csA = codeState("a")
+        let csB = codeState("b")
+
+        // Valid fingerprints persist and round-trip through v3.
+        var valid = settledTask(seed: 136, now: Date(), projectPath: projectPath)
+        valid.evidence.append(fact(
+            .independentCheck,
+            runID: valid.runs[0].id,
+            generation: UInt64(136),
+            result: .succeeded,
+            at: valid.lastActivityAt,
+            codeState: csA,
+            sequence: 1,
+            pre: csA,
+            post: csA,
+        ))
+        #expect(
+            await store.save(tasks: [valid], project: identity)
+                == .saved(taskCount: 1)
+        )
+        let loaded = await store.load(project: identity)
+        #expect(loaded.status == .loaded)
+        #expect(loaded.tasks.first?.evidence.last?.preOperationCodeState == csA)
+        #expect(loaded.tasks.first?.evidence.last?.postOperationCodeState == csA)
+
+        // A file with pre != post rejects fail-closed.
+        var mismatched = settledTask(
+            seed: 137,
+            now: Date(),
+            projectPath: projectPath
+        )
+        mismatched.evidence.append(fact(
+            .independentCheck,
+            runID: mismatched.runs[0].id,
+            generation: UInt64(137),
+            result: .succeeded,
+            at: mismatched.lastActivityAt,
+            codeState: csA,
+            sequence: 1,
+            pre: csA,
+            post: csB,
+        ))
+        #expect(
+            await store.save(tasks: [mismatched], project: identity)
+                == .rejected(.invalidMetadata)
+        )
+
+        // A file with fingerprints on a non-check fact rejects fail-closed.
+        var misplaced = settledTask(
+            seed: 138,
+            now: Date(),
+            projectPath: projectPath
+        )
+        misplaced.evidence.append(fact(
+            .agentReportedCompletion,
+            runID: misplaced.runs[0].id,
+            generation: UInt64(138),
+            result: .reported,
+            at: misplaced.lastActivityAt,
+            sequence: 1,
+            pre: csA,
+            post: csA,
+        ))
+        #expect(
+            await store.save(tasks: [misplaced], project: identity)
+                == .rejected(.invalidMetadata)
+        )
+    }
+
+    @Test("relaunch preserves the complete durable ADE relationship")
+    func relaunchPreservesCompleteDurableRelationship() async throws {
+        let fixture = try ADEPersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let stateA = codeState("a")
+        let env = environment
+        let descriptorD1 = AgentDescriptor(
+            agentType: .claudeCode,
+            launchExecutable: "claude"
+        )
+
+        // Task A: a verified, accepted success. Task B: an unverified
+        // paused attempt. Both carry the task-level durable relationship.
+        let writer = AgentTaskRegistry(persistence: store)
+        writer.registerProject(identity)
+        #expect(await writer.flushPersistence() == .saved)
+
+        func launchTask(
+            routeSeed: Int,
+            pid: Int32,
+            reference: String
+        ) throws -> UUID {
+            let route = AgentTaskRoute(
+                paneID: uuid(routeSeed),
+                tabID: uuid(routeSeed + 100),
+                terminalID: uuid(routeSeed + 100)
+            )
+            let context = AgentTaskBridgeContext(
+                project: identity,
+                route: route,
+                origin: .pineLaunched,
+                observedAt: Date()
+            )
+            guard case .reserved(let reservation) = writer.preparePineLaunch(
+                descriptor: descriptorD1,
+                context: context,
+                title: "E1 task \(routeSeed)",
+                objective: nil,
+                boundary: AgentTaskLaunchBoundary(
+                    generationFloor: 0,
+                    capturedAt: .distantPast
+                )
+            ) else {
+                throw CocoaError(.coderInvalidValue)
+            }
+            #expect(writer.bindEnvironment(env, to: reservation.taskID))
+            #expect(
+                writer.recordFeedback(
+                    reference,
+                    codeState: stateA,
+                    for: reservation.taskID
+                )
+            )
+            #expect(writer.armLaunch(reservation))
+            let session = ADESessionFixture.make(
+                pid: pid,
+                generation: 1,
+                observedAt: Date()
+            )
+            writer.bridge(
+                session,
+                replacing: nil,
+                context: context,
+                reservation: reservation
+            )
+            session.applyLiveness(.terminated)
+            writer.refresh(sessions: [session])
+            return reservation.taskID
+        }
+
+        let settledTaskID = try launchTask(
+            routeSeed: 151,
+            pid: 1_510_001,
+            reference: "e1-feedback-a"
+        )
+        // The required evidence at state A settles the attempt to success.
+        let runA = try #require(
+            writer.task(for: settledTaskID)?.runs.last
+        )
+        let endedAtA = try #require(runA.endedAt)
+        for (offset, kind, result, sequence) in [
+            (0, AgentTaskEvidenceKind.agentReportedCompletion,
+             AgentTaskEvidenceResult.reported, 1),
+            (1, AgentTaskEvidenceKind.independentCheck,
+             AgentTaskEvidenceResult.succeeded, 2),
+            (2, AgentTaskEvidenceKind.reviewerOutcome,
+             AgentTaskEvidenceResult.succeeded, 3),
+        ] {
+            #expect(
+                writer.recordEvidence(fact(
+                    kind,
+                    runID: runA.id,
+                    generation: 1,
+                    result: result,
+                    at: endedAtA.addingTimeInterval(TimeInterval(offset)),
+                    codeState: stateA,
+                    environment: env,
+                    sequence: UInt64(sequence)
+                ), taskID: settledTaskID) == .accepted
+            )
+        }
+        #expect(writer.task(for: settledTaskID)?.runs.last?.outcome == .success)
+        #expect(
+            writer.recordUserAcceptance(
+                taskID: settledTaskID,
+                codeState: stateA,
+                environment: env
+            )
+        )
+
+        let resumableTaskID = try launchTask(
+            routeSeed: 152,
+            pid: 1_520_001,
+            reference: "e1-feedback-b"
+        )
+        #expect(writer.task(for: resumableTaskID)?.runs.last?.outcome == .unverified)
+        #expect(await writer.flushPersistence() == .saved)
+
+        // A relaunch is a fresh registry over the same durable store.
+        let reloaded = AgentTaskRegistry(persistence: store)
+        reloaded.registerProject(identity)
+        #expect(await reloaded.flushPersistence() == .saved)
+        let taskA = try #require(reloaded.task(for: settledTaskID))
+        // The complete durable relationship survives the relaunch:
+        #expect(taskA.runs.last?.outcome == .success)
+        #expect(taskA.verificationState == .stale)
+        #expect(taskA.acceptanceState == .notAccepted)
+        #expect(taskA.reviewedSnapshot != nil)
+        #expect(taskA.acceptedSnapshot != nil)
+        #expect(taskA.executionState == .unknown)
+        #expect(taskA.environment == env)
+        #expect(taskA.feedback.map(\.reference) == ["e1-feedback-a"])
+        #expect(
+            reloaded.rememberedAgentDescriptor(for: identity) == descriptorD1
+        )
+
+        // Continue without rebuilding context. Task A is terminal
+        // (.completed); the current lifecycle rules resume paused tasks, so
+        // the continuation is demonstrated on task B through the production
+        // resume path: a new run on the SAME durable task.
+        #expect(!reloaded.canResumeTask(settledTaskID))
+        #expect(reloaded.canResumeTask(resumableTaskID))
+        let routeB = AgentTaskRoute(
+            paneID: uuid(152),
+            tabID: uuid(152 + 100),
+            terminalID: uuid(152 + 100)
+        )
+        let resumeContext = AgentTaskBridgeContext(
+            project: identity,
+            route: routeB,
+            origin: .pineLaunched,
+            observedAt: Date()
+        )
+        guard case .reserved(let resume) = reloaded.prepareResume(
+            taskID: resumableTaskID,
+            context: resumeContext,
+            boundary: AgentTaskLaunchBoundary(
+                generationFloor: 0,
+                capturedAt: .distantPast
+            )
+        ) else {
+            throw CocoaError(.coderInvalidValue)
+        }
+        #expect(reloaded.armLaunch(resume))
+        let followUp = ADESessionFixture.make(
+            pid: 1_520_002,
+            generation: 2,
+            observedAt: Date()
+        )
+        reloaded.bridge(
+            followUp,
+            replacing: nil,
+            context: resumeContext,
+            reservation: resume
+        )
+        let continued = try #require(reloaded.task(for: resumableTaskID))
+        #expect(continued.runs.count == 2)
+        #expect(continued.runs.last?.liveness == .live)
+        #expect(continued.runs.first?.outcome == .unverified)
+        #expect(continued.lifecycle == .active)
+        // The context was not rebuilt: the task-level relationship is
+        // intact on the continued task.
+        #expect(continued.environment == env)
+        #expect(continued.feedback.map(\.reference) == ["e1-feedback-b"])
+        #expect(continued.descriptor == descriptorD1)
+        #expect(
+            reloaded.rememberedAgentDescriptor(for: identity) == descriptorD1
+        )
+        #expect(await reloaded.flushPersistence() == .saved)
     }
 }
 

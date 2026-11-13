@@ -114,6 +114,12 @@ final class AgentTaskRegistry {
     private var registeredProjects = Set<AgentTaskProjectIdentity>()
     @ObservationIgnored
     private var loadedProjects = Set<AgentTaskProjectIdentity>()
+    /// Per-project durable envelope state (remembered default agent, C2).
+    /// Populated from each accepted load and written with the same save
+    /// path as the tasks; it is project-scoped, never task-scoped.
+    @ObservationIgnored
+    private var envelopeStateByProject:
+        [AgentTaskProjectIdentity: AgentTaskEnvelopeState] = [:]
     @ObservationIgnored
     private var quarantinedProjects = Set<AgentTaskProjectIdentity>()
     @ObservationIgnored
@@ -543,6 +549,72 @@ final class AgentTaskRegistry {
         tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
         markDirty(tasks[index].project)
         return true
+    }
+
+    /// Binds the task-level environment identity (C1a). The identity is
+    /// caller-proven; the registry validates its shape before stamping, and
+    /// the metadata store revalidates it on every save and load as a
+    /// persistence backstop. The binding never touches runs or evidence: a
+    /// new attempt or re-verification compares its bound facts against it.
+    @discardableResult
+    func bindEnvironment(
+        _ environment: AgentTaskEnvironmentIdentity,
+        to taskID: UUID,
+        at timestamp: Date = Date()
+    ) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              AgentTaskMetadataStore.validEnvironment(environment) else {
+            return false
+        }
+        tasks[index].environment = environment
+        tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
+        markDirty(tasks[index].project)
+        return true
+    }
+
+    /// Records one bounded, content-free feedback reference (C1b).
+    ///
+    /// Admission is bounded at this ONE point: the per-task record count is
+    /// checked here, and the reference must fit the byte bound. The
+    /// metadata store revalidates every record on load as a persistence
+    /// backstop. The reference is redacted by contract — a provider message
+    /// identifier or hash — never feedback text, a path, or a secret.
+    @discardableResult
+    func recordFeedback(
+        _ reference: String,
+        codeState: AgentTaskCodeStateIdentity?,
+        for taskID: UUID,
+        at timestamp: Date = Date()
+    ) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              validUserText(
+                  reference,
+                  maximum: limits.maxFeedbackReferenceBytes
+              ),
+              tasks[index].feedback.count
+                  < limits.maxFeedbackRecordsPerTask else {
+            return false
+        }
+        tasks[index].feedback.append(AgentTaskFeedbackRecord(
+            reference: reference,
+            observedAt: timestamp,
+            codeState: codeState
+        ))
+        tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
+        markDirty(tasks[index].project)
+        return true
+    }
+
+    /// The remembered default agent for one project (C2): the descriptor of
+    /// the last Pine-owned launch reserved in that project. A synchronous
+    /// read of the in-memory envelope state; the metadata store
+    /// revalidates the value on every load.
+    func rememberedAgentDescriptor(
+        for project: AgentTaskProjectIdentity
+    ) -> AgentDescriptor? {
+        envelopeStateByProject[project]?.rememberedAgent
     }
 
     /// Invalidates the task's verification and acceptance after a relevant
@@ -987,6 +1059,16 @@ final class AgentTaskRegistry {
             deadline: monotonicNow().advanced(by: claimTTL),
             state: .dormant
         ), key: key)
+        // Remember this explicit launch choice per project (C2): it is the
+        // default for the next Pine-owned launch here. prepareResume never
+        // changes it. It is envelope-level state: task dismissal and the
+        // retention sweep do not touch it. The dormant reservation itself
+        // stays runtime-only (no save); the envelope persists with the next
+        // save scheduled for this project.
+        envelopeStateByProject[context.project] = AgentTaskEnvelopeState(
+            rememberedAgent: descriptor,
+            rememberedAgentUpdatedAt: Date()
+        )
         return .reserved(reservation)
     }
 
@@ -1664,6 +1746,7 @@ final class AgentTaskRegistry {
         }
         loadedProjects.insert(project)
         diskRevisionByProject[project] = result.revision
+        envelopeStateByProject[project] = result.envelope
         historicalTaskIDByRunID = stagedHistorical
         loadedInterruptedTaskIDs.formUnion(stagedInterruptedTaskIDs)
         tasks.append(contentsOf: stagedTasks)
@@ -1690,6 +1773,7 @@ final class AgentTaskRegistry {
         loadStatusByProject[project.persistenceKey] = .rejected(rejection)
         loadedProjects.remove(project)
         diskRevisionByProject[project] = nil
+        envelopeStateByProject[project] = nil
         quarantinedProjects.insert(project)
         if dirtyProjects.contains(project) {
             unpersistableDirtyProjects.insert(project)
@@ -2247,6 +2331,7 @@ final class AgentTaskRegistry {
                 && !pendingUnverifiedTaskIDs.contains($0.id)
         }
         let store = persistence
+        let envelopeState = envelopeStateByProject[project] ?? .empty
         let revision = persistenceRevision[project]
         let ticket = AgentTaskPersistenceTicket(
             generation: persistenceGeneration,
@@ -2266,6 +2351,7 @@ final class AgentTaskRegistry {
             defer { self?.abandonedPersistenceTickets.remove(ticket) }
             let result = await store.save(
                 tasks: snapshot,
+                envelope: envelopeState,
                 project: project,
                 authorization: authorization
             )

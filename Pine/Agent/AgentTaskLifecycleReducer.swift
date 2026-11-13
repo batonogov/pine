@@ -101,7 +101,31 @@ nonisolated enum AgentTaskLifecycleReducer {
                 return false
             }
         }
-        return true
+        return validOperationFingerprints(fact)
+    }
+
+    /// Operation-fingerprint rule (D4), shared by admission and persistence
+    /// validation: for check and reviewer facts, the pre- and
+    /// post-operation code-state fingerprints must both be present, equal to
+    /// each other, and equal to the fact's own code-state identity; every
+    /// other fact kind carries neither. A mismatch is an invalid fact,
+    /// fenced at admission and rejected from durable files.
+    static func validOperationFingerprints(
+        _ fact: AgentTaskEvidenceFact
+    ) -> Bool {
+        switch fact.kind {
+        case .independentCheck, .reviewerOutcome:
+            guard let pre = fact.preOperationCodeState,
+                  let post = fact.postOperationCodeState,
+                  let codeState = fact.codeState else {
+                return fact.preOperationCodeState == nil
+                    && fact.postOperationCodeState == nil
+            }
+            return pre == post && pre == codeState
+        default:
+            return fact.preOperationCodeState == nil
+                && fact.postOperationCodeState == nil
+        }
     }
 
     /// Fences one fact against the task's durable attempts.

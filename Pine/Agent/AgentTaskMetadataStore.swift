@@ -22,13 +22,16 @@ nonisolated struct AgentTaskPersistenceLimits: Sendable {
     let maxTitleBytes: Int
     let maxObjectiveBytes: Int
     let maxEvidenceFactsPerTask: Int
+    let maxFeedbackRecordsPerTask: Int
+    let maxFeedbackReferenceBytes: Int
 
     init(
         maxTasksPerProject: Int = 200,
         maxRunsPerTask: Int = 50,
         maxHistoricalRunIDs: Int = 8_192,
         maxFileBytes: Int = 1_048_576,
-        maxEvidenceFactsPerTask: Int = 64
+        maxEvidenceFactsPerTask: Int = 64,
+        maxFeedbackRecordsPerTask: Int = 32
     ) {
         self.maxTasksPerProject = max(1, maxTasksPerProject)
         self.maxRunsPerTask = max(1, maxRunsPerTask)
@@ -42,6 +45,8 @@ nonisolated struct AgentTaskPersistenceLimits: Sendable {
         maxTitleBytes = 256
         maxObjectiveBytes = 2_048
         self.maxEvidenceFactsPerTask = max(1, maxEvidenceFactsPerTask)
+        self.maxFeedbackRecordsPerTask = max(1, maxFeedbackRecordsPerTask)
+        maxFeedbackReferenceBytes = AgentTaskFeedbackRecord.maximumReferenceBytes
     }
 }
 
@@ -184,17 +189,20 @@ nonisolated struct AgentTaskMetadataLoadResult: Sendable {
     let tasks: [AgentTask]
     let revision: AgentTaskDiskRevision?
     let requiresMigration: Bool
+    let envelope: AgentTaskEnvelopeState
 
     init(
         status: AgentTaskMetadataLoadStatus,
         tasks: [AgentTask],
         revision: AgentTaskDiskRevision? = nil,
-        requiresMigration: Bool = false
+        requiresMigration: Bool = false,
+        envelope: AgentTaskEnvelopeState = .empty
     ) {
         self.status = status
         self.tasks = tasks
         self.revision = revision
         self.requiresMigration = requiresMigration
+        self.envelope = envelope
     }
 }
 
@@ -316,9 +324,31 @@ nonisolated struct AgentTaskPublicationAuthorization: Sendable {
     #endif
 }
 
+/// Durable, per-project envelope state stored alongside the tasks in the
+/// metadata file (#1722). Additive: files written before these fields
+/// decode to the empty state.
+nonisolated struct AgentTaskEnvelopeState: Equatable, Sendable {
+    /// The agent the last Pine-owned launch in this project explicitly used,
+    /// remembered as the default for the next launch in the project.
+    let rememberedAgent: AgentDescriptor?
+    let rememberedAgentUpdatedAt: Date?
+
+    static let empty = AgentTaskEnvelopeState(
+        rememberedAgent: nil,
+        rememberedAgentUpdatedAt: nil
+    )
+}
+
 nonisolated protocol AgentTaskPersisting: Sendable {
     func save(
         tasks: [AgentTask],
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult
+
+    func save(
+        tasks: [AgentTask],
+        envelope: AgentTaskEnvelopeState,
         project: AgentTaskProjectIdentity,
         authorization: AgentTaskPublicationAuthorization?
     ) async -> AgentTaskMetadataSaveResult
@@ -329,11 +359,54 @@ nonisolated protocol AgentTaskPersisting: Sendable {
 }
 
 nonisolated extension AgentTaskPersisting {
+    /// Persists the per-project envelope state (remembered agent) together
+    /// with the tasks. Conformers without envelope persistence ignore the
+    /// state; the metadata store writes it additively.
+    func save(
+        tasks: [AgentTask],
+        envelope: AgentTaskEnvelopeState,
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult {
+        await save(
+            tasks: tasks,
+            project: project,
+            authorization: authorization
+        )
+    }
+
+    /// Saves without per-project envelope state (empty envelope).
+    func save(
+        tasks: [AgentTask],
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult {
+        await save(
+            tasks: tasks,
+            envelope: .empty,
+            project: project,
+            authorization: authorization
+        )
+    }
+
     func save(
         tasks: [AgentTask],
         project: AgentTaskProjectIdentity
     ) async -> AgentTaskMetadataSaveResult {
         await save(tasks: tasks, project: project, authorization: nil)
+    }
+
+    func save(
+        tasks: [AgentTask],
+        envelope: AgentTaskEnvelopeState,
+        project: AgentTaskProjectIdentity
+    ) async -> AgentTaskMetadataSaveResult {
+        await save(
+            tasks: tasks,
+            envelope: envelope,
+            project: project,
+            authorization: nil
+        )
     }
 }
 
@@ -353,6 +426,10 @@ nonisolated private struct AgentTaskMetadataEnvelope: Codable, Sendable {
     let canonicalProjectPath: String
     let canonicalWorktreePath: String
     let tasks: [AgentTask]
+    /// Additive per-project envelope state (#1722). Optional: files written
+    /// before these fields decode to `nil` and re-encode without them.
+    let rememberedAgent: AgentDescriptor?
+    let rememberedAgentUpdatedAt: Date?
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -360,6 +437,8 @@ nonisolated private struct AgentTaskMetadataEnvelope: Codable, Sendable {
         case canonicalProjectPath
         case canonicalWorktreePath
         case tasks
+        case rememberedAgent
+        case rememberedAgentUpdatedAt
     }
 }
 
@@ -469,6 +548,20 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         project: AgentTaskProjectIdentity,
         authorization: AgentTaskPublicationAuthorization?
     ) -> AgentTaskMetadataSaveResult {
+        save(
+            tasks: tasks,
+            envelope: .empty,
+            project: project,
+            authorization: authorization
+        )
+    }
+
+    func save(
+        tasks: [AgentTask],
+        envelope: AgentTaskEnvelopeState,
+        project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) -> AgentTaskMetadataSaveResult {
         guard !Task.isCancelled else { return .rejected(.superseded) }
         guard canonicalExistingDirectory(project.canonicalProjectPath)
                 == project.canonicalProjectPath else {
@@ -490,7 +583,9 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                     revision: nextDiskRevision,
                     canonicalProjectPath: project.canonicalProjectPath,
                     canonicalWorktreePath: project.canonicalWorktreePath,
-                    tasks: tasks
+                    tasks: tasks,
+                    rememberedAgent: envelope.rememberedAgent,
+                    rememberedAgentUpdatedAt: envelope.rememberedAgentUpdatedAt
                 )
             ) else {
                 return nil
@@ -725,6 +820,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         let storedProjectPath: String
         let storedWorktreePath: String
         let storedTasks: [AgentTask]
+        let storedEnvelope: AgentTaskEnvelopeState
         let revision: AgentTaskDiskRevision?
         let requiresMigration: Bool
         switch header.schemaVersion {
@@ -738,6 +834,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             storedProjectPath = envelope.canonicalProjectPath
             storedWorktreePath = envelope.canonicalWorktreePath
             storedTasks = envelope.tasks
+            // Schema v1 predates the per-project envelope state.
+            storedEnvelope = .empty
             revision = .legacySHA256(Data(SHA256.hash(data: data)))
             requiresMigration = true
         case 2:
@@ -753,6 +851,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             storedProjectPath = envelope.canonicalProjectPath
             storedWorktreePath = envelope.canonicalWorktreePath
             storedTasks = envelope.tasks
+            storedEnvelope = AgentTaskEnvelopeState(
+                rememberedAgent: envelope.rememberedAgent,
+                rememberedAgentUpdatedAt: envelope.rememberedAgentUpdatedAt
+            )
             revision = .versioned(envelope.revision)
             requiresMigration = true
         case Self.currentSchemaVersion:
@@ -765,6 +867,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             storedProjectPath = envelope.canonicalProjectPath
             storedWorktreePath = envelope.canonicalWorktreePath
             storedTasks = envelope.tasks
+            storedEnvelope = AgentTaskEnvelopeState(
+                rememberedAgent: envelope.rememberedAgent,
+                rememberedAgentUpdatedAt: envelope.rememberedAgentUpdatedAt
+            )
             revision = .versioned(envelope.revision)
             requiresMigration = false
         default:
@@ -773,6 +879,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         guard storedProjectPath == project.canonicalProjectPath,
               storedWorktreePath == project.canonicalWorktreePath,
               storedTasks.count <= limits.maxTasksPerProject,
+              validateEnvelopeState(storedEnvelope),
               validateLoadedTasks(storedTasks, project: project) else {
             return rejectedLoad(.invalidMetadata)
         }
@@ -792,7 +899,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             status: status,
             tasks: tasks,
             revision: revision,
-            requiresMigration: requiresMigration
+            requiresMigration: requiresMigration,
+            envelope: storedEnvelope
         )
     }
 
@@ -2019,17 +2127,17 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     private func validateTask(_ task: AgentTask) -> Bool {
         guard isCanonicalAbsolute(task.project.canonicalProjectPath),
               isCanonicalAbsolute(task.project.canonicalWorktreePath),
-              validText(
+              Self.validText(
                   task.descriptor.typeIdentifier,
                   maximum: limits.maxAgentIdentifierBytes,
                   allowsEmpty: false
               ),
-              validOptionalExecutable(
+              Self.validOptionalExecutable(
                   task.descriptor.launchExecutable,
                   maximum: limits.maxAgentIdentifierBytes
               ),
-              validOptionalText(task.title, maximum: limits.maxTitleBytes),
-              validOptionalText(
+              Self.validOptionalText(task.title, maximum: limits.maxTitleBytes),
+              Self.validOptionalText(
                   task.objective,
                   maximum: limits.maxObjectiveBytes
               ),
@@ -2047,10 +2155,67 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                     && task.attention == .none),
               validOptionalDate(task.completedAt),
               task.runs.allSatisfy(validateRun),
+              task.environment.map(Self.validEnvironment) ?? true,
+              validateFeedback(task.feedback),
               validateADEState(task),
               validateEvidence(task),
               validateChronology(task) else {
             return false
+        }
+        return true
+    }
+
+    /// Durable envelope state must be coherent and bounded (#1722): the
+    /// remembered agent and its timestamp are one state (both or neither),
+    /// and the descriptor obeys the same bounds as a task descriptor.
+    private func validateEnvelopeState(
+        _ state: AgentTaskEnvelopeState
+    ) -> Bool {
+        guard (state.rememberedAgent != nil)
+                == (state.rememberedAgentUpdatedAt != nil) else {
+            return false
+        }
+        guard let agent = state.rememberedAgent else { return true }
+        guard Self.validText(
+            agent.typeIdentifier,
+            maximum: limits.maxAgentIdentifierBytes,
+            allowsEmpty: false
+        ), Self.validOptionalExecutable(
+            agent.launchExecutable,
+            maximum: limits.maxAgentIdentifierBytes
+        ) else {
+            return false
+        }
+        if let updatedAt = state.rememberedAgentUpdatedAt {
+            return validDate(updatedAt)
+        }
+        return false
+    }
+
+    /// Bounded, content-free feedback records (#1722): scheme 1, a
+    /// non-empty reference within the byte bound, a finite observed time,
+    /// a validated code-state binding when present, and the per-task count
+    /// bound. A violation rejects the whole file fail-closed.
+    private func validateFeedback(
+        _ records: [AgentTaskFeedbackRecord]
+    ) -> Bool {
+        guard records.count <= limits.maxFeedbackRecordsPerTask else {
+            return false
+        }
+        for record in records {
+            guard record.scheme == AgentTaskFeedbackRecord.currentScheme,
+                  Self.validText(
+                      record.reference,
+                      maximum: limits.maxFeedbackReferenceBytes,
+                      allowsEmpty: false
+                  ),
+                  validDate(record.observedAt) else {
+                return false
+            }
+            if let codeState = record.codeState,
+               !Self.validCodeState(codeState) {
+                return false
+            }
         }
         return true
     }
@@ -2106,7 +2271,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         _ context: AgentTaskPresentationContext?
     ) -> Bool {
         guard let label = context?.terminalLabel else { return true }
-        return validText(
+        return Self.validText(
             label,
             maximum: AgentTaskPresentationContext.maximumTerminalLabelBytes,
             allowsEmpty: false
@@ -2118,7 +2283,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     private func validateRun(_ run: AgentTaskRun) -> Bool {
         guard run.process.processGeneration > 0,
               validDate(run.process.observedStartedAt),
-              validOptionalText(
+              Self.validOptionalText(
                   run.process.startIdentifier,
                   maximum: limits.maxProcessStartBytes
               ),
@@ -2131,15 +2296,15 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             return false
         }
         if let identity = run.vendorIdentity {
-            guard validText(
+            guard Self.validText(
                 identity.provider,
                 maximum: limits.maxVendorProviderBytes,
                 allowsEmpty: false
-            ), validText(
+            ), Self.validText(
                 identity.opaqueIdentifier,
                 maximum: limits.maxVendorIdentityBytes,
                 allowsEmpty: false
-            ), validOptionalText(
+            ), Self.validOptionalText(
                 identity.executableVersion,
                 maximum: limits.maxExecutableVersionBytes
             ) else { return false }
@@ -2168,8 +2333,9 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     /// Every fact must bind to a real run of this task with a matching
     /// process incarnation and, when both carry one, a matching provider
     /// session reference. Facts may not predate their run, may not duplicate
-    /// an admitted event identity, may not exceed the bounded maximum, and
-    /// may not request more trust than their kind allows.
+    /// an admitted event identity, may not exceed the bounded maximum, may
+    /// not request more trust than their kind allows, and must satisfy the
+    /// shared operation-fingerprint rule (D4).
     private func validateEvidence(_ task: AgentTask) -> Bool {
         guard task.evidence.count <= limits.maxEvidenceFactsPerTask else {
             return false
@@ -2194,27 +2360,36 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                   fact.observedAt.timeIntervalSinceReferenceDate.isFinite,
                   fact.observedAt >= run.startedAt,
                   fact.sourceSequence.map({ $0 > 0 }) ?? true,
+                  AgentTaskLifecycleReducer.validOperationFingerprints(fact),
                   seen.insert(fact.eventIdentity).inserted else {
                 return false
             }
             if let codeState = fact.codeState,
-               !validCodeState(codeState) {
+               !Self.validCodeState(codeState) {
+                return false
+            }
+            if let preOperation = fact.preOperationCodeState,
+               !Self.validCodeState(preOperation) {
+                return false
+            }
+            if let postOperation = fact.postOperationCodeState,
+               !Self.validCodeState(postOperation) {
                 return false
             }
             if let environment = fact.environment,
-               !validEnvironment(environment) {
+               !Self.validEnvironment(environment) {
                 return false
             }
             if let vendorSession = fact.vendorSession {
-                guard validText(
+                guard Self.validText(
                     vendorSession.provider,
                     maximum: limits.maxVendorProviderBytes,
                     allowsEmpty: false
-                ), validText(
+                ), Self.validText(
                     vendorSession.opaqueIdentifier,
                     maximum: limits.maxVendorIdentityBytes,
                     allowsEmpty: false
-                ), validOptionalText(
+                ), Self.validOptionalText(
                     vendorSession.executableVersion,
                     maximum: limits.maxExecutableVersionBytes
                 ) else { return false }
@@ -2233,46 +2408,53 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     private func validateSnapshot(_ snapshot: AgentTaskResultSnapshot?) -> Bool {
         guard let snapshot else { return true }
         guard validDate(snapshot.recordedAt) else { return false }
-        if let codeState = snapshot.codeState, !validCodeState(codeState) {
+        if let codeState = snapshot.codeState, !Self.validCodeState(codeState) {
             return false
         }
         if let environment = snapshot.environment,
-           !validEnvironment(environment) {
+           !Self.validEnvironment(environment) {
             return false
         }
         return true
     }
 
-    private func validCodeState(_ value: AgentTaskCodeStateIdentity) -> Bool {
+    /// Shape validation shared by the store's persistence checks and the
+    /// registry admission seams (same module, one rule set).
+
+    nonisolated static func validCodeState(
+        _ value: AgentTaskCodeStateIdentity
+    ) -> Bool {
         guard value.scheme == AgentTaskCodeStateIdentity.currentScheme,
-              validLowerHex(
+              Self.validLowerHex(
                   value.trackedFingerprint,
                   length: AgentTaskCodeStateIdentity.fingerprintBytes
               ),
-              validLowerHex(
+              Self.validLowerHex(
                   value.untrackedFingerprint,
                   length: AgentTaskCodeStateIdentity.fingerprintBytes
               ),
-              validLowerHex(
+              Self.validLowerHex(
                   value.ignoredRelevantFingerprint,
                   length: AgentTaskCodeStateIdentity.fingerprintBytes
               ) else {
             return false
         }
         guard let headCommit = value.headCommit else { return true }
-        return validLowerHex(
+        return Self.validLowerHex(
             headCommit,
             length: AgentTaskCodeStateIdentity.maximumHeadCommitBytes
         )
     }
 
-    private func validEnvironment(_ value: AgentTaskEnvironmentIdentity) -> Bool {
+    nonisolated static func validEnvironment(
+        _ value: AgentTaskEnvironmentIdentity
+    ) -> Bool {
         guard value.scheme == AgentTaskEnvironmentIdentity.currentScheme,
-              validOptionalBoundedText(
+              Self.validOptionalBoundedText(
                   value.osBuild,
                   maximum: AgentTaskEnvironmentIdentity.maximumComponentBytes
               ),
-              validOptionalBoundedText(
+              Self.validOptionalBoundedText(
                   value.toolchain,
                   maximum: AgentTaskEnvironmentIdentity.maximumComponentBytes
               ) else {
@@ -2281,13 +2463,13 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         guard let fingerprint = value.configurationFingerprint else {
             return true
         }
-        return validLowerHex(
+        return Self.validLowerHex(
             fingerprint,
             length: AgentTaskCodeStateIdentity.fingerprintBytes
         )
     }
 
-    private func validLowerHex(_ value: String, length: Int) -> Bool {
+    nonisolated static func validLowerHex(_ value: String, length: Int) -> Bool {
         guard value.utf8.count == length else { return false }
         return value.allSatisfy {
             // Hex digits are numerals (for which `isLowercase` is false)
@@ -2296,12 +2478,12 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         }
     }
 
-    private func validOptionalBoundedText(
+    nonisolated static func validOptionalBoundedText(
         _ value: String?,
         maximum: Int
     ) -> Bool {
         guard let value else { return true }
-        return validText(value, maximum: maximum, allowsEmpty: false)
+        return Self.validText(value, maximum: maximum, allowsEmpty: false)
     }
 
     private func validateChronology(_ task: AgentTask) -> Bool {
@@ -2372,12 +2554,12 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         return true
     }
 
-    private func validOptionalExecutable(
+    nonisolated static func validOptionalExecutable(
         _ value: String?,
         maximum: Int
     ) -> Bool {
         guard let value,
-              validText(value, maximum: maximum, allowsEmpty: false) else {
+              Self.validText(value, maximum: maximum, allowsEmpty: false) else {
             return value == nil
         }
         return value.utf8.allSatisfy { byte in
@@ -2388,15 +2570,15 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         }
     }
 
-    private func validOptionalText(
+    nonisolated static func validOptionalText(
         _ value: String?,
         maximum: Int
     ) -> Bool {
         guard let value else { return true }
-        return validText(value, maximum: maximum, allowsEmpty: false)
+        return Self.validText(value, maximum: maximum, allowsEmpty: false)
     }
 
-    private func validText(
+    nonisolated static func validText(
         _ value: String,
         maximum: Int,
         allowsEmpty: Bool
