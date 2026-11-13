@@ -49,6 +49,13 @@ These capabilities are **direction, not current functionality**, until they ship
 
 See the [Pine 3.0 product vision](docs/pine-3.0-product-vision.md) for the full direction.
 
+**Describe it. Try it. Refine it.** Explore the
+[interactive Pine 3 concept](https://batonogov.github.io/pine/#future):
+project → task → result → contextual feedback, with code and terminal available
+when needed. Web, Go, Python, and DevOps examples use simulated data in a
+Russian-language browser demo, not the downloadable app.
+[Design discussion](https://github.com/batonogov/pine/issues/1735).
+
 ## Features
 
 - **Native macOS** — SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
