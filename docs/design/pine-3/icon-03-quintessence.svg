@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Pine 3 icon concept - Quintessence: one essential glass plane refracting a line of intent</title>
+  <defs>
+    <linearGradient id="field" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1D514C"/>
+      <stop offset="0.5" stop-color="#113844"/>
+      <stop offset="1" stop-color="#091D2C"/>
+    </linearGradient>
+    <radialGradient id="ambient" gradientUnits="userSpaceOnUse" cx="300" cy="140" r="640">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="envglow" gradientUnits="userSpaceOnUse" cx="660" cy="800" r="430">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.10"/>
+    </linearGradient>
+    <linearGradient id="rim" gradientUnits="userSpaceOnUse" x1="376" y1="280" x2="856" y2="760">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="irid" gradientUnits="userSpaceOnUse" x1="404" y1="280" x2="828" y2="280">
+      <stop offset="0" stop-color="#FFC08A" stop-opacity="0.30"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#8CE8E2" stop-opacity="0.60"/>
+    </linearGradient>
+    <linearGradient id="glassS" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.18"/>
+    </linearGradient>
+    <linearGradient id="rimS" gradientUnits="userSpaceOnUse" x1="150" y1="766" x2="290" y2="906">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.25"/>
+    </linearGradient>
+    <linearGradient id="tail" gradientUnits="userSpaceOnUse" x1="720" y1="297" x2="838" y2="201">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.60"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="0.4" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="10"/></filter>
+    <filter id="med" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="26"/></filter>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="14"/></filter>
+    <clipPath id="squircle"><rect x="0" y="0" width="1024" height="1024" rx="229"/></clipPath>
+    <clipPath id="glassclip"><rect x="376" y="280" width="480" height="480" rx="28"/></clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#field)"/>
+    <rect width="1024" height="1024" fill="url(#ambient)"/>
+    <circle cx="660" cy="800" r="430" fill="url(#envglow)"/>
+    <rect x="376" y="280" width="480" height="480" rx="28" transform="translate(12 26) rotate(12 616 520)" fill="#04101A" opacity="0.55" filter="url(#med)"/>
+    <rect x="150" y="766" width="140" height="140" rx="16" transform="translate(8 16) rotate(-12 220 836)" fill="#04101A" opacity="0.50" filter="url(#glow)"/>
+    <polygon points="264.6 783.2 371.9 628.2 739.4 319.9 837.9 203.9 832.1 197.1 700.8 273.9 333.3 582.2 215.4 748.8" fill="#FFFFFF" opacity="0.35" filter="url(#soft)"/>
+    <polygon points="264.6 783.2 371.9 628.2 739.4 319.9 700.8 273.9 333.3 582.2 215.4 748.8" fill="#F7FAFC" opacity="0.85"/>
+    <g transform="rotate(12 616 520)">
+      <rect x="376" y="280" width="480" height="480" rx="28" fill="url(#glass)"/>
+      <g clip-path="url(#glassclip)">
+        <polygon points="376 520 620 280 760 280 516 760" fill="#FFFFFF" opacity="0.07" filter="url(#soft)"/>
+        <polygon points="420.2 692.6 715.6 314.6 627.3 245.6 331.9 623.6" fill="#FFFFFF" opacity="0.16" filter="url(#soft)"/>
+        <polygon points="399.7 676.6 695.1 298.6 647.8 261.7 352.4 639.6" fill="#FFFFFF" opacity="0.50" filter="url(#soft)"/>
+        <polygon points="399.7 676.6 695.1 298.6 647.8 261.7 352.4 639.6" fill="#FFFFFF" opacity="0.80"/>
+      </g>
+      <rect x="376" y="280" width="480" height="480" rx="28" fill="none" stroke="url(#rim)" stroke-width="9"/>
+      <rect x="402" y="306" width="428" height="428" rx="22" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="14" filter="url(#soft)"/>
+      <path d="M 404 280 L 828 280" stroke="url(#irid)" stroke-width="7" stroke-linecap="round" fill="none"/>
+    </g>
+    <polygon points="739.4 319.9 837.9 203.9 832.1 197.1 700.8 273.9" fill="url(#tail)"/>
+    <g transform="rotate(-12 220 836)">
+      <rect x="150" y="766" width="140" height="140" rx="16" fill="url(#glassS)"/>
+      <rect x="150" y="766" width="140" height="140" rx="16" fill="none" stroke="url(#rimS)" stroke-width="7"/>
+    </g>
+    <circle cx="256" cy="758" r="70" fill="#FFFFFF" opacity="0.32" filter="url(#soft)"/>
+  </g>
+  <rect x="1.5" y="1.5" width="1021" height="1021" rx="228" fill="none" stroke="url(#edge)" stroke-width="3"/>
+</svg>
