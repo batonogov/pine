@@ -98,6 +98,180 @@ Vendor references, resume positions, and checkpoints are bounded, non-Codable,
 and redacted from description, debug description, and reflection. Process exit
 is not successful agent completion.
 
+## Lifecycle and evidence contract (#1722)
+
+Durable task state uses one versioned lifecycle/evidence contract built on
+the #1302 registry and metadata store (schema v3). Every ADE surface —
+Inbox, notifications, recovery, result views — projects the same durable
+fields; none keeps a parallel status store.
+
+**State dimensions.** A task tracks, as distinct dimensions:
+
+- `executionState` (`working` / `blocked` / `idle` / `unknown`): the current
+  view of the latest attempt. `working` is an unresolved active turn;
+  `blocked` is a live, authenticated, unresolved question or approval;
+  `idle` is a live session with no active turn or outstanding request,
+  established by provider state or reconciliation — idle is not task
+  completion; `unknown` is missing, stale, contradictory, or unsupported
+  evidence. Terminal silence and process exit never establish `idle`.
+- `outcome` per settled run (`success` / `failure` / `cancellation` /
+  `superseded` / `unverified`), `nil` while in flight. `success` requires an
+  agent-reported completion plus all required independent evidence
+  (independent check and reviewer outcome) bound to one shared code-state
+  identity. Process exit, terminal silence, and an agent claim alone settle
+  `unverified`, never `success`. The latest observed completion claim is
+  what the attempt settles against; a failing independent fact vetoes the
+  claim only when it is bound to the claim's own code state — a failure
+  recorded against an older state is history, never a rejection of the
+  current claim. Without a claim, check and review facts settle
+  `unverified`, never `failure`.
+- `attention` / `isUnread`: the legacy review dimensions, unchanged.
+- `verificationState` (`none` / `pending` / `verified` / `stale`): the
+  current validity of independent verification for the latest result.
+  `pending` is produced by the verification layer while a re-run is in
+  flight; `stale` is left only by the explicit re-verification action
+  described under Ready.
+- `acceptanceState` (`notAccepted` / `accepted`) plus
+  `acceptedSnapshot`: user acceptance as a separate fact; the recorded
+  state identity is preserved so later edits can prove they do not inherit
+  it. Acceptance may also be recorded against an `unverified` outcome: it
+  closes the work and snapshots the identity, but never upgrades the
+  outcome or the verification state.
+
+**Evidence facts.** `AgentTaskEvidenceFact` is one bounded fact bound to one
+attempt: kind (`processCompletion`, `agentReportedCompletion`,
+`independentCheck`, `reviewerOutcome`, `userAcceptance`,
+`userCancellation`), the provenance `TrustLevel` (process observations are
+at most `observed`; user actions and structured reports may be `verified`),
+a bounded result, observed time, code-state identity, environment identity,
+an optional provider session reference, and an optional source sequence.
+Observed process completion, agent-reported completion, independent checks,
+reviewer outcomes, and user acceptance remain separate facts; no fact
+establishes any other. Facts store hashes and identifiers only — never
+transcripts, prompts, file contents, environment values, or credentials.
+
+**Operation fingerprints.** Check and reviewer facts additionally carry
+pre- and post-operation code-state fingerprints: the recording layer
+(#1724) computes the code-state identity before and after the operation and
+records the fact only when the two are equal — a check whose tree moved
+during the operation cannot prove relevance, so the fact is simply never
+recorded and Ready stays refused. Persisted pre/post fingerprints are always
+equal to each other and to the fact's own code-state identity; any other
+combination (one side only, a mismatch, or pre/post on any other fact kind)
+is fenced at admission and rejected fail-closed from durable files.
+
+**Fencing.** Facts are fenced by attempt identity (run ID), process
+incarnation (process generation), provider session reference, source
+sequence, and observed chronology; duplicate event identities are rejected.
+Ordered delivery deduplicates by source sequence ALONE — a reconnect
+re-emission (or clock skew) with a different observed timestamp is a
+duplicate, never a new event — while unordered delivery deduplicates by the
+observed timestamp quantized to millisecond precision, stable across the
+persistence encoding. Facts are also bounded (64 per task) at admission.
+Late, duplicate, replayed, nested, and foreign-provider events cannot settle
+a different or newer attempt.
+
+**Ready.** Ready is derived, never stored, and exists only from current
+required evidence: a settled `success` outcome, current `verified`
+verification state, and every required evidence fact passing and bound to
+the current code-state and environment identities. Process exit, terminal
+silence, and an agent claim never map to Ready. Invalidation — relevant
+edits, environment changes, or relaunch — fails closed and names the repeat
+work (`missingEvidence(kind)`, `failingEvidence(kind)`,
+`staleEvidence(kind)`, `environmentChanged`, plus the code-state and
+environment unknown gaps), while reviewed and accepted snapshots stay
+identifiable. The projection mirrors the settlement veto scope: a failing
+fact bound to the CURRENT code state names `failingEvidence(kind)` and no
+older passing fact can override it.
+
+**Revalidation before publication.** The surface that publishes Ready — and
+the surface that tries the result (#1725) — recomputes and proves the
+current code-state and environment identities immediately before each, and
+passes them to the readiness projection; identities captured earlier do not
+establish Ready.
+
+**Re-verification.** `.stale` (and `.pending`) is left only by an explicit
+re-verification action, which the verification layer (#1724) will drive
+through these seams; the grant mechanism is #1724's to define. No later
+fact alone re-upgrades a stale result. The layer
+re-runs the required evidence against the current identities, records the
+new bound facts (`recordEvidence`), optionally marks in-flight verification
+(`markVerificationPending`), and then restores the current state
+(`markVerificationCurrent`, reducer `reverify`) — which requires a settled
+`success` attempt and every required fact passing bound to the
+caller-proven code-state and environment identities. Those current
+identities are computed and proven by the verification layer; the registry
+seams take caller-proven identities only.
+
+**Persistence.** Task metadata is schema v3. Outcome state is writable only
+with an evidence basis: a settled run carrying a recorded outcome plus at
+least one durable evidence fact bound to it. Relaunch normalization marks
+live evidence stale, invalidates current verified and accepted state, and
+preserves the snapshots: surfaces never see un-normalized state, and
+un-normalized state is never persisted (the re-save is scheduled after
+normalization). Invalidation and the evidence recorded after it land in
+the same durable task snapshot, so a persisted write can never contain
+dependent positive evidence without its invalidation; a crash between a
+mutation and the metadata write leaves only the previous consistent state.
+
+**Durable relationship.** The task itself carries the bindings that survive
+individual runs. A task-level `environment` identity (the `bindEnvironment`
+seam, caller-proven and revalidated on every save and load) is the slot the
+structured adapters (#1723) bind their session, launch generation, and
+attempt identity to. A bounded list of content-free feedback records
+(`recordFeedback`, ≤32 per task, admitted at that one point) stores the
+user's bounded feedback references; each `reference` is a redacted provider
+identifier or hash — never feedback text, a path, or a secret — together
+with the code state the feedback referred to, when known. The per-project
+envelope remembers the agent explicitly used by the last Pine-owned launch
+in that project (`rememberedAgentDescriptor(for:)`): an explicit choice at
+launch time always wins, and task dismissal and the retention sweep never
+erase the envelope state.
+
+**Recovery.** Application restoration loads the durable metadata and
+normalizes it fail-closed before any surface may present it: live execution
+evidence degrades to `unknown`, current `verified`/`pending` verification to
+`stale`, acceptance resets, and the reviewed and accepted snapshots survive.
+Restoration never reconciles against a provider, never re-arms a claim, and
+never resumes a correction loop; automatic reconciliation is allowed only
+with an already-live process and an authenticated channel whose identity is
+revalidated (the structured layer, #1723). Starting a new agent process —
+including native provider resume — always requires explicit user action and
+creates a new run and source namespace, never a continuation of a lost one.
+
+**Code-state and environment identity.** `AgentTaskCodeStateIdentity` is
+conservative by contract: the worktree head commit plus SHA-256
+fingerprints over the canonicalized tracked status entries (tracked
+modifications, symlinks, and submodules as the git status reports them),
+the sorted untracked path list, and the relevant ignored inputs (for
+example, generated files the required checks consume).
+`AgentTaskEnvironmentIdentity` adds the OS build, the toolchain, and a
+configuration fingerprint. Provider-supplied paths and hashes are untrusted
+until recomputed beneath the authorized no-follow root; the registry seams
+take caller-proven identities only.
+
+**Data classification and logs.** Every new durable field is bounded and
+content-free:
+
+| Field | Class | Bound | Redaction | Notifications | Logs |
+| --- | --- | --- | --- | --- | --- |
+| task `environment` | identity | 3 × ≤64 B components + 64-hex config fingerprint | opaque identifiers, never values | not emitted | not logged |
+| task `feedback` | reference | ≤32 records × ≤256 B reference | provider id or hash, never text | not emitted | not logged |
+| fact `pre/postOperationCodeState` | identity | 2 × code-state identity | fingerprints only | not emitted | not logged |
+| envelope `rememberedAgent` | identity | descriptor bounds (≤128 B identifier, ≤128 B executable) | stable identifier + executable name | not emitted | not logged |
+
+The delta adds no log lines; the pre-existing rejection-enum log lines
+emit valueless diagnostics only — no field value, path, or identifier is
+logged.
+
+**Known asymmetries.** A fact bound to a code state but not to an
+environment is invisible to the `environmentChanged` dimension — the
+normative rule binds success to the code-state identity, while `reverify`
+does require the environment binding to leave `.stale`. A fact's
+vendor-session reference is fenced only when the bound run carries a vendor
+identity; on an identity-less run the field is inert and never influences
+outcome or readiness.
+
 ## Authority and deferred work
 
 Pine creates and lifecycle-binds a session-contract validating sink before the

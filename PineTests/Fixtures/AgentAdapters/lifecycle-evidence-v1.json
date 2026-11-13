@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "lifecycle-evidence-v1",
+  "sanitization": "no prompts, commands, paths, tokens, environment values, or terminal output; opaque hashes only",
+  "facts": [
+    {
+      "kind": "processCompletion",
+      "runID": "00000000-0000-0000-0000-000000000001",
+      "processGeneration": 1,
+      "trust": "observed",
+      "result": { "exited": {} },
+      "observedAt": 1760000000.0,
+      "codeState": null,
+      "environment": null,
+      "vendorSession": null,
+      "sourceSequence": null
+    },
+    {
+      "kind": "agentReportedCompletion",
+      "runID": "00000000-0000-0000-0000-000000000001",
+      "processGeneration": 1,
+      "trust": "verified",
+      "result": { "reported": {} },
+      "observedAt": 1760000010.0,
+      "codeState": {
+        "scheme": 1,
+        "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+        "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "environment": {
+        "scheme": 1,
+        "osBuild": "000000A000g",
+        "toolchain": "Pine-Test-1",
+        "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "vendorSession": {
+        "provider": "example",
+        "opaqueIdentifier": "session-0001",
+        "executableVersion": "1.0.0"
+      },
+      "sourceSequence": 1
+    },
+    {
+      "kind": "independentCheck",
+      "runID": "00000000-0000-0000-0000-000000000001",
+      "processGeneration": 1,
+      "trust": "verified",
+      "result": { "succeeded": {} },
+      "observedAt": 1760000020.0,
+      "codeState": {
+        "scheme": 1,
+        "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+        "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "environment": {
+        "scheme": 1,
+        "osBuild": "000000A000g",
+        "toolchain": "Pine-Test-1",
+        "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "vendorSession": null,
+      "sourceSequence": 2
+    },
+    {
+      "kind": "reviewerOutcome",
+      "runID": "00000000-0000-0000-0000-000000000001",
+      "processGeneration": 1,
+      "trust": "verified",
+      "result": { "succeeded": {} },
+      "observedAt": 1760000030.0,
+      "codeState": {
+        "scheme": 1,
+        "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+        "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "environment": {
+        "scheme": 1,
+        "osBuild": "000000A000g",
+        "toolchain": "Pine-Test-1",
+        "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "vendorSession": null,
+      "sourceSequence": 3
+    },
+    {
+      "kind": "userAcceptance",
+      "runID": "00000000-0000-0000-0000-000000000001",
+      "processGeneration": 1,
+      "trust": "verified",
+      "result": { "accepted": {} },
+      "observedAt": 1760000040.0,
+      "codeState": {
+        "scheme": 1,
+        "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+        "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "environment": {
+        "scheme": 1,
+        "osBuild": "000000A000g",
+        "toolchain": "Pine-Test-1",
+        "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "vendorSession": null,
+      "sourceSequence": 4
+    }
+  ]
+}

@@ -114,6 +114,12 @@ final class AgentTaskRegistry {
     private var registeredProjects = Set<AgentTaskProjectIdentity>()
     @ObservationIgnored
     private var loadedProjects = Set<AgentTaskProjectIdentity>()
+    /// Per-project durable envelope state (remembered default agent, C2).
+    /// Populated from each accepted load and written with the same save
+    /// path as the tasks; it is project-scoped, never task-scoped.
+    @ObservationIgnored
+    private var envelopeStateByProject:
+        [AgentTaskProjectIdentity: AgentTaskEnvelopeState] = [:]
     @ObservationIgnored
     private var quarantinedProjects = Set<AgentTaskProjectIdentity>()
     @ObservationIgnored
@@ -227,7 +233,8 @@ final class AgentTaskRegistry {
                 attention: .none,
                 isUnread: false,
                 startedSecondsAgo: 7 * 60,
-                verifiedSecondsAgo: 18
+                verifiedSecondsAgo: 18,
+                outcome: nil
             ), referenceDate: referenceDate),
             marketingTask(.init(
                 seed: 2,
@@ -241,7 +248,8 @@ final class AgentTaskRegistry {
                 attention: .completed,
                 isUnread: true,
                 startedSecondsAgo: 18 * 60,
-                verifiedSecondsAgo: 2 * 60
+                verifiedSecondsAgo: 2 * 60,
+                outcome: .unverified
             ), referenceDate: referenceDate),
             marketingTask(.init(
                 seed: 3,
@@ -255,7 +263,8 @@ final class AgentTaskRegistry {
                 attention: .none,
                 isUnread: false,
                 startedSecondsAgo: 4 * 60,
-                verifiedSecondsAgo: 8
+                verifiedSecondsAgo: 8,
+                outcome: nil
             ), referenceDate: referenceDate),
             marketingTask(.init(
                 seed: 4,
@@ -269,7 +278,8 @@ final class AgentTaskRegistry {
                 attention: .none,
                 isUnread: false,
                 startedSecondsAgo: 2 * 60,
-                verifiedSecondsAgo: 5
+                verifiedSecondsAgo: 5,
+                outcome: nil
             ), referenceDate: referenceDate),
         ]
     }
@@ -287,6 +297,7 @@ final class AgentTaskRegistry {
         let isUnread: Bool
         let startedSecondsAgo: TimeInterval
         let verifiedSecondsAgo: TimeInterval
+        let outcome: AgentTaskOutcome?
     }
 
     private func marketingTask(
@@ -353,6 +364,21 @@ final class AgentTaskRegistry {
         task.updatedAt = observedAt
         task.lastActivityAt = observedAt
         task.completedAt = fixture.lifecycle == .completed ? observedAt : nil
+        if let outcome = fixture.outcome {
+            // Keep the presentation-only fixture coherent with the evidence
+            // contract: a settled run carries its outcome plus the
+            // observed process-completion fact it was settled from.
+            task.runs[0].outcome = outcome
+            task.evidence = [AgentTaskEvidenceFact(
+                kind: .processCompletion,
+                runID: task.runs[0].id,
+                processGeneration: UInt64(fixture.seed),
+                trust: .observed,
+                result: .exited(status: nil),
+                observedAt: observedAt
+            )]
+        }
+        task.executionState = AgentTaskLifecycleReducer.executionState(for: task)
         return task
     }
 
@@ -426,6 +452,263 @@ final class AgentTaskRegistry {
         return true
     }
 
+    // MARK: - ADE lifecycle and evidence contract (#1722)
+
+    /// Records one bounded evidence fact for a task, enforcing the fencing
+    /// contract (attempt identity, process incarnation, provider session
+    /// reference, source sequence, chronology, and duplicates). Admitting a
+    /// fact for the latest settled run re-settles the attempt, so
+    /// verification recorded after termination can upgrade the recorded
+    /// outcome — for example `unverified` to `success`.
+    @discardableResult
+    func recordEvidence(
+        _ fact: AgentTaskEvidenceFact,
+        taskID: UUID
+    ) -> AgentTaskEvidenceAdmission {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID) else {
+            return .fencedOut(.unknownRun)
+        }
+        // The fact bound is enforced inside admit (ONE enforcement point
+        // for every entry path); the store keeps its own count guard as a
+        // persistence backstop.
+        let admission = AgentTaskLifecycleReducer.admit(
+            fact,
+            into: tasks[index]
+        )
+        guard case .accepted = admission else { return admission }
+        tasks[index].evidence.append(fact)
+        if let runIndex = tasks[index].runs.firstIndex(where: {
+            $0.id == fact.runID
+        }), AgentTaskLifecycleReducer.isSettled(tasks[index].runs[runIndex]) {
+            AgentTaskLifecycleReducer.settleLatestRun(
+                of: &tasks[index],
+                runIndex: runIndex
+            )
+        }
+        tasks[index].updatedAt = max(
+            tasks[index].updatedAt,
+            fact.observedAt
+        )
+        markDirty(tasks[index].project)
+        return .accepted
+    }
+
+    /// Records user acceptance of a settled result. Acceptance is a separate
+    /// fact from verification: it closes the task's work and records an
+    /// identifiable snapshot, but it never upgrades the recorded outcome or
+    /// the verification state, and it is never inherited by a later attempt.
+    @discardableResult
+    func recordUserAcceptance(
+        taskID: UUID,
+        codeState: AgentTaskCodeStateIdentity,
+        environment: AgentTaskEnvironmentIdentity,
+        at timestamp: Date = Date()
+    ) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              tasks[index].lifecycle != .dismissed,
+              let runIndex = tasks[index].runs.indices.last,
+              AgentTaskLifecycleReducer.isSettled(tasks[index].runs[runIndex]),
+              let outcome = tasks[index].runs[runIndex].outcome,
+              outcome == .success || outcome == .unverified else {
+            return false
+        }
+        let run = tasks[index].runs[runIndex]
+        let fact = AgentTaskEvidenceFact(
+            kind: .userAcceptance,
+            runID: run.id,
+            processGeneration: run.process.processGeneration,
+            trust: .verified,
+            result: .accepted,
+            observedAt: timestamp,
+            codeState: codeState,
+            environment: environment
+        )
+        guard case .accepted = AgentTaskLifecycleReducer.admit(
+            fact,
+            into: tasks[index]
+        ) else {
+            return false
+        }
+        tasks[index].evidence.append(fact)
+        tasks[index].acceptedSnapshot = AgentTaskResultSnapshot(
+            runID: run.id,
+            outcome: outcome,
+            codeState: codeState,
+            environment: environment,
+            recordedAt: timestamp
+        )
+        tasks[index].acceptanceState = .accepted
+        tasks[index].lifecycle = .completed
+        tasks[index].attention = .completed
+        tasks[index].completedAt = run.endedAt
+        tasks[index].executionState = AgentTaskLifecycleReducer.executionState(
+            for: tasks[index]
+        )
+        tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
+        markDirty(tasks[index].project)
+        return true
+    }
+
+    /// Binds the task-level environment identity (C1a). The identity is
+    /// caller-proven; the registry validates its shape before stamping, and
+    /// the metadata store revalidates it on every save and load as a
+    /// persistence backstop. The binding never touches runs or evidence: a
+    /// new attempt or re-verification compares its bound facts against it.
+    @discardableResult
+    func bindEnvironment(
+        _ environment: AgentTaskEnvironmentIdentity,
+        to taskID: UUID,
+        at timestamp: Date = Date()
+    ) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              AgentTaskMetadataStore.validEnvironment(environment) else {
+            return false
+        }
+        tasks[index].environment = environment
+        tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
+        markDirty(tasks[index].project)
+        return true
+    }
+
+    /// Records one bounded, content-free feedback reference (C1b).
+    ///
+    /// Admission is bounded at this ONE point: the per-task record count is
+    /// checked here, and the reference must fit the byte bound. The
+    /// metadata store revalidates every record on load as a persistence
+    /// backstop. The reference is redacted by contract — a provider message
+    /// identifier or hash — never feedback text, a path, or a secret.
+    @discardableResult
+    func recordFeedback(
+        _ reference: String,
+        codeState: AgentTaskCodeStateIdentity?,
+        for taskID: UUID,
+        at timestamp: Date = Date()
+    ) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              validUserText(
+                  reference,
+                  maximum: limits.maxFeedbackReferenceBytes
+              ),
+              tasks[index].feedback.count
+                  < limits.maxFeedbackRecordsPerTask else {
+            return false
+        }
+        tasks[index].feedback.append(AgentTaskFeedbackRecord(
+            reference: reference,
+            observedAt: timestamp,
+            codeState: codeState
+        ))
+        tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
+        markDirty(tasks[index].project)
+        return true
+    }
+
+    /// The remembered default agent for one project (C2): the descriptor of
+    /// the last Pine-owned launch reserved in that project. A synchronous
+    /// read of the in-memory envelope state; the metadata store
+    /// revalidates the value on every load.
+    func rememberedAgentDescriptor(
+        for project: AgentTaskProjectIdentity
+    ) -> AgentDescriptor? {
+        envelopeStateByProject[project]?.rememberedAgent
+    }
+
+    /// Invalidates the task's verification and acceptance after a relevant
+    /// change — a code-state or environment difference, or a relaunch (both
+    /// inputs `nil`). Returns the readiness gaps that result, naming which
+    /// checks or review must be repeated.
+    @discardableResult
+    func invalidateEvidence(
+        taskID: UUID,
+        codeState: AgentTaskCodeStateIdentity?,
+        environment: AgentTaskEnvironmentIdentity?,
+        at timestamp: Date = Date()
+    ) -> [AgentTaskReadinessGap] {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID) else {
+            return []
+        }
+        let gaps = AgentTaskLifecycleReducer.invalidate(
+            &tasks[index],
+            codeState: codeState,
+            environment: environment
+        )
+        if !gaps.isEmpty {
+            tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
+            markDirty(tasks[index].project)
+        }
+        return gaps
+    }
+
+    /// Marks in-flight verification for a settled successful attempt.
+    ///
+    /// Produced by the verification layer while the required evidence is
+    /// being re-run after an invalidation. Idempotent while `.pending`.
+    @discardableResult
+    func markVerificationPending(taskID: UUID) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID) else {
+            return false
+        }
+        let before = tasks[index].verificationState
+        AgentTaskLifecycleReducer.recordVerificationPending(&tasks[index])
+        if tasks[index].verificationState == .pending && before != .pending {
+            tasks[index].updatedAt = max(tasks[index].updatedAt, Date())
+            markDirty(tasks[index].project)
+        }
+        return tasks[index].verificationState == .pending
+    }
+
+    /// Re-establishes current verification from caller-proven identities —
+    /// the re-verification action the verification layer performs after
+    /// re-recording the required evidence against the current code state
+    /// and environment. Idempotent while already `.verified`; a no-op
+    /// unless the required facts pass bound to the provided identities.
+    @discardableResult
+    func markVerificationCurrent(
+        taskID: UUID,
+        codeState: AgentTaskCodeStateIdentity,
+        environment: AgentTaskEnvironmentIdentity
+    ) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID) else {
+            return false
+        }
+        let before = tasks[index].verificationState
+        AgentTaskLifecycleReducer.reverify(
+            &tasks[index],
+            codeState: codeState,
+            environment: environment
+        )
+        if tasks[index].verificationState == .verified && before != .verified {
+            tasks[index].updatedAt = max(tasks[index].updatedAt, Date())
+            markDirty(tasks[index].project)
+        }
+        return tasks[index].verificationState == .verified
+    }
+
+    /// Projects Ready for one task from its current required evidence. Ready
+    /// is derived, never stored, and never follows process exit, terminal
+    /// silence, or an agent claim.
+    func readiness(
+        for taskID: UUID,
+        codeState: AgentTaskCodeStateIdentity?,
+        environment: AgentTaskEnvironmentIdentity?
+    ) -> AgentTaskReadiness {
+        guard let task = task(for: taskID) else {
+            return AgentTaskReadiness(isReady: false, gaps: [.noSettledAttempt])
+        }
+        return AgentTaskLifecycleReducer.readiness(
+            for: task,
+            codeState: codeState,
+            environment: environment
+        )
+    }
+
     /// Removes a finished/stale task from Inbox history without destroying a
     /// live ownership route. Dismissed metadata remains durable until bounded
     /// retention safely reclaims it.
@@ -441,6 +724,10 @@ final class AgentTaskRegistry {
         tasks[index].lifecycle = .dismissed
         tasks[index].attention = .none
         tasks[index].isUnread = false
+        // `completedAt` is one state with `lifecycle == .completed`:
+        // dismissing a settled outcome task must clear it, or the
+        // evidence-based store validation rejects every later save.
+        tasks[index].completedAt = nil
         tasks[index].launchInterruption = nil
         tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
         markDirty(tasks[index].project)
@@ -712,6 +999,9 @@ final class AgentTaskRegistry {
             }
             tasks[taskIndex].runs[runIndex].liveness = .stale
             tasks[taskIndex].attention = .none
+            tasks[taskIndex].executionState = AgentTaskLifecycleReducer.executionState(
+                for: tasks[taskIndex]
+            )
             tasks[taskIndex].updatedAt = max(
                 tasks[taskIndex].updatedAt,
                 tasks[taskIndex].runs[runIndex].lastObservedAt
@@ -769,6 +1059,16 @@ final class AgentTaskRegistry {
             deadline: monotonicNow().advanced(by: claimTTL),
             state: .dormant
         ), key: key)
+        // Remember this explicit launch choice per project (C2): it is the
+        // default for the next Pine-owned launch here. prepareResume never
+        // changes it. It is envelope-level state: task dismissal and the
+        // retention sweep do not touch it. The dormant reservation itself
+        // stays runtime-only (no save); the envelope persists with the next
+        // save scheduled for this project.
+        envelopeStateByProject[context.project] = AgentTaskEnvelopeState(
+            rememberedAgent: descriptor,
+            rememberedAgentUpdatedAt: Date()
+        )
         return .reserved(reservation)
     }
 
@@ -1121,6 +1421,12 @@ final class AgentTaskRegistry {
                 tasks[index].lastActivityAt,
                 timestamp
             )
+            // Terminal close is authoritative observed completion of the
+            // process; it settles the attempt like a process exit (#1722).
+            AgentTaskLifecycleReducer.settleTerminated(
+                task: &tasks[index],
+                runIndex: runIndex
+            )
         }
         tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
         removeLiveOwnership(taskID: taskID, key: key)
@@ -1177,6 +1483,9 @@ final class AgentTaskRegistry {
                 tasks[taskIndex].lifecycle = .paused
             }
             tasks[taskIndex].attention = .none
+            tasks[taskIndex].executionState = AgentTaskLifecycleReducer.executionState(
+                for: tasks[taskIndex]
+            )
             tasks[taskIndex].updatedAt = max(
                 tasks[taskIndex].updatedAt,
                 timestamp
@@ -1246,6 +1555,9 @@ final class AgentTaskRegistry {
                    let liveness = rollback.liveness {
                     tasks[index].runs[runIndex].liveness = liveness
                 }
+                tasks[index].executionState = AgentTaskLifecycleReducer.executionState(
+                    for: tasks[index]
+                )
                 restoredProjects.insert(tasks[index].project)
             }
         }
@@ -1434,6 +1746,7 @@ final class AgentTaskRegistry {
         }
         loadedProjects.insert(project)
         diskRevisionByProject[project] = result.revision
+        envelopeStateByProject[project] = result.envelope
         historicalTaskIDByRunID = stagedHistorical
         loadedInterruptedTaskIDs.formUnion(stagedInterruptedTaskIDs)
         tasks.append(contentsOf: stagedTasks)
@@ -1460,6 +1773,7 @@ final class AgentTaskRegistry {
         loadStatusByProject[project.persistenceKey] = .rejected(rejection)
         loadedProjects.remove(project)
         diskRevisionByProject[project] = nil
+        envelopeStateByProject[project] = nil
         quarantinedProjects.insert(project)
         if dirtyProjects.contains(project) {
             unpersistableDirtyProjects.insert(project)
@@ -1507,20 +1821,34 @@ final class AgentTaskRegistry {
 
     private func normalizeLoadedTask(_ task: inout AgentTask) -> Bool {
         task.route.availability = .missing
-        var invalidatedLiveRun = false
+        var changed = false
         for index in task.runs.indices
         where task.runs[index].liveness == .live
             || task.runs[index].liveness == .stale {
             task.runs[index].liveness = .stale
-            invalidatedLiveRun = true
+            changed = true
         }
-        if invalidatedLiveRun {
+        if changed {
             task.attention = .none
             if task.lifecycle == .active {
                 task.lifecycle = .paused
             }
         }
-        return invalidatedLiveRun
+        // Relaunch makes current positive evidence stale but preserves the
+        // reviewed and accepted history. Surfaces never see un-normalized
+        // state, and un-normalized state is never persisted: the re-save is
+        // scheduled after normalization (#1722).
+        if task.verificationState == .verified
+            || task.verificationState == .pending {
+            task.verificationState = .stale
+            changed = true
+        }
+        if task.acceptanceState == .accepted {
+            task.acceptanceState = .notAccepted
+            changed = true
+        }
+        task.executionState = AgentTaskLifecycleReducer.executionState(for: task)
+        return changed
     }
 
     private func appendRun(
@@ -1564,6 +1892,7 @@ final class AgentTaskRegistry {
             ),
             lifecycleAccuracy: session.lifecycleAccuracy
         ))
+        supersedePreviousRun(of: &task, at: max(context.observedAt, session.lastObservedAt))
         task.route = context.route
         task.presentationContext = context.presentationContext
             ?? task.presentationContext
@@ -1574,6 +1903,10 @@ final class AgentTaskRegistry {
             task.route.availability = .missing
         }
         task.completedAt = nil
+        // A new attempt never inherits the previous attempt's verification
+        // or acceptance. Snapshots stay durable and identifiable (#1722).
+        task.verificationState = .none
+        task.acceptanceState = .notAccepted
         task.updatedAt = max(
             task.updatedAt,
             max(context.observedAt, session.lastObservedAt)
@@ -1583,7 +1916,29 @@ final class AgentTaskRegistry {
             session.lastObservedAt
         )
         applyAttention(to: &task, from: run)
+        if liveness == .terminated {
+            AgentTaskLifecycleReducer.settleTerminated(
+                task: &task,
+                runIndex: task.runs.count - 1
+            )
+        } else {
+            task.executionState = AgentTaskLifecycleReducer.executionState(
+                for: task
+            )
+        }
         return true
+    }
+
+    /// A live run replaced by a newer attempt is superseded, never silently
+    /// terminated. The outcome is the replacement fact itself.
+    private func supersedePreviousRun(of task: inout AgentTask, at timestamp: Date) {
+        guard let index = task.runs.indices.last,
+              task.runs[index].liveness != .terminated else {
+            return
+        }
+        task.runs[index].liveness = .terminated
+        task.runs[index].endedAt = max(task.runs[index].lastObservedAt, timestamp)
+        task.runs[index].outcome = .superseded
     }
 
     @discardableResult
@@ -1656,6 +2011,23 @@ final class AgentTaskRegistry {
             tasks[taskIndex].route.availability = .missing
         }
         applyAttention(to: &tasks[taskIndex], from: run)
+        if nextLiveness == .terminated {
+            // Observed process termination settles the attempt from its
+            // evidence: exit alone records an unverified outcome, never a
+            // verified result or Ready (#1722).
+            AgentTaskLifecycleReducer.settleTerminated(
+                task: &tasks[taskIndex],
+                runIndex: runIndex
+            )
+        } else {
+            // Every detector poll touches this seam: keep the stored
+            // execution dimension in step with the observed liveness (a
+            // stale run presents unknown, never working; a verified
+            // waiting request presents blocked).
+            tasks[taskIndex].executionState = AgentTaskLifecycleReducer.executionState(
+                for: tasks[taskIndex]
+            )
+        }
         return true
     }
 
@@ -1707,6 +2079,14 @@ final class AgentTaskRegistry {
             )
             tasks[index].runs[runIndex].liveness = .terminated
             tasks[index].runs[runIndex].endedAt = end
+            // The resumed attempt replaces the interrupted one. Only an
+            // UNSETTLED run is superseded here: a run already settled from
+            // its bound evidence keeps that outcome, matching endRun (the
+            // outcome is a pure function of the facts, never of the
+            // replacement).
+            if tasks[index].runs[runIndex].outcome == nil {
+                tasks[index].runs[runIndex].outcome = .superseded
+            }
             advanceTaskChronology(at: index, through: end)
         }
         return appendRun(session, to: claim.taskID, context: context)
@@ -1765,13 +2145,28 @@ final class AgentTaskRegistry {
               ) else {
             return
         }
+        let alreadySettled = tasks[taskIndex].runs[runIndex].liveness == .terminated
+            && tasks[taskIndex].runs[runIndex].outcome != nil
         tasks[taskIndex].runs[runIndex].liveness = .terminated
         tasks[taskIndex].runs[runIndex].endedAt = max(
             tasks[taskIndex].runs[runIndex].lastObservedAt,
             timestamp
         )
+        // endRun is only reached from a replacement: a newer attempt takes
+        // over this terminal, so an UNSETTLED finished attempt is
+        // superseded (mirroring supersedePreviousRun). A run already
+        // settled from its bound evidence keeps that outcome — the outcome
+        // is a pure function of the facts, never of the replacement.
+        if !alreadySettled {
+            tasks[taskIndex].runs[runIndex].outcome = .superseded
+        }
         tasks[taskIndex].lifecycle = .paused
         tasks[taskIndex].attention = .none
+        // The run just terminated: follow it with the stored execution
+        // dimension (a terminated latest run presents unknown).
+        tasks[taskIndex].executionState = AgentTaskLifecycleReducer.executionState(
+            for: tasks[taskIndex]
+        )
         if let endedAt = tasks[taskIndex].runs[runIndex].endedAt {
             advanceTaskChronology(at: taskIndex, through: endedAt)
         }
@@ -1936,6 +2331,7 @@ final class AgentTaskRegistry {
                 && !pendingUnverifiedTaskIDs.contains($0.id)
         }
         let store = persistence
+        let envelopeState = envelopeStateByProject[project] ?? .empty
         let revision = persistenceRevision[project]
         let ticket = AgentTaskPersistenceTicket(
             generation: persistenceGeneration,
@@ -1955,6 +2351,7 @@ final class AgentTaskRegistry {
             defer { self?.abandonedPersistenceTickets.remove(ticket) }
             let result = await store.save(
                 tasks: snapshot,
+                envelope: envelopeState,
                 project: project,
                 authorization: authorization
             )
@@ -2154,6 +2551,10 @@ final class AgentTaskRegistry {
               }) {
             let runID = tasks[taskIndex].runs.remove(at: removalIndex).id
             taskIDByRunID[runID] = nil
+            // Facts bound to the removed run are history that can no longer
+            // validate: shed them, or every subsequent save of the project
+            // is rejected until relaunch.
+            tasks[taskIndex].evidence.removeAll { $0.runID == runID }
         }
     }
 

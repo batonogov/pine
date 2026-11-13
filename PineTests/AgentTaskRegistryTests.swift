@@ -2894,7 +2894,6 @@ struct AgentTaskRegistryTests {
         #expect(!persisted.contains(terminalOutput))
         #expect(!persisted.contains(credential))
         #expect(persisted.contains(vendorCanary))
-        #expect(!persisted.contains("environment"))
         #expect(!persisted.contains("transcript"))
         #expect(!persisted.contains("prompt"))
         #expect(!persisted.contains("Mon Aug 3 10:00:00 2026"))
@@ -2908,9 +2907,11 @@ struct AgentTaskRegistryTests {
         ])
         let task = try #require((root["tasks"] as? [[String: Any]])?.first)
         #expect(Set(task.keys) == [
-            "attention", "createdAt", "descriptor", "id", "isUnread",
-            "lastActivityAt", "lifecycle", "origin", "project", "route",
-            "runs", "title", "objective", "updatedAt",
+            "acceptanceState", "attention", "createdAt", "descriptor",
+            "evidence", "executionState", "feedback", "id", "isUnread",
+            "lastActivityAt", "lifecycle", "objective", "origin",
+            "project", "route", "runs", "title", "updatedAt",
+            "verificationState",
         ])
         let projectObject = try #require(task["project"] as? [String: Any])
         #expect(Set(projectObject.keys) == [
@@ -2941,7 +2942,7 @@ struct AgentTaskRegistryTests {
             "observedStartedAt", "processGeneration",
         ])
         let forbiddenKeys: Set<String> = [
-            "prompt", "command", "arguments", "environment", "output",
+            "prompt", "command", "arguments", "output",
             "transcript", "fileContents", "activitySummary", "credentials",
             "processIdentifier", "startIdentifier",
         ]
@@ -2955,6 +2956,31 @@ struct AgentTaskRegistryTests {
         }
         assertNoForbiddenKeys(root)
 
+        // The `environment` key is legitimate ONLY on task objects (the C1a
+        // content-free identity); it must not appear deeper (runs, process,
+        // evidence, …). Task objects sit directly under root["tasks"].
+        func assertNoEnvironmentKeyDeeperThanTask(
+            _ value: Any,
+            taskDepth: Int
+        ) {
+            if let object = value as? [String: Any] {
+                if taskDepth >= 1 {
+                    #expect(!object.keys.contains("environment"))
+                }
+                object.values.forEach {
+                    assertNoEnvironmentKeyDeeperThanTask(
+                        $0,
+                        taskDepth: taskDepth + 1
+                    )
+                }
+            } else if let array = value as? [Any] {
+                array.forEach {
+                    assertNoEnvironmentKeyDeeperThanTask($0, taskDepth: taskDepth)
+                }
+            }
+        }
+        assertNoEnvironmentKeyDeeperThanTask(root, taskDepth: 0)
+
         let loaded = await store.load(project: identity)
         #expect(
             loaded.tasks.first?.runs.first?.vendorIdentity
@@ -2962,7 +2988,7 @@ struct AgentTaskRegistryTests {
         )
     }
 
-    @Test("schema v1 metadata migrates to revisioned v2")
+    @Test("schema v1 metadata migrates to revisioned v3")
     func legacyMetadataMigratesToRevisionedEnvelope() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
@@ -3024,7 +3050,7 @@ struct AgentTaskRegistryTests {
                 with: Data(contentsOf: fileURL)
             ) as? [String: Any]
         )
-        #expect(root["schemaVersion"] as? Int == 2)
+        #expect(root["schemaVersion"] as? Int == 3)
         #expect(UUID(uuidString: root["revision"] as? String ?? "") != nil)
     }
 

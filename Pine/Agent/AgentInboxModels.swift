@@ -38,6 +38,10 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     /// timestamp instead of letting it grow forever (#1664).
     let durationEndedAt: Date?
     let isUnread: Bool
+    /// Current execution dimension from the ADE contract (#1722).
+    let executionState: AgentTaskExecutionState
+    /// Recorded outcome of the latest attempt, when it has settled (#1722).
+    let outcome: AgentTaskOutcome?
 
     var canNavigateToLiveRun: Bool {
         lifecycle == .active
@@ -211,7 +215,9 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
                     for: task,
                     latestRun: latestRun
                 ),
-                isUnread: task.isUnread
+                isUnread: task.isUnread,
+                executionState: task.executionState,
+                outcome: latestRun?.outcome
             ))
         }
 

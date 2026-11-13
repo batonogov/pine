@@ -279,7 +279,61 @@ struct PersistenceFixtureCorpusTests {
         )
         #expect(try Data(contentsOf: url) == firstNormalizedData)
 
+        // Schema v2 (N-1) predates the ADE evidence contract: it loads with
+        // a migration marker, and saving it publishes the current schema
+        // with a versioned CAS against the v2 revision.
         try installAgentFixture("agent-task-v2.json", at: url, project: project)
+        let previous = await store.load(project: identity)
+        #expect(previous.status == .loaded)
+        #expect(previous.requiresMigration)
+        // The v2 task loads with its content intact and the additive v3
+        // fields at their fail-closed defaults.
+        let v2Task = try #require(previous.tasks.first)
+        #expect(
+            v2Task.id
+                == UUID(uuidString: "00000000-0000-0000-0000-0000000000a2")
+        )
+        #expect(v2Task.lifecycle == .paused)
+        #expect(v2Task.attention == .none)
+        #expect(v2Task.runs.count == 1)
+        #expect(v2Task.runs.first?.liveness == .terminated)
+        #expect(v2Task.runs.first?.outcome == nil)
+        #expect(v2Task.executionState == .unknown)
+        #expect(v2Task.evidence.isEmpty)
+        #expect(v2Task.verificationState == .none)
+        #expect(v2Task.acceptanceState == .notAccepted)
+        #expect(v2Task.reviewedSnapshot == nil)
+        #expect(v2Task.acceptedSnapshot == nil)
+        let v2Revision = try #require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000002")
+        )
+        let thirdTicket = AgentTaskPersistenceTicket(
+            generation: generation,
+            sequence: 3,
+            projectKey: identity.persistenceKey,
+            expectedDiskRevision: .versioned(v2Revision),
+            nextDiskRevision: revision
+        )
+        fence.authorize(thirdTicket)
+        #expect(
+            await store.save(
+                tasks: previous.tasks,
+                project: identity,
+                authorization: AgentTaskPublicationAuthorization(
+                    ticket: thirdTicket,
+                    fence: fence
+                )
+            ) == .saved(taskCount: previous.tasks.count)
+        )
+        let migratedPrevious = await store.load(project: identity)
+        #expect(migratedPrevious.status == .loaded)
+        #expect(!migratedPrevious.requiresMigration)
+        // The migration preserved the v2 content.
+        #expect(migratedPrevious.tasks.count == 1)
+        #expect(migratedPrevious.tasks.first?.id == v2Task.id)
+        #expect(migratedPrevious.tasks.first?.runs.first?.liveness == .terminated)
+
+        try installAgentFixture("agent-task-v3.json", at: url, project: project)
         let current = await store.load(project: identity)
         #expect(current.status == .loaded)
         #expect(!current.requiresMigration)
@@ -343,7 +397,7 @@ struct PersistenceFixtureCorpusTests {
         let invalid = Data(
             """
             {
-              "schemaVersion": 2,
+              "schemaVersion": 3,
               "revision": "22222222-2222-4222-8222-222222222222",
               "canonicalProjectPath": "/different/project",
               "canonicalWorktreePath": "/different/project",
