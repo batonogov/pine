@@ -675,7 +675,8 @@ nonisolated enum AgentTaskReadinessGap: Hashable, Sendable, Codable {
     case verificationNotCurrent
     /// A required evidence kind has no recorded fact.
     case missingEvidence(AgentTaskEvidenceKind)
-    /// A required evidence kind only has failing facts.
+    /// A required evidence kind has a fact bound to the relevant code state
+    /// that does not pass (a current-state failure, or only failing facts).
     case failingEvidence(AgentTaskEvidenceKind)
     /// Recorded evidence no longer matches the current code state (or its
     /// binding is missing), so the named check or review must be repeated.

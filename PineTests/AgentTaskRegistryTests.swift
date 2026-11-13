@@ -2894,7 +2894,6 @@ struct AgentTaskRegistryTests {
         #expect(!persisted.contains(terminalOutput))
         #expect(!persisted.contains(credential))
         #expect(persisted.contains(vendorCanary))
-        #expect(!persisted.contains("environment"))
         #expect(!persisted.contains("transcript"))
         #expect(!persisted.contains("prompt"))
         #expect(!persisted.contains("Mon Aug 3 10:00:00 2026"))
@@ -2943,7 +2942,7 @@ struct AgentTaskRegistryTests {
             "observedStartedAt", "processGeneration",
         ])
         let forbiddenKeys: Set<String> = [
-            "prompt", "command", "arguments", "environment", "output",
+            "prompt", "command", "arguments", "output",
             "transcript", "fileContents", "activitySummary", "credentials",
             "processIdentifier", "startIdentifier",
         ]
@@ -2956,6 +2955,31 @@ struct AgentTaskRegistryTests {
             }
         }
         assertNoForbiddenKeys(root)
+
+        // The `environment` key is legitimate ONLY on task objects (the C1a
+        // content-free identity); it must not appear deeper (runs, process,
+        // evidence, …). Task objects sit directly under root["tasks"].
+        func assertNoEnvironmentKeyDeeperThanTask(
+            _ value: Any,
+            taskDepth: Int
+        ) {
+            if let object = value as? [String: Any] {
+                if taskDepth >= 1 {
+                    #expect(!object.keys.contains("environment"))
+                }
+                object.values.forEach {
+                    assertNoEnvironmentKeyDeeperThanTask(
+                        $0,
+                        taskDepth: taskDepth + 1
+                    )
+                }
+            } else if let array = value as? [Any] {
+                array.forEach {
+                    assertNoEnvironmentKeyDeeperThanTask($0, taskDepth: taskDepth)
+                }
+            }
+        }
+        assertNoEnvironmentKeyDeeperThanTask(root, taskDepth: 0)
 
         let loaded = await store.load(project: identity)
         #expect(

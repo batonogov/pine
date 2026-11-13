@@ -260,8 +260,9 @@ content-free:
 | fact `pre/postOperationCodeState` | identity | 2 × code-state identity | fingerprints only | not emitted | not logged |
 | envelope `rememberedAgent` | identity | descriptor bounds (≤128 B identifier, ≤128 B executable) | stable identifier + executable name | not emitted | not logged |
 
-The only new log lines emit rejection-enum diagnostics (which rule rejected
-a file); no field value, path, or identifier is ever logged.
+The delta adds no log lines; the pre-existing rejection-enum log lines
+emit valueless diagnostics only — no field value, path, or identifier is
+logged.
 
 **Known asymmetries.** A fact bound to a code state but not to an
 environment is invisible to the `environmentChanged` dimension — the
