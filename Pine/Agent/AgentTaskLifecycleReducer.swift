@@ -216,8 +216,7 @@ nonisolated enum AgentTaskLifecycleReducer {
         }) {
             return .failure
         }
-        let requiredSatisfied = Self.requiredEvidenceForSuccess.allSatisfy {
-            kind in
+        let requiredSatisfied = Self.requiredEvidenceForSuccess.allSatisfy { kind in
             facts.contains(where: { fact in
                 fact.kind == kind
                     && fact.kind.isPassing(fact.result)
