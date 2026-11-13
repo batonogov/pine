@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="250" viewBox="0 0 900 250" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif">
+  <style>
+    .t1{fill:#1F2124}.t2{fill:#6C6F76}.t3{fill:#9C9FA6}
+    .sem{font-weight:600}.b{font-weight:700}
+    .arrow{stroke:#9C9FA6;stroke-width:1.6;fill:none;marker-end:url(#ah)}
+    .dash{stroke:#9C9FA6;stroke-width:1.6;fill:none;stroke-dasharray:4 4;marker-end:url(#ah)}
+  </style>
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="#9C9FA6"/></marker>
+  </defs>
+  <rect width="900" height="250" fill="#F7F6F3"/>
+  <text x="24" y="36" font-size="15" class="b t1">Navigation — C: Attention flow (push stack, no rail)</text>
+
+  <!-- stacked surfaces -->
+  <rect x="60" y="70" width="240" height="120" rx="12" fill="#EDEBE5" stroke="#D8D5CE"/>
+  <text x="84" y="100" font-size="13.5" class="sem t1">Inbox — home</text>
+  <text x="84" y="122" font-size="10.5" class="t2">Ready · Needs input · Failed</text>
+  <text x="84" y="140" font-size="10.5" class="t2">Projects section</text>
+  <text x="84" y="168" font-size="10.5" class="t3">always reachable via back</text>
+
+  <rect x="330" y="62" width="240" height="120" rx="12" fill="#FFFFFF" stroke="#D8D5CE"/>
+  <text x="354" y="92" font-size="13.5" class="sem t1">Project overview</text>
+  <text x="354" y="114" font-size="10.5" class="t2">composer · attention · work</text>
+  <text x="354" y="140" font-size="10.5" class="t3">pushed from the Projects</text>
+  <text x="354" y="156" font-size="10.5" class="t3">section of the Inbox</text>
+
+  <rect x="600" y="54" width="240" height="120" rx="12" fill="#FFFFFF" stroke="#2E5D44" stroke-width="1.6"/>
+  <text x="624" y="84" font-size="13.5" class="sem t1">Task → Result</text>
+  <text x="624" y="106" font-size="10.5" class="t2">goal · state · full-width artifact</text>
+  <text x="624" y="124" font-size="10.5" class="t2">evidence row · feedback</text>
+  <text x="624" y="150" font-size="10.5" class="t3">pushed; back returns exactly</text>
+
+  <!-- forward pushes -->
+  <path class="arrow" d="M300 100 H330"/>
+  <text x="315" y="92" font-size="10.5" class="t3" text-anchor="middle">push</text>
+  <path class="arrow" d="M570 92 H600"/>
+  <text x="585" y="84" font-size="10.5" class="t3" text-anchor="middle">push</text>
+
+  <!-- back -->
+  <path class="dash" d="M600 164 H330"/>
+  <text x="455" y="156" font-size="10.5" class="t3" text-anchor="middle">back (⌘[) — every push returns to its exact previous surface</text>
+  <text x="720" y="196" font-size="10.5" class="t3" text-anchor="middle">one decision context at a time</text>
+</svg>

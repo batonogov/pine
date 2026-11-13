@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif">
+  <defs>
+    <clipPath id="win"><rect x="10" y="10" width="1180" height="760" rx="14"/></clipPath>
+    <clipPath id="term2"><rect x="246" y="64" width="930" height="612" rx="10"/></clipPath>
+    <clipPath id="sheet"><rect x="380" y="88" width="640" height="584" rx="14"/></clipPath>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="112%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+    <filter id="sheets" x="-10%" y="-10%" width="120%" height="124%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#000000" flood-opacity="0.30"/>
+    </filter>
+    <linearGradient id="skyB" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#D8E6DE"/><stop offset="0.7" stop-color="#F3E3C8"/><stop offset="1" stop-color="#EFD9B8"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .t1{fill:#1F2124}.t2{fill:#6C6F76}.t3{fill:#9C9FA6}
+    .acc{fill:#2E5D44}.suc{fill:#2F8A57}.wrn{fill:#B97514}.err{fill:#C0453A}
+    .sem{font-weight:600}.b{font-weight:700}
+    .mono{font-family:'SF Mono', ui-monospace, Menlo, monospace}
+    .tl{fill:#C9D1D9}.td{fill:#8B93A0}.tg{fill:#7EE0A3}
+  </style>
+
+  <rect x="10" y="10" width="1180" height="760" rx="14" fill="#F7F6F3" filter="url(#shadow)"/>
+  <g clip-path="url(#win)">
+    <!-- task rail (dimmed) -->
+    <rect x="10" y="10" width="220" height="760" fill="#EFEEEA"/>
+    <line x1="230" y1="10" x2="230" y2="770" stroke="#E2E0DA"/>
+    <circle cx="32" cy="36" r="6.5" fill="#FF5F57"/><circle cx="50" cy="36" r="6.5" fill="#FEBC2E"/><circle cx="68" cy="36" r="6.5" fill="#28C840"/>
+    <path d="M36 68 L44 82 L40 82 L47 94 L25 94 L32 82 L28 82 Z" class="acc"/>
+    <rect x="34.6" y="94" width="2.8" height="5" class="acc"/>
+    <text x="56" y="86" font-size="14" class="sem t1">Pine 3</text>
+    <path d="M30 116 h18 v9 a2 2 0 0 1 -2 2 h-4.5 l-2 -3 h-3 l-2 3 h-4.5 a2 2 0 0 1 -2 -2 z" fill="none" stroke="#6C6F76" stroke-width="1.5"/>
+    <text x="56" y="126" font-size="13.5" class="t1">Inbox</text>
+    <line x1="22" y1="144" x2="218" y2="144" stroke="#E2E0DA"/>
+    <text x="28" y="168" font-size="10" class="t3" letter-spacing="0.8">PROJECTS</text>
+    <path d="M30 193 h5.5 l2 3 h7.5 v9.5 h-15 z" fill="none" stroke="#6C6F76" stroke-width="1.5"/>
+    <text x="56" y="200" font-size="13.5" class="t1">Atlas</text>
+    <rect x="16" y="250" width="196" height="28" rx="8" fill="#E3E9DF"/>
+    <circle cx="46" cy="264" r="6.5" fill="none" stroke="#2F8A57" stroke-width="1.7"/><path d="M43 264 l2.2 2.4 l4 -4.6" fill="none" stroke="#2F8A57" stroke-width="1.7" stroke-linecap="round"/>
+    <text x="62" y="269" font-size="13" class="sem t1">Plan a weekend</text>
+    <text x="208" y="269" font-size="10.5" class="suc sem" text-anchor="end">Ready</text>
+
+    <!-- dimmed terminal behind -->
+    <rect x="246" y="64" width="930" height="612" rx="10" fill="#1F242B"/>
+    <g clip-path="url(#term2)" opacity="0.55">
+      <text x="270" y="94" font-size="11" class="mono td">codex — plan-a-weekend · zsh</text>
+      <rect x="246" y="106" width="930" height="1" fill="#2A3038"/>
+      <text x="270" y="138" font-size="12.5" class="mono"><tspan class="td">$</tspan><tspan class="tl"> codex</tspan></text>
+      <text x="270" y="166" font-size="12.5" class="mono tg">◆ Session started · codex-cli 0.9.2</text>
+      <text x="270" y="194" font-size="12.5" class="mono tg">◆ Task: create a three-day coastal itinerary</text>
+      <text x="270" y="226" font-size="12.5" class="mono"><tspan class="tl">◇ Creating pages/itinerary.tsx</tspan><tspan class="tg">  ✓ 1.2s</tspan></text>
+      <text x="270" y="254" font-size="12.5" class="mono"><tspan class="tl">◇ Running npx vite build</tspan><tspan class="tg">  ✓ 4.3s</tspan></text>
+      <text x="270" y="282" font-size="12.5" class="mono tg">◆ Task complete — ready for review</text>
+    </g>
+    <rect x="246" y="64" width="930" height="612" rx="10" fill="#0A0C0E" opacity="0.42"/>
+    <text x="272" y="714" font-size="12.5" class="t3" opacity="0.7">Scrollback, focus, and unsaved work are preserved behind the sheet.</text>
+
+    <!-- result sheet -->
+    <rect x="380" y="88" width="640" height="584" rx="14" fill="#F7F6F3" filter="url(#sheets)"/>
+    <g clip-path="url(#sheet)">
+      <text x="412" y="130" font-size="20" class="b t1">Plan a weekend</text>
+      <rect x="560" y="110" width="76" height="24" rx="12" fill="#E4EFE7"/>
+      <circle cx="575" cy="122" r="6.5" fill="none" stroke="#2F8A57" stroke-width="1.7"/><path d="M572.2 122 l2 2.4 l3.8 -4.4" fill="none" stroke="#2F8A57" stroke-width="1.7" stroke-linecap="round"/>
+      <text x="587" y="127" font-size="12" class="suc sem">Ready</text>
+      <text x="412" y="154" font-size="12.5" class="t2">A coastal itinerary with stays, travel times, and a mobile layout.</text>
+
+      <rect x="412" y="172" width="140" height="34" rx="8" class="acc"/>
+      <path d="M432 181 l11 7.5 l-11 7.5 z" fill="#FFFFFF"/>
+      <text x="450" y="194" font-size="13" fill="#FFFFFF" class="sem">Open preview</text>
+      <text x="566" y="194" font-size="11.5" class="t3">Starts a local preview server.</text>
+
+      <circle cx="419" cy="234" r="7" fill="none" stroke="#2F8A57" stroke-width="1.7"/><path d="M416 234 l2.2 2.5 l4 -4.6" fill="none" stroke="#2F8A57" stroke-width="1.7" stroke-linecap="round"/>
+      <text x="434" y="239" font-size="12.5" class="t1">Checks passed · Review passed</text>
+      <text x="956" y="239" font-size="12" class="t2" text-anchor="end">1 limitation ›</text>
+      <line x1="412" y1="254" x2="988" y2="254" stroke="#E2E0DA"/>
+
+      <rect x="412" y="268" width="576" height="238" rx="8" fill="#FFFFFF" stroke="#E7E5DF"/>
+      <text x="430" y="294" font-size="15" class="sem" fill="#1F2124" font-family="Georgia, serif">Atlas</text>
+      <text x="640" y="293" font-size="9.5" class="t2">Destinations    Guides    Plan a Trip</text>
+      <rect x="890" y="281" width="82" height="20" rx="10" class="acc"/>
+      <text x="931" y="295" font-size="9.5" fill="#FFFFFF" text-anchor="middle">Plan a Weekend</text>
+      <rect x="412" y="306" width="576" height="112" fill="url(#skyB)"/>
+      <circle cx="900" cy="336" r="17" fill="#F9E9C8" opacity="0.9"/>
+      <path d="M412 400 q 90 -16 180 -8 t 180 0 t 122 -6 v26 h-576 z" fill="#8FB0C0"/>
+      <path d="M760 400 q 55 -52 135 -60 q 65 -5 115 34 v22 h-250 z" fill="#8A7B5C" opacity="0.55"/>
+      <g fill="#E8A7C4"><circle cx="436" cy="404" r="2.6"/><circle cx="448" cy="410" r="2.6"/><circle cx="462" cy="402" r="2.6"/><circle cx="476" cy="411" r="2.6"/></g>
+      <text x="434" y="352" font-size="21" fill="#FFFFFF" font-family="Georgia, serif" class="b">A weekend</text>
+      <text x="434" y="380" font-size="21" fill="#FFFFFF" font-family="Georgia, serif" class="b">on the coast</text>
+      <g>
+        <rect x="424" y="432" width="176" height="58" rx="6" fill="#FBFAF7" stroke="#EFEDE7"/>
+        <text x="434" y="452" font-size="9" class="t3">Day 1 · Arrive &amp; settle</text>
+        <text x="434" y="468" font-size="8.5" class="t2">A scenic drive, a seaside stay.</text>
+        <rect x="612" y="432" width="176" height="58" rx="6" fill="#FBFAF7" stroke="#EFEDE7"/>
+        <text x="622" y="452" font-size="9" class="t3">Day 2 · Explore the coast</text>
+        <text x="622" y="468" font-size="8.5" class="t2">Clifftop trails and hidden beaches.</text>
+        <rect x="800" y="432" width="176" height="58" rx="6" fill="#FBFAF7" stroke="#EFEDE7"/>
+        <text x="810" y="452" font-size="9" class="t3">Day 3 · Savor &amp; return</text>
+        <text x="810" y="468" font-size="8.5" class="t2">A slow morning, then head home.</text>
+      </g>
+      <text x="412" y="526" font-size="10.5" class="t3">Preview · Checked revision · a3f9c2d1…</text>
+
+      <rect x="412" y="544" width="576" height="48" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+      <text x="432" y="573" font-size="13" class="t3">What would you like to change?</text>
+      <circle cx="968" cy="568" r="13" class="acc"/>
+      <path d="M963 568 h9.5 M968.5 563.5 l4.5 4.5 l-4.5 4.5" fill="none" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+
+      <line x1="412" y1="612" x2="988" y2="612" stroke="#E2E0DA"/>
+      <path d="M418 636 l4 4.5 l7 -8" fill="none" stroke="#2E5D44" stroke-width="2" stroke-linecap="round"/>
+      <text x="438" y="643" font-size="13" class="t1">Accept result</text>
+      <text x="988" y="643" font-size="13" class="t2" text-anchor="end">Close</text>
+    </g>
+    <rect x="380" y="88" width="640" height="584" rx="14" fill="none" stroke="#D8D5CE"/>
+  </g>
+  <rect x="10" y="10" width="1180" height="760" rx="14" fill="none" stroke="#D8D5CE"/>
+</svg>

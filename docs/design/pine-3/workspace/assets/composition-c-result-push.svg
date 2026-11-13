@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif">
+  <defs>
+    <clipPath id="win"><rect x="10" y="10" width="1180" height="760" rx="14"/></clipPath>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="112%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+    <linearGradient id="skyC3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#D8E6DE"/><stop offset="0.7" stop-color="#F3E3C8"/><stop offset="1" stop-color="#EFD9B8"/>
+    </linearGradient>
+    <linearGradient id="coastC3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#CFE0DC"/><stop offset="1" stop-color="#9DBFCF"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .t1{fill:#1F2124}.t2{fill:#6C6F76}.t3{fill:#9C9FA6}
+    .acc{fill:#2E5D44}.suc{fill:#2F8A57}.wrn{fill:#B97514}.err{fill:#C0453A}
+    .sem{font-weight:600}.b{font-weight:700}
+  </style>
+
+  <rect x="10" y="10" width="1180" height="760" rx="14" fill="#F7F6F3" filter="url(#shadow)"/>
+  <g clip-path="url(#win)">
+    <circle cx="34" cy="36" r="6.5" fill="#FF5F57"/><circle cx="54" cy="36" r="6.5" fill="#FEBC2E"/><circle cx="74" cy="36" r="6.5" fill="#28C840"/>
+    <path d="M44 28 l-8 8 l8 8" fill="none" stroke="#2E5D44" stroke-width="2" stroke-linecap="round"/>
+    <text x="62" y="44" font-size="15" class="sem t1">Plan a weekend</text>
+    <text x="196" y="44" font-size="13" class="t3">· Atlas</text>
+    <g fill="#9C9FA6"><circle cx="1162" cy="38" r="1.7"/><circle cx="1168" cy="38" r="1.7"/><circle cx="1174" cy="38" r="1.7"/></g>
+    <line x1="10" y1="60" x2="1190" y2="60" stroke="#E2E0DA"/>
+
+    <!-- pushed result surface -->
+    <text x="40" y="104" font-size="26" class="b t1">Plan a weekend</text>
+    <rect x="252" y="82" width="92" height="27" rx="13.5" fill="#E4EFE7"/>
+    <circle cx="270" cy="95.5" r="7.5" fill="none" stroke="#2F8A57" stroke-width="1.8"/><path d="M266.8 95.5 l2.4 2.7 l4.4 -5.1" fill="none" stroke="#2F8A57" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="284" y="100.5" font-size="13" class="suc sem">Ready</text>
+    <text x="40" y="130" font-size="14.5" class="t2">A coastal itinerary with stays, travel times, and a mobile layout.</text>
+
+    <!-- concrete action -->
+    <rect x="40" y="148" width="150" height="36" rx="8" class="acc"/>
+    <path d="M62 158 l12 8.5 l-12 8.5 z" fill="#FFFFFF"/>
+    <text x="82" y="171" font-size="13.5" fill="#FFFFFF" class="sem">Open preview</text>
+    <text x="204" y="171" font-size="12" class="t3">Starts a local preview server.</text>
+
+    <!-- evidence row -->
+    <circle cx="52" cy="212" r="7.5" fill="none" stroke="#2F8A57" stroke-width="1.8"/><path d="M48.8 212 l2.4 2.7 l4.4 -5.1" fill="none" stroke="#2F8A57" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="68" y="217" font-size="13" class="t1">Checks passed</text>
+    <text x="160" y="217" font-size="13" class="t3">·</text>
+    <text x="172" y="217" font-size="13" class="t1">Review passed</text>
+    <text x="1120" y="217" font-size="12.5" class="t2" text-anchor="end">1 limitation</text>
+    <path d="M1140 207 l5 5 l-5 5" fill="none" stroke="#9C9FA6" stroke-width="1.6" stroke-linecap="round"/>
+    <line x1="40" y1="234" x2="1160" y2="234" stroke="#E2E0DA"/>
+
+    <!-- full-width artifact -->
+    <rect x="40" y="250" width="1120" height="330" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+    <text x="64" y="284" font-size="18" class="sem" fill="#1F2124" font-family="Georgia, serif">Atlas</text>
+    <text x="320" y="283" font-size="10.5" class="t2">Destinations    Guides    Plan a Trip</text>
+    <rect x="930" y="268" width="98" height="24" rx="12" class="acc"/>
+    <text x="979" y="284" font-size="10.5" fill="#FFFFFF" text-anchor="middle">Plan a Weekend</text>
+    <circle cx="1124" cy="279" r="4.5" fill="none" stroke="#9C9FA6" stroke-width="1.4"/>
+    <rect x="40" y="296" width="1120" height="150" fill="url(#skyC3)"/>
+    <circle cx="1030" cy="338" r="22" fill="#F9E9C8" opacity="0.9"/>
+    <path d="M40 428 q 140 -20 280 -10 t 280 0 t 280 -8 v36 h-1120 z" fill="#8FB0C0"/>
+    <path d="M820 428 q 80 -64 190 -72 q 90 -5 170 40 v28 h-360 z" fill="#8A7B5C" opacity="0.55"/>
+    <g fill="#E8A7C4"><circle cx="76" cy="434" r="3"/><circle cx="92" cy="442" r="3"/><circle cx="110" cy="432" r="3"/><circle cx="128" cy="444" r="3"/><circle cx="146" cy="436" r="3"/></g>
+    <text x="68" y="352" font-size="28" fill="#FFFFFF" font-family="Georgia, serif" class="b">A weekend</text>
+    <text x="68" y="386" font-size="28" fill="#FFFFFF" font-family="Georgia, serif" class="b">on the coast</text>
+    <text x="68" y="412" font-size="11.5" fill="#FFFFFF" opacity="0.94">Three days of ocean views, great food, and a slower pace.</text>
+    <g>
+      <rect x="64" y="462" width="344" height="100" rx="8" fill="#FBFAF7" stroke="#EFEDE7"/>
+      <rect x="76" y="474" width="320" height="42" rx="5" fill="url(#coastC3)"/>
+      <text x="76" y="536" font-size="9.5" class="t3">Day 1 · Arrive &amp; settle</text>
+      <text x="76" y="551" font-size="9.5" class="t2">A scenic drive, a seaside stay, and a sunset walk.</text>
+      <rect x="428" y="462" width="344" height="100" rx="8" fill="#FBFAF7" stroke="#EFEDE7"/>
+      <rect x="440" y="474" width="320" height="42" rx="5" fill="url(#coastC3)"/>
+      <rect x="580" y="482" width="8" height="28" fill="#F4EFE4" stroke="#D8CDB4"/>
+      <text x="440" y="536" font-size="9.5" class="t3">Day 2 · Explore the coast</text>
+      <text x="440" y="551" font-size="9.5" class="t2">Clifftop trails, local food, and hidden beaches.</text>
+      <rect x="792" y="462" width="344" height="100" rx="8" fill="#FBFAF7" stroke="#EFEDE7"/>
+      <rect x="804" y="474" width="320" height="42" rx="5" fill="url(#coastC3)"/>
+      <g fill="#F4EFE4"><rect x="860" y="488" width="18" height="14"/><rect x="884" y="482" width="18" height="20"/><rect x="908" y="490" width="18" height="12"/></g>
+      <text x="804" y="536" font-size="9.5" class="t3">Day 3 · Savor &amp; return</text>
+      <text x="804" y="551" font-size="9.5" class="t2">A slow morning, a final stop, then head home.</text>
+    </g>
+    <text x="40" y="604" font-size="11.5" class="t3">Preview · Checked revision · a3f9c2d1…</text>
+
+    <!-- feedback composer -->
+    <rect x="40" y="630" width="1120" height="60" rx="14" fill="#FFFFFF" stroke="#E7E5DF"/>
+    <path d="M66 654 a4.5 4.5 0 0 0 7 5.5 l4.5 -4.5 a2.6 2.6 0 0 0 -3.7 -3.7 l-4.3 4.3" fill="none" stroke="#9C9FA6" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="92" y="666" font-size="14" class="t3">What would you like to change?</text>
+    <circle cx="1136" cy="660" r="15" class="acc"/>
+    <path d="M1130 660 h11 M1135.5 655 l5 5 l-5 5" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <rect x="10" y="10" width="1180" height="760" rx="14" fill="none" stroke="#D8D5CE"/>
+</svg>

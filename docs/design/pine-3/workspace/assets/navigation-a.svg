@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="250" viewBox="0 0 900 250" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif">
+  <style>
+    .t1{fill:#1F2124}.t2{fill:#6C6F76}.t3{fill:#9C9FA6}
+    .sem{font-weight:600}.b{font-weight:700}
+    .arrow{stroke:#9C9FA6;stroke-width:1.6;fill:none;marker-end:url(#ah)}
+    .arrowr{stroke:#9C9FA6;stroke-width:1.6;fill:none;marker-end:url(#ah);marker-start:url(#ahs)}
+    .acc{fill:#2E5D44}
+  </style>
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="#9C9FA6"/></marker>
+    <marker id="ahs" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto"><path d="M6 0 L0 3 L6 6 z" fill="#9C9FA6"/></marker>
+  </defs>
+  <rect width="900" height="250" fill="#F7F6F3"/>
+  <text x="24" y="36" font-size="15" class="b t1">Navigation — A: Project canvas</text>
+
+  <!-- persistent sidebar -->
+  <rect x="24" y="60" width="120" height="160" rx="10" fill="#EFEEEA" stroke="#E2E0DA"/>
+  <text x="40" y="86" font-size="11" class="t2 sem">Inbox</text>
+  <text x="40" y="110" font-size="11" class="t1 sem">Atlas</text>
+  <text x="52" y="130" font-size="10" class="t2">Plan a weekend</text>
+  <text x="52" y="148" font-size="10" class="t2">Improve search</text>
+  <text x="52" y="166" font-size="10" class="t2">Fix navigation</text>
+  <text x="40" y="200" font-size="10" class="t3">Settings</text>
+  <text x="84" y="236" font-size="10.5" class="t3" text-anchor="middle">persistent — every surface</text>
+
+  <!-- nodes -->
+  <rect x="196" y="88" width="180" height="56" rx="10" fill="#FFFFFF" stroke="#D8D5CE"/>
+  <text x="286" y="112" font-size="13" class="sem t1" text-anchor="middle">Project overview</text>
+  <text x="286" y="130" font-size="10.5" class="t3" text-anchor="middle">composer · attention · work</text>
+
+  <rect x="436" y="88" width="180" height="56" rx="10" fill="#FFFFFF" stroke="#D8D5CE"/>
+  <text x="526" y="112" font-size="13" class="sem t1" text-anchor="middle">Task workspace</text>
+  <text x="526" y="130" font-size="10.5" class="t3" text-anchor="middle">goal · state · tabs</text>
+
+  <rect x="676" y="88" width="180" height="56" rx="10" fill="#FFFFFF" stroke="#D8D5CE"/>
+  <text x="766" y="112" font-size="13" class="sem t1" text-anchor="middle">Result</text>
+  <text x="766" y="130" font-size="10.5" class="t3" text-anchor="middle">action · evidence · feedback</text>
+
+  <!-- arrows -->
+  <path class="arrowr" d="M376 108 H436"/>
+  <text x="406" y="100" font-size="10.5" class="t3" text-anchor="middle">create</text>
+  <text x="406" y="126" font-size="10.5" class="t3" text-anchor="middle">back</text>
+  <path class="arrow" d="M616 108 H676"/>
+  <text x="646" y="100" font-size="10.5" class="t3" text-anchor="middle">Ready</text>
+  <path class="arrow" d="M766 144 V168 H526 V144"/>
+  <text x="646" y="184" font-size="10.5" class="t3" text-anchor="middle">feedback continues the same session</text>
+  <path class="arrow" d="M144 116 H196"/>
+  <path d="M144 128 Q 300 190 436 128" fill="none" stroke="#9C9FA6" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#ah)"/>
+  <text x="300" y="186" font-size="10.5" class="t3" text-anchor="middle">sidebar jumps directly to any task</text>
+  <text x="170" y="108" font-size="10.5" class="t3">open</text>
+</svg>

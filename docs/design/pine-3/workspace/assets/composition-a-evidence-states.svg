@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="1010" viewBox="0 0 980 1010" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif">
+  <style>
+    .t1{fill:#1F2124}.t2{fill:#6C6F76}.t3{fill:#9C9FA6}
+    .acc{fill:#2E5D44}.suc{fill:#2F8A57}.wrn{fill:#B97514}.err{fill:#C0453A}
+    .sem{font-weight:600}.b{font-weight:700}
+    .mono{font-family:'SF Mono', ui-monospace, Menlo, monospace}
+  </style>
+  <rect width="980" height="1010" fill="#F7F6F3"/>
+  <text x="40" y="52" font-size="20" class="b t1">Result actions and evidence-row states</text>
+  <text x="40" y="76" font-size="13" class="t2">The evidence row is a disclosure. Its shape follows the lifecycle model — it is never decorative.</text>
+
+  <!-- panel 1: evidence row states -->
+  <text x="40" y="120" font-size="14" class="sem t1">Evidence row — five states</text>
+  <!-- row 1: ready -->
+  <rect x="40" y="136" width="900" height="56" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <rect x="54" y="152" width="64" height="24" rx="12" fill="#E4EFE7"/>
+  <text x="86" y="168" font-size="11" class="suc sem" text-anchor="middle">Ready</text>
+  <circle cx="152" cy="164" r="7.5" fill="none" stroke="#2F8A57" stroke-width="1.8"/><path d="M148.8 164 l2.4 2.7 l4.4 -5.1" fill="none" stroke="#2F8A57" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="170" y="169" font-size="13.5" class="t1">Checks passed</text>
+  <text x="262" y="169" font-size="13.5" class="t3">·</text>
+  <text x="276" y="169" font-size="13.5" class="t1">Review passed</text>
+  <text x="872" y="169" font-size="12.5" class="t2" text-anchor="end">1 limitation</text>
+  <path d="M888 159 l5 5 l-5 5" fill="none" stroke="#9C9FA6" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- row 2: pending -->
+  <rect x="40" y="200" width="900" height="56" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <rect x="54" y="216" width="64" height="24" rx="12" fill="#EDEBE5"/>
+  <text x="86" y="232" font-size="11" class="t2 sem" text-anchor="middle">Pending</text>
+  <path d="M152 228 a8 8 0 1 1 -5.8 -13.4" fill="none" stroke="#6C6F76" stroke-width="2" stroke-linecap="round"/>
+  <text x="170" y="233" font-size="13.5" class="t2">Running checks · Review queued</text>
+  <text x="872" y="233" font-size="12.5" class="t3" text-anchor="end">1 limitation</text>
+  <path d="M888 223 l5 5 l-5 5" fill="none" stroke="#C9C6BE" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- row 3: unchecked -->
+  <rect x="40" y="264" width="900" height="56" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <rect x="54" y="280" width="64" height="24" rx="12" fill="#EDEBE5"/>
+  <text x="86" y="296" font-size="11" class="t2 sem" text-anchor="middle">Unchecked</text>
+  <circle cx="152" cy="292" r="7.5" fill="none" stroke="#C9C6BE" stroke-width="1.8"/>
+  <text x="170" y="297" font-size="13.5" class="t2">No checks recorded yet</text>
+  <text x="896" y="297" font-size="12.5" class="acc sem" text-anchor="end">Run checks</text>
+  <!-- row 4: stale -->
+  <rect x="40" y="328" width="900" height="56" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <rect x="54" y="344" width="64" height="24" rx="12" fill="#F6EAD8"/>
+  <text x="86" y="360" font-size="11" class="wrn sem" text-anchor="middle">Stale</text>
+  <path d="M152 356 l7 -12 l7 12 z" fill="none" stroke="#B97514" stroke-width="1.8" stroke-linejoin="round"/><line x1="152" y1="351.5" x2="152" y2="354.5" stroke="#B97514" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="170" y="361" font-size="13.5" class="wrn">Evidence stale — code changed after the last check</text>
+  <text x="896" y="361" font-size="12.5" class="acc sem" text-anchor="end">Reverify ›</text>
+  <!-- row 5: failed -->
+  <rect x="40" y="392" width="900" height="56" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <rect x="54" y="408" width="64" height="24" rx="12" fill="#F7E2DE"/>
+  <text x="86" y="424" font-size="11" class="err sem" text-anchor="middle">Failed</text>
+  <circle cx="152" cy="420" r="7.5" fill="none" stroke="#C0453A" stroke-width="1.8"/><path d="M149 417 l6 6 M155 417 l-6 6" stroke="#C0453A" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="170" y="425" font-size="13.5" class="err">Checks failed · Review found issues</text>
+  <text x="896" y="425" font-size="12.5" class="acc sem" text-anchor="end">View failures ›</text>
+  <text x="40" y="480" font-size="11.5" class="t3">Expanded, the row lists each fact's kind, time, and the exact revision it was bound to — then the stated</text>
+  <text x="40" y="497" font-size="11.5" class="t3">limitations. Stale and failed rows name the repeat work. A stale or not-Ready result shows no trial action.</text>
+
+  <!-- panel 2: acceptance -->
+  <text x="40" y="545" font-size="14" class="sem t1">Acceptance — separate, secondary action</text>
+  <rect x="40" y="560" width="900" height="142" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <rect x="64" y="576" width="280" height="86" rx="10" fill="#FFFFFF" stroke="#D8D5CE"/>
+  <rect x="72" y="584" width="264" height="28" rx="6" fill="#E3E9DF"/>
+  <path d="M88 598 l4 4.5 l7 -8" fill="none" stroke="#2E5D44" stroke-width="2" stroke-linecap="round"/>
+  <text x="106" y="603" font-size="13" class="sem t1">Accept result</text>
+  <text x="88" y="630" font-size="13" class="t2">Show provenance</text>
+  <text x="88" y="652" font-size="13" class="t2">Dismiss task</text>
+  <text x="372" y="592" font-size="12.5" class="t2">Reached from the toolbar overflow (Task ▸ Accept result) and from the evidence</text>
+  <text x="372" y="610" font-size="12.5" class="t2">disclosure. One explicit command, one recorded snapshot identity; never a</text>
+  <text x="372" y="628" font-size="12.5" class="t2">primary button. It is also offered on a settled result that ended unverified,</text>
+  <text x="372" y="646" font-size="12.5" class="t2">then captioned “Accepting does not upgrade verification”.</text>
+  <text x="372" y="676" font-size="11.5" class="t3">Discoverability is validated in the accessibility pass before sign-off (D2).</text>
+
+  <!-- panel 3: actions by project type -->
+  <text x="40" y="722" font-size="14" class="sem t1">Trial action by project type — labeled with what it actually does</text>
+  <!-- web -->
+  <rect x="40" y="738" width="212" height="164" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <text x="58" y="764" font-size="11.5" class="t3">WEBSITE / WEB APP</text>
+  <rect x="58" y="778" width="176" height="32" rx="8" class="acc"/>
+  <path d="M76 786 l11 7.5 l-11 7.5 z" fill="#FFFFFF"/>
+  <text x="94" y="798" font-size="13" fill="#FFFFFF" class="sem">Open preview</text>
+  <text x="58" y="832" font-size="10.5" class="t2">Starts the declared local dev</text>
+  <text x="58" y="847" font-size="10.5" class="t2">server and opens its page.</text>
+  <text x="58" y="872" font-size="10.5" class="t3">Opening the task alone never</text>
+  <text x="58" y="886" font-size="10.5" class="t3">starts it.</text>
+  <!-- native app -->
+  <rect x="268" y="738" width="212" height="164" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <text x="286" y="764" font-size="11.5" class="t3">MACOS APP</text>
+  <rect x="286" y="778" width="176" height="32" rx="8" class="acc"/>
+  <path d="M306 786 l11 7.5 l-11 7.5 z" fill="#FFFFFF"/>
+  <text x="324" y="798" font-size="13" fill="#FFFFFF" class="sem">Run application</text>
+  <text x="286" y="832" font-size="10.5" class="t2">Launches the identified built</text>
+  <text x="286" y="847" font-size="10.5" class="t2">app in the validated task</text>
+  <text x="286" y="861" font-size="10.5" class="t2">environment.</text>
+  <text x="286" y="886" font-size="10.5" class="t3">Build absent → “Run the build”.</text>
+  <!-- cli -->
+  <rect x="496" y="738" width="212" height="164" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <text x="514" y="764" font-size="11.5" class="t3">CLI UTILITY</text>
+  <rect x="514" y="778" width="176" height="32" rx="8" class="acc"/>
+  <path d="M534 786 l11 7.5 l-11 7.5 z" fill="#FFFFFF"/>
+  <text x="552" y="798" font-size="13" fill="#FFFFFF" class="sem">Run example</text>
+  <rect x="514" y="822" width="176" height="26" rx="6" fill="#F1F0EB" stroke="#E2E0DA"/>
+  <text x="602" y="839" font-size="10.5" class="mono t2" text-anchor="middle">atlas --demo week</text>
+  <text x="514" y="868" font-size="10.5" class="t2">Runs in the task terminal under</text>
+  <text x="514" y="882" font-size="10.5" class="t2">a current grant.</text>
+  <!-- non-runnable -->
+  <rect x="724" y="738" width="212" height="164" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+  <text x="742" y="764" font-size="11.5" class="t3">INTERNAL LOGIC / RACE FIX</text>
+  <rect x="742" y="778" width="176" height="32" rx="8" fill="#FFFFFF" stroke="#D8D5CE"/>
+  <path d="M760 794 h14 M767 787 v14" stroke="#6C6F76" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="782" y="798" font-size="13" class="t1 sem">View changes</text>
+  <text x="742" y="832" font-size="10.5" class="t2">Explanation, diff, and check</text>
+  <text x="742" y="847" font-size="10.5" class="t2">evidence. No runnable artifact</text>
+  <text x="742" y="861" font-size="10.5" class="t2">is required — and none is</text>
+  <text x="742" y="875" font-size="10.5" class="t2">fabricated.</text>
+
+  <line x1="40" y1="934" x2="940" y2="934" stroke="#E2E0DA"/>
+  <text x="40" y="964" font-size="12" class="t2">Viewing, running, and accepting are separate actions. The agent may suggest a command, URL, or build path;</text>
+  <text x="40" y="982" font-size="12" class="t2">Pine validates the environment, target, and authority before exposing execution. Arbitrary terminal text never becomes a button.</text>
+</svg>

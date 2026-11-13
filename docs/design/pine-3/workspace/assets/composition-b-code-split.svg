@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif">
+  <defs>
+    <clipPath id="win"><rect x="10" y="10" width="1180" height="760" rx="14"/></clipPath>
+    <clipPath id="term3"><rect x="246" y="64" width="556" height="612" rx="10"/></clipPath>
+    <clipPath id="code"><rect x="816" y="64" width="358" height="612" rx="10"/></clipPath>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="112%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+  <style>
+    .t1{fill:#1F2124}.t2{fill:#6C6F76}.t3{fill:#9C9FA6}
+    .acc{fill:#2E5D44}.suc{fill:#2F8A57}.wrn{fill:#B97514}.err{fill:#C0453A}
+    .sem{font-weight:600}.b{font-weight:700}
+    .mono{font-family:'SF Mono', ui-monospace, Menlo, monospace}
+    .tl{fill:#C9D1D9}.td{fill:#8B93A0}.tg{fill:#7EE0A3}
+  </style>
+
+  <rect x="10" y="10" width="1180" height="760" rx="14" fill="#F7F6F3" filter="url(#shadow)"/>
+  <g clip-path="url(#win)">
+    <!-- task rail -->
+    <rect x="10" y="10" width="220" height="760" fill="#EFEEEA"/>
+    <line x1="230" y1="10" x2="230" y2="770" stroke="#E2E0DA"/>
+    <circle cx="32" cy="36" r="6.5" fill="#FF5F57"/><circle cx="50" cy="36" r="6.5" fill="#FEBC2E"/><circle cx="68" cy="36" r="6.5" fill="#28C840"/>
+    <path d="M36 68 L44 82 L40 82 L47 94 L25 94 L32 82 L28 82 Z" class="acc"/>
+    <rect x="34.6" y="94" width="2.8" height="5" class="acc"/>
+    <text x="56" y="86" font-size="14" class="sem t1">Pine 3</text>
+    <path d="M30 116 h18 v9 a2 2 0 0 1 -2 2 h-4.5 l-2 -3 h-3 l-2 3 h-4.5 a2 2 0 0 1 -2 -2 z" fill="none" stroke="#6C6F76" stroke-width="1.5"/>
+    <text x="56" y="126" font-size="13.5" class="t1">Inbox</text>
+    <circle cx="206" cy="121" r="9" class="acc"/><text x="206" y="125" font-size="10.5" fill="#FFFFFF" text-anchor="middle" class="sem">1</text>
+    <line x1="22" y1="144" x2="218" y2="144" stroke="#E2E0DA"/>
+    <text x="28" y="168" font-size="10" class="t3" letter-spacing="0.8">PROJECTS</text>
+    <path d="M30 193 h5.5 l2 3 h7.5 v9.5 h-15 z" fill="none" stroke="#6C6F76" stroke-width="1.5"/>
+    <text x="56" y="200" font-size="13.5" class="t1">Atlas</text>
+    <line x1="34" y1="246" x2="34" y2="330" stroke="#E2E0DA"/>
+    <rect x="16" y="250" width="196" height="28" rx="8" fill="#E3E9DF"/>
+    <path d="M46 264 a6.5 6.5 0 1 1 -4.7 -11.1" fill="none" stroke="#2E5D44" stroke-width="1.7" stroke-linecap="round"/>
+    <text x="62" y="269" font-size="13" class="sem t1">Plan a weekend</text>
+    <circle cx="46" cy="294" r="6.5" fill="none" stroke="#B97514" stroke-width="1.7"/><text x="46" y="298" font-size="8.5" fill="#B97514" text-anchor="middle" class="b">?</text>
+    <text x="62" y="299" font-size="13" class="t1">Improve search</text>
+    <path d="M46 324 a6.5 6.5 0 1 1 -4.7 -11.1" fill="none" stroke="#6C6F76" stroke-width="1.7" stroke-linecap="round"/>
+    <text x="62" y="329" font-size="13" class="t1">Fix navigation</text>
+    <circle cx="36" cy="732" r="6.5" fill="none" stroke="#6C6F76" stroke-width="1.5"/><circle cx="36" cy="732" r="2.2" fill="#6C6F76"/>
+    <text x="56" y="737" font-size="13" class="t2">Settings</text>
+
+    <!-- toolbar -->
+    <text x="258" y="41" font-size="14" class="sem t1">Plan a weekend</text>
+    <rect x="392" y="24" width="86" height="24" rx="12" fill="#F1F0EB" stroke="#E2E0DA"/>
+    <text x="435" y="40" font-size="11.5" class="t2" text-anchor="middle">Atlas · Codex</text>
+    <g fill="#9C9FA6"><circle cx="1162" cy="35" r="1.7"/><circle cx="1168" cy="35" r="1.7"/><circle cx="1174" cy="35" r="1.7"/></g>
+
+    <!-- terminal pane -->
+    <rect x="246" y="64" width="556" height="612" rx="10" fill="#1F242B"/>
+    <g clip-path="url(#term3)">
+      <text x="268" y="94" font-size="11" class="mono td">codex — plan-a-weekend</text>
+      <rect x="246" y="106" width="556" height="1" fill="#2A3038"/>
+      <text x="268" y="138" font-size="12.5" class="mono"><tspan class="td">$</tspan><tspan class="tl"> codex</tspan></text>
+      <text x="268" y="166" font-size="12.5" class="mono tg">◆ Session started · codex-cli 0.9.2</text>
+      <text x="268" y="194" font-size="12.5" class="mono tg">◆ Task: create a three-day coastal itinerary</text>
+      <text x="268" y="226" font-size="12.5" class="mono"><tspan class="tl">◇ Creating pages/itinerary.tsx</tspan><tspan class="tg">  ✓</tspan></text>
+      <text x="268" y="254" font-size="12.5" class="mono"><tspan class="tl">◇ Running npx vite build</tspan><tspan class="tg">  ✓</tspan></text>
+      <text x="268" y="286" font-size="12.5" class="mono tg">◆ Editing pages/itinerary.tsx</text><rect x="470" y="274" width="8" height="15" fill="#C9D1D9"/>
+      <text x="268" y="318" font-size="12.5" class="mono td">◇ The agent's terminal stays fully interactive.</text>
+      <text x="268" y="346" font-size="12.5" class="mono td">◇ Type directly — Pine never injects text.</text>
+    </g>
+    <rect x="246" y="64" width="556" height="612" rx="10" fill="none" stroke="#14181D"/>
+
+    <!-- divider -->
+    <line x1="808" y1="76" x2="808" y2="664" stroke="#E2E0DA" stroke-width="2"/>
+
+    <!-- code pane (existing editor, manual edit preserved) -->
+    <rect x="816" y="64" width="358" height="612" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+    <g clip-path="url(#code)">
+      <rect x="816" y="64" width="358" height="34" fill="#FBFAF7"/>
+      <line x1="816" y1="98" x2="1174" y2="98" stroke="#E7E5DF"/>
+      <text x="836" y="86" font-size="11.5" class="mono t2">pages/itinerary.tsx</text>
+      <circle cx="972" cy="82" r="3.4" fill="#B97514"/>
+      <rect x="1120" y="72" width="40" height="20" rx="5" fill="#F1F0EB"/>
+      <text x="1140" y="86" font-size="10.5" class="t2" text-anchor="middle">Code</text>
+      <g class="mono" font-size="11">
+        <text x="836" y="126" class="td">14</text><text x="872" y="126" fill="#3A3D44"><tspan fill="#7A5AF8">const</tspan> days = [</text>
+        <rect x="868" y="136" width="320" height="18" fill="#EFF7F1"/>
+        <text x="836" y="150" class="td">15</text><text x="872" y="150" fill="#2F6B45">+  { day: 1, title: "Arrive &amp; settle" },</text>
+        <rect x="868" y="156" width="320" height="18" fill="#EFF7F1"/>
+        <text x="836" y="170" class="td">16</text><text x="872" y="170" fill="#2F6B45">+  { day: 2, title: "Coastal drive" },</text>
+        <rect x="868" y="176" width="320" height="18" fill="#EFF7F1"/>
+        <text x="836" y="190" class="td">17</text><text x="872" y="190" fill="#2F6B45">+  { day: 3, title: "Savor &amp; return" },</text>
+        <text x="836" y="210" class="td">18</text><text x="872" y="210" fill="#3A3D44">]</text>
+        <text x="836" y="238" class="td">19</text><text x="872" y="238" class="td">// manual edits stay dirty, like any document</text>
+        <text x="836" y="258" class="td">20</text><text x="872" y="258" fill="#3A3D44"><tspan fill="#7A5AF8">export</tspan> <tspan fill="#7A5AF8">function</tspan> Itinerary() {</text>
+        <text x="836" y="278" class="td">21</text><text x="872" y="278" fill="#3A3D44">  <tspan fill="#7A5AF8">return</tspan> days.<tspan fill="#B07A2A">map</tspan>(d =&gt; &lt;DayRow key={d.day} {…d} /&gt;)</text>
+        <text x="836" y="298" class="td">22</text><text x="872" y="298" fill="#3A3D44">}</text>
+      </g>
+      <line x1="816" y1="640" x2="1174" y2="640" stroke="#E7E5DF"/>
+      <text x="836" y="660" font-size="10.5" class="t3">Edited · evidence invalidated — see the task's result surface</text>
+    </g>
+    <rect x="816" y="64" width="358" height="612" rx="10" fill="none" stroke="#E7E5DF"/>
+
+    <!-- status strip -->
+    <path d="M272 704 a10 10 0 1 1 -7.2 -16.6" fill="none" stroke="#2E5D44" stroke-width="2.2" stroke-linecap="round"/>
+    <text x="290" y="714" font-size="13.5" class="sem t1">Working</text>
+    <text x="356" y="714" font-size="12.5" class="t2">· side-by-side: terminal + code, 2.x pane behavior</text>
+  </g>
+  <rect x="10" y="10" width="1180" height="760" rx="14" fill="none" stroke="#D8D5CE"/>
+</svg>

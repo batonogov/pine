@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif">
+  <defs>
+    <clipPath id="win"><rect x="10" y="10" width="1180" height="760" rx="14"/></clipPath>
+    <clipPath id="hero2"><rect x="288" y="286" width="598" height="180"/></clipPath>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="112%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+    <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#CFE3DA"/><stop offset="1" stop-color="#F5E8CF"/>
+    </linearGradient>
+    <linearGradient id="coast2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#D9E8E2"/><stop offset="0.55" stop-color="#BFD9D2"/><stop offset="0.56" stop-color="#8FB4C4"/><stop offset="1" stop-color="#7FA6B8"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .t1{fill:#1F2124}.t2{fill:#6C6F76}.t3{fill:#9C9FA6}
+    .acc{fill:#2E5D44}.suc{fill:#2F8A57}.wrn{fill:#B97514}.err{fill:#C0453A}
+    .sem{font-weight:600}.b{font-weight:700}
+    .mono{font-family:'SF Mono', ui-monospace, Menlo, monospace}
+  </style>
+
+  <rect x="10" y="10" width="1180" height="760" rx="14" fill="#F7F6F3" filter="url(#shadow)"/>
+  <g clip-path="url(#win)">
+    <!-- sidebar -->
+    <rect x="10" y="10" width="250" height="760" fill="#EFEEEA"/>
+    <line x1="260" y1="10" x2="260" y2="770" stroke="#E2E0DA"/>
+    <circle cx="34" cy="36" r="6.5" fill="#FF5F57"/><circle cx="54" cy="36" r="6.5" fill="#FEBC2E"/><circle cx="74" cy="36" r="6.5" fill="#28C840"/>
+    <path d="M40 66 L48 80 L44 80 L51 92 L29 92 L36 80 L32 80 Z" class="acc"/>
+    <rect x="38.6" y="92" width="2.8" height="6" class="acc"/>
+    <text x="62" y="86" font-size="15" class="sem t1">Pine 3</text>
+    <path d="M32 118 h20 v10 a2 2 0 0 1 -2 2 h-5 l-2 -3 h-4 l-2 3 h-5 a2 2 0 0 1 -2 -2 z" fill="none" stroke="#6C6F76" stroke-width="1.6"/>
+    <text x="62" y="128" font-size="14" class="t1">Inbox</text>
+    <circle cx="232" cy="123" r="10" class="acc"/><text x="232" y="127" font-size="11" fill="#FFFFFF" text-anchor="middle" class="sem">1</text>
+    <line x1="24" y1="146" x2="246" y2="146" stroke="#E2E0DA"/>
+    <text x="32" y="170" font-size="10.5" class="t3" letter-spacing="0.8">PROJECTS</text>
+    <path d="M32 195 h6 l2 3 h8 v10 h-16 z" fill="none" stroke="#6C6F76" stroke-width="1.6"/>
+    <text x="62" y="203" font-size="14" class="t1">Atlas</text>
+    <path d="M32 227 h6 l2 3 h8 v10 h-16 z" fill="none" stroke="#6C6F76" stroke-width="1.6"/>
+    <text x="62" y="235" font-size="14" class="t2">Fieldnotes</text>
+    <line x1="38" y1="248" x2="38" y2="352" stroke="#E2E0DA"/>
+    <rect x="18" y="252" width="224" height="30" rx="8" fill="#E3E9DF"/>
+    <path d="M52 267 a7 7 0 1 1 -5 -11.9" fill="none" stroke="#2E5D44" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="70" y="272" font-size="13.5" class="sem t1">Plan a weekend</text>
+    <circle cx="52" cy="300" r="7" fill="none" stroke="#B97514" stroke-width="1.8"/><text x="52" y="304" font-size="9" fill="#B97514" text-anchor="middle" class="b">?</text>
+    <text x="70" y="305" font-size="13.5" class="t1">Improve search</text>
+    <text x="238" y="305" font-size="11" class="wrn sem" text-anchor="end">Needs input</text>
+    <path d="M52 334 a7 7 0 1 1 -5 -11.9" fill="none" stroke="#6C6F76" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="70" y="339" font-size="13.5" class="t1">Fix navigation</text>
+    <circle cx="40" cy="732" r="7" fill="none" stroke="#6C6F76" stroke-width="1.6"/><circle cx="40" cy="732" r="2.4" fill="#6C6F76"/>
+    <text x="62" y="737" font-size="13.5" class="t2">Settings</text>
+
+    <!-- toolbar -->
+    <path d="M296 30 l-8 6 l8 6" fill="none" stroke="#1F2124" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M322 30 l8 6 l-8 6" fill="none" stroke="#C9C6BE" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="348" y="41" font-size="13" class="t2">Atlas</text>
+    <text x="392" y="41" font-size="13" class="t3">›</text>
+    <text x="406" y="41" font-size="13" class="sem t1">Plan a weekend</text>
+    <g fill="#9C9FA6"><circle cx="1162" cy="35" r="1.7"/><circle cx="1168" cy="35" r="1.7"/><circle cx="1174" cy="35" r="1.7"/></g>
+
+    <!-- header -->
+    <text x="288" y="100" font-size="28" class="b t1">Plan a weekend</text>
+    <text x="288" y="126" font-size="14.5" class="t2">Create a three-day coastal itinerary with places to stay.</text>
+    <rect x="966" y="82" width="62" height="24" rx="12" fill="#F1F0EB" stroke="#E2E0DA"/>
+    <text x="997" y="98" font-size="11.5" class="t2" text-anchor="middle">Codex</text>
+    <path d="M1044 94 a10 10 0 1 1 -7.2 -16.6" fill="none" stroke="#2E5D44" stroke-width="2.2" stroke-linecap="round"/>
+    <text x="1060" y="99" font-size="14" class="sem t1">Working</text>
+    <rect x="1138" y="82" width="24" height="24" rx="6" fill="#F1F0EB" stroke="#E2E0DA"/>
+    <rect x="1145" y="89" width="10" height="10" rx="1.5" fill="#6C6F76"/>
+
+    <!-- tabs (segmented) -->
+    <rect x="288" y="146" width="84" height="32" rx="8" fill="#FFFFFF" stroke="#D8D5CE"/>
+    <text x="330" y="166" font-size="13.5" class="sem t1" text-anchor="middle">Overview</text>
+    <text x="412" y="166" font-size="13.5" class="t2">Changes</text>
+    <text x="486" y="166" font-size="13.5" class="t2">Code</text>
+    <text x="546" y="166" font-size="13.5" class="t2">Terminal</text>
+    <line x1="288" y1="192" x2="1162" y2="192" stroke="#E2E0DA"/>
+
+    <!-- left: preview -->
+    <path d="M304 214 a8 8 0 1 1 -5.8 -13.4" fill="none" stroke="#2E5D44" stroke-width="2" stroke-linecap="round"/>
+    <text x="322" y="224" font-size="14" class="sem t1">Latest preview</text>
+    <text x="418" y="224" font-size="14" class="t3">· Updating</text>
+    <text x="886" y="224" font-size="12.5" class="t3" text-anchor="end">This revision has not been checked yet.</text>
+
+    <rect x="288" y="238" width="598" height="380" rx="10" fill="#FFFFFF" stroke="#E7E5DF"/>
+    <text x="312" y="270" font-size="17" class="sem" fill="#1F2124" font-family="Georgia, serif">Atlas</text>
+    <text x="520" y="269" font-size="10" class="t2">Destinations    Itineraries    Stays    Journal</text>
+    <circle cx="864" cy="264" r="4.5" fill="none" stroke="#9C9FA6" stroke-width="1.4"/>
+    <g clip-path="url(#hero2)">
+    <rect x="288" y="286" width="598" height="180" fill="url(#sky2)"/>
+    <ellipse cx="790" cy="330" rx="30" ry="11" fill="#F7E7C6" opacity="0.8"/>
+    <path d="M288 448 q 90 -18 180 -8 t 180 0 t 138 -6 v26 h-598 z" fill="#8FB4C4"/>
+    <path d="M560 448 q 60 -60 140 -70 q 60 -8 150 30 v40 h-290 z" fill="#8A7B5C" opacity="0.55"/>
+    <g fill="#E8A7C4"><circle cx="316" cy="452" r="3"/><circle cx="330" cy="458" r="3"/><circle cx="346" cy="451" r="3"/><circle cx="360" cy="459" r="3"/><circle cx="374" cy="453" r="3"/></g>
+    </g>
+    <text x="316" y="322" font-size="9" fill="#FFFFFF" letter-spacing="1.4" class="sem">A COASTAL WEEKEND</text>
+    <text x="316" y="356" font-size="27" fill="#FFFFFF" font-family="Georgia, serif" class="b">Three Days</text>
+    <text x="316" y="388" font-size="27" fill="#FFFFFF" font-family="Georgia, serif" class="b">on the Coast</text>
+    <text x="316" y="414" font-size="10.5" fill="#FFFFFF" opacity="0.92">A relaxed three-day itinerary with scenic drives,</text>
+    <text x="316" y="429" font-size="10.5" fill="#FFFFFF" opacity="0.92">coastal towns, and places to stay.</text>
+    <text x="312" y="504" font-size="15" class="sem t1" font-family="Georgia, serif">The Itinerary</text>
+    <circle cx="318" cy="530" r="4" class="suc"/>
+    <line x1="318" y1="536" x2="318" y2="600" stroke="#E2E0DA" stroke-dasharray="2 3"/>
+    <circle cx="318" cy="606" r="3.4" fill="none" stroke="#C9C6BE" stroke-width="1.4"/>
+    <text x="338" y="524" font-size="10" class="t3">Day 1</text>
+    <text x="338" y="542" font-size="13.5" class="sem t1">Arrive and explore</text>
+    <text x="338" y="560" font-size="11" class="t2">Coastal views, a seaside town, and dinner by the water.</text>
+    <rect x="700" y="514" width="168" height="62" rx="6" fill="url(#coast2)"/>
+    <line x1="700" y1="546" x2="868" y2="546" stroke="#8A7B5C" stroke-width="3" opacity="0.7"/>
+    <text x="338" y="598" font-size="10" class="t3">Day 2</text>
+    <text x="338" y="616" font-size="13.5" class="sem t1">Coastal drive and beaches</text>
+    <text x="338" y="634" font-size="11" class="t2">Scenic stops, beach time, and a local lunch.</text>
+    <rect x="700" y="586" width="168" height="62" rx="6" fill="url(#coast2)"/>
+    <ellipse cx="784" cy="606" rx="60" ry="14" fill="#F7E7C6" opacity="0.5"/>
+
+    <text x="288" y="654" font-size="13.5" class="t2">Adding places to stay and travel times.</text>
+
+    <!-- right rail: honest phases -->
+    <text x="906" y="228" font-size="14.5" class="sem t1">In progress</text>
+    <path d="M922 273 a11 11 0 1 1 -8 -18.8" fill="none" stroke="#2E5D44" stroke-width="2" stroke-linecap="round"/>
+    <text x="944" y="254" font-size="13.5" class="t1">Implementation</text>
+    <text x="944" y="272" font-size="11.5" class="t2">In progress —</text>
+    <text x="944" y="288" font-size="11.5" class="t2">editing <tspan class="mono">pages/itinerary.tsx</tspan></text>
+    <line x1="922" y1="276" x2="922" y2="316" stroke="#E2E0DA"/>
+    <circle cx="922" cy="330" r="11" fill="none" stroke="#C9C6BE" stroke-width="1.8"/>
+    <text x="944" y="326" font-size="13.5" class="t1">Checks</text>
+    <text x="944" y="346" font-size="11.5" class="t2">Queued</text>
+    <line x1="922" y1="344" x2="922" y2="384" stroke="#E2E0DA"/>
+    <circle cx="922" cy="398" r="11" fill="none" stroke="#C9C6BE" stroke-width="1.8"/>
+    <text x="944" y="394" font-size="13.5" class="t1">Independent review</text>
+    <text x="944" y="414" font-size="11.5" class="t2">Queued — read-only reviewer</text>
+    <line x1="906" y1="444" x2="1162" y2="444" stroke="#E2E0DA"/>
+    <path d="M908 458 l6 6 l-6 6" fill="none" stroke="#6C6F76" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="926" y="472" font-size="13.5" class="sem t1">Activity</text>
+
+    <!-- composer -->
+    <rect x="288" y="678" width="874" height="64" rx="14" fill="#FFFFFF" stroke="#E7E5DF"/>
+    <path d="M314 704 a4.5 4.5 0 0 0 7 5.5 l4.5 -4.5 a2.6 2.6 0 0 0 -3.7 -3.7 l-4.3 4.3" fill="none" stroke="#9C9FA6" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="340" y="715" font-size="14" class="t3">Add a note or reference…</text>
+    <circle cx="1136" cy="710" r="15" class="acc"/>
+    <path d="M1130 710 h11 M1135.5 705 l5 5 l-5 5" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <rect x="10" y="10" width="1180" height="760" rx="14" fill="none" stroke="#D8D5CE"/>
+</svg>
