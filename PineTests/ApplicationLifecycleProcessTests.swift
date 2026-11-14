@@ -91,6 +91,9 @@ nonisolated private final class ApplicationLifecycleLaunchedProcess:
             "YES",
         ]
         var environment = ProcessInfo.processInfo.environment
+        // Child relaunches share the owned fixture namespace, never the host's.
+        environment[PineStorageContext.namespaceEnvironmentKey] =
+            configuration.defaultsSuiteName.components(separatedBy: ".").last
         for key in [
             "XCInjectBundleInto",
             "XCTestBundlePath",

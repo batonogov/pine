@@ -21,14 +21,14 @@ import SwiftUI
 struct GeneralSettingsView: View {
     @Bindable var editor: EditorSettings
     @Bindable var fontSizeSettings: FontSizeSettings
-    @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
-    @AppStorage("minimapVisible") private var defaultMinimapVisible = true
-    @AppStorage("wordWrapEnabled") private var defaultWordWrap = true
+    @AppStorage(TabManager.autoSaveKey, store: PineStorageContext.defaults) private var autoSaveEnabled = false
+    @AppStorage("minimapVisible", store: PineStorageContext.defaults) private var defaultMinimapVisible = true
+    @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) private var defaultWordWrap = true
 
     init(
         editor: EditorSettings,
         fontSizeSettings: FontSizeSettings,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = PineStorageContext.defaults
     ) {
         self.editor = editor
         self.fontSizeSettings = fontSizeSettings

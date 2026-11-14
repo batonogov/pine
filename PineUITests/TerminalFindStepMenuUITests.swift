@@ -13,8 +13,6 @@ import XCTest
 
 final class TerminalFindStepMenuUITests: PineUITestCase {
 
-    private static let bundleIdentifier = "io.github.batonogov.pine"
-
     private var projectURL: URL!
 
     override func setUpWithError() throws {
@@ -24,8 +22,8 @@ final class TerminalFindStepMenuUITests: PineUITestCase {
         // shell override into this one. On a fresh runner the defaults
         // domain itself may not exist yet; `runDefaults` tolerates a
         // `delete` that fails only because the domain or key is missing.
-        try runDefaults(["delete", Self.bundleIdentifier, "terminalShellPath"])
-        try runDefaults(["delete", Self.bundleIdentifier, "terminalShellArgs"])
+        try runDefaults(["delete", isolatedDefaultsSuiteName, "terminalShellPath"])
+        try runDefaults(["delete", isolatedDefaultsSuiteName, "terminalShellArgs"])
 
         // The terminal's scrollback must contain repeatable matches without
         // depending on this machine's shell prompt. `/usr/bin/yes sunny`
@@ -35,13 +33,13 @@ final class TerminalFindStepMenuUITests: PineUITestCase {
         // `defaults write` carries both keys.
         try runDefaults([
             "write",
-            Self.bundleIdentifier,
+            isolatedDefaultsSuiteName,
             "terminalShellPath",
             "/usr/bin/yes"
         ])
         try runDefaults([
             "write",
-            Self.bundleIdentifier,
+            isolatedDefaultsSuiteName,
             "terminalShellArgs",
             "-array",
             "sunny"
@@ -51,8 +49,8 @@ final class TerminalFindStepMenuUITests: PineUITestCase {
     }
 
     override func tearDownWithError() throws {
-        try runDefaults(["delete", Self.bundleIdentifier, "terminalShellPath"])
-        try runDefaults(["delete", Self.bundleIdentifier, "terminalShellArgs"])
+        try runDefaults(["delete", isolatedDefaultsSuiteName, "terminalShellPath"])
+        try runDefaults(["delete", isolatedDefaultsSuiteName, "terminalShellArgs"])
         if let url = projectURL { cleanupProject(url) }
         try super.tearDownWithError()
     }

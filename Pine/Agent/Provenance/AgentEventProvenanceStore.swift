@@ -538,8 +538,7 @@ actor AgentEventProvenanceStore: AgentEventProvenanceCollector {
     }
 
     nonisolated static var defaultStorageRoot: URL {
-        FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        PineStorageContext.applicationSupportDirectory
             .appendingPathComponent("Pine", isDirectory: true)
             .appendingPathComponent("AgentProvenance", isDirectory: true)
     }

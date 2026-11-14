@@ -95,7 +95,7 @@ final class TerminalThemeSettings {
     }
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         notificationCenter: NotificationCenter = .default
     ) {
         self.defaults = defaults

@@ -123,7 +123,7 @@ final class TerminalFontSettings {
     }
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         notificationCenter: NotificationCenter = .default,
         availableFontFamilies: (() -> Set<String>)? = nil
     ) {

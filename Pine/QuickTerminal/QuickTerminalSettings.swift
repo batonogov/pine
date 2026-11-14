@@ -172,7 +172,7 @@ final class QuickTerminalSettings {
     // MARK: - Init
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         notificationCenter: NotificationCenter = .default
     ) {
         self.defaults = defaults

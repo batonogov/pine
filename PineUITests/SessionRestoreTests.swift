@@ -13,7 +13,7 @@ final class SessionRestoreTests: PineUITestCase {
 
     private var projectURL: URL!
     private var seededSessionKey: String?
-    private let bundleID = "io.github.batonogov.pine"
+    private var bundleID: String { isolatedDefaultsSuiteName }
 
     override func setUpWithError() throws {
         try super.setUpWithError()

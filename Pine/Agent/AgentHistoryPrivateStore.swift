@@ -148,8 +148,7 @@ nonisolated final class AgentHistoryPrivateStore: @unchecked Sendable {
 
     /// Real production base: `~/Library/Application Support/Pine/AgentHistory/`.
     static var defaultBaseDirectory: URL {
-        FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        PineStorageContext.applicationSupportDirectory
             .appendingPathComponent("Pine", isDirectory: true)
             .appendingPathComponent("AgentHistory", isDirectory: true)
     }
