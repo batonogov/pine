@@ -253,6 +253,61 @@ struct AgentProjectTerminalOwnershipTests {
         #expect(reopened.terminal.projectOwnedActiveAgentSessions == [session])
     }
 
+    @Test("Completed owned session survives reclamation without a manual finalizer")
+    func completedHistorySurvivesReclamation() async throws {
+        let root = try makeTemporaryRoot(name: "HistoryReclamation")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let domain = "PineTests.HistoryDurability.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let registry = ProjectRegistry(
+            defaults: defaults,
+            agentHistoryPrivateStore: AgentHistoryPrivateStore(
+                baseDirectory: root.appendingPathComponent("private-history")
+            ),
+            agentTasks: AgentTaskRegistry(persistence: AgentTaskMetadataStore(
+                storageRoot: root.appendingPathComponent("private-task-storage")
+            )),
+            agentDetectionProcessRunner: { _, _, _, _ in
+                ProcessRunResult(stdout: "", stderr: "", exitCode: 0, timedOut: false)
+            },
+            agentDetectionInitialPollDelay: 3_600
+        )
+        let project = try #require(registry.projectManager(for: root))
+        let pane = project.paneManager.createTerminalPaneAtBottom(workingDirectory: root)
+        let tab = try #require(project.paneManager.terminalState(for: pane)?.activeTab)
+        let coordinator = AgentDetectionCoordinator(
+            detector: project.terminal.agentDetector,
+            terminalManager: project.terminal
+        )
+        let process = coordinatorProcess(pid: 361, command: "codex", startedAt: 361)
+        setCoordinatorOwnership(process, on: tab)
+        coordinator.applySnapshotForTesting(processes: [process])
+        let session = try #require(tab.agentSession)
+        session.filesModified = [root.appendingPathComponent("Sources/Changed.swift")]
+        tab.foregroundProcessIDOverrideForTesting = 0
+        tab.foregroundStartOverrideForTesting = nil
+        // Actual production reconciliation establishes completion, transfers
+        // exact ownership, and persists. The test never invokes the finalizer.
+        coordinator.applySnapshotForTesting(processes: [])
+        try #require(session.state == .done)
+        try #require(session.liveness == .terminated)
+        #expect(await waitUntilMainActor { !project.agentHistory.entries.isEmpty })
+        project.agentHistory.flush()
+        #expect(project.agentHistory.entries.map(\.sessionID) == [session.id])
+        tab.agentSession = nil
+        registry.closeProjectWindow(root)
+        try #require(await waitUntilMainActor {
+            registry.runBackgroundReclamationPassForTesting()
+            return registry.openProjects[ProjectRegistry.canonicalProjectURL(root)] == nil
+        })
+        let reopened = try #require(registry.projectManager(for: root))
+        #expect(reopened !== project)
+        #expect(reopened.agentHistory.entries.map(\.sessionID) == [session.id])
+        #expect(reopened.agentHistory.entries.first?.affectedFiles == ["Sources/Changed.swift"])
+        #expect(reopened.agentHistory.entries.first?.summary == "1 file")
+    }
+
     @Test("Sequential process-generation conflict remains quarantined")
     func sequentialProcessConflictFailsClosed() throws {
         let fixture = try makeProjectFixture(name: "Sequential", terminalCount: 1)
@@ -369,7 +424,7 @@ struct AgentProjectTerminalOwnershipTests {
     }
 
     @Test("Terminated generation finalizes once in only its owning project")
-    func terminatedGenerationFinalizesOnce() throws {
+    func terminatedGenerationFinalizesOnce() async throws {
         let owner = try makeProjectFixture(name: "HistoryOwner", terminalCount: 2)
         let sibling = try makeProjectFixture(name: "HistorySibling", terminalCount: 1)
         defer {
@@ -403,6 +458,7 @@ struct AgentProjectTerminalOwnershipTests {
         owner.project.finalizeAgentSessionsForHistory()
         owner.project.finalizeAgentSessionsForHistory()
         sibling.project.finalizeAgentSessionsForHistory()
+        #expect(await owner.project.flushAgentHistoryPersistence())
 
         #expect(owner.project.agentHistory.entries.map(\.sessionID) == [session.id])
         #expect(owner.project.agentHistory.entries.first?.affectedFiles == ["Owned.swift"])

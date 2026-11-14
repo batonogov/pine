@@ -160,7 +160,33 @@ nonisolated enum AgentHistoryLogPersistence {
             data.append(contentsOf: buffer.prefix(count))
         }
         if data.isEmpty { return [] }
-        return try AgentHistoryStore.makeDecoder().decode([AgentHistoryEntry].self, from: data)
+        let decoded = try AgentHistoryStore.makeDecoder().decode([AgentHistoryEntry].self, from: data)
+        // Display decoding is deliberately tolerant. Persistence is stricter:
+        // rewriting a future/partially decoded row must never erase fields or
+        // downgrade an unfamiliar contract to today's fallback representation.
+        let original = try JSONSerialization.jsonObject(with: data)
+        let encoded = try JSONSerialization.jsonObject(
+            with: AgentHistoryStore.makeEncoder().encode(decoded)
+        )
+        guard preservesStoredFields(original, encoded) else { throw Failure.unsafeStorage }
+        return decoded
+    }
+
+    private static func preservesStoredFields(_ original: Any, _ encoded: Any) -> Bool {
+        if let original = original as? [String: Any] {
+            guard let encoded = encoded as? [String: Any] else { return false }
+            return original.allSatisfy { key, value in
+                // Explicit null is still stored information. In particular,
+                // unknown future keys must not disappear during a rewrite.
+                guard let next = encoded[key] else { return false }
+                return preservesStoredFields(value, next)
+            }
+        }
+        if let original = original as? [Any] {
+            guard let encoded = encoded as? [Any], original.count == encoded.count else { return false }
+            return zip(original, encoded).allSatisfy { preservesStoredFields($0, $1) }
+        }
+        return (original as? NSObject)?.isEqual(encoded) == true
     }
 
     private static func replace(_ data: Data, directory: Int32) throws {

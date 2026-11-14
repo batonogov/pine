@@ -194,6 +194,51 @@ struct WindowLifecycleTests {
         #expect(session2?.existingFileURLs.count == 1)
     }
 
+    @Test func historyWriteFailureCancelsQuitBeforeIrreversibleCommit() async throws {
+        let root = try makeTempDirectory()
+        defer { cleanup(root) }
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults() }
+        let registry = ProjectRegistry(
+            defaults: defaults,
+            agentHistoryPrivateStore: AgentHistoryPrivateStore(
+                baseDirectory: root.appendingPathComponent("private-history")
+            ),
+            agentTasks: AgentTaskRegistry(persistence: WindowLifecycleAgentTaskStore()),
+            agentDetectionProcessRunner: { _, _, _, _ in
+                ProcessRunResult(stdout: "", stderr: "", exitCode: 0, timedOut: false)
+            },
+            agentDetectionInitialPollDelay: 3_600
+        )
+        let project = try #require(registry.projectManager(for: root))
+        let pine = root.appendingPathComponent(".pine")
+        try FileManager.default.createDirectory(at: pine, withIntermediateDirectories: true)
+        let log = pine.appendingPathComponent("agent-log.json")
+        let original = Data("{unreadable".utf8)
+        try original.write(to: log)
+        let row = AgentHistoryEntry(
+            sessionID: UUID(), agentTypeRaw: "codex", startedAt: Date(),
+            affectedFiles: ["Changed.swift"], summary: "1 file"
+        )
+        project.agentHistory.append(row)
+        let delegate = AppDelegate()
+        delegate.registry = registry
+        var failureAlerts = 0
+        let result = await delegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                if template == .applicationQuitFailure { failureAlerts += 1 }
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 120
+        )
+        #expect(!result)
+        #expect(failureAlerts == 1)
+        #expect(!registry.isProjectAdmissionFrozenForTermination)
+        #expect(registry.openProjects.values.contains { $0 === project })
+        #expect(project.agentHistory.entries.map(\.sessionID) == [row.sessionID])
+        #expect(try Data(contentsOf: log) == original)
+    }
+
     @Test func asyncTerminationFailsClosedWhenSaveFails() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }

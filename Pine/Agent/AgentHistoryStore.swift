@@ -103,6 +103,12 @@ final class AgentHistoryStore {
     /// (see class doc). The store only hands it value-type snapshots.
     private let writer = AgentHistoryLogWriter()
 
+    /// Queued/failed entries remain owned by this store. Only a successful
+    /// locked, merged, fsynced replacement acknowledges a generation durable.
+    private(set) var persistenceState: AgentHistoryPersistenceState = .saved
+    private var persistenceGeneration: UInt64 = 0
+    var hasPendingPersistence: Bool { persistenceState != .saved }
+
     /// Owner-private store for checked-undo authority manifests and inverse
     /// payload blobs (#1183). Defaults to real Application Support; tests inject
     /// a temporary base directory via `init(privateStore:)`.
@@ -142,7 +148,13 @@ final class AgentHistoryStore {
     /// up an existing `.pine/agent-log.json` as soon as the project opens
     /// (the root is unknown at `ProjectManager.init` time). Calling with a new
     /// root resets in-memory state and reloads.
-    func updateProjectRoot(_ root: URL?) {
+    @discardableResult
+    func updateProjectRoot(_ root: URL?) -> Bool {
+        guard root != projectRoot else { return true }
+        // A project manager never changes roots while it owns unsaved history.
+        // Preserve failed snapshots rather than silently redirecting them.
+        guard !hasPendingPersistence else { return false }
+        persistenceGeneration &+= 1
         projectRoot = root
         entries = []
         loggedSessionIDs = []
@@ -155,6 +167,7 @@ final class AgentHistoryStore {
             async let recovery: Void = refreshRecoveryNotices()
             _ = await (availability, recovery)
         }
+        return true
     }
 
     /// Loads `.pine/agent-log.json` if present and valid. Tolerates a missing
@@ -886,16 +899,47 @@ final class AgentHistoryStore {
     /// Schedules an atomic write of the current `entries` to disk via the
     /// nonisolated writer. Fire-and-forget from the main actor.
     private func persist() {
-        writer.persist(snapshot: entries, root: projectRoot)
+        guard projectRoot != nil else { return }
+        persistenceGeneration &+= 1
+        let generation = persistenceGeneration
+        persistenceState = .pending
+        writer.persist(snapshot: entries, root: projectRoot) { [weak self] saved in
+            Task { @MainActor in
+                guard let self, self.persistenceGeneration == generation else { return }
+                self.persistenceState = saved ? .saved : .failed
+            }
+        }
     }
 
-    /// Blocks the calling (main) thread until every pending disk write has
-    /// completed. Called from `applicationWillTerminate` so a session finalized
-    /// at quit is guaranteed to reach `.pine/agent-log.json` before the OS
-    /// reclaims the process — without this the feature's core durability
-    /// promise ("a finished agent run is never lost") would be racy.
+    /// Compatibility drain for synchronous tests. Production uses the async,
+    /// result-bearing barrier below; draining alone never acknowledges a save.
     func flush() {
         writer.flush()
+    }
+
+    /// Retry the retained snapshot off-main. A concurrent append invalidates
+    /// this acknowledgement, so callers must retry rather than release ownership.
+    func flushPersistence() async -> Bool {
+        guard projectRoot != nil else { return entries.isEmpty }
+        guard hasPendingPersistence else { return true }
+        persistenceGeneration &+= 1
+        let generation = persistenceGeneration
+        persistenceState = .pending
+        let saved = await withCheckedContinuation { continuation in
+            writer.persist(snapshot: entries, root: projectRoot) { saved in
+                continuation.resume(returning: saved)
+            }
+        }
+        guard generation == persistenceGeneration else { return false }
+        persistenceState = saved ? .saved : .failed
+        return saved
+    }
+
+    /// A bounded reclamation pass retries failed I/O without blocking MainActor
+    /// or spawning another attempt while one is already queued.
+    func retryFailedPersistence() {
+        guard persistenceState == .failed else { return }
+        persist()
     }
 
     // MARK: - Codable helpers
@@ -984,6 +1028,12 @@ final class AgentHistoryStore {
     }
 }
 
+nonisolated enum AgentHistoryPersistenceState: Equatable, Sendable {
+    case saved
+    case pending
+    case failed
+}
+
 // MARK: - AgentHistoryLogWriter
 
 /// Serial, off-main writer for `.pine/agent-log.json`.
@@ -1010,25 +1060,29 @@ nonisolated final class AgentHistoryLogWriter {
 
     /// Schedules an atomic write of `snapshot` to `<root>/.pine/agent-log.json`.
     /// A `nil` root (no project open) is a no-op — the in-memory log suffices.
-    func persist(snapshot: [AgentHistoryEntry], root: URL?) {
+    func persist(
+        snapshot: [AgentHistoryEntry], root: URL?,
+        completion: @escaping @Sendable (Bool) -> Void = { _ in }
+    ) {
         // Bound waiting from submission, not execution: a held project lock
         // must not charge another two seconds for every queued quit snapshot.
         let lockDeadline = DispatchTime.now() + .seconds(2)
         writeQueue.async {
-            guard let root else { return }
+            guard let root else { completion(true); return }
             do {
                 try AgentHistoryLogPersistence.persist(
                     snapshot: snapshot, root: root, lockDeadline: lockDeadline
                 )
+                completion(true)
             } catch {
+                completion(false)
                 NSLog("AgentHistoryLogWriter: refused to persist agent-log.json. \(error)")
             }
         }
     }
 
-    /// Blocks the calling thread until all queued writes have completed. Used
-    /// on app termination to guarantee durability. Safe because the queue never
-    /// calls back onto its own thread (writes are fire-and-forget from main).
+    /// Compatibility drain for synchronous tests. Completion callbacks carry
+    /// the actual durability result; queue drainage alone is not a save.
     func flush() {
         writeQueue.sync {}
     }

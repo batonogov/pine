@@ -2355,11 +2355,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         agentPresence.stop()
         // Save sessions before terminating processes.
         for (_, pm) in registry.openProjects {
-            pm.finalizeAgentSessionsForHistory()
-            // Flush the agent-history log synchronously so a session finalized
-            // above is guaranteed to reach `.pine/agent-log.json` before the OS
-            // reclaims the process — the feature's durability promise.
-            pm.agentHistory.flush()
             pm.saveSession()
             pm.cleanupEditorContext()
             // Shut down language servers so no orphan process survives (#1010).
@@ -2382,7 +2377,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // project teardown must not discard live cancellation handles.
         if !registry.destroyAllProjects() {
             Logger.task.critical(
-                "Application termination reached teardown with live user tasks"
+                "Application termination reached teardown with pending project durability or live user tasks"
             )
         }
 
@@ -3445,6 +3440,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     - budgetSplit.rollbackNanoseconds
         )
 
+        // Check existing history failures before requesting any process stop.
+        // Queue drainage is insufficient: only the fsynced, locked replacement
+        // acknowledges a generation. Failed snapshots keep their owner alive.
+        func persistCompletedHistoryBeforeDeadline() async -> Bool {
+            for projectManager in registry.openProjects.values {
+                projectManager.finalizeAgentSessionsForHistory()
+                guard let saved = await valueBeforeTerminationDeadline(
+                    forwardDeadline,
+                    deadlineObserver: terminationDeadlineObserver,
+                    onTimeout: {},
+                    operation: { await projectManager.flushAgentHistoryPersistence() }
+                ), saved else { return false }
+            }
+            return registry.openProjects.values.allSatisfy {
+                !$0.hasPendingAgentHistory
+            }
+        }
+        guard await persistCompletedHistoryBeforeDeadline() else {
+            await presentTerminationFailure()
+            return false
+        }
+
         guard registry.userTaskShutdownAuthorizationStillCovers(
             userTaskAuthorization
         ) else {
@@ -3694,6 +3711,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             terminalStopControllers,
             until: forwardDeadline
         ) else {
+            await rollbackAfterRequestedTerminalStops()
+            await presentTerminationFailure()
+            return false
+        }
+
+        // Terminal shutdown may have completed another owned session since
+        // preflight. Acknowledge that generation before the final commit too.
+        guard await persistCompletedHistoryBeforeDeadline() else {
             await rollbackAfterRequestedTerminalStops()
             await presentTerminationFailure()
             return false
