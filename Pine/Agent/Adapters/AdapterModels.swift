@@ -237,10 +237,32 @@ nonisolated struct CandidateAttentionEvent: Sendable {
     }
 }
 
+/// Contract 1.1: resolves one exact question/approval. Resolution is not
+/// task completion, confirmed idle, acceptance, or evidence of success.
+nonisolated struct CandidateRequestResolutionEvent: Sendable {
+    let scope: AdapterLifecycleScope
+    let request: VendorReference
+    let context: VendorReference
+
+    init(scope: AdapterLifecycleScope, request: VendorReference, context: VendorReference) throws {
+        guard request.role == .request else { throw AdapterCandidateError.contradictoryEvent }
+        let expectedRole: VendorReference.Role = switch scope {
+        case .session, .run: .conversation
+        case .turn: .turn
+        case .item: .item
+        }
+        guard context.role == expectedRole else { throw AdapterCandidateError.contradictoryEvent }
+        self.scope = scope
+        self.request = request
+        self.context = context
+    }
+}
+
 nonisolated enum AdapterCandidateEvent: Sendable {
     case lifecycle(CandidateLifecycleEvent)
     case question(CandidateAttentionEvent)
     case approval(CandidateAttentionEvent)
+    case requestResolved(CandidateRequestResolutionEvent)
     case tool(CandidateToolEvent)
     case processExited(status: Int32?)
 
@@ -261,6 +283,11 @@ nonisolated enum AdapterCandidateEvent: Sendable {
         case let .approval(attention):
             guard attention.phase == .waitingForApproval,
                   profile.lifecycle.authorizes(scope: attention.scope, phase: attention.phase) else {
+                throw AdapterCandidateError.capabilityOverreach
+            }
+        case let .requestResolved(resolution):
+            guard contract.version >= PineAdapterContractVersion(major: 1, minor: 1),
+                  profile.lifecycle.authorizes(scope: resolution.scope, phase: .settled) else {
                 throw AdapterCandidateError.capabilityOverreach
             }
         case let .tool(event):
