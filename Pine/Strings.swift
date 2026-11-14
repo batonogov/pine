@@ -894,6 +894,13 @@ enum Strings {
         }
     }
 
+    static let agentMetadataUnavailable: LocalizedStringKey = "agentMetadata.unavailable"
+    static let agentMetadataLocked: LocalizedStringKey = "agentMetadata.locked"
+    static let agentMetadataIOFailure: LocalizedStringKey = "agentMetadata.ioFailure"
+    static let agentMetadataFutureSchema: LocalizedStringKey = "agentMetadata.futureSchema"
+    static let agentMetadataProtected: LocalizedStringKey = "agentMetadata.protected"
+    static let agentMetadataRetry: LocalizedStringKey = "agentMetadata.retry"
+
     static let agentInboxRecoveryActions: LocalizedStringKey =
         "agentInbox.recoveryActions"
     static let agentInboxShowRecoveryActions: LocalizedStringKey =

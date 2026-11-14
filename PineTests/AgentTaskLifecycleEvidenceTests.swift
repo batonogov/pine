@@ -3282,6 +3282,7 @@ struct AgentTaskLifecycleEvidenceTests {
         )
         session.applyLiveness(.terminated)
         writer.refresh(sessions: [session])
+        #expect(await writer.flushPersistence() == .saved)
         let resumeResult = writer.prepareResume(
             taskID: firstTaskID,
             context: context1,
@@ -3720,6 +3721,7 @@ struct AgentTaskLifecycleEvidenceTests {
             )
         )
 
+        #expect(await writer.flushPersistence() == .saved)
         let resumableTaskID = try launchTask(
             routeSeed: 152,
             pid: 1_520_001,

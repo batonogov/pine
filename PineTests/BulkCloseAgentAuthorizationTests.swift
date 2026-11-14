@@ -451,6 +451,7 @@ struct BulkCloseAgentAuthorizationTests {
             replacing: firstSession,
             in: tab
         )
+        #expect(await registry.agentTasks.flushPersistence() == .saved)
         guard case .reserved(let secondReservation) = project.terminal
                 .prepareAgentResume(
                     taskID: firstReservation.taskID,

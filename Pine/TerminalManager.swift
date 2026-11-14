@@ -863,7 +863,12 @@ final class TerminalManager {
                 ? .sentWithoutReservation
                 : .rejected
         }
-        guard launchWritesInFlight[tab.id] == nil else {
+        guard let project = agentTaskContext(for: tab)?.project,
+              await agentTaskRegistry?.prepareDurableWork(in: project) == true,
+              !isPermanentlyInvalidated,
+              !agentTaskCallbacksFrozen,
+              agentTaskContext(for: tab)?.project == project,
+              launchWritesInFlight[tab.id] == nil else {
             return .rejected
         }
         if let existing = launchReservations[tab.id],
@@ -935,6 +940,12 @@ final class TerminalManager {
               launchWritesInFlight[tab.id] == nil else {
             return .rejected
         }
+        guard await agentTaskRegistry.prepareDurableWork(in: task.project),
+              !isPermanentlyInvalidated,
+              !agentTaskCallbacksFrozen,
+              agentTaskRegistry.task(for: taskID) == task,
+              agentTaskContext(for: tab)?.project == task.project,
+              launchWritesInFlight[tab.id] == nil else { return .rejected }
         let result = prepareAgentResume(taskID: taskID, in: tab)
         guard case .reserved(let reservation) = result else { return result }
         guard agentTaskRegistry.pauseLaunchExpirationForAcknowledgedWrite(
@@ -1045,6 +1056,7 @@ final class TerminalManager {
               let pm = paneManager,
               let project = agentTaskProject,
               project == plan.project,
+              agentTaskRegistry?.canAdmitDurableWork(in: project) == true,
               project.canonicalWorktreePath
                 == plan.workingDirectory.standardizedFileURL.path else {
             return .rejected
