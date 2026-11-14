@@ -201,7 +201,9 @@ struct AgentTaskLifecycleEvidenceTests {
             at: t.addingTimeInterval(1),
             codeState: codeState,
             environment: environment,
-            sequence: 2
+            sequence: 2,
+            pre: codeState,
+            post: codeState
         ))
         task.evidence.append(fact(
             .reviewerOutcome,
@@ -211,10 +213,74 @@ struct AgentTaskLifecycleEvidenceTests {
             at: t.addingTimeInterval(2),
             codeState: codeState,
             environment: environment,
-            sequence: 3
+            sequence: 3,
+            pre: codeState,
+            post: codeState
         ))
         AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
         return task
+    }
+
+    @Test("Ready refuses checks or review without current environment binding")
+    func readyRequiresEnvironmentBinding() throws {
+        let cs = codeState("a")
+        for kind in AgentTaskLifecycleReducer.requiredEvidenceForSuccess {
+            var task = try verifiedSuccessTask(seed: 180, codeState: cs, environment: environment)
+            task.evidence = task.evidence.map { existing in
+                guard existing.kind == kind else { return existing }
+                return fact(kind, runID: existing.runID, generation: existing.processGeneration,
+                            result: .succeeded, at: existing.observedAt, codeState: cs,
+                            sequence: existing.sourceSequence, pre: cs, post: cs)
+            }
+            #expect(!AgentTaskLifecycleReducer.readiness(
+                for: task, codeState: cs, environment: environment
+            ).isReady)
+        }
+    }
+
+    @Test("Ready and re-verification refuse legacy facts without operation fingerprints")
+    func readyRequiresOperationFingerprints() throws {
+        let cs = codeState("a")
+        for kind in AgentTaskLifecycleReducer.requiredEvidenceForSuccess {
+            var task = try verifiedSuccessTask(seed: 181, codeState: cs, environment: environment)
+            task.evidence = task.evidence.map { existing in
+                guard existing.kind == kind else { return existing }
+                return fact(kind, runID: existing.runID, generation: existing.processGeneration,
+                            result: .succeeded, at: existing.observedAt, codeState: cs,
+                            environment: environment, sequence: existing.sourceSequence)
+            }
+            #expect(!AgentTaskLifecycleReducer.readiness(
+                for: task, codeState: cs, environment: environment
+            ).isReady)
+            task.verificationState = .stale
+            AgentTaskLifecycleReducer.reverify(&task, codeState: cs, environment: environment)
+            #expect(task.verificationState == .stale)
+        }
+    }
+
+    @Test("Current operations remain usable alongside incomplete historical evidence")
+    func incompleteHistoryDoesNotMaskCurrentOperations() throws {
+        let cs = codeState("a")
+        for kind in AgentTaskLifecycleReducer.requiredEvidenceForSuccess {
+            for missingEnvironment in [true, false] {
+                var task = try verifiedSuccessTask(seed: 182, codeState: cs, environment: environment)
+                let run = try #require(task.runs.last)
+                let historical = fact(
+                    kind, runID: run.id, generation: 182,
+                    result: .succeeded, at: task.lastActivityAt, codeState: cs,
+                    environment: missingEnvironment ? nil : environment,
+                    pre: missingEnvironment ? cs : nil, post: missingEnvironment ? cs : nil
+                )
+                #expect(AgentTaskLifecycleReducer.isValid(historical))
+                task.evidence.insert(historical, at: 0)
+                #expect(AgentTaskLifecycleReducer.readiness(
+                    for: task, codeState: cs, environment: environment
+                ).isReady)
+                task.verificationState = .stale
+                AgentTaskLifecycleReducer.reverify(&task, codeState: cs, environment: environment)
+                #expect(task.verificationState == .verified)
+            }
+        }
     }
 
     // MARK: - Execution state
@@ -2798,7 +2864,9 @@ struct AgentTaskLifecycleEvidenceTests {
                     at: endedAt.addingTimeInterval(TimeInterval(offset)),
                     codeState: csOld,
                     environment: env,
-                    sequence: UInt64(sequence)
+                    sequence: UInt64(sequence),
+                    pre: kind == .agentReportedCompletion ? nil : csOld,
+                    post: kind == .agentReportedCompletion ? nil : csOld
                 ), taskID: taskID) == .accepted
             )
         }
@@ -2850,7 +2918,9 @@ struct AgentTaskLifecycleEvidenceTests {
                     ),
                     codeState: csNew,
                     environment: env,
-                    sequence: UInt64(sequence)
+                    sequence: UInt64(sequence),
+                    pre: csNew,
+                    post: csNew
                 ), taskID: taskID) == .accepted
             )
         }

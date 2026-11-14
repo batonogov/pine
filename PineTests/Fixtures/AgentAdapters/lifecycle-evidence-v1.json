@@ -63,7 +63,21 @@
         "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
       },
       "vendorSession": null,
-      "sourceSequence": 2
+      "sourceSequence": 2,
+      "preOperationCodeState": {
+        "scheme": 1,
+        "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+        "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "postOperationCodeState": {
+        "scheme": 1,
+        "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+        "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
+      }
     },
     {
       "kind": "reviewerOutcome",
@@ -86,7 +100,21 @@
         "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
       },
       "vendorSession": null,
-      "sourceSequence": 3
+      "sourceSequence": 3,
+      "preOperationCodeState": {
+        "scheme": 1,
+        "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+        "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "postOperationCodeState": {
+        "scheme": 1,
+        "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+        "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
+      }
     },
     {
       "kind": "userAcceptance",

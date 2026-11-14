@@ -83,6 +83,67 @@ img {
     padding: 20px 0 56px;
 }
 
+/* ---------- Pine 3 design preview ---------- */
+
+.future-section {
+    border-top: 1px solid var(--line-strong);
+}
+
+.future-heading,
+.future-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 18px;
+}
+
+.future-status {
+    padding: 5px 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    color: var(--muted-strong);
+    font-size: 12px;
+}
+
+.future-section h2 {
+    max-width: 900px;
+    margin: 24px 0 18px;
+    font-size: clamp(34px, 5.5vw, 64px);
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+}
+
+.future-description {
+    max-width: 720px;
+    color: var(--muted-strong);
+    font-size: 18px;
+    line-height: 1.65;
+}
+
+.future-actions { margin-top: 26px; }
+.future-discussion { padding: 12px 0; font-size: 14px; }
+.future-discussion:hover { color: var(--accent-strong); }
+.future-note { max-width: 720px; margin-top: 16px; color: var(--muted-strong); font-size: 13px; }
+.future-preview { margin-top: 32px; }
+.future-preview > a { display: block; border-radius: var(--radius-lg); }
+.future-preview img { width: 100%; height: auto; border-radius: var(--radius-lg); }
+
+.future-preview figcaption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 16px;
+    color: var(--muted-strong);
+    font-size: 14px;
+}
+
+.future-scenarios { display: flex; flex-wrap: wrap; gap: 8px; }
+.future-scenarios a { padding: 10px 16px; border: 1px solid var(--line-strong); border-radius: 999px; }
+.future-scenarios a:hover { border-color: var(--accent); color: var(--text); }
+
 /* ---------- header ---------- */
 
 .site-header {

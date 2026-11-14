@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex">
+  <title>Pine 3 — интерактивный концепт</title>
+  <link rel="stylesheet" href="prototype.css">
+  <link rel="stylesheet" href="examples.css">
+  <script src="prototype.js" defer></script>
+  <script src="examples.js" defer></script>
+</head>
+<body>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6m0-6L10 14M10 5H5a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-5"/></symbol>
+      <symbol id="i-code" viewBox="0 0 24 24"><path d="m7 7-5 5 5 5m10-10 5 5-5 5M14 4l-4 16"/></symbol>
+      <symbol id="i-inbox" viewBox="0 0 24 24"><path d="m4 5-2 9v5h20v-5l-2-9ZM2 14h6l2 3h4l2-3h6"/></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-attach" viewBox="0 0 24 24"><path d="m8 12 7-7a4 4 0 0 1 6 6L10 22a6 6 0 0 1-8-8L13 3m-8 14 11-11"/></symbol>
+      <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+      <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14A9 9 0 0 1 10 3a9 9 0 1 0 10 11Z"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></symbol>
+      <symbol id="i-paper" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8Zm0 0v5h5M8 12h8m-8 4h6"/></symbol>
+    </defs>
+  </svg>
+
+  <div class="desktop">
+    <div class="app-window" id="app">
+      <aside class="sidebar" aria-label="Навигация по проекту">
+        <div class="window-top">
+          <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+          <span class="wordmark">pine<span> / 3</span></span>
+        </div>
+        <button class="nav-item inbox-link" id="inbox-button">
+          <svg><use href="#i-inbox"/></svg><span>Внимание</span><span class="count" id="inbox-count">2</span>
+        </button>
+        <div class="project-label"><span>ВАШ ПРОЕКТ</span><button class="icon-button small" id="choose-project" aria-label="Выбрать пример проекта" aria-haspopup="dialog"><svg><use href="#i-grid"/></svg></button></div>
+        <button class="project-switch" id="project-button" aria-label="Обзор проекта Atlas">
+          <span class="project-avatar">A<span>↗</span></span>
+          <span><strong>Atlas</strong><small>Путешествовать иначе</small></span>
+        </button>
+        <div class="tasks-heading"><span>Задачи</span><button class="icon-button small" id="new-task" aria-label="Новая задача"><svg><use href="#i-plus"/></svg></button></div>
+        <nav class="task-list" aria-label="Задачи Atlas">
+          <button class="task selected" data-task="home" aria-current="page">
+            <span class="task-dot ready" id="home-dot"></span>
+            <span><strong id="home-label">Первое впечатление</strong><small id="home-state">Результат готов</small></span>
+          </button>
+          <button class="task" data-task="saved">
+            <span class="task-dot question"></span>
+            <span><strong>Избранные места</strong><small id="saved-state">Нужен ваш выбор</small></span>
+          </button>
+          <button class="task" data-task="search">
+            <span class="task-dot working"></span>
+            <span><strong>Поиск по маршрутам</strong><small>Проверяем изменения</small></span>
+          </button>
+        </nav>
+        <div class="sidebar-note"><span class="tiny-orbit" aria-hidden="true"></span><span>Всё остаётся<br>в контексте проекта.</span></div>
+        <div class="sidebar-bottom">
+          <button class="nav-item" id="tools-button"><svg><use href="#i-code"/></svg><span>Код и терминал</span></button>
+          <div class="sidebar-footer"><span class="local-dot"></span><span>Локально на Mac</span><button class="icon-button small" id="theme-button" aria-label="Включить тёмную тему"><svg><use href="#i-moon"/></svg></button></div>
+        </div>
+      </aside>
+
+      <main class="workspace" id="main">
+        <header class="workspace-bar">
+          <div class="breadcrumb"><button class="icon-button" id="sidebar-button" aria-label="Скрыть боковую панель" aria-expanded="true"><svg><use href="#i-sidebar"/></svg></button><button id="breadcrumb-project">Atlas</button><svg><use href="#i-chevron"/></svg><span id="breadcrumb-task">Первое впечатление</span></div>
+          <button class="icon-button" id="history-button" aria-label="История этой задачи"><svg><use href="#i-clock"/></svg></button>
+        </header>
+
+        <section class="result-heading" aria-labelledby="task-title">
+          <div class="heading-copy"><div class="eyebrow" id="eyebrow">ВАША ИДЕЯ, ВОПЛОЩЁННАЯ</div><h1 id="task-title">Меньше суеты.<br class="mobile-break"> Больше открытий.</h1><p id="task-description">Новый первый экран Atlas. Места и настроение — на первом плане.</p></div>
+          <button class="primary-button" id="preview-button"><svg><use href="#i-external"/></svg>Открыть превью</button>
+        </section>
+
+        <section class="result-body" id="result-body">
+          <div class="result-toolbar">
+            <div class="segmented" aria-label="Представление результата">
+              <button class="active" id="result-tab" aria-pressed="true">Результат</button>
+              <button id="changes-tab" aria-pressed="false">Что изменилось<span class="new-change" hidden></span></button>
+            </div>
+            <div class="preview-tools">
+              <span id="revision-label">Версия 02</span>
+              <button class="icon-button" id="annotate-button" aria-label="Указать место для изменения" aria-pressed="false"><svg><use href="#i-target"/></svg></button>
+            </div>
+          </div>
+          <div class="artifact-stage" id="artifact-stage">
+            <div class="browser-chrome"><span class="browser-dots" aria-hidden="true">•••</span><span><span class="lock-icon" aria-hidden="true">⌑</span> atlas.local</span><span class="preview-caption">ПРЕВЬЮ</span></div>
+            <div class="travel-site" id="travel-site">
+              <nav class="travel-nav" aria-label="Навигация демонстрационного сайта"><span class="atlas-logo">atlas<span>®</span></span><span class="travel-nav-links"><button data-travel="places">Места</button><button data-travel="about">О проекте</button></span><button class="saved-link" data-travel="saved">Сохранённое <span>↗</span></button></nav>
+              <div class="travel-hero">
+                <div class="hero-shade"></div>
+                <div class="hero-topline"><span>МЕНЬШЕ ПЛАНОВ. БОЛЬШЕ ЖИЗНИ.</span><span>01 — 03</span></div>
+                <div class="hero-copy" id="hero-copy"><p class="hero-kicker">Небольшое путешествие к себе</p><h2 id="hero-title">Somewhere<br><em>slower.</em></h2><p class="hero-description" id="hero-description">Места, где можно никуда не спешить.<br>И наконец оказаться там, где хочется.</p><button class="explore-button" id="explore-button">Найти своё место <svg><use href="#i-arrow"/></svg></button></div>
+                <div class="hero-location"><span class="location-symbol" aria-hidden="true">↗</span><span>Доломитовые Альпы, Италия<small>46°38′ N &nbsp; 11°43′ E</small></span></div>
+                <button class="annotation-anchor" id="annotation-anchor" aria-label="Добавить замечание к первому экрану"><svg><use href="#i-plus"/></svg></button>
+              </div>
+              <div class="travel-bottom"><span>ДАЛЬШЕ ОТ ПРИВЫЧНОГО</span><p>Необязательно далеко.<br><em>Достаточно по-другому.</em></p><button data-travel="places" aria-label="Посмотреть места"><svg><use href="#i-arrow"/></svg></button></div>
+            </div>
+            <div class="annotation-hint" id="annotation-hint" hidden>Нажмите на первый экран, чтобы оставить замечание <kbd>Esc</kbd></div>
+          </div>
+
+          <section class="changes-panel" id="changes-panel" hidden aria-label="Изменения результата">
+            <div class="changes-intro"><span class="eyebrow">ЭВОЛЮЦИЯ ИДЕИ</span><h2>Тот же замысел.<br>Более точное воплощение.</h2><p id="changes-description">Первый экран стал спокойнее. Главное — место, настроение и одно понятное действие.</p></div>
+            <div class="comparison">
+              <article><div class="compare-label"><span>До</span><span>Версия 01</span></div><div class="mini-site before-site"><strong>ATLAS · TRAVEL</strong><div class="before-menu">Направления &nbsp; Туры &nbsp; Отели &nbsp; Подборки</div><h3>Откройте мир<br>новых путешествий</h3><p>Лучшие направления, уникальные предложения<br>и незабываемые впечатления.</p><div class="before-buttons"><span>Смотреть туры</span><span>Узнать больше</span></div><div class="before-stats"><span>120+ стран</span><span>2 000+ мест</span><span>Лучшие цены</span></div></div></article>
+              <article><div class="compare-label"><span>Сейчас</span><span id="compare-version">Версия 02</span></div><div class="mini-site after-site"><strong>atlas®</strong><h3>Somewhere<br><em>slower.</em></h3><span class="mini-cta">Найти своё место &nbsp; ↗</span></div></article>
+            </div>
+            <div class="change-points"><div><span>01</span><p><strong>Одно главное действие</strong>Вместо конкурирующих кнопок и предложений.</p></div><div><span>02</span><p><strong>Место говорит за себя</strong>Больше фотографии, меньше интерфейса.</p></div><div><span>03</span><p><strong id="change-third-title">Спокойный ритм</strong><span id="change-third-copy">Воздух, ясная иерархия и короткий текст.</span></p></div></div>
+          </section>
+
+          <div class="evidence-row"><button class="evidence-summary" id="evidence-button"><span class="verified-symbol"><svg><use href="#i-check"/></svg></span><strong id="evidence-state">Проверено</strong><span class="evidence-extra" id="evidence-extra">Сборка, 12 тестов и независимое ревью</span><svg class="evidence-chevron"><use href="#i-chevron"/></svg></button><span class="evidence-time" id="evidence-time">В этой версии</span></div>
+        </section>
+
+        <section class="alternate-view" id="alternate-view" hidden></section>
+
+        <section class="feedback-zone" id="feedback-zone">
+          <div class="feedback-context" id="feedback-context" hidden><span class="feedback-context-label"><svg><use href="#i-target"/></svg><span id="feedback-context-text">Первый экран · версия 02</span></span><button class="icon-button small" id="remove-anchor" aria-label="Убрать привязку к месту"><svg><use href="#i-close"/></svg></button></div>
+          <form class="composer" id="feedback-form">
+            <label class="visually-hidden" for="feedback-input">Что хотите улучшить?</label>
+            <textarea id="feedback-input" rows="1" placeholder="Что хотите улучшить?"></textarea>
+            <div class="composer-actions"><button class="icon-button" id="attach-button" type="button" aria-label="Прикрепить изображение"><svg><use href="#i-attach"/></svg></button><span class="composer-hint">Продолжить эту идею</span><button class="send-button" id="send-button" type="submit" aria-label="Отправить уточнение" disabled><svg><use href="#i-up"/></svg></button></div>
+          </form>
+          <input type="file" id="attachment-input" accept="image/png,image/jpeg,image/webp" hidden>
+          <div class="attachment-preview" id="attachment-preview" hidden><img id="attachment-image" alt="Выбранное изображение"><span id="attachment-name"></span><button class="icon-button small" id="remove-attachment" aria-label="Убрать изображение"><svg><use href="#i-close"/></svg></button></div>
+          <div class="composer-footer"><span id="composer-footer-text">Контекст, решения и предыдущий результат сохранятся.</span><span>Codex <span class="agent-dot"></span></span></div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="prototype-bar"><div><span class="prototype-mark"></span><strong>Pine 3</strong><span class="prototype-description">Интерактивный концепт · демонстрационные данные</span></div><div class="prototype-actions"><button id="examples-button">Web · Go · Python · DevOps</button><button id="tour-button">Пройти сценарий <svg><use href="#i-arrow"/></svg></button><button id="reset-button" aria-label="Начать демонстрацию заново">Сначала</button></div></footer>
+  </div>
+
+  <dialog id="detail-dialog" class="detail-dialog">
+    <div class="dialog-header"><span class="eyebrow" id="dialog-eyebrow">ДЕТАЛИ ЗАДАЧИ</span><button class="icon-button" id="close-dialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button></div>
+    <div id="dialog-content"></div>
+  </dialog>
+  <dialog id="preview-dialog" class="preview-dialog">
+    <div class="preview-dialog-bar"><span><strong>Atlas</strong><span>Демонстрационное превью</span></span><button class="icon-button" id="close-preview" aria-label="Закрыть превью"><svg><use href="#i-close"/></svg></button></div>
+    <div id="expanded-preview"></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="visually-hidden" id="announcer" role="status" aria-live="polite"></div>
+</body>
+</html>

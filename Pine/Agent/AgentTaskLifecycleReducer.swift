@@ -105,9 +105,11 @@ nonisolated enum AgentTaskLifecycleReducer {
     }
 
     /// Operation-fingerprint rule (D4), shared by admission and persistence
-    /// validation: for check and reviewer facts, the pre- and
+    /// validation: for check and reviewer facts, supplied pre- and
     /// post-operation code-state fingerprints must both be present, equal to
-    /// each other, and equal to the fact's own code-state identity; every
+    /// each other, and equal to the fact's own code-state identity. Legacy
+    /// facts with neither remain admissible as history, but cannot establish
+    /// Ready or restore current verification. Every
     /// other fact kind carries neither. A mismatch is an invalid fact,
     /// fenced at admission and rejected from durable files.
     static func validOperationFingerprints(
@@ -587,13 +589,25 @@ nonisolated enum AgentTaskLifecycleReducer {
             facts.contains { fact in
                 fact.kind == kind
                     && fact.kind.isPassing(fact.result)
-                    && fact.codeState == codeState
-                    && fact.environment == environment
+                    && hasCurrentOperationIdentity(fact, codeState: codeState, environment: environment)
             }
         }) else {
             return
         }
         task.verificationState = .verified
+    }
+
+    /// Legacy facts remain available as history, but cannot authorize Ready
+    /// without the caller-proven environment and unchanged operation inputs.
+    private static func hasCurrentOperationIdentity(
+        _ fact: AgentTaskEvidenceFact,
+        codeState: AgentTaskCodeStateIdentity,
+        environment: AgentTaskEnvironmentIdentity
+    ) -> Bool {
+        fact.codeState == codeState
+            && fact.environment == environment
+            && fact.preOperationCodeState == codeState
+            && fact.postOperationCodeState == codeState
     }
 
     // MARK: - Ready projection
@@ -706,6 +720,9 @@ nonisolated enum AgentTaskLifecycleReducer {
                 // masked by older ones earlier in the array.
                 guard let passing = kindFacts.first(where: {
                     kind.isPassing($0.result)
+                        && hasCurrentOperationIdentity($0, codeState: codeState, environment: environment)
+                }) ?? kindFacts.first(where: {
+                    kind.isPassing($0.result)
                         && $0.codeState == codeState
                 }) ?? kindFacts.first(where: {
                     kind.isPassing($0.result)
@@ -717,9 +734,12 @@ nonisolated enum AgentTaskLifecycleReducer {
                     gaps.append(.staleEvidence(kind))
                     continue
                 }
-                if let boundEnvironment = passing.environment,
-                   boundEnvironment != environment {
+                guard passing.environment == environment else {
                     gaps.append(.environmentChanged)
+                    continue
+                }
+                if !hasCurrentOperationIdentity(passing, codeState: codeState, environment: environment) {
+                    gaps.append(.staleEvidence(kind))
                 }
             }
             return AgentTaskReadiness(isReady: gaps.isEmpty, gaps: gaps)
