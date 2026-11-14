@@ -27,10 +27,33 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
 
     private let processID: pid_t
 
-    init(
+    convenience init(
         executableURL: URL,
         command: String,
         workingDirectory: URL?
+    ) throws {
+        try self.init(
+            executableURL: executableURL, invocationArguments: ["-c", command],
+            workingDirectory: workingDirectory
+        )
+    }
+
+    /// Argument-array entry point. Shell interpretation is never added here.
+    convenience init(executableURL: URL, arguments: [String], workingDirectory: URL?) throws {
+        guard executableURL.isFileURL, executableURL.path.hasPrefix("/"),
+              !executableURL.path.utf8.contains(0), arguments.count <= 256,
+              arguments.reduce(0, { $0 + $1.utf8.count }) <= 65_536,
+              arguments.allSatisfy({ !$0.utf8.contains(0) }) else {
+            throw Self.posixError(EINVAL)
+        }
+        try self.init(
+            executableURL: executableURL, invocationArguments: arguments,
+            workingDirectory: workingDirectory
+        )
+    }
+
+    private init(
+        executableURL: URL, invocationArguments: [String], workingDirectory: URL?
     ) throws {
         let pipes = SpawnPipes(
             stdin: Pipe(),
@@ -44,7 +67,7 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
             try Self.spawn(
                 processID: &childProcessID,
                 executableURL: executableURL,
-                command: command,
+                arguments: invocationArguments,
                 workingDirectory: workingDirectory,
                 pipes: pipes
             )
@@ -159,7 +182,7 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
     private static func spawn(
         processID: inout pid_t,
         executableURL: URL,
-        command: String,
+        arguments: [String],
         workingDirectory: URL?,
         pipes: SpawnPipes
     ) throws {
@@ -258,7 +281,7 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
         ))
 
         let executablePath = executableURL.path
-        let arguments = [executablePath, "-c", command]
+        let arguments = [executablePath] + arguments
         var argumentPointers: [UnsafeMutablePointer<CChar>?] = []
         defer {
             for pointer in argumentPointers {
