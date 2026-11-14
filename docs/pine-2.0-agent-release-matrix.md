@@ -1,6 +1,9 @@
 # Pine 2.0 agent release matrix
 
-This matrix is the release gate for Pine's agent workflows. A row marked
+This is the historical Pine 2.0 agent-workflow gate, retained with its original
+uncompleted manual observations. It is not the live Pine 3.0 acceptance record;
+that gate belongs to [#1761](https://github.com/batonogov/pine/issues/1761).
+A row marked
 `Pending` blocks the Pine 2.0 release; it must not be converted to `Pass`
 without recording the exact environment and a human result. Automated tests
 use only checked-in synthetic data and must not read a user's agent config,
@@ -73,7 +76,7 @@ These claims are deliberately conservative. Process observation is the
 supported mechanism and generic execution is the lower-tier fallback; terminal
 text is never parsed as trusted lifecycle evidence.
 
-| Adapter | Verified version | Tier | Mechanism | Required fallback | Limitation |
+| Adapter | Catalog fixture version | Tier | Mechanism | Required fallback | Limitation |
 | --- | --- | --- | --- | --- | --- |
 | Pi | 0.83.0 | Detected | Exact executable alias + process generation | Generic terminal command | Process termination only |
 | Codex | 0.146.0 | Detected | Exact executable alias + process generation | Generic terminal command | Process termination only |
@@ -93,6 +96,14 @@ text is never parsed as trusted lifecycle evidence.
 | Cline | 3.0.74 | Detected | Exact executable alias + process generation | Generic terminal command | JSON/ACP/hooks disabled; process termination only |
 | Grok Build | 1.0.77 | Detected | Exact executable alias + process generation | Generic terminal command | Headless JSON/ACP disabled; process termination only |
 | Kilo Code | 7.8.27 | Detected | Exact executable alias + process generation | Generic terminal command | ACP/serve disabled; process termination only |
+
+The version column is the synthetic process fixture label, not a supported
+protocol floor. The [dated capability evidence audit](cli-capability-evidence-2026-11-14.md)
+records source dates, limited binary version/help observations, and unknown
+handshake/end-to-end coverage. No fixture version is upgraded from upstream
+release availability. Empry⊙ is retired with [#1766](https://github.com/batonogov/pine/issues/1766);
+preserve historical records and generic terminal execution. The active catalog
+and all nine Help pages reflect this retirement.
 
 Empry⊙ first-party detection and presentation were retired on November 14,
 2026 and are excluded from Pine 3.0 structured adapter plans. Existing task and
