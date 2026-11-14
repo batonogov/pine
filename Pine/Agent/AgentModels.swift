@@ -42,8 +42,6 @@ enum AgentType: Equatable, Sendable {
     case crush
     /// Moonshot AI Kimi Code (`kimi`).
     case kimiCode
-    /// Empry⊙ coding agent (`empryo`).
-    case empryo
     /// Google Antigravity CLI (`agy`).
     case antigravity
     /// Factory Droid CLI (`droid`).
@@ -73,7 +71,6 @@ enum AgentType: Equatable, Sendable {
         case .qwenCode: "Qwen Code"
         case .crush: "Crush"
         case .kimiCode: "Kimi Code"
-        case .empryo: "Empry⊙"
         case .antigravity: "Antigravity"
         case .droid: "Droid"
         case .cline: "Cline"
@@ -96,7 +93,7 @@ enum AgentType: Equatable, Sendable {
     }
 
     /// Color used for UI color-coding of this agent. Adaptive system colors
-    /// are preferred; `.kimiCode`, `.empryo`, and the Pine 3.0 additions use
+    /// are preferred; `.kimiCode` and the Pine 3.0 additions use
     /// fixed, appearance-stable hues (distinct from the same-named adaptive
     /// color already assigned to another agent, though red/brown pairs are
     /// perceptually close as small dots) because every adaptive system color
@@ -116,7 +113,6 @@ enum AgentType: Equatable, Sendable {
         case .qwenCode: .systemRed
         case .crush: .systemBrown
         case .kimiCode: .magenta
-        case .empryo: .cyan
         case .antigravity: .brown
         case .droid: .red
         case .cline: .blue

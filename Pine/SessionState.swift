@@ -155,12 +155,12 @@ struct SessionState: Codable, Sendable {
     // MARK: - Clear
 
     /// Removes the saved tab session for a specific project.
-    static func clear(for projectURL: URL, defaults: UserDefaults = .standard) {
+    static func clear(for projectURL: URL, defaults: UserDefaults = PineStorageContext.defaults) {
         defaults.removeObject(forKey: key(for: projectURL))
     }
 
     /// Removes all saved sessions (used by `--reset-state` launch argument for UI testing).
-    static func removeAll(defaults: UserDefaults = .standard) {
+    static func removeAll(defaults: UserDefaults = PineStorageContext.defaults) {
         let allKeys = defaults.dictionaryRepresentation().keys
         for key in allKeys where key.hasPrefix(perProjectPrefix) {
             defaults.removeObject(forKey: key)
@@ -188,7 +188,7 @@ struct SessionState: Codable, Sendable {
         panePinnedPaths: [String: [String]]? = nil,
         paneTransientPreviewPaths: [String: String]? = nil,
         globalTabSwitchOrder: [SessionTabReference]? = nil,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         faultInjector: PersistenceFaultInjector = .processEnvironment
     ) -> Bool {
         let state = SessionState(
@@ -255,7 +255,7 @@ struct SessionState: Codable, Sendable {
     // MARK: - Load
 
     /// Returns the saved tab session for a specific project, if the folder still exists.
-    static func load(for projectURL: URL, defaults: UserDefaults = .standard) -> SessionState? {
+    static func load(for projectURL: URL, defaults: UserDefaults = PineStorageContext.defaults) -> SessionState? {
         guard let data = defaults.data(forKey: key(for: projectURL)) else {
             return loadLegacy(for: projectURL, defaults: defaults)
         }

@@ -13,7 +13,6 @@ The checked-in catalog schema is version 1. The versions below were verified
 against sanitized command-shape fixtures; Pi, Codex, and OpenCode were also
 checked against locally installed binaries on August 3, 2026, and Kimi Code
 2.1.1 was checked against a locally installed binary on September 28, 2026.
-Empry⊙ 3.12.2-beta was checked locally with `empryo --version` and `empryo --help`; command shapes are covered by synthetic fixtures.
 Antigravity 1.5.6, Droid 1.9.0, Cline 3.0.74, Grok Build 1.0.77, and Kilo
 Code 7.8.27 were verified on November 12, 2026 against documented release
 sources (the official Antigravity CLI release manifest, npm registry
@@ -39,12 +38,17 @@ releases.
 | [Qwen Code](https://github.com/QwenLM/qwen-code) | `qwen` | 0.21.4 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Machine-readable output was reviewed but is not trusted from an ambient terminal. |
 | [Crush](https://github.com/charmbracelet/crush) | `crush` | 0.88.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Workspace/SSE is experimental and not enabled without a registry-minted authenticated connection. |
 | [Kimi Code](https://www.kimi.com/code/docs/en/) | `kimi`, `kimi-code` | 2.1.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. The CLI rewrites its process title to `kimi-code`, so both aliases are required for detection. |
-| [Empry⊙](https://empryo.com/) | `empryo` | 3.12.2-beta | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Headless `--events` is not enabled as a trusted lifecycle transport. |
 | [Antigravity](https://antigravity.google/docs/cli/headless) | `agy` | 1.5.6 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Headless `--output-format json\|stream-json` events were reviewed but are disabled until Pine launches and authenticates the transport. |
 | [Droid](https://docs.factory.com/droid-cli/cli-reference) | `droid` | 1.9.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | `droid exec` JSON/stream/JSON-RPC output and ACP were reviewed but are disabled until Pine launches and authenticates the transport. |
 | [Cline](https://github.com/cline/cline) | `cline` | 3.0.74 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | `--json` output, `--acp` mode, and lifecycle hooks were reviewed but are disabled until Pine launches and authenticates the transport. |
 | [Grok Build](https://github.com/xai-org/grok-build) | `grok` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Headless `--output-format json\|streaming-json` and ACP were reviewed but are disabled until Pine launches and authenticates the transport. |
 | [Kilo Code](https://github.com/Kilo-Org/kilocode) | `kilo`, `kilocode` | 7.8.27 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | `kilo acp`, `kilo serve`, and `kilo run --format json` were reviewed but are disabled. Its OpenCode fork lineage does not grant `opencode` alias or schema compatibility; only the exact `kilo`/`kilocode` executables are detected. |
+
+Empry⊙ first-party detection and presentation were retired on November 14,
+2026. Existing task and history records remain readable as generic historical
+metadata, and remembered defaults require a new explicit agent choice. Manual
+terminal commands remain available. Empry⊙ is excluded from Pine 3.0 structured
+adapter plans; historical release records remain unchanged.
 
 ## Tier meanings
 

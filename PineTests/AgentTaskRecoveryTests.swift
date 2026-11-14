@@ -4,6 +4,31 @@ import Testing
 
 @MainActor
 struct AgentTaskRecoveryTests {
+    @Test("Retired history cannot trigger an executable version probe")
+    func retiredMetadataNeverProbesExecutable() async throws {
+        var object = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(makeTask())) as? [String: Any]
+        )
+        object["descriptor"] = ["typeIdentifier": "empryo", "launchExecutable": "empryo"]
+        let task = try JSONDecoder().decode(
+            AgentTask.self, from: JSONSerialization.data(withJSONObject: object)
+        )
+        let inspector = AgentTaskRecoveryInspector(processRunner: { _, _, _, _ in
+            Issue.record("Retired recovery must not run a version probe")
+            return ProcessRunResult(stdout: "", stderr: "", exitCode: 0, timedOut: false)
+        })
+        #expect(await inspector.inspect(task: task, action: .resumeVendorSession)
+            == .unavailable(.adapterUnavailable))
+        #expect(!inspector.canOfferVendorResume(for: task))
+        guard case .ready(let plan) = AgentTaskRecoveryPlanner.evaluate(
+            task: task, action: .startNewSession, inspection: inspection(), recipes: []
+        ) else {
+            Issue.record("Retired history must still offer a generic shell")
+            return
+        }
+        #expect(plan.process == nil)
+    }
+
     @Test("New session is an honest shell plan with the saved objective")
     func newSessionPlan() throws {
         let task = makeTask()

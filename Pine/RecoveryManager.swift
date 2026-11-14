@@ -21,7 +21,7 @@ final class RecoveryManager {
 
     /// Root recovery directory under Application Support.
     nonisolated static var rootDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        PineStorageContext.applicationSupportDirectory
             .appendingPathComponent("Pine/Recovery")
     }
 

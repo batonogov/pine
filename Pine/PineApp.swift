@@ -14,7 +14,6 @@ import Sparkle
 import SwiftUI
 import os
 
-@main
 struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
@@ -1604,14 +1603,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
         // Must be set before applicationDidFinishLaunching — the system runs
         // window restoration between willFinishLaunching and didFinishLaunching.
-        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+        PineStorageContext.defaults.set(false, forKey: "NSQuitAlwaysKeepsWindows")
 
         // Run data migrations before any other UserDefaults access
         MigrationManager.withDefaultMigrations().runMigrations()
 
         // Default blame to ON for first launch
-        if UserDefaults.standard.object(forKey: BlameConstants.storageKey) == nil {
-            UserDefaults.standard.set(true, forKey: BlameConstants.storageKey)
+        if PineStorageContext.defaults.object(forKey: BlameConstants.storageKey) == nil {
+            PineStorageContext.defaults.set(true, forKey: BlameConstants.storageKey)
         }
 
         // Preload syntax grammars at startup instead of lazily on first tab open

@@ -36,7 +36,8 @@ struct ProductionDefaultsIsolationTests {
     /// Production-domain keys that embed the given path — i.e. leaked writes.
     private func leakedProductionKeys(containing path: String) -> Set<String> {
         Set(
-            UserDefaults.standard.dictionaryRepresentation().keys
+            Set(UserDefaults.standard.dictionaryRepresentation().keys)
+                .union(PineStorageContext.defaults.dictionaryRepresentation().keys)
                 .filter { $0.contains(path) }
         )
     }
@@ -111,5 +112,6 @@ struct ProductionDefaultsIsolationTests {
 
         #expect(defaults.stringArray(forKey: probeKey) == ["scoped"])
         #expect(UserDefaults.standard.stringArray(forKey: probeKey) == nil)
+        #expect(PineStorageContext.defaults.stringArray(forKey: probeKey) == nil)
     }
 }

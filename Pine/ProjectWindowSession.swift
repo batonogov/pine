@@ -157,7 +157,7 @@ final class ProjectWindowSession {
 
     init(
         initialProjectURL: URL,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         worktreeService: AgentWorktreeService = AgentWorktreeService(),
         toolResolver: ExternalToolResolver = .fromEnvironment(),
         managedRootResolver: @escaping @Sendable (URL) -> URL = {
@@ -438,6 +438,13 @@ final class ProjectWindowSession {
             return projectName
         }
         return "\(projectName) — \(Self.shortBranchName(worktree.branchName))"
+    }
+
+    /// Retired defaults remain metadata until the user explicitly chooses again.
+    var hasRetiredRememberedAgent: Bool {
+        defaults.string(forKey: Self.lastAgentIdentifierKey).map {
+            AgentPresentationCatalog.isRetired(stableIdentifier: $0)
+        } ?? false
     }
 
     var availableAgentOptions: [ProjectAgentLaunchOption] {
@@ -751,6 +758,10 @@ final class ProjectWindowSession {
         registry: ProjectRegistry
     ) async {
         guard !isLaunchingAgent else { return }
+        guard !AgentPresentationCatalog.isRetired(stableIdentifier: option.id) else {
+            alertMessage = String(localized: "projectSwitcher.retiredAgentChoice")
+            return
+        }
         isLaunchingAgent = true
         defer { isLaunchingAgent = false }
 
@@ -1033,10 +1044,7 @@ final class ProjectWindowSession {
         let name = digest.prefix(12).map {
             String(format: "%02x", $0)
         }.joined()
-        return FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        )[0]
+        return PineStorageContext.applicationSupportDirectory
             .appendingPathComponent("Pine", isDirectory: true)
             .appendingPathComponent("AgentWorktrees", isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)

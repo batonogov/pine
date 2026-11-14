@@ -49,6 +49,7 @@ nonisolated struct AgentID: CanonicalAdapterIdentifier {
         self.value = try AdapterIdentifierValidation.canonical(value, field: "agentID")
     }
 
+    // Includes retired IDs solely for decoding historical identity.
     init(migratingLegacyStableIdentifier value: String) throws {
         guard [
             "claudeCode", "codex", "aider", "copilot", "pi", "openCode", "gemini",

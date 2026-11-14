@@ -79,7 +79,8 @@ nonisolated enum AgentTaskRecoveryPlanner {
         task: AgentTask,
         recipes: [AgentTaskResumeRecipe]
     ) -> Bool {
-        guard task.lifecycle == .paused,
+        guard !task.descriptor.isRetired,
+              task.lifecycle == .paused,
               task.origin == .pineLaunched,
               task.runs.last?.liveness != .live,
               let identity = task.runs.last?.vendorIdentity,
@@ -229,6 +230,9 @@ nonisolated struct AgentTaskRecoveryInspector: Sendable {
         task: AgentTask,
         action: AgentTaskRecoveryAction
     ) async -> AgentTaskRecoveryEvaluation {
+        guard action != .resumeVendorSession || !task.descriptor.isRetired else {
+            return .unavailable(.adapterUnavailable)
+        }
         let projectPath = task.project.canonicalProjectPath
         let worktreePath = task.project.canonicalWorktreePath
         let executableName = task.descriptor.launchExecutable

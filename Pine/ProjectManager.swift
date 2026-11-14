@@ -1832,7 +1832,7 @@ final class ProjectManager {
 
     init(
         lspSettings: LSPSettings = .shared,
-        sessionDefaults: UserDefaults = .standard,
+        sessionDefaults: UserDefaults = PineStorageContext.defaults,
         agentProcessSnapshotPoller: AgentProcessSnapshotPoller? = nil,
         agentTaskRegistry: AgentTaskRegistry? = nil,
         workspaceFilesystemValidationSeam:

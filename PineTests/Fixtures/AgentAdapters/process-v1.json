@@ -69,11 +69,6 @@
       "commands": ["kimi", "kimi-code", "/opt/homebrew/bin/kimi"]
     },
     {
-      "stableIdentifier": "empryo",
-      "testedVersion": "3.12.2-beta",
-      "commands": ["empryo", "/opt/homebrew/bin/empryo --headless --events task", "bun /opt/homebrew/bin/empryo --headless --chat", "node /usr/local/bin/empryo.js --headless task"]
-    },
-    {
       "stableIdentifier": "antigravity",
       "testedVersion": "1.5.6",
       "commands": ["agy", "/opt/homebrew/bin/agy -p --output-format json"]

@@ -333,7 +333,7 @@ actor ContextFileWriter {
     /// The directory where context files are stored.
     var contextsDirectory: URL {
         if let override = contextsDirOverride { return override }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return PineStorageContext.applicationSupportDirectory
             .appendingPathComponent(Self.contextsDirName)
     }
 

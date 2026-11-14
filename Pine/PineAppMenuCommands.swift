@@ -52,9 +52,9 @@ struct PineAppMenuCommands: Commands {
     /// `recentProjects`: a closure keeps Commands off the AppDelegate.
     let projectRegistry: () -> ProjectRegistry?
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
-    @AppStorage("minimapVisible") private var minimapVisible = true
-    @AppStorage(BlameConstants.storageKey) private var blameVisible = true
-    @AppStorage("wordWrapEnabled") private var wordWrapEnabled = true
+    @AppStorage("minimapVisible", store: PineStorageContext.defaults) private var minimapVisible = true
+    @AppStorage(BlameConstants.storageKey, store: PineStorageContext.defaults) private var blameVisible = true
+    @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) private var wordWrapEnabled = true
     private var keybindings: UserKeybindingRegistry {
         ExtensibilityManager.shared.keybindings
     }
@@ -1054,9 +1054,22 @@ struct PineAppMenuCommands: Commands {
             // live in the menu bar, never their only route.
             Menu {
                 let options = agentLaunchOptions
+                let newAgentChord = keybindings.effectiveChord(for: .newAgent)
                 if options.isEmpty {
                     Text(Strings.projectSwitcherNoAgents)
                 } else {
+                    if windowSession()?.hasRetiredRememberedAgent == true {
+                        Button(Strings.projectSwitcherChooseAgent) {
+                            ProjectAgentLaunchSelection.post(
+                                identifier: nil,
+                                projectManager: focusedProject
+                            )
+                        }
+                        .effectiveKeyboardShortcut(
+                            newAgentChord
+                        )
+                        Divider()
+                    }
                     ForEach(options) { option in
                         Button(option.displayName) {
                             ProjectAgentLaunchSelection.post(
@@ -1071,7 +1084,8 @@ struct PineAppMenuCommands: Commands {
                         // chord nothing to fire.
                         .effectiveKeyboardShortcut(
                             option.id == options.first?.id
-                                ? keybindings.effectiveChord(for: .newAgent)
+                                && windowSession()?.hasRetiredRememberedAgent != true
+                                ? newAgentChord
                                 : nil
                         )
                     }
