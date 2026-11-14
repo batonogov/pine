@@ -1354,13 +1354,20 @@ nonisolated enum AgentPresentationCatalog {
         "qwenCode": ("Qwen Code", .generic, ["qwen"]),
         "crush": ("Crush", .generic, ["crush"]),
         "kimiCode": ("Kimi Code", .generic, ["kimi", "kimi-code"]),
-        "empryo": ("Empry⊙", .generic, ["empryo"]),
         "antigravity": ("Antigravity", .generic, ["agy"]),
         "droid": ("Droid", .generic, ["droid"]),
         "cline": ("Cline", .generic, ["cline"]),
         "grokBuild": ("Grok Build", .generic, ["grok"]),
         "kiloCode": ("Kilo Code", .generic, ["kilo", "kilocode"])
     ]
+
+    // Retired identities remain reserved for historical records, never discovery.
+    private static let retiredIdentifiers: Set<String> = ["empryo"]
+    private static let retiredAliases: Set<String> = ["empryo"]
+
+    static func isRetired(stableIdentifier: String) -> Bool {
+        retiredIdentifiers.contains(stableIdentifier)
+    }
 
     static var builtInStableIdentifiers: Set<String> { Set(builtIns.keys) }
 
@@ -1371,6 +1378,9 @@ nonisolated enum AgentPresentationCatalog {
     }
 
     static func validateBuiltIn(_ descriptor: AgentPresentationDescriptor) throws {
+        guard !isRetired(stableIdentifier: descriptor.agentID.value) else {
+            throw AdapterRegistrationError.invalidBuiltInPresentation
+        }
         guard let expected = builtIns[descriptor.agentID.value] else { return }
         let aliases = Set(descriptor.executableAliases.map(\.value))
         guard descriptor.displayName == expected.0, descriptor.style == expected.1,
@@ -1378,7 +1388,10 @@ nonisolated enum AgentPresentationCatalog {
     }
 
     static func validateReservedNames(_ descriptor: AgentPresentationDescriptor) throws {
-        let reservedAliases = Set(builtIns.values.flatMap { $0.2 })
+        guard !isRetired(stableIdentifier: descriptor.agentID.value) else {
+            throw AdapterRegistrationError.invalidBuiltInPresentation
+        }
+        let reservedAliases = Set(builtIns.values.flatMap { $0.2 }).union(retiredAliases)
         guard builtIns[descriptor.agentID.value] != nil
                 || Set(descriptor.executableAliases.map(\.value)).isDisjoint(with: reservedAliases) else {
             throw AdapterRegistrationError.aliasCollision
@@ -1447,6 +1460,16 @@ nonisolated struct LegacyAgentMigrationCatalog: Sendable {
                 originalStableIdentifier: stableIdentifier,
                 canonicalAgentID: presentation.agentID,
                 presentation: presentation
+            )
+        }
+        if AgentPresentationCatalog.isRetired(stableIdentifier: stableIdentifier) {
+            let agentID = try AgentID(migratingLegacyStableIdentifier: stableIdentifier)
+            return LegacyAgentMigration(
+                originalStableIdentifier: stableIdentifier,
+                canonicalAgentID: agentID,
+                presentation: try AgentPresentationDescriptor(
+                    agentID: agentID, displayName: "Empry⊙", executableAliases: [], style: .generic
+                )
             )
         }
         guard stableIdentifier.hasPrefix("generic:") else { throw LegacyMigrationError.malformedIdentifier }

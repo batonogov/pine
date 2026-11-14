@@ -616,7 +616,9 @@ final class AgentTaskRegistry {
     func rememberedAgentDescriptor(
         for project: AgentTaskProjectIdentity
     ) -> AgentDescriptor? {
-        envelopeStateByProject[project]?.rememberedAgent
+        guard let descriptor = envelopeStateByProject[project]?.rememberedAgent,
+              !descriptor.isRetired else { return nil }
+        return descriptor
     }
 
     /// Invalidates the task's verification and acceptance after a relevant
@@ -2704,6 +2706,7 @@ final class AgentTaskRegistry {
     }
 
     private func validLaunchExecutable(_ descriptor: AgentDescriptor) -> Bool {
+        guard !descriptor.isRetired else { return false }
         guard let executable = descriptor.launchExecutable else { return true }
         return descriptor.agentType.cliNames.contains(executable)
             && executable.utf8.count <= limits.maxAgentIdentifierBytes

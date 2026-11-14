@@ -9,42 +9,56 @@ The executable release procedure, automated gate inventory, OS/renderer test
 matrix, and accessibility checklist live in the
 [Pine 2.0 agent release matrix](pine-2.0-agent-release-matrix.md).
 
-The checked-in catalog schema is version 1. The versions below were verified
-against sanitized command-shape fixtures; Pi, Codex, and OpenCode were also
-checked against locally installed binaries on August 3, 2026, and Kimi Code
-2.1.1 was checked against a locally installed binary on September 28, 2026.
-Empry⊙ 3.12.2-beta was checked locally with `empryo --version` and `empryo --help`; command shapes are covered by synthetic fixtures.
-Antigravity 1.5.6, Droid 1.9.0, Cline 3.0.74, Grok Build 1.0.77, and Kilo
-Code 7.8.27 were verified on November 12, 2026 against documented release
-sources (the official Antigravity CLI release manifest, npm registry
-metadata for `droid`, `cline`, and `@kilocode/cli` — cross-checked with the
-Kilo GitHub release, and the Grok Build changelog). None of those five
-executables was installed on the verification host, so their entries are
-release-source-verified and fixture-tested, not binary-verified.
-Links point to the upstream projects used to verify the remaining current
-releases.
+The checked-in catalog schema is version 1. **Catalog fixture version** below
+identifies the version label in the synthetic process-name fixture; it is not
+a minimum protocol version or a certified integration version. All retained
+first-party entries remain **Detected**: process snapshots with observed
+process-generation trust, manual terminal launch/new sessions, and process
+termination observations only. No structured transport, approval, provider
+resume, account/model discovery, or verified completion is enabled by these
+entries. The manual terminal can still run arbitrary programs.
 
-| Agent | Executable aliases | Verified version | Tier | Event source and trust | Launch / resume | Notification accuracy | Current limitation |
+The [dated capability evidence audit](cli-capability-evidence-2026-11-14.md)
+separates source review, fixtures, limited version/help observations, handshake,
+and end-to-end checks for every entry. It records identity, evidence dates and
+platform gaps, current upstream transport candidates, and required follow-up.
+The catalog's version labels are intentionally unchanged by the newer
+version/help observations: OpenCode 2.3.0 help does not upgrade the existing
+1.18.10 fixture into a verified V2 ACP integration.
+
+Empry⊙ first-party recognition/presentation is retired with
+[#1766](https://github.com/batonogov/pine/issues/1766) (2026-11-14 decision).
+Legacy records and manual generic terminal use remain; there is no planned
+structured adapter. The earlier wrapper version probe changed its runtime;
+that observation is not passive discovery and must not be repeated for a badge.
+The active catalog and all nine Help pages reflect this retirement.
+
+| Agent | Executable aliases | Catalog fixture version | Tier | Event source and trust | Launch / resume | Notification accuracy | Current limitation |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| [Pi](https://github.com/badlogic/pi-mono) | `pi` | 0.83.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
-| [Codex](https://github.com/openai/codex) | `codex` | 0.146.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
-| [Claude Code](https://github.com/anthropics/claude-code) | `claude` | 2.1.220 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
-| [OpenCode](https://github.com/anomalyco/opencode) | `opencode` | 1.18.10 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
-| [GitHub Copilot CLI](https://github.com/github/copilot-cli) | `github-copilot-cli`, `copilot` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
-| [Aider](https://github.com/Aider-AI/aider) | `aider` | 0.86.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `gemini` | 0.53.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. |
-| [Amp](https://ampcode.com/manual) | `amp` | 0.0.1785747753-g51f676 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Streaming JSON was reviewed but is disabled until Pine can authenticate and bind the launch transport. |
-| [Cursor Agent](https://docs.cursor.com/en/cli/overview) | `cursor-agent` | 2026.07.23-e383d2b | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | JSON is limited to Pine-launched print mode; interactive sessions stay detected-only and `--force` is never enabled. |
-| [Goose](https://github.com/aaif-goose/goose) | `goose` | 1.45.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | ACP was reviewed but is disabled until Pine provides authenticated, bounded stdio negotiation. |
-| [Qwen Code](https://github.com/QwenLM/qwen-code) | `qwen` | 0.21.4 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Machine-readable output was reviewed but is not trusted from an ambient terminal. |
-| [Crush](https://github.com/charmbracelet/crush) | `crush` | 0.88.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Workspace/SSE is experimental and not enabled without a registry-minted authenticated connection. |
-| [Kimi Code](https://www.kimi.com/code/docs/en/) | `kimi`, `kimi-code` | 2.1.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No documented structured event channel is enabled. The CLI rewrites its process title to `kimi-code`, so both aliases are required for detection. |
-| [Empry⊙](https://empryo.com/) | `empryo` | 3.12.2-beta | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Headless `--events` is not enabled as a trusted lifecycle transport. |
-| [Antigravity](https://antigravity.google/docs/cli/headless) | `agy` | 1.5.6 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Headless `--output-format json\|stream-json` events were reviewed but are disabled until Pine launches and authenticates the transport. |
-| [Droid](https://docs.factory.com/droid-cli/cli-reference) | `droid` | 1.9.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | `droid exec` JSON/stream/JSON-RPC output and ACP were reviewed but are disabled until Pine launches and authenticates the transport. |
-| [Cline](https://github.com/cline/cline) | `cline` | 3.0.74 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | `--json` output, `--acp` mode, and lifecycle hooks were reviewed but are disabled until Pine launches and authenticates the transport. |
-| [Grok Build](https://github.com/xai-org/grok-build) | `grok` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Headless `--output-format json\|streaming-json` and ACP were reviewed but are disabled until Pine launches and authenticates the transport. |
-| [Kilo Code](https://github.com/Kilo-Org/kilocode) | `kilo`, `kilocode` | 7.8.27 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | `kilo acp`, `kilo serve`, and `kilo run --format json` were reviewed but are disabled. Its OpenCode fork lineage does not grant `opencode` alias or schema compatibility; only the exact `kilo`/`kilocode` executables are detected. |
+| [Pi](https://github.com/badlogic/pi-mono) | `pi` | 0.83.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Codex](https://github.com/openai/codex) | `codex` | 0.146.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Claude Code](https://github.com/anthropics/claude-code) | `claude` | 2.1.220 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [OpenCode](https://github.com/anomalyco/opencode) | `opencode` | 1.18.10 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [GitHub Copilot CLI](https://github.com/github/copilot-cli) | `github-copilot-cli`, `copilot` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Aider](https://github.com/Aider-AI/aider) | `aider` | 0.86.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `gemini` | 0.53.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Amp](https://ampcode.com/manual) | `amp` | 0.0.1785747753-g51f676 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Cursor Agent](https://docs.cursor.com/en/cli/overview) | `cursor-agent` | 2026.07.23-e383d2b | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Goose](https://github.com/aaif-goose/goose) | `goose` | 1.45.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Qwen Code](https://github.com/QwenLM/qwen-code) | `qwen` | 0.21.4 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Crush](https://github.com/charmbracelet/crush) | `crush` | 0.88.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Kimi Code](https://www.kimi.com/code/docs/en/) | `kimi`, `kimi-code` | 2.1.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Antigravity](https://antigravity.google/docs/cli/headless) | `agy` | 1.5.6 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Droid](https://docs.factory.com/droid-cli/cli-reference) | `droid` | 1.9.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Cline](https://github.com/cline/cline) | `cline` | 3.0.74 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Grok Build](https://github.com/xai-org/grok-build) | `grok` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Kilo Code](https://github.com/Kilo-Org/kilocode) | `kilo`, `kilocode` | 7.8.27 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+
+Empry⊙ first-party detection and presentation were retired on November 14,
+2026. Existing task and history records remain readable as generic historical
+metadata, and remembered defaults require a new explicit agent choice. Manual
+terminal commands remain available. Empry⊙ is excluded from Pine 3.0 structured
+adapter plans; historical release records remain unchanged.
 
 ## Tier meanings
 
@@ -92,7 +106,11 @@ Accordingly, the compatibility layer must not trigger a success notification,
 resume an old conversation, or mark an attention request solely from process
 timing or terminal text.
 
-## Structured-interface evaluation
+## Historical structured-interface evaluation
+
+The following records describe earlier source/fixture evaluations, not current
+protocol floors or completed integration tests. The [2026-11-14 audit](cli-capability-evidence-2026-11-14.md)
+supersedes their route descriptions where upstream changed.
 
 On August 3, 2026, Pine evaluated the five additional macOS terminal agents
 named in issue #1304. Their exact executable aliases are now first-party

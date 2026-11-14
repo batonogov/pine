@@ -37,7 +37,7 @@ struct FirstPartyAgentCompatibilityTests {
 
     @Test func catalogIsCompleteUniqueAndFailClosed() throws {
         let records = FirstPartyAgentCompatibilityCatalog.records
-        #expect(records.count == 19)
+        #expect(records.count == 18)
         #expect(Set(records.map(\.stableIdentifier)).count == records.count)
         #expect(records.allSatisfy { $0.schemaVersion == FirstPartyAgentCompatibilityCatalog.schemaVersion })
         #expect(records.allSatisfy { $0.supportTier == .detected })
@@ -199,28 +199,61 @@ struct FirstPartyAgentCompatibilityTests {
         return try JSONDecoder().decode(ProtocolReviewFixture.self, from: data)
     }
 
-    @Test func empryoCommandsResolveAndPersistWithoutClaimingStructuredEvents() throws {
-        let commands = [
-            "empryo", "/opt/homebrew/bin/empryo --headless --events task",
-            "bun /opt/homebrew/bin/empryo --headless --chat",
-            "node /usr/local/bin/empryo.js --headless task",
-        ]
-        for command in commands {
-            let executable = AgentDetector.extractExecutableName(from: command)
-            let type = try #require(AgentType.resolve(fromProcessName: executable))
-            #expect(type.stableIdentifier == "empryo")
-            #expect(type.displayName == "Empry⊙")
-            #expect(AgentType(stableIdentifier: type.stableIdentifier) == type)
+    @Test func retiredLegacyFixturePreservesUnrelatedRecordsWithoutAuthority() throws {
+        struct LegacyFixture: Decodable {
+            let history: [AgentHistoryEntry]
+            let descriptors: [AgentDescriptor]
         }
-        let record = try #require(FirstPartyAgentCompatibilityCatalog.record(stableIdentifier: "empryo"))
-        #expect(record.executableAliases == ["empryo"])
-        #expect(record.notificationAccuracy == .processTerminationOnly)
-        #expect(record.supportTier == .detected)
-        let presentation = try #require(try AgentPresentationCatalog.builtIn(stableIdentifier: "empryo"))
-        try AgentPresentationCatalog.validateBuiltIn(presentation)
-        #expect(presentation.displayName == "Empry⊙")
-        for lookalike in ["empryo-helper", "empryo-server", "empryo.com"] {
-            #expect(AgentType.resolve(fromProcessName: lookalike) == .generic(name: lookalike))
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appending(path: "Fixtures/AgentAdapters/retired-empryo-v1.json")
+        let fixture = try JSONDecoder().decode(LegacyFixture.self, from: Data(contentsOf: url))
+        #expect(fixture.history.count == 2)
+        #expect(fixture.history.map(\.agentTypeRaw) == ["empryo", "codex"])
+        #expect(fixture.history[0].attribution == .heuristic)
+        #expect(fixture.history[0].verifiedChangeSet == nil)
+        #expect(fixture.descriptors.map(\.typeIdentifier) == ["empryo", "codex", "future-agent"])
+        #expect(fixture.descriptors[0].agentType == .generic(name: "Empry⊙"))
+        #expect(fixture.descriptors[0].isRetired)
+        #expect(!fixture.descriptors[1].isRetired)
+        #expect(fixture.descriptors[2].agentType == .generic(name: "future-agent"))
+        let data = try JSONEncoder().encode(fixture.descriptors)
+        #expect(try JSONDecoder().decode([AgentDescriptor].self, from: data) == fixture.descriptors)
+    }
+
+    @Test func retiredEmpryoIsHistoricalMetadataOnly() throws {
+        #expect(FirstPartyAgentCompatibilityCatalog.record(stableIdentifier: "empryo") == nil)
+        #expect(AgentPresentationCatalog.stableIdentifier(forExecutableAlias: "empryo") == nil)
+        #expect(try AgentPresentationCatalog.builtIn(stableIdentifier: "empryo") == nil)
+        #expect(AgentType(stableIdentifier: "empryo") == .generic(name: "Empry⊙"))
+        #expect(AgentType.resolve(fromProcessName: "empryo") == .generic(name: "empryo"))
+        let migrations = try LegacyAgentMigrationCatalog(
+            stableIdentifiers: ["empryo", "codex", "generic:Custom"]
+        )
+        let retired = try #require(migrations.lookup(stableIdentifier: "empryo"))
+        #expect(retired.canonicalAgentID.value == "empryo")
+        #expect(retired.presentation.displayName == "Empry⊙")
+        #expect(retired.presentation.style == .generic)
+        #expect(retired.presentation.executableAliases.isEmpty)
+        #expect(migrations.lookup(stableIdentifier: "codex") != nil)
+        #expect(migrations.lookup(stableIdentifier: "generic:Custom") != nil)
+        let namesake = try LegacyAgentMigrationCatalog(stableIdentifiers: ["empryo", "generic:Empry⊙"])
+        #expect(namesake.lookup(stableIdentifier: "empryo")?.canonicalAgentID
+            != namesake.lookup(stableIdentifier: "generic:Empry⊙")?.canonicalAgentID)
+        let registry = try AgentAdapterRegistry(compiledPresentations: [], compiledAdapters: [])
+        let registration = try UserAgentPresentationRegistration(
+            identifier: "other", displayName: "Empry⊙", executableAliases: ["empryo"]
+        )
+        #expect(throws: (any Error).self) {
+            try registry.validatedUserPresentations([registration])
+        }
+        for (id, aliases) in [("empryo", [String]()), ("user:other", ["empryo"])] {
+            let descriptor = try AgentPresentationDescriptor(
+                agentID: AgentID(validating: id), displayName: "Other",
+                executableAliases: Set(try aliases.map(ExecutableAlias.init(validating:))), style: .generic
+            )
+            #expect(throws: (any Error).self) {
+                try AgentPresentationCatalog.validateReservedNames(descriptor)
+            }
         }
     }
 

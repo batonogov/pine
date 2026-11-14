@@ -28,7 +28,6 @@ struct AgentModelsTests {
         #expect(AgentType.qwenCode.displayName == "Qwen Code")
         #expect(AgentType.crush.displayName == "Crush")
         #expect(AgentType.kimiCode.displayName == "Kimi Code")
-        #expect(AgentType.empryo.displayName == "Empry⊙")
         #expect(AgentType.antigravity.displayName == "Antigravity")
         #expect(AgentType.droid.displayName == "Droid")
         #expect(AgentType.cline.displayName == "Cline")
@@ -53,7 +52,6 @@ struct AgentModelsTests {
         #expect(AgentType.qwenCode.cliNames == ["qwen"])
         #expect(AgentType.crush.cliNames == ["crush"])
         #expect(AgentType.kimiCode.cliNames == ["kimi", "kimi-code"])
-        #expect(AgentType.empryo.cliNames == ["empryo"])
         #expect(AgentType.antigravity.cliNames == ["agy"])
         #expect(AgentType.droid.cliNames == ["droid"])
         #expect(AgentType.cline.cliNames == ["cline"])
@@ -68,7 +66,7 @@ struct AgentModelsTests {
     @Test func color_isDistinctAndNotClearPerAgent() {
         let agents: [AgentType] = [
             .claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
-            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode, .empryo,
+            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode,
             .antigravity, .droid, .cline, .grokBuild, .kiloCode,
             .generic(name: "X"),
         ]
@@ -82,7 +80,7 @@ struct AgentModelsTests {
         // distinguishable — including against the generic fallback color.
         let known = [
             AgentType.claudeCode, .codex, .aider, .copilot, .pi, .openCode, .gemini,
-            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode, .empryo,
+            .amp, .cursorAgent, .goose, .qwenCode, .crush, .kimiCode,
             .antigravity, .droid, .cline, .grokBuild, .kiloCode,
             .generic(name: "X"),
         ]

@@ -29803,6 +29803,126 @@
         }
       }
     },
+    "projectSwitcher.retiredAgentChoice" : {
+      "comment" : "Explains why a retired remembered agent requires an explicit new choice.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Unterstützung für Empry⊙ wurde eingestellt. Wähle einen Agenten für dieses Projekt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empry⊙ support has been retired. Choose an agent for this project."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha retirado la compatibilidad con Empry⊙. Elige un agente para este proyecto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La prise en charge d’Empry⊙ a été retirée. Choisissez un agent pour ce projet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empry⊙のサポートは終了しました。このプロジェクトのエージェントを選択してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empry⊙ 지원이 종료되었습니다. 이 프로젝트에서 사용할 에이전트를 선택하세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O suporte ao Empry⊙ foi encerrado. Escolha um agente para este projeto."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поддержка Empry⊙ прекращена. Выберите агента для этого проекта."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停止支持Empry⊙。请为此项目选择代理。"
+          }
+        }
+      }
+    },
+    "projectSwitcher.chooseAgent" : {
+      "comment" : "Actionable menu command that opens an explicit choice after a remembered agent is retired.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agenten auswählen…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Agent…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir agente…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir un agent…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントを選択…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트 선택…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolher agente…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбрать агента…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择代理…"
+          }
+        }
+      }
+    },
     "projectSwitcher.noAgents" : {
       "comment" : "Shown when no supported command-line coding agent is installed.",
       "extractionState" : "manual",

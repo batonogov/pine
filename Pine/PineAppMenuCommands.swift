@@ -1054,9 +1054,22 @@ struct PineAppMenuCommands: Commands {
             // live in the menu bar, never their only route.
             Menu {
                 let options = agentLaunchOptions
+                let newAgentChord = keybindings.effectiveChord(for: .newAgent)
                 if options.isEmpty {
                     Text(Strings.projectSwitcherNoAgents)
                 } else {
+                    if windowSession()?.hasRetiredRememberedAgent == true {
+                        Button(Strings.projectSwitcherChooseAgent) {
+                            ProjectAgentLaunchSelection.post(
+                                identifier: nil,
+                                projectManager: focusedProject
+                            )
+                        }
+                        .effectiveKeyboardShortcut(
+                            newAgentChord
+                        )
+                        Divider()
+                    }
                     ForEach(options) { option in
                         Button(option.displayName) {
                             ProjectAgentLaunchSelection.post(
@@ -1071,7 +1084,8 @@ struct PineAppMenuCommands: Commands {
                         // chord nothing to fire.
                         .effectiveKeyboardShortcut(
                             option.id == options.first?.id
-                                ? keybindings.effectiveChord(for: .newAgent)
+                                && windowSession()?.hasRetiredRememberedAgent != true
+                                ? newAgentChord
                                 : nil
                         )
                     }

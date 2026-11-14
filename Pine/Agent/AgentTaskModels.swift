@@ -167,6 +167,11 @@ nonisolated struct AgentDescriptor: Codable, Equatable, Sendable {
         self.launchExecutable = launchExecutable
     }
 
+    /// Historical metadata is readable but cannot become a new launch default.
+    var isRetired: Bool {
+        AgentPresentationCatalog.isRetired(stableIdentifier: typeIdentifier)
+    }
+
     @MainActor
     var agentType: AgentType {
         AgentType(stableIdentifier: typeIdentifier)

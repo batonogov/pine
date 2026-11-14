@@ -1,0 +1,391 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "2026-11-14",
+  "sanitization": "Synthetic process command strings only; never executed. No prompts, credentials, output or real user paths.",
+  "cases": [
+    {
+      "name": "exact-pi",
+      "command": "pi",
+      "expectedExecutable": "pi",
+      "expectedStableIdentifier": "pi"
+    },
+    {
+      "name": "lookalike-pi",
+      "command": "pi-helper",
+      "expectedExecutable": "pi-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-codex",
+      "command": "codex",
+      "expectedExecutable": "codex",
+      "expectedStableIdentifier": "codex"
+    },
+    {
+      "name": "lookalike-codex",
+      "command": "codex-helper",
+      "expectedExecutable": "codex-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-claude",
+      "command": "claude",
+      "expectedExecutable": "claude",
+      "expectedStableIdentifier": "claudeCode"
+    },
+    {
+      "name": "lookalike-claude",
+      "command": "claude-helper",
+      "expectedExecutable": "claude-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-opencode",
+      "command": "opencode",
+      "expectedExecutable": "opencode",
+      "expectedStableIdentifier": "openCode"
+    },
+    {
+      "name": "lookalike-opencode",
+      "command": "opencode-helper",
+      "expectedExecutable": "opencode-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-github-copilot-cli",
+      "command": "github-copilot-cli",
+      "expectedExecutable": "github-copilot-cli",
+      "expectedStableIdentifier": "copilot"
+    },
+    {
+      "name": "lookalike-github-copilot-cli",
+      "command": "github-copilot-cli-helper",
+      "expectedExecutable": "github-copilot-cli-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-copilot",
+      "command": "copilot",
+      "expectedExecutable": "copilot",
+      "expectedStableIdentifier": "copilot"
+    },
+    {
+      "name": "lookalike-copilot",
+      "command": "copilot-helper",
+      "expectedExecutable": "copilot-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-aider",
+      "command": "aider",
+      "expectedExecutable": "aider",
+      "expectedStableIdentifier": "aider"
+    },
+    {
+      "name": "lookalike-aider",
+      "command": "aider-helper",
+      "expectedExecutable": "aider-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-gemini",
+      "command": "gemini",
+      "expectedExecutable": "gemini",
+      "expectedStableIdentifier": "gemini"
+    },
+    {
+      "name": "lookalike-gemini",
+      "command": "gemini-helper",
+      "expectedExecutable": "gemini-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-amp",
+      "command": "amp",
+      "expectedExecutable": "amp",
+      "expectedStableIdentifier": "amp"
+    },
+    {
+      "name": "lookalike-amp",
+      "command": "amp-helper",
+      "expectedExecutable": "amp-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-cursor-agent",
+      "command": "cursor-agent",
+      "expectedExecutable": "cursor-agent",
+      "expectedStableIdentifier": "cursorAgent"
+    },
+    {
+      "name": "lookalike-cursor-agent",
+      "command": "cursor-agent-helper",
+      "expectedExecutable": "cursor-agent-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-goose",
+      "command": "goose",
+      "expectedExecutable": "goose",
+      "expectedStableIdentifier": "goose"
+    },
+    {
+      "name": "lookalike-goose",
+      "command": "goose-helper",
+      "expectedExecutable": "goose-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-qwen",
+      "command": "qwen",
+      "expectedExecutable": "qwen",
+      "expectedStableIdentifier": "qwenCode"
+    },
+    {
+      "name": "lookalike-qwen",
+      "command": "qwen-helper",
+      "expectedExecutable": "qwen-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-crush",
+      "command": "crush",
+      "expectedExecutable": "crush",
+      "expectedStableIdentifier": "crush"
+    },
+    {
+      "name": "lookalike-crush",
+      "command": "crush-helper",
+      "expectedExecutable": "crush-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-kimi",
+      "command": "kimi",
+      "expectedExecutable": "kimi",
+      "expectedStableIdentifier": "kimiCode"
+    },
+    {
+      "name": "lookalike-kimi",
+      "command": "kimi-helper",
+      "expectedExecutable": "kimi-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-kimi-code",
+      "command": "kimi-code",
+      "expectedExecutable": "kimi-code",
+      "expectedStableIdentifier": "kimiCode"
+    },
+    {
+      "name": "lookalike-kimi-code",
+      "command": "kimi-code-helper",
+      "expectedExecutable": "kimi-code-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-agy",
+      "command": "agy",
+      "expectedExecutable": "agy",
+      "expectedStableIdentifier": "antigravity"
+    },
+    {
+      "name": "lookalike-agy",
+      "command": "agy-helper",
+      "expectedExecutable": "agy-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-droid",
+      "command": "droid",
+      "expectedExecutable": "droid",
+      "expectedStableIdentifier": "droid"
+    },
+    {
+      "name": "lookalike-droid",
+      "command": "droid-helper",
+      "expectedExecutable": "droid-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-cline",
+      "command": "cline",
+      "expectedExecutable": "cline",
+      "expectedStableIdentifier": "cline"
+    },
+    {
+      "name": "lookalike-cline",
+      "command": "cline-helper",
+      "expectedExecutable": "cline-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-grok",
+      "command": "grok",
+      "expectedExecutable": "grok",
+      "expectedStableIdentifier": "grokBuild"
+    },
+    {
+      "name": "lookalike-grok",
+      "command": "grok-helper",
+      "expectedExecutable": "grok-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-kilo",
+      "command": "kilo",
+      "expectedExecutable": "kilo",
+      "expectedStableIdentifier": "kiloCode"
+    },
+    {
+      "name": "lookalike-kilo",
+      "command": "kilo-helper",
+      "expectedExecutable": "kilo-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "exact-kilocode",
+      "command": "kilocode",
+      "expectedExecutable": "kilocode",
+      "expectedStableIdentifier": "kiloCode"
+    },
+    {
+      "name": "lookalike-kilocode",
+      "command": "kilocode-helper",
+      "expectedExecutable": "kilocode-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "cursor-generic-agent",
+      "command": "agent acp",
+      "expectedExecutable": "agent",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "cursor-generic-agent-path",
+      "command": "/usr/local/bin/agent --version",
+      "expectedExecutable": "agent",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "cursor-generic-agent-wrapper",
+      "command": "node /usr/local/bin/agent.js acp",
+      "expectedExecutable": "agent",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "cursor-generic-agent-helper",
+      "command": "agent-helper",
+      "expectedExecutable": "agent-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "opencode-helper-wrapper",
+      "command": "node /usr/local/bin/opencode-helper.js",
+      "expectedExecutable": "opencode-helper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "kilo-fork-lookalike",
+      "command": "kilo-code",
+      "expectedExecutable": "kilo-code",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "kilo-backup",
+      "command": "kilocode-backup",
+      "expectedExecutable": "kilocode-backup",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "gemini-server-wrapper",
+      "command": "node /usr/local/bin/gemini-server.js",
+      "expectedExecutable": "gemini-server",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "gemini-product-name",
+      "command": "antigravity",
+      "expectedExecutable": "antigravity",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "antigravity-lookalike",
+      "command": "agy-cli",
+      "expectedExecutable": "agy-cli",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "grok-product-name",
+      "command": "grok-build",
+      "expectedExecutable": "grok-build",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "grok-suffix",
+      "command": "grok2",
+      "expectedExecutable": "grok2",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "arbitrary-wrapper-argument",
+      "command": "project-wrapper opencode acp",
+      "expectedExecutable": "project-wrapper",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "shell-command-argument",
+      "command": "sh -c opencode",
+      "expectedExecutable": "sh",
+      "expectedStableIdentifier": null
+    },
+    {
+      "name": "opencode-keeps-fork-identity",
+      "command": "opencode acp --agent kilo",
+      "expectedExecutable": "opencode",
+      "expectedStableIdentifier": "openCode"
+    },
+    {
+      "name": "kilo-keeps-fork-identity",
+      "command": "kilo acp --agent opencode",
+      "expectedExecutable": "kilo",
+      "expectedStableIdentifier": "kiloCode"
+    },
+    {
+      "name": "kilocode-wrapper-keeps-fork-identity",
+      "command": "bun /usr/local/bin/kilocode acp",
+      "expectedExecutable": "kilocode",
+      "expectedStableIdentifier": "kiloCode"
+    },
+    {
+      "name": "opencode-wrapper-keeps-fork-identity",
+      "command": "node /usr/local/bin/opencode.js acp",
+      "expectedExecutable": "opencode",
+      "expectedStableIdentifier": "openCode"
+    },
+    {
+      "name": "cursor-exact-path",
+      "command": "/usr/local/bin/cursor-agent --print",
+      "expectedExecutable": "cursor-agent",
+      "expectedStableIdentifier": "cursorAgent"
+    },
+    {
+      "name": "gemini-keeps-product-identity",
+      "command": "gemini --model agy",
+      "expectedExecutable": "gemini",
+      "expectedStableIdentifier": "gemini"
+    },
+    {
+      "name": "antigravity-keeps-product-identity",
+      "command": "agy --model gemini",
+      "expectedExecutable": "agy",
+      "expectedStableIdentifier": "antigravity"
+    },
+    {
+      "name": "grok-keeps-provider-identity",
+      "command": "grok agent --model claude",
+      "expectedExecutable": "grok",
+      "expectedStableIdentifier": "grokBuild"
+    }
+  ]
+}
