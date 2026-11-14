@@ -33,6 +33,82 @@ struct PineStorageContextTests {
         }
     }
 
+    @Test("The reserved test identity requires matching compile mode", arguments: [false, true])
+    func reservedIdentityRequiresTestMode(testHost: Bool) {
+        #expect(PineStorageContext.launchIsSafe(
+            testHost: testHost, bundleIdentifier: PineStorageContext.testBundleIdentifier, arguments: []
+        ) == testHost)
+    }
+
+    @Test("Private UI fixtures require the Testing identity", arguments: [
+        "--ui-test-agent-recovery", "--ui-test-agent-vendor-recovery", "--ui-test-live-agent",
+        "--ui-test-a11y-dirty-buffer", "--ui-test-agent-attention", "--ui-test-agent-activity-all",
+        "--ui-test-agent-activity-heuristic", "--ui-test-agent-inbox-marketing", "--ui-test-dark-appearance",
+        "--ui-test-future-fixture", "--ui-test-",
+    ])
+    func privateFixtureArguments(flag: String) {
+        var environment = ["PINE_OPEN_PROJECT": "/owned/fixture-project"]
+        if flag == "--ui-test-a11y-dirty-buffer" {
+            environment["PINE_UI_TEST_DIRTY_FILE"] = "main.swift"
+            environment["PINE_UI_TEST_DIRTY_MARKER"] = "// owned dirty fixture"
+        }
+        #expect(!PineStorageContext.launchIsSafe(
+            testHost: false, bundleIdentifier: "fixture.production", arguments: [flag], environment: environment
+        ))
+        #expect(PineStorageContext.launchIsSafe(
+            testHost: true, bundleIdentifier: PineStorageContext.testBundleIdentifier,
+            arguments: [flag], environment: environment
+        ))
+    }
+
+    @Test("UI and persistence injection environments require Testing", arguments: [
+        "PINE_UI_TEST_SETTINGS_SUITE", "PINE_UI_TEST_DIRTY_FILE", "PINE_UI_TEST_DIRTY_MARKER",
+        "PINE_UI_TEST_FUTURE_FIXTURE", "PINE_UI_TEST_", "PINE_PERSISTENCE_FAULT",
+        "PINE_PERSISTENCE_PAUSE", "PINE_PERSISTENCE_CHECKPOINT_DIRECTORY",
+    ])
+    func privateFixtureEnvironment(marker: String) {
+        let configuredValue: String
+        switch marker {
+        case "PINE_PERSISTENCE_FAULT": configuredValue = "session:before-atomic-replace:permission-denied"
+        case "PINE_PERSISTENCE_PAUSE": configuredValue = "session:before-atomic-replace"
+        case "PINE_PERSISTENCE_CHECKPOINT_DIRECTORY": configuredValue = "/owned/fixture-checkpoint"
+        case "PINE_UI_TEST_SETTINGS_SUITE": configuredValue = "PineUITests.Settings.owned-fixture"
+        case "PINE_UI_TEST_DIRTY_FILE": configuredValue = "main.swift"
+        case "PINE_UI_TEST_DIRTY_MARKER": configuredValue = "// owned dirty fixture"
+        default: configuredValue = "1"
+        }
+        for value in ["", "malformed", configuredValue] {
+            let environment = [marker: value, "PINE_OPEN_PROJECT": "/owned/fixture-project"]
+            #expect(!PineStorageContext.launchIsSafe(
+                testHost: false, bundleIdentifier: "fixture.production", arguments: [], environment: environment
+            ))
+            #expect(PineStorageContext.launchIsSafe(
+                testHost: true, bundleIdentifier: PineStorageContext.testBundleIdentifier,
+                arguments: [], environment: environment
+            ))
+        }
+    }
+
+    @Test("The unchanged release-smoke launch contract and normal search remain accepted")
+    func ordinaryReleaseSmokeContract() {
+        let arguments = [
+            "--disable-agent-detection", "--disable-metal", "--disable-quick-terminal", "--disable-terminal-seeding",
+            "-ApplePersistenceIgnoreState", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        ]
+        var environment = [
+            "HOME": "/owned/fixture-home", "CFFIXED_USER_HOME": "/owned/fixture-home", "TMPDIR": "/owned/fixture-home/tmp",
+            "PINE_DISABLE_AGENT_DETECTION": "1", "PINE_DISABLE_METAL": "1", "PINE_DISABLE_QUICK_TERMINAL": "1",
+            "PINE_OPEN_PROJECT": "/owned/fixture-project",
+        ]
+        #expect(PineStorageContext.launchIsSafe(
+            testHost: false, bundleIdentifier: "io.github.batonogov.pine", arguments: arguments, environment: environment
+        ))
+        environment["PINE_SEARCH_QUERY"] = "normal query"
+        #expect(PineStorageContext.launchIsSafe(
+            testHost: false, bundleIdentifier: "io.github.batonogov.pine", arguments: arguments, environment: environment
+        ))
+    }
+
     @Test("Application support scopes keep owned recovery files separate")
     func recoveryPaths() throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

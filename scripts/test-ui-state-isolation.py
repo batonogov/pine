@@ -193,9 +193,28 @@ for mode in modes:
 entry = source / 'Pine/PineEntryPoint.swift'
 if entry.exists():
     # Exercise the actual earliest entry point as an ordinary build. The stub
-    # returns 42 if app initialization is reached; neither rejected flag may
-    # get that far. No application object or real domain is ever initialized.
-    (root / 'AppStub.swift').write_text('struct PineApp { static func main() { exit(42) } }\nimport Foundation\n')
+    # returns 42 and updates an owned fake production sentinel if initialization
+    # is reached. Rejected vectors must leave it intact. No NSApplication or
+    # actual production domain is ever initialized.
+    (root / 'AppStub.swift').write_text('''import Foundation
+struct PineApp {
+    static func main() {
+        precondition(PineStorageContext.launchIsSafe(
+            testHost: false, bundleIdentifier: "io.github.batonogov.pine",
+            arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment
+        ))
+        if let expectedIdentity = ProcessInfo.processInfo.environment["PROBE_EXPECTED_BUNDLE_ID"] {
+            precondition(Bundle.main.bundleIdentifier == expectedIdentity)
+        }
+        let path = ProcessInfo.processInfo.environment["PROBE_GUARD_SENTINEL"]!
+        let sentinel = URL(fileURLWithPath: path)
+        precondition(sentinel.lastPathComponent == "guard-owned-production")
+        precondition(sentinel.deletingLastPathComponent().lastPathComponent.hasPrefix("pine-state-isolation-probe-"))
+        try! Data("entered stub application".utf8).write(to: sentinel)
+        exit(42)
+    }
+}
+''')
     guard_binary = app / 'MacOS/Guard'
     subprocess.run([
         'xcrun', 'swiftc', '-swift-version', '6', '-default-isolation', 'MainActor',
@@ -203,22 +222,101 @@ if entry.exists():
         str(context), str(entry), str(root / 'AppStub.swift'), '-o', str(guard_binary),
     ], env=environment, check=True)
     ordinary_environment = environment.copy()
-    for key in ['PINE_TEST_STATE_NAMESPACE', 'PINE_UI_TEST_SETTINGS_SUITE',
+    for key in ['PINE_TEST_STATE_NAMESPACE',
                 'PINE_APPLICATION_LIFECYCLE_CONFIG', 'XCTestConfigurationFilePath',
                 'XCTestBundlePath', 'XCInjectBundleInto']:
         ordinary_environment.pop(key, None)
-    for flag in ['--reset-state', '--application-lifecycle-process-test']:
-        result = subprocess.run([str(guard_binary), flag], env=ordinary_environment, check=False)
-        if result.returncode != 78:
-            raise SystemExit('FAIL: ordinary application entered test initialization')
+    fault_keys = ['PINE_PERSISTENCE_FAULT', 'PINE_PERSISTENCE_PAUSE', 'PINE_PERSISTENCE_CHECKPOINT_DIRECTORY']
+    for key in list(ordinary_environment):
+        if key.startswith('PINE_UI_TEST_') or key in fault_keys:
+            ordinary_environment.pop(key)
+    sentinel = root / 'guard-owned-production'
+    ordinary_environment['PROBE_GUARD_SENTINEL'] = str(sentinel)
+    unsafe_flags = [
+        '--reset-state', '--application-lifecycle-process-test', '--ui-test-agent-recovery',
+        '--ui-test-agent-vendor-recovery', '--ui-test-live-agent', '--ui-test-a11y-dirty-buffer',
+        '--ui-test-agent-attention', '--ui-test-agent-activity-all', '--ui-test-agent-activity-heuristic',
+        '--ui-test-agent-inbox-marketing', '--ui-test-dark-appearance', '--ui-test-future-fixture', '--ui-test-',
+    ]
+    unsafe_environment_keys = [
+        'PINE_TEST_STATE_NAMESPACE', 'PINE_UI_TEST_SETTINGS_SUITE', 'PINE_UI_TEST_DIRTY_FILE',
+        'PINE_UI_TEST_DIRTY_MARKER', 'PINE_UI_TEST_FUTURE_FIXTURE', 'PINE_UI_TEST_',
+        'PINE_APPLICATION_LIFECYCLE_CONFIG', 'XCTestConfigurationFilePath', 'XCTestBundlePath',
+        'XCInjectBundleInto', *fault_keys,
+    ]
+    unsafe_vectors = [(flag, [flag], {}) for flag in unsafe_flags]
+    unsafe_vectors += [(key + '=' + value, [], {key: value})
+                       for key in unsafe_environment_keys for value in ['', 'malformed']]
+    configured_values = {
+        'PINE_UI_TEST_SETTINGS_SUITE': 'PineUITests.Settings.owned-fixture',
+        'PINE_UI_TEST_DIRTY_FILE': 'main.swift', 'PINE_UI_TEST_DIRTY_MARKER': '// owned dirty fixture',
+        'PINE_PERSISTENCE_FAULT': 'session:before-atomic-replace:permission-denied',
+        'PINE_PERSISTENCE_PAUSE': 'session:before-atomic-replace',
+        'PINE_PERSISTENCE_CHECKPOINT_DIRECTORY': '/owned/fixture-checkpoint',
+    }
+    unsafe_vectors += [(key + '=' + value, [], {key: value}) for key, value in configured_values.items()]
+    unsafe_vectors += [('configured pause with checkpoint directory', [], {
+        'PINE_PERSISTENCE_PAUSE': configured_values['PINE_PERSISTENCE_PAUSE'],
+        'PINE_PERSISTENCE_CHECKPOINT_DIRECTORY': configured_values['PINE_PERSISTENCE_CHECKPOINT_DIRECTORY'],
+    }), ('configured dirty buffer', ['--ui-test-a11y-dirty-buffer'], {
+        'PINE_UI_TEST_DIRTY_FILE': configured_values['PINE_UI_TEST_DIRTY_FILE'],
+        'PINE_UI_TEST_DIRTY_MARKER': configured_values['PINE_UI_TEST_DIRTY_MARKER'],
+    })]
+    rejected = True
+    for label, arguments, overrides in unsafe_vectors:
+        sentinel.write_text('preserved')
+        vector_environment = {**ordinary_environment, 'PINE_OPEN_PROJECT': '/owned/fixture-project', **overrides}
+        result = subprocess.run([str(guard_binary), *arguments], env=vector_environment, check=False)
+        if result.returncode != 78 or sentinel.read_text() != 'preserved':
+            print('FAIL: ordinary entry accepted unsafe vector:', label, flush=True)
+            rejected = False
+    sentinel.write_text('preserved')
     result = subprocess.run([str(guard_binary)], env=ordinary_environment, check=False)
-    if result.returncode != 42:
+    if result.returncode != 42 or sentinel.read_text() != 'entered stub application':
         raise SystemExit('FAIL: ordinary application launch was changed')
-    ordinary_environment['PINE_TEST_STATE_NAMESPACE'] = 'malformed'
-    result = subprocess.run([str(guard_binary)], env=ordinary_environment, check=False)
-    if result.returncode != 78:
-        raise SystemExit('FAIL: ordinary app accepted a private test environment')
-    print('PASS: ordinary launches proceed; test flags/environment stop before app initialization')
+    # Exact app arguments and environment explicitly supplied by the unchanged
+    # release-artifact smoke helper (no release tooling or real app is run).
+    release_arguments = [
+        '--disable-agent-detection', '--disable-metal', '--disable-quick-terminal',
+        '--disable-terminal-seeding', '-ApplePersistenceIgnoreState', 'YES',
+        '-AppleLanguages', '(en)', '-AppleLocale', 'en_US',
+    ]
+    release_environment = {
+        **ordinary_environment, 'HOME': '/owned/fixture-home', 'CFFIXED_USER_HOME': '/owned/fixture-home',
+        'TMPDIR': '/owned/fixture-home/tmp', 'PINE_DISABLE_AGENT_DETECTION': '1',
+        'PINE_DISABLE_METAL': '1', 'PINE_DISABLE_QUICK_TERMINAL': '1',
+        'PINE_OPEN_PROJECT': '/owned/fixture-project',
+    }
+    for overrides in [{}, {'PINE_SEARCH_QUERY': 'normal query'}]:
+        result = subprocess.run([str(guard_binary), *release_arguments],
+                                env={**release_environment, **overrides}, check=False)
+        if result.returncode != 42:
+            raise SystemExit('FAIL: release-smoke or normal search launch contract was changed')
+    print('PASS: ordinary/release-smoke/search vectors reach harmless stub initialization', flush=True)
+    # Metadata belongs only to this harmless stub bundle. A build without the
+    # test compile flag must refuse the reserved test identity even with no
+    # fixture marker; the stub never accesses preferences or NSApplication.
+    metadata_path = app / 'Info.plist'
+    ordinary_metadata = metadata_path.read_bytes()
+    reserved_identity = 'io.github.batonogov.pine.test-host'
+    mismatched_metadata = plistlib.loads(ordinary_metadata)
+    mismatched_metadata['CFBundleIdentifier'] = reserved_identity
+    try:
+        metadata_path.write_bytes(plistlib.dumps(mismatched_metadata))
+        sentinel.write_text('preserved')
+        result = subprocess.run([str(guard_binary)], env={
+            **ordinary_environment, 'PROBE_EXPECTED_BUNDLE_ID': reserved_identity,
+        }, check=False)
+        if result.returncode != 78 or sentinel.read_text() != 'preserved':
+            print('FAIL: ordinary build accepted reserved test identity before initialization', flush=True)
+            rejected = False
+        else:
+            print('PASS: reserved test identity without test compile mode exits before initialization', flush=True)
+    finally:
+        metadata_path.write_bytes(ordinary_metadata)
+    if not rejected:
+        raise SystemExit(1)
+    print('PASS: every private fixture vector exits before initialization and preserves its owned sentinel')
 
 if entry.exists():
     # Exercise the real entry's scheduler with harmless storage and app stubs.

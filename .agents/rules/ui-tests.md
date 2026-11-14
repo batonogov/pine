@@ -15,10 +15,18 @@ Every "known issue" below has already cost someone a debugging session.
 
 - The scheme's Test action uses the `Testing` build configuration. Its app has
   bundle identifier `io.github.batonogov.pine.test-host`; normal Debug and Release
-  builds retain the production identifier. Keep local/CI test commands on the
-  scheme configuration: overriding `-configuration Debug` cannot run reset or
-  lifecycle fixtures. The ordinary app rejects private test flags and test environment markers before
-  SwiftUI or application persistence initializes.
+  builds retain the production identifier. The reserved test identity and test
+  compile mode must agree; a mismatched build stops before application startup.
+  Keep local/CI test commands on the
+  scheme configuration: overriding `-configuration Debug` cannot run private
+  fixtures. Before SwiftUI or persistence initializes, ordinary Debug/Release
+  launches reject `--reset-state`, `--application-lifecycle-process-test`, all
+  `--ui-test-*` arguments and `PINE_UI_TEST_*` environment keys, and the
+  `PINE_PERSISTENCE_FAULT`, `PINE_PERSISTENCE_PAUSE`, and
+  `PINE_PERSISTENCE_CHECKPOINT_DIRECTORY` fault-injection keys. Marker presence
+  is rejected even with empty or malformed values. Normal project/search
+  environment variables, disable flags, locale, and `ApplePersistenceIgnoreState`
+  remain compatible with the release-smoke launch contract.
 - `PineUITestCase` assigns one UUID `PINE_TEST_STATE_NAMESPACE` for each test,
   including replacement `XCUIApplication` instances and relaunches. Preferences
   use `PineUITests.State.<UUID>` and application-support stores use a private

@@ -191,13 +191,18 @@ nonisolated enum PineStorageContext {
         environment: [String: String] = [:]
     ) -> Bool {
         if testHost { return bundleIdentifier == testBundleIdentifier }
+        guard bundleIdentifier != testBundleIdentifier else { return false }
         let testMarkers = [
-            namespaceEnvironmentKey, "PINE_UI_TEST_SETTINGS_SUITE",
-            "PINE_APPLICATION_LIFECYCLE_CONFIG", "XCTestConfigurationFilePath",
-            "XCTestBundlePath", "XCInjectBundleInto",
+            namespaceEnvironmentKey, "PINE_APPLICATION_LIFECYCLE_CONFIG",
+            "XCTestConfigurationFilePath", "XCTestBundlePath", "XCInjectBundleInto",
+            "PINE_PERSISTENCE_FAULT", "PINE_PERSISTENCE_PAUSE", "PINE_PERSISTENCE_CHECKPOINT_DIRECTORY",
         ]
+        // Fixture families may seed durable state even without --reset-state.
+        // Deny the entire private family so future hooks also require Testing.
         return testMarkers.allSatisfy { environment[$0] == nil }
-            && !arguments.contains("--reset-state")
-            && !arguments.contains("--application-lifecycle-process-test")
+            && !environment.keys.contains { $0.hasPrefix("PINE_UI_TEST_") }
+            && !arguments.contains {
+                $0 == "--reset-state" || $0 == "--application-lifecycle-process-test" || $0.hasPrefix("--ui-test-")
+            }
     }
 }
