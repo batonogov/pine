@@ -3604,7 +3604,7 @@ struct AgentTaskLifecycleEvidenceTests {
         #expect(
             !AgentTaskMetadataStore.validCodeState(
                 AgentTaskCodeStateIdentity(
-                    scheme: 2,
+                    scheme: 3,
                     headCommit: valid.headCommit,
                     trackedFingerprint: valid.trackedFingerprint,
                     untrackedFingerprint: valid.untrackedFingerprint,
@@ -3612,7 +3612,7 @@ struct AgentTaskLifecycleEvidenceTests {
                 )
             )
         )
-        // The head commit must be exactly 40 lowercase hex bytes, or absent.
+        // HEAD is SHA-1 (40) or SHA-256 (64) lowercase hex, or unborn.
         #expect(
             !AgentTaskMetadataStore.validCodeState(
                 AgentTaskCodeStateIdentity(
@@ -3647,6 +3647,9 @@ struct AgentTaskLifecycleEvidenceTests {
         // fingerprint, current scheme only.
         let validEnvironment = environment
         #expect(AgentTaskMetadataStore.validEnvironment(validEnvironment))
+        #expect(!AgentTaskMetadataStore.validEnvironment(AgentTaskEnvironmentIdentity(
+            osBuild: nil, toolchain: nil, configurationFingerprint: nil
+        )))
         #expect(
             !AgentTaskMetadataStore.validEnvironment(
                 AgentTaskEnvironmentIdentity(
@@ -3870,6 +3873,45 @@ struct AgentTaskLifecycleEvidenceTests {
         )
         #expect(await reloaded.flushPersistence() == .saved)
     }
+    @Test("legacy and unknown identity schemes retain history without current authority")
+    func identitySchemeHistoryMigration() async throws {
+        let fixture = try ADEPersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        for scheme: UInt8 in [1, 99] {
+            let legacyCode = AgentTaskCodeStateIdentity(
+                scheme: scheme, headCommit: String(repeating: "b", count: 40),
+                trackedFingerprint: hex("a"), untrackedFingerprint: hex("b"), ignoredRelevantFingerprint: hex("c")
+            )
+            let legacyEnvironment = AgentTaskEnvironmentIdentity(
+                scheme: scheme, osBuild: "legacy", toolchain: "legacy", configurationFingerprint: hex("d")
+            )
+            var task = try verifiedSuccessTask(
+                seed: 230 + Int(scheme), codeState: legacyCode, environment: legacyEnvironment,
+                now: Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down)),
+                projectPath: fixture.project.path
+            )
+            task.environment = legacyEnvironment
+            task.acceptanceState = .accepted
+            task.acceptedSnapshot = task.reviewedSnapshot
+            #expect(AgentTaskMetadataStore.validStoredCodeState(legacyCode))
+            #expect(!AgentTaskMetadataStore.validCodeState(legacyCode))
+            #expect(await store.save(tasks: [task], project: identity).isDurablySaved)
+            let loaded = await store.load(project: identity)
+            var restored = try #require(loaded.tasks.first)
+            #expect(restored.reviewedSnapshot == task.reviewedSnapshot)
+            #expect(restored.acceptedSnapshot == task.acceptedSnapshot)
+            #expect(restored.evidence == task.evidence)
+            #expect(!AgentTaskLifecycleReducer.readiness(
+                for: restored, codeState: legacyCode, environment: legacyEnvironment
+            ).isReady)
+            restored.verificationState = .stale
+            AgentTaskLifecycleReducer.reverify(&restored, codeState: legacyCode, environment: legacyEnvironment)
+            #expect(restored.verificationState == .stale)
+        }
+    }
+
 }
 
 // MARK: - Session fixture

@@ -2149,7 +2149,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                     && task.attention == .none),
               validOptionalDate(task.completedAt),
               task.runs.allSatisfy(validateRun),
-              task.environment.map(Self.validEnvironment) ?? true,
+              task.environment.map(Self.validStoredEnvironment) ?? true,
               validateFeedback(task.feedback),
               validateADEState(task),
               validateEvidence(task),
@@ -2207,7 +2207,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 return false
             }
             if let codeState = record.codeState,
-               !Self.validCodeState(codeState) {
+               !Self.validStoredCodeState(codeState) {
                 return false
             }
         }
@@ -2359,19 +2359,19 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 return false
             }
             if let codeState = fact.codeState,
-               !Self.validCodeState(codeState) {
+               !Self.validStoredCodeState(codeState) {
                 return false
             }
             if let preOperation = fact.preOperationCodeState,
-               !Self.validCodeState(preOperation) {
+               !Self.validStoredCodeState(preOperation) {
                 return false
             }
             if let postOperation = fact.postOperationCodeState,
-               !Self.validCodeState(postOperation) {
+               !Self.validStoredCodeState(postOperation) {
                 return false
             }
             if let environment = fact.environment,
-               !Self.validEnvironment(environment) {
+               !Self.validStoredEnvironment(environment) {
                 return false
             }
             if let vendorSession = fact.vendorSession {
@@ -2402,11 +2402,11 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     private func validateSnapshot(_ snapshot: AgentTaskResultSnapshot?) -> Bool {
         guard let snapshot else { return true }
         guard validDate(snapshot.recordedAt) else { return false }
-        if let codeState = snapshot.codeState, !Self.validCodeState(codeState) {
+        if let codeState = snapshot.codeState, !Self.validStoredCodeState(codeState) {
             return false
         }
         if let environment = snapshot.environment,
-           !Self.validEnvironment(environment) {
+           !Self.validStoredEnvironment(environment) {
             return false
         }
         return true
@@ -2418,7 +2418,17 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     nonisolated static func validCodeState(
         _ value: AgentTaskCodeStateIdentity
     ) -> Bool {
-        guard value.scheme == AgentTaskCodeStateIdentity.currentScheme,
+        value.scheme == AgentTaskCodeStateIdentity.currentScheme && validStoredCodeState(value)
+    }
+
+    /// Hash-shaped older/unknown identities can be retained as history. This
+    /// deliberately supplies no current execution or verification authority.
+    nonisolated static func validStoredCodeState(
+        _ value: AgentTaskCodeStateIdentity
+    ) -> Bool {
+        // Bounded old/unknown hash identities remain historical metadata.
+        // Current authority is checked by the lifecycle reducer, not storage.
+        guard value.scheme > 0,
               Self.validLowerHex(
                   value.trackedFingerprint,
                   length: AgentTaskCodeStateIdentity.fingerprintBytes
@@ -2434,16 +2444,21 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             return false
         }
         guard let headCommit = value.headCommit else { return true }
-        return Self.validLowerHex(
-            headCommit,
-            length: AgentTaskCodeStateIdentity.maximumHeadCommitBytes
-        )
+        return Self.validLowerHex(headCommit, length: 40)
+            || (value.scheme != 1 && Self.validLowerHex(headCommit, length: 64))
     }
 
     nonisolated static func validEnvironment(
         _ value: AgentTaskEnvironmentIdentity
     ) -> Bool {
-        guard value.scheme == AgentTaskEnvironmentIdentity.currentScheme,
+        value.scheme == AgentTaskEnvironmentIdentity.currentScheme && validStoredEnvironment(value)
+            && value.osBuild != nil && value.toolchain != nil && value.configurationFingerprint != nil
+    }
+
+    nonisolated static func validStoredEnvironment(
+        _ value: AgentTaskEnvironmentIdentity
+    ) -> Bool {
+        guard value.scheme > 0,
               Self.validOptionalBoundedText(
                   value.osBuild,
                   maximum: AgentTaskEnvironmentIdentity.maximumComponentBytes

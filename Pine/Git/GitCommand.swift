@@ -21,6 +21,9 @@ nonisolated struct GitCommandResult: Sendable {
     let errorOutputCaptureComplete: Bool
     let outputReadError: Int32?
     let errorOutputReadError: Int32?
+    /// Authoritative parsers may refuse lossy UTF-8 without changing existing
+    /// display-oriented callers or their success semantics.
+    var outputIsValidUTF8 = true
 
     /// True when the child process itself completed successfully. Use this
     /// for mutating commands whose side effect is authoritative even if a
@@ -360,8 +363,9 @@ nonisolated enum GitCommand {
 
         // A byte cap can split a multi-byte scalar. Preserve the valid prefix
         // plus a replacement scalar instead of discarding the entire stream.
+        let exactOutput = String(data: standardOutput.data, encoding: .utf8)
         // swiftlint:disable:next optional_data_string_conversion
-        let output = String(decoding: standardOutput.data, as: UTF8.self)
+        let output = exactOutput ?? String(decoding: standardOutput.data, as: UTF8.self)
         // swiftlint:disable:next optional_data_string_conversion
         let errorOutput = String(decoding: standardError.data, as: UTF8.self)
         return GitCommandResult(
@@ -375,7 +379,8 @@ nonisolated enum GitCommand {
             outputCaptureComplete: standardOutput.captureComplete,
             errorOutputCaptureComplete: standardError.captureComplete,
             outputReadError: standardOutput.readError,
-            errorOutputReadError: standardError.readError
+            errorOutputReadError: standardError.readError,
+            outputIsValidUTF8: exactOutput != nil
         )
     }
 

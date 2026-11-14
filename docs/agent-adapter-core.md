@@ -3,6 +3,10 @@
 This first #1303 slice defines pure contracts and validation only. It has no
 production ingress and is independently reviewable from #1302.
 
+For Pine-computed content/environment capture and scheme migration, see
+[ADE content identities](ade-content-identities.md). These primitives do not
+authorize checks, provider execution, Ready publication, or result actions.
+
 ## Three planes
 
 The **presentation plane** contains a stable agent ID, normalized display text,
@@ -240,13 +244,16 @@ including native provider resume — always requires explicit user action and
 creates a new run and source namespace, never a continuation of a lost one.
 
 **Code-state and environment identity.** `AgentTaskCodeStateIdentity` is
-conservative by contract: the worktree head commit plus SHA-256
-fingerprints over the canonicalized tracked status entries (tracked
-modifications, symlinks, and submodules as the git status reports them),
-the sorted untracked path list, and the relevant ignored inputs (for
-example, generated files the required checks consume).
-`AgentTaskEnvironmentIdentity` adds the OS build, the toolchain, and a
-configuration fingerprint. Provider-supplied paths and hashes are untrusted
+computed under content scheme 2: the worktree HEAD and framed hashes of actual
+tracked, untracked, ignored/generated input contents, paths, modes, symlinks,
+Git indexes/configuration, and initialized submodule inputs. Status categories
+and path lists alone are not content identities. `AgentTaskEnvironmentIdentity`
+scheme 2 adds the observed OS build, actual selected executable bytes, and a
+configuration/environment/policy fingerprint. All three environment components
+are required for current equivalence. Bounded older/unknown schemes survive as
+history but cannot authorize Ready or re-verification. See
+[ADE content identities](ade-content-identities.md) for encoding, bounds,
+input/output declarations, editor preflight, and unsupported states. Provider-supplied paths and hashes are untrusted
 until recomputed beneath the authorized no-follow root; the registry seams
 take caller-proven identities only.
 
@@ -255,7 +262,7 @@ content-free:
 
 | Field | Class | Bound | Redaction | Notifications | Logs |
 | --- | --- | --- | --- | --- | --- |
-| task `environment` | identity | 3 × ≤64 B components + 64-hex config fingerprint | opaque identifiers, never values | not emitted | not logged |
+| task `environment` | identity | OS/tool identity ≤64 B each + 64-hex config fingerprint | opaque identifiers, never values | not emitted | not logged |
 | task `feedback` | reference | ≤32 records × ≤256 B reference | provider id or hash, never text | not emitted | not logged |
 | fact `pre/postOperationCodeState` | identity | 2 × code-state identity | fingerprints only | not emitted | not logged |
 | envelope `rememberedAgent` | identity | descriptor bounds (≤128 B identifier, ≤128 B executable) | stable identifier + executable name | not emitted | not logged |

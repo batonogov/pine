@@ -359,17 +359,19 @@ nonisolated enum AgentTaskAcceptanceState: String, Codable, Sendable {
 /// Only bounded hashes and identifiers are stored — no paths, contents, or
 /// environment values.
 nonisolated struct AgentTaskCodeStateIdentity: Codable, Hashable, Sendable {
-    static let currentScheme: UInt8 = 1
-    static let maximumHeadCommitBytes = 40
+    /// Scheme 2 uses framed, content-bound filesystem and Git inputs (#1753).
+    /// Other schemes may survive as bounded history, never current authority.
+    static let currentScheme: UInt8 = 2
+    static let maximumHeadCommitBytes = 64
     static let fingerprintBytes = 64
 
     let scheme: UInt8
-    /// Full 40-hex worktree head commit, or `nil` when the worktree has no
-    /// head commit.
+    /// Full SHA-1 (40 hex) or SHA-256 (64 hex) worktree HEAD, or `nil`
+    /// only when locally observed to be unborn.
     let headCommit: String?
-    /// SHA-256 (lowercase hex) over canonicalized tracked status entries.
+    /// SHA-256 over framed tracked contents, path/kind/mode and Git index inputs.
     let trackedFingerprint: String
-    /// SHA-256 (lowercase hex) over the sorted untracked path list.
+    /// SHA-256 over framed untracked input names AND contents, never names alone.
     let untrackedFingerprint: String
     /// SHA-256 (lowercase hex) over relevant ignored inputs (for example
     /// generated files the required checks consume).
@@ -395,7 +397,8 @@ nonisolated struct AgentTaskCodeStateIdentity: Codable, Hashable, Sendable {
 /// Components are opaque bounded strings; the configuration fingerprint
 /// covers the relevant configuration inputs without storing their values.
 nonisolated struct AgentTaskEnvironmentIdentity: Codable, Hashable, Sendable {
-    static let currentScheme: UInt8 = 1
+    /// Scheme 2 binds observed tool/configuration inputs and capture policy.
+    static let currentScheme: UInt8 = 2
     static let maximumComponentBytes = 64
 
     let scheme: UInt8
