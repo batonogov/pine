@@ -263,10 +263,12 @@ nonisolated private final class StablePathDescriptor: @unchecked Sendable {
         parent: StablePathDescriptor,
         entryName: String,
         url: URL,
-        kind: UInt16
+        kind: UInt16,
+        nonBlocking: Bool = false
     ) {
         let flags = O_CLOEXEC | O_NOFOLLOW
             | (kind == S_IFDIR ? O_SEARCH : O_RDONLY)
+            | (nonBlocking ? O_NONBLOCK : 0)
         let descriptor = entryName.withCString {
             Darwin.openat(parent.descriptor, $0, flags)
         }
@@ -460,6 +462,31 @@ nonisolated private struct MissingDirectoryEntryWitness: @unchecked Sendable {
     }
 }
 
+/// A locally selected regular file and every directory/symlink witness used
+/// to reach it. The leaf is never followed; callers supply explicit read
+/// authority and retain this lease through their bounded byte observation.
+nonisolated final class RecentAgentTaskFilesystemFileLease: @unchecked Sendable {
+    private let file: StablePathDescriptor
+    private let directories: [StablePathDescriptor]
+    private let symlinks: [StableSymlinkWitness]
+
+    fileprivate init(
+        file: StablePathDescriptor, directories: [StablePathDescriptor], symlinks: [StableSymlinkWitness]
+    ) {
+        self.file = file
+        self.directories = directories
+        self.symlinks = symlinks
+    }
+
+    var descriptor: Int32 { file.descriptor }
+    var canonicalURL: URL { file.url }
+
+    func revalidate() -> Bool {
+        directories.allSatisfy { $0.revalidate() }
+            && symlinks.allSatisfy { $0.revalidate() } && file.revalidate()
+    }
+}
+
 /// Holds every filesystem object and absent edge used to derive one project /
 /// worktree relationship. Callers retain this through their final MainActor
 /// commit and perform a detached revalidation immediately before mutation.
@@ -562,6 +589,27 @@ nonisolated enum RecentAgentTaskFilesystemValidator {
             sourceRecord: record,
             lease: standaloneLease
         )
+    }
+
+    /// Reuses the witnessed directory walk so protected system aliases such
+    /// as /var are validated rather than blindly followed or rejected after
+    /// Foundation re-canonicalizes /private/var. This does not grant read or
+    /// execution authority and deliberately refuses a symlink leaf.
+    static func selectedFileLease(for candidate: URL) -> RecentAgentTaskFilesystemFileLease? {
+        guard candidate.isFileURL, candidate.path.hasPrefix("/"), candidate.path.utf8.count <= 16_384,
+              !candidate.path.utf8.contains(0), !candidate.lastPathComponent.isEmpty,
+              candidate.lastPathComponent != ".", candidate.lastPathComponent != "..",
+              !candidate.lastPathComponent.contains("/"),
+              let graph = directoryDescriptorWalk(candidate.deletingLastPathComponent()),
+              let file = StablePathDescriptor(
+                  parent: graph.final, entryName: candidate.lastPathComponent,
+                  url: graph.final.url.appendingPathComponent(candidate.lastPathComponent),
+                  kind: S_IFREG, nonBlocking: true
+              ) else { return nil }
+        let lease = RecentAgentTaskFilesystemFileLease(
+            file: file, directories: graph.descriptors, symlinks: graph.symlinks
+        )
+        return lease.revalidate() ? lease : nil
     }
 
     static func validationLease(

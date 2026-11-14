@@ -604,7 +604,9 @@ nonisolated enum AgentTaskLifecycleReducer {
         codeState: AgentTaskCodeStateIdentity,
         environment: AgentTaskEnvironmentIdentity
     ) -> Bool {
-        fact.codeState == codeState
+        AgentTaskMetadataStore.validCodeState(codeState)
+            && AgentTaskMetadataStore.validEnvironment(environment)
+            && fact.codeState == codeState
             && fact.environment == environment
             && fact.preOperationCodeState == codeState
             && fact.postOperationCodeState == codeState
@@ -689,11 +691,11 @@ nonisolated enum AgentTaskLifecycleReducer {
             if task.verificationState != .verified {
                 gaps.append(.verificationNotCurrent)
             }
-            guard let codeState else {
+            guard let codeState, AgentTaskMetadataStore.validCodeState(codeState) else {
                 gaps.append(.codeStateUnknown)
                 return AgentTaskReadiness(isReady: false, gaps: gaps)
             }
-            guard let environment else {
+            guard let environment, AgentTaskMetadataStore.validEnvironment(environment) else {
                 gaps.append(.environmentUnknown)
                 return AgentTaskReadiness(isReady: false, gaps: gaps)
             }

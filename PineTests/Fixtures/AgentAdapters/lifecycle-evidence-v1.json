@@ -23,14 +23,14 @@
       "result": { "reported": {} },
       "observedAt": 1760000010.0,
       "codeState": {
-        "scheme": 1,
+        "scheme": 2,
         "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
         "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
         "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
       },
       "environment": {
-        "scheme": 1,
+        "scheme": 2,
         "osBuild": "000000A000g",
         "toolchain": "Pine-Test-1",
         "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
@@ -50,14 +50,14 @@
       "result": { "succeeded": {} },
       "observedAt": 1760000020.0,
       "codeState": {
-        "scheme": 1,
+        "scheme": 2,
         "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
         "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
         "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
       },
       "environment": {
-        "scheme": 1,
+        "scheme": 2,
         "osBuild": "000000A000g",
         "toolchain": "Pine-Test-1",
         "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
@@ -65,14 +65,14 @@
       "vendorSession": null,
       "sourceSequence": 2,
       "preOperationCodeState": {
-        "scheme": 1,
+        "scheme": 2,
         "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
         "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
         "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
       },
       "postOperationCodeState": {
-        "scheme": 1,
+        "scheme": 2,
         "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
         "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
@@ -87,14 +87,14 @@
       "result": { "succeeded": {} },
       "observedAt": 1760000030.0,
       "codeState": {
-        "scheme": 1,
+        "scheme": 2,
         "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
         "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
         "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
       },
       "environment": {
-        "scheme": 1,
+        "scheme": 2,
         "osBuild": "000000A000g",
         "toolchain": "Pine-Test-1",
         "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
@@ -102,14 +102,14 @@
       "vendorSession": null,
       "sourceSequence": 3,
       "preOperationCodeState": {
-        "scheme": 1,
+        "scheme": 2,
         "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
         "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
         "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
       },
       "postOperationCodeState": {
-        "scheme": 1,
+        "scheme": 2,
         "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
         "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
@@ -124,14 +124,14 @@
       "result": { "accepted": {} },
       "observedAt": 1760000040.0,
       "codeState": {
-        "scheme": 1,
+        "scheme": 2,
         "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "trackedFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
         "untrackedFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
         "ignoredRelevantFingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
       },
       "environment": {
-        "scheme": 1,
+        "scheme": 2,
         "osBuild": "000000A000g",
         "toolchain": "Pine-Test-1",
         "configurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
