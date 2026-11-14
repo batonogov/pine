@@ -53,6 +53,71 @@ struct BackgroundDispatchTests {
         #expect(isMain == false)
     }
 
+    // MARK: - Actor-independent dispatch (#1768)
+
+    @Test("Non-throwing work starts while MainActor is occupied")
+    @MainActor
+    func nonThrowingStartsWithoutMainActorHop() async {
+        let started = DispatchSemaphore(value: 0)
+        let task = Task.detached {
+            await runOnBackground { () -> Int in
+                started.signal()
+                return 42
+            }
+        }
+        // Deliberately occupy MainActor: the work must signal directly from
+        // GCD, without waiting for an actor hop or continuation resumption.
+        // This is a bounded correctness handshake, not a speed measurement.
+        let status = waitWhileOccupyingMainActor(for: started)
+        #expect(status == .success)
+        let result = await task.value
+        #expect(result == 42)
+    }
+
+    @Test("Throwing work starts while MainActor is occupied and propagates its error")
+    @MainActor
+    func throwingStartsWithoutMainActorHop() async {
+        let started = DispatchSemaphore(value: 0)
+        let task = Task.detached {
+            try await runOnBackground { () throws -> Int in
+                started.signal()
+                throw SentinelError(code: 1768)
+            }
+        }
+        let status = waitWhileOccupyingMainActor(for: started)
+        #expect(status == .success)
+        await #expect(throws: SentinelError(code: 1768)) {
+            try await task.value
+        }
+    }
+
+    /// This synchronous actor occupation is the regression stimulus: yielding
+    /// MainActor here would let the broken implementation dispatch its work.
+    @MainActor
+    private func waitWhileOccupyingMainActor(for started: DispatchSemaphore) -> DispatchTimeoutResult {
+        started.wait(timeout: .now() + 5)
+    }
+
+    @Test("Cancellation still allows already requested non-throwing work to return")
+    func cancelledNonThrowingTaskReturnsValue() async {
+        let task = Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await runOnBackground { 42 }
+        }
+        let result = await task.value
+        #expect(result == 42)
+    }
+
+    @Test("Cancellation still allows throwing work to return its result")
+    func cancelledThrowingTaskReturnsValue() async throws {
+        let task = Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await runOnBackground { () throws -> Int in 42 }
+        }
+        let result = try await task.value
+        #expect(result == 42)
+    }
+
     // MARK: - QoS forwarding
 
     @Test("userInitiated QoS forwards to the queue (probed via qos_class_self)")
@@ -122,19 +187,19 @@ struct BackgroundDispatchTests {
 
     @Test("Throwing variant returns value when closure does not throw")
     func throwingReturnsValueOnSuccess() async throws {
-        let result = try await runOnBackground { 7 * 6 }
+        let result = try await runOnBackground { () throws -> Int in 7 * 6 }
         #expect(result == 42)
     }
 
     @Test("Throwing variant runs body off the main thread")
     func throwingRunsOffMain() async throws {
-        let isMain = try await runOnBackground { (pthread_main_np() != 0) }
+        let isMain = try await runOnBackground { () throws -> Bool in (pthread_main_np() != 0) }
         #expect(isMain == false)
     }
 
     @Test("Throwing variant honours custom QoS")
     func throwingHonoursQoS() async throws {
-        let qosClass = try await runOnBackground(qos: .utility) {
+        let qosClass = try await runOnBackground(qos: .utility) { () throws -> qos_class_t in
             qos_class_self()
         }
         #expect(qosClass == QOS_CLASS_UTILITY)
@@ -210,7 +275,7 @@ struct BackgroundDispatchTests {
     @Test("Throwing closure body executes exactly once per call (success path)")
     func throwingClosureRunsOnceOnSuccess() async throws {
         let counter = AtomicCounter()
-        _ = try await runOnBackground {
+        _ = try await runOnBackground { () throws in
             counter.increment()
         }
         #expect(counter.value == 1)
@@ -257,7 +322,7 @@ struct BackgroundDispatchTests {
     @Test("Throwing variant drains autoreleased objects before returning")
     func throwingDrainsAutoreleasePool() async throws {
         let deallocations = AtomicCounter()
-        _ = try await runOnBackground { () -> Int in
+        _ = try await runOnBackground { () throws -> Int in
             let probe = AutoreleaseProbe(deallocations: deallocations)
             _ = Unmanaged.passRetained(probe).autorelease()
             return 1
