@@ -82,20 +82,53 @@ nonisolated struct AgentAdapterOffer: Sendable, CustomStringConvertible,
     }
 }
 
+/// Registry-owned activation proof for programmatic provider control. It is
+/// not a task, command, environment, or publication grant. Only core lifecycle
+/// transitions can change it; adapters may synchronously revalidate it before
+/// physical writes without hopping onto an actor.
+nonisolated final class AgentAdapterControlAuthority: Sendable {
+    private enum Phase: Sendable { case pending, active, revoked }
+    private let phase = Mutex(Phase.pending)
+    fileprivate init() {}
+
+    func validate() throws {
+        try phase.withLock { state in
+            guard state == .active else { throw AdapterSessionError.invalidLifecycle }
+        }
+    }
+
+    fileprivate func activate() -> Bool {
+        phase.withLock { state in
+            guard state != .revoked else { return false }
+            state = .active
+            return true
+        }
+    }
+
+    fileprivate func invalidate() { phase.withLock { $0 = .revoked } }
+
+    /// Negative-only authority: a physical owner may revoke its source even
+    /// when the registry-bound wrapper has not started asynchronous cleanup.
+    func revoke() { invalidate() }
+}
+
 /// A registry-minted request. Factories can consume, but cannot construct, session authority.
 nonisolated struct AgentAdapterSessionRequest: Sendable {
     let contract: NegotiatedAdapterContract
     let resumeFrom: AdapterResumeCheckpoint?
     let sink: any AgentEventSink
+    let controlAuthority: AgentAdapterControlAuthority
 
     fileprivate init(
         contract: NegotiatedAdapterContract,
         resumeFrom: AdapterResumeCheckpoint?,
-        sink: any AgentEventSink
+        sink: any AgentEventSink,
+        controlAuthority: AgentAdapterControlAuthority
     ) {
         self.contract = contract
         self.resumeFrom = resumeFrom
         self.sink = sink
+        self.controlAuthority = controlAuthority
     }
 }
 
@@ -117,10 +150,28 @@ nonisolated fileprivate struct SourceAttempt: Hashable, Sendable, CustomStringCo
     var customMirror: Mirror { Mirror(self, children: ["value": description]) }
 }
 
+/// Opaque source/attempt identity, minted only on registry-validated events.
+/// It is not persisted, a provider resume token, or execution authority.
+nonisolated struct ValidatedAgentSourceIdentity: Hashable, Sendable,
+    CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    fileprivate let namespace: SourceNamespace
+    fileprivate let attempt: SourceAttempt
+    fileprivate init(namespace: SourceNamespace, attempt: SourceAttempt) {
+        self.namespace = namespace
+        self.attempt = attempt
+    }
+    var description: String { "<redacted:validated-source>" }
+    var debugDescription: String { description }
+    var customMirror: Mirror { Mirror(self, children: ["value": description]) }
+}
+
 /// A core-wrapped event whose source authority cannot be supplied by a producer.
 nonisolated struct ValidatedAgentEvent: Sendable, CustomStringConvertible,
     CustomDebugStringConvertible, CustomReflectable {
     let candidate: AdapterCandidate
+    var sourceIdentity: ValidatedAgentSourceIdentity {
+        ValidatedAgentSourceIdentity(namespace: namespace, attempt: attempt)
+    }
     fileprivate let namespace: SourceNamespace
     fileprivate let attempt: SourceAttempt
 
@@ -354,11 +405,13 @@ private actor SourceSessionState {
     private var stopCompletion: BoundedAdapterStop?
     private var startSettlement: BoundedAdapterStop?
     private let authority: OneShotAuthorityReservation
+    let controlAuthority: AgentAdapterControlAuthority
     private let pendingLimit = AgentAdapterRegistry.startBufferLimit
 
-    init(baseline: UInt64, authority: OneShotAuthorityReservation) {
+    init(baseline: UInt64, authority: OneShotAuthorityReservation, controlAuthority: AgentAdapterControlAuthority) {
         highestAdmittedSequence = baseline
         self.authority = authority
+        self.controlAuthority = controlAuthority
     }
 
     func beginStart() -> Bool {
@@ -412,6 +465,7 @@ private actor SourceSessionState {
         guard lifecycle == .starting else { return .rejected }
         guard !Task.isCancelled else {
             lifecycle = .retired
+            controlAuthority.invalidate()
             pendingCandidates.removeAll(keepingCapacity: false)
             activationRemaining = 0
             authority.rollback()
@@ -419,6 +473,7 @@ private actor SourceSessionState {
         }
         guard authority.commit() else {
             lifecycle = .retired
+            controlAuthority.invalidate()
             pendingCandidates.removeAll(keepingCapacity: false)
             activationRemaining = 0
             return .rejected
@@ -437,6 +492,7 @@ private actor SourceSessionState {
         guard !pendingCandidates.isEmpty else {
             activationRemaining = 0
             lifecycle = .retired
+            controlAuthority.invalidate()
             return nil
         }
         activationRemaining -= 1
@@ -447,11 +503,16 @@ private actor SourceSessionState {
     func finishActivation() -> SourceActivationResult {
         if Task.isCancelled {
             lifecycle = .retired
+            controlAuthority.invalidate()
             pendingCandidates.removeAll(keepingCapacity: false)
             activationRemaining = 0
             return .cancelled
         }
-        return lifecycle == .active ? .committed : .rejected
+        guard lifecycle == .active, controlAuthority.activate() else {
+            controlAuthority.invalidate()
+            return .rejected
+        }
+        return .committed
     }
 
     func complete(
@@ -463,6 +524,7 @@ private actor SourceSessionState {
         resumeDrainWaitersIfNeeded()
         if outcome == .revoked {
             lifecycle = .retired
+            controlAuthority.invalidate()
             pendingCandidates.removeAll(keepingCapacity: false)
             activationRemaining = 0
             return .revoked
@@ -486,6 +548,7 @@ private actor SourceSessionState {
         checkpointedSequence = sequence
         pendingCheckpointPosition = position
         lifecycle = .retired
+        controlAuthority.invalidate()
         return position
     }
 
@@ -504,12 +567,14 @@ private actor SourceSessionState {
             authority.rollback()
         }
         lifecycle = .retired
+        controlAuthority.invalidate()
         pendingCandidates.removeAll(keepingCapacity: false)
         activationRemaining = 0
         resumeDrainWaitersIfNeeded()
     }
 
     func beginStop() -> SourceStopDirective {
+        controlAuthority.invalidate()
         if let stopCompletion { return .wait(stopCompletion) }
         let completion = BoundedAdapterStop()
         stopCompletion = completion
@@ -534,6 +599,7 @@ private actor SourceSessionState {
 
     func revoke() {
         lifecycle = .retired
+        controlAuthority.invalidate()
         pendingCandidates.removeAll(keepingCapacity: false)
         activationRemaining = 0
         resumeDrainWaitersIfNeeded()
@@ -841,21 +907,25 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
     let cleanupPermit: AdapterCleanupPermit
     private let deadlineSleeper: AdapterDeadlineSleeper
     private let confirmedCleanup = BoundedAdapterStop()
+    private let controlAuthority: AgentAdapterControlAuthority
 
     init(
         state: SourceSessionState,
         underlying: any AgentAdapterSession,
         cleanupPermit: AdapterCleanupPermit,
-        deadlineSleeper: AdapterDeadlineSleeper
+        deadlineSleeper: AdapterDeadlineSleeper,
+        controlAuthority: AgentAdapterControlAuthority
     ) {
         self.state = state
+        self.controlAuthority = controlAuthority
         self.underlying = underlying
         self.cleanupPermit = cleanupPermit
         self.deadlineSleeper = deadlineSleeper
     }
 
     func requestStop(deadline: ContinuousClock.Instant) async -> BoundedAdapterStop {
-        await Self.prepareStop(
+        controlAuthority.invalidate()
+        return await Self.prepareStop(
             context: cleanupContext,
             deadline: deadline
         )
@@ -879,6 +949,7 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
     }
 
     deinit {
+        controlAuthority.invalidate()
         let state = state
         let underlying = underlying
         let cleanupPermit = cleanupPermit
@@ -1185,9 +1256,11 @@ nonisolated struct AgentAdapterRegistry: Sendable {
         let authorityLease = OneShotAuthorityLease(reservation: authority)
         let namespace = checkpoint?.namespace ?? SourceNamespace()
         let attempt = SourceAttempt()
+        let controlAuthority = AgentAdapterControlAuthority()
         let state = SourceSessionState(
             baseline: checkpoint?.lastSourceSequence ?? 0,
-            authority: authority
+            authority: authority,
+            controlAuthority: controlAuthority
         )
         let sink = ValidatingAgentEventSink(
             contract: contract,
@@ -1196,7 +1269,8 @@ nonisolated struct AgentAdapterRegistry: Sendable {
             state: state,
             downstream: downstream
         )
-        let request = AgentAdapterSessionRequest(contract: contract, resumeFrom: checkpoint, sink: sink)
+        let request = AgentAdapterSessionRequest(contract: contract, resumeFrom: checkpoint, sink: sink,
+                                                 controlAuthority: controlAuthority)
         var guardedLifetime: CoreBoundSessionLifetime?
         do {
             try Task.checkCancellation()
@@ -1205,7 +1279,8 @@ nonisolated struct AgentAdapterRegistry: Sendable {
                 state: state,
                 underlying: session,
                 cleanupPermit: cleanupPermit,
-                deadlineSleeper: deadlineSleeper
+                deadlineSleeper: deadlineSleeper,
+                controlAuthority: controlAuthority
             )
             guardedLifetime = lifetime
             try Task.checkCancellation()
