@@ -61,9 +61,9 @@ struct ContentView: View {
     /// overlay (including Agent Attention)
     /// and captures/restores the previous AppKit first responder.
     @State var commandOverlayRouter = CommandOverlayRouter()
-    @AppStorage("minimapVisible") var isMinimapVisible = true
-    @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
-    @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
+    @AppStorage("minimapVisible", store: PineStorageContext.defaults) var isMinimapVisible = true
+    @AppStorage(BlameConstants.storageKey, store: PineStorageContext.defaults) var isBlameVisible = true
+    @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) var isWordWrapEnabled = true
 
     /// The TabManager for the currently focused editor pane. Use this for
     /// any menu command, go-to request, search result, status bar binding,

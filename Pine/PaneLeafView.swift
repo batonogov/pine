@@ -97,9 +97,9 @@ struct PaneLeafView: View {
     /// via the `CodeEditorView` environment for multiple-definition navigation.
     @State private var definitionQuickPickController = DefinitionQuickPickController()
 
-    @AppStorage("minimapVisible") private var isMinimapVisible = true
-    @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
-    @AppStorage("wordWrapEnabled") private var isWordWrapEnabled = true
+    @AppStorage("minimapVisible", store: PineStorageContext.defaults) private var isMinimapVisible = true
+    @AppStorage(BlameConstants.storageKey, store: PineStorageContext.defaults) private var isBlameVisible = true
+    @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) private var isWordWrapEnabled = true
 
     private var tabManager: TabManager? { paneManager.tabManager(for: paneID) }
     private var terminalState: TerminalPaneState? { paneManager.terminalState(for: paneID) }

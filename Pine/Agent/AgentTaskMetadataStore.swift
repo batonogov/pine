@@ -908,13 +908,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         if let storageRoot {
             return storageRoot.standardizedFileURL
         }
-        let base = applicationSupportDirectory ?? fileManager.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first
-        guard let base else {
-            return URL(fileURLWithPath: "/dev/null/pine-agent-tasks")
-        }
+        let base = applicationSupportDirectory ?? PineStorageContext.applicationSupportDirectory
         return base.resolvingSymlinksInPath()
             .appendingPathComponent(Self.directoryName)
     }

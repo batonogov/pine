@@ -58,7 +58,7 @@ struct ProblemsPanelView: View {
     var onSelect: ((ProblemsFlatDiagnostic) -> Void)?
 
     @Environment(\.openSettings) private var openSettings
-    @AppStorage(PineSettingsView.selectedPaneKey)
+    @AppStorage(PineSettingsView.selectedPaneKey, store: PineStorageContext.defaults)
     private var selectedSettingsPane = SettingsPane.SettingsPaneID.general
 
     var body: some View {

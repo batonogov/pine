@@ -20,7 +20,7 @@ nonisolated enum PineSettingsDefaults {
             environment: ProcessInfo.processInfo.environment
         ),
         let defaults = UserDefaults(suiteName: suiteName) else {
-            return .standard
+            return PineStorageContext.defaults
         }
         return defaults
     }

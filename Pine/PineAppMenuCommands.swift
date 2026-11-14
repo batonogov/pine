@@ -52,9 +52,9 @@ struct PineAppMenuCommands: Commands {
     /// `recentProjects`: a closure keeps Commands off the AppDelegate.
     let projectRegistry: () -> ProjectRegistry?
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
-    @AppStorage("minimapVisible") private var minimapVisible = true
-    @AppStorage(BlameConstants.storageKey) private var blameVisible = true
-    @AppStorage("wordWrapEnabled") private var wordWrapEnabled = true
+    @AppStorage("minimapVisible", store: PineStorageContext.defaults) private var minimapVisible = true
+    @AppStorage(BlameConstants.storageKey, store: PineStorageContext.defaults) private var blameVisible = true
+    @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) private var wordWrapEnabled = true
     private var keybindings: UserKeybindingRegistry {
         ExtensibilityManager.shared.keybindings
     }

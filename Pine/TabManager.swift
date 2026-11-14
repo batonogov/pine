@@ -154,7 +154,7 @@ final class TabManager {
     /// from inheriting a concurrently mutated process-wide UserDefaults key.
     @ObservationIgnored
     var autoSavePreferenceProvider: @MainActor () -> Bool = {
-        UserDefaults.standard.bool(forKey: TabAutoSave.autoSaveKey)
+        PineStorageContext.defaults.bool(forKey: TabAutoSave.autoSaveKey)
     }
     /// Project wiring replaces this fallback for every pane-owned manager,
     /// so model-triggered large-file and error flows do not depend on which

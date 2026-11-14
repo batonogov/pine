@@ -45,7 +45,7 @@ struct MigrationManager {
     private var migrations: [(from: Int, to: Int, migrate: (UserDefaults) -> Void)] = []
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         faultInjector: PersistenceFaultInjector = .processEnvironment
     ) {
         self.defaults = defaults
@@ -190,7 +190,7 @@ struct MigrationManager {
 
     /// Creates a MigrationManager with all built-in migrations registered.
     static func withDefaultMigrations(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         faultInjector: PersistenceFaultInjector = .processEnvironment
     ) -> MigrationManager {
         var manager = MigrationManager(

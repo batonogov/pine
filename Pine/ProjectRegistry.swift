@@ -1358,7 +1358,7 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     init(
         lspSettings: LSPSettings = .shared,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = PineStorageContext.defaults,
         fileManager: FileManager = .default,
         agentTasks: AgentTaskRegistry? = nil,
         agentRecoveryInspector: AgentTaskRecoveryInspector = AgentTaskRecoveryInspector(),

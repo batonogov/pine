@@ -40,7 +40,7 @@ final class FontSizeSettings {
         NSFont.monospacedSystemFont(ofSize: fontSize - 2, weight: .regular)
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PineStorageContext.defaults) {
         self.defaults = defaults
         let stored = defaults.double(forKey: Self.userDefaultsKey)
         if stored > 0 {

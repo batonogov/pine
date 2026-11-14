@@ -26,7 +26,7 @@ final class AgentHandoffSettings {
 
     private(set) var isReadOnlyContextEnabled: Bool
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PineStorageContext.defaults) {
         self.defaults = defaults
         self.isReadOnlyContextEnabled = (
             defaults.object(forKey: Keys.readOnlyContextEnabled) as? Bool

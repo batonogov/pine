@@ -41,7 +41,7 @@ final class QuickOpenProvider {
     /// suite instead of the production domain (#1554).
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PineStorageContext.defaults) {
         self.defaults = defaults
     }
 
