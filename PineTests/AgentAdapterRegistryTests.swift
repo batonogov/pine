@@ -1543,6 +1543,8 @@ struct AgentAdapterRegistryTests {
         let setup = try fixtures()
         let descriptor = setup.adapters[0].0
         let stopHold = StopHold()
+        let returnHold = IgnoringStopHold()
+        defer { Task { await returnHold.release() } }
         let capacity = AdapterCleanupCapacity(limit: 1)
         let manualDeadline = ManualDeadlineSleeper()
         let registry = try AgentAdapterRegistry(
@@ -1553,7 +1555,8 @@ struct AgentAdapterRegistryTests {
                     profile: setup.profile,
                     versions: descriptor.contractVersions
                 ),
-                stopHold: stopHold
+                stopHold: stopHold,
+                returnHold: returnHold
             ))],
             cleanupCapacity: capacity,
             deadlineSleeper: AdapterDeadlineSleeper { deadline in
@@ -1590,6 +1593,18 @@ struct AgentAdapterRegistryTests {
         await stopHold.waitUntilFinished()
         await stopHold.release()
         #expect(await stopHold.observedCancellationAtExit == true)
+        // The fixture's finished signal precedes its caller returning. Hold
+        // that exact interleaving to prove cleanup still owns the permit.
+        await returnHold.waitUntilArrived()
+        #expect(capacity.reservedCount == 1)
+        await #expect(throws: AdapterSessionError.cleanupCapacityUnavailable) {
+            _ = try await registry.makeSession(
+                contract: replacementContract,
+                resumeFrom: nil
+            ) { _ in .accepted }
+        }
+        await returnHold.release()
+        #expect(await waitUntilMainActor { capacity.reservedCount == 0 })
         #expect(capacity.reservedCount == 0)
 
         let replacement = try await registry.makeSession(
@@ -2574,6 +2589,7 @@ nonisolated private struct StopTestFactory: AgentAdapterFactory {
     let probeResult: AdapterProbeResult
     let stopHold: StopHold
     var recorder: FactoryRecorder? = nil
+    var returnHold: IgnoringStopHold? = nil
 
     func probe() async throws -> AdapterProbeResult { probeResult }
 
@@ -2581,17 +2597,19 @@ nonisolated private struct StopTestFactory: AgentAdapterFactory {
         _ request: AgentAdapterSessionRequest
     ) async throws -> any AgentAdapterSession {
         if let recorder { await recorder.record(request: request) }
-        return StopTestSession(contract: request.contract, stopHold: stopHold)
+        return StopTestSession(contract: request.contract, stopHold: stopHold, returnHold: returnHold)
     }
 }
 
 nonisolated private struct StopTestSession: AgentAdapterSession {
     let contract: NegotiatedAdapterContract
     let stopHold: StopHold
+    var returnHold: IgnoringStopHold? = nil
 
     func start() async throws {}
     func stop(deadline: ContinuousClock.Instant) async {
         await stopHold.wait()
+        if let returnHold { await returnHold.wait() }
     }
 }
 
