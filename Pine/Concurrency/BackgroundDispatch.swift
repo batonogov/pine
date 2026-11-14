@@ -17,7 +17,8 @@ import Foundation
 /// Use this when you need to leave the current actor for CPU-bound or blocking
 /// I/O work (process spawning, regex computation, file enumeration) and resume
 /// once the result is ready. The closure is `@Sendable`, so callers must pass
-/// in pure values rather than capturing actor-isolated state.
+/// in pure values rather than capturing actor-isolated state. Explicit
+/// nonisolation lets any actor enqueue work without first visiting MainActor.
 ///
 /// The body runs inside an explicit `autoreleasepool` (#1509). Global dispatch
 /// queues install no pool of their own, so without one every autoreleased
@@ -35,7 +36,7 @@ import Foundation
 ///   - work: The synchronous work to perform off the calling actor.
 /// - Returns: The value produced by `work`.
 @inlinable
-func runOnBackground<T: Sendable>(
+nonisolated func runOnBackground<T: Sendable>(
     qos: DispatchQoS.QoSClass = .userInitiated,
     _ work: @Sendable @escaping () -> T
 ) async -> T {
@@ -53,6 +54,7 @@ func runOnBackground<T: Sendable>(
 
 /// Throwing variant of `runOnBackground(qos:_:)`. Errors thrown by `work` are
 /// propagated through the continuation and surface to the awaiting caller.
+/// Like the non-throwing variant, enqueueing does not require MainActor.
 ///
 /// The body runs inside an explicit `autoreleasepool` for the reason described
 /// on the non-throwing variant (#1509). The pool drains on the error path too,
@@ -64,7 +66,7 @@ func runOnBackground<T: Sendable>(
 /// - Returns: The value produced by `work`.
 /// - Throws: Any error thrown by `work`.
 @inlinable
-func runOnBackground<T: Sendable>(
+nonisolated func runOnBackground<T: Sendable>(
     qos: DispatchQoS.QoSClass = .userInitiated,
     _ work: @Sendable @escaping () throws -> T
 ) async throws -> T {
