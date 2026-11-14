@@ -802,6 +802,7 @@ struct AgentInboxTests {
             agentType: .codex,
             launchExecutable: "codex"
         )
+        #expect(await taskRegistry.prepareDurableWork(in: projectIdentity))
         let launch = taskRegistry.preparePineLaunch(
             descriptor: descriptor,
             context: routeContext,

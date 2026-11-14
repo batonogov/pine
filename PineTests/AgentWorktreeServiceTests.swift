@@ -40,6 +40,8 @@ struct AgentWorktreeServiceTests {
             if state == "agent" {
                 tab.agentSession = self.session(id: id(45), processIdentifier: 1_345)
             } else {
+                let context = try #require(manager.terminal.agentTaskContext(for: tab))
+                #expect(await taskRegistry.prepareDurableWork(in: context.project))
                 _ = try reservation(manager.terminal.prepareAgentLaunch(
                     in: tab, descriptor: AgentDescriptor(agentType: .codex, launchExecutable: "codex"), objective: "Pending work"
                 ))

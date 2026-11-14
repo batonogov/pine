@@ -134,6 +134,16 @@ struct AgentInboxView: View {
                 Divider()
             }
 
+            if !registry.agentTasks.unavailableMetadataProjects.isEmpty {
+                ScrollView {
+                    ForEach(registry.agentTasks.unavailableMetadataProjects, id: \.self) { project in
+                        AgentTaskPersistenceStatusView(registry: registry.agentTasks, project: project)
+                    }
+                }
+                .frame(maxHeight: 180)
+                Divider()
+            }
+
             if snapshot.isEmpty {
                 ContentUnavailableView {
                     Label(Strings.agentInboxEmpty, systemImage: MenuIcons.agentInbox)

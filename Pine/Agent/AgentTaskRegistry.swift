@@ -90,6 +90,8 @@ final class AgentTaskRegistry {
     private(set) var saveResultByProject:
         [String: AgentTaskMetadataSaveResult] = [:]
 
+    private(set) var metadataRecoveryProjects = Set<AgentTaskProjectIdentity>()
+
     @ObservationIgnored
     private let persistence: any AgentTaskPersisting
     @ObservationIgnored
@@ -832,6 +834,120 @@ final class AgentTaskRegistry {
         loadTasks[project] = load
     }
 
+    /// Recovery is deliberate and performs exactly one validated read. Repeated
+    /// registration never silently changes the initial fail-closed decision.
+    func retryMetadataLoad(_ project: AgentTaskProjectIdentity) async -> Bool {
+        guard !isTerminating,
+              loadTasks[project] == nil,
+              case .rejected(let rejection) = loadStatusByProject[project.persistenceKey],
+              rejection == .lockContention || rejection == .transientIO else {
+            return false
+        }
+        metadataRecoveryProjects.insert(project)
+        let store = persistence
+        let load = Task { @MainActor [weak self] in
+            let result = await store.load(project: project)
+            guard let self else { return }
+            defer { loadTasks[project] = nil }
+            guard !Task.isCancelled else {
+                metadataRecoveryProjects.remove(project)
+                return
+            }
+            acceptLoad(result, project: project)
+        }
+        loadTasks[project] = load
+        let deadline = monotonicNow().advanced(by: flushTotal)
+        guard await waitForLoad(project, until: deadline) else {
+            // Keep the canceled read registered until the store returns. A
+            // stuck backend must not accumulate overlapping retry requests.
+            load.cancel()
+            if loadTasks[project] == nil { metadataRecoveryProjects.remove(project) }
+            return false
+        }
+        defer { metadataRecoveryProjects.remove(project) }
+        guard loadedProjects.contains(project) else { return false }
+        return await flushPersistence(project: project) == .saved
+            && !Task.isCancelled
+            && canAdmitDurableWork(in: project)
+    }
+
+    /// Used by production dispatch paths before creating a process or writing
+    /// a command. Loading and the existing persistence barrier are bounded;
+    /// this never retries a rejected load on the user's behalf.
+    func prepareDurableWork(in project: AgentTaskProjectIdentity) async -> Bool {
+        guard !Task.isCancelled, !isTerminating else { return false }
+        registerProject(project)
+        guard await waitForLoad(
+            project, until: monotonicNow().advanced(by: flushTotal)
+        ), !Task.isCancelled, !isTerminating,
+           loadedProjects.contains(project),
+           !quarantinedProjects.contains(project) else { return false }
+        // A readable file is not proof that its next write can be committed.
+        // Probe through the existing publication fence and durability checks.
+        markDirty(project)
+        return await flushPersistence(project: project) == .saved
+            && !Task.isCancelled
+            && canAdmitDurableWork(in: project)
+    }
+
+    func canAdmitDurableWork(in project: AgentTaskProjectIdentity) -> Bool {
+        loadedProjects.contains(project)
+            && loadTasks[project] == nil
+            && !quarantinedProjects.contains(project)
+            && !unpersistableDirtyProjects.contains(project)
+            && !dirtyProjects.contains(project)
+            && persistenceTailTicket?.projectKey != project.persistenceKey
+            && !persistenceRetryBlocked.contains(project)
+            && saveResultByProject[project.persistenceKey]?.isDurablySaved != false
+            && !isTerminating
+    }
+
+    /// Includes failed scopes with no restored tasks, so an empty Inbox still
+    /// explains why new work cannot be saved.
+    var unavailableMetadataProjects: [AgentTaskProjectIdentity] {
+        registeredProjects.filter { project in
+            if metadataRecoveryProjects.contains(project) { return true }
+            if case .rejected = loadStatusByProject[project.persistenceKey] {
+                return true
+            }
+            return saveResultByProject[project.persistenceKey]?.isDurablySaved == false
+        }.sorted { $0.persistenceKey < $1.persistenceKey }
+    }
+
+    func canRetryMetadataLoad(_ project: AgentTaskProjectIdentity) -> Bool {
+        guard loadTasks[project] == nil, !isTerminating,
+              case .rejected(let rejection) = loadStatusByProject[project.persistenceKey]
+        else { return false }
+        return rejection == .lockContention || rejection == .transientIO
+    }
+
+    func canRetryMetadataPersistence(_ project: AgentTaskProjectIdentity) -> Bool {
+        if canRetryMetadataLoad(project) { return true }
+        guard !isTerminating, loadTasks[project] == nil,
+              !metadataRecoveryProjects.contains(project),
+              loadedProjects.contains(project),
+              !quarantinedProjects.contains(project) else { return false }
+        switch saveResultByProject[project.persistenceKey] {
+        case .rejected(.lockContention), .rejected(.transientIO),
+             .rejected(.ioFailure), .rejected(.durabilityUnknown),
+             .publishedButDurabilityUnknown:
+            return true
+        default:
+            return false
+        }
+    }
+
+    func retryMetadataPersistence(_ project: AgentTaskProjectIdentity) async -> Bool {
+        if canRetryMetadataLoad(project) { return await retryMetadataLoad(project) }
+        guard canRetryMetadataPersistence(project) else { return false }
+        metadataRecoveryProjects.insert(project)
+        defer { metadataRecoveryProjects.remove(project) }
+        markDirty(project)
+        return await flushPersistence(project: project) == .saved
+            && !Task.isCancelled
+            && canAdmitDurableWork(in: project)
+    }
+
     /// Inbox may read recent metadata before any project is admitted. Do not
     /// claim the scope until the caller revalidates it after the store suspends:
     /// cancellation, removal from Recents, and repository replacement must not
@@ -1011,8 +1127,10 @@ final class AgentTaskRegistry {
         changedProjects.forEach(markDirty)
     }
 
-    /// Reserves durable identity before a Pine-owned launch. The real detector
-    /// later supplies the run and process evidence for this exact route.
+    /// Reserves identity before a Pine-owned launch. The real detector later
+    /// supplies run and process evidence for this exact route. This synchronous
+    /// reservation does not establish durability: production dispatchers must
+    /// first await `prepareDurableWork(in:)`, including for an unregistered scope.
     func preparePineLaunch(
         descriptor: AgentDescriptor,
         context: AgentTaskBridgeContext,
@@ -1022,6 +1140,8 @@ final class AgentTaskRegistry {
     ) -> AgentTaskLaunchResult {
         expireClaims()
         guard !isTerminating,
+              !registeredProjects.contains(context.project)
+                || canAdmitDurableWork(in: context.project),
               context.origin == .pineLaunched,
               validLaunchRoute(context.route),
               validLaunchExecutable(descriptor),
@@ -1081,6 +1201,8 @@ final class AgentTaskRegistry {
         expireClaims()
         guard let index = taskIndex(for: taskID),
               !isTerminating,
+              !registeredProjects.contains(context.project)
+                || canAdmitDurableWork(in: context.project),
               context.origin == .pineLaunched,
               validLaunchRoute(context.route),
               tasks[index].project == context.project,
@@ -1628,7 +1750,8 @@ final class AgentTaskRegistry {
     /// Waits for loads and every queued save, with a five-second total and
     /// two-second per-tail monotonic deadline. A hung store fails closed.
     func flushPersistence(
-        maximumDuration: Duration? = nil
+        maximumDuration: Duration? = nil,
+        project scope: AgentTaskProjectIdentity? = nil
     ) async -> AgentTaskPersistenceFlushResult {
         let requestedDuration = maximumDuration.map {
             max(.zero, $0)
@@ -1636,29 +1759,40 @@ final class AgentTaskRegistry {
         let deadline = monotonicNow().advanced(
             by: min(flushTotal, requestedDuration)
         )
-        let loadingProjects = Array(loadTasks.keys)
+        let loadingProjects = loadTasks.keys.filter { scope == nil || $0 == scope }
         for project in loadingProjects {
             guard await waitForLoad(project, until: deadline) else {
                 return .failed
             }
         }
-        guard unpersistableDirtyProjects.isEmpty else { return .failed }
+        // Rejected restoration with no local mutation has nothing to write.
+        // Keep that status visible and block admission, while allowing Quit to
+        // leave the untouched file intact. Unsaved local work still fails here.
+        guard !unpersistableDirtyProjects.contains(where: { scope == nil || $0 == scope }) else {
+            return .failed
+        }
         var failedAttempts = 0
         while monotonicNow() < deadline {
-            guard unpersistableDirtyProjects.isEmpty else { return .failed }
+            guard !unpersistableDirtyProjects.contains(where: { scope == nil || $0 == scope }) else {
+                return .failed
+            }
             guard monotonicNow() < deadline else { return .failed }
+            if let scope, !dirtyProjects.contains(scope),
+               persistenceTailTicket?.projectKey != scope.persistenceKey {
+                return .saved
+            }
+            let dirty = dirtyProjects.filter { scope == nil || $0 == scope }
             if persistenceTail == nil,
-               !dirtyProjects.isEmpty,
-               dirtyProjects.isSubset(of: persistenceRetryBlocked) {
-                let retry = dirtyProjects.min {
+               !dirty.isEmpty,
+               dirty.allSatisfy({ persistenceRetryBlocked.contains($0) }) {
+                let retry = dirty.min {
                     $0.persistenceKey < $1.persistenceKey
                 }
                 if let retry { persistenceRetryBlocked.remove(retry) }
             }
-            let dirty = dirtyProjects
             dirty.forEach(scheduleSaveIfReady)
             guard persistenceTail != nil else {
-                return dirtyProjects.isEmpty ? .saved : .failed
+                return dirty.isEmpty ? .saved : .failed
             }
             let ticket = persistenceTailTicket
             let attempt = min(
@@ -1670,7 +1804,8 @@ final class AgentTaskRegistry {
                 abandonPersistenceTail()
                 return .failed
             }
-            if let result = saveResultByProject[ticket.projectKey],
+            if scope == nil || scope?.persistenceKey == ticket.projectKey,
+               let result = saveResultByProject[ticket.projectKey],
                !result.isDurablySaved {
                 failedAttempts += 1
                 if failedAttempts >= 3 { return .failed }
@@ -1744,9 +1879,20 @@ final class AgentTaskRegistry {
                 stagedHistorical[run.id] = task.id
             }
         }
+        // Only a fully validated read can release quarantine. Local tasks and
+        // their live ownership maps remain intact; duplicate IDs/runs above
+        // reject the entire merge rather than replacing either history.
+        quarantinedProjects.remove(project)
+        let hadUnsavedLocalChanges = unpersistableDirtyProjects.remove(project) != nil
         loadedProjects.insert(project)
         diskRevisionByProject[project] = result.revision
-        envelopeStateByProject[project] = result.envelope
+        if let local = envelopeStateByProject[project],
+           let localDate = local.rememberedAgentUpdatedAt,
+           localDate > (result.envelope.rememberedAgentUpdatedAt ?? .distantPast) {
+            needsNormalizedSave = true
+        } else {
+            envelopeStateByProject[project] = result.envelope
+        }
         historicalTaskIDByRunID = stagedHistorical
         loadedInterruptedTaskIDs.formUnion(stagedInterruptedTaskIDs)
         tasks.append(contentsOf: stagedTasks)
@@ -1758,7 +1904,7 @@ final class AgentTaskRegistry {
         // does not immediately re-sweep the same tasks.
         lastRetentionSweepAt = monotonicNow()
         reconcileTerminalRetention()
-        if needsNormalizedSave { markDirty(project) }
+        if needsNormalizedSave || hadUnsavedLocalChanges { markDirty(project) }
         scheduleSaveIfReady(project)
     }
 
@@ -1773,7 +1919,6 @@ final class AgentTaskRegistry {
         loadStatusByProject[project.persistenceKey] = .rejected(rejection)
         loadedProjects.remove(project)
         diskRevisionByProject[project] = nil
-        envelopeStateByProject[project] = nil
         quarantinedProjects.insert(project)
         if dirtyProjects.contains(project) {
             unpersistableDirtyProjects.insert(project)

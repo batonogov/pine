@@ -1054,6 +1054,7 @@ struct AgentTaskRegistryTests {
                 targetTerminalID: tab.id
             )?.terminalID == tab.id
         )
+        #expect(await taskRegistry.flushPersistence() == .saved)
         guard case .reserved(let resumeReservation) = manager.terminal.prepareAgentResume(
             taskID: reservation.taskID,
             in: tab
@@ -1081,7 +1082,10 @@ struct AgentTaskRegistryTests {
     func failedWriteCancelsLaunchReservation() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        let taskRegistry = AgentTaskRegistry(claimTTL: .seconds(1))
+        let taskRegistry = AgentTaskRegistry(
+            persistence: AgentTaskMetadataStore(storageRoot: fixture.storage),
+            claimTTL: .seconds(1)
+        )
         let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
         let manager = try #require(
             projectRegistry.projectManager(for: fixture.project)
@@ -1129,7 +1133,10 @@ struct AgentTaskRegistryTests {
     func staleAcknowledgementCannotArmLaunchAuthority() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        let taskRegistry = AgentTaskRegistry(claimTTL: .milliseconds(50))
+        let taskRegistry = AgentTaskRegistry(
+            persistence: AgentTaskMetadataStore(storageRoot: fixture.storage),
+            claimTTL: .milliseconds(50)
+        )
         let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
         let manager = try #require(
             projectRegistry.projectManager(for: fixture.project)
@@ -1489,7 +1496,7 @@ struct AgentTaskRegistryTests {
     func lateAcknowledgedPineLaunchInvalidatesQuitAnyway() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        let store = ScriptedAgentTaskStore(suspendFirstSave: true)
+        let store = ScriptedAgentTaskStore(suspendFirstSave: true, savesBeforeSuspension: 1)
         let taskRegistry = AgentTaskRegistry(persistence: store)
         let projects = ProjectRegistry(agentTasks: taskRegistry)
         let manager = try #require(
@@ -1759,7 +1766,7 @@ struct AgentTaskRegistryTests {
     func lateAcknowledgementGetsPostSettlementFlush() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        let store = ScriptedAgentTaskStore(suspendFirstSave: true)
+        let store = ScriptedAgentTaskStore(suspendFirstSave: true, savesBeforeSuspension: 1)
         let taskRegistry = AgentTaskRegistry(persistence: store)
         let projects = ProjectRegistry(agentTasks: taskRegistry)
         let manager = try #require(
@@ -1833,7 +1840,9 @@ struct AgentTaskRegistryTests {
     func inFlightPineLaunchContributesQuitAttention() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        let projects = ProjectRegistry()
+        let projects = ProjectRegistry(agentTasks: AgentTaskRegistry(
+            persistence: AgentTaskMetadataStore(storageRoot: fixture.storage)
+        ))
         let manager = try #require(
             projects.projectManager(for: fixture.project)
         )
@@ -1881,7 +1890,10 @@ struct AgentTaskRegistryTests {
     func expiredTerminalReservationCanBeReplaced() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        let taskRegistry = AgentTaskRegistry(claimTTL: .milliseconds(1))
+        let taskRegistry = AgentTaskRegistry(
+            persistence: AgentTaskMetadataStore(storageRoot: fixture.storage),
+            claimTTL: .milliseconds(1)
+        )
         let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
         let manager = try #require(
             projectRegistry.projectManager(for: fixture.project)
@@ -1908,6 +1920,7 @@ struct AgentTaskRegistryTests {
             try await clock.sleep(for: .milliseconds(5))
         }
         #expect(!taskRegistry.isLaunchPending(expired))
+        #expect(await taskRegistry.flushPersistence() == .saved)
 
         guard case .reserved = manager.terminal.prepareAgentLaunch(
             in: tab,
@@ -2009,7 +2022,9 @@ struct AgentTaskRegistryTests {
     func duplicateLiveTabRouteIsRejected() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        let taskRegistry = AgentTaskRegistry()
+        let taskRegistry = AgentTaskRegistry(
+            persistence: AgentTaskMetadataStore(storageRoot: fixture.storage)
+        )
         let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
         let manager = try #require(
             projectRegistry.projectManager(for: fixture.project)
@@ -2427,6 +2442,250 @@ struct AgentTaskRegistryTests {
         #expect(
             registry.saveResultByProject[identity.persistenceKey] == nil
         )
+    }
+
+    @Test("transient metadata failure blocks new work before dispatch")
+    func transientMetadataFailureRejectsLaunch() async {
+        let identity = project("/tmp/pine-transient-admission")
+        let store = LoadedAgentTaskStore(
+            status: .rejected(.lockContention), tasks: []
+        )
+        let registry = AgentTaskRegistry(persistence: store)
+        registry.registerProject(identity)
+        _ = await registry.flushPersistence()
+        let result = registry.preparePineLaunch(
+            descriptor: AgentDescriptor(agentType: .claudeCode, launchExecutable: "claude"),
+            context: context(project: identity, routeSeed: 172, origin: .pineLaunched),
+            title: nil,
+            objective: nil
+        )
+        #expect(result == .rejected)
+        #expect(registry.tasks.isEmpty)
+    }
+
+    @Test("transient load recovery merges local and disk history in one process")
+    func transientLoadRecoveryPreservesLocalAndDiskTasks() async throws {
+        for rejection in [AgentTaskMetadataRejection.lockContention, .transientIO] {
+            let fixture = try PersistenceFixture()
+            defer { fixture.cleanup() }
+            let identity = project(fixture.project.path)
+            let disk = AgentTaskMetadataStore(storageRoot: fixture.storage)
+            let seed = AgentTaskRegistry()
+            seed.bridge(makeSession(pid: 1801, generation: 1, observedAt: Date()),
+                        replacing: nil, context: context(project: identity, routeSeed: 1801))
+            #expect(await disk.save(tasks: seed.tasks, project: identity).isDurablySaved)
+            let store = RecoverableAgentTaskStore(disk: disk, rejection: rejection)
+            let registry = AgentTaskRegistry(persistence: store)
+            registry.registerProject(identity)
+            #expect(await registry.flushPersistence() == .saved)
+            #expect(registry.canRetryMetadataLoad(identity))
+            #expect(registry.unavailableMetadataProjects == [identity])
+            registry.registerProject(identity)
+            #expect(await store.loadCount == 1)
+
+            let local = makeSession(pid: 1802, generation: 1, observedAt: Date())
+            registry.bridge(local, replacing: nil,
+                            context: context(project: identity, routeSeed: 1802))
+            let localID = try #require(registry.taskID(forSessionID: local.id))
+            #expect(await registry.retryMetadataLoad(identity))
+            #expect(await store.loadCount == 2)
+            #expect(registry.taskID(forSessionID: local.id) == localID)
+            #expect(registry.canAdmitDurableWork(in: identity))
+            #expect(registry.unavailableMetadataProjects.isEmpty)
+            let restored = await disk.load(project: identity)
+            #expect(Set(restored.tasks.map(\.id)) == Set(seed.tasks.map(\.id) + [localID]))
+            registry.prepareForApplicationTermination()
+            #expect(await registry.flushPersistence() == .saved)
+        }
+    }
+
+    @Test("retry validates complete disk batch before releasing quarantine")
+    func retryRejectsIdentityCollisionWithoutDiscardingLocalState() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let disk = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let store = RecoverableAgentTaskStore(disk: disk, rejection: .transientIO)
+        let registry = AgentTaskRegistry(persistence: store)
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+        let local = makeSession(pid: 1803, generation: 1, observedAt: Date())
+        registry.bridge(local, replacing: nil,
+                        context: context(project: identity, routeSeed: 1803))
+        let localTasks = registry.tasks
+        #expect(await disk.save(tasks: localTasks, project: identity).isDurablySaved)
+        let original = await disk.load(project: identity)
+        #expect(await registry.retryMetadataLoad(identity) == false)
+        #expect(registry.tasks == localTasks)
+        #expect(registry.taskID(forSessionID: local.id) == localTasks.first?.id)
+        #expect(registry.loadStatusByProject[identity.persistenceKey] == .rejected(.invalidMetadata))
+        #expect(await disk.load(project: identity).revision == original.revision)
+        #expect(await registry.flushPersistence() == .failed)
+    }
+
+    @Test("recovery save cannot overwrite disk changed after its validated read")
+    func retryCASPreservesNewerDiskAndConcurrentLocalOwnership() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let disk = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let seed = AgentTaskRegistry()
+        seed.bridge(makeSession(pid: 1804, generation: 1, observedAt: Date()), replacing: nil,
+                    context: context(project: identity, routeSeed: 1804))
+        #expect(await disk.save(tasks: seed.tasks, project: identity).isDurablySaved)
+        let store = RecoverableAgentTaskStore(disk: disk, rejection: .lockContention, suspendRecovery: true)
+        let registry = AgentTaskRegistry(persistence: store)
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+        let retry = Task { await registry.retryMetadataLoad(identity) }
+        #expect(await store.waitForRecovery())
+        // This disk writer races after the accepted read; it owns a newer revision.
+        seed.bridge(makeSession(pid: 1805, generation: 1, observedAt: Date()), replacing: nil,
+                    context: context(project: identity, routeSeed: 1805))
+        #expect(await disk.save(tasks: seed.tasks, project: identity).isDurablySaved)
+        let newer = await disk.load(project: identity)
+        let local = makeSession(pid: 1806, generation: 1, observedAt: Date())
+        registry.bridge(local, replacing: nil,
+                        context: context(project: identity, routeSeed: 1806))
+        let localID = try #require(registry.taskID(forSessionID: local.id))
+        await store.releaseRecovery()
+        #expect(await retry.value == false)
+        #expect(registry.taskID(forSessionID: local.id) == localID)
+        #expect(registry.task(for: localID) != nil)
+        let after = await disk.load(project: identity)
+        #expect(after.revision == newer.revision)
+        #expect(Set(after.tasks.map(\.id)) == Set(newer.tasks.map(\.id)))
+        // The existing store names an expected-disk-revision mismatch superseded.
+        #expect(registry.saveResultByProject[identity.persistenceKey] == .rejected(.superseded))
+        #expect(registry.canAdmitDurableWork(in: identity) == false)
+        #expect(await registry.flushPersistence() == .failed)
+    }
+
+    @Test("protected metadata cannot be retried or overwritten")
+    func protectedMetadataRejectsRecovery() async {
+        for rejection in [AgentTaskMetadataRejection.corrupt, .unknownSchema, .unsafeFilesystemObject] {
+            let identity = project("/tmp/pine-protected-retry")
+            let store = LoadedAgentTaskStore(status: .rejected(rejection), tasks: [])
+            let registry = AgentTaskRegistry(persistence: store)
+            registry.registerProject(identity)
+            #expect(await registry.flushPersistence() == .saved)
+            #expect(registry.canRetryMetadataLoad(identity) == false)
+            #expect(await registry.retryMetadataLoad(identity) == false)
+            #expect(registry.persistenceIsQuarantinedForTesting(identity))
+            #expect(registry.loadStatusByProject[identity.persistenceKey] == .rejected(rejection))
+        }
+    }
+
+    @Test("dispatch admission verifies writing even after a successful read")
+    func durableWorkAdmissionChecksWriteFailure() async {
+        let identity = project("/tmp/pine-write-admission")
+        let store = ScriptedAgentTaskStore(saveResult: .rejected(.transientIO))
+        let registry = AgentTaskRegistry(persistence: store)
+        #expect(await registry.prepareDurableWork(in: identity) == false)
+        #expect(registry.tasks.isEmpty)
+        #expect(registry.canAdmitDurableWork(in: identity) == false)
+        #expect(registry.unavailableMetadataProjects == [identity])
+        #expect(await registry.flushPersistence() == .failed)
+    }
+
+    @Test("a hung recovery is bounded and its late result cannot release quarantine")
+    func recoveryTimeoutRejectsLateResult() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let disk = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let store = RecoverableAgentTaskStore(disk: disk, rejection: .transientIO, suspendRecovery: true)
+        let registry = AgentTaskRegistry(persistence: store, flushTotal: .milliseconds(50))
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+        #expect(await registry.retryMetadataLoad(identity) == false)
+        #expect(await store.loadCount == 2)
+        #expect(registry.canRetryMetadataLoad(identity) == false)
+        #expect(await registry.retryMetadataLoad(identity) == false)
+        #expect(await store.loadCount == 2)
+        await store.releaseRecovery()
+        #expect(await waitUntilMainActor { registry.canRetryMetadataLoad(identity) })
+        #expect(await registry.flushPersistence() == .saved)
+        #expect(registry.persistenceIsQuarantinedForTesting(identity))
+        #expect(registry.tasks.isEmpty)
+    }
+
+    @Test("explicit retry recovers a transient save failure without reloading local ownership")
+    func retryTransientSavePreservesLocalTask() async throws {
+        let identity = project("/tmp/pine-save-retry")
+        let store = ScriptedAgentTaskStore(saveResult: .rejected(.transientIO))
+        let registry = AgentTaskRegistry(persistence: store)
+        #expect(await registry.prepareDurableWork(in: identity) == false)
+        registry.bridge(makeSession(pid: 1807, generation: 1), replacing: nil,
+                        context: context(project: identity, routeSeed: 1807))
+        let before = registry.tasks
+        #expect(await registry.flushPersistence() == .failed)
+        #expect(registry.canRetryMetadataPersistence(identity))
+        await store.setSaveResult(.saved(taskCount: 1))
+        #expect(await registry.retryMetadataPersistence(identity))
+        #expect(registry.tasks == before)
+        #expect(registry.unavailableMetadataProjects.isEmpty)
+        #expect(await registry.flushPersistence() == .saved)
+    }
+
+    @Test("production terminal dispatch waits for explicit task-history recovery")
+    func terminalDispatchDoesNotWriteUntilHistoryRecovers() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let disk = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let store = RecoverableAgentTaskStore(disk: disk, rejection: .lockContention)
+        let taskRegistry = AgentTaskRegistry(persistence: store)
+        let projects = ProjectRegistry(agentTasks: taskRegistry)
+        let manager = try #require(projects.projectManager(for: fixture.project))
+        let pane = manager.paneManager.createTerminalPaneAtBottom(workingDirectory: fixture.project)
+        let tab = try #require(manager.paneManager.terminalState(for: pane)?.terminalTabs.first)
+        let descriptor = AgentDescriptor(agentType: .codex, launchExecutable: "codex")
+        var writes = 0
+        let refused = await manager.terminal.launchAgentCommandForTesting(
+            "codex", descriptor: descriptor, in: tab
+        ) {
+            writes += 1
+            return true
+        }
+        #expect(refused == .rejected)
+        #expect(writes == 0)
+        #expect(taskRegistry.tasks.isEmpty)
+        let identity = try #require(taskRegistry.unavailableMetadataProjects.first)
+        #expect(await taskRegistry.retryMetadataLoad(identity))
+        let admitted = await manager.terminal.launchAgentCommandForTesting(
+            "codex", descriptor: descriptor, in: tab
+        ) {
+            writes += 1
+            return true
+        }
+        guard case .reserved = admitted else {
+            Issue.record("Recovered task history did not permit the explicit launch")
+            return
+        }
+        #expect(writes == 1)
+        manager.terminal.cancelAgentLaunch(in: tab)
+        await manager.workspace.waitForLoadingComplete()
+    }
+
+    @Test("unavailable history in one project does not block another project's durable admission")
+    func metadataAdmissionIsProjectScoped() async throws {
+        let unavailable = try PersistenceFixture()
+        defer { unavailable.cleanup() }
+        let healthy = try PersistenceFixture()
+        defer { healthy.cleanup() }
+        let disk = AgentTaskMetadataStore(storageRoot: healthy.storage)
+        let store = RecoverableAgentTaskStore(disk: disk, rejection: .transientIO)
+        let registry = AgentTaskRegistry(persistence: store)
+        let unavailableIdentity = project(unavailable.project.path)
+        let healthyIdentity = project(healthy.project.path)
+        registry.registerProject(unavailableIdentity)
+        #expect(await registry.flushPersistence() == .saved)
+        registry.bridge(makeSession(pid: 1808, generation: 1), replacing: nil,
+                        context: context(project: unavailableIdentity, routeSeed: 1808))
+        #expect(await registry.prepareDurableWork(in: healthyIdentity))
+        #expect(registry.canAdmitDurableWork(in: healthyIdentity))
+        #expect(registry.canAdmitDurableWork(in: unavailableIdentity) == false)
+        #expect(await registry.flushPersistence() == .failed)
     }
 
     @Test("every rejected load quarantines later registry mutations")
@@ -3581,7 +3840,9 @@ struct AgentTaskRegistryTests {
     func productionTerminalCloseReconciliationUsesTombstone() async throws {
         let fixture = try PersistenceFixture()
         defer { fixture.cleanup() }
-        let taskRegistry = AgentTaskRegistry()
+        let taskRegistry = AgentTaskRegistry(
+            persistence: AgentTaskMetadataStore(storageRoot: fixture.storage)
+        )
         let projectRegistry = ProjectRegistry(agentTasks: taskRegistry)
         let manager = try #require(
             projectRegistry.projectManager(for: fixture.project)
@@ -4596,6 +4857,7 @@ private actor ScriptedAgentTaskStore: AgentTaskPersisting {
     private var saveResult: AgentTaskMetadataSaveResult
     private let suspendFirstSave: Bool
     private let suspendEverySave: Bool
+    private let savesBeforeSuspension: Int
     private var saveSnapshots: [[AgentTask]] = []
     private var publishedSnapshots: [[AgentTask]] = []
     private var completedSaves = 0
@@ -4605,11 +4867,13 @@ private actor ScriptedAgentTaskStore: AgentTaskPersisting {
     init(
         saveResult: AgentTaskMetadataSaveResult = .saved(taskCount: 0),
         suspendFirstSave: Bool = false,
-        suspendEverySave: Bool = false
+        suspendEverySave: Bool = false,
+        savesBeforeSuspension: Int = 0
     ) {
         self.saveResult = saveResult
         self.suspendFirstSave = suspendFirstSave
         self.suspendEverySave = suspendEverySave
+        self.savesBeforeSuspension = savesBeforeSuspension
     }
 
     func load(
@@ -4629,7 +4893,7 @@ private actor ScriptedAgentTaskStore: AgentTaskPersisting {
             await withCheckedContinuation { continuation in
                 saveContinuations.append(continuation)
             }
-        } else if suspendFirstSave, saveSnapshots.count == 1 {
+        } else if suspendFirstSave, saveSnapshots.count == savesBeforeSuspension + 1 {
             await withCheckedContinuation { continuation in
                 firstSaveContinuation = continuation
             }
@@ -4662,14 +4926,14 @@ private actor ScriptedAgentTaskStore: AgentTaskPersisting {
     func waitForFirstSave() async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(1))
-        while saveSnapshots.isEmpty, clock.now < deadline {
+        while saveSnapshots.count <= savesBeforeSuspension, clock.now < deadline {
             do {
                 try await clock.sleep(for: .milliseconds(1))
             } catch {
                 return false
             }
         }
-        return !saveSnapshots.isEmpty
+        return saveSnapshots.count > savesBeforeSuspension
     }
 
     func releaseFirstSave() {
@@ -4797,5 +5061,57 @@ private actor RollbackTailRaceAgentTaskStore: AgentTaskPersisting {
             }
         }
         return condition()
+    }
+}
+
+private actor RecoverableAgentTaskStore: AgentTaskPersisting {
+    let disk: AgentTaskMetadataStore
+    let rejection: AgentTaskMetadataRejection
+    let suspendRecovery: Bool
+    private(set) var loadCount = 0
+    private(set) var recoveryWaiting = false
+    private var recoveryContinuation: CheckedContinuation<Void, Never>?
+
+    init(disk: AgentTaskMetadataStore, rejection: AgentTaskMetadataRejection,
+         suspendRecovery: Bool = false) {
+        self.disk = disk
+        self.rejection = rejection
+        self.suspendRecovery = suspendRecovery
+    }
+
+    func load(project: AgentTaskProjectIdentity) async -> AgentTaskMetadataLoadResult {
+        loadCount += 1
+        if loadCount == 1 {
+            return AgentTaskMetadataLoadResult(status: .rejected(rejection), tasks: [])
+        }
+        let result = await disk.load(project: project)
+        if suspendRecovery {
+            await withCheckedContinuation { continuation in
+                recoveryContinuation = continuation
+                recoveryWaiting = true
+            }
+        }
+        return result
+    }
+
+    func waitForRecovery() async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while !recoveryWaiting, clock.now < deadline {
+            do { try await clock.sleep(for: .milliseconds(1)) } catch { return false }
+        }
+        return recoveryWaiting
+    }
+
+    func releaseRecovery() {
+        recoveryContinuation?.resume()
+        recoveryContinuation = nil
+        recoveryWaiting = false
+    }
+
+    func save(tasks: [AgentTask], envelope: AgentTaskEnvelopeState,
+              project: AgentTaskProjectIdentity,
+              authorization: AgentTaskPublicationAuthorization?) async -> AgentTaskMetadataSaveResult {
+        await disk.save(tasks: tasks, envelope: envelope, project: project, authorization: authorization)
     }
 }

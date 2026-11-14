@@ -2834,6 +2834,9 @@ final class ProjectRegistry: LSPSettingsObserver {
             return .launchRejected
         }
 
+        guard await agentTasks.prepareDurableWork(in: initialTask.project) else {
+            return .launchRejected
+        }
         guard await manager.revalidateAgentTaskFilesystemAdmission(
             expectedIdentity: initialTask.project,
             workingDirectory: plan.workingDirectory

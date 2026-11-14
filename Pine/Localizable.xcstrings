@@ -1,6 +1,354 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "agentMetadata.futureSchema" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Aufgabenverlauf erfordert eine neuere Version von Pine. Die ursprünglichen Daten wurden beibehalten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This task history requires a newer version of Pine. The original data has been preserved."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este historial de tareas requiere una versión más reciente de Pine. Se han conservado los datos originales."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet historique des tâches nécessite une version plus récente de Pine. Les données d’origine ont été conservées."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタスク履歴には新しいバージョンのPineが必要です。元のデータは保持されています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 작업 기록에는 더 최신 버전의 Pine이 필요합니다. 원본 데이터는 보존되었습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este histórico de tarefas requer uma versão mais recente do Pine. Os dados originais foram preservados."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Для этой истории задач нужна более новая версия Pine. Исходные данные сохранены."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此任务历史记录需要更新版本的 Pine。原始数据已保留。"
+          }
+        }
+      }
+    },
+    "agentMetadata.ioFailure" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Aufgabenverlauf konnte nicht gelesen oder gespeichert werden. Prüfe den Speicherzugriff und versuche es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task history could not be read or saved. Check storage access, then try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer o guardar el historial de tareas. Comprueba el acceso al almacenamiento e inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de lire ou d’enregistrer l’historique des tâches. Vérifiez l’accès au stockage, puis réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク履歴を読み取るか保存することができませんでした。ストレージへのアクセスを確認してから再試行してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "작업 기록을 읽거나 저장할 수 없습니다. 저장 공간 접근 권한을 확인한 후 다시 시도하세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler ou salvar o histórico de tarefas. Verifique o acesso ao armazenamento e tente novamente."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось прочитать или сохранить историю задач. Проверьте доступ к хранилищу и повторите попытку."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取或保存任务历史记录。请检查存储访问权限，然后重试。"
+          }
+        }
+      }
+    },
+    "agentMetadata.locked" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein anderer Prozess verwendet den Aufgabenverlauf. Versuche es erneut, wenn er fertig ist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another process is using task history. Try again when it finishes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro proceso está usando el historial de tareas. Inténtalo de nuevo cuando termine."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un autre processus utilise l’historique des tâches. Réessayez lorsqu’il aura terminé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のプロセスがタスク履歴を使用中です。終了後に再試行してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다른 프로세스가 작업 기록을 사용 중입니다. 완료되면 다시 시도하세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Outro processo está usando o histórico de tarefas. Tente novamente quando ele terminar."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Историю задач использует другой процесс. Повторите попытку, когда он завершится."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另一个进程正在使用任务历史记录。请在其完成后重试。"
+          }
+        }
+      }
+    },
+    "agentMetadata.protected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Aufgabenverlauf konnte nicht validiert werden oder wurde anderswo geändert. Der vorhandene Verlauf wurde nicht überschrieben; ungespeicherte Änderungen müssen noch gespeichert werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task history failed validation or changed elsewhere. Existing history has not been overwritten; unsaved changes still need to be saved."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El historial de tareas no superó la validación o cambió en otro lugar. El historial existente no se ha sobrescrito; los cambios sin guardar aún deben guardarse."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’historique des tâches n’a pas pu être validé ou a été modifié ailleurs. L’historique existant n’a pas été écrasé ; les modifications non enregistrées doivent encore être enregistrées."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク履歴の検証に失敗したか、別の場所で変更されました。既存の履歴は上書きされていません。未保存の変更はまだ保存する必要があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "작업 기록 검증에 실패했거나 다른 곳에서 변경되었습니다. 기존 기록은 덮어쓰지 않았으며 저장되지 않은 변경 사항은 아직 저장해야 합니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O histórico de tarefas falhou na validação ou foi alterado em outro lugar. O histórico existente não foi sobrescrito; as alterações não salvas ainda precisam ser salvas."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "История задач не прошла проверку или была изменена в другом месте. Существующая история не перезаписана; несохранённые изменения ещё нужно сохранить."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任务历史记录未通过验证或已在其他位置更改。现有历史记录未被覆盖；未保存的更改仍需保存。"
+          }
+        }
+      }
+    },
+    "agentMetadata.retry" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aufgabenverlauf erneut laden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry task history"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reintentar historial de tareas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessayer l’historique des tâches"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク履歴を再試行"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "작업 기록 다시 시도"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tentar histórico de tarefas novamente"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повторить загрузку истории задач"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试任务历史记录"
+          }
+        }
+      }
+    },
+    "agentMetadata.unavailable" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Aufgabenverlauf ist nicht verfügbar. Neue Arbeit pausiert, bis sie gespeichert werden kann."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task history is unavailable. New work is paused until it can be saved."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El historial de tareas no está disponible. El trabajo nuevo está en pausa hasta que pueda guardarse."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’historique des tâches est indisponible. Les nouvelles tâches sont suspendues jusqu’à ce qu’elles puissent être enregistrées."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク履歴を利用できません。保存できるようになるまで新しい作業を一時停止します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "작업 기록을 사용할 수 없습니다. 저장할 수 있을 때까지 새 작업이 일시 정지됩니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O histórico de tarefas está indisponível. Novos trabalhos estão pausados até que possam ser salvos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "История задач недоступна. Новая работа приостановлена, пока её нельзя сохранить."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任务历史记录不可用。新工作已暂停，直到可以保存。"
+          }
+        }
+      }
+    },
     "" : {
       "shouldTranslate" : false
     },
