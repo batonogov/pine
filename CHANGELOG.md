@@ -1,5 +1,39 @@
 # Changelog
 
+## [2.13.0](https://github.com/batonogov/pine/compare/v2.12.4...v2.13.0) (2026-11-14)
+
+
+### Features
+
+* **agent:** capture content-bound code and environment identities ([#1783](https://github.com/batonogov/pine/issues/1783)) ([8aab5e3](https://github.com/batonogov/pine/commit/8aab5e33fc81d4755db61028e12c84fc2ddd075c))
+* **agent:** correlate Codex requests and scoped attention ([#1789](https://github.com/batonogov/pine/issues/1789)) ([0ca861c](https://github.com/batonogov/pine/commit/0ca861c5db3799547da0ad3cc28b2fb289f72456))
+* **agent:** define the ADE task lifecycle and evidence model ([#1740](https://github.com/batonogov/pine/issues/1740)) ([c06806a](https://github.com/batonogov/pine/commit/c06806a677fe9925543d8c908995620c138ce890))
+* **agent:** detect Antigravity, Droid, Cline, Grok Build, and Kilo Code CLIs ([#1739](https://github.com/batonogov/pine/issues/1739)) ([87d12cc](https://github.com/batonogov/pine/commit/87d12ccef554ed1d7ae38a83c8e3c18ed1cc8076)), closes [#1726](https://github.com/batonogov/pine/issues/1726)
+* **process:** support bounded literal argument launches ([#1752](https://github.com/batonogov/pine/issues/1752)) ([4b3f753](https://github.com/batonogov/pine/commit/4b3f753bc683acde7d55ca12b21618e5a8605015))
+
+
+### Bug Fixes
+
+* **agent:** recover task metadata after transient load failures ([#1775](https://github.com/batonogov/pine/issues/1775)) ([0c1a66c](https://github.com/batonogov/pine/commit/0c1a66c27539da5f1c63f961c91da4454bc9691f))
+* **agent:** require complete operation identities before Ready ([#1750](https://github.com/batonogov/pine/issues/1750)) ([7cfdc67](https://github.com/batonogov/pine/commit/7cfdc675efa8a2d41ca31fa49aa814c1f4f85b6c))
+* **agent:** tolerate filesystem birthtime drift ([#1743](https://github.com/batonogov/pine/issues/1743)) ([cd86759](https://github.com/batonogov/pine/commit/cd867598101c68af9680bd9ac5f317334326e3d0))
+* **concurrency:** dispatch background work without a MainActor hop ([#1773](https://github.com/batonogov/pine/issues/1773)) ([26af795](https://github.com/batonogov/pine/commit/26af79594436b4c61fd5b00f3017af69eec4fc5f))
+* **test:** isolate application persistence before reset and launch ([#1774](https://github.com/batonogov/pine/issues/1774)) ([2c2452e](https://github.com/batonogov/pine/commit/2c2452e1c9628b13eaa9e51957ec36624bd97b18))
+
+
+### Performance Improvements
+
+* **terminal:** coalesce per-terminal process-tree polling into one shared capture wave ([#1746](https://github.com/batonogov/pine/issues/1746)) ([421a54a](https://github.com/batonogov/pine/commit/421a54a3258583c396d52f977fd8206ceff2c5a3))
+
+
+### Documentation
+
+* **agent:** position Pine 3.0 as outcome-first ADE across public surfaces ([#1738](https://github.com/batonogov/pine/issues/1738)) ([23f4bf3](https://github.com/batonogov/pine/commit/23f4bf383935db0d2001eaa20d013a3fea805ec1))
+* **agent:** refresh capability-specific CLI compatibility evidence ([#1781](https://github.com/batonogov/pine/issues/1781)) ([b1766da](https://github.com/batonogov/pine/commit/b1766da1b7507540dac0220b89df3d143bb1de95))
+* **design:** compare two project and task workspace compositions ([#1751](https://github.com/batonogov/pine/issues/1751)) ([ff62c87](https://github.com/batonogov/pine/commit/ff62c870b78d6d63a505e642112f88ba51f3280f))
+* **design:** preserve interactive Pine 3 workspace concept ([#1763](https://github.com/batonogov/pine/issues/1763)) ([0e84d52](https://github.com/batonogov/pine/commit/0e84d5259323ca39fe4755e8a2ae1e2ff9626425))
+* **web:** showcase the Pine 3 vision on the landing page ([#1764](https://github.com/batonogov/pine/issues/1764)) ([7faf90d](https://github.com/batonogov/pine/commit/7faf90d473b93ff743e1436bc2d51825659e864f))
+
 ## [2.12.4](https://github.com/batonogov/pine/compare/v2.12.3...v2.12.4) (2026-11-12)
 
 
