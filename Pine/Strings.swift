@@ -973,6 +973,10 @@ enum Strings {
         "projectSwitcher.tooltip"
     static let projectSwitcherNewAgent: LocalizedStringKey =
         "projectSwitcher.newAgent"
+    static let projectSwitcherChooseAgent: LocalizedStringKey =
+        "projectSwitcher.chooseAgent"
+    static let projectSwitcherRetiredAgentChoice: LocalizedStringKey =
+        "projectSwitcher.retiredAgentChoice"
     static let projectSwitcherNoAgents: LocalizedStringKey =
         "projectSwitcher.noAgents"
 

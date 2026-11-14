@@ -88,12 +88,17 @@ text is never parsed as trusted lifecycle evidence.
 | Qwen Code | 0.21.4 | Detected | Exact executable alias + process generation | Generic terminal command | Structured stream disabled; process termination only |
 | Crush | 0.88.0 | Detected | Exact executable alias + process generation | Generic terminal command | Experimental SSE disabled; process termination only |
 | Kimi Code | 2.1.1 | Detected | Exact executable alias + process generation | Generic terminal command | Process termination only |
-| Empry⊙ | 3.12.2-beta | Detected | Exact executable alias + process generation | Generic terminal command | Structured headless events disabled; process termination only |
 | Antigravity | 1.5.6 | Detected | Exact executable alias + process generation | Generic terminal command | Structured headless JSON disabled; process termination only |
 | Droid | 1.9.0 | Detected | Exact executable alias + process generation | Generic terminal command | JSON/JSON-RPC/ACP disabled; process termination only |
 | Cline | 3.0.74 | Detected | Exact executable alias + process generation | Generic terminal command | JSON/ACP/hooks disabled; process termination only |
 | Grok Build | 1.0.77 | Detected | Exact executable alias + process generation | Generic terminal command | Headless JSON/ACP disabled; process termination only |
 | Kilo Code | 7.8.27 | Detected | Exact executable alias + process generation | Generic terminal command | ACP/serve disabled; process termination only |
+
+Empry⊙ first-party detection and presentation were retired on November 14,
+2026 and are excluded from Pine 3.0 structured adapter plans. Existing task and
+history metadata and manual terminal use remain available; a retired remembered
+default requires an explicit new agent choice. Historical release evidence is
+preserved rather than relabeled as current support.
 
 If the installed version differs, record it and rerun the shared adapter
 conformance suite. Do not raise the tier based on terminal presentation,

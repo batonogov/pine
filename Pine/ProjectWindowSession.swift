@@ -440,6 +440,13 @@ final class ProjectWindowSession {
         return "\(projectName) — \(Self.shortBranchName(worktree.branchName))"
     }
 
+    /// Retired defaults remain metadata until the user explicitly chooses again.
+    var hasRetiredRememberedAgent: Bool {
+        defaults.string(forKey: Self.lastAgentIdentifierKey).map {
+            AgentPresentationCatalog.isRetired(stableIdentifier: $0)
+        } ?? false
+    }
+
     var availableAgentOptions: [ProjectAgentLaunchOption] {
         let options = FirstPartyAgentCompatibilityCatalog.records.compactMap { record ->
             ProjectAgentLaunchOption? in
@@ -751,6 +758,10 @@ final class ProjectWindowSession {
         registry: ProjectRegistry
     ) async {
         guard !isLaunchingAgent else { return }
+        guard !AgentPresentationCatalog.isRetired(stableIdentifier: option.id) else {
+            alertMessage = String(localized: "projectSwitcher.retiredAgentChoice")
+            return
+        }
         isLaunchingAgent = true
         defer { isLaunchingAgent = false }
 

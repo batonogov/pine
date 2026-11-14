@@ -217,7 +217,6 @@ extension AgentType {
         case .qwenCode: "qwenCode"
         case .crush: "crush"
         case .kimiCode: "kimiCode"
-        case .empryo: "empryo"
         case .antigravity: "antigravity"
         case .droid: "droid"
         case .cline: "cline"
@@ -247,7 +246,7 @@ extension AgentType {
         case "qwenCode": self = .qwenCode
         case "crush": self = .crush
         case "kimiCode": self = .kimiCode
-        case "empryo": self = .empryo
+        case "empryo": self = .generic(name: "Empry⊙")
         case "antigravity": self = .antigravity
         case "droid": self = .droid
         case "cline": self = .cline

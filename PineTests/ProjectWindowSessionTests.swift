@@ -21,6 +21,21 @@ struct ProjectWindowSessionTests {
         )
     }
 
+    @Test("retired remembered defaults require an explicit new choice")
+    func retiredRememberedAgentRequiresChoice() throws {
+        let fixture = try ProjectWindowSessionFixture()
+        defer { fixture.cleanup() }
+        fixture.defaults.set("empryo", forKey: "projectWindowSession.lastAgentIdentifier")
+        let session = ProjectWindowSession(
+            initialProjectURL: fixture.firstProject, defaults: fixture.defaults
+        )
+        #expect(session.hasRetiredRememberedAgent)
+        #expect(!session.availableAgentOptions.contains { $0.id == "empryo" })
+        #expect(fixture.defaults.string(forKey: "projectWindowSession.lastAgentIdentifier") == "empryo")
+        fixture.defaults.set("codex", forKey: "projectWindowSession.lastAgentIdentifier")
+        #expect(!session.hasRetiredRememberedAgent)
+    }
+
     @Test("a fresh restored scene admits its initial project exactly once")
     func freshSceneRestoration() async throws {
         let fixture = try ProjectWindowSessionFixture()

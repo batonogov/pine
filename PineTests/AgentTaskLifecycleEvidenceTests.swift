@@ -3114,6 +3114,47 @@ struct AgentTaskLifecycleEvidenceTests {
         #expect(await writer.flushPersistence() == .saved)
     }
 
+    @Test("legacy retired defaults preserve the project envelope but are not launch defaults")
+    func retiredRememberedAgentPreservesEnvelope() async throws {
+        let fixture = try ADEPersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let store = AgentTaskMetadataStore(storageRoot: fixture.storage)
+        let descriptor = try JSONDecoder().decode(
+            AgentDescriptor.self,
+            from: Data(#"{"typeIdentifier":"empryo","launchExecutable":"empryo"}"#.utf8)
+        )
+        let honest = settledTask(seed: 131, now: Date(), projectPath: fixture.project.path)
+        var legacyTaskObject = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(
+                settledTask(seed: 132, now: Date(), projectPath: fixture.project.path)
+            )) as? [String: Any]
+        )
+        legacyTaskObject["descriptor"] = ["typeIdentifier": "empryo", "launchExecutable": "empryo"]
+        let legacyTask = try JSONDecoder().decode(
+            AgentTask.self, from: JSONSerialization.data(withJSONObject: legacyTaskObject)
+        )
+        let envelope = AgentTaskEnvelopeState(
+            rememberedAgent: descriptor, rememberedAgentUpdatedAt: Date()
+        )
+        #expect(await store.save(tasks: [honest, legacyTask], envelope: envelope, project: identity) == .saved(taskCount: 2))
+        let loaded = await store.load(project: identity)
+        #expect(loaded.status == .loaded)
+        #expect(loaded.tasks.first { $0.id == legacyTask.id }?.descriptor == descriptor)
+        #expect(loaded.tasks.count == 2)
+        #expect(loaded.envelope.rememberedAgent == descriptor)
+        #expect(loaded.envelope.rememberedAgent?.agentType == .generic(name: "Empry⊙"))
+        let registry = AgentTaskRegistry(persistence: store)
+        registry.registerProject(identity)
+        #expect(await registry.flushPersistence() == .saved)
+        #expect(registry.rememberedAgentDescriptor(for: identity) == nil)
+        #expect(registry.tasks.count == 2)
+        let restored = try #require(registry.tasks.first { $0.id == legacyTask.id })
+        #expect(restored.descriptor.agentType == .generic(name: "Empry⊙"))
+        #expect(restored.route.availability == .missing)
+        #expect(restored.verificationState != .verified)
+    }
+
     @Test("the remembered default agent persists per project")
     func rememberedAgentPersistsPerProject() async throws {
         let fixture = try ADEPersistenceFixture()

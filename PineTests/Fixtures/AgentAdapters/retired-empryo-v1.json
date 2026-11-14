@@ -1,0 +1,11 @@
+{
+  "history": [
+    {"id":"00000000-0000-0000-0000-000000000001","sessionID":"00000000-0000-0000-0000-000000000002","agentTypeRaw":"empryo","startedAt":0,"affectedFiles":["README.md"],"summary":"Legacy session"},
+    {"id":"00000000-0000-0000-0000-000000000003","sessionID":"00000000-0000-0000-0000-000000000004","agentTypeRaw":"codex","startedAt":0,"affectedFiles":[],"summary":"Unrelated session"}
+  ],
+  "descriptors": [
+    {"typeIdentifier":"empryo","launchExecutable":"empryo"},
+    {"typeIdentifier":"codex","launchExecutable":"codex"},
+    {"typeIdentifier":"future-agent","launchExecutable":"future-agent"}
+  ]
+}

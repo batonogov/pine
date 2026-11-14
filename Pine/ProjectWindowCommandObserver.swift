@@ -13,12 +13,22 @@ import SwiftUI
 /// Applies window-scoped agent and project-switching commands to this scene.
 struct ProjectWindowCommandObserver: ViewModifier {
     @Environment(\.controlActiveState) private var controlActiveState
+    @State private var showsRetiredAgentChoice = false
     let projectManager: ProjectManager
     let session: ProjectWindowSession
     let registry: ProjectRegistry
 
     func body(content: Content) -> some View {
         content
+            .confirmationDialog(
+                Strings.projectSwitcherRetiredAgentChoice,
+                isPresented: $showsRetiredAgentChoice,
+                titleVisibility: .visible
+            ) {
+                ForEach(session.availableAgentOptions) { option in
+                    Button(option.displayName) { launchAgent(identifier: option.id) }
+                }
+            }
             .onReceive(
                 NotificationCenter.default.publisher(for: .newAgent)
             ) { notification in
@@ -58,6 +68,10 @@ struct ProjectWindowCommandObserver: ViewModifier {
     }
 
     private func launchAgent(identifier: String?) {
+        if identifier == nil, session.hasRetiredRememberedAgent {
+            showsRetiredAgentChoice = true
+            return
+        }
         // Resolved against the live catalog rather than the one the menu was
         // built from: an agent uninstalled in between must not silently
         // launch a different one in its place.
