@@ -43,12 +43,7 @@ enum PineEntryPoint {
             CFRunLoopSourceInvalidate(source)
         }
         let preparation = StoragePreparation(runLoop: runLoop, source: source)
-        DispatchQueue.global(qos: .userInitiated).async {
-            autoreleasepool {
-                _ = PineStorageContext.applicationSupportDirectory
-            }
-            preparation.finish()
-        }
+        preparation.start()
         let deadline = DispatchTime.now().uptimeNanoseconds + 30_000_000_000
         while !preparation.isFinished {
             let now = DispatchTime.now().uptimeNanoseconds
@@ -78,6 +73,15 @@ enum PineEntryPoint {
         }
 
         var isFinished: Bool { lock.withLock { finished } }
+
+        func start() {
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                autoreleasepool {
+                    _ = PineStorageContext.applicationSupportDirectory
+                }
+                finish()
+            }
+        }
 
         func finish() {
             lock.withLock { finished = true }
