@@ -1270,6 +1270,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         "recentProjectAgentTaskIdentities"
     private static let maxRecentProjects = 10
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let agentHistoryPrivateStore: AgentHistoryPrivateStore?
     @ObservationIgnored private let fileManager: FileManager
     @ObservationIgnored private let agentRecoveryInspector: AgentTaskRecoveryInspector
     @ObservationIgnored private let agentProcessSnapshotPoller: AgentProcessSnapshotPoller
@@ -1359,6 +1360,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     init(
         lspSettings: LSPSettings = .shared,
         defaults: UserDefaults = PineStorageContext.defaults,
+        agentHistoryPrivateStore: AgentHistoryPrivateStore? = nil,
         fileManager: FileManager = .default,
         agentTasks: AgentTaskRegistry? = nil,
         agentRecoveryInspector: AgentTaskRecoveryInspector = AgentTaskRecoveryInspector(),
@@ -1381,6 +1383,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         self.lspSettings = lspSettings
         self.agentTasks = agentTasks ?? Self.makeDefaultAgentTaskRegistry()
         self.defaults = defaults
+        self.agentHistoryPrivateStore = agentHistoryPrivateStore
         self.fileManager = fileManager
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains(
@@ -1606,6 +1609,8 @@ final class ProjectRegistry: LSPSettingsObserver {
     func releaseIdleWorktreeProject(_ root: URL) -> Bool {
         let root = canonicalProjectURL(root)
         guard let manager = openProjects[root] else { return true }
+        manager.finalizeAgentSessionsForHistory()
+        manager.agentHistory.retryFailedPersistence()
         guard backgroundProjects.contains(root),
               backgroundPresentationLeases[root]?.isEmpty != false,
               !manager.requiresBackgroundRetention,
@@ -1904,12 +1909,17 @@ final class ProjectRegistry: LSPSettingsObserver {
             }
             // Verify directory still exists when reopening from background
             if backgroundProjects.contains(canonical) {
+                existing.finalizeAgentSessionsForHistory()
                 if !hasValidatedFilesystem {
                     var isDir: ObjCBool = false
                     guard fileManager.fileExists(
                         atPath: canonical.path,
                         isDirectory: &isDir
                     ), isDir.boolValue else {
+                        // Failed history remains owned even if its directory
+                        // disappeared. Removing this manager would discard the
+                        // only recoverable pending snapshot.
+                        guard !existing.hasPendingAgentHistory else { return nil }
                         // Directory was deleted while in background — clean up
                         existing.requestUserTaskShutdown()
                         existing.terminal.terminateAll()
@@ -1980,6 +1990,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         let pm = ProjectManager(
             lspSettings: lspSettings,
             sessionDefaults: defaults,
+            agentHistoryPrivateStore: agentHistoryPrivateStore ?? AgentHistoryPrivateStore(),
             agentProcessSnapshotPoller: agentProcessSnapshotPoller,
             agentTaskRegistry: agentTasks,
             workspaceFilesystemValidationSeam:
@@ -2412,6 +2423,8 @@ final class ProjectRegistry: LSPSettingsObserver {
                   backgroundProjects.contains(canonical) else {
                 continue
             }
+            manager.finalizeAgentSessionsForHistory()
+            manager.agentHistory.retryFailedPersistence()
             guard backgroundPresentationLeases[canonical]?.isEmpty != false,
                   !manager.requiresBackgroundRetention,
                   !hasTerminalWorkingDirectoryRetention(in: canonical) else {
@@ -3485,6 +3498,12 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// attempts teardown while any user-task execution is still owned.
     @discardableResult
     func destroyAllProjects() -> Bool {
+        for manager in openProjects.values {
+            manager.finalizeAgentSessionsForHistory()
+        }
+        guard !openProjects.values.contains(where: {
+            $0.hasPendingAgentHistory
+        }) else { return false }
         guard !userTaskOwners.contains(where: {
             $0.hasOutstandingUserTaskExecution
         }) else {

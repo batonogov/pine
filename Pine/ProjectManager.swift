@@ -348,7 +348,14 @@ final class ProjectManager {
     let agentActivity = AgentActivityStore()
     /// Persistent, review-only history of observed finished-agent activity
     /// (vision #933, Phase 2 — Visibility, issues #1073 and #1183).
-    let agentHistory = AgentHistoryStore()
+    let agentHistory: AgentHistoryStore
+    private let agentHistoryPathResolver: AgentHistoryPathResolution.Resolver
+    private var agentHistoryFinalizationGeneration = UUID()
+    private var pendingAgentHistoryFinalizations: [PendingAgentHistoryFinalization] = []
+    @ObservationIgnored private var agentHistoryFinalizationTask: Task<Void, Never>?
+    var hasPendingAgentHistory: Bool {
+        !pendingAgentHistoryFinalizations.isEmpty || agentHistory.hasPendingPersistence
+    }
     /// The primary TabManager (initial root editor pane). Project-scoped
     /// services are wired to every pane-owned manager by `PaneManager`'s
     /// configurator. For the *focused* pane's TabManager, use
@@ -1833,6 +1840,9 @@ final class ProjectManager {
     init(
         lspSettings: LSPSettings = .shared,
         sessionDefaults: UserDefaults = PineStorageContext.defaults,
+        agentHistoryPrivateStore: AgentHistoryPrivateStore = AgentHistoryPrivateStore(),
+        agentHistoryPathResolver: @escaping AgentHistoryPathResolution.Resolver =
+            AgentHistoryPathResolution.relativePaths,
         agentProcessSnapshotPoller: AgentProcessSnapshotPoller? = nil,
         agentTaskRegistry: AgentTaskRegistry? = nil,
         workspaceFilesystemValidationSeam:
@@ -1842,6 +1852,8 @@ final class ProjectManager {
             ContextPresentationIdentity(epoch: 1)
     ) {
         self.sessionDefaults = sessionDefaults
+        self.agentHistory = AgentHistoryStore(privateStore: agentHistoryPrivateStore)
+        self.agentHistoryPathResolver = agentHistoryPathResolver
         self.quickOpenProvider = QuickOpenProvider(defaults: sessionDefaults)
         self.workspace = WorkspaceManager(
             filesystemValidationSeam: workspaceFilesystemValidationSeam
@@ -1854,6 +1866,9 @@ final class ProjectManager {
         )
         self.lspManager = LSPManager(settings: lspSettings)
         self.problemsController = ProblemsPanelController(lspManager: lspManager)
+        terminal.onAgentHistoryBoundary = { [weak self] in
+            self?.finalizeAgentSessionsForHistory()
+        }
         workspace.setOnRootNodesChanged { [weak self] nodes in
             guard let self, let rootURL = self.workspace.rootURL else { return }
             self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)
@@ -2114,6 +2129,7 @@ final class ProjectManager {
     var requiresBackgroundRetention: Bool {
         allTabs.contains(where: \.isDirty)
             || terminal.requiresBackgroundRetention
+            || hasPendingAgentHistory
             || hasOutstandingUserTaskExecution
     }
 
@@ -2385,6 +2401,12 @@ final class ProjectManager {
         filesystemAdmission:
             RecentAgentTaskFilesystemValidationLease? = nil
     ) {
+        guard pendingAgentHistoryFinalizations.isEmpty,
+              agentHistory.updateProjectRoot(url) else {
+            NSLog("ProjectManager: retained project root with unsaved agent history")
+            return
+        }
+        agentHistoryFinalizationGeneration = UUID()
         let projectIdentity = agentTaskProject ?? AgentTaskProjectIdentity(
                 canonicalProjectPath: url.path,
                 canonicalWorktreePath: url.path
@@ -2418,7 +2440,6 @@ final class ProjectManager {
         // where the offer is silently skipped — the user's unsaved work stays
         // on disk with nothing to reveal it.
         setupRecovery(projectURL: url)
-        agentHistory.updateProjectRoot(url)
         synchronizeAgentHandoff(projectRoot: url)
         lspManager.setWorkspaceRoot(url)
         #if DEBUG
@@ -2822,9 +2843,9 @@ final class ProjectManager {
     // MARK: - Agent history finalization (#1073)
 
     /// Finalizes any `.done` agent sessions not yet logged into the durable
-    /// `AgentHistoryStore`. Called on app termination (and safe to call
-    /// periodically). Records heuristically attributed relative paths and a
-    /// file-count summary for review. These observations do not authorize
+    /// `AgentHistoryStore`. Called at detector reconciliation, reclamation,
+    /// and the cancellable Quit barrier. Records heuristically attributed
+    /// relative paths and a file-count summary for review. These observations do not authorize
     /// undo; safe reversal requires exact provenance and an inverse change set
     /// (#1183).
     ///
@@ -2835,31 +2856,47 @@ final class ProjectManager {
     /// the UI (S2/S3 from the #1075 review).
     func finalizeAgentSessionsForHistory() {
         guard let root = workspace.rootURL else { return }
-        let doneSessions = terminal.takeProjectOwnedCompletedAgentSessions()
-        guard !doneSessions.isEmpty else { return }
-        for session in doneSessions {
-            let relativePaths = session.filesModified.compactMap { relativePath(from: $0, root: root) }
-            agentHistory.finalize(
-                session: session,
-                summary: "",
-                affectedRelativePaths: relativePaths,
-                attribution: .heuristic
-            )
+        for session in terminal.takeProjectOwnedCompletedAgentSessions() {
+            pendingAgentHistoryFinalizations.append(PendingAgentHistoryFinalization(
+                generation: agentHistoryFinalizationGeneration,
+                root: root, entryID: UUID(), sessionID: session.id,
+                agentTypeRaw: session.agentType.stableIdentifier,
+                startedAt: session.startedAt, endedAt: Date(), files: session.filesModified
+            ))
+        }
+        guard agentHistoryFinalizationTask == nil,
+              !pendingAgentHistoryFinalizations.isEmpty else { return }
+        // Strong ownership is intentional: consuming the terminal ledger must
+        // not leave a weak task as the only owner of an unfinished snapshot.
+        agentHistoryFinalizationTask = Task { @MainActor [self] in
+            defer { agentHistoryFinalizationTask = nil }
+            while let request = pendingAgentHistoryFinalizations.first {
+                let paths = await AgentHistoryPathResolution.resolve(
+                    root: request.root, files: request.files, using: agentHistoryPathResolver
+                )
+                guard request.generation == agentHistoryFinalizationGeneration,
+                      workspace.rootURL == request.root,
+                      agentHistory.projectRoot == request.root else { return }
+                let safePaths = paths.filter(AgentHistoryStore.isValidRelativePath)
+                agentHistory.append(AgentHistoryEntry(
+                    id: request.entryID, sessionID: request.sessionID,
+                    agentTypeRaw: request.agentTypeRaw, startedAt: request.startedAt,
+                    endedAt: request.endedAt, affectedFiles: safePaths,
+                    summary: safePaths.count == 1 ? "1 file" : "\(safePaths.count) files"
+                ))
+                pendingAgentHistoryFinalizations.removeFirst()
+            }
         }
     }
 
-    /// Returns `url` relative to `root`, or `nil` if `url` is not under `root`.
-    /// Resolves symlinks on both sides so a file recorded via a symlinked path
-    /// still matches the (resolved) project root (S4 from the #1075 review).
-    private func relativePath(from url: URL, root: URL) -> String? {
-        // `URL.path(relativeTo:)` was removed in newer SDKs, so derive the
-        // relative path manually. `resolvingSymlinksInPath()` canonicalizes
-        // both sides so symlinked roots/paths still match.
-        let rootPath = root.resolvingSymlinksInPath().path
-        let urlPath = url.resolvingSymlinksInPath().path
-        guard urlPath == rootPath || urlPath.hasPrefix(rootPath + "/") else { return nil }
-        if urlPath == rootPath { return "" }
-        return String(urlPath.dropFirst(rootPath.count + 1))
+    /// Quit awaits both captured finalization and its acknowledged disk write.
+    /// The caller's deadline can cancel Quit while blocked filesystem work
+    /// stays retained; cancellation never discards an owned completion.
+    func flushAgentHistoryPersistence() async -> Bool {
+        if let task = agentHistoryFinalizationTask { await task.value }
+        guard !Task.isCancelled,
+              pendingAgentHistoryFinalizations.isEmpty else { return false }
+        return await agentHistory.flushPersistence()
     }
 
     // MARK: - Convenience accessors (terminal)

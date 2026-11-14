@@ -998,9 +998,14 @@ final class TerminalManager {
         return result
     }
 
+    /// Runs after a complete detector reconciliation, while exact completed
+    /// ownership is still available even when the terminal badge has expired.
+    var onAgentHistoryBoundary: (@MainActor () -> Void)?
+
     func refreshAgentTasks() {
         guard !agentTaskCallbacksFrozen else { return }
         agentTaskRegistry?.refresh(sessions: agentDetector.detectedSessions)
+        onAgentHistoryBoundary?()
     }
 
     func markAgentEvidenceUnavailable() {
