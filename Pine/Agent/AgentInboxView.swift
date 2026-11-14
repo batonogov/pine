@@ -82,6 +82,15 @@ struct AgentInboxView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            #if PINE_TEST_HOST
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-recovery-evidence") {
+                Text("Recovery test evidence")
+                    .accessibilityIdentifier("agentRecoveryTestEvidence")
+                    .accessibilityValue(
+                        RecoveryUITestEvidence.shared.snapshot(registry: registry)
+                    )
+            }
+            #endif
             HStack(spacing: 8) {
                 Label(
                     Strings.agentInboxTitle,

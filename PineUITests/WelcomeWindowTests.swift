@@ -5,6 +5,7 @@
 //  P0: Welcome window appearance and basic interactions.
 //
 
+import CryptoKit
 import XCTest
 
 final class WelcomeWindowTests: PineUITestCase {
@@ -153,7 +154,7 @@ final class WelcomeWindowTests: PineUITestCase {
             files: ["release.md": "# Pine 2.0\n"]
         )
         projectURLs.append(url)
-        app.launchArguments.append("--ui-test-agent-recovery")
+        app.launchArguments += ["--ui-test-agent-recovery", "--ui-test-recovery-evidence"]
         launchWithProject(url)
 
         openAgentInbox()
@@ -162,6 +163,15 @@ final class WelcomeWindowTests: PineUITestCase {
             firstLaunchRow.waitForExistence(timeout: 8),
             "The first launch should create the durable recovery fixture"
         )
+        let original = try recoveryEvidence(attachmentName: "recovery-original-history")
+        let originalTask = try onlyRecoveryTask(original)
+        let originalID = try XCTUnwrap(originalTask["id"] as? String)
+        XCTAssertEqual(firstLaunchRow.identifier, "agentInboxRow_" + originalID)
+        assertNoRecoveryDispatch(original)
+        let history = try XCTUnwrap(originalTask["runs"] as? [[String: Any]])
+        XCTAssertEqual(history.count, 1)
+        XCTAssertNotNil(history.first?["endedAt"])
+        XCTAssertNotNil(history.first?["outcome"], "The settled result must be retained")
         let recoveryActions = app.descendants(matching: .any)[
             "agentInboxRecoveryActions"
         ].firstMatch
@@ -197,7 +207,9 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(app.descendants(matching: .any)["agentInbox"].exists)
         XCTAssertFalse(terminal.exists)
 
+        assertNoRecoveryDispatch(try recoveryEvidence(attachmentName: "recovery-before-termination"))
         app.terminate()
+        removeRecoverySeedAndResetArguments()
         app.launch()
         app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
@@ -208,6 +220,10 @@ final class WelcomeWindowTests: PineUITestCase {
             restoredRow.waitForExistence(timeout: 8),
             "The second launch should load the persisted recovery card"
         )
+        XCTAssertEqual(restoredRow.identifier, "agentInboxRow_" + originalID)
+        let restored = try recoveryEvidence(attachmentName: "recovery-restored-history")
+        try assertRecoveryHistoryEqual(onlyRecoveryTask(restored), originalTask)
+        assertNoRecoveryDispatch(restored)
         restoredRow.click()
         let restoredNewSession = app.buttons[
             "agentInboxNewSession"
@@ -220,14 +236,187 @@ final class WelcomeWindowTests: PineUITestCase {
             terminal.exists,
             "Restoring task metadata must not launch a terminal automatically"
         )
+        assertNoRecoveryDispatch(try recoveryEvidence())
         restoredNewSession.click()
 
         XCTAssertTrue(terminal.waitForExistence(timeout: 5))
+        // Observe the real child-launch boundary rather than inferring a
+        // dispatch from a terminal tab appearing in SwiftUI.
+        openAgentInbox()
+        let launched = expectation(for: NSPredicate { [weak self] _, _ in
+            guard let value = try? self?.recoveryEvidence() else { return false }
+            return (value["processLaunches"] as? [String])?.count == 1
+        }, evaluatedWith: nil)
+        wait(for: [launched], timeout: 5)
+        let dispatched = try recoveryEvidence(attachmentName: "recovery-explicit-launch")
+        let launchIDs = try XCTUnwrap(dispatched["processLaunches"] as? [String])
+        XCTAssertEqual(launchIDs.count, 1)
+        XCTAssertEqual(Set(launchIDs).count, 1)
+        XCTAssertEqual(dispatched["processStarts"] as? [String], launchIDs)
+        XCTAssertNotEqual(launchIDs.first, history.first?["terminalID"] as? String)
+        XCTAssertEqual(dispatched["inputDispatches"] as? [String], [])
         XCTAssertEqual(
             app.buttons.matching(identifier: "terminalTab_Terminal 1").count,
             1,
             "One explicit recovery action must create one exact terminal"
         )
+    }
+
+    func testMissingRecoveryStorageCannotReseedOnRestart() throws {
+        try assertRecoveryStorageLossDoesNotReseed(corrupt: false)
+    }
+
+    func testCorruptRecoveryStorageCannotReseedOnRestart() throws {
+        try assertRecoveryStorageLossDoesNotReseed(corrupt: true)
+    }
+
+    private func removeRecoverySeedAndResetArguments() {
+        app.launchArguments.removeAll {
+            $0 == "--ui-test-agent-recovery"
+                || $0 == "--ui-test-agent-vendor-recovery"
+                || $0 == "--reset-state"
+        }
+    }
+
+    private func recoveryEvidence(attachmentName: String? = nil) throws -> [String: Any] {
+        let element = app.staticTexts["agentRecoveryTestEvidence"].firstMatch
+        XCTAssertTrue(element.waitForExistence(timeout: 5))
+        let text = try XCTUnwrap(element.value as? String)
+        if let attachmentName {
+            let attachment = XCTAttachment(string: text)
+            attachment.name = attachmentName
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        return try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        )
+    }
+
+    private func onlyRecoveryTask(_ evidence: [String: Any]) throws -> [String: Any] {
+        let tasks = try XCTUnwrap(evidence["tasks"] as? [[String: Any]])
+        XCTAssertEqual(tasks.count, 1)
+        return try XCTUnwrap(tasks.first)
+    }
+
+    private func canonicalJSON(_ value: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    }
+
+    private func assertRecoveryHistoryEqual(
+        _ restored: [String: Any], _ original: [String: Any]
+    ) throws {
+        var comparable = restored
+        comparable["createdAt"] = try comparableRecoveryDate(
+            restored["createdAt"], original["createdAt"]
+        )
+        let runs = try XCTUnwrap(restored["runs"] as? [[String: Any]])
+        let originalRuns = try XCTUnwrap(original["runs"] as? [[String: Any]])
+        XCTAssertEqual(runs.count, originalRuns.count)
+        var comparableRuns = runs
+        for index in runs.indices where originalRuns.indices.contains(index) {
+            for key in ["startedAt", "endedAt"] {
+                comparableRuns[index][key] = try comparableRecoveryDate(
+                    runs[index][key], originalRuns[index][key], allowMissing: key == "endedAt"
+                )
+            }
+        }
+        comparable["runs"] = comparableRuns
+        // Every key, identity, run order, outcome and non-time value stays exact.
+        XCTAssertEqual(try canonicalJSON(comparable), try canonicalJSON(original))
+    }
+
+    private func comparableRecoveryDate(
+        _ actual: Any?, _ expected: Any?, allowMissing: Bool = false
+    ) throws -> Any? {
+        guard let expected else {
+            XCTAssertTrue(allowMissing, "Required recovery timestamps must exist")
+            XCTAssertNil(actual, "A missing settled timestamp must remain missing")
+            return actual
+        }
+        let original = try XCTUnwrap(expected as? Double)
+        let restored = try XCTUnwrap(actual as? Double)
+        XCTAssertTrue(original.isFinite && restored.isFinite)
+        // The metadata codec's millisecondsSince1970 epoch conversion can lose
+        // sub-microsecond floating precision; no broader history tolerance.
+        XCTAssertEqual(restored, original, accuracy: 0.000001)
+        return expected
+    }
+
+    private func assertNoRecoveryDispatch(_ evidence: [String: Any]) {
+        XCTAssertEqual(evidence["processLaunches"] as? [String], [])
+        XCTAssertEqual(evidence["processStarts"] as? [String], [])
+        XCTAssertEqual(evidence["inputDispatches"] as? [String], [])
+    }
+
+    private func assertRecoveryStorageLossDoesNotReseed(corrupt: Bool) throws {
+        let url = try createTempProject(files: ["release.md": "# Recovery\n"])
+        projectURLs.append(url)
+        app.launchArguments += ["--ui-test-agent-recovery", "--ui-test-recovery-evidence"]
+        launchWithProject(url)
+        openAgentInbox()
+        XCTAssertTrue(recoveryRow.waitForExistence(timeout: 8))
+        let original = try recoveryEvidence(attachmentName: "recovery-original-history")
+        let originalID = try XCTUnwrap(onlyRecoveryTask(original)["id"] as? String)
+        assertNoRecoveryDispatch(original)
+        app.terminate()
+
+        // Derive the owned namespace independently; never trust an app-supplied
+        // path when removing a file. Preserve the original as a result artifact.
+        let namespace = try XCTUnwrap(app.launchEnvironment["PINE_TEST_STATE_NAMESPACE"])
+        _ = try XCTUnwrap(UUID(uuidString: namespace), "Refuse storage mutation without an owned UUID")
+        let support = try XCTUnwrap(FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first)
+        let root = support.appendingPathComponent("PineTestState")
+            .appendingPathComponent(namespace)
+            .appendingPathComponent(".pine-agent-tasks-private")
+        let canonical = url.standardizedFileURL.resolvingSymlinksInPath().path
+        let digest = SHA256.hash(data: Data((canonical + "\0" + canonical).utf8))
+        let fileName = digest.prefix(16).map { String(format: "%02x", $0) }.joined() + ".json"
+        let metadata = root.appendingPathComponent(fileName)
+        let originalBytes = try Data(contentsOf: metadata)
+        let attachment = XCTAttachment(data: originalBytes, uniformTypeIdentifier: "public.json")
+        attachment.name = corrupt ? "recovery-before-corruption" : "recovery-before-removal"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        if corrupt {
+            try Data("not valid task metadata".utf8).write(to: metadata)
+        } else {
+            try FileManager.default.removeItem(at: metadata)
+        }
+
+        if !corrupt {
+            // Reproduce the old oracle: keeping the seed flag makes a missing
+            // store look recovered, but its identity proves it is a new task.
+            app.launchArguments.removeAll { $0 == "--reset-state" }
+            app.launch()
+            app.activate()
+            openAgentInbox()
+            XCTAssertTrue(recoveryRow.waitForExistence(timeout: 8))
+            let reseeded = try recoveryEvidence(attachmentName: "recovery-reseed-negative-control")
+            XCTAssertNotEqual(try onlyRecoveryTask(reseeded)["id"] as? String, originalID)
+            assertNoRecoveryDispatch(reseeded)
+            app.terminate()
+            try FileManager.default.removeItem(at: metadata)
+        }
+
+        removeRecoverySeedAndResetArguments()
+        app.launch()
+        app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+        openAgentInbox()
+        let loadFinished = expectation(for: NSPredicate { [weak self] _, _ in
+            guard let evidence = try? self?.recoveryEvidence(),
+                  let statuses = evidence["loadStatuses"] as? [String] else { return false }
+            return statuses.contains { corrupt ? $0.hasPrefix("rejected(") : $0 == "missing" }
+        }, evaluatedWith: nil)
+        wait(for: [loadFinished], timeout: 8)
+        let restored = try recoveryEvidence(attachmentName: "recovery-restored-history")
+        XCTAssertEqual((restored["tasks"] as? [[String: Any]])?.count, 0)
+        XCTAssertFalse(app.buttons["agentInboxRow_" + originalID].exists)
+        XCTAssertFalse(recoveryRow.exists, "Missing data must never be replaced by a fresh fixture")
+        assertNoRecoveryDispatch(restored)
     }
 
     func testVendorResumeIsVisibleAndIsTheKeyboardDefault() throws {

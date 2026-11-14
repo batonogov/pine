@@ -2453,6 +2453,9 @@ final class TerminalTab: Identifiable, Hashable {
             ?? shellSettings.resolvedShellPath
         let arguments = initialProcess?.arguments ?? shellSettings.shellArgs
         let launch: Result<Void, LocalProcessError>
+        #if PINE_TEST_HOST
+        RecoveryUITestEvidence.shared.processLaunches.append(id)
+        #endif
         #if DEBUG
         if let checkedProcessLaunchForTesting {
             launch = checkedProcessLaunchForTesting()
@@ -2474,6 +2477,9 @@ final class TerminalTab: Identifiable, Hashable {
             processDidTerminate()
             return
         }
+        #if PINE_TEST_HOST
+        RecoveryUITestEvidence.shared.processStarts.append(id)
+        #endif
         kickPTYWindowSize()
         processTreeController = TerminalProcessTreeController(
             rootProcessID: terminalView.process.shellPid,
@@ -2890,6 +2896,9 @@ final class TerminalTab: Identifiable, Hashable {
         guard isProcessRunning else { return false }
         let data = Array(text.utf8)
         terminalView.process.send(data: data[...])
+        #if PINE_TEST_HOST
+        RecoveryUITestEvidence.shared.inputDispatches.append(id)
+        #endif
         return true
     }
 
@@ -2902,6 +2911,9 @@ final class TerminalTab: Identifiable, Hashable {
               let descriptor = acknowledgedPTYLease
                 .acquireWriteDescriptor() else { return false }
         let bytes = Array(text.utf8)
+        #if PINE_TEST_HOST
+        RecoveryUITestEvidence.shared.inputDispatches.append(id)
+        #endif
         return await AcknowledgedPTYWriter.write(
             bytes,
             to: descriptor

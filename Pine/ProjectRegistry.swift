@@ -2055,15 +2055,18 @@ final class ProjectRegistry: LSPSettingsObserver {
 
     #if DEBUG
     /// Creates a durable, terminated Pine-owned task only for the explicit
-    /// recovery XCUITest. A second launch loads the persisted card instead of
-    /// seeding another one, exercising the real restore boundary.
-    private func seedAgentRecoveryUITestFixture(
-        project: AgentTaskProjectIdentity
-    ) {
-        guard ProcessInfo.processInfo.arguments.contains(
+    /// recovery XCUITest. Restoration tests must remove the seed argument on
+    /// subsequent launches: this fixture deliberately seeds missing storage.
+    /// Returning the existing task lets backend tests await the real fixture.
+    @discardableResult
+    func seedAgentRecoveryUITestFixture(
+        project: AgentTaskProjectIdentity,
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> Task<Void, Never>? {
+        guard arguments.contains(
             "--ui-test-agent-recovery"
-        ) else { return }
-        Task { @MainActor [weak self] in
+        ) else { return nil }
+        return Task { @MainActor [weak self] in
             guard let self else { return }
             _ = await agentTasks.flushPersistence(
                 maximumDuration: .seconds(2)
@@ -2102,9 +2105,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             guard case .reserved(let reservation) = launch,
                   agentTasks.armLaunch(reservation) else { return }
             let session = AgentSession(
-                id: UUID(
-                    uuidString: "00000000-0000-0000-0000-000000001307"
-                ) ?? UUID(),
+                id: UUID(),
                 agentType: .codex,
                 state: .executing,
                 startedAt: startedAt
@@ -2124,7 +2125,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             )
             session.applyLiveness(.terminated)
             agentTasks.bridge(session, replacing: session, context: context)
-            if ProcessInfo.processInfo.arguments.contains(
+            if arguments.contains(
                 "--ui-test-agent-vendor-recovery"
             ), let taskID = agentTasks.tasks.first(where: {
                 $0.runs.last?.id == session.id
