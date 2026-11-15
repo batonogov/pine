@@ -3,6 +3,10 @@
 This first #1303 slice defines pure contracts and validation only. It has no
 production ingress and is independently reviewable from #1302.
 
+For a pinned-source comparison with T3 Code and the Codex-first integration
+sequence, see [agent integration research](t3-code-agent-integration-2026-11-15.md).
+It distinguishes protocol foundations from a complete production task flow.
+
 For Pine-computed content/environment capture and scheme migration, see
 [ADE content identities](ade-content-identities.md). These primitives do not
 authorize checks, provider execution, Ready publication, or result actions.
