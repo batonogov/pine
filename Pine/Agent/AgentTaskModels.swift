@@ -894,6 +894,44 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
 
 /// Durable user work identity. A task survives individual runs and process
 /// generations, and stores only bounded value metadata.
+/// Durable identity only, never a filesystem lease or an execution grant.
+nonisolated struct AgentTaskEnvironmentSetupSnapshot: Codable, Equatable, Sendable {
+    let taskID: UUID
+    let reservationRunID: UUID
+    let project: URL
+    let expectedWorktree: URL
+    let repositoryProof: RecentAgentTaskRepositoryProof
+    let projectRoot: RecentAgentTaskFilesystemObjectProof
+    let parentRoot: RecentAgentTaskFilesystemObjectProof
+}
+
+/// A one-shot setup journal within the existing project metadata transaction.
+/// Codable does not restore runtime authority; independently reconcile first.
+nonisolated struct AgentTaskReservedWorktreeCheckpoint: Codable, Equatable, Sendable {
+    enum Phase: String, Codable, Sendable { case creationIntent, populationIntent, populated }
+    static let currentScheme = 1
+    let scheme: Int
+    let reservation: AgentTaskEnvironmentSetupSnapshot
+    let baseCommit: String
+    let phase: Phase
+    let worktreeProof: RecentAgentTaskRepositoryProof?
+
+    init(
+        scheme: Int = Self.currentScheme, reservation: AgentTaskEnvironmentSetupSnapshot, baseCommit: String,
+        phase: Phase, worktreeProof: RecentAgentTaskRepositoryProof?
+    ) {
+        self.scheme = scheme
+        self.reservation = reservation
+        self.baseCommit = baseCommit
+        self.phase = phase
+        self.worktreeProof = worktreeProof
+    }
+
+    func advancing(to phase: Phase, proof: RecentAgentTaskRepositoryProof) -> Self {
+        Self(scheme: scheme, reservation: reservation, baseCommit: baseCommit, phase: phase, worktreeProof: proof)
+    }
+}
+
 nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     let id: UUID
     let project: AgentTaskProjectIdentity
@@ -925,6 +963,11 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     // decodes to nil/empty.
     var environment: AgentTaskEnvironmentIdentity?
     var feedback: [AgentTaskFeedbackRecord]
+    var worktreeSetup: AgentTaskReservedWorktreeCheckpoint?
+
+    var hasUnresolvedWorktreeSetup: Bool {
+        worktreeSetup.map { $0.phase != .populated } ?? false
+    }
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -952,6 +995,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case acceptedSnapshot
         case environment
         case feedback
+        case worktreeSetup
     }
 
     init(
@@ -987,6 +1031,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         acceptedSnapshot = nil
         environment = nil
         feedback = []
+        worktreeSetup = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -1068,6 +1113,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             [AgentTaskFeedbackRecord].self,
             forKey: .feedback
         ) ?? []
+        worktreeSetup = try values.decodeIfPresent(AgentTaskReservedWorktreeCheckpoint.self, forKey: .worktreeSetup)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1106,6 +1152,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         )
         try values.encodeIfPresent(environment, forKey: .environment)
         try values.encode(feedback, forKey: .feedback)
+        try values.encodeIfPresent(worktreeSetup, forKey: .worktreeSetup)
     }
 }
 
