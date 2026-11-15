@@ -756,6 +756,8 @@ final class TerminalManager {
                 cancelAgentLaunch(in: tab)
                 return .rejected
             }
+            // A closed/switched window cannot mount the view to start an authorized launch.
+            if !agentTaskWindowOpen, !tab.processStartAdmissionRefused { tab.startIfNeeded() }
             if tab.isTerminated {
                 Logger.agent.error(
                     "Agent launch terminal ended before its shell started (after \(attempts) waits)"
