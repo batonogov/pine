@@ -1,0 +1,6 @@
+event_id,kind,amount
+A,sale,0.10
+B,sale,0.20
+B,sale,0.20
+R,refund,0.05
+R,refund,0.05
