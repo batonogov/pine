@@ -432,10 +432,14 @@ nonisolated enum AgentTaskLifecycleReducer {
         outcome: AgentTaskOutcome,
         in task: AgentTask
     ) -> AgentTaskResultSnapshot? {
-        task.evidence
-            .filter { $0.kind == kind && $0.runID == run.id }
-            .sorted { $0.observedAt < $1.observedAt }
-            .last
+        let facts = Self.facts(forRun: run.id, in: task)
+        guard let claim = facts.filter({
+            $0.kind == .agentReportedCompletion
+        }).max(by: Self.claimIsEarlier) else { return nil }
+        // Historical reviews of another candidate cannot describe this settlement.
+        return facts
+            .filter { $0.kind == kind && Self.sameCodeState($0, claim) }
+            .max(by: Self.claimIsEarlier)
             .map {
                 AgentTaskResultSnapshot(
                     runID: run.id,

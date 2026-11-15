@@ -258,6 +258,117 @@ struct AgentTaskLifecycleEvidenceTests {
         }
     }
 
+    @Test("Reviewed snapshots exclude unrelated newer candidates", arguments: [false, true])
+    func reviewedSnapshotMatchesSettledCandidate(failing: Bool) throws {
+        let stateA = codeState("a")
+        let stateB = codeState("b")
+        var original = try verifiedSuccessTask(seed: 240, codeState: stateA, environment: environment)
+        let run = try #require(original.runs.last)
+        let reviewA = try #require(original.evidence.last)
+        if failing {
+            original.evidence.append(fact(
+                .independentCheck, runID: run.id, generation: 240, result: .failed,
+                at: reviewA.observedAt.addingTimeInterval(1), codeState: stateA,
+                environment: environment, sequence: 4, pre: stateA, post: stateA
+            ))
+        }
+        original.evidence.append(fact(
+            .reviewerOutcome, runID: run.id, generation: 240, result: .requestedChanges,
+            at: reviewA.observedAt.addingTimeInterval(2), codeState: stateB,
+            environment: environment, sequence: 5, pre: stateB, post: stateB
+        ))
+        let expected = AgentTaskResultSnapshot(
+            runID: run.id, outcome: failing ? .failure : .success,
+            codeState: stateA, environment: environment, recordedAt: reviewA.observedAt
+        )
+        for reversed in [false, true] {
+            var task = original
+            if reversed { task.evidence.reverse() }
+            let history = task.evidence
+            AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
+            #expect(task.reviewedSnapshot == expected)
+            #expect(task.runs.last?.outcome == expected.outcome)
+            #expect(task.evidence == history)
+            #expect(AgentTaskLifecycleReducer.readiness(
+                for: task, codeState: stateA, environment: environment
+            ).isReady == !failing)
+            #expect(!AgentTaskLifecycleReducer.readiness(
+                for: task, codeState: stateB, environment: environment
+            ).isReady)
+            #expect(!AgentTaskLifecycleReducer.readiness(
+                for: task, codeState: nil, environment: nil
+            ).isReady)
+        }
+    }
+
+    @Test("A failed candidate without review cannot borrow another candidate's review")
+    func failureWithoutMatchingReviewHasNoReviewedSnapshot() throws {
+        let stateA = codeState("a")
+        let stateB = codeState("b")
+        var task = settledTask(seed: 242)
+        let run = try #require(task.runs.last)
+        for (sequence, kind, result, state) in [
+            (1, AgentTaskEvidenceKind.agentReportedCompletion, AgentTaskEvidenceResult.reported, stateA),
+            (2, .independentCheck, .failed, stateA),
+            (3, .reviewerOutcome, .requestedChanges, stateB)
+        ] {
+            task.evidence.append(fact(
+                kind, runID: run.id, generation: 242, result: result,
+                at: task.lastActivityAt.addingTimeInterval(TimeInterval(sequence)),
+                codeState: state, environment: environment, sequence: UInt64(sequence)
+            ))
+        }
+        let history = task.evidence
+        AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
+        #expect(task.runs.last?.outcome == .failure)
+        #expect(task.reviewedSnapshot == nil)
+        #expect(task.evidence == history)
+        #expect(!AgentTaskLifecycleReducer.readiness(
+            for: task, codeState: stateA, environment: environment
+        ).isReady)
+    }
+
+    @Test("Reviewed snapshot selection uses deterministic completion-claim ordering")
+    func reviewedSnapshotUsesClaimOrdering() throws {
+        let stateA = codeState("a")
+        let stateB = codeState("b")
+        var original = try verifiedSuccessTask(seed: 241, codeState: stateA, environment: environment)
+        let run = try #require(original.runs.last)
+        let claim = try #require(original.evidence.first { $0.kind == .agentReportedCompletion })
+        let reviewA = try #require(original.evidence.last)
+        let timestamp = reviewA.observedAt.addingTimeInterval(1)
+        original.evidence.append(fact(
+            .agentReportedCompletion, runID: run.id, generation: 241, result: .reported,
+            at: claim.observedAt, codeState: stateB, environment: environment, sequence: 4
+        ))
+        // Equal-time claims use their source identity, not their array position.
+        original.evidence.append(fact(
+            .agentReportedCompletion, runID: run.id, generation: 241, result: .reported,
+            at: claim.observedAt, codeState: stateA, environment: environment, sequence: 5
+        ))
+        for sequence: UInt64 in [6, 7] {
+            original.evidence.append(fact(
+                .reviewerOutcome, runID: run.id, generation: 241, result: .succeeded,
+                at: timestamp, codeState: stateA, environment: sequence == 7 ? nil : environment,
+                sequence: sequence, pre: stateA, post: stateA
+            ))
+        }
+        let expected = AgentTaskResultSnapshot(
+            runID: run.id, outcome: .success, codeState: stateA,
+            environment: nil, recordedAt: timestamp
+        )
+        for reversed in [false, true] {
+            var task = original
+            if reversed { task.evidence.reverse() }
+            AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
+            #expect(task.reviewedSnapshot == expected)
+            #expect(task.runs.last?.outcome == .success)
+            #expect(AgentTaskLifecycleReducer.readiness(
+                for: task, codeState: stateA, environment: environment
+            ).isReady)
+        }
+    }
+
     @Test("Current operations remain usable alongside incomplete historical evidence")
     func incompleteHistoryDoesNotMaskCurrentOperations() throws {
         let cs = codeState("a")
