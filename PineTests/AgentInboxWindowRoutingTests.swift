@@ -43,6 +43,26 @@ struct WindowSessionRegistryTests {
         #expect(registry.keyWindowSession() == nil)
     }
 
+    @Test("a restored scene reopens the session without reviving its old intent")
+    func registrationReopensOnlyNewIntent() throws {
+        let fixture = try RoutingFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let session = fixture.makeSession(initial: fixture.projectA)
+        registry.registerWindowSession(session)
+        let oldIntent = session.beginPresentationIntent()
+        session.windowDidClose(registry: registry)
+        #expect(!session.isCurrentPresentationIntent(oldIntent))
+
+        registry.registerWindowSession(session)
+        let newIntent = session.beginPresentationIntent()
+        #expect(session.isCurrentPresentationIntent(newIntent))
+        #expect(!session.isCurrentPresentationIntent(oldIntent))
+        registry.registerWindowSession(session)
+        #expect(session.isCurrentPresentationIntent(newIntent))
+        session.windowDidClose(registry: registry)
+    }
+
     @Test("a released window stops answering for its projects")
     func releasedWindowDisappears() throws {
         let fixture = try RoutingFixture()
@@ -124,6 +144,35 @@ struct WindowSessionRegistryTests {
 @Suite("Agent inbox window routing", .serialized)
 @MainActor
 struct AgentInboxWindowRoutingTests {
+    @Test("A newer selection during presentation rejects old focus without closing the new owner")
+    func newerSelectionDuringPresentationKeepsOwner() async throws {
+        let fixture = try RoutingFixture()
+        defer { fixture.cleanup() }
+        let registry = fixture.makeRegistry()
+        let session = fixture.makeSession(initial: fixture.projectA)
+        registry.noteKeyWindowSession(session)
+        await session.openProject(fixture.projectB, registry: registry)
+        let task = try fixture.stageAgentTask(in: fixture.projectB, registry: registry, seed: 75)
+        await session.activate(fixture.projectA, registry: registry)
+        var focused = false
+        let result = await registry.navigateToAgentTaskFromInbox(
+            task.taskID,
+            openProjectWindow: { _ in },
+            waitUntilPresented: { manager in
+                let presented = fixture.present(manager)
+                await session.activate(fixture.projectB, registry: registry)
+                return presented
+            },
+            activateApplication: { _ in focused = true }
+        )
+        #expect(result == .projectUnavailable)
+        #expect(!focused)
+        #expect(session.activeProjectURL == registry.canonicalProjectURL(fixture.projectB))
+        #expect(registry.isWindowOpen(fixture.projectB))
+        #expect(registry.projectManagerIfAdmitted(for: fixture.projectB)?.presentationLifecycle == .visible)
+        session.windowDidClose(registry: registry)
+    }
+
     @Test("a project sitting behind its neighbour reuses its own window")
     func backgroundProjectReusesItsWindow() async throws {
         let fixture = try RoutingFixture()

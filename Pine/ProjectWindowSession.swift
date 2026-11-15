@@ -101,6 +101,7 @@ nonisolated enum ProjectWindowSwitchOrder {
 enum ProjectWindowRestorationResult: Equatable {
     case restored
     case unavailable
+    case superseded
     case alreadyRestored
 }
 
@@ -138,12 +139,16 @@ final class ProjectWindowSession {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let worktreeService: AgentWorktreeService
     @ObservationIgnored private let toolResolver: ExternalToolResolver
+    @ObservationIgnored private let agentLauncher:
+        @MainActor (ProjectManager, ProjectAgentLaunchOption, URL) async -> AgentTaskLaunchResult
     /// Derives the managed root for a repository. Injectable so the discovery
     /// path can be pointed at a fixture directory in tests; production uses
     /// ``managedRoot(for:)``.
     @ObservationIgnored
     private let managedRootResolver: @Sendable (URL) -> URL
     @ObservationIgnored private var backgroundLeases: [URL: UUID] = [:]
+    @ObservationIgnored private var navigationIntent = UUID()
+    @ObservationIgnored private var isWindowClosed = false
     @ObservationIgnored private var pendingRestoredActiveURL: URL?
     @ObservationIgnored private var didRestore = false
     /// Whether anything has moved this window off the project its scene was
@@ -162,6 +167,13 @@ final class ProjectWindowSession {
         toolResolver: ExternalToolResolver = .fromEnvironment(),
         managedRootResolver: @escaping @Sendable (URL) -> URL = {
             ProjectWindowSession.managedRoot(for: $0)
+        },
+        agentLauncher: @escaping @MainActor (
+            ProjectManager, ProjectAgentLaunchOption, URL
+        ) async -> AgentTaskLaunchResult = { manager, option, directory in
+            await manager.terminal.launchAgentInNewTerminal(
+                option.command, descriptor: option.descriptor, workingDirectory: directory
+            )
         }
     ) {
         let initial = initialProjectURL.standardizedFileURL
@@ -169,6 +181,7 @@ final class ProjectWindowSession {
         self.defaults = defaults
         self.worktreeService = worktreeService
         self.toolResolver = toolResolver
+        self.agentLauncher = agentLauncher
         self.managedRootResolver = managedRootResolver
         let anchor = Self.persistenceAnchor(
             for: initial,
@@ -349,7 +362,7 @@ final class ProjectWindowSession {
     /// admission must not strand the checkout outside the manager's inventory.
     func retainWorktreeForRecovery(_ worktree: AgentManagedWorktree) {
         managedWorktrees[worktree.worktreeRoot.standardizedFileURL] = worktree
-        saveState()
+        saveState(recovering: worktree)
     }
 
     /// Drops a worktree the user removed from disk. Not a destructive call —
@@ -519,8 +532,12 @@ final class ProjectWindowSession {
         guard let target = pendingTarget else {
             return .unavailable
         }
-        await activate(target, registry: registry, reportFailure: false)
-        guard registry.projectManagerIfAdmitted(for: activeProjectURL) != nil
+        let intent = beginPresentationIntent()
+        let activated = await activate(
+            target, registry: registry, reportFailure: false, presentationIntent: intent
+        )
+        guard isCurrentPresentationIntent(intent) else { return .superseded }
+        guard activated, registry.projectManagerIfAdmitted(for: activeProjectURL) != nil
         else { return .unavailable }
         // `activate` only persists when it actually switches, and the common
         // case here is that it did not have to. Write the honoured request
@@ -543,12 +560,15 @@ final class ProjectWindowSession {
         }
     }
 
+    @discardableResult
     func openProject(
         _ url: URL,
         registry: ProjectRegistry,
-        allowAlreadyOpenTarget: Bool = false
-    ) async {
-        guard !isLaunchingAgent else { return }
+        allowAlreadyOpenTarget: Bool = false,
+        presentationIntent: UUID? = nil
+    ) async -> Bool {
+        guard !isWindowClosed else { return false }
+        if let presentationIntent, !isCurrentPresentationIntent(presentationIntent) { return false }
         let canonical = registry.canonicalProjectURL(url)
         let belongsToSession = projectURLs.contains(canonical)
             || managedWorktrees[canonical] != nil
@@ -556,29 +576,50 @@ final class ProjectWindowSession {
                 || belongsToSession
                 || !registry.isWindowOpen(canonical) else {
             alertMessage = Strings.projectSwitcherAlreadyOpenText
-            return
+            return false
         }
         if !projectURLs.contains(canonical) {
             projectURLs.append(canonical)
         }
-        await activate(canonical, registry: registry)
+        return await activate(canonical, registry: registry, presentationIntent: presentationIntent)
     }
 
+    /// Navigation authorization belongs to this live window, not to admission.
+    func beginPresentationIntent() -> UUID {
+        navigationIntent = UUID()
+        return navigationIntent
+    }
+
+    func isCurrentPresentationIntent(_ intent: UUID) -> Bool {
+        !isWindowClosed && navigationIntent == intent && !Task.isCancelled
+    }
+
+    func windowDidOpen() {
+        guard isWindowClosed else { return }
+        isWindowClosed = false
+        navigationIntent = UUID()
+    }
+
+    @discardableResult
     func activate(
         _ url: URL,
         registry: ProjectRegistry,
-        reportFailure: Bool = true
-    ) async {
-        guard !isLaunchingAgent else { return }
+        reportFailure: Bool = true,
+        presentationIntent: UUID? = nil
+    ) async -> Bool {
+        guard !isWindowClosed else { return false }
+        let intent = presentationIntent ?? beginPresentationIntent()
+        guard isCurrentPresentationIntent(intent) else { return false }
         let target = url.standardizedFileURL
         let worktreeLookupKey = Self.worktreeMembershipKey(url)
 
         let manager: ProjectManager?
         if let worktree = managedWorktrees[worktreeLookupKey] {
-            manager = await registry.projectManager(for: worktree)
+            manager = await registry.projectManager(for: worktree, inBackground: true)
         } else {
             manager = registry.projectManager(for: target)
         }
+        guard isCurrentPresentationIntent(intent) else { return false }
         guard let manager else {
             let worktree = managedWorktrees[worktreeLookupKey]
             if reportFailure {
@@ -608,6 +649,7 @@ final class ProjectWindowSession {
             } else {
                 worktreeStillExists = false
             }
+            guard isCurrentPresentationIntent(intent) else { return false }
             if worktree == nil {
                 Logger.agent.error(
                     "Evicting unavailable project \(target.path, privacy: .public)"
@@ -629,11 +671,11 @@ final class ProjectWindowSession {
                 // dismiss that scene to Welcome on every relaunch forever.
                 saveState()
             }
-            return
+            return false
         }
         guard target != activeProjectURL else {
             _ = registry.reconcileKeyProjectPresentation(manager)
-            return
+            return true
         }
 
         transition(
@@ -641,6 +683,7 @@ final class ProjectWindowSession {
             manager: manager,
             registry: registry
         )
+        return true
     }
 
     /// Whether ``closeProject(_:registry:)`` can take `url` out of this window.
@@ -670,6 +713,7 @@ final class ProjectWindowSession {
               let successor = successorAfterClosing(target) else {
             return false
         }
+        _ = beginPresentationIntent()
 
         let departingWorktrees = managedWorktrees.filter {
             $0.value.repositoryRoot.standardizedFileURL == target
@@ -680,8 +724,8 @@ final class ProjectWindowSession {
         let isShowingDepartingProject = activeProjectURL == target
             || departingWorktrees[activeProjectURL] != nil
         if isShowingDepartingProject {
-            await activate(successor, registry: registry)
-            guard activeProjectURL == successor else { return false }
+            guard await activate(successor, registry: registry),
+                  activeProjectURL == successor else { return false }
         }
 
         // Built before the record is emptied, and from the same dictionary the
@@ -757,12 +801,13 @@ final class ProjectWindowSession {
         _ option: ProjectAgentLaunchOption,
         registry: ProjectRegistry
     ) async {
-        guard !isLaunchingAgent else { return }
+        guard !isLaunchingAgent, !isWindowClosed else { return }
         guard !AgentPresentationCatalog.isRetired(stableIdentifier: option.id) else {
             alertMessage = String(localized: "projectSwitcher.retiredAgentChoice")
             return
         }
         isLaunchingAgent = true
+        let intent = beginPresentationIntent()
         defer { isLaunchingAgent = false }
 
         guard toolResolver.resolve(tool: option.command) != nil else {
@@ -773,11 +818,12 @@ final class ProjectWindowSession {
         }
 
         let repository = activeRepositoryURL.standardizedFileURL
+        let requestedManagedRoot = managedRootResolver(repository)
         let worktreeID = UUID()
         let managedRoot: URL
         do {
             managedRoot = try await Task.detached(priority: .utility) {
-                try Self.prepareManagedRoot(for: repository)
+                try Self.prepareManagedRoot(at: requestedManagedRoot)
             }.value
         } catch {
             alertMessage = Strings.projectSwitcherWorktreeFailureText(
@@ -819,7 +865,7 @@ final class ProjectWindowSession {
             "Worktree created at \(worktree.worktreeRoot.path, privacy: .public)"
         )
         retainWorktreeForRecovery(worktree)
-        guard let manager = await registry.projectManager(for: worktree) else {
+        guard let manager = await registry.projectManager(for: worktree, inBackground: true) else {
             Logger.agent.error(
                 "Registry refused to admit fresh worktree \(worktree.worktreeRoot.path, privacy: .public)"
             )
@@ -834,18 +880,25 @@ final class ProjectWindowSession {
             projectURLs.append(repository)
         }
         managedWorktrees[worktree.worktreeRoot.standardizedFileURL] = worktree
-        transition(
-            to: worktree.worktreeRoot,
-            manager: manager,
-            registry: registry
+        // Execution outlives presentation, including while the terminal awaits its shell.
+        let executionLease = registry.retainBackgroundProjectForPresentation(
+            worktree.worktreeRoot, manager: manager
         )
+        defer {
+            if let executionLease {
+                registry.releaseBackgroundProjectPresentation(executionLease, for: worktree.worktreeRoot)
+            }
+        }
+        if isCurrentPresentationIntent(intent) {
+            transition(
+                to: worktree.worktreeRoot,
+                manager: manager,
+                registry: registry
+            )
+        }
         saveState()
 
-        let launch = await manager.terminal.launchAgentInNewTerminal(
-            option.command,
-            descriptor: option.descriptor,
-            workingDirectory: worktree.worktreeRoot
-        )
+        let launch = await agentLauncher(manager, option, worktree.worktreeRoot)
         guard case .reserved = launch else {
             alertMessage = Strings.projectSwitcherAgentLaunchFailureText(
                 option.displayName
@@ -859,6 +912,10 @@ final class ProjectWindowSession {
     }
 
     func windowDidClose(registry: ProjectRegistry) {
+        saveState()
+        isWindowClosed = true
+        navigationIntent = UUID()
+        registry.unregisterWindowSession(self)
         for (url, leaseID) in backgroundLeases {
             registry.releaseBackgroundProjectPresentation(
                 leaseID,
@@ -866,7 +923,6 @@ final class ProjectWindowSession {
             )
         }
         backgroundLeases.removeAll()
-        saveState()
     }
 
     func worktreeTask(
@@ -955,27 +1011,37 @@ final class ProjectWindowSession {
         }
     }
 
-    private func saveState() {
+    private func saveState(recovering worktree: AgentManagedWorktree? = nil) {
+        guard !isWindowClosed || worktree != nil else { return }
+        // Late execution may add recovery metadata, but cannot rewrite a reopened window's selection.
+        let current = isWindowClosed ? Self.loadState(for: sceneProjectURL, defaults: defaults) : nil
+        var worktrees = isWindowClosed ? [:] : managedWorktrees
+        for worktree in current?.worktrees ?? [] {
+            worktrees[worktree.worktreeRoot.standardizedFileURL] = worktree
+        }
+        if let worktree {
+            worktrees[worktree.worktreeRoot.standardizedFileURL] = worktree
+        }
         let state = PersistedState(
             version: 1,
-            projectURLs: projectURLs,
-            worktrees: Array(managedWorktrees.values),
-            activeURL: activeProjectURL,
-            closedAnchor: didCloseAnchor
+            projectURLs: current?.projectURLs ?? projectURLs,
+            worktrees: Array(worktrees.values),
+            activeURL: current?.activeURL ?? activeProjectURL,
+            closedAnchor: current?.closedAnchor ?? didCloseAnchor
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults.set(data, forKey: persistenceKey)
-        saveMembershipIndex()
+        saveMembershipIndex(state: state)
     }
 
-    private func saveMembershipIndex() {
+    private func saveMembershipIndex(state: PersistedState) {
         var membership = defaults.dictionary(
             forKey: Self.membershipIndexKey
         ) as? [String: String] ?? [:]
         membership = membership.filter { _, anchorPath in
             anchorPath != sceneProjectURL.path
         }
-        let memberURLs = projectURLs + Array(managedWorktrees.keys)
+        let memberURLs = state.projectURLs + state.worktrees.map(\.worktreeRoot)
         for url in memberURLs {
             membership[url.standardizedFileURL.path] = sceneProjectURL.path
         }
@@ -1052,9 +1118,8 @@ final class ProjectWindowSession {
     }
 
     nonisolated private static func prepareManagedRoot(
-        for repository: URL
+        at root: URL
     ) throws -> URL {
-        let root = managedRoot(for: repository)
         try FileManager.default.createDirectory(
             at: root,
             withIntermediateDirectories: true,

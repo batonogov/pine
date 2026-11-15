@@ -681,6 +681,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         )
         ownerWindowGeneration = projectManager.dialogOwnerWindowGeneration
         ownerRecoveryIsAuthorized = true
+        windowSession?.windowDidOpen()
         installCloseObserver(for: window)
     }
 
@@ -2156,20 +2157,52 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         fallbackOpenProjectWindow: ((URL) -> Void)? = nil
     ) async -> Bool {
         let targetRegistry = registry
+        // Admission may outlive this window; do not discover a replacement destination afterward.
+        let requestedURL = targetRegistry.canonicalProjectURL(url)
+        let owningSession = targetRegistry.windowSession(owning: requestedURL)
+        let existingProject = targetRegistry.projectManagerIfAdmitted(for: requestedURL)
+        let existingWindow = existingProject.flatMap {
+            liveProjectWindow(for: $0, canonicalURL: requestedURL)
+        }
+        let destination = owningSession == nil && existingWindow == nil
+            ? nativeCommandDestination(requestedProject: nil) : nil
+        let intentSession = owningSession
+            ?? (existingWindow?.delegate as? CloseDelegate)?.windowSession
+            ?? destination?.delegate.windowSession
+            ?? targetRegistry.keyWindowSession()
+        let intent = intentSession?.beginPresentationIntent()
+        let ownerWindow = existingWindow ?? destination?.window
+        let ownerDelegate = ownerWindow?.delegate as? CloseDelegate
+        let ownerGeneration = ownerDelegate?.projectManager.dialogOwnerWindowGeneration
+
+        func presentationIsCurrent() -> Bool {
+            guard !Task.isCancelled, registry === targetRegistry else { return false }
+            if let intentSession, let intent {
+                guard intentSession.isCurrentPresentationIntent(intent) else { return false }
+                if existingWindow == nil { return true }
+            }
+            if let ownerWindow, let ownerDelegate {
+                return ownerWindow.delegate === ownerDelegate
+                    && !ownerDelegate.didCompleteWindowLifecycle
+                    && ownerDelegate.projectManager.dialogOwnerWindow === ownerWindow
+                    && ownerDelegate.projectManager.dialogOwnerWindowGeneration == ownerGeneration
+                    && DialogPresenter.isEligibleApplicationOwner(ownerWindow)
+            }
+            return targetRegistry.keyWindowSession() == nil
+                && nativeCommandDestination(requestedProject: nil) == nil
+        }
+
         guard let project = await targetRegistry
-                .projectManagerForRecentProject(url),
-              !Task.isCancelled,
-              registry === targetRegistry,
+                .projectManagerForRecentProject(url, inBackground: true),
+              presentationIsCurrent(),
               let canonical = project.rootURL?.standardizedFileURL,
+              canonical == requestedURL,
               targetRegistry.openProjects[canonical] === project else {
             return false
         }
-        if targetRegistry.isWindowOpen(canonical),
-           let window = liveProjectWindow(
-               for: project,
-               canonicalURL: canonical
-           ) {
-            window.makeKeyAndOrderFront(nil)
+        if let existingWindow {
+            guard existingProject === project else { return false }
+            existingWindow.makeKeyAndOrderFront(nil)
             NSApp.activate()
             hideWelcome()
             return true
@@ -2180,14 +2213,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // instead of opening the active project URL as a second WindowGroup
         // value. Once activated, the restored scene observes the admitted
         // manager and replaces its loading placeholder with ContentView.
-        if let windowSession = targetRegistry.windowSession(
-            owning: canonical
-        ) {
-            await windowSession.activate(
+        if let windowSession = owningSession {
+            guard await windowSession.activate(
                 canonical,
-                registry: targetRegistry
-            )
-            guard windowSession.activeProjectURL == canonical,
+                registry: targetRegistry,
+                presentationIntent: intent
+            ), presentationIsCurrent(), windowSession.activeProjectURL == canonical,
                   let openProjectWindow = self.openProjectWindow
                     ?? fallbackOpenProjectWindow else {
                 return false
@@ -2202,23 +2233,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // linked worktree can join only when this exact session already owns
         // its persisted proof; otherwise the existing separate-scene path
         // remains the fail-closed fallback.
-        if let destination = nativeCommandDestination(requestedProject: nil),
+        if let destination,
            let windowSession = destination.delegate.windowSession,
            windowSession.managedWorktrees[canonical] != nil
                 || targetRegistry.isOrdinaryProjectScope(canonical) {
+            let activated: Bool
             if windowSession.managedWorktrees[canonical] != nil {
-                await windowSession.activate(
-                    canonical,
-                    registry: targetRegistry
-                )
-            } else {
-                await windowSession.openProject(
+                activated = await windowSession.activate(
                     canonical,
                     registry: targetRegistry,
-                    allowAlreadyOpenTarget: true
+                    presentationIntent: intent
+                )
+            } else {
+                activated = await windowSession.openProject(
+                    canonical,
+                    registry: targetRegistry,
+                    allowAlreadyOpenTarget: true,
+                    presentationIntent: intent
                 )
             }
-            guard windowSession.activeProjectURL == canonical else {
+            guard activated, presentationIsCurrent(),
+                  windowSession.activeProjectURL == canonical else {
                 return false
             }
             destination.window.makeKeyAndOrderFront(nil)
@@ -2238,8 +2273,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             targetRegistry.closeProjectWindow(canonical)
             return false
         }
-        guard !Task.isCancelled,
-              registry === targetRegistry,
+        guard presentationIsCurrent(),
               targetRegistry.openProjects[canonical] === project else {
             return false
         }

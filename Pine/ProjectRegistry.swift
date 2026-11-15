@@ -1254,6 +1254,15 @@ struct TerminationSaveInventoryAuthorization {
 @MainActor
 @Observable
 final class ProjectRegistry: LSPSettingsObserver {
+    private struct AgentInboxWindowIntent {
+        let session: ProjectWindowSession
+        let generation: UUID
+
+        var isCurrent: Bool {
+            session.isCurrentPresentationIntent(generation)
+        }
+    }
+
     private struct AgentInboxPresentationAuthorization {
         let projectURL: URL
         let projectIdentity: AgentTaskProjectIdentity
@@ -1262,6 +1271,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         let leaseID: UUID
         let ownerWindow: NSWindow
         let ownerWindowGeneration: UUID
+        let windowIntent: AgentInboxWindowIntent?
     }
 
     /// Open projects keyed by their root directory URL.
@@ -1529,7 +1539,8 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// A stale or missing linked-worktree proof fails closed without rewriting
     /// the persisted record.
     func projectManagerForRecentProject(
-        _ projectURL: URL
+        _ projectURL: URL,
+        inBackground: Bool = false
     ) async -> ProjectManager? {
         guard !isProjectAdmissionFrozenForTermination else { return nil }
         let canonical = await Task.detached(priority: .utility) {
@@ -1571,7 +1582,9 @@ final class ProjectRegistry: LSPSettingsObserver {
             forCanonicalWorktree: canonical,
             identity: identity,
             repositoryProof: expectedProof,
-            validationLease: lease
+            validationLease: lease,
+            reopenBackgroundProject: !inBackground,
+            admitMissingProjectInBackground: inBackground
         )
     }
 
@@ -1835,7 +1848,8 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// the shared project scope. Sibling worktrees therefore remain comparable
     /// without sharing terminal, task, event, checkpoint, or notification IDs.
     func projectManager(
-        for worktree: AgentManagedWorktree
+        for worktree: AgentManagedWorktree,
+        inBackground: Bool = false
     ) async -> ProjectManager? {
         let repository = canonicalProjectURL(worktree.repositoryRoot)
         let managedRoot = canonicalProjectURL(worktree.managedRoot)
@@ -1866,7 +1880,9 @@ final class ProjectRegistry: LSPSettingsObserver {
             forCanonicalWorktree: worktreeRoot,
             identity: identity,
             repositoryProof: worktree.repositoryProof,
-            validationLease: lease
+            validationLease: lease,
+            reopenBackgroundProject: !inBackground,
+            admitMissingProjectInBackground: inBackground
         )
     }
 
@@ -2770,11 +2786,13 @@ final class ProjectRegistry: LSPSettingsObserver {
             fileURLWithPath: initialTask.project.canonicalWorktreePath,
             isDirectory: true
         )
+        let windowIntent = beginAgentInboxWindowIntent(for: rawURL)
         let projectURL = await agentInboxProjectCanonicalizer(rawURL)
         guard projectURL.path == initialTask.project.canonicalWorktreePath,
               let presentation = await ensureAgentInboxProjectPresented(
                 initialTask,
                 at: projectURL,
+                windowIntent: windowIntent,
                 openProjectWindow: openProjectWindow,
                 waitUntilPresented: waitUntilPresented
               ) else {
@@ -2843,6 +2861,11 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard initialTask.route.surface == .projectWindow else {
             return .launchRejected
         }
+        let rawURL = URL(
+            fileURLWithPath: initialTask.project.canonicalWorktreePath,
+            isDirectory: true
+        )
+        let windowIntent = beginAgentInboxWindowIntent(for: rawURL)
         // An unavailable vendor resume must fail inside the current Inbox, not
         // raise a project window that dismisses its transient error surface.
         // Keep the inspection below too: this preflight grants no launch
@@ -2862,15 +2885,12 @@ final class ProjectRegistry: LSPSettingsObserver {
                 return .launchRejected
             }
         }
-        let rawURL = URL(
-            fileURLWithPath: initialTask.project.canonicalWorktreePath,
-            isDirectory: true
-        )
         let projectURL = await agentInboxProjectCanonicalizer(rawURL)
         guard projectURL.path == initialTask.project.canonicalWorktreePath,
               let presentation = await ensureAgentInboxProjectPresented(
                 initialTask,
                 at: projectURL,
+                windowIntent: windowIntent,
                 openProjectWindow: openProjectWindow,
                 waitUntilPresented: waitUntilPresented
               ) else {
@@ -2944,6 +2964,11 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
     }
 
+    private func beginAgentInboxWindowIntent(for projectURL: URL) -> AgentInboxWindowIntent? {
+        guard let session = windowSession(owning: projectURL) ?? keyWindowSession() else { return nil }
+        return AgentInboxWindowIntent(session: session, generation: session.beginPresentationIntent())
+    }
+
     /// Resolves and presents one exact Inbox project without exposing an
     /// intermediate logically-open state. The presentation requirement is
     /// captured before retained-manager lookup, because ordinary lookup is a
@@ -2952,6 +2977,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     private func ensureAgentInboxProjectPresented(
         _ task: AgentTask,
         at projectURL: URL,
+        windowIntent: AgentInboxWindowIntent?,
         openProjectWindow: @escaping @MainActor (URL) -> Void,
         waitUntilPresented: (@MainActor (ProjectManager) async -> Bool)?
     ) async -> AgentInboxPresentationAuthorization? {
@@ -2963,6 +2989,8 @@ final class ProjectRegistry: LSPSettingsObserver {
             isDirectory: true
         ))
         guard !Task.isCancelled,
+              windowIntent?.isCurrent != false,
+              windowIntent != nil || keyWindowSession() == nil,
               agentTasks.task(for: task.id) == task,
               projectURL.path == task.project.canonicalWorktreePath,
               canonicalProjectIdentityURL.path
@@ -2977,6 +3005,8 @@ final class ProjectRegistry: LSPSettingsObserver {
             reopenBackgroundProject: false,
             admitMissingProjectInBackground: true
         ), manager.rootURL == projectURL,
+            windowIntent?.isCurrent != false,
+            windowIntent != nil || keyWindowSession() == nil,
             agentTasks.task(for: task.id) == task,
             agentTaskProjectsByRoot[projectURL] == task.project else {
             return nil
@@ -3025,6 +3055,7 @@ final class ProjectRegistry: LSPSettingsObserver {
                 projectURL,
                 task: task,
                 manager: manager,
+                windowIntent: windowIntent,
                 openProjectWindow: openProjectWindow
             ) else { return nil }
         }
@@ -3036,6 +3067,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
         guard presentationReported,
               !Task.isCancelled,
+              windowIntent?.isCurrent != false,
               agentInboxPresentationOperations[projectURL] == operationID,
               openProjects[projectURL] === manager,
               agentTaskProjectsByRoot[projectURL] == task.project,
@@ -3053,11 +3085,18 @@ final class ProjectRegistry: LSPSettingsObserver {
             }
             return nil
         }
+        let ownerWindowGeneration = manager.dialogOwnerWindowGeneration
         guard await manager.revalidateAgentTaskFilesystemAdmission(
             expectedIdentity: task.project,
             workingDirectory: projectURL
         ) else { return nil }
-        guard markProjectWindowOpen(
+        guard windowIntent?.isCurrent != false,
+              !Task.isCancelled,
+              agentInboxPresentationOperations[projectURL] == operationID,
+              manager.dialogOwnerWindow === ownerWindow,
+              manager.dialogOwnerWindowGeneration == ownerWindowGeneration,
+              DialogPresenter.isEligibleApplicationOwner(ownerWindow),
+              markProjectWindowOpen(
             projectURL,
             identity: task.project,
             manager: manager
@@ -3071,7 +3110,8 @@ final class ProjectRegistry: LSPSettingsObserver {
             operationID: operationID,
             leaseID: presentationLease,
             ownerWindow: ownerWindow,
-            ownerWindowGeneration: manager.dialogOwnerWindowGeneration
+            ownerWindowGeneration: ownerWindowGeneration,
+            windowIntent: windowIntent
         )
         transfersAuthorization = true
         return authorization
@@ -3095,41 +3135,32 @@ final class ProjectRegistry: LSPSettingsObserver {
         _ projectURL: URL,
         task: AgentTask,
         manager: ProjectManager,
+        windowIntent: AgentInboxWindowIntent?,
         openProjectWindow: @escaping @MainActor (URL) -> Void
     ) async -> Bool {
-        if let session = windowSession(owning: projectURL) {
-            await session.activate(projectURL, registry: self)
-            guard agentInboxTransactionHolds(
-                projectURL,
-                task: task,
-                manager: manager
-            ) else { return false }
+        if let windowIntent {
+            let session = windowIntent.session
+            guard windowIntent.isCurrent else { return false }
+            let activated: Bool
+            if session.contains(projectURL) {
+                activated = await session.activate(
+                    projectURL, registry: self, presentationIntent: windowIntent.generation
+                )
+            } else {
+                activated = await session.openProject(
+                    projectURL, registry: self, allowAlreadyOpenTarget: true,
+                    presentationIntent: windowIntent.generation
+                )
+            }
+            guard activated, windowIntent.isCurrent,
+                  session.activeProjectURL == projectURL,
+                  agentInboxTransactionHolds(projectURL, task: task, manager: manager) else { return false }
             openProjectWindow(session.sceneProjectURL)
             return true
         }
 
-        if let session = keyWindowSession() {
-            await session.openProject(
-                projectURL,
-                registry: self,
-                allowAlreadyOpenTarget: true
-            )
-            guard agentInboxTransactionHolds(
-                projectURL,
-                task: task,
-                manager: manager
-            ) else { return false }
-            // The window can refuse — the directory may have gone missing
-            // between admission and here, and the session drops targets it
-            // cannot activate (a managed worktree whose root still exists
-            // is the one target it deliberately keeps, #1590). Only claim
-            // the window if it took the project.
-            if session.contains(canonicalProjectURL(projectURL)) {
-                openProjectWindow(session.sceneProjectURL)
-                return true
-            }
-        }
-
+        // A window opened during admission is not the destination this request authorized.
+        guard keyWindowSession() == nil else { return false }
         closeProjectWindow(
             projectURL,
             expectedManager: manager,
@@ -3161,6 +3192,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         _ authorization: AgentInboxPresentationAuthorization
     ) -> Bool {
         !Task.isCancelled
+            && authorization.windowIntent?.isCurrent != false
             && agentInboxPresentationOperations[authorization.projectURL]
                 == authorization.operationID
             && openProjects[authorization.projectURL]
@@ -3603,6 +3635,7 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// re-runs a scene's task on restoration, and the same session must not be
     /// counted twice.
     func registerWindowSession(_ session: ProjectWindowSession) {
+        session.windowDidOpen()
         compactWindowSessions()
         guard !windowSessionRefs.contains(where: { $0.session === session })
         else { return }
