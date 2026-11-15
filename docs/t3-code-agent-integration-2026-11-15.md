@@ -49,15 +49,18 @@ design. More adapters and more permanent controls are not substitutes.
 | Documentation | T3 architecture/provider guides supplied orientation; claims below are tied to implementation unless explicitly labeled documentation-only |
 | Runtime observation | Local prerequisites only, observed 2026-11-15T05:22:30Z; no T3 agent session, login, prompt, paid generation, approval, or recovery experiment |
 | Machine | macOS 27.2.1, build 26B131, arm64; Node v26.13.1 |
-| Probe blocker | No `t3` executable or T3 Code app in `/Applications` or `~/Applications`; no `pnpm`, `vp`, or installed dependencies in the research checkout |
+| Historical prerequisite check, 05:22:30Z | No `t3` executable or T3 Code app was found in `/Applications` or `~/Applications`; no `pnpm`, `vp`, or installed dependencies were found in the research checkout |
+| Subsequent installation evidence | #1762 reports a passively observed T3 Code bundle version 0.1.9; this does not establish runtime access, provider authorization, or correspondence to the inspected source revision |
 
 T3 pins Node 26.13.1 and pnpm 12.14.0; its root `prepare` runs
-`vp config --no-agent` ([manifest][t3-manifest]). Node is available, but a runnable
-T3 environment is not. Dependency/bootstrap scripts were not executed and no
-application was installed. The real launch → question/denial → continuation →
-disconnect/recovery probe is therefore **blocked on preparing a reviewed,
-isolated T3 installation**, not passed. A bare Codex handshake would not close
-that gap. macOS 26 behavior, T3 UI usability, and both products' end-to-end
+`vp config --no-agent` ([manifest][t3-manifest]). Dependency/bootstrap scripts
+were not executed and this research installed no application. The dated
+absence observation above is historical, not a claim that T3 remains absent.
+The subsequently observed bundle does not establish a usable, authorized runtime;
+installation is not assumed necessary. The real launch → question/denial →
+continuation → disconnect/recovery probe remains **unperformed, with current
+runtime access and authorization unverified**. A bare Codex handshake would not
+close that gap. macOS 26 behavior, T3 UI usability, and both products' end-to-end
 integration remain unmeasured here.
 
 Evidence labels used below:
@@ -180,8 +183,12 @@ concepts; none supplies Pine-observed checks plus independent-review evidence
 bound to the exact candidate.
 
 **For Pine:** retain `parentSettlementUnknown` until aggregate closure can be
-proven. #1795 supplies logical settlement metadata; it does not by itself supply
-production evidence of child/tool/question closure.
+proven. #1795 tracks proposed logical-settlement work, currently **blocked on a
+core-owned closure authority and concrete provider-reconciliation contract**
+([investigation record](https://github.com/batonogov/pine/issues/1795#issuecomment-6883848222)).
+T3's [background probes][t3-background-probes] inspect known work, not an
+exhaustive atomic inventory; empty observed sets do not prove aggregate closure.
+Neither those probes nor settlement metadata supply Pine's missing authority.
 
 ### 5. Changes and continuation stay attached to their workspace
 
@@ -208,6 +215,11 @@ Client socket-loss retries preserve command IDs. The event sink supports replay
 and snapshots; [ProjectionMaintenance][t3-maintenance] prunes covered old events,
 so the database projections, not an indefinitely replayable event log, are
 essential durable state.
+
+Provider snapshots are a separate capability limit: Codex
+[`readThreadSnapshot`][t3-codex-snapshot] returns empty normalized `providerTurns`,
+`messages`, and `runtimeRequests` arrays plus raw `providerPayload`. This is not
+a complete normalized request reconstruction or an aggregate-closure proof.
 
 Provider process loss is handled separately: recovery cancels or expires
 process-bound work, stops persisted sessions, and can enqueue
@@ -248,7 +260,7 @@ current first-party support **Detected**, not structured.
 | Worktree before implementation | **Partial:** [environment bindings][pine-environment] reserve and adopt a validated linked tree; explicitly do not create it. | **Adopt invariant:** #1796 creates/reconciles the one reserved tree before #1723 launch; never fall back to the main checkout. |
 | Questions/permissions | **Partial:** [mapper][pine-mapper] scopes requests to connection/thread/turn; [approval policy][pine-approval] limits one-shot responses. No complete production task/UI round trip here. | **Adapt:** #1723 with #1765; preserve native IDs, deny and unsupported states; do not imitate broad grants. |
 | Durable delivery intent | **Partial:** [metadata store][pine-store] and registry preserve bounded tasks/launch intent. No production Codex dispatch receipt/controller path found. | **Adapt minimal intent/result record:** #1723 first dispatch; #1756 continuation, under #1722 storage semantics. No second store or mandatory event-sourcing migration. |
-| Logical versus physical settlement | **Partial:** mapper returns `parentSettlementUnknown`; reducer `isSettled` still requires terminated liveness and `endedAt`. | #1795 is prerequisite metadata; #1723 must prove aggregate closure before production settlement. Never fabricate process exit. |
+| Logical versus physical settlement | **Partial:** mapper returns `parentSettlementUnknown`; reducer `isSettled` still requires terminated liveness and `endedAt`. | #1795 tracks blocked settlement work, not supplied metadata: core-owned closure authority and a concrete provider-reconciliation contract are prerequisites to #1723 production settlement. Never fabricate process exit or infer closure from empty observed inventories. |
 | Effective model/account configuration | **Partial:** Codex account observation/authority primitives exist, but not a verified production settings-selection flow. | #1765 → provider implementation in #1723; no global account mutation or silent billing fallback. |
 | Same-task next turn and recovery | **Planned integration:** primitive loss handling stops the client; task restoration preserves stale metadata, not a live conversation. No production `thread/resume`/next-turn controller found. | #1756 + #1723; exact provider identity, explicit resume, no “latest conversation” fallback. |
 | Diff/result linkage | **Partial:** Git/editor features and [content identities](ade-content-identities.md) exist; no complete structured Codex task → result/checkpoint/PR pipeline found in inspected callers. | #1753/#1725 for identity/result; #1758 for revision-bound comparison. Defer checkpoint revert and automatic PR watching. |
@@ -316,8 +328,12 @@ paths. Synthetic negative cases supplement, not replace, pinned-binary probes.
    Extend the event allowlist only for demonstrated required capabilities;
    retain bounded ingress and exact source authority. User need not hunt through
    terminal output; unsupported controls never default to “proceed.”
-3. **Honest settlement and continuation — #1795 → #1723/#1756.** Prove aggregate
-   closure, settle logically without killing a reusable process, and send a
+3. **Honest settlement and continuation — #1795 → #1723/#1756 (blocked).**
+   First establish core-owned closure authority and a concrete
+   provider-reconciliation contract; neither T3's known-work probes nor its Codex
+   snapshot supplies them. Until then retain `parentSettlementUnknown`, without
+   promoting later parent exit or user acceptance into aggregate closure.
+   Once closure is proven, settle logically without killing a reusable process, and send a
    subsequent authorized message to the exact conversation as a new attempt.
    Persist dispatch ambiguity at the existing task boundary. Acceptance: late
    children/approvals cannot settle a newer attempt; restart restores unknown/
@@ -337,8 +353,10 @@ paths. Synthetic negative cases supplement, not replace, pinned-binary probes.
    Then apply the shared contract to Kimi #1732 and Claude #1727, respecting
    capability differences. No fourth required provider is introduced.
 
-Steps 1–3 are the first integration slice; step 4 is what earns Pine's checked
-result promise. #1759 still owns handoff evaluation. PR watching, generated
+Steps 1–3 define the first integration slice, but step 3 remains blocked on the
+closure contract; steps 1–2 cannot claim settled Ready. Step 4 additionally
+supplies the checks/review needed for Pine's checked result promise.
+#1759 still owns handoff evaluation. PR watching, generated
 review guides and checkpoint/revert are **deferred candidates**, not new release
 gates or implementation tasks created by this report.
 
@@ -368,6 +386,8 @@ authorization, privacy or verification contract.
 [t3-worker]: https://github.com/pingdotgg/t3code/blob/843893e58c3f8fcc1ecce970411e439d1fa69002/apps/server/src/orchestration-v2/EffectWorker.ts
 [t3-contract]: https://github.com/pingdotgg/t3code/blob/843893e58c3f8fcc1ecce970411e439d1fa69002/packages/provider-core/src/server/ProviderAdapter.ts
 [t3-codex]: https://github.com/pingdotgg/t3code/blob/843893e58c3f8fcc1ecce970411e439d1fa69002/apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+[t3-background-probes]: https://github.com/pingdotgg/t3code/blob/843893e58c3f8fcc1ecce970411e439d1fa69002/apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts#L7835-L7879
+[t3-codex-snapshot]: https://github.com/pingdotgg/t3code/blob/843893e58c3f8fcc1ecce970411e439d1fa69002/apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts#L8688-L8722
 [t3-codex-client]: https://github.com/pingdotgg/t3code/blob/843893e58c3f8fcc1ecce970411e439d1fa69002/packages/effect-codex-app-server/src/client.ts
 [t3-claude]: https://github.com/pingdotgg/t3code/blob/843893e58c3f8fcc1ecce970411e439d1fa69002/apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts#L1469-L1595
 [t3-acp]: https://github.com/pingdotgg/t3code/blob/843893e58c3f8fcc1ecce970411e439d1fa69002/packages/provider-acp/src/server/adapter.ts
