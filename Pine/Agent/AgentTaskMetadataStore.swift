@@ -504,7 +504,10 @@ nonisolated private final class AgentTaskStorageHandle {
 /// Serializes all metadata I/O away from MainActor. Files are scoped by a hash
 /// of the canonical project path and contain value metadata only.
 actor AgentTaskMetadataStore: AgentTaskPersisting {
-    static let currentSchemaVersion = 3
+    static let currentSchemaVersion = 4
+    /// Keep ordinary task files readable by schema-3 Pine. Critical one-shot
+    /// setup journals require v4 so older readers preserve rather than shed them.
+    private static let ordinarySchemaVersion = 3
     private static let directoryName = ".pine-agent-tasks-private"
 
     private let storageRoot: URL?
@@ -579,7 +582,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         func encodeEnvelope(_ tasks: [AgentTask]) -> Data? {
             guard var data = try? encoder.encode(
                 AgentTaskMetadataEnvelope(
-                    schemaVersion: Self.currentSchemaVersion,
+                    schemaVersion: tasks.contains(where: { $0.worktreeSetup != nil })
+                        ? Self.currentSchemaVersion : Self.ordinarySchemaVersion,
                     revision: nextDiskRevision,
                     canonicalProjectPath: project.canonicalProjectPath,
                     canonicalWorktreePath: project.canonicalWorktreePath,
@@ -857,7 +861,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             )
             revision = .versioned(envelope.revision)
             requiresMigration = true
-        case Self.currentSchemaVersion:
+        case Self.ordinarySchemaVersion, Self.currentSchemaVersion:
             guard let envelope = try? decoder.decode(
                 AgentTaskMetadataEnvelope.self,
                 from: data
@@ -876,7 +880,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         default:
             return rejectedLoad(.unknownSchema)
         }
-        guard storedProjectPath == project.canonicalProjectPath,
+        guard header.schemaVersion >= Self.currentSchemaVersion || !storedTasks.contains(where: { $0.worktreeSetup != nil }),
+              storedProjectPath == project.canonicalProjectPath,
               storedWorktreePath == project.canonicalWorktreePath,
               storedTasks.count <= limits.maxTasksPerProject,
               validateEnvelopeState(storedEnvelope),
@@ -2150,12 +2155,54 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               validOptionalDate(task.completedAt),
               task.runs.allSatisfy(validateRun),
               task.environment.map(Self.validStoredEnvironment) ?? true,
+              task.worktreeSetup.map({ Self.validWorktreeSetup($0, for: task) }) ?? true,
               validateFeedback(task.feedback),
               validateADEState(task),
               validateEvidence(task),
               validateChronology(task) else {
             return false
         }
+        return true
+    }
+
+    /// Shape and ownership only: decoded metadata never recreates a live lease.
+    nonisolated static func validWorktreeSetup(_ value: AgentTaskReservedWorktreeCheckpoint, for task: AgentTask) -> Bool {
+        let snapshot = value.reservation
+        func validPath(_ url: URL) -> Bool {
+            url.isFileURL && (url.host == nil || url.host == "")
+                && url.query == nil && url.fragment == nil && url.user == nil && url.password == nil
+                && url.path.hasPrefix("/") && url.path.utf8.count <= 16_384
+                && url.standardizedFileURL.path == url.path
+                && !url.path.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+        }
+        func validObject(_ proof: RecentAgentTaskFilesystemObjectProof?) -> Bool {
+            guard let proof else { return false }
+            return proof.inode > 0 && proof.kind == S_IFDIR
+                && proof.birthSeconds >= 0 && (0..<1_000_000_000).contains(proof.birthNanoseconds)
+        }
+        func validRepository(_ proof: RecentAgentTaskRepositoryProof) -> Bool {
+            proof.commonDirectoryInode > 0 && proof.commonDirectoryBirthSeconds >= 0
+                && (0..<1_000_000_000).contains(proof.commonDirectoryBirthNanoseconds)
+        }
+        guard value.scheme == AgentTaskReservedWorktreeCheckpoint.currentScheme,
+              task.origin == .pineLaunched, snapshot.taskID == task.id,
+              snapshot.project.path == task.project.canonicalProjectPath,
+              validPath(snapshot.project), validPath(snapshot.expectedWorktree),
+              snapshot.project.path != snapshot.expectedWorktree.path,
+              validObject(snapshot.projectRoot), validObject(snapshot.parentRoot),
+              validRepository(snapshot.repositoryProof),
+              snapshot.repositoryProof.projectRoot == nil, snapshot.repositoryProof.projectGitDirectory == nil,
+              snapshot.repositoryProof.worktreeRoot == nil, snapshot.repositoryProof.worktreeGitDirectory == nil,
+              [40, 64].contains(value.baseCommit.utf8.count),
+              value.baseCommit.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+              value.phase == .populated || task.runs.isEmpty else { return false }
+        if value.phase == .creationIntent { return value.worktreeProof == nil }
+        guard let proof = value.worktreeProof, let worktreeRoot = proof.worktreeRoot, proof.hasExactWorktreeInstance,
+              validRepository(proof), proof.identifiesSameRepository(as: snapshot.repositoryProof),
+              validObject(proof.projectRoot), validObject(proof.projectGitDirectory),
+              validObject(proof.worktreeRoot), validObject(proof.worktreeGitDirectory),
+              proof.projectRoot?.identifiesSameObject(as: snapshot.projectRoot) == true,
+              proof.projectRoot?.identifiesSameObject(as: worktreeRoot) == false else { return false }
         return true
     }
 
@@ -2630,7 +2677,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     }
 
     private func isRetentionProtected(_ task: AgentTask) -> Bool {
-        task.lifecycle == .active || task.lifecycle == .paused
+        task.lifecycle == .active || task.lifecycle == .paused || task.hasUnresolvedWorktreeSetup
     }
 
     private func oldestTaskFirst(_ lhs: AgentTask, _ rhs: AgentTask) -> Bool {

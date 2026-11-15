@@ -7,29 +7,73 @@ import Synchronization
 /// immediately before an explicitly authorized probe/launch/setup approval.
 nonisolated struct AgentTaskEnvironmentSetupLease: Sendable,
     CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
-    let taskID: UUID
-    let reservationRunID: UUID
-    let expectedWorktree: URL
-    fileprivate let project: URL
-    fileprivate let repositoryProof: RecentAgentTaskRepositoryProof
+    let snapshot: AgentTaskEnvironmentSetupSnapshot
+    var taskID: UUID { snapshot.taskID }
+    var reservationRunID: UUID { snapshot.reservationRunID }
+    var expectedWorktree: URL { snapshot.expectedWorktree }
+    var project: URL { snapshot.project }
     fileprivate let projectLease: RecentAgentTaskFilesystemValidationLease
     fileprivate let parentLease: RecentAgentTaskFilesystemValidationLease
     fileprivate let validity: AgentTaskSetupLeaseValidity
     var description: String { "<redacted:task-environment-setup>" }
     var debugDescription: String { description }
     var customMirror: Mirror { Mirror(self, children: ["value": description]) }
+    func revalidateOrigin() -> Bool {
+        validity.isSetupActive && projectLease.revalidate() && parentLease.revalidate()
+            && RecentAgentTaskFilesystemValidator.repositoryProof(forRepository: project)?
+                .identifiesSameRepository(as: snapshot.repositoryProof) == true
+    }
     func revalidate() -> Bool {
-        guard validity.isActive, projectLease.revalidate(), parentLease.revalidate(),
-              RecentAgentTaskFilesystemValidator.repositoryProof(forRepository: project) == repositoryProof else { return false }
+        guard revalidateOrigin() else { return false }
         var info = stat()
-        return lstat(expectedWorktree.path, &info) == -1 && errno == ENOENT && validity.isActive
+        return lstat(expectedWorktree.path, &info) == -1 && errno == ENOENT && validity.isSetupActive
+    }
+
+    /// Shared by every copy/owner of this lease. An uncertain dispatch never
+    /// becomes a fresh creation grant, even when its target still looks absent.
+    func claimCreationAttempt() -> Bool {
+        validity.claimCreationAttempt()
+    }
+
+    func revokeAuthority() { validity.invalidate() }
+
+    /// Intermediate metadata observation before file population; this is not
+    /// adoption and cannot authorize a provider launch.
+    func createdFilesystemLease() -> RecentAgentTaskFilesystemValidationLease? {
+        let identity = AgentTaskProjectIdentity(canonicalProjectPath: project.path, canonicalWorktreePath: expectedWorktree.path)
+        guard revalidateOrigin(),
+              let proof = RecentAgentTaskFilesystemValidator.repositoryProof(for: identity),
+              proof.identifiesSameRepository(as: snapshot.repositoryProof),
+              let lease = RecentAgentTaskFilesystemValidator.validationLease(for: identity, expectedProof: proof),
+              revalidateOrigin(), lease.revalidate() else { return nil }
+        return lease
     }
 }
 
 nonisolated private final class AgentTaskSetupLeaseValidity: Sendable, Hashable {
-    private let active = Mutex(true)
-    var isActive: Bool { active.withLock { $0 } }
-    func invalidate() { active.withLock { $0 = false } }
+    private struct State: Sendable {
+        var active = true
+        var setupFinished = false
+        var creationAttempted = false
+    }
+    private let state = Mutex(State())
+    var isActive: Bool { state.withLock { $0.active } }
+    var isSetupActive: Bool { state.withLock { $0.active && !$0.setupFinished } }
+    func invalidate() { state.withLock { $0.active = false } }
+    func finishSetup() -> Bool {
+        state.withLock {
+            guard $0.active, !$0.setupFinished else { return false }
+            $0.setupFinished = true
+            return true
+        }
+    }
+    func claimCreationAttempt() -> Bool {
+        state.withLock {
+            guard $0.active, !$0.setupFinished, !$0.creationAttempted else { return false }
+            $0.creationAttempted = true
+            return true
+        }
+    }
     static func == (lhs: AgentTaskSetupLeaseValidity, rhs: AgentTaskSetupLeaseValidity) -> Bool { lhs === rhs }
     func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
 }
@@ -42,19 +86,20 @@ nonisolated struct AgentTaskEnvironmentBinding: Hashable, Sendable {
     /// Original environment-creation reservation, distinct from later logical
     /// attempts that reuse this environment and provider process.
     let reservationRunID: UUID
-    private let validity = AgentTaskSetupLeaseValidity()
+    private let validity: AgentTaskSetupLeaseValidity
 
-    /// Current runtime ownership only; filesystem and execution grants are
-    /// separate. Revocation fences cached filesystem leases synchronously.
+    /// Current runtime ownership only; filesystem evidence is not a grant.
+    /// Shared revocation synchronously fences consumers of cached leases.
     func validateAuthority() throws {
         guard validity.isActive else { throw AgentTaskEnvironmentBindingError.staleBinding }
     }
     fileprivate func invalidate() { validity.invalidate() }
 
-    fileprivate init(taskID: UUID, runID: UUID) {
+    fileprivate init(taskID: UUID, runID: UUID, validity: AgentTaskSetupLeaseValidity) {
         id = UUID()
         self.taskID = taskID
         reservationRunID = runID
+        self.validity = validity
     }
 }
 
@@ -92,7 +137,7 @@ actor AgentTaskEnvironmentBindings {
     }
 
     private struct CapturedReservation: Sendable {
-        let proof: RecentAgentTaskRepositoryProof
+        let snapshot: AgentTaskEnvironmentSetupSnapshot
         let projectLease: RecentAgentTaskFilesystemValidationLease
         let parentLease: RecentAgentTaskFilesystemValidationLease
         let expectedWorktree: URL
@@ -115,6 +160,20 @@ actor AgentTaskEnvironmentBindings {
 
     @discardableResult
     func reserve(taskID: UUID, runID: UUID, canonicalProject: URL, expectedWorktree: URL) async throws -> AgentTaskEnvironmentSetupLease {
+        try await reserve(taskID: taskID, runID: runID, canonicalProject: canonicalProject, expectedWorktree: expectedWorktree, restoring: nil)
+    }
+
+    /// Cold recovery permits an existing target but NEVER a fresh creation.
+    /// Original repository, project and parent instances must still match.
+    func restore(_ snapshot: AgentTaskEnvironmentSetupSnapshot) async throws -> AgentTaskEnvironmentSetupLease {
+        try await reserve(taskID: snapshot.taskID, runID: snapshot.reservationRunID,
+            canonicalProject: snapshot.project, expectedWorktree: snapshot.expectedWorktree, restoring: snapshot)
+    }
+
+    private func reserve(
+        taskID: UUID, runID: UUID, canonicalProject: URL, expectedWorktree: URL,
+        restoring: AgentTaskEnvironmentSetupSnapshot?
+    ) async throws -> AgentTaskEnvironmentSetupLease {
         guard reservations[taskID] == nil, pendingReservations[taskID] == nil else {
             throw AgentTaskEnvironmentBindingError.alreadyReserved
         }
@@ -141,11 +200,22 @@ actor AgentTaskEnvironmentBindings {
             )
             guard let projectLease = RecentAgentTaskFilesystemValidator.validationLease(for: identity, expectedProof: nil),
                   let parentLease = RecentAgentTaskFilesystemValidator.validationLease(for: parentIdentity, expectedProof: nil),
-                  let proof = RecentAgentTaskFilesystemValidator.repositoryProof(forRepository: canonicalProject) else { return nil }
+                  let proof = RecentAgentTaskFilesystemValidator.repositoryProof(forRepository: canonicalProject),
+                  let projectRoot = Self.directoryProof(canonicalProject),
+                  let parentRoot = Self.directoryProof(parent) else { return nil }
             var info = stat()
-            guard lstat(expected.path, &info) == -1, errno == ENOENT,
-                  projectLease.revalidate(), parentLease.revalidate() else { return nil }
-            return CapturedReservation(proof: proof, projectLease: projectLease, parentLease: parentLease, expectedWorktree: expected)
+            if let restoring {
+                guard restoring.project.path == canonicalProject.path, restoring.expectedWorktree.path == expected.path,
+                      restoring.projectRoot.identifiesSameObject(as: projectRoot),
+                      restoring.parentRoot.identifiesSameObject(as: parentRoot),
+                      restoring.repositoryProof.identifiesSameRepository(as: proof) else { return nil }
+            } else {
+                guard lstat(expected.path, &info) == -1, errno == ENOENT else { return nil }
+            }
+            guard projectLease.revalidate(), parentLease.revalidate() else { return nil }
+            let snapshot = AgentTaskEnvironmentSetupSnapshot(taskID: taskID, reservationRunID: runID,
+                project: canonicalProject, expectedWorktree: expected, repositoryProof: proof, projectRoot: projectRoot, parentRoot: parentRoot)
+            return CapturedReservation(snapshot: snapshot, projectLease: projectLease, parentLease: parentLease, expectedWorktree: expected)
         }
         try Task.checkCancellation()
         guard pendingReservations[taskID]?.token == token else {
@@ -155,15 +225,24 @@ actor AgentTaskEnvironmentBindings {
         guard !reservations.values.contains(where: { $0.expectedWorktree == captured.expectedWorktree }) else {
             throw AgentTaskEnvironmentBindingError.ambiguousEnvironment
         }
-        let setupLease = AgentTaskEnvironmentSetupLease(taskID: taskID, reservationRunID: runID,
-            expectedWorktree: captured.expectedWorktree, project: canonicalProject, repositoryProof: captured.proof,
+        let setupLease = AgentTaskEnvironmentSetupLease(snapshot: captured.snapshot,
             projectLease: captured.projectLease, parentLease: captured.parentLease, validity: AgentTaskSetupLeaseValidity())
+        if restoring != nil { _ = setupLease.claimCreationAttempt() }
         reservations[taskID] = Reservation(
-            runID: runID, project: canonicalProject, repositoryProof: captured.proof,
+            runID: runID, project: canonicalProject, repositoryProof: captured.snapshot.repositoryProof,
             projectLease: captured.projectLease, expectedParentLease: captured.parentLease,
             expectedWorktree: captured.expectedWorktree, expectedBranch: Self.branchName(taskID: taskID, runID: runID), setupLease: setupLease
         )
         return setupLease
+    }
+
+    nonisolated private static func directoryProof(_ url: URL) -> RecentAgentTaskFilesystemObjectProof? {
+        var info = stat()
+        guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else { return nil }
+        return RecentAgentTaskFilesystemObjectProof(
+            device: UInt64(truncatingIfNeeded: info.st_dev), inode: UInt64(info.st_ino), generation: UInt64(info.st_gen),
+            birthSeconds: Int64(info.st_birthtimespec.tv_sec), birthNanoseconds: Int64(info.st_birthtimespec.tv_nsec), kind: S_IFDIR
+        )
     }
 
     /// Discovery must yield exactly one candidate. Ambiguous reporting is not
@@ -177,6 +256,7 @@ actor AgentTaskEnvironmentBindings {
             throw AgentTaskEnvironmentBindingError.missingReservation
         }
         guard reservation.binding == nil else { throw AgentTaskEnvironmentBindingError.alreadyReserved }
+        guard reservation.setupLease.validity.isSetupActive else { throw AgentTaskEnvironmentBindingError.staleBinding }
         guard candidates.count == 1, let worktree = candidates.first else {
             throw AgentTaskEnvironmentBindingError.ambiguousEnvironment
         }
@@ -220,12 +300,14 @@ actor AgentTaskEnvironmentBindings {
         guard !reservations.values.contains(where: {
             $0.worktreeProof?.worktreeRoot?.identifiesSameObject(as: worktreeRoot) == true
         }) else { throw AgentTaskEnvironmentBindingError.ambiguousEnvironment }
-        let binding = AgentTaskEnvironmentBinding(taskID: taskID, runID: runID)
+        // Adoption ends setup, not ownership. The retained binding shares the
+        // exact reservation token so owner revocation remains synchronous.
+        guard current.setupLease.validity.finishSetup() else { throw AgentTaskEnvironmentBindingError.staleBinding }
+        let binding = AgentTaskEnvironmentBinding(taskID: taskID, runID: runID, validity: current.setupLease.validity)
         var bound = current
         bound.binding = binding
         bound.identity = captured.identity
         bound.worktreeProof = captured.proof
-        current.setupLease.validity.invalidate()
         reservations[taskID] = bound
         return binding
     }
@@ -236,6 +318,7 @@ actor AgentTaskEnvironmentBindings {
     func revalidate(
         _ binding: AgentTaskEnvironmentBinding
     ) async throws -> RecentAgentTaskFilesystemValidationLease {
+        try binding.validateAuthority()
         guard let reservation = reservations[binding.taskID],
               reservation.binding == binding,
               let identity = reservation.identity,
@@ -254,6 +337,7 @@ actor AgentTaskEnvironmentBindings {
             return lease
         }
         try Task.checkCancellation()
+        try binding.validateAuthority()
         guard reservations[binding.taskID]?.binding == binding, let lease else {
             throw AgentTaskEnvironmentBindingError.staleBinding
         }
@@ -268,5 +352,12 @@ actor AgentTaskEnvironmentBindings {
         reservations[taskID]?.binding?.invalidate()
         reservations[taskID]?.setupLease.validity.invalidate()
         reservations.removeValue(forKey: taskID)
+    }
+
+    /// Retiring an old owner must not revoke a newer cold-restored lease that
+    /// happens to carry the same durable task/run identity.
+    func revoke(_ lease: AgentTaskEnvironmentSetupLease) {
+        guard reservations[lease.taskID]?.setupLease.validity === lease.validity else { return }
+        revoke(taskID: lease.taskID, runID: lease.reservationRunID)
     }
 }

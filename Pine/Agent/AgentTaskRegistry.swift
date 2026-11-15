@@ -190,6 +190,14 @@ final class AgentTaskRegistry {
     private var taskChangeObservers: [
         UUID: @MainActor ([AgentTask], [AgentTask]) -> Void
     ] = [:]
+    @ObservationIgnored
+    private var worktreeSetups: [UUID: AgentTaskReservedWorktreeSetup] = [:]
+    @ObservationIgnored
+    private var worktreeCheckpointWrites = Set<UUID>()
+    @ObservationIgnored
+    private var worktreeSetupOperations: [UUID: UUID] = [:]
+    @ObservationIgnored
+    private var worktreeSetupRetirements: [ObjectIdentifier: Task<Void, Never>] = [:]
 
     init(
         persistence: any AgentTaskPersisting = AgentTaskMetadataStore(),
@@ -575,6 +583,213 @@ final class AgentTaskRegistry {
         return true
     }
 
+    /// Explicit setup action, before any provider run. A saved intent is never
+    /// interpreted as permission to create again; use reconciliation instead.
+    func setupReservedWorktree(
+        taskID: UUID, runID: UUID, expectedWorktree: URL, bindings: AgentTaskEnvironmentBindings
+    ) async -> AgentTaskEnvironmentBinding? {
+        guard let task = task(for: taskID), task.origin == .pineLaunched, task.runs.isEmpty,
+              task.worktreeSetup == nil, worktreeSetups[taskID] == nil,
+              task.lifecycle == .paused, let operation = beginWorktreeSetupOperation(taskID) else { return nil }
+        defer { finishWorktreeSetupOperation(operation, taskID: taskID) }
+        guard await prepareDurableWork(in: task.project),
+              isCurrentWorktreeSetupOperation(operation, taskID: taskID),
+              self.task(for: taskID)?.worktreeSetup == nil, worktreeSetups[taskID] == nil else { return nil }
+        do {
+            let lease = try await bindings.reserve(taskID: taskID, runID: runID,
+                canonicalProject: URL(fileURLWithPath: task.project.canonicalProjectPath), expectedWorktree: expectedWorktree)
+            guard isCurrentWorktreeSetupOperation(operation, taskID: taskID),
+                  self.task(for: taskID)?.worktreeSetup == nil, worktreeSetups[taskID] == nil else {
+                lease.revokeAuthority()
+                await bindings.revoke(lease)
+                return nil
+            }
+            let owner = AgentTaskReservedWorktreeSetup(lease: lease, bindings: bindings)
+            worktreeSetups[taskID] = owner
+            let result = await owner.create(persist: { [weak self] checkpoint in
+                await self?.persistWorktreeSetupCheckpoint(checkpoint, operation: operation) ?? false
+            })
+            guard isCurrentWorktreeSetupOperation(operation, taskID: taskID) else {
+                await retireWorktreeSetup(owner).value
+                return nil
+            }
+            guard result == .adopted else {
+                return validatedWorktreeSetupResult(nil, operation: operation, taskID: taskID)
+            }
+            let binding = await reconcileReservedWorktree(taskID: taskID, bindings: bindings, operation: operation)
+            return validatedWorktreeSetupResult(binding, operation: operation, taskID: taskID)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Explicit cold recovery observes the persisted exact target. Decoding
+    /// the checkpoint never restores a lease, a provider, or creation authority.
+    func reconcileReservedWorktree(
+        taskID: UUID, bindings: AgentTaskEnvironmentBindings
+    ) async -> AgentTaskEnvironmentBinding? {
+        guard let operation = beginWorktreeSetupOperation(taskID) else { return nil }
+        defer { finishWorktreeSetupOperation(operation, taskID: taskID) }
+        let binding = await reconcileReservedWorktree(taskID: taskID, bindings: bindings, operation: operation)
+        return validatedWorktreeSetupResult(binding, operation: operation, taskID: taskID)
+    }
+
+    private func reconcileReservedWorktree(
+        taskID: UUID, bindings: AgentTaskEnvironmentBindings, operation: UUID
+    ) async -> AgentTaskEnvironmentBinding? {
+        guard let task = task(for: taskID), let checkpoint = task.worktreeSetup,
+              isCurrentWorktreeSetupOperation(operation, taskID: taskID),
+              await prepareDurableWork(in: task.project),
+              isCurrentWorktreeSetupOperation(operation, taskID: taskID),
+              self.task(for: taskID)?.worktreeSetup == checkpoint else { return nil }
+        do {
+            let owner: AgentTaskReservedWorktreeSetup
+            if let existing = worktreeSetups[taskID], !existing.isRevoked {
+                owner = existing
+            } else {
+                if let revoked = worktreeSetups[taskID] {
+                    await retireWorktreeSetup(revoked).value
+                    guard isCurrentWorktreeSetupOperation(operation, taskID: taskID),
+                          self.task(for: taskID)?.worktreeSetup == checkpoint else { return nil }
+                }
+                let lease = try await bindings.restore(checkpoint.reservation)
+                guard isCurrentWorktreeSetupOperation(operation, taskID: taskID),
+                      worktreeSetups[taskID]?.isRevoked != false,
+                      self.task(for: taskID)?.worktreeSetup == checkpoint else {
+                    lease.revokeAuthority()
+                    await bindings.revoke(lease)
+                    return nil
+                }
+                owner = AgentTaskReservedWorktreeSetup(lease: lease, bindings: bindings, recovering: checkpoint)
+                worktreeSetups[taskID] = owner
+            }
+            do {
+                let binding = try await owner.reconcile { [weak self] checkpoint in
+                    await self?.persistWorktreeSetupCheckpoint(checkpoint, operation: operation) ?? false
+                }
+                guard isCurrentWorktreeSetupOperation(operation, taskID: taskID),
+                      worktreeSetups[taskID] === owner,
+                      self.task(for: taskID)?.worktreeSetup?.phase == .populated,
+                      canAdmitDurableWork(in: task.project) else {
+                    await retireWorktreeSetup(owner).value
+                    return nil
+                }
+                try binding.validateAuthority()
+                return binding
+            } catch {
+                if !isCurrentWorktreeSetupOperation(operation, taskID: taskID) {
+                    await retireWorktreeSetup(owner).value
+                }
+                return nil
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    private func beginWorktreeSetupOperation(_ taskID: UUID) -> UUID? {
+        guard !Task.isCancelled, !isTerminating, worktreeSetupOperations[taskID] == nil else { return nil }
+        let operation = UUID()
+        worktreeSetupOperations[taskID] = operation
+        return operation
+    }
+
+    private func isCurrentWorktreeSetupOperation(_ operation: UUID, taskID: UUID) -> Bool {
+        !Task.isCancelled && !isTerminating && worktreeSetupOperations[taskID] == operation
+            && task(for: taskID).map { $0.lifecycle != .dismissed } == true
+    }
+
+    private func finishWorktreeSetupOperation(_ operation: UUID, taskID: UUID) {
+        if worktreeSetupOperations[taskID] == operation { worktreeSetupOperations[taskID] = nil }
+    }
+
+    private func validatedWorktreeSetupResult(
+        _ binding: AgentTaskEnvironmentBinding?, operation: UUID, taskID: UUID
+    ) -> AgentTaskEnvironmentBinding? {
+        guard isCurrentWorktreeSetupOperation(operation, taskID: taskID),
+              let binding, (try? binding.validateAuthority()) != nil else {
+            if worktreeSetupOperations[taskID] == operation, let owner = worktreeSetups[taskID] {
+                retireWorktreeSetup(owner)
+            }
+            return nil
+        }
+        return binding
+    }
+
+    private func revokeWorktreeSetup(_ taskID: UUID) {
+        worktreeSetupOperations[taskID] = nil
+        if let owner = worktreeSetups[taskID] { retireWorktreeSetup(owner) }
+    }
+
+    @discardableResult
+    private func retireWorktreeSetup(_ owner: AgentTaskReservedWorktreeSetup) -> Task<Void, Never> {
+        owner.revokeAuthority()
+        let identity = ObjectIdentifier(owner)
+        if let pending = worktreeSetupRetirements[identity] { return pending }
+        // Capture the exact owner, never look up a possibly replaced task/run at retirement.
+        let pending = Task { [weak self] in
+            await owner.releaseRevokedReservation()
+            self?.worktreeSetupRetirements[identity] = nil
+        }
+        worktreeSetupRetirements[identity] = pending
+        return pending
+    }
+
+    func waitForReservedWorktreeRetirements() async {
+        let pending = Array(worktreeSetupRetirements.values)
+        for retirement in pending { await retirement.value }
+    }
+
+    private func persistWorktreeSetupCheckpoint(_ next: AgentTaskReservedWorktreeCheckpoint, operation: UUID) async -> Bool {
+        let taskID = next.reservation.taskID
+        guard isCurrentWorktreeSetupOperation(operation, taskID: taskID) else { return false }
+        let saved = await persistWorktreeSetupCheckpoint(next)
+        return saved && isCurrentWorktreeSetupOperation(operation, taskID: taskID)
+    }
+
+    /// Compare-and-swap the immutable reservation and monotonic journal phase
+    /// through the registry's existing project publication fence.
+    func persistWorktreeSetupCheckpoint(_ next: AgentTaskReservedWorktreeCheckpoint) async -> Bool {
+        let taskID = next.reservation.taskID
+        guard !Task.isCancelled, !isTerminating, !worktreeCheckpointWrites.contains(taskID),
+              let index = taskIndex(for: taskID), tasks[index].lifecycle != .dismissed,
+              loadedProjects.contains(tasks[index].project),
+              !quarantinedProjects.contains(tasks[index].project),
+              AgentTaskMetadataStore.validWorktreeSetup(next, for: tasks[index]) else { return false }
+        let previous = tasks[index].worktreeSetup
+        if let previous {
+            guard previous.reservation == next.reservation, previous.baseCommit == next.baseCommit,
+                  previous.scheme == next.scheme,
+                  previous.worktreeProof.map({ old in
+                      next.worktreeProof?.identifiesSameWorktreeInstance(as: old) == true
+                  }) ?? true else { return false }
+        }
+        switch next.phase {
+        case .creationIntent:
+            guard previous == nil else { return false }
+        case .populationIntent:
+            guard previous?.phase == .creationIntent else { return false }
+        case .populated:
+            guard previous != nil else { return false }
+        }
+        worktreeCheckpointWrites.insert(taskID)
+        defer { worktreeCheckpointWrites.remove(taskID) }
+        let project = tasks[index].project
+        let generation = persistenceGeneration
+        var updated = tasks[index]
+        updated.worktreeSetup = next
+        updated.updatedAt = max(updated.updatedAt, Date())
+        tasks[index] = updated
+        markDirty(project)
+        guard await flushPersistence(project: project) == .saved,
+              !Task.isCancelled, generation == persistenceGeneration,
+              task(for: taskID)?.worktreeSetup == next,
+              task(for: taskID)?.lifecycle != .dismissed,
+              saveResultByProject[project.persistenceKey]?.isDurablySaved == true,
+              canAdmitDurableWork(in: project) else { return false }
+        return true
+    }
+
     /// Records one bounded, content-free feedback reference (C1b).
     ///
     /// Admission is bounded at this ONE point: the per-task record count is
@@ -725,6 +940,7 @@ final class AgentTaskRegistry {
               tasks[index].lifecycle != .dismissed else {
             return false
         }
+        revokeWorktreeSetup(taskID)
         tasks[index].lifecycle = .dismissed
         tasks[index].attention = .none
         tasks[index].isUnread = false
@@ -764,6 +980,7 @@ final class AgentTaskRegistry {
 
     private func isRetentionEligible(_ task: AgentTask, at now: Date) -> Bool {
         guard task.lifecycle == .paused || task.lifecycle == .completed,
+              !task.hasUnresolvedWorktreeSetup,
               task.route.availability == .missing,
               task.runs.last?.liveness != .live,
               !pendingClaims.values.contains(where: { $0.taskID == task.id })
@@ -1565,6 +1782,8 @@ final class AgentTaskRegistry {
         rollbackPersistenceRetryTask = nil
         expireClaims()
         isTerminating = true
+        worktreeSetupOperations.removeAll()
+        worktreeSetups.values.forEach { retireWorktreeSetup($0) }
         let now = monotonicNow()
         terminationClaimRemaining.removeAll(keepingCapacity: true)
         for claim in pendingClaims.values {
@@ -1835,7 +2054,8 @@ final class AgentTaskRegistry {
         for loadedTask in result.tasks {
             if loadedTask.origin == .pineLaunched,
                loadedTask.runs.isEmpty,
-               loadedTask.launchInterruption == nil {
+               loadedTask.launchInterruption == nil,
+               loadedTask.worktreeSetup == nil {
                 needsNormalizedSave = true
                 continue
             }
@@ -2385,9 +2605,13 @@ final class AgentTaskRegistry {
         guard let claim = pendingClaims[key] else { return }
         removeClaim(for: key)
         guard let index = taskIndex(for: claim.taskID) else { return }
+        if tasks[index].runs.isEmpty { revokeWorktreeSetup(claim.taskID) }
         tasks[index].route.availability = .missing
-        if case .initialLaunch = claim.kind, tasks[index].runs.isEmpty {
+        if case .initialLaunch = claim.kind, tasks[index].runs.isEmpty, tasks[index].worktreeSetup == nil {
             let project = tasks[index].project
+            if let owner = worktreeSetups.removeValue(forKey: claim.taskID) {
+                retireWorktreeSetup(owner)
+            }
             tasks.remove(at: index)
             markDirty(project)
         } else {
@@ -2475,7 +2699,7 @@ final class AgentTaskRegistry {
         // process evidence and must survive the application relaunch.
         let snapshot = tasks.filter {
             $0.project == project
-                && !pendingUnverifiedTaskIDs.contains($0.id)
+                && (!pendingUnverifiedTaskIDs.contains($0.id) || $0.worktreeSetup != nil)
         }
         let store = persistence
         let envelopeState = envelopeStateByProject[project] ?? .empty
@@ -2632,8 +2856,8 @@ final class AgentTaskRegistry {
             guard let removalIndex = tasks.indices
                 .filter({ tasks[$0].project == project })
                 .filter({
-                    tasks[$0].lifecycle == .completed
-                        || tasks[$0].lifecycle == .dismissed
+                    !tasks[$0].hasUnresolvedWorktreeSetup
+                        && (tasks[$0].lifecycle == .completed || tasks[$0].lifecycle == .dismissed)
                 })
                 .min(by: {
                     tasks[$0].updatedAt < tasks[$1].updatedAt
@@ -2647,6 +2871,8 @@ final class AgentTaskRegistry {
 
     private func removeTaskFromMemory(at index: Int) {
         let task = tasks[index]
+        revokeWorktreeSetup(task.id)
+        worktreeSetups[task.id] = nil
         let claimKeys = pendingClaims.compactMap { key, claim in
             claim.taskID == task.id ? key : nil
         }
