@@ -21,6 +21,11 @@ nonisolated struct UserTaskOutcome: Sendable, Equatable {
     let stderr: String
     /// Process exit status. -1 when launch, cleanup, or output capture failed.
     let exitCode: Int32
+    /// Actual reaped status, even when the legacy `exitCode` fails closed.
+    /// Nil means no direct-child exit was observed.
+    let processExitCode: Int32?
+    let outputCaptureSucceeded: Bool
+    let preSpawnRejected: Bool
     let timedOut: Bool
     /// `true` only after Pine reaped the direct child and completed bounded
     /// process-tree and pipe cleanup.
@@ -42,12 +47,18 @@ nonisolated struct UserTaskOutcome: Sendable, Equatable {
         timedOut: Bool,
         cleanupSucceeded: Bool = true,
         standardInputCompleted: Bool = true,
-        retainedOutputBytes: Int? = nil
+        retainedOutputBytes: Int? = nil,
+        processExitCode: Int32? = nil,
+        outputCaptureSucceeded: Bool = true,
+        preSpawnRejected: Bool = false
     ) {
         self.taskID = taskID
         self.stdout = stdout
         self.stderr = stderr
         self.exitCode = exitCode
+        self.processExitCode = processExitCode ?? (exitCode == -1 ? nil : exitCode)
+        self.outputCaptureSucceeded = outputCaptureSucceeded
+        self.preSpawnRejected = preSpawnRejected
         self.timedOut = timedOut
         self.cleanupSucceeded = cleanupSucceeded
         self.standardInputCompleted = standardInputCompleted
@@ -67,6 +78,8 @@ nonisolated struct UserTaskOutcome: Sendable, Equatable {
             && !timedOut
             && cleanupSucceeded
             && standardInputCompleted
+            && outputCaptureSucceeded
+            && !preSpawnRejected
     }
 }
 
@@ -216,13 +229,25 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
     /// Internal lifecycle observation used by process-ownership tests. The
     /// public progress contract deliberately does not expose process IDs.
     private let processDidSpawn: (@Sendable (pid_t) -> Void)?
+    private let admissionLock = NSLock()
+    /// Includes deferred ownership cleanup; queued requests allocate no threads.
+    private let maximumConcurrentExecutions: Int
+    private var activeExecutions = 0
+    private var pendingExecutions: [PendingExecution] = []
+
+    private struct PendingExecution: Sendable {
+        let id: UUID
+        let start: @Sendable () -> Void
+        let cancel: @Sendable () -> Void
+    }
 
     init(
         timeout: TimeInterval = 30.0,
         shellExecutableURL: URL = URL(fileURLWithPath: "/bin/sh"),
         executionScheduler: (any UserTaskExecutionScheduling)? = nil,
         ioExecutionPolicy: UserTaskIOExecutionPolicy? = nil,
-        processDidSpawn: (@Sendable (pid_t) -> Void)? = nil
+        processDidSpawn: (@Sendable (pid_t) -> Void)? = nil,
+        maximumConcurrentExecutions: Int = 4
     ) {
         self.timeout = timeout
         self.shellExecutableURL = shellExecutableURL
@@ -234,6 +259,8 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             shutdownDeadline: Self.ioShutdownDeadline
         )
         self.processDidSpawn = processDidSpawn
+        precondition(maximumConcurrentExecutions > 0)
+        self.maximumConcurrentExecutions = maximumConcurrentExecutions
     }
 
     /// Runs a task against the given file/project context.
@@ -316,19 +343,69 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             stdinText = ""
         }
 
-        let timeout = self.timeout
-
         // Log the attempt (what + when).
         Logger.task.info(
             "Task '\(task.id, privacy: .public)' starting: '\(task.command, privacy: .private)'"
         )
 
-        let executionState = UserTaskExecutionState()
+        return runExecution(
+            taskID: task.id,
+            executableURL: shellExecutableURL,
+            invocation: .shell(task.command),
+            workingDirectory: workingDir,
+            stdin: stdinText,
+            preSpawnValidation: { _ in },
+            progress: progress
+        )
+    }
+
+    /// Executes literal argv, without shell expansion or environment overrides.
+    /// The gate runs off-main immediately before posix_spawn and receives the
+    /// exact inherited environment passed to the child. Throwing creates no child.
+    /// It must return promptly. Queue/gate time is outside the process timeout;
+    /// concurrency is bounded per runner through final ownership release.
+    @discardableResult
+    // swiftlint:disable:next function_parameter_count
+    func run(
+        taskID: String,
+        executableURL: URL,
+        arguments: [String],
+        workingDirectory: URL?,
+        preSpawnValidation: @escaping @Sendable ([String: String]) throws -> Void,
+        progress: UserTaskProgress
+    ) -> UserTaskCancellation {
+        runExecution(
+            taskID: taskID,
+            executableURL: executableURL,
+            invocation: .arguments(arguments),
+            workingDirectory: workingDirectory,
+            stdin: "",
+            preSpawnValidation: preSpawnValidation,
+            progress: progress
+        )
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    private func runExecution(
+        taskID: String,
+        executableURL: URL,
+        invocation: Invocation,
+        workingDirectory: URL?,
+        stdin: String,
+        preSpawnValidation: @escaping @Sendable ([String: String]) throws -> Void,
+        progress: UserTaskProgress
+    ) -> UserTaskCancellation {
+        let id = UUID()
+        let executionState = UserTaskExecutionState(onOwnershipReleased: {
+            self.releaseExecution()
+        })
 
         // Publish the handle before dispatch so a caller can cancel even while
         // the background queue is still waiting to start the process.
         let cancellation = UserTaskCancellation {
-            executionState.requestCancellation()
+            let accepted = executionState.requestCancellation()
+            if accepted { self.cancelQueuedExecution(id) }
+            return accepted
         } waitForCompletion: { deadline in
             executionState.waitForCompletion(until: deadline)
         }
@@ -336,37 +413,40 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             progress.onCancellationReady?(cancellation)
         }
 
-        executionScheduler.schedule {
-            let execution = Self.execute(
-                config: .init(
-                    executableURL: self.shellExecutableURL,
-                    command: task.command,
-                    workingDirectory: workingDir,
-                    stdin: stdinText,
-                    timeout: timeout,
-                    taskID: task.id,
-                    executionState: executionState,
-                    ioExecutionPolicy: self.ioExecutionPolicy,
-                    processDidSpawn: self.processDidSpawn
-                ),
-                onStart: {
-                    DispatchQueue.main.async { progress.onStart?() }
-                }
-            )
+        let operation: @Sendable () -> Void = {
+            let execution = autoreleasepool {
+                Self.execute(
+                    config: .init(
+                        executableURL: executableURL,
+                        invocation: invocation,
+                        workingDirectory: workingDirectory,
+                        stdin: stdin,
+                        timeout: self.timeout,
+                        taskID: taskID,
+                        executionState: executionState,
+                        ioExecutionPolicy: self.ioExecutionPolicy,
+                        processDidSpawn: self.processDidSpawn,
+                        preSpawnValidation: preSpawnValidation
+                    ),
+                    onStart: {
+                        DispatchQueue.main.async { progress.onStart?() }
+                    }
+                )
+            }
             let outcome = execution.outcome
             let didCancel = execution.cancelled
 
             // Log the result (exit code).
             if outcome.succeeded {
                 Logger.task.info(
-                    "Task '\(task.id, privacy: .public)' completed (exit 0)"
+                    "Task '\(taskID, privacy: .public)' completed (exit 0)"
                 )
             } else {
                 let exitCode = outcome.exitCode
                 let timedOut = outcome.timedOut
                 let stderr = outcome.stderr
                 Logger.task.error(
-                    "Task '\(task.id, privacy: .public)' exit \(exitCode), timedOut: \(timedOut), cancelled: \(didCancel)"
+                    "Task '\(taskID, privacy: .public)' exit \(exitCode), timedOut: \(timedOut), cancelled: \(didCancel)"
                 )
                 if !stderr.isEmpty {
                     Logger.task.error("stderr: \(stderr, privacy: .private)")
@@ -377,15 +457,69 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 progress.onFinish?(outcome, didCancel)
             }
         }
+        let pending = PendingExecution(id: id, start: {
+            self.executionScheduler.schedule(operation)
+        }, cancel: {
+            // A queued request never owned a slot or subprocess resources.
+            executionState.complete(releaseAdmission: false)
+            let outcome = UserTaskOutcome(
+                taskID: taskID, stdout: "", stderr: "",
+                exitCode: -1, timedOut: false
+            )
+            DispatchQueue.main.async { progress.onFinish?(outcome, true) }
+        })
+        let admission = admissionLock.withLock {
+            if executionState.terminalCause == .cancelled {
+                return (start: false, cancel: true)
+            }
+            guard activeExecutions < maximumConcurrentExecutions else {
+                pendingExecutions.append(pending)
+                return (start: false, cancel: false)
+            }
+            activeExecutions += 1
+            return (start: true, cancel: false)
+        }
+        if admission.start { pending.start() }
+        if admission.cancel { pending.cancel() }
         return cancellation
     }
 
     // MARK: - Private
 
+    private func cancelQueuedExecution(_ id: UUID) {
+        let pending: PendingExecution? = admissionLock.withLock {
+            guard let index = pendingExecutions.firstIndex(where: { $0.id == id }) else {
+                return nil
+            }
+            return pendingExecutions.remove(at: index)
+        }
+        pending?.cancel()
+    }
+
+    private func releaseExecution() {
+        let next: PendingExecution? = admissionLock.withLock {
+            if !pendingExecutions.isEmpty {
+                return pendingExecutions.removeFirst()
+            }
+            activeExecutions -= 1
+            return nil
+        }
+        next?.start()
+    }
+
+    enum Invocation: Sendable {
+        case shell(String)
+        case arguments([String])
+    }
+
+    private struct PreSpawnRejection: LocalizedError {
+        let errorDescription: String?
+    }
+
     /// Spawns the shell command and waits for it (called off the main thread).
     struct ExecuteConfig: Sendable {
         let executableURL: URL
-        let command: String
+        let invocation: Invocation
         let workingDirectory: URL?
         let stdin: String
         let timeout: TimeInterval
@@ -393,6 +527,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         let executionState: UserTaskExecutionState
         let ioExecutionPolicy: UserTaskIOExecutionPolicy
         let processDidSpawn: (@Sendable (pid_t) -> Void)?
+        let preSpawnValidation: @Sendable ([String: String]) throws -> Void
     }
 
     private struct ExecutionResult: Sendable {
@@ -434,17 +569,39 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
 
         let subprocess: UserTaskSubprocess
         do {
-            subprocess = try UserTaskSubprocess(
-                executableURL: config.executableURL,
-                command: config.command,
-                workingDirectory: config.workingDirectory
-            )
+            switch config.invocation {
+            case .shell(let command):
+                subprocess = try UserTaskSubprocess(
+                    executableURL: config.executableURL,
+                    command: command,
+                    workingDirectory: config.workingDirectory
+                )
+            case .arguments(let arguments):
+                subprocess = try UserTaskSubprocess(
+                    executableURL: config.executableURL,
+                    arguments: arguments,
+                    workingDirectory: config.workingDirectory,
+                    preSpawnValidation: { environment in
+                        guard config.executionState.terminalCause != .cancelled else {
+                            throw CancellationError()
+                        }
+                        do {
+                            try config.preSpawnValidation(environment)
+                        } catch {
+                            throw PreSpawnRejection(errorDescription: error.localizedDescription)
+                        }
+                        guard config.executionState.terminalCause != .cancelled else {
+                            throw CancellationError()
+                        }
+                    }
+                )
+            }
         } catch {
             // No child exists, so there is nothing for shutdown to reap even
             // though the task outcome itself is a launch failure.
             completedCleanup = true
             Logger.task.error(
-                "Task '\(config.taskID, privacy: .public)' failed to launch: \(error.localizedDescription, privacy: .public)"
+                "Task '\(config.taskID, privacy: .public)' failed to launch: \(error.localizedDescription, privacy: .private)"
             )
             return ExecutionResult(
                 outcome: UserTaskOutcome(
@@ -455,7 +612,8 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                     ),
                     exitCode: -1,
                     timedOut: false,
-                    cleanupSucceeded: false
+                    cleanupSucceeded: false,
+                    preSpawnRejected: error is PreSpawnRejection
                 ),
                 cancelled: config.executionState.closeWithoutProcess() == .cancelled
             )
@@ -680,7 +838,11 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 standardInputCompleted: standardInputCompleted,
                 retainedOutputBytes:
                     (decodedStdout?.utf8.count ?? 0)
-                    + stderr.utf8.count
+                    + stderr.utf8.count,
+                processExitCode: directChild.reaped ? directChild.exitCode : nil,
+                outputCaptureSucceeded:
+                    ioWorkersStarted && ioFinished && streamsReachedEOF
+                    && !outputWasTruncated && outputWasValidUTF8
             ),
             cancelled: didCancel
         )
@@ -812,8 +974,10 @@ nonisolated final class UserTaskExecutionState: @unchecked Sendable {
     private var processGroup: UserTaskProcessGroup?
     private var didFinishExecution = false
     private var didResolveOwnership = false
+    private let onOwnershipReleased: @Sendable () -> Void
 
-    init() {
+    init(onOwnershipReleased: @escaping @Sendable () -> Void = {}) {
+        self.onOwnershipReleased = onOwnershipReleased
         completion.enter()
     }
 
@@ -862,7 +1026,7 @@ nonisolated final class UserTaskExecutionState: @unchecked Sendable {
         }
     }
 
-    func complete(cleanupSucceeded: Bool = true) {
+    func complete(cleanupSucceeded: Bool = true, releaseAdmission: Bool = true) {
         let shouldLeave = lock.withLock {
             guard !didFinishExecution else { return false }
             didFinishExecution = true
@@ -873,6 +1037,7 @@ nonisolated final class UserTaskExecutionState: @unchecked Sendable {
         }
         if shouldLeave {
             completion.leave()
+            if releaseAdmission { onOwnershipReleased() }
         }
     }
 
@@ -891,6 +1056,7 @@ nonisolated final class UserTaskExecutionState: @unchecked Sendable {
         }
         if shouldLeave {
             completion.leave()
+            onOwnershipReleased()
         }
     }
 
