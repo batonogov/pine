@@ -50,13 +50,12 @@ design. More adapters and more permanent controls are not substitutes.
 | Runtime observation | Local prerequisites only, observed 2026-11-15T05:22:30Z; no T3 agent session, login, prompt, paid generation, approval, or recovery experiment |
 | Machine | macOS 27.2.1, build 26B131, arm64; Node v26.13.1 |
 | Historical prerequisite check, 05:22:30Z | No `t3` executable or T3 Code app was found in `/Applications` or `~/Applications`; no `pnpm`, `vp`, or installed dependencies were found in the research checkout |
-| Subsequent installation evidence | #1762 reports a passively observed T3 Code bundle version 0.1.9; this does not establish runtime access, provider authorization, or correspondence to the inspected source revision |
 
 T3 pins Node 26.13.1 and pnpm 12.14.0; its root `prepare` runs
 `vp config --no-agent` ([manifest][t3-manifest]). Dependency/bootstrap scripts
 were not executed and this research installed no application. The dated
 absence observation above is historical, not a claim that T3 remains absent.
-The subsequently observed bundle does not establish a usable, authorized runtime;
+No subsequent usable, authorized runtime was established by this research;
 installation is not assumed necessary. The real launch → question/denial →
 continuation → disconnect/recovery probe remains **unperformed, with current
 runtime access and authorization unverified**. A bare Codex handshake would not
