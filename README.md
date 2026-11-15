@@ -43,7 +43,7 @@ These capabilities are **direction, not current functionality**, until they ship
 
 - **Durable tasks** — a task owns its goal, environment, checks, and result across navigation and relaunches
 - **Verified results** — every Ready result carries Pine-observed checks and independent-review evidence bound to the exact code and environment
-- **Attention over supervision** — the Inbox becomes an attention queue for Ready results and decisions that need you
+- **Attention over supervision** — the current project's task list surfaces Ready results and decisions that need you
 - **Task-owned environments** — agents manage worktrees; Pine validates and binds the environment before implementation, checks, review, or result execution
 - **Bounded parallelism** — independent same-repository tasks with validated routing and documented concurrency limits
 
@@ -51,8 +51,10 @@ See the [Pine 3.0 product vision](docs/pine-3.0-product-vision.md) for the full 
 
 **Describe it. Try it. Refine it.** Explore the
 [interactive Pine 3 concept](https://batonogov.github.io/pine/#future):
-project → task → result → contextual feedback, with code and terminal available
-when needed. Web, Go, Python, and DevOps examples use simulated data in a
+project → task → result → contextual feedback. Its code/terminal and
+project-switching controls predate the selected Pine 3 direction: one current
+project and explicit Request/Command input, without an embedded code editor or
+terminal emulator. Web, Go, Python, and DevOps examples use simulated data in a
 Russian-language browser demo, not the downloadable app.
 [Design discussion](https://github.com/batonogov/pine/issues/1735).
 
