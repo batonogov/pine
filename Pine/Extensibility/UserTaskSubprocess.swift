@@ -39,21 +39,33 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
     }
 
     /// Argument-array entry point. Shell interpretation is never added here.
-    convenience init(executableURL: URL, arguments: [String], workingDirectory: URL?) throws {
+    convenience init(
+        executableURL: URL,
+        arguments: [String],
+        workingDirectory: URL?,
+        preSpawnValidation: @Sendable ([String: String]) throws -> Void = { _ in }
+    ) throws {
         guard executableURL.isFileURL, executableURL.path.hasPrefix("/"),
               !executableURL.path.utf8.contains(0), arguments.count <= 256,
               arguments.reduce(0, { $0 + $1.utf8.count }) <= 65_536,
-              arguments.allSatisfy({ !$0.utf8.contains(0) }) else {
+              arguments.allSatisfy({ !$0.utf8.contains(0) }),
+              workingDirectory.map({
+                  $0.isFileURL && $0.path.hasPrefix("/") && !$0.path.utf8.contains(0)
+              }) ?? true else {
             throw Self.posixError(EINVAL)
         }
         try self.init(
             executableURL: executableURL, invocationArguments: arguments,
-            workingDirectory: workingDirectory
+            workingDirectory: workingDirectory,
+            preSpawnValidation: preSpawnValidation
         )
     }
 
     private init(
-        executableURL: URL, invocationArguments: [String], workingDirectory: URL?
+        executableURL: URL,
+        invocationArguments: [String],
+        workingDirectory: URL?,
+        preSpawnValidation: @Sendable ([String: String]) throws -> Void = { _ in }
     ) throws {
         let pipes = SpawnPipes(
             stdin: Pipe(),
@@ -69,7 +81,8 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
                 executableURL: executableURL,
                 arguments: invocationArguments,
                 workingDirectory: workingDirectory,
-                pipes: pipes
+                pipes: pipes,
+                preSpawnValidation: preSpawnValidation
             )
         } catch {
             Self.closeAll(pipes)
@@ -179,12 +192,14 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
         return reaper
     }
 
+    // swiftlint:disable:next function_parameter_count
     private static func spawn(
         processID: inout pid_t,
         executableURL: URL,
         arguments: [String],
         workingDirectory: URL?,
-        pipes: SpawnPipes
+        pipes: SpawnPipes,
+        preSpawnValidation: @Sendable ([String: String]) throws -> Void
     ) throws {
         var fileActions: posix_spawn_file_actions_t?
         try check(posix_spawn_file_actions_init(&fileActions))
@@ -296,7 +311,8 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
         }
         argumentPointers.append(nil)
 
-        let environment = ProcessInfo.processInfo.environment
+        let inheritedEnvironment = ProcessInfo.processInfo.environment
+        let environment = inheritedEnvironment
             .sorted { $0.key < $1.key }
             .map { "\($0.key)=\($0.value)" }
         var environmentPointers: [UnsafeMutablePointer<CChar>?] = []
@@ -313,10 +329,11 @@ nonisolated final class UserTaskSubprocess: @unchecked Sendable {
         }
         environmentPointers.append(nil)
 
-        let spawnResult = argumentPointers.withUnsafeMutableBufferPointer { buffer in
-            environmentPointers.withUnsafeMutableBufferPointer { environmentBuffer in
-                executablePath.withCString { executablePathPointer in
-                    posix_spawn(
+        let spawnResult = try argumentPointers.withUnsafeMutableBufferPointer { buffer in
+            try environmentPointers.withUnsafeMutableBufferPointer { environmentBuffer in
+                try executablePath.withCString { executablePathPointer in
+                    try preSpawnValidation(inheritedEnvironment)
+                    return posix_spawn(
                         &processID,
                         executablePathPointer,
                         &fileActions,
