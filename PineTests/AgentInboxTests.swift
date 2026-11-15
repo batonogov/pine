@@ -52,8 +52,18 @@ nonisolated private final class BlockingInboxProcessRunner: @unchecked Sendable 
 private actor BlockingInboxProjectCanonicalizer {
     private var entered = false
     private var released = false
+    private var calls = 0
+    private let blockingCall: Int
+
+    init(blockingCall: Int = 1) {
+        self.blockingCall = blockingCall
+    }
 
     func canonicalize(_ url: URL) async -> URL {
+        calls += 1
+        guard calls == blockingCall else {
+            return ProjectRegistry.canonicalProjectURL(url)
+        }
         entered = true
         while !released {
             try? await Task.sleep(for: .milliseconds(1))
@@ -560,6 +570,233 @@ struct AgentInboxTests {
         #expect(AgentInboxSnapshot(tasks: registry.tasks).isEmpty)
     }
 
+    @Test("live routing survives an actual detector heartbeat during canonicalization",
+          arguments: [false, true])
+    func observationDuringCanonicalization(navigate: Bool) async throws {
+        try await assertLiveRoutingAcrossSuspension(
+            navigate: navigate,
+            mutation: .observation
+        )
+    }
+
+    @Test("live routing rejects ownership changes during canonicalization",
+          arguments: [false, true],
+          [RoutingMutation.task, .run, .process, .environment, .route, .terminal, .cancelled])
+    func ownershipDuringCanonicalization(
+        navigate: Bool,
+        mutation: RoutingMutation
+    ) async throws {
+        try await assertLiveRoutingAcrossSuspension(
+            navigate: navigate,
+            mutation: mutation
+        )
+    }
+
+    @Test("presentation revalidates ownership without rejecting detector heartbeats",
+          arguments: [RoutingMutation.observation, .task, .run, .process,
+                      .environment, .route, .terminal, .cancelled])
+    func ownershipDuringPresentation(mutation: RoutingMutation) async throws {
+        try await assertLiveRoutingAcrossSuspension(
+            navigate: true,
+            mutation: mutation,
+            duringPresentation: true
+        )
+    }
+
+    @Test("heartbeat cannot revive a superseded window intent",
+          arguments: [false, true])
+    func heartbeatWithSupersededIntent(duringPresentation: Bool) async throws {
+        try await assertLiveRoutingAcrossSuspension(
+            navigate: true,
+            mutation: .intent,
+            duringPresentation: duringPresentation
+        )
+    }
+
+    @Test("post-authorization heartbeat preserves only the original presentation owner",
+          arguments: [false, true])
+    func heartbeatWithPresentationAuthorization(replaceOwner: Bool) async throws {
+        try await assertLiveRoutingAcrossSuspension(
+            navigate: true,
+            mutation: replaceOwner ? .owner : .observation,
+            afterAuthorization: true
+        )
+    }
+
+    enum RoutingMutation: Sendable {
+        case observation, task, run, process, environment, route, terminal, cancelled, intent, owner
+    }
+
+    private func assertLiveRoutingAcrossSuspension(
+        navigate: Bool,
+        mutation: RoutingMutation,
+        duringPresentation: Bool = false,
+        afterAuthorization: Bool = false
+    ) async throws {
+        let fixture = try InboxProjectFixture()
+        defer { fixture.cleanup() }
+        let suite = "AgentObservationRouting.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let taskRegistry = AgentTaskRegistry(persistence: InboxLoadedAgentTaskStore(tasks: []))
+        let canonicalizer = BlockingInboxProjectCanonicalizer(
+            blockingCall: afterAuthorization ? 2 : 1
+        )
+        let registry = ProjectRegistry(
+            defaults: defaults,
+            agentTasks: taskRegistry,
+            agentInboxProjectCanonicalizer: { url in
+                if duringPresentation { return ProjectRegistry.canonicalProjectURL(url) }
+                return await canonicalizer.canonicalize(url)
+            }
+        )
+        let manager = try #require(registry.projectManager(for: fixture.project))
+        let firstPane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: fixture.project
+        )
+        let pane = try #require(manager.paneManager.createTerminalPane(
+            relativeTo: firstPane,
+            axis: .horizontal,
+            workingDirectory: fixture.project
+        ))
+        let state = try #require(manager.paneManager.terminalState(for: pane))
+        let tab = try #require(state.terminalTabs.first)
+        let session = makeSession(seed: 17_870, state: .executing)
+        manager.terminal.bridgeAgentSession(session, replacing: nil, in: tab)
+        tab.agentSession = session
+        let taskID = try #require(taskRegistry.taskID(forSessionID: session.id))
+        let original = try #require(taskRegistry.task(for: taskID))
+        let originalRun = try #require(original.runs.last)
+        manager.paneManager.activePaneID = firstPane
+        state.pendingFocusTabID = nil
+        let window = makeEligibleProjectWindow()
+        manager.bindDialogOwnerWindow(window)
+        let ownerGeneration = manager.dialogOwnerWindowGeneration
+        var replacementWindow: NSWindow?
+        let windowSession = ProjectWindowSession(initialProjectURL: fixture.project, defaults: defaults)
+        if mutation == .intent { registry.noteKeyWindowSession(windowSession) }
+        defer {
+            if mutation == .intent { windowSession.windowDidClose(registry: registry) }
+            if let replacementWindow {
+                manager.unbindDialogOwnerWindow(replacementWindow)
+                replacementWindow.orderOut(nil)
+            }
+            manager.unbindDialogOwnerWindow(window)
+            window.orderOut(nil)
+        }
+        var activations = 0
+        let operation = Task { @MainActor () -> AgentTaskRoute? in
+            if navigate {
+                let result = await registry.navigateToAgentTaskFromInbox(
+                    taskID,
+                    openProjectWindow: { _ in Issue.record("Already presented") },
+                    waitUntilPresented: { _ in
+                        if duringPresentation {
+                            _ = await canonicalizer.canonicalize(fixture.project)
+                        }
+                        return true
+                    },
+                    activateApplication: { _ in activations += 1 },
+                    expectedNotificationRoute: AgentNotificationRouteIdentity(
+                        taskID: taskID,
+                        runID: originalRun.id,
+                        processGeneration: originalRun.process.processGeneration
+                    )
+                )
+                if case .focused(let route) = result { return route }
+                return nil
+            }
+            return await registry.resolveAgentTaskRoute(taskID)
+        }
+        let entered = await canonicalizer.waitUntilEntered()
+        // Release before requiring success so a failed setup cannot strand navigation.
+        if !entered { await canonicalizer.release() }
+        try #require(entered)
+        let stamp = session.lastObservationStamp
+        #expect(session.recordObservation(AgentObservationStamp(
+            wallTime: session.lastObservedAt.addingTimeInterval(1),
+            uptime: stamp.uptime + 1,
+            generation: stamp.generation,
+            sequence: stamp.sequence + 1
+        )))
+        taskRegistry.refresh(sessions: [session])
+        let observed = try #require(taskRegistry.task(for: taskID))
+        #expect(observed != original)
+        #expect(observed.runs.last?.lastObservedAt == session.lastObservedAt)
+        #expect(observed.runs.last?.id == original.runs.last?.id)
+
+        switch mutation {
+        case .observation:
+            break
+        case .task:
+            taskRegistry.setTasksForTesting([])
+            manager.terminal.bridgeAgentSession(session, replacing: nil, in: tab)
+            #expect(taskRegistry.taskID(forSessionID: session.id) != taskID)
+        case .terminal:
+            tab.agentSession = nil
+        case .cancelled:
+            operation.cancel()
+        case .intent:
+            #expect(await windowSession.activate(fixture.project, registry: registry))
+        case .owner:
+            let replacement = makeEligibleProjectWindow()
+            replacementWindow = replacement
+            manager.bindDialogOwnerWindow(replacement)
+            #expect(manager.dialogOwnerWindowGeneration != ownerGeneration)
+        case .run, .process:
+            var changed = observed
+            let oldRun = try #require(changed.runs.last)
+            changed.runs[changed.runs.count - 1] = AgentTaskRun(AgentTaskRunInput(
+                id: mutation == .run ? UUID() : oldRun.id,
+                terminalID: oldRun.terminalID,
+                process: mutation == .run ? oldRun.process : AgentProcessEvidence(
+                    processIdentifier: oldRun.process.processIdentifier,
+                    processGeneration: oldRun.process.processGeneration + 1,
+                    startIdentifier: "replacement",
+                    observedStartedAt: oldRun.startedAt,
+                    startIsAuthoritative: true
+                ),
+                status: AgentTaskRunStatus(
+                    state: oldRun.state, liveness: .live, observedAt: oldRun.lastObservedAt
+                )
+            ))
+            taskRegistry.setTasksForTesting([changed])
+        case .environment:
+            var changed = observed
+            changed.environment = AgentTaskEnvironmentIdentity(
+                osBuild: "replacement", toolchain: nil, configurationFingerprint: nil
+            )
+            taskRegistry.setTasksForTesting([changed])
+        case .route:
+            var changed = observed
+            changed.route = AgentTaskRoute(
+                paneID: firstPane.id, tabID: tab.id, terminalID: tab.id
+            )
+            taskRegistry.setTasksForTesting([changed])
+        }
+        await canonicalizer.release()
+        let route = await operation.value
+        if mutation == .observation {
+            #expect(route == original.route)
+            if navigate {
+                #expect(activations == 1)
+                #expect(manager.paneManager.activePaneID == pane)
+                #expect(state.activeTerminalID == tab.id)
+                #expect(state.pendingFocusTabID == tab.id)
+            }
+        } else {
+            #expect(route == nil)
+            #expect(activations == 0)
+            #expect(manager.paneManager.activePaneID == firstPane)
+            if mutation == .intent || mutation == .owner {
+                #expect(registry.isWindowOpen(fixture.project))
+                #expect(manager.presentationLifecycle == .visible)
+                #expect(state.pendingFocusTabID != tab.id)
+                #expect(manager.dialogOwnerWindow === (replacementWindow ?? window))
+            }
+        }
+    }
+
     @Test("navigation focuses only the exact live generation")
     func exactNavigationAndReplacementFailure() async throws {
         let fixture = try InboxProjectFixture()
@@ -685,26 +922,47 @@ struct AgentInboxTests {
             presentationWindow.orderOut(nil)
         }
 
+        let replacement = makeSession(seed: 46, state: .executing)
+        var replacementSnapshot: AgentTask?
+        var activations = 0
+        var openedProjects: [URL] = []
+        let activePaneBeforeNavigation = manager.paneManager.activePaneID
+        state.pendingFocusTabID = nil
         let result = await projectRegistry.navigateToAgentTaskFromInbox(
             taskID,
-            openProjectWindow: { _ in },
+            openProjectWindow: { openedProjects.append($0) },
             waitUntilPresented: { _ in
                 original.applyLiveness(.terminated)
-                let replacement = makeSession(seed: 46, state: .executing)
                 manager.terminal.bridgeAgentSession(
                     replacement,
                     replacing: original,
                     in: tab
                 )
                 tab.agentSession = replacement
+                replacementSnapshot = taskRegistry.taskID(forSessionID: replacement.id)
+                    .flatMap { taskRegistry.task(for: $0) }
                 return true
             },
-            activateApplication: { _ in },
+            activateApplication: { _ in activations += 1 },
             expectedNotificationRoute: identity
         )
 
+        // Earlier rejection must retain the documented replacement-route failure contract.
         #expect(result == .routeStale)
         #expect(taskRegistry.task(for: taskID)?.isUnread == true)
+        #expect(activations == 0)
+        #expect(openedProjects.isEmpty)
+        #expect(manager.paneManager.activePaneID == activePaneBeforeNavigation)
+        #expect(state.pendingFocusTabID == nil)
+        #expect(tab.agentSession === replacement)
+        #expect(manager.dialogOwnerWindow === presentationWindow)
+        let expectedReplacement = try #require(replacementSnapshot)
+        #expect(taskRegistry.task(for: expectedReplacement.id) == expectedReplacement)
+        #expect(taskRegistry.isExactLiveOwner(
+            taskID: expectedReplacement.id,
+            terminalID: tab.id,
+            runID: replacement.id
+        ))
     }
 
     @Test("background navigation reopens the exact project before resolving")
