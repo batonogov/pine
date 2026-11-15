@@ -59,7 +59,7 @@ Russian-language browser demo, not the downloadable app.
 ## Features
 
 - **Native macOS** — SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
-- **Agent-aware workflow** — Tracks durable tasks across projects in Agent Inbox, routes back to the exact live session, and sends privacy-bounded notifications for verified events or detected process exits
+- **Agent-aware workflow** — Agent Inbox keeps task context across projects and links to live sessions. In current source, detected-agent notifications report process termination—not waiting, success, or checked results. Released binaries may behave differently.
 - **Multi-project workspaces** — Keep related projects in one native window, switch from the toolbar, and close one project without disturbing the rest of the workspace
 - **LSP code intelligence** — Diagnostics, completion, hover, go-to-definition, code actions, rename, and a Problems panel
 - **Syntax highlighting** — bundled grammars for Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
@@ -127,8 +127,8 @@ Pine keeps a macOS 26.0 deployment target while also checking source compatibili
 ```bash
 git clone https://github.com/batonogov/pine.git
 cd pine
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-xcodebuild -project Pine.xcodeproj -scheme Pine build
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine build
 ```
 
 Dependencies resolve automatically via Swift Package Manager on first build.
