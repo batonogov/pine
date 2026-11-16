@@ -40,6 +40,8 @@ nonisolated struct AgentVerificationIdentityCapture: Sendable {
     var maximumObservedBytes = 512 * 1_024 * 1_024
     var filesystemLimits = AgentVerificationFilesystemFingerprint.Limits()
     var environmentValues: @Sendable () -> [String: String] = { ProcessInfo.processInfo.environment }
+    /// Operation adapters retain live authority, not merely a filesystem lease.
+    var authorityIsCurrent: @Sendable () -> Bool = { true }
     let cancellation: GitCommandCancellationToken
 
     func capture() async -> AgentVerificationIdentityCaptureResult {
@@ -66,7 +68,7 @@ nonisolated struct AgentVerificationIdentityCapture: Sendable {
         guard Self.slots.wait(timeout: .now()) == .success else { return .unavailable(.captureCapacity) }
         defer { Self.slots.signal() }
         guard !cancellation.isCancelled else { return .cancelled }
-        guard timeout.isFinite, timeout > 0, maximumObservedBytes > 0,
+        guard authorityIsCurrent(), timeout.isFinite, timeout > 0, maximumObservedBytes > 0,
               inputs.lease.revalidate() else { return .unavailable(.unavailableBinding) }
         guard inputs.policy.isValid, !inputs.tools.isEmpty, inputs.tools.count <= 32,
               inputs.configurationFiles.count <= 128,
@@ -89,6 +91,7 @@ nonisolated struct AgentVerificationIdentityCapture: Sendable {
             let code = try collector.capture()
             let after = try environment(deadline: deadline, remainingBytes: &remainingObservedBytes)
             guard !cancellation.isCancelled else { return .cancelled }
+            guard authorityIsCurrent() else { return .unavailable(.unavailableBinding) }
             guard before == after, inputs.lease.revalidate(), ContinuousClock.now < deadline else { return .changed }
             guard case .available(_, let editorIsCurrent) = inputs.editor, editorIsCurrent() else { return .changed }
             return .current(AgentVerificationIdentitySnapshot(code: code, environment: after.identity))
