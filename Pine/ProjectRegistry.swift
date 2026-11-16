@@ -2630,6 +2630,32 @@ final class ProjectRegistry: LSPSettingsObserver {
         return agentRecoveryInspector.canOfferVendorResume(for: task)
     }
 
+    private func agentTaskRoutingSnapshotIsCurrent(_ task: AgentTask) -> Bool {
+        guard !Task.isCancelled,
+              var current = agentTasks.task(for: task.id) else { return false }
+        // Recovery keeps full-value fencing; only a live navigation tolerates heartbeats.
+        guard task.lifecycle == .active else { return current == task }
+        guard let index = task.runs.indices.last,
+              task.runs[index].liveness == .live,
+              task.runs[index].endedAt == nil else { return false }
+        guard current.runs.indices.contains(index),
+              current.route.availability != .missing,
+              agentTasks.isExactLiveOwner(
+                taskID: task.id,
+                terminalID: task.route.terminalID,
+                runID: task.runs[index].id
+              ) else { return false }
+        current.updatedAt = task.updatedAt
+        current.lastActivityAt = task.lastActivityAt
+        current.runs[index].lastObservedAt = task.runs[index].lastObservedAt
+        // Presentation can reopen this exact route, but closing it invalidates navigation.
+        if task.route.availability == .background,
+           current.route.availability == .available {
+            current.route.availability = .background
+        }
+        return current == task
+    }
+
     /// Re-resolves a persisted route against current application ownership.
     /// No UI object is retained by the durable registry; every activation must
     /// cross this boundary immediately before use.
@@ -2637,7 +2663,8 @@ final class ProjectRegistry: LSPSettingsObserver {
         _ taskID: UUID,
         targetTerminalID: UUID? = nil
     ) async -> AgentTaskRoute? {
-        guard let task = agentTasks.task(for: taskID) else { return nil }
+        guard !Task.isCancelled,
+              let task = agentTasks.task(for: taskID) else { return nil }
         if task.lifecycle == .paused, let targetTerminalID {
             return await resolvePausedAgentTaskRoute(
                 task,
@@ -2658,7 +2685,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             guard let route = quickTerminalAgentRouter?
                     .resolveQuickTerminalAgentRoute(for: task),
                   route == task.route,
-                  agentTasks.task(for: taskID) == task,
+                  agentTaskRoutingSnapshotIsCurrent(task),
                   agentTasks.isExactLiveOwner(
                     taskID: taskID,
                     terminalID: route.terminalID,
@@ -2672,12 +2699,12 @@ final class ProjectRegistry: LSPSettingsObserver {
             isDirectory: true
         )
         let projectURL = await agentInboxProjectCanonicalizer(rawURL)
-        guard let currentTask = agentTasks.task(for: taskID),
-              currentTask == task,
+        guard !Task.isCancelled,
+              let currentTask = agentTasks.task(for: taskID),
+              agentTaskRoutingSnapshotIsCurrent(task),
               currentTask.lifecycle == .active,
               currentTask.route.availability == .available,
               let currentRun = currentTask.runs.last,
-              currentRun == run,
               currentRun.liveness == .live,
               currentRun.endedAt == nil,
               agentTasks.isExactLiveOwner(
@@ -2766,7 +2793,7 @@ final class ProjectRegistry: LSPSettingsObserver {
                     .revealQuickTerminalAgentRoute(for: initialTask),
                   route == initialTask.route,
                   let currentTask = agentTasks.task(for: taskID),
-                  currentTask == initialTask,
+                  agentTaskRoutingSnapshotIsCurrent(initialTask),
                   matches(currentTask, expectedNotificationRoute),
                   agentTasks.isExactLiveOwner(
                     taskID: taskID,
@@ -2796,12 +2823,21 @@ final class ProjectRegistry: LSPSettingsObserver {
                 openProjectWindow: openProjectWindow,
                 waitUntilPresented: waitUntilPresented
               ) else {
+            // A changed route stays stale; invalidated presentation intent stays unavailable.
+            if projectURL.path == initialTask.project.canonicalWorktreePath,
+               !Task.isCancelled,
+               windowIntent?.isCurrent != false,
+               windowIntent != nil || keyWindowSession() == nil,
+               !agentTaskRoutingSnapshotIsCurrent(initialTask) {
+                return .routeStale
+            }
             return .projectUnavailable
         }
         let manager = presentation.manager
         defer { finishAgentInboxPresentation(presentation) }
 
         guard let route = await resolveAgentTaskRoute(taskID),
+              agentTaskRoutingSnapshotIsCurrent(initialTask),
               let currentTask = agentTasks.task(for: taskID),
               currentTask.lifecycle == .active,
               currentTask.route == route,
@@ -2991,7 +3027,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard !Task.isCancelled,
               windowIntent?.isCurrent != false,
               windowIntent != nil || keyWindowSession() == nil,
-              agentTasks.task(for: task.id) == task,
+              agentTaskRoutingSnapshotIsCurrent(task),
               projectURL.path == task.project.canonicalWorktreePath,
               canonicalProjectIdentityURL.path
                 == task.project.canonicalProjectPath else {
@@ -3007,7 +3043,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         ), manager.rootURL == projectURL,
             windowIntent?.isCurrent != false,
             windowIntent != nil || keyWindowSession() == nil,
-            agentTasks.task(for: task.id) == task,
+            agentTaskRoutingSnapshotIsCurrent(task),
             agentTaskProjectsByRoot[projectURL] == task.project else {
             return nil
         }
@@ -3043,7 +3079,7 @@ final class ProjectRegistry: LSPSettingsObserver {
 
         if requiresPresentation {
             guard !Task.isCancelled,
-                  agentTasks.task(for: task.id) == task,
+                  agentTaskRoutingSnapshotIsCurrent(task),
                   openProjects[projectURL] === manager,
                   agentTaskProjectsByRoot[projectURL] == task.project else {
                 return nil
@@ -3068,6 +3104,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard presentationReported,
               !Task.isCancelled,
               windowIntent?.isCurrent != false,
+              agentTaskRoutingSnapshotIsCurrent(task),
               agentInboxPresentationOperations[projectURL] == operationID,
               openProjects[projectURL] === manager,
               agentTaskProjectsByRoot[projectURL] == task.project,
@@ -3092,6 +3129,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         ) else { return nil }
         guard windowIntent?.isCurrent != false,
               !Task.isCancelled,
+              agentTaskRoutingSnapshotIsCurrent(task),
               agentInboxPresentationOperations[projectURL] == operationID,
               manager.dialogOwnerWindow === ownerWindow,
               manager.dialogOwnerWindowGeneration == ownerWindowGeneration,
@@ -3173,17 +3211,14 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// What must still hold after routing suspends: the project binding and
     /// the manager this presentation authorized are the ones in effect.
     ///
-    /// Deliberately not the task value. Presenting a project marks its window
-    /// open, which rewrites the very task being routed to — comparing against
-    /// the pre-presentation snapshot would reject every success. Task freshness
-    /// is re-established by the caller after presentation, against the route it
-    /// is about to focus.
+    /// Presentation may reopen the same route, not replace its task/run owner.
     private func agentInboxTransactionHolds(
         _ projectURL: URL,
         task: AgentTask,
         manager: ProjectManager
     ) -> Bool {
         !Task.isCancelled
+            && agentTaskRoutingSnapshotIsCurrent(task)
             && openProjects[projectURL] === manager
             && agentTaskProjectsByRoot[projectURL] == task.project
     }
