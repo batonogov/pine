@@ -30,7 +30,7 @@
   "mini.nativeDesc": "SwiftUI와 AppKit으로 제작했습니다. 익숙한 Mac 컨트롤, 브라우저 런타임은 없습니다.",
   "mini.focusedKicker": "에이전트 인식",
   "mini.focusedTitle": "에이전트는 터미널에 머뭅니다",
-  "mini.focusedDesc": "에이전트는 터미널에서 작업하고 Pine은 누가 작업 중인지, 무엇이 바뀌었는지, 언제 주의가 필요한지 보여줍니다.",
+  "mini.focusedDesc": "터미널에서 에이전트를 실행하고 파일 변경을 살펴보세요. 현재 내장 연동은 프로세스를 감지할 뿐, 대기나 성공 여부를 검증하지 않습니다.",
   "mini.leanKicker": "집중",
   "mini.leanTitle": "AI 대시보드 없음",
   "mini.leanDesc": "가벼운 사용자 문법, 작업, 키 바인딩 — 확장 마켓플레이스나 브라우저 런타임이 없습니다.",
