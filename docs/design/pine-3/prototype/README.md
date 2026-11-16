@@ -6,10 +6,18 @@ Interactive design exploration for [workspace design #1735](https://github.com/b
 [comparative validation #1762](https://github.com/batonogov/pine/issues/1762).
 Not an approved final design or a screenshot of implemented Pine functionality.
 
-The maintainer welcomed this direction and explicitly endorsed keeping code and
-the terminal out of the foreground. Preserve **project → task → result →
-refinement**, with full developer tools available in context. See the
+The maintainer welcomed the **project → task → result → refinement** hierarchy.
+The contextual developer tools below record an earlier exploration. See the
 [recorded design feedback](https://github.com/batonogov/pine/issues/1735#issuecomment-6863196763).
+
+The [later selected direction](https://github.com/batonogov/pine/issues/1735#issuecomment-6865465191)
+supersedes this prototype's embedded code/file-tree, terminal-emulator, and
+multi-project switching surfaces. Pine 3.0 is planned around one current project,
+its tasks and results, with explicit Request/Command input. Attention belongs in
+the [project task list, not a separate Inbox](https://github.com/batonogov/pine/issues/1760#issuecomment-6865474119).
+The preserved controls and captures are historical design artifacts, not retained
+requirements or implemented native functionality. Command input does not promise
+arbitrary interactive TUI compatibility.
 
 Base: `421a54a3258583c396d52f977fd8206ceff2c5a3`.
 

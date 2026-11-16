@@ -3,12 +3,36 @@
 Status: working product direction; not an implementation or compatibility promise.
 Scope reference: [Pine 3.0 — ADE milestone](https://github.com/batonogov/pine/milestone/16).
 
+## Selected composition
+
+The later maintainer decisions in [#1760](https://github.com/batonogov/pine/issues/1760)
+and the [selected design reference](https://github.com/batonogov/pine/issues/1735#issuecomment-6865465191)
+supersede the older contextual editor/terminal proposal:
+
+- One current project → its tasks → usable result → feedback → revised result.
+  Attention belongs in the [project task list](https://github.com/batonogov/pine/issues/1760#issuecomment-6865474119),
+  not a separate cross-project Inbox.
+- No built-in source-code editor, file tree, terminal emulator, or multi-project
+  workspace composition. Result-revision comparison and rendered Markdown remain
+  in scope; neither requires restoring the removed code workspace.
+- One task input with explicit [Request and Command modes](https://github.com/batonogov/pine/issues/1760#issuecomment-6865414122).
+  Request sends intent to the agent; Command runs the supplied command in the
+  bound task environment through owned execution. Never infer the mode from text
+  syntax or silently rewrite a command through an agent. Command parsing/shell
+  semantics and interactive-tool support still require implementation and verification.
+- Preserve existing files, unsaved work, history, and environment ownership
+  through deliberate migration. Removing UI does not authorize deleting data.
+
+These are selected Pine 3.0 requirements, not shipped functionality. They do not
+change the released Pine 2.x feature record or establish provider compatibility.
+
 ## Explore the direction
 
 **Describe it. Try it. Refine it.** The
 [interactive concept on the landing page](https://batonogov.github.io/pine/#future)
-explores project → task → result → contextual feedback. Code and terminal are
-available when needed rather than occupying the foreground.
+explores project → task → result → contextual feedback. Its contextual code,
+terminal, and project-switching controls predate the selected removals above;
+they are historical design exploration, not retained Pine 3.0 requirements.
 
 The Web, Go, Python, and DevOps examples are a Russian-language design study
 with simulated agents, commands, and checks, not the downloadable application.
@@ -30,9 +54,9 @@ result they can try.
 The ADE product pillars are:
 
 - **Durable tasks are the unit of work.** A task owns its goal, bounded context
-  references, environment, terminal, files, feedback, reviewed states, checks,
-  and result across navigation and relaunches without persisting transcripts or
-  secrets by default.
+  references, environment, command execution, files, feedback, reviewed states,
+  checks, and result across navigation and relaunches without persisting
+  transcripts or secrets by default.
 - **Reliable agent lifecycle is core infrastructure.** Execution, verification,
   attention, unread, and user acceptance are distinct dimensions. Working,
   blocked, idle, and unknown are execution states; unverified is an outcome, and
@@ -42,8 +66,8 @@ The ADE product pillars are:
   worktrees; Pine discovers, validates, binds, and revalidates the authorized
   environment before implementation, checks, review, or result execution.
   Worktrees provide routing and ownership boundaries, not a security sandbox.
-- **Attention replaces supervision.** The Inbox is the attention queue for Ready
-  and Needs decision. Intermediate activity stays inside the task, and results
+- **Attention replaces supervision.** The current project's task list surfaces
+  Ready and Needs decision. Intermediate activity stays inside the task; results
   remain directly accessible in their project context rather than requiring a
   fleet-monitoring dashboard.
 - **Verified outcomes are the differentiator.** Every Ready result carries
@@ -53,9 +77,9 @@ The ADE product pillars are:
   task-scoped programmatic control APIs prevent Pine from becoming a
   provider-specific chat client. Authenticated structured provider events are
   preferred; terminal text never acquires execution authority.
-- **The native Mac workspace remains first-class.** Editor, diffs, and real
-  terminals are always available for inspection and intervention, but are not
-  mandatory steps in every task.
+- **The native Mac workspace stays result-first.** Results, contextual feedback,
+  evidence, and task-local command output replace the editor/terminal workspace.
+  Request and Command modes remain distinct and keyboard/VoiceOver accessible.
 
 ## Product promise
 
@@ -64,12 +88,12 @@ was checked, or a concrete decision that needs you.
 
 The Pine 3.0 direction is an outcome-first native macOS ADE for making software
 with agents. It is not an agent dashboard, a replacement vendor chat, or a
-workflow-construction tool. The editor and real terminal remain first-class
-tools, available without an agent and directly accessible when the user wants to
-inspect or intervene. Task-first describes delegation, not a mandatory task
-dashboard or a replacement for the project workspace. Results open in their
-project context beside the code; the Inbox is a shortcut to attention, not a
-required stop.
+workflow-construction tool. One current project and its tasks form the workspace;
+results open in their owning task. The task input supports agent requests and
+explicit commands without an embedded editor or terminal emulator. Questions,
+problems, and verified ready results surface in the project task list rather
+than a separate Inbox. Command output and result-revision comparison remain
+task-local and do not imply arbitrary interactive TUI compatibility.
 
 ## Baseline: what Pine 2.x already ships
 
@@ -82,8 +106,8 @@ Public surfaces describe two things and never blur them:
   integration; and session persistence with restoration.
 - **Direction (Pine 3.0, this document):** durable tasks, validated
   task-owned environments, reliable agent lifecycle signals, Ready evidence
-  from Pine-observed checks and independent review, the Inbox as an attention
-  queue, and bounded parallel tasks.
+  from Pine-observed checks and independent review, attention in the current
+  project's task list, explicit Request/Command input, and bounded parallel tasks.
 
 Until each ADE capability ships, copy on every public surface identifies it as
 Pine 3.0 direction, not current functionality. No surface mocks unimplemented
@@ -104,7 +128,7 @@ Mac application. This is a decision-making standard, not a visual imitation.
 
 ## Primary experience
 
-1. Create a task in the current or selected project. Describe the desired outcome
+1. Create a task in the current project. Describe the desired outcome
    and add references if the selected agent supports them. Offer a remembered
    agent default when available; choosing a provider is not a mandatory repeated
    step.
@@ -121,8 +145,8 @@ Mac application. This is a decision-making standard, not a visual imitation.
    revisions, Pine escalates to Needs decision without a fourth automatic
    attempt; the counter persists across relaunch. Missing permissions, missing
    capabilities, failures, and unresolved decisions are never reported as success.
-5. The Inbox surfaces either Ready or Needs decision. Intermediate activity stays
-   inside the task and can be inspected without becoming a notification stream.
+5. The project task list surfaces either Ready or Needs decision. Intermediate
+   activity stays inside the task without becoming a notification stream.
 6. The user tries the result through a distinct authorized action and continues
    with an ordinary message or explicitly supplied visual reference where
    supported. Opening a result changes viewed/unread only; it does not accept the
@@ -137,7 +161,8 @@ A Ready result presents, in this order:
   backend request, or library tests, using the task environment.
 - Verification and independent-review evidence, with limitations stated plainly.
 - Changes since the user's last review or acceptance.
-- Optional deeper access to files, diff, commands, and terminal.
+- Contextual result-revision comparison, command output, errors, and history,
+  without restoring the retired source-code or terminal-emulator surfaces.
 
 Ready means the agreed Pine-observed verification and independent-review
 requirements were satisfied for this exact result. It does not mean the software
@@ -231,7 +256,7 @@ explicit lifecycle evidence, native session resume, and transition-based
 attention. These are inspiration, not verified compatibility claims or automatic
 Pine commitments.
 
-For Pine, preview, logs, and terminals should belong to the task. Programmatic
+For Pine, preview, logs, and command results should belong to the task. Programmatic
 control should remove manual setup rather than expose a layout-programming
 language as the main experience. A grid of busy terminals is not the product's
 primary value or its default home. Terminal scraping and prompt markers must not
@@ -244,6 +269,8 @@ Prove Codex app-server end to end before broadening compatibility:
 
 - One task, one implementer, and a separate read-only reviewer session.
 - Selected-project task creation with a remembered default agent.
+- Explicit Request/Command modes with owned execution, task-local output, and
+  visible cancellation; no automatic replay or implied interactive TUI support.
 - Validated single-task environment discovery and binding.
 - Pine-observed required checks and bounded automatic correction.
 - Evidence bound to the checked state, with visible invalidation after edits.
@@ -274,6 +301,14 @@ Help in all 9 locales, and this document. Each surface keeps current 2.x
 capabilities described as shipped and ADE capabilities described as Pine 3.0
 direction, using durable wording: no agent counts, adapter totals, or release
 dates.
+
+Alignment remains open under [#1730](https://github.com/batonogov/pine/issues/1730):
+older future-facing copy and the preserved prototype still refer to contextual
+code/terminal access or an Inbox. Synchronize those direction labels across all
+nine locales; do not remove accurate released-editor Help or screenshots merely
+because the selected future composition differs. Refresh native Help/screenshots
+with the corresponding implementation, and change GitHub About only with
+authorization. This document correction is not completion of that broader work.
 
 ## Release quality gates
 
