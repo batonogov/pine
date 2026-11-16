@@ -1101,7 +1101,7 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
     }
 }
 
-nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
+nonisolated private struct CoreBoundAdapterSession: AgentAdapterControlledSession {
     let contract: NegotiatedAdapterContract
     let registryID: UUID
     let namespace: SourceNamespace
@@ -1109,6 +1109,7 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
     let sink: ValidatingAgentEventSink
     let authorityLease: OneShotAuthorityLease
     let lifetime: CoreBoundSessionLifetime
+    let controlAuthority: AgentAdapterControlAuthority
 
     var state: SourceSessionState { lifetime.state }
 
@@ -1139,6 +1140,24 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
 
     func stop(deadline: ContinuousClock.Instant) async {
         await lifetime.stop(deadline: deadline)
+    }
+
+    func dispatch(
+        _ control: AgentAdapterControl,
+        beforeDispatch: @escaping @Sendable () throws -> Void
+    ) async throws -> AgentAdapterControlDispatch {
+        try Task.checkCancellation()
+        let authority = controlAuthority
+        let validate: @Sendable () throws -> Void = {
+            try authority.validate()
+            try beforeDispatch()
+            try authority.validate()
+        }
+        try validate()
+        guard let controlled = lifetime.underlying as? any AgentAdapterControlledSession else {
+            throw AgentAdapterControlError.unsupported
+        }
+        return try await controlled.dispatch(control, beforeDispatch: validate)
     }
 }
 
@@ -1294,7 +1313,8 @@ nonisolated struct AgentAdapterRegistry: Sendable {
                 attempt: attempt,
                 sink: sink,
                 authorityLease: authorityLease,
-                lifetime: lifetime
+                lifetime: lifetime,
+                controlAuthority: controlAuthority
             )
         } catch {
             await state.failStart()
@@ -1305,6 +1325,20 @@ nonisolated struct AgentAdapterRegistry: Sendable {
             }
             throw error
         }
+    }
+
+    /// Identity only, including before start. Possession grants no live control
+    /// authority; the returned control wrapper enforces activation/revocation.
+    func sourceIdentity(for session: any AgentAdapterSession) throws -> ValidatedAgentSourceIdentity {
+        guard let source = session as? CoreBoundAdapterSession,
+              source.registryID == registryID else { throw AdapterSessionError.contractMismatch }
+        return ValidatedAgentSourceIdentity(namespace: source.namespace, attempt: source.attempt)
+    }
+
+    func controls(for session: any AgentAdapterSession) throws -> any AgentAdapterControlledSession {
+        guard let source = session as? CoreBoundAdapterSession,
+              source.registryID == registryID else { throw AdapterSessionError.contractMismatch }
+        return source
     }
 
     func makeCheckpoint(for sourceSession: any AgentAdapterSession) async throws -> AdapterResumeCheckpoint {
