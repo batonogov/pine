@@ -401,6 +401,11 @@ nonisolated struct AgentTaskCodeStateIdentity: Codable, Hashable, Sendable {
 ///
 /// Components are opaque bounded strings; the configuration fingerprint
 /// covers the relevant configuration inputs without storing their values.
+/// A missing `osBuild`, `toolchain`, or `configurationFingerprint` each
+/// prevent proving equivalence: current readiness, re-verification, and
+/// grant matching (`AgentTaskMetadataStore.validEnvironment`,
+/// `AgentTaskCheckGrant.matchesScope`) require all three, while bounded
+/// historical values stay storable without authority.
 nonisolated struct AgentTaskEnvironmentIdentity: Codable, Hashable, Sendable {
     /// Scheme 2 binds observed tool/configuration inputs and capture policy.
     static let currentScheme: UInt8 = 2
