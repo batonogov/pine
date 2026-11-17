@@ -93,9 +93,7 @@ nonisolated enum AgentProviderContractSuite {
 /// was not explicitly declared unsupported.
 nonisolated func expectProviderContractOutcomes(
     _ table: [String: AgentProviderContractOutcome],
-    provider: String,
-    fileID: StaticString = #fileID,
-    line: UInt = #line
+    provider: String
 ) {
     let validated = AgentProviderContractSuite.validate(provider: provider, table: table)
     for scenario in AgentProviderContractSuite.scenarios {
@@ -103,8 +101,7 @@ nonisolated func expectProviderContractOutcomes(
         switch outcome {
         case .pass, .unsupported: break
         case let .fail(reason):
-            Issue.record("Provider contract '\(scenario.name)' failed for \(provider): \(reason)",
-                         fileID: fileID, line: line)
+            Issue.record("Provider contract '\(scenario.name)' failed for \(provider): \(reason)")
         }
     }
 }
