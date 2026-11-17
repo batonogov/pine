@@ -949,6 +949,10 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     var attention: AgentTaskAttention
     var title: String?
     var objective: String?
+    /// Version of `objective`: `0` while the goal is unset, bumped once per
+    /// accepted change. Evidence recorded under an older version stays
+    /// identifiable but is invalidated, never rewritten (#1759).
+    var objectiveRevision: UInt64
     var launchInterruption: AgentTaskLaunchInterruption?
     // ADE lifecycle and evidence contract (#1722). All additive: metadata
     // persisted before schema v3 decodes to the fail-closed defaults.
@@ -963,6 +967,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     // decodes to nil/empty.
     var environment: AgentTaskEnvironmentIdentity?
     var feedback: [AgentTaskFeedbackRecord]
+    var decisionReferences: [AgentTaskDecisionReference]
     var worktreeSetup: AgentTaskReservedWorktreeCheckpoint?
 
     var hasUnresolvedWorktreeSetup: Bool {
@@ -986,6 +991,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case attention
         case title
         case objective
+        case objectiveRevision
         case launchInterruption
         case executionState
         case evidence
@@ -995,6 +1001,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case acceptedSnapshot
         case environment
         case feedback
+        case decisionReferences
         case worktreeSetup
     }
 
@@ -1022,6 +1029,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         attention = .none
         self.title = title
         self.objective = objective
+        objectiveRevision = objective == nil ? 0 : 1
         launchInterruption = nil
         executionState = .unknown
         evidence = []
@@ -1031,6 +1039,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         acceptedSnapshot = nil
         environment = nil
         feedback = []
+        decisionReferences = []
         worktreeSetup = nil
     }
 
@@ -1076,6 +1085,12 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             String.self,
             forKey: .objective
         )
+        // Metadata persisted before goal versioning decodes to version 1
+        // when a goal exists: it was the first and only version.
+        objectiveRevision = try values.decodeIfPresent(
+            UInt64.self,
+            forKey: .objectiveRevision
+        ) ?? (objective == nil ? 0 : 1)
         launchInterruption = try values.decodeIfPresent(
             AgentTaskLaunchInterruption.self,
             forKey: .launchInterruption
@@ -1113,6 +1128,9 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             [AgentTaskFeedbackRecord].self,
             forKey: .feedback
         ) ?? []
+        decisionReferences = try values.decodeIfPresent(
+            [AgentTaskDecisionReference].self, forKey: .decisionReferences
+        ) ?? []
         worktreeSetup = try values.decodeIfPresent(AgentTaskReservedWorktreeCheckpoint.self, forKey: .worktreeSetup)
     }
 
@@ -1137,6 +1155,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         try values.encode(attention, forKey: .attention)
         try values.encodeIfPresent(title, forKey: .title)
         try values.encodeIfPresent(objective, forKey: .objective)
+        try values.encode(objectiveRevision, forKey: .objectiveRevision)
         try values.encodeIfPresent(
             launchInterruption,
             forKey: .launchInterruption
@@ -1152,6 +1171,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         )
         try values.encodeIfPresent(environment, forKey: .environment)
         try values.encode(feedback, forKey: .feedback)
+        try values.encode(decisionReferences, forKey: .decisionReferences)
         try values.encodeIfPresent(worktreeSetup, forKey: .worktreeSetup)
     }
 }
