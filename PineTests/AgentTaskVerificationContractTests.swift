@@ -537,7 +537,7 @@ struct AgentTaskVerificationContractTests {
 
     private struct PortFailure: Error {}
 
-    private final class PortProbe: @unchecked Sendable {
+    private nonisolated final class PortProbe: @unchecked Sendable {
         private let lock = NSLock()
         private var _anchor: AgentVerificationIdentitySnapshot?
         private var _grantIsCurrent = true
@@ -633,7 +633,7 @@ struct AgentTaskVerificationContractTests {
 
     /// A write fault that fires on every agent-task atomic replace while
     /// armed: the deterministic stand-in for a process dying mid-write.
-    private final class ArmedWriteFault: @unchecked Sendable {
+    private nonisolated final class ArmedWriteFault: @unchecked Sendable {
         private let lock = NSLock()
         private var _armed = false
 
