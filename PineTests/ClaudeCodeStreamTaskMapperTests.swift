@@ -153,21 +153,23 @@ struct ClaudeCodeStreamTaskMapperTests {
         try bindTurn(&mapper)
         _ = try mapper.map(.result(sessionID: sessionID, subtype: .success), connection: connection)
         try bindTurn(&mapper, uuid: "turn-2")
-        // A replay of the old turn's settlement cannot rebind or settle.
         #expect(try mapper.map(.result(sessionID: sessionID, subtype: .success), connection: connection)
-            == [.needsReconciliation])
+            == [.mainTurnEnd])
+        #expect(!mapper.hasUnsettledTurn)
     }
 
-    @Test func staleClosedTurnEventsAreIgnored() throws {
+    @Test func staleClosedTurnTrafficDuringActiveTurnNeedsReconciliation() throws {
         var mapper = ClaudeCodeStreamTaskMapper(connectionID: connection)
         try bindSession(&mapper)
         try bindTurn(&mapper, uuid: "old-turn")
         #expect(try mapper.map(.result(sessionID: sessionID, subtype: .success), connection: connection)
             == [.mainTurnEnd])
         try bindTurn(&mapper, uuid: "new-turn")
-        #expect(try mapper.map(assistant("old-turn"), connection: connection) == [.ignored])
+        #expect(try mapper.map(assistant("old-turn"), connection: connection) == [.needsReconciliation])
+        #expect(mapper.isClosed)
+        // Once stale traffic is observed, its uncorrelated result cannot settle the new turn.
         #expect(try mapper.map(.result(sessionID: sessionID, subtype: .success), connection: connection)
-            == [.mainTurnEnd])
+            == [.needsReconciliation])
         // A mismatch that is not a closed turn still fences.
         var mismatched = ClaudeCodeStreamTaskMapper(connectionID: connection)
         try bindSession(&mismatched)
@@ -204,20 +206,39 @@ struct ClaudeCodeStreamTaskMapperTests {
             .userToolResults(sessionID: sessionID, results: [.init(toolUseID: "tool-1", isError: false)]),
             connection: connection
         )
-        #expect(ack.contains(.requestResolved(request.id)))
+        guard case .requestResolved(let resolution, let resolvedID)? = ack.last,
+              case .requestResolved(let scopedResolution) = resolution.event else {
+            throw ClaudeCodeWireError.invalidState
+        }
+        #expect(resolvedID == request.id)
+        #expect(scopedResolution.scope == attention.scope)
+        #expect(scopedResolution.request == attention.request)
+        #expect(scopedResolution.context == attention.context)
         let second = try mapper.map(
             .userToolResults(sessionID: sessionID, results: [.init(toolUseID: "tool-1", isError: false)]),
             connection: connection
         )
-        #expect(!second.contains(.requestResolved(request.id)))
+        #expect(!second.contains { effect in
+            guard case .requestResolved(_, let id) = effect else { return false }
+            return id == request.id
+        })
         // Denial path reconciles through permission_denied.
         let denied = try ClaudeCodePermissionRequest(
             id: try ClaudeCodeControlRequestID("perm-2"), toolName: "Edit", toolUseID: "tool-2", agentID: nil
         )
         _ = try mapper.map(.permissionRequest(denied), connection: connection)
         try mapper.markResponseWritten(denied.id)
-        let denial = try mapper.map(.permissionDenied(toolUseID: "tool-2"), connection: connection)
-        #expect(denial == [.requestResolved(denied.id)])
+        let denial = try mapper.map(
+            .permissionDenied(sessionID: sessionID, toolUseID: "tool-2"), connection: connection
+        )
+        guard case .requestResolved(_, let deniedID)? = denial.first else {
+            throw ClaudeCodeWireError.invalidState
+        }
+        #expect(deniedID == denied.id)
+        // The exact shared resolution leaves no approval blocking a successful Stop.
+        #expect(try mapper.map(.result(sessionID: sessionID, subtype: .success), connection: connection)
+            == [.mainTurnEnd])
+        #expect(!mapper.hasUnsettledTurn)
     }
 
     @Test func toolResultForUnansweredApprovalFences() throws {
@@ -298,7 +319,7 @@ struct ClaudeCodeStreamTaskMapperTests {
         // the queued turn does not start by itself.
         #expect(mapper.hasUnsettledTurn)
         let outcome = try mapper.map(.result(sessionID: sessionID, subtype: .success), connection: connection)
-        guard case .candidate(let candidate)? = outcome, case .lifecycle(let event) = candidate.event,
+        guard case .candidate(let candidate)? = outcome.first, case .lifecycle(let event) = candidate.event,
               event.phase == .cancelled else {
             throw ClaudeCodeWireError.invalidState
         }

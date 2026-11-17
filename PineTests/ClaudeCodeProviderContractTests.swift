@@ -38,7 +38,7 @@ struct ClaudeCodeProviderContractTests {
             connection: connection.identity
         )
         guard case .candidate(let candidate)? = initEffects.first,
-              case .lifecycle(let event)? = candidate.event, event.scope == .session else {
+              case .lifecycle(let event) = candidate.event, event.scope == .session else {
             throw ClaudeCodeWireError.invalidState
         }
         return Fixture(connection: connection, mapper: mapper)
@@ -51,7 +51,7 @@ struct ClaudeCodeProviderContractTests {
             connection: fx.connectionID
         )
         guard case .candidate(let candidate)? = effects.first,
-              case .lifecycle(let event)? = candidate.event, event.phase == .started else {
+              case .lifecycle(let event) = candidate.event, event.phase == .started else {
             throw ClaudeCodeWireError.invalidState
         }
     }
@@ -90,7 +90,10 @@ struct ClaudeCodeProviderContractTests {
                                  results: [.init(toolUseID: "tool-perm-1", isError: false)]),
                 connection: fx.connectionID
             )
-            guard redelivery == .replayedResponse, ack.contains(.requestResolved(request.id)) else {
+            guard redelivery == .replayedResponse, ack.contains(where: { effect in
+                guard case .requestResolved(_, let id) = effect else { return false }
+                return id == request.id
+            }) else {
                 throw ClaudeCodeWireError.invalidState
             }
             table["approval"] = .pass
@@ -110,7 +113,7 @@ struct ClaudeCodeProviderContractTests {
                 connection: fx.connectionID
             )
             guard case .candidate(let candidate)? = effects.first,
-                  case .lifecycle(let event)? = candidate.event, event.phase == .started else {
+                  case .lifecycle(let event) = candidate.event, event.phase == .started else {
                 throw ClaudeCodeWireError.invalidState
             }
             table["continuation"] = .pass
@@ -129,7 +132,7 @@ struct ClaudeCodeProviderContractTests {
             let outcome = try fx.mapper.map(.result(sessionID: Self.sessionID, subtype: .success),
                                             connection: fx.connectionID)
             guard case .candidate(let candidate)? = outcome.first,
-                  case .lifecycle(let event)? = candidate.event, event.phase == .cancelled else {
+                  case .lifecycle(let event) = candidate.event, event.phase == .cancelled else {
                 throw ClaudeCodeWireError.invalidState
             }
             table["cancellation"] = .pass
@@ -211,7 +214,7 @@ struct ClaudeCodeProviderContractTests {
                 connection: fresh.connectionID
             )
             guard case .candidate(let candidate)? = effects.first,
-                  case .lifecycle(let event)? = candidate.event,
+                  case .lifecycle(let event) = candidate.event,
                   event.scope == .session, event.phase == .started else {
                 throw ClaudeCodeWireError.invalidState
             }
@@ -302,7 +305,7 @@ struct ClaudeCodeProviderContractTests {
             }
             _ = try fx.connection.receive(.permissionRequest(request)) { writes.append($0) }
             _ = try fx.connection.answer(request.id, allow: false, write: { writes.append($0) })
-            let lastWrite = #require(writes.last)
+            let lastWrite = try #require(writes.last)
             let lastText = String(data: lastWrite, encoding: .utf8) ?? ""
             guard !lastText.contains(secret), lastText.contains("Denied in Pine.") else {
                 throw ClaudeCodeWireError.invalidState

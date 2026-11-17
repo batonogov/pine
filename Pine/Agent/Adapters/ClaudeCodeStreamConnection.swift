@@ -11,7 +11,7 @@ nonisolated struct ClaudeCodeStreamConnection {
             requestID: ClaudeCodeControlRequestID,
             claudeCodeVersion: String?,
             account: ClaudeCodeStreamAccountState?,
-            redelivered: [ClaudeCodePermissionRequest],
+            redelivered: [ClaudeCodePermissionRequest]?,
             userDialogRequestCount: Int,
             interruptReceipt: ClaudeCodeInterruptReceipt?
         )
@@ -328,9 +328,9 @@ nonisolated struct ClaudeCodeStreamConnection {
         case let .assistant(sessionID: value, _, _): return value
         case let .userToolResults(sessionID: value, _): return value
         case let .result(sessionID: value, _): return value
+        case let .permissionDenied(sessionID: value, _): return value
         case .permissionRequest, .unsupportedControlRequest,
-             .controlResponseSuccess, .controlResponseError,
-             .permissionDenied, .dataOnly:
+             .controlResponseSuccess, .controlResponseError, .dataOnly:
             return nil
         }
     }

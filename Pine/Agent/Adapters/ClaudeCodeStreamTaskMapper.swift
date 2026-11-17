@@ -15,7 +15,7 @@ nonisolated struct ClaudeCodeStreamTaskMapper {
         /// a lifecycle candidate and cannot feed Ready.
         case mainTurnEnd
         case attention(ClaudeCodePermissionRequest, AdapterCandidate)
-        case requestResolved(ClaudeCodeControlRequestID)
+        case requestResolved(AdapterCandidate, requestID: ClaudeCodeControlRequestID)
         case unsupportedControlRequest(ClaudeCodeControlRequestID)
         case needsReconciliation
         /// A late completion after a requested cancellation is a race outcome,
@@ -148,7 +148,7 @@ nonisolated struct ClaudeCodeStreamTaskMapper {
             case .controlResponseSuccess, .controlResponseError, .unsupportedControlRequest:
                 // Correlation belongs to the connection owner.
                 return [.ignored]
-            case .permissionDenied(let toolUseID):
+            case .permissionDenied(_, let toolUseID):
                 if let resolved = try reconcileApproval(toolUseID) { return [resolved] }
                 return [.ignored]
             case .dataOnly:
@@ -198,12 +198,8 @@ nonisolated struct ClaudeCodeStreamTaskMapper {
             return effects
         }
         if let observed = userMessageUUID, let active = activeTurn, observed != active.rawValue {
-            // A replay of an already-closed turn is stale data; any other
-            // mismatch is a live turn Pine never authorized.
-            if let stale = try? VendorReference(role: .turn, value: observed),
-               closedTurns.contains(stale) {
-                return [.ignored]
-            }
+            // Closed-turn replay interleaved with a live turn destroys result
+            // correlation; any other mismatch is also unauthorized work.
             close()
             return [.needsReconciliation]
         }
@@ -258,7 +254,16 @@ nonisolated struct ClaudeCodeStreamTaskMapper {
             return nil
         }
         approvalToolUseIDs.removeValue(forKey: id)
-        return .requestResolved(id)
+        guard let activeTurn else {
+            close()
+            return .needsReconciliation
+        }
+        let resolution = try CandidateRequestResolutionEvent(
+            scope: .turn,
+            request: VendorReference(role: .request, value: id.value),
+            context: activeTurn
+        )
+        return .requestResolved(AdapterCandidate(event: .requestResolved(resolution)), requestID: id)
     }
 
     private mutating func permission(_ request: ClaudeCodePermissionRequest) throws -> Effect {
@@ -368,7 +373,7 @@ extension ClaudeCodeStreamTaskMapper.Effect: Equatable {
              (.sessionEnded, .sessionEnded), (.ignored, .ignored):
             return true
         case let (.attention(l, _), .attention(r, _)): return l == r
-        case let (.requestResolved(l), .requestResolved(r)): return l == r
+        case let (.requestResolved(_, l), .requestResolved(_, r)): return l == r
         case let (.unsupportedControlRequest(l), .unsupportedControlRequest(r)): return l == r
         case let (.interruptReceiptObserved(l1, l2), .interruptReceiptObserved(r1, r2)):
             return l1 == r1 && l2 == r2

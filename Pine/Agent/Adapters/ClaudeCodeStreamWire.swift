@@ -84,12 +84,12 @@ nonisolated enum ClaudeCodeStreamMessage: Equatable, Sendable,
         requestID: ClaudeCodeControlRequestID,
         claudeCodeVersion: String?,
         account: ClaudeCodeStreamAccountState?,
-        redeliveredPermissionRequests: [ClaudeCodePermissionRequest],
+        redeliveredPermissionRequests: [ClaudeCodePermissionRequest]?,
         userDialogRequestCount: Int,
         interruptReceipt: ClaudeCodeInterruptReceipt?
     )
     case controlResponseError(requestID: ClaudeCodeControlRequestID, message: String)
-    case permissionDenied(toolUseID: String)
+    case permissionDenied(sessionID: String, toolUseID: String)
     case dataOnly(kind: String)
 
     var description: String { "<redacted:claude-stream-message>" }
@@ -154,10 +154,11 @@ nonisolated enum ClaudeCodeStreamMessage: Equatable, Sendable,
                 account: ClaudeCodeStreamAccountState.observe(fields["account"])
             )
         case "permission_denied":
-            // A denial without a recognizable tool identity reconciles
+            // A denial without both recognizable identities reconciles
             // nothing; it stays data-only rather than fencing the stream.
-            if let toolUseID = try optionalString(fields["tool_use_id"], maximum: 256) {
-                return .permissionDenied(toolUseID: toolUseID)
+            if let sessionID = try optionalString(fields["session_id"], maximum: 128),
+               let toolUseID = try optionalString(fields["tool_use_id"], maximum: 256) {
+                return .permissionDenied(sessionID: sessionID, toolUseID: toolUseID)
             }
             return .dataOnly(kind: "permission_denied")
         default:
@@ -251,15 +252,17 @@ nonisolated enum ClaudeCodeStreamMessage: Equatable, Sendable,
         guard case .object(let payload) = response["response"] else {
             throw ClaudeCodeWireError.invalidEnvelope
         }
-        var redelivered: [ClaudeCodePermissionRequest] = []
+        let redelivered: [ClaudeCodePermissionRequest]?
         if let pending = response["pending_permission_requests"] {
             guard case .array(let entries) = pending, entries.count <= 32 else {
                 throw ClaudeCodeWireError.capacityExceeded
             }
-            for entry in entries {
+            redelivered = try entries.map { entry in
                 guard case .object(let entryFields) = entry else { throw ClaudeCodeWireError.invalidEnvelope }
-                redelivered.append(try Self.parseRedeliveredPermission(entryFields))
+                return try Self.parseRedeliveredPermission(entryFields)
             }
+        } else {
+            redelivered = nil
         }
         let dialogCount: Int
         if let dialogs = response["pending_user_dialog_requests"] {

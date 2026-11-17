@@ -105,6 +105,19 @@ struct ClaudeCodeStreamWireTests {
         #expect(!String(describing: message).contains(secret))
     }
 
+    @Test func permissionDeniedRequiresBothSessionAndToolIdentities() throws {
+        let line = #"{"type":"system","subtype":"permission_denied","session_id":"s-1","tool_use_id":"tool-9"}"#
+        let message = try ClaudeCodeStreamMessage.parse(data: Data(line.utf8))
+        #expect(message == .permissionDenied(sessionID: "s-1", toolUseID: "tool-9"))
+        for incomplete in [
+            #"{"type":"system","subtype":"permission_denied","tool_use_id":"tool-9"}"#,
+            #"{"type":"system","subtype":"permission_denied","session_id":"s-1"}"#
+        ] {
+            let dataOnly = try ClaudeCodeStreamMessage.parse(data: Data(incomplete.utf8))
+            #expect(dataOnly == .dataOnly(kind: "permission_denied"))
+        }
+    }
+
     @Test func unsupportedControlRequestsRetainNothing() throws {
         let line = """
         {"type":"control_request","request_id":"req-2",\
@@ -131,7 +144,7 @@ struct ClaudeCodeStreamWireTests {
         """
         let message = try ClaudeCodeStreamMessage.parse(data: Data(envelope.utf8))
         guard case .controlResponseSuccess(requestID: let id, claudeCodeVersion: let version, account: let account,
-                                           redelivered: let redelivered, userDialogRequestCount: let dialogs,
+                                           redeliveredPermissionRequests: let redelivered?, userDialogRequestCount: let dialogs,
                                            interruptReceipt: nil) = message else {
             throw ClaudeCodeWireError.invalidEnvelope
         }
@@ -153,13 +166,33 @@ struct ClaudeCodeStreamWireTests {
         }
     }
 
+    @Test func pendingPermissionRequestsPreserveAbsentVersusEmpty() throws {
+        func redelivered(_ pendingField: String) throws -> [ClaudeCodePermissionRequest]? {
+            let envelope = """
+            {"type":"control_response","response":{"subtype":"success","request_id":"init-presence",\
+            "response":{}\(pendingField)}}
+            """
+            let message = try ClaudeCodeStreamMessage.parse(data: Data(envelope.utf8))
+            guard case .controlResponseSuccess(
+                requestID: _, claudeCodeVersion: nil, account: nil,
+                redeliveredPermissionRequests: let requests,
+                userDialogRequestCount: 0, interruptReceipt: nil
+            ) = message else {
+                throw ClaudeCodeWireError.invalidEnvelope
+            }
+            return requests
+        }
+        #expect(try redelivered("") == nil)
+        #expect(try redelivered(", \"pending_permission_requests\":[]") == [])
+    }
+
     @Test func interruptReceiptIsBounded() throws {
         let envelope = """
         {"type":"control_response","response":{"subtype":"success","request_id":"int-1",\
         "response":{"still_queued":["q-1","q-2"],"cancelled":[]}}}
         """
         let message = try ClaudeCodeStreamMessage.parse(data: Data(envelope.utf8))
-        guard case .controlResponseSuccess(requestID: _, claudeCodeVersion: nil, account: nil, redelivered: [],
+        guard case .controlResponseSuccess(requestID: _, claudeCodeVersion: nil, account: nil, redeliveredPermissionRequests: nil,
                                            userDialogRequestCount: 0, interruptReceipt: let receipt) = message else {
             throw ClaudeCodeWireError.invalidEnvelope
         }
@@ -170,7 +203,7 @@ struct ClaudeCodeStreamWireTests {
         {"type":"control_response","response":{"subtype":"success","request_id":"int-2","response":{}}}
         """
         let other = try ClaudeCodeStreamMessage.parse(data: Data(envelopeWithout.utf8))
-        guard case .controlResponseSuccess(requestID: _, claudeCodeVersion: nil, account: nil, redelivered: [],
+        guard case .controlResponseSuccess(requestID: _, claudeCodeVersion: nil, account: nil, redeliveredPermissionRequests: nil,
                                            userDialogRequestCount: 0, interruptReceipt: let none) = other else {
             throw ClaudeCodeWireError.invalidEnvelope
         }
@@ -274,7 +307,7 @@ struct ClaudeCodeStreamWireTests {
         let allow = try ClaudeCodeStreamMessage.permissionAllowResponse(id: id, toolUseID: "tool-1")
         let parsedAllow = try ClaudeCodeStreamMessage.parse(data: allow)
         guard case .controlResponseSuccess(requestID: let allowID, claudeCodeVersion: nil, account: nil,
-                                           redelivered: [], userDialogRequestCount: 0, interruptReceipt: nil) = parsedAllow else {
+                                           redeliveredPermissionRequests: nil, userDialogRequestCount: 0, interruptReceipt: nil) = parsedAllow else {
             throw ClaudeCodeWireError.invalidEnvelope
         }
         #expect(allowID == id)

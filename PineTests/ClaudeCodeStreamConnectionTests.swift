@@ -170,7 +170,7 @@ struct ClaudeCodeStreamConnectionTests {
         let request = try permission("perm-6")
         _ = try connection.receive(.permissionRequest(request)) { writes.append($0) }
         _ = try connection.reject(request.id) { writes.append($0) }
-        let last = #require(writes.last)
+        let last = try #require(writes.last)
         let text = String(data: last, encoding: .utf8) ?? ""
         #expect(text.contains("Request not supported by Pine."))
         // Rejecting an unknown request writes once without caching.
@@ -191,7 +191,7 @@ struct ClaudeCodeStreamConnectionTests {
         """
         let delivery = try connection.receive(
             try ClaudeCodeStreamMessage.parse(data: Data(envelope.utf8))) { writes.append($0) }
-        guard case .controlResponseSuccess(requestID: _, _, _, redelivered: let redelivered, _, _) = delivery else {
+        guard case .controlResponseSuccess(requestID: _, _, _, redelivered: let redelivered?, _, _) = delivery else {
             throw ClaudeCodeWireError.invalidState
         }
         #expect(redelivered == [request])
@@ -202,6 +202,25 @@ struct ClaudeCodeStreamConnectionTests {
         try connection.resolveRequest(request.id)
         // A later standalone redelivery replays the remembered response.
         #expect(try connection.receive(.permissionRequest(request)) { writes.append($0) } == .replayedResponse)
+    }
+
+    @Test func initializePreservesAbsentVersusEmptyPendingRequests() throws {
+        func redelivered(_ pendingField: String) throws -> [ClaudeCodePermissionRequest]? {
+            var connection = ClaudeCodeStreamConnection()
+            let initID = try connection.initialize { _ in }
+            let envelope = """
+            {"type":"control_response","response":{"subtype":"success","request_id":"\(initID.value)",\
+            "response":{}\(pendingField)}}
+            """
+            let delivery = try connection.receive(
+                try ClaudeCodeStreamMessage.parse(data: Data(envelope.utf8))) { _ in }
+            guard case .controlResponseSuccess(requestID: _, _, _, redelivered: let requests, _, _) = delivery else {
+                throw ClaudeCodeWireError.invalidState
+            }
+            return requests
+        }
+        #expect(try redelivered("") == nil)
+        #expect(try redelivered(", \"pending_permission_requests\":[]") == [])
     }
 
     @Test func sessionFencingRejectsForeignSessions() throws {
@@ -216,6 +235,22 @@ struct ClaudeCodeStreamConnectionTests {
             write: { writes.append($0) }) == .ignoredForeignSession)
         #expect(connection.sessionID == "s-1")
         #expect(connection.phase == .ready)
+    }
+
+    @Test func permissionDenialUsesSessionFencing() throws {
+        var writes: [Data] = []
+        var connection = try initialize(&writes)
+        _ = try connection.receive(
+            .assistant(sessionID: "s-1", userMessageUUID: nil, toolCalls: []),
+            write: { writes.append($0) }
+        )
+        let request = try permission("perm-foreign")
+        _ = try connection.receive(.permissionRequest(request)) { writes.append($0) }
+        let foreign = ClaudeCodeStreamMessage.permissionDenied(sessionID: "s-2", toolUseID: request.toolUseID)
+        #expect(try connection.receive(foreign, write: { writes.append($0) }) == .ignoredForeignSession)
+        #expect(connection.phase == .ready)
+        // The foreign denial never reached the owner, so the request remains answerable.
+        _ = try connection.answer(request.id, allow: false, write: { writes.append($0) })
     }
 
     @Test func serverRequestCapacityFailsClosed() throws {
