@@ -45,11 +45,16 @@ Check operations additionally bind the surface to their live execution inputs
 through `forCheckOperation(_:)`: the operation's task, environment binding,
 plan, command, and capture inputs must agree, the binding's
 authority is revalidated before and during capture, and the supplied values
-are the exact environment the runner will spawn with. Current run, selection,
-and grant authority are re-checked by the executor's pre-spawn gate, not by
-the factory. The executor compares the returned snapshot with the operation's
-expected snapshot before any effect; any non-current result prevents spawn
-and evidence publication.
+are the exact environment the runner will spawn with. Before capture, the
+executor's pre-spawn gate checks current task, run, processGeneration,
+selection, and live grant/binding/lease authority; the factory does not replace
+those executor checks. After capture and the expected pre/post comparison, the
+#1754 executor MUST revalidate all of that authority immediately before every
+external effect (including posix_spawn) and immediately before publishing
+current evidence. Any change or revocation, and any unavailable or non-current
+result, means no effect and no current evidence. This primitive does not
+implement that final executor gate; #1754 needs an integration test that revokes
+authority during capture.
 
 Editor coverage is observed rather than asserted: `observing(_:)` and
 `ProjectRegistry.verificationEditorPreflight()` track the open

@@ -136,10 +136,18 @@ nonisolated struct AgentTaskCheckOperationInputs: Sendable {
 }
 
 /// Synchronous off-main pre-spawn gate, passed the EXACT environment supplied
-/// by UserTaskRunner. It must validate current task/run, selection, grant and
-/// binding authority (not cached snapshots), then use #1753 capture with these
-/// environment values and compare with `expected`. Throwing prevents spawn.
-/// The same validation and capture are needed after cleanup before evidence.
+/// by UserTaskRunner. It must validate current task, run, processGeneration,
+/// selection, and live grant/binding/lease authority (not cached snapshots),
+/// then use #1753 capture with these environment values and compare with
+/// `expected`. Throwing prevents spawn. After capture and the expected pre/post
+/// comparison, the #1754 executor MUST revalidate all of that authority
+/// immediately before every external effect (including posix_spawn) and
+/// immediately before publishing current evidence. Any change or revocation,
+/// and any unavailable or non-current result, means no effect and no current
+/// evidence. The same validation and capture are needed after cleanup before
+/// evidence.
+/// This primitive does not implement that executor gate; #1754 needs an
+/// integration test that revokes authority during capture.
 /// This contract supplies no default that silently approves missing authority.
 typealias AgentTaskCheckLaunchValidator = @Sendable (
     AgentTaskCheckOperationInputs, [String: String]

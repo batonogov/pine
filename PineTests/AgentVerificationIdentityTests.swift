@@ -633,7 +633,7 @@ nonisolated struct AgentVerificationIdentityBoundaryTests {
         #expect(!threads.withLock { $0 }.contains(true))
     }
 
-    @Test func richTreeEnumerationOrderingProducesIdenticalIdentity() async throws {
+    @Test func richTreeRepeatedCapturesAndDictionaryInsertionOrderProduceIdenticalIdentity() async throws {
         let fixture = try IdentityFixture()
         defer { fixture.cleanup() }
         try fixture.write(".hidden/config", "hidden")
