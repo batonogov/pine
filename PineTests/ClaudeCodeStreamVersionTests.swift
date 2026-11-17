@@ -9,7 +9,7 @@ struct ClaudeCodeStreamVersionTests {
         let v3 = try ClaudeCodeCLIVersion("2.2.0")
         #expect(v2 < v1)
         #expect(v1 < v3)
-        #expect(v1 == try ClaudeCodeCLIVersion(2, 1, 311))
+        #expect(try ClaudeCodeCLIVersion(2, 1, 311) == v1)
         #expect(v1.description == "2.1.311")
         for invalid in ["2.1", "2.1.311.4", "2.a.1", "2..1", "2.1.01x", "", "0x1.2.3", "2.1.-3"] {
             #expect(throws: ClaudeCodeStreamError.invalidVersion) {
