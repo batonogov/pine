@@ -93,10 +93,9 @@ nonisolated struct AgentTaskDiscoveryReport: Equatable, Sendable {
             }
         }
         for effective in [effectiveModel, effectiveReasoningEffort, effectivePermissions] {
-            guard case .unknown = effective else {
-                guard case .resolved = executableIdentity else {
-                    throw AgentTaskDiscoveryReportError.effectiveSettingWithoutExecutable
-                }
+            if case .unknown = effective { continue }
+            guard case .resolved = executableIdentity else {
+                throw AgentTaskDiscoveryReportError.effectiveSettingWithoutExecutable
             }
             try Self.validateEffectiveSetting(effective)
         }
