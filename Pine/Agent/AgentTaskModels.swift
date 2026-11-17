@@ -964,6 +964,9 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     var environment: AgentTaskEnvironmentIdentity?
     var feedback: [AgentTaskFeedbackRecord]
     var worktreeSetup: AgentTaskReservedWorktreeCheckpoint?
+    // Independent review and bounded corrections (#1755): the durable
+    // review-cycle journal. Additive: older metadata decodes to nil.
+    var reviewCycle: AgentTaskCorrectionCycle?
 
     var hasUnresolvedWorktreeSetup: Bool {
         worktreeSetup.map { $0.phase != .populated } ?? false
@@ -996,6 +999,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case environment
         case feedback
         case worktreeSetup
+        case reviewCycle
     }
 
     init(
@@ -1032,6 +1036,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         environment = nil
         feedback = []
         worktreeSetup = nil
+        reviewCycle = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -1114,6 +1119,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             forKey: .feedback
         ) ?? []
         worktreeSetup = try values.decodeIfPresent(AgentTaskReservedWorktreeCheckpoint.self, forKey: .worktreeSetup)
+        reviewCycle = try values.decodeIfPresent(AgentTaskCorrectionCycle.self, forKey: .reviewCycle)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1153,6 +1159,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         try values.encodeIfPresent(environment, forKey: .environment)
         try values.encode(feedback, forKey: .feedback)
         try values.encodeIfPresent(worktreeSetup, forKey: .worktreeSetup)
+        try values.encodeIfPresent(reviewCycle, forKey: .reviewCycle)
     }
 }
 

@@ -2157,6 +2157,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               task.environment.map(Self.validStoredEnvironment) ?? true,
               task.worktreeSetup.map({ Self.validWorktreeSetup($0, for: task) }) ?? true,
               validateFeedback(task.feedback),
+              validateReviewCycle(task.reviewCycle, for: task),
               validateADEState(task),
               validateEvidence(task),
               validateChronology(task) else {
@@ -2257,6 +2258,67 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                !Self.validStoredCodeState(codeState) {
                 return false
             }
+        }
+        return true
+    }
+
+    /// Durable review-cycle journal (#1755): structural invariants via the
+    /// journal's own validator, plus the same text-shape bounds as the rest
+    /// of the metadata. A violation rejects the whole file fail-closed, so
+    /// a tampered round count, reservation, or candidate identity can never
+    /// load.
+    private func validateReviewCycle(
+        _ cycle: AgentTaskCorrectionCycle?,
+        for task: AgentTask
+    ) -> Bool {
+        guard let cycle else { return true }
+        guard cycle.isValid(for: task),
+              Self.validText(
+                  cycle.requestedOutcomeReference,
+                  maximum: limits.maxFeedbackReferenceBytes,
+                  allowsEmpty: false
+              ),
+              Self.validText(
+                  cycle.criteriaVersion,
+                  maximum: AgentTaskCorrectionCycle.maximumIdentityBytes,
+                  allowsEmpty: false
+              ),
+              Self.validText(
+                  cycle.checkPlanIdentity,
+                  maximum: AgentTaskCorrectionCycle.maximumIdentityBytes,
+                  allowsEmpty: false
+              ),
+              cycle.reviewEventKeys.count
+                  <= AgentTaskCorrectionCycle.maximumEventKeys,
+              cycle.reviewEventKeys.allSatisfy({
+                  Self.validText(
+                      $0,
+                      maximum: AgentTaskCorrectionCycle.maximumIdentityBytes,
+                      allowsEmpty: false
+                  )
+              }),
+              cycle.lastRejectedReference.map({
+                  Self.validText(
+                      $0,
+                      maximum: limits.maxFeedbackReferenceBytes,
+                      allowsEmpty: false
+                  )
+              }) ?? true else {
+            return false
+        }
+        if let session = cycle.reviewerSession {
+            guard Self.validText(
+                session.provider,
+                maximum: limits.maxVendorProviderBytes,
+                allowsEmpty: false
+            ), Self.validText(
+                session.opaqueIdentifier,
+                maximum: limits.maxVendorIdentityBytes,
+                allowsEmpty: false
+            ), Self.validOptionalText(
+                session.executableVersion,
+                maximum: limits.maxExecutableVersionBytes
+            ) else { return false }
         }
         return true
     }
