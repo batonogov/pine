@@ -325,7 +325,7 @@ struct AgentTaskDiscoveryReportTests {
     }
 
     @Test func effectiveSettingsCannotBeConfirmedWithoutAResolvedExecutable() throws {
-        #expect(throws: AgentTaskDiscoveryReportError.effectiveSettingWithoutResolvedExecutable) {
+        #expect(throws: AgentTaskDiscoveryReportError.effectiveSettingWithoutExecutable) {
             _ = try report(effectiveModel: .confirmed("gpt-5.xhigh"))
         }
         #expect(throws: AdapterValueError.self) {

@@ -30,6 +30,16 @@ nonisolated enum AgentTaskLaunchEnvironmentProvenance: String, Hashable, Sendabl
     case explicitExternal
 }
 
+/// The launch-boundary provenance facts the intent records: where the
+/// credentials come from and where the launch environment comes from. Both
+/// are required — a default would assert a fact the consumer never decided
+/// (a credential in the launch environment can change connection and billing
+/// provenance).
+nonisolated struct AgentTaskLaunchProvenance: Equatable, Sendable {
+    let authenticationOrigin: AgentTaskAuthenticationOrigin
+    let environmentProvenance: AgentTaskLaunchEnvironmentProvenance
+}
+
 /// One native setting's launch intent. "Use agent settings" (`.inherited`)
 /// is a real policy, not a fabricated selection: it carries no value and no
 /// scope. Explicit values stay native labels; Pine never normalizes them to
@@ -169,10 +179,10 @@ nonisolated struct AgentTaskNativeLaunchPolicy: Equatable, Sendable {
     /// Deterministic representability only: no discovery, probes or config
     /// reads. Setting selections are already validated at construction.
     ///
-    /// `authenticationOrigin` and `environmentProvenance` are required
-    /// because the intent records them as launch-boundary facts: a default
-    /// would assert a provenance the consumer never decided (a credential in
-    /// the launch environment can change connection and billing provenance).
+    /// `provenance` is required because the intent records the
+    /// launch-boundary facts: a default would assert a provenance the
+    /// consumer never decided (a credential in the launch environment can
+    /// change connection and billing provenance).
     static func evaluate(
         taskID: UUID,
         runID: UUID,
@@ -181,8 +191,7 @@ nonisolated struct AgentTaskNativeLaunchPolicy: Equatable, Sendable {
         model: AgentTaskNativeSettingSelection = AgentTaskNativeSettingSelection(),
         reasoningEffort: AgentTaskNativeSettingSelection = AgentTaskNativeSettingSelection(),
         permissions: AgentTaskNativeSettingSelection = AgentTaskNativeSettingSelection(),
-        authenticationOrigin: AgentTaskAuthenticationOrigin,
-        environmentProvenance: AgentTaskLaunchEnvironmentProvenance
+        provenance: AgentTaskLaunchProvenance
     ) -> Eligibility {
         guard let selection else { return .blocked(.missingSelection) }
         guard isValidAbsoluteLocalExecutable(selection.selectedExecutable) else {
@@ -191,7 +200,8 @@ nonisolated struct AgentTaskNativeLaunchPolicy: Equatable, Sendable {
         return .eligible(Self(
             taskID: taskID, runID: runID, bindingID: bindingID, selection: selection,
             model: model, reasoningEffort: reasoningEffort, permissions: permissions,
-            authenticationOrigin: authenticationOrigin, environmentProvenance: environmentProvenance
+            authenticationOrigin: provenance.authenticationOrigin,
+            environmentProvenance: provenance.environmentProvenance
         ))
     }
 }

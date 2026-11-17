@@ -95,7 +95,7 @@ nonisolated struct AgentTaskDiscoveryReport: Equatable, Sendable {
         for effective in [effectiveModel, effectiveReasoningEffort, effectivePermissions] {
             guard case .unknown = effective else {
                 guard case .resolved = executableIdentity else {
-                    throw AgentTaskDiscoveryReportError.effectiveSettingWithoutResolvedExecutable
+                    throw AgentTaskDiscoveryReportError.effectiveSettingWithoutExecutable
                 }
             }
             try Self.validateEffectiveSetting(effective)
@@ -231,7 +231,7 @@ nonisolated enum AgentTaskDiscoveryReportError: Error, Equatable, Sendable {
     case transportWithoutResolvedExecutable
     case sessionStartWithoutNegotiatedTransport
     case loginFlowsWithoutNegotiatedTransport
-    case effectiveSettingWithoutResolvedExecutable
+    case effectiveSettingWithoutExecutable
 }
 
 /// Conservative derivation from confirmed observations. `isReady` states

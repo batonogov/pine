@@ -13,8 +13,10 @@ struct AgentTaskNativeLaunchPolicyTests {
         )
         let result = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: taskID, runID: runID, bindingID: bindingID, selection: selection,
-            authenticationOrigin: .inheritNative,
-            environmentProvenance: .inheritedPineProcess
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         )
         guard case .eligible(let policy) = result else {
             Issue.record("Native inheritance must be representable without inspecting the executable")
@@ -47,8 +49,10 @@ struct AgentTaskNativeLaunchPolicyTests {
         )
         #expect(AgentTaskNativeLaunchPolicy.evaluate(
             taskID: taskID, runID: runID, bindingID: bindingID, selection: nil,
-            authenticationOrigin: .inheritNative,
-            environmentProvenance: .inheritedPineProcess
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         ) == .blocked(.missingSelection))
 
         let modelOverride = try AgentTaskNativeSettingSelection.explicit(
@@ -57,8 +61,10 @@ struct AgentTaskNativeLaunchPolicyTests {
         guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: taskID, runID: runID, bindingID: bindingID, selection: selection,
             model: modelOverride,
-            authenticationOrigin: .inheritNative,
-            environmentProvenance: .inheritedPineProcess
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         ) else {
             Issue.record("An explicit session-scoped override must be a representable intent")
             return
@@ -107,8 +113,10 @@ struct AgentTaskNativeLaunchPolicyTests {
             #expect(AgentTaskNativeLaunchPolicy.evaluate(
                 taskID: UUID(), runID: UUID(), bindingID: UUID(),
                 selection: .init(agentID: agentID, selectedExecutable: executable),
-                authenticationOrigin: .inheritNative,
-                environmentProvenance: .inheritedPineProcess
+                provenance: AgentTaskLaunchProvenance(
+                    authenticationOrigin: .inheritNative,
+                    environmentProvenance: .inheritedPineProcess
+                )
             ) == .blocked(.inconsistentSelection))
         }
         // PATH_MAX: an overlong path is not a representable executable identity.
@@ -116,8 +124,10 @@ struct AgentTaskNativeLaunchPolicyTests {
         #expect(AgentTaskNativeLaunchPolicy.evaluate(
             taskID: UUID(), runID: UUID(), bindingID: UUID(),
             selection: .init(agentID: agentID, selectedExecutable: overlong),
-            authenticationOrigin: .inheritNative,
-            environmentProvenance: .inheritedPineProcess
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         ) == .blocked(.inconsistentSelection))
     }
 
@@ -136,19 +146,25 @@ struct AgentTaskNativeLaunchPolicyTests {
         )
         let first = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: taskID, runID: firstRun, bindingID: bindingID, selection: firstSelection,
-            authenticationOrigin: .inheritNative,
-            environmentProvenance: .inheritedPineProcess
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         )
         let second = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: taskID, runID: secondRun, bindingID: bindingID, selection: secondSelection,
-            authenticationOrigin: .inheritNative,
-            environmentProvenance: .inheritedPineProcess
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         )
         #expect(first != second)
         #expect(first == AgentTaskNativeLaunchPolicy.evaluate(
             taskID: taskID, runID: firstRun, bindingID: bindingID, selection: firstSelection,
-            authenticationOrigin: .inheritNative,
-            environmentProvenance: .inheritedPineProcess
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         ))
     }
 
@@ -162,8 +178,10 @@ struct AgentTaskNativeLaunchPolicyTests {
         )
         let inFlight = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: taskID, runID: UUID(), bindingID: bindingID, selection: selection,
-            authenticationOrigin: .inheritNative,
-            environmentProvenance: .inheritedPineProcess
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         )
         let futureDefault = try AgentTaskNativeSettingSelection.explicit(
             nativeValue: "new-default-model", scope: .directory
@@ -171,8 +189,10 @@ struct AgentTaskNativeLaunchPolicyTests {
         let nextTask = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: futureTaskID, runID: UUID(), bindingID: bindingID, selection: selection,
             model: futureDefault,
-            authenticationOrigin: .inheritNative,
-            environmentProvenance: .inheritedPineProcess
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         )
         guard case .eligible(let inFlightPolicy) = inFlight else {
             Issue.record("In-flight intent must remain eligible")
@@ -196,8 +216,10 @@ struct AgentTaskNativeLaunchPolicyTests {
         )
         guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: UUID(), runID: UUID(), bindingID: UUID(), selection: selection,
-            authenticationOrigin: .launchEnvironment,
-            environmentProvenance: .explicitExternal
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .launchEnvironment,
+                environmentProvenance: .explicitExternal
+            )
         ) else {
             Issue.record("Explicit external environment provenance must be representable")
             return
