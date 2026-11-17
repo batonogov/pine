@@ -2296,12 +2296,36 @@ final class TerminalTab: Identifiable, Hashable {
     /// - `TERM=xterm-256color` — standard 256-color terminal type
     /// - `COLORTERM=truecolor` — advertises 24-bit color support to TUIs
     func buildEnvironment() -> [String: String] {
-        Self.normalizedEnvironment(
+        let environment = Self.normalizedEnvironment(
             from: ProcessInfo.processInfo.environment,
             workingDirectory: workingDirectory,
             readOnlyContextEnabled: agentHandoffSettings
                 .isReadOnlyContextEnabled
         )
+        #if PINE_TEST_HOST
+        // Test host only: strip child startup/history/prompt injection.
+        return TestChildStartupPolicy.environment(from: environment)
+        #else
+        return environment
+        #endif
+    }
+
+    /// Exact executable/argv the tab launches. An explicitly configured
+    /// process always wins; under the private test host the default child is
+    /// the controlled non-login shell, never the user's selected one (#1792).
+    var resolvedInitialProcess: TerminalInitialProcess {
+        if let initialProcess { return initialProcess }
+        #if PINE_TEST_HOST
+        return TerminalInitialProcess(
+            executablePath: TestChildStartupPolicy.executablePath,
+            arguments: TestChildStartupPolicy.arguments
+        )
+        #else
+        return TerminalInitialProcess(
+            executablePath: shellSettings.resolvedShellPath,
+            arguments: shellSettings.shellArgs
+        )
+        #endif
     }
 
     /// Normalizes the host process environment for Pine's embedded terminal.
@@ -2449,9 +2473,9 @@ final class TerminalTab: Identifiable, Hashable {
         let retention = TerminalWorkingDirectoryRetention(canonicalDirectory: canonicalDirectory)
         workingDirectoryRetention = retention
 
-        let executable = initialProcess?.executablePath
-            ?? shellSettings.resolvedShellPath
-        let arguments = initialProcess?.arguments ?? shellSettings.shellArgs
+        let process = resolvedInitialProcess
+        let executable = process.executablePath
+        let arguments = process.arguments
         let launch: Result<Void, LocalProcessError>
         #if PINE_TEST_HOST
         RecoveryUITestEvidence.shared.processLaunches.append(id)
