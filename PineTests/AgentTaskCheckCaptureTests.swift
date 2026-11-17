@@ -67,7 +67,9 @@ struct AgentTaskCheckCaptureTests {
             during.setup.revokeAuthority()
             return [:]
         }
-        if case .unavailable(.unavailableBinding) = await inFlight.capture() {} else {
+        // Property under test is REFUSAL, not a specific reason: under load a
+        // mid-capture Git failure may surface another unavailable reason.
+        if case .current = await inFlight.capture() {
             Issue.record("Revocation while observing inputs must refuse the snapshot")
         }
     }

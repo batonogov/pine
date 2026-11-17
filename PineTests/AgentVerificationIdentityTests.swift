@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 import Testing
 @testable import Pine
 
@@ -522,6 +523,139 @@ nonisolated struct AgentVerificationCoverageBoundaryTests {
         let redirected = try fixture.git(["ls-files", "--others", "--exclude-standard"])
         #expect(redirected.contains("untracked-outside"))
         #expect(!(await fixture.capture()).isCurrent)
+    }
+}
+
+@Suite("Shared capture race and threading boundaries", .serialized)
+nonisolated struct AgentVerificationIdentityBoundaryTests {
+    @Test func symlinkTargetReplacementDuringCaptureRefusesSnapshot() async throws {
+        let fixture = try IdentityFixture()
+        defer { fixture.cleanup() }
+        try fixture.write("a.txt", "alpha")
+        try fixture.write("z.txt", "zeta")
+        try fixture.commit()
+        try FileManager.default.createSymbolicLink(
+            atPath: fixture.root.appending(path: "z-link").path, withDestinationPath: "z.txt"
+        )
+        var capture = try fixture.service()
+        capture.didReadFile = { relative in
+            // Replace the link (new inode/ctime) before the read phase
+            // re-witnesses it; "a.txt" sorts before "z-link".
+            if relative == "a.txt" {
+                let link = fixture.root.appending(path: "z-link")
+                try? FileManager.default.removeItem(at: link)
+                try? FileManager.default.createSymbolicLink(
+                    atPath: link.path, withDestinationPath: "a.txt"
+                )
+            }
+        }
+        if case .current = await capture.capture() {
+            Issue.record("Symlink replacement during capture must refuse the snapshot")
+        }
+    }
+
+    @Test func directoryReplacementDuringCaptureRefusesSnapshot() async throws {
+        let fixture = try IdentityFixture()
+        defer { fixture.cleanup() }
+        try fixture.write("a.txt", "alpha")
+        try fixture.write("sub/one.txt", "one")
+        try fixture.commit()
+        // Hold the pre-capture directory inode; the capture's walk holds its
+        // own descriptor into the same entry.
+        let held = Darwin.open(
+            fixture.root.appending(path: "sub").path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+        #expect(held >= 0)
+        defer { if held >= 0 { Darwin.close(held) } }
+        var capture = try fixture.service()
+        capture.didReadFile = { relative in
+            if relative == "a.txt" {
+                // Swap the path to a new inode while the capture holds the old one.
+                try? FileManager.default.moveItem(
+                    at: fixture.root.appending(path: "sub"),
+                    to: fixture.root.appending(path: "sub-old")
+                )
+                try? fixture.write("sub/two.txt", "two")
+            }
+        }
+        if case .current = await capture.capture() {
+            Issue.record("Directory/inode replacement during capture must refuse the snapshot")
+        }
+        var heldInfo = stat()
+        var swapped = stat()
+        #expect(fstat(held, &heldInfo) == 0)
+        #expect(lstat(fixture.root.appending(path: "sub").path, &swapped) == 0)
+        #expect(heldInfo.st_ino != swapped.st_ino, "The path swap must have happened")
+    }
+
+    @Test func rootReplacementInsideSharedCaptureRefusesSnapshot() async throws {
+        let fixture = try IdentityFixture()
+        defer { fixture.cleanup() }
+        try fixture.write("source", "state-A")
+        try fixture.commit()
+        let replaced = Mutex(false)
+        var capture = try fixture.service()
+        capture.environmentValues = {
+            let firstCall = replaced.withLock { value in
+                defer { value = true }
+                return !value
+            }
+            guard firstCall else { return [:] }
+            // Replace the authorized worktree while the shared capture is in
+            // flight; the held lease must not survive the replacement.
+            let root = fixture.root
+            try? FileManager.default.moveItem(
+                at: root, to: fixture.parent.appending(path: "replaced-root")
+            )
+            try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+            try? Data("state-B".utf8).write(to: root.appending(path: "source"))
+            return [:]
+        }
+        if case .current = await capture.capture() {
+            Issue.record("Root replacement during capture must refuse the snapshot")
+        }
+    }
+
+    @Test func captureWorkRunsOffMainThread() async throws {
+        let fixture = try IdentityFixture()
+        defer { fixture.cleanup() }
+        try fixture.write("source", "value")
+        try fixture.commit()
+        let threads = Mutex<[Bool]>([])
+        var capture = try fixture.service()
+        capture.environmentValues = {
+            threads.withLock { $0.append(Thread.isMainThread) }
+            return [:]
+        }
+        capture.didReadFile = { _ in threads.withLock { $0.append(Thread.isMainThread) } }
+        #expect(await capture.capture().snapshot != nil)
+        #expect(!threads.withLock { $0 }.isEmpty)
+        #expect(!threads.withLock { $0 }.contains(true))
+    }
+
+    @Test func richTreeEnumerationOrderingProducesIdenticalIdentity() async throws {
+        let fixture = try IdentityFixture()
+        defer { fixture.cleanup() }
+        try fixture.write(".hidden/config", "hidden")
+        try fixture.write("src/Deep/File.swift", "import Foundation\n")
+        try fixture.write("src/top.swift", "one")
+        try fixture.write("Zebra/entry", "Z")
+        try fixture.write("name with space.txt", "snowman\n🐴")
+        try fixture.commit()
+        try fixture.write("untracked/dir/leaf", "u")
+        var firstEnvironment: [String: String] = [:]
+        firstEnvironment["A"] = "1"
+        firstEnvironment["B"] = "2"
+        firstEnvironment["C"] = "3"
+        var secondEnvironment: [String: String] = [:]
+        secondEnvironment["C"] = "3"
+        secondEnvironment["A"] = "1"
+        secondEnvironment["B"] = "2"
+        let first = try await fixture.current(environment: firstEnvironment)
+        let second = try await fixture.current(environment: secondEnvironment)
+        let third = try await fixture.current(environment: firstEnvironment)
+        #expect(first == second)
+        #expect(third == first)
     }
 }
 

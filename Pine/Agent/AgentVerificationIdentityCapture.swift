@@ -42,6 +42,9 @@ nonisolated struct AgentVerificationIdentityCapture: Sendable {
     var environmentValues: @Sendable () -> [String: String] = { ProcessInfo.processInfo.environment }
     /// Operation adapters retain live authority, not merely a filesystem lease.
     var authorityIsCurrent: @Sendable () -> Bool = { true }
+    /// Test seam: invoked after each regular tree file is read and hashed,
+    /// before the shared capture can return a current result.
+    var didReadFile: (@Sendable (String) -> Void)?
     let cancellation: GitCommandCancellationToken
 
     func capture() async -> AgentVerificationIdentityCaptureResult {
@@ -86,7 +89,8 @@ nonisolated struct AgentVerificationIdentityCapture: Sendable {
             limits.timeout = min(limits.timeout, Double(remaining.seconds) + Double(remaining.attoseconds) / 1e18)
             let collector = AgentVerificationFilesystemFingerprint(
                 lease: inputs.lease, limits: limits, policy: inputs.policy, editor: inputs.editor,
-                cancellation: cancellation, gitSnapshot: { try inspector.capture() }
+                cancellation: cancellation, gitSnapshot: { try inspector.capture() },
+                didReadFile: didReadFile
             )
             let code = try collector.capture()
             let after = try environment(deadline: deadline, remainingBytes: &remainingObservedBytes)
