@@ -298,7 +298,7 @@ struct ClaudeCodeStreamTaskMapperTests {
         // the queued turn does not start by itself.
         #expect(mapper.hasUnsettledTurn)
         let outcome = try mapper.map(.result(sessionID: sessionID, subtype: .success), connection: connection)
-        guard case .candidate(let candidate)? = outcome, case .lifecycle(let event) = candidate.event,
+        guard case .candidate(let candidate)? = outcome.first, case .lifecycle(let event) = candidate.event,
               event.phase == .cancelled else {
             throw ClaudeCodeWireError.invalidState
         }
