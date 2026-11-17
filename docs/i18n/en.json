@@ -67,7 +67,7 @@
   "features.title": "Everything needed to edit beside an agent.",
   "features.desc": "Pine stays a focused code editor while making terminal-driven, agent-assisted work visible.",
   "features.01title": "See agent work as it happens.",
-  "features.01desc": "Agent Inbox keeps task context across projects and links to live sessions. In current source, detected-agent notifications report process termination—not waiting, success, or checked results. Released binaries may behave differently.",
+  "features.01desc": "Agent Inbox keeps task context across projects and links to live sessions. Current process-only integrations send no agent notifications, including on process exit. Waiting-input, failure, and completion notifications require verified lifecycle events from a supported structured integration; no such integration is app-enabled yet. Released binaries may behave differently.",
   "features.02title": "Edit with native speed and real code intelligence.",
   "features.02desc": "Bundled language grammars, LSP diagnostics, completion, hover, go-to-definition, code actions, rename, symbols, folding, minimap, and project search.",
   "features.03title": "Shape one workspace around multiple projects.",

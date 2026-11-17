@@ -100,6 +100,11 @@ task-local and do not imply arbitrary interactive TUI compatibility.
 
 ## Baseline: what Pine 2.x already ships
 
+In current source, process-only integrations send no agent notifications,
+including on process exit. Waiting-input, failure, and completion notifications
+require verified lifecycle events from a supported structured integration; no
+such integration is app-enabled yet. Released binaries may behave differently.
+
 Public surfaces describe two things and never blur them:
 
 - **Shipped now (Pine 2.x):** a native SwiftUI + AppKit code editor; a full

@@ -13714,55 +13714,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine meldet nur bedeutsame Zustandswechsel, wenn die zugehörige Sitzung nicht sichtbar ist. Das Prozessende allein löst keine Mitteilung aus. Inhalte und Ausgaben werden nie eingeschlossen."
+            "value" : "Integrationen, die nur Prozesse beobachten, senden keine Agentenmitteilungen. Verifizierte Mitteilungen über das Warten auf eine Antwort, Fehler und den Abschluss erfordern eine unterstützte strukturierte Integration. Sie werden nur gesendet, wenn die zugehörige Sitzung nicht sichtbar ist, und enthalten nie Eingabeaufforderungen oder Ausgaben."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine alerts only on meaningful state changes while the relevant session is not visible. Process exit alone does not trigger an alert. Prompts and output are never included."
+            "value" : "Process-only integrations do not send agent notifications. Verified notifications for waiting, failure, and completion require a supported structured integration. They are sent only when the relevant session is not visible and never include prompts or output."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine avisa solo de cambios importantes cuando la sesión relevante no está visible. El fin del proceso por sí solo no genera un aviso. Nunca incluye solicitudes ni salida."
+            "value" : "Las integraciones que solo observan procesos no envían notificaciones de agentes. Las notificaciones verificadas de espera, fallo y finalización requieren una integración estructurada compatible. Solo se envían cuando la sesión correspondiente no está visible y nunca incluyen solicitudes ni salida."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine signale uniquement les changements importants lorsque la session concernée n’est pas visible. La fin du processus seule ne déclenche pas de notification. Les requêtes et sorties ne sont jamais incluses."
+            "value" : "Les intégrations limitées à l’observation des processus n’envoient pas de notifications des agents. Les notifications vérifiées d’attente, d’échec et de fin nécessitent une intégration structurée prise en charge. Elles sont envoyées uniquement lorsque la session concernée n’est pas visible et n’incluent jamais les requêtes ni les sorties."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine は関連セッションが表示されていない場合に重要な状態変化だけを通知します。プロセス終了だけでは通知しません。プロンプトや出力は含まれません。"
+            "value" : "プロセスのみを監視する連携では、エージェント通知は送信されません。検証済みの待機・失敗・完了の通知には、構造化イベントに対応した連携が必要です。これらは関連セッションが表示されていない場合にのみ送信され、プロンプトや出力は含まれません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine은 관련 세션이 보이지 않을 때 의미 있는 상태 변경만 알립니다. 프로세스 종료만으로는 알리지 않습니다. 프롬프트와 출력은 포함하지 않습니다."
+            "value" : "프로세스만 관찰하는 통합에서는 에이전트 알림을 보내지 않습니다. 검증된 대기, 실패 및 완료 알림은 구조화된 이벤트를 지원하는 통합에서만 제공됩니다. 이러한 알림은 관련 세션이 보이지 않을 때만 전송되며 프롬프트와 출력은 포함하지 않습니다."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Pine alerta apenas mudanças importantes quando a sessão relevante não está visível. O encerramento do processo por si só não gera um alerta. Prompts e saídas nunca são incluídos."
+            "value" : "As integrações que apenas observam processos não enviam notificações de agentes. As notificações verificadas de espera, falha e conclusão exigem uma integração estruturada compatível. Elas são enviadas somente quando a sessão relevante não está visível e nunca incluem prompts nem saídas."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine сообщает только о важных изменениях, когда нужная сессия не видна. Само по себе завершение процесса не вызывает уведомления. Запросы и вывод никогда не включаются."
+            "value" : "Интеграции, которые только отслеживают процессы, не отправляют уведомления агентов. Проверенные уведомления об ожидании, ошибках и завершении требуют поддерживаемой структурированной интеграции. Они отправляются, только когда нужная сессия не видна, и никогда не содержат запросы и вывод."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "仅当相关会话不可见时，Pine 才会提醒重要状态变化。仅进程退出不会触发提醒，且绝不包含提示或输出。"
+            "value" : "仅监测进程的集成不会发送智能体通知。经过验证的等待、失败和完成通知需要支持结构化事件的集成。此类通知仅在相关会话不可见时发送，且绝不包含提示或输出。"
           }
         }
       }

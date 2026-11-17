@@ -8,7 +8,7 @@ supersede the issue body's earlier editor/terminal/Inbox preservation wording.
 This is an implementation inventory, not usage research, final design approval,
 or end-to-end acceptance. The browser prototype is historical, not delivered UI.
 
-## Bounded candidate: process-exit notifications
+## Bounded candidate: process-exit notifications ([#1834](https://github.com/batonogov/pine/issues/1834))
 
 **Remove**, not hide: the process-ended event, its delivery/title branches,
 Settings toggle, and nine-language catalog entry. All nine preference explanations

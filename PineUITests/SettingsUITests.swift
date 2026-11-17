@@ -375,6 +375,40 @@ final class SettingsUITests: PineUITestCase {
         )
     }
 
+    func testAgentNotificationsRequireStructuredIntegration() throws {
+        launchClean()
+        openSettings()
+
+        let agentTab = app.buttons["Agent Handoff"].firstMatch
+        XCTAssertTrue(agentTab.waitForExistence(timeout: 10))
+        agentTab.click()
+
+        let notificationSettings = app.descendants(matching: .any)[
+            "agentNotificationSettings"
+        ].firstMatch
+        XCTAssertTrue(notificationSettings.waitForExistence(timeout: 5))
+
+        let explanation = """
+            Process-only integrations do not send agent notifications. Verified \
+            notifications for waiting, failure, and completion require a supported \
+            structured integration. They are sent only when the relevant session is \
+            not visible and never include prompts or output.
+            """
+        let explanationText = app.staticTexts[explanation].firstMatch
+        XCTAssertTrue(
+            explanationText.waitForExistence(timeout: 5),
+            "Settings should explain that verified events need structured integration"
+        )
+
+        let processEndedToggle = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Process ended")
+        ).firstMatch
+        XCTAssertFalse(
+            processEndedToggle.exists,
+            "Process-only integrations should not expose a Process ended toggle"
+        )
+    }
+
     func testEverySettingsPaneUsesLocalizedLabels() throws {
         launchClean()
         openSettings(

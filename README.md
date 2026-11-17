@@ -61,7 +61,7 @@ Russian-language browser demo, not the downloadable app.
 ## Features
 
 - **Native macOS** — SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
-- **Agent-aware workflow** — Agent Inbox keeps task context across projects and links to live sessions. In current source, detected-agent notifications report process termination—not waiting, success, or checked results. Released binaries may behave differently.
+- **Agent-aware workflow** — Agent Inbox keeps task context across projects and links to live sessions. Current process-only integrations send no agent notifications, including on process exit. Waiting-input, failure, and completion notifications require verified lifecycle events from a supported structured integration; no such integration is app-enabled yet. Released binaries may behave differently.
 - **Multi-project workspaces** — Keep related projects in one native window, switch from the toolbar, and close one project without disturbing the rest of the workspace
 - **LSP code intelligence** — Diagnostics, completion, hover, go-to-definition, code actions, rename, and a Problems panel
 - **Syntax highlighting** — bundled grammars for Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
