@@ -3741,6 +3741,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         terminalStopControllers.append(
             contentsOf: quickTerminalControllers
         )
+        // A tab or project closed before Quit may already be cleaning up with
+        // no live inventory reference left. The pre-termination barrier must
+        // account for those detached owners as well (#1786).
+        terminalStopControllers =
+            TerminalProcessCleanupOwnerRegistry
+                .applicationTerminationControllers(
+                    from: terminalStopControllers
+                )
         guard await TerminalTabCloseAuthorization.waitForAuthorizedStops(
             terminalStopControllers,
             until: forwardDeadline

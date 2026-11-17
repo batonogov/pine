@@ -40,6 +40,14 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     private var terminationRequested = false
     private var terminationFinished = false
     private var terminationSucceeded = true
+    /// Total deferred-cleanup work items, frozen before dispatch; the
+    /// returned counter advances per worker. The last return publishes the
+    /// deferred outcome (#1786).
+    private var deferredWorkScheduled = 0
+    private var deferredWorkCompleted = 0
+    /// Set once the deferred outcome was published so a bounded failure
+    /// published later cannot clobber an already-completed success (#1786).
+    private var deferredCompletionPublished = false
     let workingDirectoryRetention: TerminalWorkingDirectoryRetention
     #if DEBUG
     private let scheduledCaptureCount = UserTaskProcessTelemetryCounter()
@@ -112,6 +120,11 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
             return true
         }
         guard shouldStart else { return }
+        // Retain the cleanup owner independently of the tab, pane, or manager
+        // that started it. A tab closed before application Quit must not drop
+        // an in-flight TERM-to-KILL cleanup from the pre-termination barrier
+        // (#1786).
+        TerminalProcessCleanupOwnerRegistry.shared.retain(self)
 
         #if DEBUG
         if let cleanupForTesting {
@@ -173,7 +186,10 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     }
 
     /// Application Quit can await the already-running deferred cleanup after
-    /// the ordinary bounded close fails. The caller supplies the outer deadline.
+    /// the ordinary bounded close fails. The caller supplies the outer
+    /// deadline. A drained deferred phase reports its published outcome
+    /// rather than assuming success, so a still-pending cleanup fails the
+    /// termination truthfully (#1786).
     func waitForApplicationTermination(timeout: TimeInterval) -> Bool {
         let deadline = DispatchTime.now() + max(timeout, 0)
         guard DispatchTime.now() < deadline else { return false }
@@ -188,9 +204,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
               deferredCleanupCompletion.wait(timeout: deadline) == .success,
               DispatchTime.now() < deadline
         else { return false }
-        workingDirectoryRetention.finishCleanup(succeeded: true)
-        lock.withLock { terminationSucceeded = true }
-        return true
+        return lock.withLock { terminationSucceeded }
     }
 
     private func finishBoundedTermination(
@@ -208,23 +222,42 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     }
 
     private func startDeferredCleanup(rootNeedsCleanup: Bool) {
+        let works: [@Sendable () -> Void]
         #if DEBUG
         if let deferredCleanupForTesting {
-            scheduleDeferredCleanup(deferredCleanupForTesting)
-            return
+            works = [deferredCleanupForTesting]
+        } else {
+            works = deferredProductionWorks(rootNeedsCleanup: rootNeedsCleanup)
         }
+        #else
+        works = deferredProductionWorks(rootNeedsCleanup: rootNeedsCleanup)
         #endif
-        scheduleDeferredCleanup { [processGroup] in
-            processGroup?.finishDeferredCleanup()
+        // Freeze the total before any block is dispatched, so a fast
+        // finishing early worker cannot publish while later works are still
+        // unscheduled (#1786).
+        lock.withLock { deferredWorkScheduled = works.count }
+        for work in works {
+            scheduleDeferredCleanup(work)
         }
-        scheduleDeferredCleanup { [descendantTracker] in
-            descendantTracker.finishDeferredCleanup()
-        }
+    }
+
+    private func deferredProductionWorks(
+        rootNeedsCleanup: Bool
+    ) -> [@Sendable () -> Void] {
+        var works: [@Sendable () -> Void] = [
+            { [processGroup] in
+                processGroup?.finishDeferredCleanup()
+            },
+            { [descendantTracker] in
+                descendantTracker.finishDeferredCleanup()
+            },
+        ]
         if rootNeedsCleanup {
-            scheduleDeferredCleanup { [self] in
+            works.append { [self] in
                 finishDeferredRootCleanup()
             }
         }
+        return works
     }
 
     private func scheduleDeferredCleanup(
@@ -233,8 +266,30 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         deferredCleanupCompletion.enter()
         Self.deferredCleanupQueue.async { [self] in
             work()
+            let isLastCompletion = lock.withLock {
+                deferredWorkCompleted += 1
+                return deferredWorkCompleted == deferredWorkScheduled
+            }
+            if isLastCompletion {
+                publishDeferredCleanupCompletion()
+            }
+            // Leave after the publish so a drained group always carries the
+            // completed outcome and the fence release (#1786).
             deferredCleanupCompletion.leave()
         }
+    }
+
+    /// Deferred workers return only after every observed process is gone, so
+    /// the last return is a truthful success. Publish it, release the
+    /// cwd/worktree fence, and drop the detached-owner record exactly once —
+    /// without requiring an application Quit (#1786).
+    private func publishDeferredCleanupCompletion() {
+        workingDirectoryRetention.finishCleanup(succeeded: true)
+        lock.withLock {
+            deferredCompletionPublished = true
+            terminationSucceeded = true
+        }
+        TerminalProcessCleanupOwnerRegistry.shared.release(self)
     }
 
     private func finishDeferredRootCleanup() {
@@ -264,8 +319,13 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         // A bounded failure retains the fence until deferred cleanup completes.
         workingDirectoryRetention.finishCleanup(succeeded: succeeded)
         lock.withLock {
-            terminationSucceeded = succeeded
+            // Deferred work that already completed cannot be demoted by the
+            // bounded result published against it (#1786).
+            terminationSucceeded = succeeded || deferredCompletionPublished
             terminationFinished = true
+        }
+        if succeeded {
+            TerminalProcessCleanupOwnerRegistry.shared.release(self)
         }
         terminationCompletion.leave()
     }
@@ -323,5 +383,61 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
             Darwin.usleep(10_000)
         } while DispatchTime.now() < deadline
         return false
+    }
+}
+
+/// Detached owner records for in-flight terminal process-tree cleanup,
+/// independent of the view, tab, or manager that started the cleanup.
+///
+/// A record is retained when the bounded TERM-to-KILL teardown starts and is
+/// released exactly once when the cleanup actually completes (bounded
+/// success, or bounded failure plus completed deferred cleanup). Retention
+/// fails closed until that outcome is established: a D-state descendant can
+/// outlive SIGKILL, so the record is never dropped on a deadline alone.
+/// Application Quit reads the records so a tab or project closed before Quit
+/// cannot drop an owner whose KILL/reaping is still pending (#1786).
+nonisolated final class TerminalProcessCleanupOwnerRegistry:
+    @unchecked Sendable {
+    static let shared = TerminalProcessCleanupOwnerRegistry()
+
+    private let lock = NSLock()
+    private var owners: [ObjectIdentifier: TerminalProcessTreeController] = [:]
+
+    private init() {}
+
+    func retain(_ controller: TerminalProcessTreeController) {
+        lock.withLock {
+            owners[ObjectIdentifier(controller)] = controller
+        }
+    }
+
+    func release(_ controller: TerminalProcessTreeController) {
+        lock.withLock {
+            _ = owners.removeValue(forKey: ObjectIdentifier(controller))
+        }
+    }
+
+    /// Detached owners whose cleanup is still in flight.
+    var inFlightControllers: [TerminalProcessTreeController] {
+        lock.withLock { Array(owners.values) }
+    }
+
+    /// Pre-termination barrier input: the attached controllers a Quit
+    /// transaction stopped plus every detached in-flight owner, deduplicated
+    /// so one owner is waited on once (#1786).
+    static func applicationTerminationControllers(
+        from liveControllers: [TerminalProcessTreeController]
+    ) -> [TerminalProcessTreeController] {
+        var merged: [TerminalProcessTreeController] = []
+        var seen = Set<ObjectIdentifier>()
+        for controller in liveControllers
+            where seen.insert(ObjectIdentifier(controller)).inserted {
+            merged.append(controller)
+        }
+        for controller in shared.inFlightControllers
+            where seen.insert(ObjectIdentifier(controller)).inserted {
+            merged.append(controller)
+        }
+        return merged
     }
 }

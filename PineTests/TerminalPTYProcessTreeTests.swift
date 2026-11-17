@@ -10,23 +10,25 @@ import Testing
 
 @testable import Pine
 
-nonisolated private struct PTYFixtureEvidence: Sendable {
+nonisolated struct PTYFixtureEvidence: Sendable {
     let phase: String
     let processID: pid_t
     let processGroupID: pid_t
     let identity: UserTaskProcessIdentity?
 }
 
-nonisolated private enum PTYFixtureError: Error {
+nonisolated enum PTYFixtureError: Error {
     case processDidNotStart
     case processOwnershipUnavailable
 }
 
-nonisolated private enum PTYFixtureTrace {
+/// Trace-file evidence shared with the detached-ownership regressions
+/// (#1786).
+nonisolated enum PTYFixtureTrace {
     static func wait(
         for phase: String,
         at url: URL,
-        timeout: TimeInterval = 3
+        timeout: TimeInterval = 5
     ) async -> PTYFixtureEvidence? {
         await Task.detached(priority: .utility) {
             let deadline = DispatchTime.now() + timeout
@@ -334,7 +336,70 @@ struct TerminalPTYProcessTreeTests {
         ).value
         #expect(deferredCompleted)
         #expect(!controller.waitForApplicationTermination(timeout: 0))
+        // Deferred completion now releases the fence itself; the expired
+        // application deadline still fails the termination truthfully
+        // (#1786). The publish lands after the signal, so poll with a
+        // bounded deadline instead of one shot.
+        let released = await Task.detached(priority: .utility) {
+            let deadline = DispatchTime.now() + 5
+            while retention.isRetained, DispatchTime.now() < deadline {
+                Darwin.usleep(10_000)
+            }
+            return !retention.isRetained
+        }.value
+        #expect(released)
+    }
+
+    @Test("successful deferred cleanup releases retention without app Quit")
+    func deferredCleanupReleasesRetentionWithoutQuit() async throws {
+        let retention = TerminalWorkingDirectoryRetention(
+            canonicalDirectory: FileManager.default.temporaryDirectory
+        )
+        defer { retention.finishCleanup(succeeded: true) }
+        let deferredFinished = DispatchSemaphore(value: 0)
+        let controller = TerminalProcessTreeController(
+            retention: retention,
+            cleanupForTesting: { false },
+            deferredCleanupForTesting: { deferredFinished.signal() }
+        )
+        controller.requestTermination()
+
+        let boundedResult = await Task.detached(priority: .utility) {
+            controller.waitForTermination(timeout: 1)
+        }.value
+        #expect(!boundedResult)
+        // Fail-closed while the deferred outcome is still unknown.
         #expect(retention.isRetained)
+
+        let waitForDeferred: @Sendable () -> Bool = {
+            deferredFinished.wait(timeout: .now() + 3) == .success
+        }
+        let finished = await Task.detached(
+            priority: .utility,
+            operation: waitForDeferred
+        ).value
+        #expect(finished)
+        // No app Quit and no manual application wait: the fence must follow
+        // the deferred completion itself (#1786).
+        let released = await Task.detached(priority: .utility) {
+            let deadline = DispatchTime.now() + 3
+            while retention.isRetained, DispatchTime.now() < deadline {
+                Darwin.usleep(10_000)
+            }
+            return !retention.isRetained
+        }.value
+        #expect(released)
+        // The success publish follows the fence release on the same worker;
+        // poll with a bounded deadline instead of one shot (#1786 review).
+        let published = await Task.detached(priority: .utility) {
+            let deadline = DispatchTime.now() + 5
+            while !controller.waitForTermination(timeout: 0),
+                  DispatchTime.now() < deadline {
+                Darwin.usleep(10_000)
+            }
+            return controller.waitForTermination(timeout: 0)
+        }.value
+        #expect(published)
     }
 
     @Test("replacement records a new exact process generation")
