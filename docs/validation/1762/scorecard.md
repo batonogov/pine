@@ -63,8 +63,10 @@ consistent.
 ## Small-sample reporting rules
 
 - Formative cohort of 5–8: report **counts/ranges and qualitative
-  findings** only. No statistical-generalization claims (no significance
-  testing, no population claims) at this sample size.
+  findings** only, except that T6 may include **descriptive within-sample
+  medians**, each reported with its sample size and range. No significance
+  testing, statistical inference or population-wide claims at this sample
+  size, including from T6 medians.
 - Failed attempts and learning stay in the counts and time reports; never
   compute a speed claim from successful trials alone.
 - Counterbalance tool order across participants (record the schedule); report

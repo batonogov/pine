@@ -24,7 +24,7 @@ tool/app/provider versions, OS/hardware and fixture SHA-256 at run time.
 1. Fresh isolated fixture copy per trial and per participant. Distribute only
    packets + fixture files; never the oracle (`test_report.py` /
    `test_ledger.py`), never facilitator answers. The facilitator, not an
-   agent, prepares packets.
+   agent, prepares packets and performs any hidden-oracle before/after runs.
 2. Matched conditions: same fixture revision, same task requirements (packet
    text), same machine, provider/model where genuinely supported. When
    providers or models differ between tools, record the confound and report
@@ -76,16 +76,22 @@ tool/app/provider versions, OS/hardware and fixture SHA-256 at run time.
 
 ### SC3 — nonvisual bug with a real failing/passing check
 
-- **Fixture:** revenue — `test_report.py` is the real check (RED on the seed,
-  GREEN on the corrected candidate) — or ledger T1/T2 as the alternate to
+- **Fixture:** revenue — facilitator-only `test_report.py` is the hidden
+  acceptance oracle (RED on the seed, GREEN on the corrected candidate) — or
+  ledger T1/T2 with facilitator-only `test_ledger.py` as the alternate to
   reduce learning.
-- **Requirements:** start from the deliberately failing check; end with a
-  passing check on the checked candidate. The check is part of the task, not
-  the user's own.
-- **Measure:** did the fix run the failing check first (RED→GREEN evidence
-  loop); completion claims made before a passing check (count); verification
-  equivalence (whole gate, not just the stored CSV); skipped verification is
-  a recorded gap, never a speed credit.
+- **Requirements:** the facilitator runs the hidden oracle on the seed (RED)
+  before participant work and on the checked corrected candidate (GREEN)
+  afterward. Separately, the participant authors and runs a regression check
+  derived only from the packet, demonstrating it failing on the seed and
+  passing after the fix. Neither hidden oracle nor its expected answers enters
+  participant/model context.
+- **Measure:** facilitator hidden-oracle RED→GREEN evidence and
+  participant-authored regression RED→GREEN evidence, scored separately;
+  completion claims made before the participant check passes (count);
+  verification equivalence assessed by the facilitator against the whole
+  hidden gate, not just the stored CSV; skipped verification is a recorded
+  gap, never a speed credit.
 - **Runnability:** the oracle demonstrates RED/GREEN deterministically
   offline; the loop requires a live provider.
 
@@ -142,9 +148,11 @@ tool/app/provider versions, OS/hardware and fixture SHA-256 at run time.
 ## F1–F6 — representative failures (issue CLI audit additions, 2026-11-14)
 
 Operationalize #1810 boundary card B6 (capability loss → recovery) and the
-audit's pending-question/lost-session/environment items (B2 for F4). These
-require a live runtime; offline synthetic fault injection tests UI reactions
-only and is labeled as such.
+audit's pending-question (B2), lost-session (B5), and environment (B6) items.
+F4 covers only a real delegated child question; a separate B2 probe retains the ordinary
+root-question case without establishing F4 coverage. These require a live
+runtime; offline synthetic fault injection tests UI reactions only and is
+labeled as such.
 
 Common measurement points for every F:
 
@@ -162,7 +170,8 @@ Common measurement points for every F:
 | F1 | Logged-out/expired account | Authenticate before task creation; expire the token or log out between creation and completion, or start from an already-expired session | Blocker names the account state; re-auth next action; recovery preserves task/draft/result |
 | F2 | Unsupported model/effort/input | Pin an unsupported model id or effort in provider config before running; or submit an input the adapter rejects | Blocker names model/effort/input; recovery keeps the task; unsupported interactive tooling labeled honestly |
 | F3 | Denied action | Task whose required action needs approval (e.g., running a check); user denies once | Denial visible and truthful; no retry storm or silent alternate path; a concrete next decision is presented |
-| F4 | Pending child question | Leave a question (e.g., revenue Packet 2's policy question, or ledger T3's merge policy) unanswered while a second task runs in the same project | Question stays discoverable through ordinary navigation; answering does not corrupt the other task; no duplicate/stale copy presented as new |
+| F4 | Pending delegated child question | Create a parent task that delegates a real child task; leave the child's question unanswered while a second task runs in the same project. Record parent/child/request identities and parent-turn state at question creation and answer. Where supported, also cover a child question arriving after the parent turn has ended and record late-child behavior. If delegation or child identity is unsupported, mark F4 unsupported/not comparable | The specific child question stays discoverable through ordinary navigation; answering does not corrupt the parent or other task; parent-turn state is truthful; no duplicate/stale copy presented as new |
+| B2 probe (not F4) | Pending root question | Leave an ordinary root question (revenue Packet 2's policy question or ledger T3's merge policy) unanswered while a second task runs in the same project | Root question stays discoverable through ordinary navigation; answering does not corrupt the other task; no duplicate/stale copy presented as new; this probe provides no F4 coverage |
 | F5 | Lost session | Kill/quit the provider session after dispatch, before completion; relaunch | Relaunch labels live evidence stale/unknown; continuation is explicit; no automatic re-dispatch; prior result preserved |
 | F6 | Changed environment | Move/modify the fixture path or switch the project revision after dispatch | Blocker names the environment; no silent cwd substitution; recovery keeps task + draft |
 

@@ -80,39 +80,39 @@ VALID = {
 }
 INVALID = {
     "t1": [
-        ("header", ("shipment,weight_kg\n",), "expected header"),
-        ("three-fields", (T1_HEADER + "A,1,9\n",), "expected two fields"),
-        ("one-field", (T1_HEADER + "A\n",), "expected two fields"),
-        ("bad-id", (T1_HEADER + ".A,1\n",), "invalid shipment_id"),
-        ("long-id", (T1_HEADER + "A" * 33 + ",1\n",), "invalid shipment_id"),
-        ("zero-weight", (T1_HEADER + "A,0\n",), "out of range"),
-        ("big-weight", (T1_HEADER + "A,100000\n",), "invalid weight_kg"),
-        ("fractional", (T1_HEADER + "A,1.5\n",), "invalid weight_kg"),
-        ("signed", (T1_HEADER + "A,-1\n",), "invalid weight_kg"),
-        ("csv", (T1_HEADER + '"A,1\n',), "unexpected end of data"),
-        ("encoding", (b"\xff",), "error:"),
-        ("missing", (None,), "error:"),
+        ("header", ("shipment,weight_kg\n",)),
+        ("three-fields", (T1_HEADER + "A,1,9\n",)),
+        ("one-field", (T1_HEADER + "A\n",)),
+        ("bad-id", (T1_HEADER + ".A,1\n",)),
+        ("long-id", (T1_HEADER + "A" * 33 + ",1\n",)),
+        ("zero-weight", (T1_HEADER + "A,0\n",)),
+        ("big-weight", (T1_HEADER + "A,100000\n",)),
+        ("fractional", (T1_HEADER + "A,1.5\n",)),
+        ("signed", (T1_HEADER + "A,-1\n",)),
+        ("csv", (T1_HEADER + '"A,1\n',)),
+        ("encoding", (b"\xff",)),
+        ("missing", (None,)),
     ],
     "t2": [
-        ("header", ("item,label\n",), "expected header"),
-        ("one-field", (T2_HEADER + "I\n",), "expected two fields"),
-        ("three-fields", (T2_HEADER + "I,red,x\n",), "expected two fields"),
-        ("bad-item", (T2_HEADER + ".I,red\n",), "invalid item_id"),
-        ("empty-label", (T2_HEADER + "I,\n",), "invalid label"),
-        ("long-label", (T2_HEADER + "I," + "a" * 17 + "\n",), "invalid label"),
-        ("label-dot", (T2_HEADER + "I,a.b\n",), "invalid label"),
-        ("csv", (T2_HEADER + '"I,red\n',), "unexpected end of data"),
-        ("encoding", (b"\xff",), "error:"),
-        ("missing", (None,), "error:"),
+        ("header", ("item,label\n",)),
+        ("one-field", (T2_HEADER + "I\n",)),
+        ("three-fields", (T2_HEADER + "I,red,x\n",)),
+        ("bad-item", (T2_HEADER + ".I,red\n",)),
+        ("empty-label", (T2_HEADER + "I,\n",)),
+        ("long-label", (T2_HEADER + "I," + "a" * 17 + "\n",)),
+        ("label-dot", (T2_HEADER + "I,a.b\n",)),
+        ("csv", (T2_HEADER + '"I,red\n',)),
+        ("encoding", (b"\xff",)),
+        ("missing", (None,)),
     ],
     "t3": [
-        ("header-a", ("sku,qty\n", T3_HEADER), "expected header"),
-        ("three-fields-b", (T3_HEADER, T3_HEADER + "A,1,2\n"), "expected two fields"),
-        ("bad-sku-a", (T3_HEADER + ".A,1\n", T3_HEADER), "invalid sku"),
-        ("units-range-b", (T3_HEADER, T3_HEADER + "A,1000000\n"), "invalid units"),
-        ("units-signed", (T3_HEADER + "A,-1\n", T3_HEADER), "invalid units"),
-        ("missing-a", (None, T3_HEADER), "error:"),
-        ("encoding-b", (T3_HEADER, b"\xff"), "error:"),
+        ("header-a", ("sku,qty\n", T3_HEADER)),
+        ("three-fields-b", (T3_HEADER, T3_HEADER + "A,1,2\n")),
+        ("bad-sku-a", (T3_HEADER + ".A,1\n", T3_HEADER)),
+        ("units-range-b", (T3_HEADER, T3_HEADER + "A,1000000\n")),
+        ("units-signed", (T3_HEADER + "A,-1\n", T3_HEADER)),
+        ("missing-a", (None, T3_HEADER)),
+        ("encoding-b", (T3_HEADER, b"\xff")),
     ],
 }
 
@@ -151,9 +151,9 @@ def assess(task, candidate):
             result = run(task, candidate, directory, texts)
             if (result.returncode, result.stdout, result.stderr) != (0, total + "\n", ""):
                 failures.append(label)
-        for label, texts, diagnostic in INVALID[task]:
+        for label, texts in INVALID[task]:
             result = run(task, candidate, directory, texts)
-            if result.returncode != 2 or result.stdout or diagnostic not in result.stderr:
+            if result.returncode != 2 or result.stdout or not result.stderr:
                 failures.append(label)
     return failures
 

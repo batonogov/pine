@@ -15,7 +15,7 @@ money domain so the decimal-precision lesson cannot carry over between tasks.
 ## Facilitator only — prepare separate participant packets
 
 Use a fresh isolated copy of the same seed for each trial. Initially distribute
-only the three task CLIs, the five CSVs and the task packet below. Exclude this
+only the three task CLIs, the four CSVs and the task packet below. Exclude this
 full README, test_ledger.py, the facilitator answer and all assessor sections
 from participant materials and model context. The facilitator, not an agent,
 prepares packets. Do not claim blind assessment if answers were available in the
@@ -89,12 +89,14 @@ facilitator intervention; do not invent a native question/approval event.
 
 `test_ledger.py` never imports candidate arithmetic. It runs a reviewed
 candidate as a CLI in an automatically removed temporary directory, with a
-five-second timeout per invocation, then compares exit code, exact stdout and
-diagnostics against literal expected values. References substitute only the
-`aggregate` function into the unchanged seed. They are known answers for
-oracle calibration, not agent results. `--candidate` never rewrites the
-candidate; it returns 1 for failed assertions, 0 for passing assertions. An
-oracle error/timeout is a failed assessment, not a pass.
+five-second timeout per invocation. Valid cases compare exit code, exact
+stdout and empty stderr against literal expected values; invalid cases require
+exit 2, empty stdout and nonempty stderr. The oracle does not prescribe
+diagnostic wording; the facilitator assesses actionability separately.
+References substitute only the `aggregate` function into the unchanged seed.
+They are known answers for oracle calibration, not agent results. `--candidate`
+never rewrites the candidate; it returns 1 for failed assertions, 0 for passing
+assertions. An oracle error/timeout is a failed assessment, not a pass.
 
 Input policy: T1 weight 1..99999, repeated IDs are separate shipments; T2
 labels exact case-sensitive strings, each row one item; T3 units 0..999999,
@@ -122,11 +124,12 @@ python3 -B test_ledger.py --task t3 --candidate /absolute/path/to/candidate/t3_s
 
 Calibration proves each seed fails a known non-empty set of cases; each
 reference passes the whole task gate; three repeated T3 executions produce
-identical bytes. Each task gate also rejects malformed headers/fields, bad
-identifiers, out-of-range values, malformed CSV, invalid encoding and missing
-files. Candidate implementations must pass the whole task gate, not just the
-stored CSVs. Passing this oracle is not independent review or Pine
-verification.
+identical valid-output bytes. Across the three tasks, the invalid cases
+collectively cover malformed headers/fields, bad identifiers, out-of-range
+values, malformed CSV (T1/T2), invalid encoding and missing files; not every
+category occurs in every task. Candidate implementations must pass the whole
+task gate, not just the stored CSVs. Passing this oracle is not independent
+review or Pine verification.
 
 ## Local calibration evidence
 
@@ -143,8 +146,8 @@ Verified on Python 3.9.6 and 3.15.2; no 3.9-specific syntax used.
   `fixture, within-file-add`.
 - Seed CLIs on the stored fixtures: exit 0 with the three S0 outputs in the
   table above.
-- Invalid input (bad header) exits 2 with an actionable stderr error and no
-  stdout.
+- Invalid input (bad header) exits 2 with nonempty stderr and no stdout;
+  diagnostic actionability is a separate facilitator assessment.
 - The revenue seed re-ran clean under the same interpreter: 5/5 self-tests,
   seed candidate exit 1 with the documented five known failures.
 
