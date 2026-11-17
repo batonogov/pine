@@ -170,7 +170,7 @@ struct ClaudeCodeStreamConnectionTests {
         let request = try permission("perm-6")
         _ = try connection.receive(.permissionRequest(request)) { writes.append($0) }
         _ = try connection.reject(request.id) { writes.append($0) }
-        let last = #require(writes.last)
+        let last = try #require(writes.last)
         let text = String(data: last, encoding: .utf8) ?? ""
         #expect(text.contains("Request not supported by Pine."))
         // Rejecting an unknown request writes once without caching.
