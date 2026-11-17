@@ -309,7 +309,6 @@ struct AgentTaskContinuationTests {
         )
     }
 
-    /// Drives a bare registry to a Ready task and returns its join points.
     // swiftlint:disable:next function_parameter_count
     private func makeReadyRegistryTask(
         registry: AgentTaskRegistry,
