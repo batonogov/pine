@@ -48,14 +48,12 @@ deployment; no new hosting target.
 
 ### Topics
 
-Add two topics to the existing 19 (total 21, within GitHub's 25-topic limit;
+Add one topic to the existing 19 (total 20, within GitHub's 20-topic limit;
 all names lowercase and ≤ 50 chars):
 
 - `ade` — the product category the Pine 3.0 milestone owns. It is a direction
   label, consistent with the description's "heading toward" wording; it is not
   a claim that ADE functionality ships today.
-- `agentic-development-environment` — the long-form category term, kept for
-  search discoverability.
 
 No topics are removed; all 19 current topics remain accurate for the shipped
 Pine 2.x product.
@@ -68,8 +66,7 @@ Use the primary description; swap in the fallback string if preferred.
 gh repo edit batonogov/pine \
   --description "A native macOS editor for CLI-agent workflows — agent in the terminal, code in view. Pine 3.0 is heading toward an outcome-first ADE with durable tasks, verified results, and attention in the current project's task list." \
   --homepage "https://batonogov.github.io/pine" \
-  --add-topic ade \
-  --add-topic agentic-development-environment
+  --add-topic ade
 ```
 
 ## Verification after the update
@@ -79,8 +76,7 @@ gh repo view batonogov/pine --json description,homepageUrl,repositoryTopics
 ```
 
 Expected: the description matches the string above, the homepage is unchanged,
-and `repositoryTopics` contains the 21 names (the 19 existing plus `ade` and
-`agentic-development-environment`).
+and `repositoryTopics` contains the 20 names (the 19 existing plus `ade`).
 
 ## Canonical install command
 
