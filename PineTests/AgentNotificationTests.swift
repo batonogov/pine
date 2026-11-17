@@ -13,6 +13,12 @@ import Testing
 struct AgentNotificationTests {
     private let notificationCenter = NotificationCenter()
 
+    private func notificationRegistry() -> AgentTaskRegistry {
+        AgentTaskRegistry(accuracyPolicy: AgentLifecycleAccuracyPolicy { _ in
+            .verifiedLifecycleTransitions
+        })
+    }
+
     @Test("verified waiting, failure, and completion transitions are actionable")
     func verifiedTransitions() throws {
         let working = task(seed: 1, state: .executing)
@@ -42,10 +48,63 @@ struct AgentNotificationTests {
 
         var ended = waiting
         update(&ended, state: .done, liveness: .terminated, offset: 2)
-        #expect(events(waiting, ended, accuracy: .processTerminationOnly).map(\.kind) == [.processEnded])
+        #expect(events(waiting, ended, accuracy: .processTerminationOnly).isEmpty)
     }
 
-    @Test("a run that goes stale before terminating still fires process-ended")
+    @Test("retired process-exit preference cannot re-enable banners or erase history", arguments: [true, false])
+    func retiredProcessExitPreference(_ obsoleteEnabled: Bool) async throws {
+        let fixture = DefaultsFixture()
+        defer { fixture.cleanup() }
+        let obsoleteKey = AgentNotificationSettings.Keys.eventPrefix + "processEnded"
+        fixture.defaults.set(obsoleteEnabled, forKey: obsoleteKey)
+        fixture.defaults.set(false, forKey: AgentNotificationSettings.Keys.enabled)
+        fixture.defaults.set(["legacy-process-exit"], forKey: AgentNotificationSettings.Keys.deliveredEventIDs)
+        let settings = AgentNotificationSettings(defaults: fixture.defaults)
+        #expect(!settings.isEnabled)
+        #expect(!settings.enabledEvents.contains { $0.rawValue == "processEnded" })
+        #expect(fixture.defaults.object(forKey: obsoleteKey) as? Bool == obsoleteEnabled)
+        #expect(settings.deliveredEventIDs == ["legacy-process-exit"])
+        settings.setEnabled(true)
+
+        let registry = AgentTaskRegistry()
+        let delivery = RecordingAgentNotificationDelivery(status: .authorized)
+        let controller = AgentNotificationController(
+            registry: registry,
+            settings: settings,
+            delivery: delivery,
+            notificationCenter: notificationCenter,
+            isPresented: { _ in false },
+            openTask: { _ in }
+        )
+        controller.start()
+        defer { controller.stop() }
+        await controller.refreshAuthorizationStatus()
+        let working = task(seed: 8, state: .executing)
+        var ended = working
+        update(&ended, state: .done, liveness: .terminated, offset: 1)
+        registry.setTasksForTesting([working])
+        registry.setTasksForTesting([ended])
+        await settle()
+        #expect(delivery.requests.isEmpty)
+        #expect(settings.deliveredEventIDs == ["legacy-process-exit"])
+        #expect(fixture.defaults.stringArray(forKey: AgentNotificationSettings.Keys.deliveredEventIDs)
+            == ["legacy-process-exit"])
+        #expect(fixture.defaults.object(forKey: obsoleteKey) as? Bool == obsoleteEnabled)
+        let retained = try #require(registry.task(for: working.id))
+        #expect(retained.runs.last?.liveness == .terminated)
+        #expect(retained.runs.last?.endedAt == ended.runs.last?.endedAt)
+    }
+
+    @Test("verified catalog cannot turn process-only evidence into an exit notification")
+    func processOnlyEvidenceIsSilent() {
+        var working = task(seed: 9, state: .executing)
+        working.runs[0].lifecycleAccuracy = .processTerminationOnly
+        var ended = working
+        update(&ended, state: .done, liveness: .terminated, offset: 1)
+        #expect(events(working, ended, accuracy: .verifiedLifecycleTransitions).isEmpty)
+    }
+
+    @Test("process exit remains silent after stale evidence or repeated polling")
     func staleThenTerminatedProcessEnd() {
         let working = task(seed: 6, state: .executing)
         var stale = working
@@ -58,7 +117,7 @@ struct AgentNotificationTests {
         // `lastObservedAt` is equal between the stale and terminated states.
         var ended = stale
         update(&ended, state: .done, liveness: .terminated, offset: 1)
-        #expect(events(stale, ended, accuracy: .processTerminationOnly).map(\.kind) == [.processEnded])
+        #expect(events(stale, ended, accuracy: .processTerminationOnly).isEmpty)
 
         // An already-terminated run never re-fires.
         var reobserved = ended
@@ -66,7 +125,7 @@ struct AgentNotificationTests {
         #expect(events(ended, reobserved, accuracy: .processTerminationOnly).isEmpty)
     }
 
-    @Test("resume bookkeeping close-out of an interrupted stale run never fires process-ended")
+    @Test("resume bookkeeping close-out of an interrupted stale run never fires a notification")
     func interruptedStaleCloseOutIsSilent() {
         // `AgentTaskRegistry.consume` terminates the stale tail of a
         // load-normalized (`.paused`) interrupted task when the user resumes
@@ -172,9 +231,9 @@ struct AgentNotificationTests {
         defer { fixture.cleanup() }
         let settings = AgentNotificationSettings(defaults: fixture.defaults)
         let sample = task(seed: 5, state: .executing)
-        var ended = sample
-        update(&ended, state: .done, liveness: .terminated, offset: 2)
-        let event = events(sample, ended, accuracy: .processTerminationOnly)[0]
+        var waiting = sample
+        update(&waiting, state: .waitingInput, offset: 2)
+        let event = events(sample, waiting, accuracy: .verifiedLifecycleTransitions)[0]
 
         settings.setEnabled(true)
         settings.setEvent(.completed, enabled: false)
@@ -204,7 +263,7 @@ struct AgentNotificationTests {
         defer { fixture.cleanup() }
         let settings = AgentNotificationSettings(defaults: fixture.defaults)
         settings.setEnabled(true)
-        let registry = AgentTaskRegistry()
+        let registry = notificationRegistry()
         let delivery = RecordingAgentNotificationDelivery(status: .authorized)
         var presented = Set<UUID>()
         var opened: AgentNotificationRouteIdentity?
@@ -212,6 +271,7 @@ struct AgentNotificationTests {
             registry: registry,
             settings: settings,
             delivery: delivery,
+            accuracy: { _ in .verifiedLifecycleTransitions },
             notificationCenter: notificationCenter,
             isPresented: { presented.contains($0) },
             openTask: { opened = $0 }
@@ -229,8 +289,8 @@ struct AgentNotificationTests {
         )
         presented.insert(firstTaskID)
 
-        first.applyLiveness(.terminated)
-        second.applyLiveness(.terminated)
+        first.recordLifecycleState(.waitingInput, accuracy: .verifiedLifecycleTransitions)
+        second.recordLifecycleState(.waitingInput, accuracy: .verifiedLifecycleTransitions)
         registry.refresh(sessions: [first, second])
         #expect(await waitUntil { delivery.requests.count == 1 })
 
@@ -272,6 +332,7 @@ struct AgentNotificationTests {
             registry: registry,
             settings: settings,
             delivery: delivery,
+            accuracy: { _ in .verifiedLifecycleTransitions },
             notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
@@ -280,7 +341,7 @@ struct AgentNotificationTests {
 
         let working = task(seed: 29, state: .executing)
         var ended = working
-        update(&ended, state: .done, liveness: .terminated, offset: 1)
+        update(&ended, state: .waitingInput, offset: 1)
         registry.setTasksForTesting([working])
         registry.setTasksForTesting([ended])
 
@@ -304,13 +365,14 @@ struct AgentNotificationTests {
         defer { fixture.cleanup() }
         let settings = AgentNotificationSettings(defaults: fixture.defaults)
         settings.setEnabled(true)
-        let registry = AgentTaskRegistry()
+        let registry = notificationRegistry()
         let delivery = RecordingAgentNotificationDelivery(status: .authorized)
         delivery.failuresRemaining = 1
         let controller = AgentNotificationController(
             registry: registry,
             settings: settings,
             delivery: delivery,
+            accuracy: { _ in .verifiedLifecycleTransitions },
             deliveryRetryDelays: [.zero],
             notificationCenter: notificationCenter,
             isPresented: { _ in false },
@@ -325,7 +387,7 @@ struct AgentNotificationTests {
             replacing: nil,
             context: context(seed: 30, project: "/tmp/notify-retry")
         )
-        session.applyLiveness(.terminated)
+        session.recordLifecycleState(.waitingInput, accuracy: .verifiedLifecycleTransitions)
         registry.refresh(sessions: [session])
         #expect(await waitUntil { delivery.deliveryAttemptCount == 2 })
 
@@ -347,7 +409,7 @@ struct AgentNotificationTests {
             registry: registry,
             settings: settings,
             delivery: delivery,
-            accuracy: { _ in .processTerminationOnly },
+            accuracy: { _ in .verifiedLifecycleTransitions },
             deliveryRetryDelays: [.zero],
             notificationCenter: notificationCenter,
             isPresented: { _ in false },
@@ -362,7 +424,7 @@ struct AgentNotificationTests {
 
         let working = task(seed: 31, state: .executing)
         var ended = working
-        update(&ended, state: .done, liveness: .terminated, offset: 1)
+        update(&ended, state: .waitingInput, offset: 1)
         registry.setTasksForTesting([working])
         registry.setTasksForTesting([ended])
         #expect(await waitUntil { delivery.deliveryAttemptCount == 2 })
@@ -370,8 +432,8 @@ struct AgentNotificationTests {
         #expect(delivery.requests.isEmpty)
         #expect(settings.deliveredEventIDs.isEmpty)
 
-        // The task remains terminated. A real process cannot replay its exit
-        // just because Notification Center was temporarily unavailable.
+        // The task remains waiting. An unanswered question need not transition
+        // again just because Notification Center was temporarily unavailable.
         notificationCenter.post(
             name: NSApplication.didBecomeActiveNotification,
             object: nil
@@ -412,7 +474,7 @@ struct AgentNotificationTests {
             registry: registry,
             settings: settings,
             delivery: delivery,
-            accuracy: { _ in .processTerminationOnly },
+            accuracy: { _ in .verifiedLifecycleTransitions },
             deliveryRetryDelays: [.zero],
             notificationCenter: notificationCenter,
             isPresented: { _ in presented },
@@ -426,7 +488,7 @@ struct AgentNotificationTests {
 
         let working = task(seed: 32, state: .executing)
         var ended = working
-        update(&ended, state: .done, liveness: .terminated, offset: 1)
+        update(&ended, state: .waitingInput, offset: 1)
         registry.setTasksForTesting([working])
         registry.setTasksForTesting([ended])
         #expect(await waitUntil { delivery.deliveryAttemptCount == 2 })
@@ -557,12 +619,13 @@ struct AgentNotificationTests {
         defer { fixture.cleanup() }
         let settings = AgentNotificationSettings(defaults: fixture.defaults)
         settings.setEnabled(true)
-        let registry = AgentTaskRegistry()
+        let registry = notificationRegistry()
         let delivery = RecordingAgentNotificationDelivery(status: .denied)
         let controller = AgentNotificationController(
             registry: registry,
             settings: settings,
             delivery: delivery,
+            accuracy: { _ in .verifiedLifecycleTransitions },
             notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
@@ -581,7 +644,7 @@ struct AgentNotificationTests {
             context: context(seed: 60, project: "/tmp/notify-recover")
         )
         let firstTaskID = try #require(registry.taskID(forSessionID: first.id))
-        first.applyLiveness(.terminated)
+        first.recordLifecycleState(.waitingInput, accuracy: .verifiedLifecycleTransitions)
         registry.refresh(sessions: [first])
         await settle()
         #expect(delivery.requests.isEmpty)
@@ -604,7 +667,7 @@ struct AgentNotificationTests {
             context: context(seed: 61, project: "/tmp/notify-recover")
         )
         let secondTaskID = try #require(registry.taskID(forSessionID: second.id))
-        second.applyLiveness(.terminated)
+        second.recordLifecycleState(.waitingInput, accuracy: .verifiedLifecycleTransitions)
         registry.refresh(sessions: [first, second])
         #expect(await waitUntil { delivery.requests.count == 1 })
 
@@ -624,13 +687,14 @@ struct AgentNotificationTests {
         defer { fixture.cleanup() }
         let settings = AgentNotificationSettings(defaults: fixture.defaults)
         settings.setEnabled(true)
-        let registry = AgentTaskRegistry()
+        let registry = notificationRegistry()
         let delivery = RecordingAgentNotificationDelivery(status: .authorized)
         delivery.suspendAuthorizationStatus = true
         let controller = AgentNotificationController(
             registry: registry,
             settings: settings,
             delivery: delivery,
+            accuracy: { _ in .verifiedLifecycleTransitions },
             notificationCenter: notificationCenter,
             isPresented: { _ in false },
             openTask: { _ in }
@@ -652,7 +716,7 @@ struct AgentNotificationTests {
             replacing: nil,
             context: context(seed: 62, project: "/tmp/notify-revoked")
         )
-        session.applyLiveness(.terminated)
+        session.recordLifecycleState(.waitingInput, accuracy: .verifiedLifecycleTransitions)
         registry.refresh(sessions: [session])
         #expect(await waitUntil { delivery.requests.count == 1 })
 
@@ -789,6 +853,7 @@ struct AgentNotificationTests {
         let session = AgentSession(
             agentType: .codex,
             state: .executing,
+            lifecycleAccuracy: .verifiedLifecycleTransitions,
             startedAt: fixtureDate(seed: seed)
         )
         _ = session.bindProcessEvidence(AgentProcessEvidence(

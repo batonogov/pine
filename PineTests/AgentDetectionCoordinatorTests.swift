@@ -1008,7 +1008,7 @@ struct AgentDetectionCoordinatorTests {
         #expect(taskRegistry.tasks.filter {
             $0.lifecycle == .active && $0.runs.last?.liveness == .live
         }.count == 1)
-        #expect(events.map(\.kind) == [.processEnded])
+        #expect(events.isEmpty)
 
         coordinator.applySnapshotForTesting(processes: [
             replacing(

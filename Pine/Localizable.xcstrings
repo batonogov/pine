@@ -13361,64 +13361,6 @@
         }
       }
     },
-    "agentNotifications.event.processEnded" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prozess beendet"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Process ended"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Proceso finalizado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Processus terminé"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロセス終了"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "프로세스 종료됨"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Processo encerrado"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Процесс завершён"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "进程已结束"
-          }
-        }
-      }
-    },
     "agentNotifications.event.waiting" : {
       "localizations" : {
         "de" : {
@@ -13772,55 +13714,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine meldet nur bedeutsame Zustandswechsel, wenn die zugehörige Sitzung nicht sichtbar ist. Inhalte und Ausgaben werden nie eingeschlossen."
+            "value" : "Pine meldet nur bedeutsame Zustandswechsel, wenn die zugehörige Sitzung nicht sichtbar ist. Das Prozessende allein löst keine Mitteilung aus. Inhalte und Ausgaben werden nie eingeschlossen."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine alerts only on meaningful state changes while the relevant session is not visible. Prompts and output are never included."
+            "value" : "Pine alerts only on meaningful state changes while the relevant session is not visible. Process exit alone does not trigger an alert. Prompts and output are never included."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine avisa solo de cambios importantes cuando la sesión relevante no está visible. Nunca incluye solicitudes ni salida."
+            "value" : "Pine avisa solo de cambios importantes cuando la sesión relevante no está visible. El fin del proceso por sí solo no genera un aviso. Nunca incluye solicitudes ni salida."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine signale uniquement les changements importants lorsque la session concernée n’est pas visible. Les requêtes et sorties ne sont jamais incluses."
+            "value" : "Pine signale uniquement les changements importants lorsque la session concernée n’est pas visible. La fin du processus seule ne déclenche pas de notification. Les requêtes et sorties ne sont jamais incluses."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine は関連セッションが表示されていない場合に重要な状態変化だけを通知します。プロンプトや出力は含まれません。"
+            "value" : "Pine は関連セッションが表示されていない場合に重要な状態変化だけを通知します。プロセス終了だけでは通知しません。プロンプトや出力は含まれません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine은 관련 세션이 보이지 않을 때 의미 있는 상태 변경만 알립니다. 프롬프트와 출력은 포함하지 않습니다."
+            "value" : "Pine은 관련 세션이 보이지 않을 때 의미 있는 상태 변경만 알립니다. 프로세스 종료만으로는 알리지 않습니다. 프롬프트와 출력은 포함하지 않습니다."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Pine alerta apenas mudanças importantes quando a sessão relevante não está visível. Prompts e saídas nunca são incluídos."
+            "value" : "O Pine alerta apenas mudanças importantes quando a sessão relevante não está visível. O encerramento do processo por si só não gera um alerta. Prompts e saídas nunca são incluídos."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine сообщает только о важных изменениях, когда нужная сессия не видна. Запросы и вывод никогда не включаются."
+            "value" : "Pine сообщает только о важных изменениях, когда нужная сессия не видна. Само по себе завершение процесса не вызывает уведомления. Запросы и вывод никогда не включаются."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "仅当相关会话不可见时，Pine 才会提醒重要状态变化，且绝不包含提示或输出。"
+            "value" : "仅当相关会话不可见时，Pine 才会提醒重要状态变化。仅进程退出不会触发提醒，且绝不包含提示或输出。"
           }
         }
       }

@@ -23,6 +23,9 @@ supersede the older contextual editor/terminal proposal:
 - Preserve existing files, unsaved work, history, and environment ownership
   through deliberate migration. Removing UI does not authorize deleting data.
 
+The canonical removal/merge ledger is
+[design/pine-3/subtraction-ledger.md](design/pine-3/subtraction-ledger.md) (#1760).
+
 These are selected Pine 3.0 requirements, not shipped functionality. They do not
 change the released Pine 2.x feature record or establish provider compatibility.
 
