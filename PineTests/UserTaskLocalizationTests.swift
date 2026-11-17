@@ -42,6 +42,17 @@ struct UserTaskLocalizationTests {
         "userTask.diagnostic.outputTruncated",
         "userTask.diagnostic.invalidUTF8",
         "userTask.diagnostic.inputIncomplete",
+        "userTask.result.retainOutput",
+        "userTask.result.captureIncomplete",
+        "userTask.result.retentionWarning",
+        "userTask.result.outputNotSaved",
+        "userTask.result.commandNotSaved",
+        "userTask.result.retentionSelected",
+        "userTask.result.stdoutTruncated",
+        "userTask.result.stderrTruncated",
+        "userTask.result.saveFailed",
+        "userTask.result.saving",
+        "userTask.result.retry",
     ]
 
     @Test("Every task UI key is translated for all supported locales")

@@ -1672,6 +1672,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard let manager = openProjects[root] else { return true }
         manager.finalizeAgentSessionsForHistory()
         manager.agentHistory.retryFailedPersistence()
+        manager.retryCommandResultPersistence()
         guard backgroundProjects.contains(root),
               backgroundPresentationLeases[root]?.isEmpty != false,
               !manager.requiresBackgroundRetention,
@@ -1983,7 +1984,8 @@ final class ProjectRegistry: LSPSettingsObserver {
                         // Failed history remains owned even if its directory
                         // disappeared. Removing this manager would discard the
                         // only recoverable pending snapshot.
-                        guard !existing.hasPendingAgentHistory else { return nil }
+                        guard !existing.hasPendingAgentHistory,
+                              !existing.hasPendingCommandResults else { return nil }
                         // Directory was deleted while in background — clean up
                         existing.requestUserTaskShutdown()
                         existing.terminal.terminateAll()
@@ -2017,6 +2019,10 @@ final class ProjectRegistry: LSPSettingsObserver {
                         return nil
                     }
                 }
+                // The directory may have been deleted and recreated while the
+                // project was backgrounded: its result workspace identity is
+                // stale and must be re-derived before the manager is reused.
+                existing.recoverRecreatedResultRoot()
                 if reopenBackgroundProject {
                     existing.prepareForWindowPresentation()
                     _ = markProjectWindowOpen(
@@ -2490,6 +2496,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             }
             manager.finalizeAgentSessionsForHistory()
             manager.agentHistory.retryFailedPersistence()
+            manager.retryCommandResultPersistence()
             guard backgroundPresentationLeases[canonical]?.isEmpty != false,
                   !manager.requiresBackgroundRetention,
                   !hasTerminalWorkingDirectoryRetention(in: canonical) else {
@@ -3592,10 +3599,10 @@ final class ProjectRegistry: LSPSettingsObserver {
             )
         }
         detachedTaskCleanupProjects = detachedTaskCleanupProjects.filter {
-            $0.value.hasOutstandingUserTaskExecution
+            $0.value.hasOutstandingUserTaskExecution || $0.value.hasPendingCommandResults
         }
         return !userTaskOwners.contains(where: {
-            $0.hasOutstandingUserTaskExecution
+            $0.hasOutstandingUserTaskExecution || $0.hasPendingCommandResults
         })
     }
 
@@ -3622,7 +3629,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
         guard !openProjects.values.contains(where: {
             $0.hasPendingAgentHistory
-        }) else { return false }
+        }), !hasPendingCommandResults else { return false }
         guard !userTaskOwners.contains(where: {
             $0.hasOutstandingUserTaskExecution
         }) else {
@@ -4075,6 +4082,13 @@ final class ProjectRegistry: LSPSettingsObserver {
             fileURLWithPath: canonical.path,
             isDirectory: true
         ).standardizedFileURL
+    }
+
+    /// Includes removed managers still owning a completed result or cleanup.
+    var commandResultOwners: [ProjectManager] { userTaskOwners }
+
+    var hasPendingCommandResults: Bool {
+        commandResultOwners.contains { $0.hasPendingCommandResults }
     }
 
     private var userTaskOwners: [ProjectManager] {

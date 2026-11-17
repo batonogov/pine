@@ -2395,6 +2395,63 @@ enum Strings {
         )
     }
 
+    static var userTaskRetainOutput: String {
+        String(localized: "userTask.result.retainOutput", defaultValue: "Retain this run’s output")
+    }
+
+    static var userTaskOutputCaptureIncomplete: String {
+        String(localized: "userTask.result.captureIncomplete", defaultValue: "Output capture is incomplete.")
+    }
+
+    static var userTaskOutputRetentionWarning: String {
+        String(
+            localized: "userTask.result.retentionWarning",
+            defaultValue: """
+            Output may contain secrets. Retain only if safe. Recovery is available for up to 7 days after completion, \
+            with at most 25 results and 64 KiB per stream. Dormant disk copies are pruned on next access. \
+            Backups and secure erasure are not provided.
+            """
+        )
+    }
+
+    static var userTaskOutputNotSaved: String {
+        String(localized: "userTask.result.outputNotSaved", defaultValue: "Output is not saved to disk.")
+    }
+
+    static var userTaskCommandNotSaved: String {
+        String(localized: "userTask.result.commandNotSaved", defaultValue: "Command text is not saved.")
+    }
+
+    static var userTaskOutputRetentionSelected: String {
+        String(
+            localized: "userTask.result.retentionSelected",
+            defaultValue: "Output selected for recovery availability, up to 7 days after completion."
+        )
+    }
+
+    static var userTaskRetainedStdoutTruncated: String {
+        String(localized: "userTask.result.stdoutTruncated", defaultValue: "Saved stdout is truncated to 64 KiB.")
+    }
+
+    static var userTaskRetainedStderrTruncated: String {
+        String(localized: "userTask.result.stderrTruncated", defaultValue: "Saved stderr is truncated to 64 KiB.")
+    }
+
+    static var userTaskResultSaveFailed: String {
+        String(
+            localized: "userTask.result.saveFailed",
+            defaultValue: "Command results could not be loaded or saved. Unsaved results remain in memory for recovery."
+        )
+    }
+
+    static var userTaskResultSaving: String {
+        String(localized: "userTask.result.saving", defaultValue: "Saving command results…")
+    }
+
+    static var userTaskResultRetry: String {
+        String(localized: "userTask.result.retry", defaultValue: "Retry Save")
+    }
+
     static var userTaskCloseOutput: String {
         String(
             localized: "userTask.output.close",

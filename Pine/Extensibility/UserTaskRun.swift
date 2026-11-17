@@ -107,7 +107,7 @@ nonisolated struct UserTaskOutputPreview: Sendable, Equatable {
 }
 
 /// Lifecycle phase of a single task run.
-nonisolated enum UserTaskRunState: Sendable, Equatable {
+nonisolated enum UserTaskRunState: String, Codable, Sendable, Equatable {
     /// The task has been queued / is preparing to launch.
     case pending
     /// The process is running.
@@ -142,14 +142,12 @@ nonisolated enum UserTaskRunState: Sendable, Equatable {
 final class UserTaskRun: Identifiable {
     /// Stable identifier for this run.
     let id: UUID
-    /// The task definition's id (from `tasks.json`).
+    /// Command definition ID in memory; restored results expose only its hash.
     let taskID: String
-    /// Human-readable task label, snapshotted at invocation time so later
-    /// edits to `tasks.json` do not retroactively rename an in-flight run.
+    /// Label snapshotted at invocation; restored results use a generic label.
     let taskLabel: String
-    /// The validated shell command text, captured for display only. This is
-    /// the exact string handed to `/bin/sh -c` — never editor or terminal
-    /// content interpolated into shell text (issue #1117 safety contract).
+    /// Validated command for live display only; empty after restoration.
+    /// Never editor or terminal content interpolated into shell text (#1117).
     let command: String
     /// Whether this run was an active-file replacement task.
     let replacesFileContent: Bool
@@ -178,6 +176,11 @@ final class UserTaskRun: Identifiable {
     private(set) var retainedOutputBytes: Int
     /// Cached, bounded output used by the SwiftUI history surface.
     private(set) var outputPreview: UserTaskOutputPreview
+    /// Bounded disk payload; live output can be larger.
+    private(set) var retainedOutput: UserTaskResultRecord.Output?
+    private(set) var outputRetentionRequested = false
+    private(set) var isRestoredResult = false
+    private(set) var outputCaptureSucceeded = true
 
     init(
         taskID: String,
@@ -201,6 +204,39 @@ final class UserTaskRun: Identifiable {
         self.blockedReason = nil
         self.retainedOutputBytes = 0
         self.outputPreview = .empty
+    }
+
+    init(result: UserTaskResultRecord) {
+        let restoredStdout = result.output?.stdout ?? ""
+        let restoredStderr = result.output?.stderr ?? ""
+        id = result.id
+        taskID = result.taskIdentity
+        taskLabel = Strings.userTaskOutputTitle
+        command = ""
+        replacesFileContent = false
+        startedAt = result.startedAt
+        finishedAt = result.finishedAt
+        state = result.state
+        stdout = restoredStdout
+        stderr = restoredStderr
+        exitCode = result.exitCode
+        timedOut = result.timedOut
+        blockedReason = nil
+        retainedOutputBytes = restoredStdout.utf8.count + restoredStderr.utf8.count
+        outputPreview = .make(stdout: restoredStdout, stderr: restoredStderr)
+        retainedOutput = result.output
+        outputRetentionRequested = result.output != nil
+        isRestoredResult = true
+        outputCaptureSucceeded = result.outputCaptureSucceeded
+    }
+
+    func setRetainedOutput(_ output: UserTaskResultRecord.Output?) {
+        retainedOutput = output
+        outputRetentionRequested = output != nil
+    }
+
+    func requestOutputRetention() {
+        outputRetentionRequested = true
     }
 
     // MARK: - Mutations (driven by UserTaskRunner)
@@ -234,8 +270,10 @@ final class UserTaskRun: Identifiable {
         timedOut = outcome.timedOut
         retainedOutputBytes = outcome.retainedOutputBytes
         outputPreview = outcome.outputPreview
+        outputCaptureSucceeded = outcome.outputCaptureSucceeded
         self.finishedAt = finishedAt
-        if !outcome.cleanupSucceeded || !outcome.standardInputCompleted {
+        if !outcome.cleanupSucceeded || !outcome.standardInputCompleted
+            || !outcome.outputCaptureSucceeded || outcome.preSpawnRejected {
             state = .failed
         } else if cancelled {
             state = .cancelled
@@ -340,7 +378,7 @@ final class UserTaskRun: Identifiable {
             if timedOut {
                 return Strings.userTaskRunStatusTimedOut
             }
-            if let exitCode {
+            if let exitCode, exitCode != 0 {
                 return Strings.userTaskRunStatusExitCode(Int(exitCode))
             }
             return Strings.userTaskRunStatusFailed

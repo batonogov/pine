@@ -1665,7 +1665,7 @@ final class ProjectManager {
     /// Tracks active and recent user-task runs for the task execution UI
     /// (issue #1246). Owned by the project window so the output surface,
     /// toast, and Cancel button all share one source of truth.
-    let taskRunStore = UserTaskRunStore()
+    let taskRunStore: UserTaskRunStore
     /// Recovery snapshots and their lifecycle are owned by the main actor.
     private(set) var recoveryManager: RecoveryManager?
     /// Whether the user has already answered this project's crash-recovery
@@ -1841,6 +1841,7 @@ final class ProjectManager {
         lspSettings: LSPSettings = .shared,
         sessionDefaults: UserDefaults = PineStorageContext.defaults,
         agentHistoryPrivateStore: AgentHistoryPrivateStore = AgentHistoryPrivateStore(),
+        taskResultPersistence: UserTaskResultPersistence = UserTaskResultPersistence(),
         agentHistoryPathResolver: @escaping AgentHistoryPathResolution.Resolver =
             AgentHistoryPathResolution.relativePaths,
         agentProcessSnapshotPoller: AgentProcessSnapshotPoller? = nil,
@@ -1853,6 +1854,7 @@ final class ProjectManager {
     ) {
         self.sessionDefaults = sessionDefaults
         self.agentHistory = AgentHistoryStore(privateStore: agentHistoryPrivateStore)
+        self.taskRunStore = UserTaskRunStore(resultPersistence: taskResultPersistence)
         self.agentHistoryPathResolver = agentHistoryPathResolver
         self.quickOpenProvider = QuickOpenProvider(defaults: sessionDefaults)
         self.workspace = WorkspaceManager(
@@ -2115,6 +2117,7 @@ final class ProjectManager {
     func shutdownReclaimableProject() {
         guard presentationLifecycle != .destroyed else { return }
         presentationLifecycle = .destroyed
+        taskRunStore.abandonResultPersistence()
         recoveryManager?.snapshotDirtyTabs(allTabs)
         recoveryManager?.cancelScheduledSnapshot()
         recoveryManager?.stopPeriodicSnapshots()
@@ -2131,6 +2134,7 @@ final class ProjectManager {
             || terminal.requiresBackgroundRetention
             || hasPendingAgentHistory
             || hasOutstandingUserTaskExecution
+            || taskRunStore.hasUnpersistedResultOwnership
     }
 
     /// Applies project-owned services to every editor group, including groups
@@ -2402,10 +2406,12 @@ final class ProjectManager {
             RecentAgentTaskFilesystemValidationLease? = nil
     ) {
         guard pendingAgentHistoryFinalizations.isEmpty,
+              taskRunStore.canChangeResultRoot(to: url),
               agentHistory.updateProjectRoot(url) else {
-            NSLog("ProjectManager: retained project root with unsaved agent history")
+            NSLog("ProjectManager: retained project root with pending history or command results")
             return
         }
+        guard taskRunStore.updateResultRoot(url) else { return }
         agentHistoryFinalizationGeneration = UUID()
         let projectIdentity = agentTaskProject ?? AgentTaskProjectIdentity(
                 canonicalProjectPath: url.path,
@@ -3064,5 +3070,27 @@ final class ProjectManager {
     /// `true` while destroying this project would drop task cleanup ownership.
     var hasOutstandingUserTaskExecution: Bool {
         taskRunStore.hasOutstandingExecutionOwnership
+    }
+
+    var hasPendingCommandResults: Bool { taskRunStore.hasUnpersistedResultOwnership }
+
+    func retryCommandResultPersistence() {
+        // Do not restart failed read-only recovery on every reclamation pass.
+        guard hasPendingCommandResults else { return }
+        taskRunStore.retryFailedResultPersistence()
+    }
+
+    /// Background reopen after the project directory was deleted and
+    /// recreated: the result store re-derives the new workspace identity.
+    /// No-op while the directory has not been recreated.
+    func recoverRecreatedResultRoot() {
+        taskRunStore.recoverRecreatedRoot()
+    }
+
+    func flushCommandResultPersistence() async -> Bool {
+        // Read-only recovery has no sole copy to lose and must not block Quit.
+        guard hasPendingCommandResults else { return true }
+        let saved = await taskRunStore.flushResultPersistence()
+        return saved || !hasPendingCommandResults
     }
 }
