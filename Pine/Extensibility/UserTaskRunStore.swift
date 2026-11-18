@@ -532,7 +532,7 @@ final class UserTaskRunStore {
     // MARK: - Durable completed results
 
     var hasPendingResultPersistence: Bool {
-        resultProjectRoot != nil && (
+        resultProjectRoot != nil && !resultRootMissing && (
             resultLoadTask != nil || resultSnapshot == nil
                 || resultWriteTask != nil || !resultPreparationTasks.isEmpty
                 || !pendingOutputRetentionIDs.isEmpty
@@ -645,7 +645,7 @@ final class UserTaskRunStore {
                 trimToCapacity()
                 scheduleResultExpiry()
                 persistResults()
-            } catch is UserTaskResultPersistence.Failure.rootMissing {
+            } catch UserTaskResultPersistence.Failure.rootMissing {
                 // No directory, no durable file: nothing to restore or persist.
                 resultRootMissing = true
             } catch {
@@ -813,7 +813,7 @@ final class UserTaskRunStore {
                     resultPersistenceFailed = false
                     if generation == resultGeneration { return }
                 } catch {
-                    if error is UserTaskResultPersistence.Failure.rootMissing {
+                    if case UserTaskResultPersistence.Failure.rootMissing = error {
                         // The project directory is gone: a recreated directory gets a
                         // new workspace identity, so this durable file can never be
                         // reached again. Drop the in-memory copy and release ownership

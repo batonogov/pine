@@ -320,6 +320,7 @@ struct UserTaskResultReclamationTests {
         let second = start(in: store)
         finish(second, in: store)
         try #require(await waitUntilMainActor { !store.hasUnpersistedResultOwnership })
+        #expect(!store.hasPendingResultPersistence)
         #expect(!store.resultPersistenceFailed)
         #expect(await original.flushCommandResultPersistence())
         #expect(!registry.hasPendingCommandResults)
