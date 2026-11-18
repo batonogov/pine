@@ -153,50 +153,44 @@ struct TerminalProcessCleanupOwnerTests {
             .shared.inFlightControllers.contains { $0 === controller })
     }
 
-    @Test("multi-element deferred cleanup publishes once, after all works")
+    @Test("multi-element deferred cleanup releases the owner once, after all works")
     func multiElementDeferredCleanupPublishesOnceAfterAllWorks() async throws {
         // No deferredCleanupForTesting seam: the real multi-element list
         // (nil-group no-op, pid-0 descendant no-op, pid-0 root no-op) runs,
-        // so the frozen work total must cover every element before any
-        // publish (#1786).
+        // so the frozen work total must cover every element before the owner
+        // record drops (#1786).
         for _ in 0..<5 {
             let retention = TerminalWorkingDirectoryRetention(
                 canonicalDirectory: FileManager.default.temporaryDirectory
             )
+            defer { retention.finishCleanup(succeeded: true) }
             let controller = TerminalProcessTreeController(
                 retention: retention,
                 cleanupForTesting: { false }
             )
             controller.requestTermination()
 
-            // The fence must stay retained until every work has returned;
+            // The owner record drops only after every work has returned;
             // poll with a bounded deadline and fail closed on it (#1786).
-            let settled = await Task.detached(priority: .utility) {
+            let released = await Task.detached(priority: .utility) {
                 let deadline = DispatchTime.now() + 5
                 let stillTracked = {
                     TerminalProcessCleanupOwnerRegistry
                         .shared.inFlightControllers
                         .contains { $0 === controller }
                 }
-                while retention.isRetained || stillTracked(),
-                      DispatchTime.now() < deadline {
+                while stillTracked(), DispatchTime.now() < deadline {
                     Darwin.usleep(10_000)
                 }
-                return !retention.isRetained && !stillTracked()
+                return !stillTracked()
             }.value
-            #expect(settled)
+            #expect(released)
 
-            // The published success follows the fence release on the same
-            // worker; poll with a bounded deadline instead of one shot.
-            let published = await Task.detached(priority: .utility) {
-                let deadline = DispatchTime.now() + 5
-                while !controller.waitForTermination(timeout: 0),
-                      DispatchTime.now() < deadline {
-                    Darwin.usleep(10_000)
-                }
-                return controller.waitForTermination(timeout: 0)
-            }.value
-            #expect(published)
+            // A bounded failure stays fail-closed: the fence is retained
+            // (the Quit path commits it) and the termination truth is a
+            // truthful failure, never a published success (#1786).
+            #expect(retention.isRetained)
+            #expect(!controller.waitForTermination(timeout: 0))
         }
     }
 
@@ -228,10 +222,13 @@ struct TerminalProcessCleanupOwnerTests {
         #expect(recorded == 1)
 
         // A controller present in both the live list and the detached-owner
-        // registry must merge to a single element (#1786).
+        // registry must merge to a single element (#1786). Unrelated
+        // in-flight owners from other tests may also appear in the shared
+        // registry; the invariant is this controller's deduplication, not
+        // an empty registry.
         let merged = TerminalProcessCleanupOwnerRegistry
             .applicationTerminationControllers(from: [controller])
-        #expect(merged.count == 1 && merged.first === controller)
+        #expect(merged.filter { $0 === controller }.count == 1)
 
         // Release the held bounded phase; the success path then removes the
         // record, which the termination assertions below verify.

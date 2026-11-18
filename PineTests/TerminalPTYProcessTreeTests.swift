@@ -350,8 +350,8 @@ struct TerminalPTYProcessTreeTests {
         #expect(released)
     }
 
-    @Test("successful deferred cleanup releases retention without app Quit")
-    func deferredCleanupReleasesRetentionWithoutQuit() async throws {
+    @Test("drained deferred cleanup releases the owner without app Quit")
+    func deferredCleanupReleasesOwnerWithoutQuit() async throws {
         let retention = TerminalWorkingDirectoryRetention(
             canonicalDirectory: FileManager.default.temporaryDirectory
         )
@@ -379,27 +379,27 @@ struct TerminalPTYProcessTreeTests {
             operation: waitForDeferred
         ).value
         #expect(finished)
-        // No app Quit and no manual application wait: the fence must follow
-        // the deferred completion itself (#1786).
+        // No app Quit and no manual application wait: the drained owner
+        // record drops, so a later Quit stops waiting for this controller
+        // (#1786).
         let released = await Task.detached(priority: .utility) {
-            let deadline = DispatchTime.now() + 3
-            while retention.isRetained, DispatchTime.now() < deadline {
+            let deadline = DispatchTime.now() + 5
+            let stillTracked = {
+                TerminalProcessCleanupOwnerRegistry
+                    .shared.inFlightControllers
+                    .contains { $0 === controller }
+            }
+            while stillTracked(), DispatchTime.now() < deadline {
                 Darwin.usleep(10_000)
             }
-            return !retention.isRetained
+            return !stillTracked()
         }.value
         #expect(released)
-        // The success publish follows the fence release on the same worker;
-        // poll with a bounded deadline instead of one shot (#1786 review).
-        let published = await Task.detached(priority: .utility) {
-            let deadline = DispatchTime.now() + 5
-            while !controller.waitForTermination(timeout: 0),
-                  DispatchTime.now() < deadline {
-                Darwin.usleep(10_000)
-            }
-            return controller.waitForTermination(timeout: 0)
-        }.value
-        #expect(published)
+        // The bounded failure stays fail-closed: the fence is retained (the
+        // Quit path commits it) and the termination truth is a truthful
+        // failure, never a success published against it (#1786).
+        #expect(retention.isRetained)
+        #expect(!controller.waitForTermination(timeout: 0))
     }
 
     @Test("replacement records a new exact process generation")

@@ -45,9 +45,6 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     /// deferred outcome (#1786).
     private var deferredWorkScheduled = 0
     private var deferredWorkCompleted = 0
-    /// Set once the deferred outcome was published so a bounded failure
-    /// published later cannot clobber an already-completed success (#1786).
-    private var deferredCompletionPublished = false
     let workingDirectoryRetention: TerminalWorkingDirectoryRetention
     #if DEBUG
     private let scheduledCaptureCount = UserTaskProcessTelemetryCounter()
@@ -187,9 +184,11 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
 
     /// Application Quit can await the already-running deferred cleanup after
     /// the ordinary bounded close fails. The caller supplies the outer
-    /// deadline. A drained deferred phase reports its published outcome
-    /// rather than assuming success, so a still-pending cleanup fails the
-    /// termination truthfully (#1786).
+    /// deadline. Once the bounded phase has finished and every deferred work
+    /// has returned, the app is terminating anyway: commit the fence and the
+    /// success truth, and drop the owner record — the same commit the
+    /// pre-#1786 Quit path made. A still-pending cleanup fails the
+    /// termination truthfully at the deadline (#1786).
     func waitForApplicationTermination(timeout: TimeInterval) -> Bool {
         let deadline = DispatchTime.now() + max(timeout, 0)
         guard DispatchTime.now() < deadline else { return false }
@@ -204,7 +203,10 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
               deferredCleanupCompletion.wait(timeout: deadline) == .success,
               DispatchTime.now() < deadline
         else { return false }
-        return lock.withLock { terminationSucceeded }
+        workingDirectoryRetention.finishCleanup(succeeded: true)
+        lock.withLock { terminationSucceeded = true }
+        TerminalProcessCleanupOwnerRegistry.shared.release(self)
+        return true
     }
 
     private func finishBoundedTermination(
@@ -279,16 +281,14 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         }
     }
 
-    /// Deferred workers return only after every observed process is gone, so
-    /// the last return is a truthful success. Publish it, release the
-    /// cwd/worktree fence, and drop the detached-owner record exactly once —
-    /// without requiring an application Quit (#1786).
+    /// Deferred workers run only after a bounded failure, and they return
+    /// only after every observed process is gone. Their completion releases
+    /// the app-termination owner record exactly once — without requiring an
+    /// application Quit (#1786). The working-directory fence and the
+    /// termination truth follow the bounded result only: a bounded failure
+    /// keeps the fence fail-closed (a failed production cleanup must never
+    /// release it) and is never reported as success.
     private func publishDeferredCleanupCompletion() {
-        workingDirectoryRetention.finishCleanup(succeeded: true)
-        lock.withLock {
-            deferredCompletionPublished = true
-            terminationSucceeded = true
-        }
         TerminalProcessCleanupOwnerRegistry.shared.release(self)
     }
 
@@ -319,9 +319,9 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         // A bounded failure retains the fence until deferred cleanup completes.
         workingDirectoryRetention.finishCleanup(succeeded: succeeded)
         lock.withLock {
-            // Deferred work that already completed cannot be demoted by the
-            // bounded result published against it (#1786).
-            terminationSucceeded = succeeded || deferredCompletionPublished
+            // The bounded result is the termination truth; deferred completion
+            // only releases the owner record, never a success report (#1786).
+            terminationSucceeded = succeeded
             terminationFinished = true
         }
         if succeeded {
