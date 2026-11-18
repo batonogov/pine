@@ -315,7 +315,7 @@ struct AgentTaskDataPolicyTests {
         // LENIENT half: the four custom fail-closed decoders accept unknown
         // future raw values and decode to their negative defaults; the load
         // SUCCEEDS.
-        let execution = await loadMutated { root in
+        let execution = try await loadMutated { root in
             var tasks = try #require(root["tasks"] as? [[String: Any]])
             var task = tasks[0]
             task["executionState"] = "future-execution-state"
@@ -325,7 +325,7 @@ struct AgentTaskDataPolicyTests {
         #expect(execution.status == .loaded)
         #expect(execution.tasks.first?.executionState == .unknown)
 
-        let outcome = await loadMutated { root in
+        let outcome = try await loadMutated { root in
             var tasks = try #require(root["tasks"] as? [[String: Any]])
             var task = tasks[0]
             var runs = try #require(task["runs"] as? [[String: Any]])
@@ -339,7 +339,7 @@ struct AgentTaskDataPolicyTests {
         #expect(outcome.status == .loaded)
         #expect(outcome.tasks.first?.runs.last?.outcome == .unverified)
 
-        let verification = await loadMutated { root in
+        let verification = try await loadMutated { root in
             var tasks = try #require(root["tasks"] as? [[String: Any]])
             var task = tasks[0]
             task["verificationState"] = "future-verification-state"
@@ -349,7 +349,7 @@ struct AgentTaskDataPolicyTests {
         #expect(verification.status == .loaded)
         #expect(verification.tasks.first?.verificationState == .stale)
 
-        let acceptance = await loadMutated { root in
+        let acceptance = try await loadMutated { root in
             var tasks = try #require(root["tasks"] as? [[String: Any]])
             var task = tasks[0]
             task["acceptanceState"] = "future-acceptance-state"
@@ -422,7 +422,7 @@ struct AgentTaskDataPolicyTests {
         // The feedback `scheme` is a plain UInt8, not an enum: an unknown
         // scheme decodes without throwing and is rejected at VALIDATION —
         // `.invalidMetadata`, not `.corrupt`.
-        let scheme = await loadMutated { root in
+        let scheme = try await loadMutated { root in
             var tasks = try #require(root["tasks"] as? [[String: Any]])
             var task = tasks[0]
             var feedback = try #require(task["feedback"] as? [[String: Any]])
