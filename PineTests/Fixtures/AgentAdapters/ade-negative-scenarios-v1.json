@@ -1,0 +1,307 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "ade-negative-scenarios-v1",
+  "issue": "#1761",
+  "source": "Issue #1761 section 3, negative and recovery scenario list, 2026-11-16 base 5cd4707b148ab926ced8f7d4f878d8e4c5709056.",
+  "sanitization": "Model-level scenario expectations only. No prompts, commands, paths, tokens, environment values, or terminal output.",
+  "coverageValues": ["existing", "added", "pending"],
+  "scenarios": [
+    {
+      "id": "missing-required-check",
+      "group": "verification",
+      "scenario": "A required check has no recorded result for the settled claim.",
+      "expected": "Outcome settles unverified; readiness gap missingEvidence(independentCheck); never Ready.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — successRequiresEachRequiredFactor",
+      "owner": null
+    },
+    {
+      "id": "failed-required-check",
+      "group": "verification",
+      "scenario": "A required check fails against the claim's code state.",
+      "expected": "Outcome settles failure with failed attention; readiness gap failedAttempt; never Ready.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — failingEvidenceSettlesFailure",
+      "owner": null
+    },
+    {
+      "id": "timed-out-required-check",
+      "group": "verification",
+      "scenario": "A required check times out.",
+      "expected": "Main models a timed-out check as a failed check bound to the claim's code state: failure, never Ready. An explicit timeout status is owned by the check executor (pending, work/20261116-issue-1754); the no-Ready guarantee holds via the failed-check path today.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — failingEvidenceSettlesFailure",
+      "owner": null
+    },
+    {
+      "id": "cancelled-required-check",
+      "group": "verification",
+      "scenario": "A required check is cancelled before it settles.",
+      "expected": "Either no check fact (missingEvidence) or a failed fact (failingEvidence); the attempt never settles success and never becomes Ready.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — successRequiresEachRequiredFactor; failingEvidenceSettlesFailure",
+      "owner": null
+    },
+    {
+      "id": "reviewer-rejection",
+      "group": "verification",
+      "scenario": "The independent reviewer rejects the candidate (requestedChanges) while checks pass.",
+      "expected": "Outcome settles failure with failed attention; the reviewer rejection persists as a bound fact; never Ready.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — failedSettlementPersists",
+      "owner": null
+    },
+    {
+      "id": "provider-success-without-independent-evidence",
+      "group": "verification",
+      "scenario": "The provider reports completion but no independent check or review fact exists.",
+      "expected": "Outcome settles unverified, never success; readiness names the missing required evidence.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — claimAloneSettlesUnverified; processExitSettlesUnverified",
+      "owner": null
+    },
+    {
+      "id": "changes-after-verification",
+      "group": "state-truth",
+      "scenario": "Tracked, untracked, or ignored-relevant input changes after verification.",
+      "expected": "Relevant edit invalidates verification to stale and drops acceptance; snapshots preserved; not Ready until explicit re-verification with new bound facts.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — relevantEditInvalidatesReady; acceptanceNeverInherited",
+      "owner": null
+    },
+    {
+      "id": "mutation-during-check-or-review",
+      "group": "state-truth",
+      "scenario": "The code state mutates during a check or review run.",
+      "expected": "Pre- and post-operation fingerprints must both be present, equal, and equal to the fact's code state; any mismatch is fenced as invalidFact at admission and rejected from durable files, so a mutating operation cannot pass.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — operationFingerprintsMustBeConsistent; operationFingerprintsPersistAndRejectFailClosed",
+      "owner": null
+    },
+    {
+      "id": "missing-environment",
+      "group": "environment-authority",
+      "scenario": "The current code-state or environment identity cannot be re-proved (relaunch, unreadable state).",
+      "expected": "Readiness refuses with codeStateUnknown or environmentUnknown; a verified success without a re-proved current state is never Ready.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — readinessRefusesWithoutCurrentState; readyRequiresEnvironmentBinding",
+      "owner": null
+    },
+    {
+      "id": "moved-environment",
+      "group": "environment-authority",
+      "scenario": "The bound worktree or its parent directory is moved or replaced after reservation.",
+      "expected": "Lease revalidation fails; the reservation is invalidated and cannot be rearmed; adoption refuses the moved object.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskEnvironmentBindingTests.swift — expectedParentReplacementDuringSetupInvalidatesReservation; setupLeasePinsMissingTargetAndRevocationCannotBeRearmed",
+      "owner": null
+    },
+    {
+      "id": "wrong-environment",
+      "group": "environment-authority",
+      "scenario": "The expected worktree exists but has the wrong branch, belongs to another task, or is a symlink alias of the project.",
+      "expected": "Adoption fails closed (ambiguousEnvironment/staleBinding/wrong-branch refusal); no silent substitution of a different tree.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskEnvironmentBindingTests.swift — wrongBranchAtExpectedPathFailsClosed; activeEnvironmentCannotBelongToAnotherTask; projectSymlinkCannotBeAdoptedAsTaskWorktree; symlinkAliasCannotStealAnotherTasksActiveWorktree",
+      "owner": null
+    },
+    {
+      "id": "expired-grant",
+      "group": "environment-authority",
+      "scenario": "A setup lease or environment binding is used after its target changed or the lease expired.",
+      "expected": "Revalidation fails; an uncertain dispatch never becomes a fresh creation grant; revocation cannot be rearmed.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskEnvironmentBindingTests.swift — setupLeasePinsMissingTargetAndRevocationCannotBeRearmed; adoptsOnceRevalidatesAndRefusesReplacement",
+      "owner": null
+    },
+    {
+      "id": "revoked-grant",
+      "group": "environment-authority",
+      "scenario": "The binding owner revokes the task's environment while consumers hold cached leases.",
+      "expected": "Revocation synchronously fences all consumers (staleBinding); no later launch, check, or result use is authorized.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskEnvironmentBindingTests.swift — abandoningBindingOwnerRevokesRetainedSetupLease; adoptsOnceRevalidatesAndRefusesReplacement",
+      "owner": null
+    },
+    {
+      "id": "unavailable-check-tools",
+      "group": "environment-authority",
+      "scenario": "A tool required by the check plan is unavailable in the bound environment.",
+      "expected": "The required check records failure (never silence) and the candidate is never Ready. Main has no check executor yet; the guarantee lands with the bound check plan.",
+      "coverage": "pending",
+      "evidence": null,
+      "owner": "work/20261116-issue-1754 (feat(agent): execute required ADE checks with bound plans and command grants)"
+    },
+    {
+      "id": "transport-loss-degrades-execution",
+      "group": "environment-authority",
+      "scenario": "The provider transport is lost or a waiting request becomes stale (lost response).",
+      "expected": "Execution degrades to unknown (blocked requires a live verified waiting request; stale/terminated runs are unknown); no misleading working or idle state is presented.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — blockedState; unknownStates; staleRefreshPresentsUnknownExecution",
+      "owner": null
+    },
+    {
+      "id": "provider-auth-capability-loss",
+      "group": "environment-authority",
+      "scenario": "Provider authentication expires or a required capability is revoked mid-task.",
+      "expected": "The user finds the specific blocker and a safe next action; no silent provider/model/account/cwd substitution; task, draft, and prior results preserved. Main models transport loss only; provider-level auth/capability classification lands with task execution settings and the adapter owners.",
+      "coverage": "pending",
+      "evidence": null,
+      "owner": "work/20261116-issue-1765 (feat(agent): choose task execution settings with truthful CLI capabilities); adapter owners work/20261116-issue-1723, feat/1811-opencode-ade"
+    },
+    {
+      "id": "duplicate-events",
+      "group": "event-integrity",
+      "scenario": "An equivalent evidence event is delivered twice (reconnect re-emission, sub-millisecond clock skew).",
+      "expected": "Fenced as duplicate (source sequence identity, or millisecond-quantized timestamp identity); the task stays exactly unchanged and a fenced batch leaves no partial state.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — evidenceFencing; subMillisecondFactsSurviveRoundTrip",
+      "owner": null
+    },
+    {
+      "id": "stale-events",
+      "group": "event-integrity",
+      "scenario": "An event for a replaced run or an older code state arrives late.",
+      "expected": "Fenced by process incarnation or admitted as history; it never settles or flips the newer attempt; an older-code-state failure cannot veto a current claim and a replayed skewed-timestamp sequence cannot flip a settled outcome.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — lateForeignEventCannotSettleNewerAttempt; replayWithSkewedTimestampCannotFlipOutcome; staleStateFailureDoesNotVetoCurrentClaim",
+      "owner": null
+    },
+    {
+      "id": "foreign-task-events",
+      "group": "event-integrity",
+      "scenario": "An event references an unknown run, a foreign process generation, or a foreign/nested provider session.",
+      "expected": "Fenced as unknownRun, foreignProcess, or foreignVendorSession; no fact from another task or session can settle this task.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — evidenceFencing; vendorSessionFencing",
+      "owner": null
+    },
+    {
+      "id": "reordered-events",
+      "group": "event-integrity",
+      "scenario": "Events arrive in a different order than they were produced.",
+      "expected": "Settlement is a pure function of the bound facts with deterministic claim ordering: replayed and reordered events converge to one settlement independent of admission order.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — eventReorderingConverges; latestAgentClaimWins",
+      "owner": null
+    },
+    {
+      "id": "lost-responses",
+      "group": "event-integrity",
+      "scenario": "A provider state response is lost and the last observed state goes stale.",
+      "expected": "A stale refresh presents unknown execution state; missing positive idle evidence is never presented as idle or working.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — staleRefreshPresentsUnknownExecution; unknownStates",
+      "owner": null
+    },
+    {
+      "id": "late-completion-after-cancellation",
+      "group": "event-integrity",
+      "scenario": "The provider reports completion after the user already cancelled the attempt.",
+      "expected": "The late claim is admitted as history but the outcome stays cancellation: lifecycle paused, no completedAt, no attention, readiness gap cancelledAttempt; never Ready, never flipped to success or failure.",
+      "coverage": "added",
+      "evidence": "PineTests/AdeNegativeScenarioFixtureTests.swift — lateCompletionAfterCancellationCannotFlipOutcome",
+      "owner": null
+    },
+    {
+      "id": "crash-between-evidence-and-metadata-writes",
+      "group": "crash-recovery",
+      "scenario": "The process dies between writing evidence and writing the rest of the task metadata.",
+      "expected": "A failed settlement write leaves no partial outcome state; the durable file remains loadable and consistent; duplicate run IDs in a v3 file reject without trapping.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — failedSettlementWriteFailsClosed; duplicateRunIDsRejectFailClosed",
+      "owner": null
+    },
+    {
+      "id": "crash-between-dispatch-steps",
+      "group": "crash-recovery",
+      "scenario": "The process dies between worktree setup journal steps (creation intent, population intent, populated).",
+      "expected": "The one-shot checkpoint rejects replays and reservation changes after restore; unknown post-publication durability never re-dispatches population; unresolved intents cannot be shed by retention.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskWorktreeSetupPersistenceTests.swift — oneShotCheckpointCASRejectsReplaysAndReservationChanges; unknownPostPublicationDurabilityDoesNotDispatchPopulationOrReplayAfterRestore; unresolvedIntentCannotBeShedByDiskOrRuntimeRetention",
+      "owner": null
+    },
+    {
+      "id": "crash-between-round-accounting",
+      "group": "crash-recovery",
+      "scenario": "The process dies between correction-round accounting steps.",
+      "expected": "A crash cannot produce a fourth automatic attempt or double-count a correction round. Main has no correction-round accounting yet; the guarantee lands with bounded corrections and continuation.",
+      "coverage": "pending",
+      "evidence": null,
+      "owner": "work/20261116-issue-1755 (feat(agent): orchestrate independent review and persistent bounded corrections); work/20261116-issue-1756 (feat(agent): continue Ready tasks with preserved result history)"
+    },
+    {
+      "id": "crash-between-invalidation",
+      "group": "crash-recovery",
+      "scenario": "The process dies after an invalidating edit was observed but before the invalidation persisted.",
+      "expected": "After relaunch, readiness requires a re-proved current code-state and environment; a verified result without re-proof is never Ready (relaunch trigger fails closed).",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — readinessRefusesWithoutCurrentState; relaunchInvalidatesVerifiedEvidence",
+      "owner": null
+    },
+    {
+      "id": "relaunch-live-channel",
+      "group": "crash-recovery",
+      "scenario": "Relaunch while the provider channel/process is still live.",
+      "expected": "Vendor resume is refused for a live run (taskNotRecoverable); continuation is explicit; no duplicate dispatch happens silently.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskRecoveryTests.swift — resumeActionAvailability; capabilityGate",
+      "owner": null
+    },
+    {
+      "id": "relaunch-dead-process",
+      "group": "crash-recovery",
+      "scenario": "Relaunch after the provider process died.",
+      "expected": "Recovery offers exactly two honest actions: resume the vendor session only through a documented recipe with a re-probed matching version, or start a new session described as new, never as continuation.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskRecoveryTests.swift — newSessionPlan; capabilityGate; opaqueIdentifierIsOneArgument",
+      "owner": null
+    },
+    {
+      "id": "relaunch-unavailable-provider-history",
+      "group": "crash-recovery",
+      "scenario": "Relaunch with the provider history unavailable (missing vendor identity, executable removed, version changed, probe failed).",
+      "expected": "Each condition maps to a distinct unavailable reason (vendorIdentityMissing, executableMissing, adapterUnavailable, versionProbeFailed, versionChanged); resume is refused, new session stays available.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskRecoveryTests.swift — capabilityGate; executableAndVersionChanges; removedCachedExecutable; invalidOpaqueIdentity",
+      "owner": null
+    },
+    {
+      "id": "relaunch-exhausted-correction-budget",
+      "group": "crash-recovery",
+      "scenario": "Relaunch after the persistent correction budget is exhausted.",
+      "expected": "No fourth automatic attempt is launched; the unresolved third corrected revision escalates to the user. Main has no correction budget yet.",
+      "coverage": "pending",
+      "evidence": null,
+      "owner": "work/20261116-issue-1755 (feat(agent): orchestrate independent review and persistent bounded corrections)"
+    },
+    {
+      "id": "event-pressure-at-limit",
+      "group": "pressure",
+      "scenario": "Evidence event pressure reaches the documented per-task fact limit.",
+      "expected": "Settlement at the fact cap is fenced (limitReached) and the state stays saveable; the bound remains one constant shared by admission and persistence.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — settlementAtFactCapFencesAndSaves",
+      "owner": null
+    },
+    {
+      "id": "event-pressure-beyond-limit",
+      "group": "pressure",
+      "scenario": "Evidence event pressure exceeds the file budget.",
+      "expected": "Older evidence sheds toward the file budget before new facts are rejected; run history trims with equal limits while settled evidence stays loadable.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — evidenceShedsTowardFileBudget; trimmedHistoryWithSettledRunsLoads; registryTrimWithEqualLimitsKeepsSavesLoadable",
+      "owner": null
+    },
+    {
+      "id": "run-history-pressure",
+      "group": "pressure",
+      "scenario": "Many runs and process generations accumulate on one task.",
+      "expected": "Trimmed run history with settled evidence stays loadable; pinned timestamps keep the retention sweep deterministic.",
+      "coverage": "existing",
+      "evidence": "PineTests/AgentTaskLifecycleEvidenceTests.swift — trimmedHistoryWithSettledRunsLoads",
+      "owner": null
+    }
+  ]
+}
