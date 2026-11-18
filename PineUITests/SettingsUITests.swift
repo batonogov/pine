@@ -388,13 +388,14 @@ final class SettingsUITests: PineUITestCase {
         ].firstMatch
         XCTAssertTrue(notificationSettings.waitForExistence(timeout: 5))
 
-        let explanation = """
-            Process-only integrations do not send agent notifications. Verified \
-            notifications for waiting, failure, and completion require a supported \
-            structured integration. They are sent only when the relevant session is \
-            not visible and never include prompts or output.
-            """
-        let explanationText = app.staticTexts[explanation].firstMatch
+        // XCUITest string queries are capped at 128 characters, and the
+        // full explanation exceeds that, so match a stable prefix.
+        let explanationText = app.staticTexts.matching(
+            NSPredicate(
+                format: "label BEGINSWITH %@",
+                "Process-only integrations do not send agent notifications"
+            )
+        ).firstMatch
         XCTAssertTrue(
             explanationText.waitForExistence(timeout: 5),
             "Settings should explain that verified events need structured integration"
