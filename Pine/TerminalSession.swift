@@ -2317,11 +2317,11 @@ final class TerminalTab: Identifiable, Hashable {
     /// argv (#1792).
     var resolvedInitialProcess: TerminalInitialProcess {
         if let initialProcess { return initialProcess }
-        #if PINE_TEST_HOST
         let configured = TerminalInitialProcess(
             executablePath: shellSettings.resolvedShellPath,
             arguments: shellSettings.shellArgs
         )
+        #if PINE_TEST_HOST
         let base = (configured.executablePath as NSString).lastPathComponent
         guard TestChildStartupPolicy.isShell(base) else { return configured }
         return TerminalInitialProcess(
