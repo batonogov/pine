@@ -2311,20 +2311,25 @@ final class TerminalTab: Identifiable, Hashable {
     }
 
     /// Exact executable/argv the tab launches. An explicitly configured
-    /// process always wins; under the private test host the default child is
-    /// the controlled non-login shell, never the user's selected one (#1792).
+    /// process always wins; under the private test host a configured *shell*
+    /// becomes the controlled non-login shell, while a non-shell child is an
+    /// explicit test seam (e.g. `/usr/bin/yes sunny`) and keeps its exact
+    /// argv (#1792).
     var resolvedInitialProcess: TerminalInitialProcess {
         if let initialProcess { return initialProcess }
         #if PINE_TEST_HOST
+        let configured = TerminalInitialProcess(
+            executablePath: shellSettings.resolvedShellPath,
+            arguments: shellSettings.shellArgs
+        )
+        let base = (configured.executablePath as NSString).lastPathComponent
+        guard TestChildStartupPolicy.isShell(base) else { return configured }
         return TerminalInitialProcess(
             executablePath: TestChildStartupPolicy.executablePath,
             arguments: TestChildStartupPolicy.arguments
         )
         #else
-        return TerminalInitialProcess(
-            executablePath: shellSettings.resolvedShellPath,
-            arguments: shellSettings.shellArgs
-        )
+        return configured
         #endif
     }
 

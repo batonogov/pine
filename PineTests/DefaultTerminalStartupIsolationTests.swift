@@ -77,10 +77,13 @@ struct DefaultTerminalStartupIsolationTests {
         )
 
         // Generation-qualified ownership must clean up the exact process.
+        // The bounded phase may legitimately escalate to the deferred KILL,
+        // so assert the termination contract (bounded or deferred), not the
+        // bounded phase's truth within a short window (#1792 CI).
         tab.stop()
         #expect(
             await Task.detached(priority: .utility) {
-                controller.waitForTermination(timeout: 3)
+                controller.waitForApplicationTermination(timeout: 5)
             }.value,
             "the owned PTY process tree must terminate"
         )

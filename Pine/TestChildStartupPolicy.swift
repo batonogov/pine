@@ -14,6 +14,17 @@ nonisolated enum TestChildStartupPolicy {
     static let executablePath = "/bin/bash"
     static let arguments = ["--noprofile", "--norc", "--noediting", "-i"]
 
+    /// Shells load user startup files, so the policy replaces their default
+    /// argv. Non-shell children are explicit test seams (e.g.
+    /// `/usr/bin/yes sunny`) and keep their exact argv (#1792).
+    static func isShell(_ basename: String) -> Bool {
+        shellBasenames.contains(basename.lowercased())
+    }
+
+    private static let shellBasenames: Set<String> = [
+        "bash", "zsh", "sh", "dash", "ksh", "csh", "tcsh", "fish",
+    ]
+
     /// Removes only test-child startup/history/prompt injection variables
     /// from an inherited environment. `HOME`, `PATH`, and every other
     /// value pass through unchanged.

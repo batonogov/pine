@@ -59,4 +59,22 @@ struct TestChildStartupPolicyTests {
         #expect(tab.buildEnvironment()["HISTFILE"] == "/dev/null")
         #expect(tab.buildEnvironment()["PROMPT_COMMAND"] == nil)
     }
+
+    @Test @MainActor func nonShellChildKeepsExactArgv() throws {
+        let suite = "TestChildStartupPolicy-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/usr/bin/yes"
+        settings.shellArgs = ["sunny"]
+        let tab = TerminalTab(name: "Owned seam", shellSettings: settings)
+        defer { tab.stop() }
+        // A non-shell child is a test seam (the find-step UI test seeds its
+        // scrollback with `yes sunny`): the policy must keep the exact argv
+        // or the base UI test loses its match counter (#1792).
+        #expect(tab.resolvedInitialProcess == TerminalInitialProcess(
+            executablePath: "/usr/bin/yes",
+            arguments: ["sunny"]
+        ))
+    }
 }
