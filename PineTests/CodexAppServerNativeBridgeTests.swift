@@ -563,7 +563,11 @@ nonisolated private struct NativeBridgeFixture: Sendable {
         )
         guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: reservation.taskID, runID: reservation.runID,
-            bindingID: binding.id, selection: selection
+            bindingID: binding.id, selection: selection,
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
         ) else {
             throw AgentTaskNativeAdmissionError.invalidPolicy
         }

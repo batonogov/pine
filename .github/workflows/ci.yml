@@ -48,8 +48,14 @@ jobs:
           curl -fSL "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux_amd64.zip" -o swiftlint.zip
           echo "${SWIFTLINT_SHA256}  swiftlint.zip" | sha256sum -c -
           unzip -o swiftlint.zip
-          chmod +x swiftlint
-          sudo mv swiftlint /usr/local/bin/
+          # The dynamic swiftlint binary needs host shared libraries (libxml2.so.2)
+          # that the post-2026-10 ubuntu-latest (Ubuntu 26) image no longer provides
+          # (exit 127: "error while loading shared libraries", #1815). The release
+          # zip ships the same-version static build, which removes the host-lib
+          # dependency entirely. Same version, same rules; the sha256 check above
+          # still covers the whole zip.
+          chmod +x swiftlint-static
+          sudo mv swiftlint-static /usr/local/bin/swiftlint
 
       - name: Run SwiftLint
         run: |

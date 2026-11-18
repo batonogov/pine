@@ -2,6 +2,13 @@ import Foundation
 import Testing
 @testable import Pine
 
+/// Test-host provenance for minted policies: the CLI's own credentials,
+/// the Pine process's own environment (#1723, #1765 launch contract).
+private let testLaunchProvenance = AgentTaskLaunchProvenance(
+    authenticationOrigin: .inheritNative,
+    environmentProvenance: .inheritedPineProcess
+)
+
 /// Runtime ownership tests for the policy-based token (#1723): constructor
 /// cross-checks, the source join, the environment digest, the filesystem
 /// lease, and irreversible revocation. Executable stamp gates live in the
@@ -33,7 +40,8 @@ struct AgentTaskNativeOwnershipTests {
             agentID: fixture.policy.agentID, selectedExecutable: URL(fileURLWithPath: "/selected/codex"))
         guard case .eligible(let mismatchedPolicy) = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: fixture.reservation.taskID, runID: fixture.reservation.runID,
-            bindingID: UUID(), selection: selection) else {
+            bindingID: UUID(), selection: selection,
+            provenance: testLaunchProvenance) else {
             throw AgentTaskNativeAdmissionError.invalidPolicy
         }
         await #expect(throws: AgentTaskNativeAdmissionError.invalidPolicy) {
@@ -163,7 +171,8 @@ nonisolated struct NativeOwnershipFixture: Sendable {
         policy = try #require({
             guard case .eligible(let value) = AgentTaskNativeLaunchPolicy.evaluate(
                 taskID: reservation.taskID, runID: reservation.runID, bindingID: binding.id,
-                selection: selection) else { return nil }
+                selection: selection,
+                provenance: testLaunchProvenance) else { return nil }
             return value
         }())
         lease = try #require(
