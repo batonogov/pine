@@ -336,18 +336,23 @@ struct TerminalPTYProcessTreeTests {
         ).value
         #expect(deferredCompleted)
         #expect(!controller.waitForApplicationTermination(timeout: 0))
-        // Deferred completion now releases the fence itself; the expired
-        // application deadline still fails the termination truthfully
-        // (#1786). The publish lands after the signal, so poll with a
-        // bounded deadline instead of one shot.
-        let released = await Task.detached(priority: .utility) {
+        // Deferred completion drops the owner record, but cannot release the
+        // fence or turn an expired application deadline into success (#1786).
+        let ownerReleased = await Task.detached(priority: .utility) {
             let deadline = DispatchTime.now() + 5
-            while retention.isRetained, DispatchTime.now() < deadline {
+            let stillTracked = {
+                TerminalProcessCleanupOwnerRegistry
+                    .shared.inFlightControllers
+                    .contains { $0 === controller }
+            }
+            while stillTracked(), DispatchTime.now() < deadline {
                 Darwin.usleep(10_000)
             }
-            return !retention.isRetained
+            return !stillTracked()
         }.value
-        #expect(released)
+        #expect(ownerReleased)
+        #expect(retention.isRetained)
+        #expect(!controller.waitForTermination(timeout: 0))
     }
 
     @Test("drained deferred cleanup releases the owner without app Quit")
