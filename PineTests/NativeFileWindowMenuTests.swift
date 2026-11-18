@@ -497,6 +497,65 @@ struct NativeFileWindowMenuTests {
         )
     }
 
+    @Test("Open File uses the replacement editor after closing the last untitled tab")
+    func openFileAfterClosingLastUntitledTab() async throws {
+        let root = try makeTemporaryDirectory(prefix: "pine-menu-open-after-close")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("main.swift")
+        let content = "let value = 1\n"
+        try content.write(to: file, atomically: true, encoding: .utf8)
+
+        let defaults = makeIsolatedDefaults()
+        let settings = LSPSettings(defaults: defaults)
+        let project = ProjectManager(lspSettings: settings, sessionDefaults: defaults)
+        project.workspace.loadDirectory(url: root)
+        let originalPaneID = try #require(project.nativeFileCommandPaneID())
+        let untitledID = try #require(project.createUntitledFile(in: originalPaneID))
+        let originalTabs = try #require(project.paneManager.tabManager(for: originalPaneID))
+        #expect(originalTabs.activeTabID == untitledID)
+        #expect(originalTabs.activeTab?.fileURL == nil)
+
+        let registry = ProjectRegistry(lspSettings: settings, defaults: defaults)
+        let appDelegate = AppDelegate()
+        let closeDelegate = CloseDelegate(
+            projectManager: project,
+            registry: registry,
+            projectURL: root,
+            appDelegate: appDelegate,
+            original: nil
+        )
+        let closeTarget = try #require(NativeMenuCommandState(projectManager: project).closeTarget)
+        try #require(closeDelegate.closeActiveTab(expectedTarget: closeTarget))
+        try #require(await waitUntilMainActor {
+            project.allTabs.isEmpty
+                && project.paneManager.tabManager(for: originalPaneID) == nil
+        })
+
+        let destinationPaneID = try #require(project.nativeFileCommandPaneID())
+        let destinationTabs = try #require(project.paneManager.tabManager(for: destinationPaneID))
+        #expect(destinationPaneID != originalPaneID)
+        #expect(destinationTabs !== originalTabs)
+        var chooserCalls = 0
+        project.openFileChooser = { chooserRoot, _ in
+            chooserCalls += 1
+            #expect(chooserRoot == root)
+            return file
+        }
+        project.openFileFromMenu(initiatingPaneID: destinationPaneID)
+        try #require(await waitUntilMainActor {
+            destinationTabs.activeTab?.fileURL == file
+        })
+
+        #expect(chooserCalls == 1)
+        #expect(project.allTabs.count == 1)
+        #expect(destinationTabs.tabs.count == 1)
+        #expect(destinationTabs.activeTab?.content == content)
+        #expect(project.paneManager.activePaneID == destinationPaneID)
+        #expect(originalTabs.tabs.isEmpty)
+        #expect(project.allTerminalTabs.isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["main.swift"])
+    }
+
     @Test("Open File retains the initiating project and pane across focus drift")
     func openFileUsesProjectScopedChooser() async throws {
         let root = try makeTemporaryDirectory(prefix: "pine-open-root")

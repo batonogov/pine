@@ -2158,6 +2158,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               task.worktreeSetup.map({ Self.validWorktreeSetup($0, for: task) }) ?? true,
               validateFeedback(task.feedback),
               validateReviewCycle(task.reviewCycle, for: task),
+              task.decisionReferences.count <= AgentTaskDecisionReference.maximumCount,
+              task.decisionReferences.allSatisfy(\.isValid),
+              Set(task.decisionReferences.map(\.id)).count == task.decisionReferences.count,
+              task.objectiveRevision == 0 ? task.objective == nil : task.objective != nil,
               validateADEState(task),
               validateEvidence(task),
               validateChronology(task) else {

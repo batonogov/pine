@@ -11,6 +11,10 @@ For Pine-computed content/environment capture and scheme migration, see
 [ADE content identities](ade-content-identities.md). These primitives do not
 authorize checks, provider execution, Ready publication, or result actions.
 
+For bounded concurrent independent tasks — launch admission, the documented
+limit `N`, resource bounds, and cross-task isolation — see
+[parallel task isolation](ade-parallel-task-isolation.md).
+
 ## Three planes
 
 The **presentation plane** contains a stable agent ID, normalized display text,

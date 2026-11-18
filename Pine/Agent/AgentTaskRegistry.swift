@@ -464,6 +464,95 @@ final class AgentTaskRegistry {
 
     // MARK: - ADE lifecycle and evidence contract (#1722)
 
+    /// Explicit user annotation only. This records a reference to a decision
+    /// already made for an attempt; it does not edit the task goal or criteria.
+    /// `expectedRevision` fences stale editors; nil creates a new annotation.
+    @discardableResult
+    func setDecisionReference(
+        _ record: AgentTaskDecisionReference,
+        expectedRevision: UInt64?,
+        taskID: UUID
+    ) -> Bool {
+        guard !isTerminating, let index = taskIndex(for: taskID),
+              tasks[index].lifecycle != .dismissed, record.isValid,
+              record.recordedAt >= tasks[index].createdAt else { return false }
+        var task = tasks[index]
+        if let existing = task.decisionReferences.firstIndex(where: { $0.id == record.id }) {
+            let previous = task.decisionReferences[existing]
+            guard expectedRevision == previous.revision, previous.revision < UInt64.max,
+                  record.revision == previous.revision + 1,
+                  record.runID == previous.runID, record.kind == previous.kind,
+                  record.recordedAt >= previous.recordedAt else { return false }
+            task.decisionReferences[existing] = record
+        } else {
+            guard expectedRevision == nil, record.revision == 1,
+                  task.runs.contains(where: { $0.id == record.runID }),
+                  task.decisionReferences.count < AgentTaskDecisionReference.maximumCount else { return false }
+            task.decisionReferences.append(record)
+        }
+        task.updatedAt = max(task.updatedAt, record.recordedAt)
+        tasks[index] = task
+        markDirty(task.project)
+        return true
+    }
+
+    /// Removing persisted annotation content never removes result history.
+    @discardableResult
+    func removeDecisionReference(id: UUID, expectedRevision: UInt64, taskID: UUID) -> Bool {
+        guard !isTerminating, let index = taskIndex(for: taskID),
+              tasks[index].lifecycle != .dismissed,
+              let recordIndex = tasks[index].decisionReferences.firstIndex(where: {
+                  $0.id == id && $0.revision == expectedRevision
+              }) else { return false }
+        var task = tasks[index]
+        task.decisionReferences.remove(at: recordIndex)
+        task.updatedAt = max(task.updatedAt, Date())
+        tasks[index] = task
+        markDirty(task.project)
+        return true
+    }
+
+    /// Versioned goal edit. The revision fence rejects stale editors; every
+    /// accepted change bumps `objectiveRevision` and invalidates the current
+    /// verification and acceptance without rewriting history — recorded
+    /// evidence facts and result snapshots keep the identity they were made
+    /// against, and the bumped revision discloses that the goal has since
+    /// moved (#1759). A no-op edit (identical text) succeeds without bumping
+    /// the version or invalidating anything.
+    @discardableResult
+    func setObjective(
+        _ newObjective: String,
+        expectedRevision: UInt64,
+        taskID: UUID,
+        at timestamp: Date = Date()
+    ) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              tasks[index].lifecycle != .dismissed,
+              tasks[index].objectiveRevision == expectedRevision,
+              tasks[index].objectiveRevision < UInt64.max,
+              validUserText(newObjective, maximum: limits.maxObjectiveBytes) else {
+            return false
+        }
+        guard newObjective != tasks[index].objective else { return true }
+        tasks[index].objective = newObjective
+        tasks[index].objectiveRevision += 1
+        tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
+        // Invalidation follows the established contract (see
+        // AgentTaskLifecycleReducer.invalidate): positive state downgrades,
+        // records are never erased. A stale verification cannot re-upgrade
+        // from later facts alone; the verification layer owns explicit
+        // re-verification, and acceptance is never inherited across the
+        // changed goal.
+        if tasks[index].verificationState == .verified
+            || tasks[index].verificationState == .pending {
+            tasks[index].verificationState = .stale
+        }
+        tasks[index].acceptanceState = .notAccepted
+        markDirty(tasks[index].project)
+        return true
+    }
+
     /// Records one bounded evidence fact for a task, enforcing the fencing
     /// contract (attempt identity, process incarnation, provider session
     /// reference, source sequence, chronology, and duplicates). Admitting a
