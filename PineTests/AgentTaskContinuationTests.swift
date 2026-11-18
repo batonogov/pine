@@ -1741,7 +1741,22 @@ struct AgentTaskContinuationTests {
             == .saved(taskCount: 1))
         let loaded = await store.load(project: identity)
         #expect(loaded.status == .loaded)
-        #expect(loaded.tasks.first == task)
+        // Process runtime observations are intentionally not persisted
+        // (base contract: AgentProcessEvidence.init(from:) resets
+        // processIdentifier/startIdentifier/startIsAuthoritative).
+        var expected = task
+        expected.runs = expected.runs.map { run in
+            var r = run
+            r.process = AgentProcessEvidence(
+                processIdentifier: nil,
+                processGeneration: r.process.processGeneration,
+                startIdentifier: nil,
+                observedStartedAt: r.process.observedStartedAt,
+                startIsAuthoritative: false
+            )
+            return r
+        }
+        #expect(loaded.tasks.first == expected)
 
         func expectRejected(_ mutate: (inout AgentTask) -> Void) async {
             var copy = task
