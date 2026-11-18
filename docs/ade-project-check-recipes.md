@@ -10,6 +10,11 @@ contract. A local override takes precedence over the project suggestion. An
 invalid override fails closed rather than running the project's different
 commands. Unknown schemas are rejected; no migration is currently implemented.
 
+The complete recipe contract — prerequisites, setup actions, result actions,
+preparation, and the result-action lifecycle model — is documented in
+[ade-project-recipes.md](ade-project-recipes.md). This check-only kind remains
+its embedded checks section and is unchanged.
+
 The recipe identifies the origin project, not a task worktree. Two isolated
 tasks can select the same recipe, but cannot share a task-scoped command grant.
 Command order, required status, arguments, deadlines, capture declarations and
