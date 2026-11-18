@@ -1983,9 +1983,11 @@ final class ProjectRegistry: LSPSettingsObserver {
                     ), isDir.boolValue else {
                         // Failed history remains owned even if its directory
                         // disappeared. Removing this manager would discard the
-                        // only recoverable pending snapshot.
-                        guard !existing.hasPendingAgentHistory,
-                              !existing.hasPendingCommandResults else { return nil }
+                        // only recoverable pending snapshot. Command results do
+                        // not block: a deleted root can never be persisted to
+                        // again, and the store's rootMissing path releases that
+                        // ownership by design.
+                        guard !existing.hasPendingAgentHistory else { return nil }
                         // Directory was deleted while in background — clean up
                         existing.requestUserTaskShutdown()
                         existing.terminal.terminateAll()

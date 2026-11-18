@@ -822,6 +822,8 @@ final class UserTaskRunStore {
                         resultRecords.removeAll()
                         resultSnapshot = nil
                         savedResultGeneration = resultGeneration
+                        pendingOutputRetentionIDs.removeAll()
+                        outputRetentionRunIDs.removeAll()
                         runs.removeAll { $0.isRestoredResult }
                         return
                     }
