@@ -241,7 +241,7 @@ struct AgentTaskReviewCycleTests {
                 return task
             }
             let granted = try #require(grant)
-            let next = codeState(letter(revision + 1))
+            let next = codeState(letter(revision + 2))
             #expect(AgentTaskReviewOrchestrator.recordImplementerReturn(task: &task,
                 operationID: granted.operationID,
                 codeState: next,
@@ -280,7 +280,7 @@ struct AgentTaskReviewCycleTests {
             }
             if revision < 2 {
                 let granted = try #require(grant)
-                let next = codeState(letter(revision + 1))
+                let next = codeState(letter(revision + 2))
                 #expect(AgentTaskReviewOrchestrator.recordImplementerReturn(task: &task,
                     operationID: granted.operationID,
                     codeState: next,
@@ -1082,7 +1082,8 @@ struct AgentTaskReviewCycleTests {
         var reserved = makeTask(seed: 90, now: Date(), projectPath: fixture.project.path)
         #expect(begin(&reserved, cs: cs))
         let dr = try issueReview(&reserved)
-        let at = Date()
+        // Millisecond-aligned: the store persists dates with millisecond precision.
+        let at = Date(timeIntervalSince1970: 50_000.5)
         guard case .accepted(_, let grant, _) = AgentTaskReviewOrchestrator.acceptReviewerOutcome(task: &reserved,
             event(dr.operationID, passed: false, cs: cs, reference: "res-ref", at: at, sequence: 1)
         ) else {
@@ -1135,7 +1136,11 @@ struct AgentTaskReviewCycleTests {
         // (a) An armed write fault at the round-3 transition: the save is
         // rejected, the file stays byte-identical to the pre-transition
         // state, and a fresh load recovers that state.
-        var terminal = try driveToRound3(93, now: Date(), projectPath: fixture.project.path)
+        var terminal = try driveToRound3(
+            93,
+            now: Date(timeIntervalSince1970: 60_000),
+            projectPath: fixture.project.path
+        )
         #expect(terminal.reviewCycle?.round == 3)
         #expect(terminal.reviewCycle?.state == .awaitingFeedback)
         #expect(await store.save(tasks: [terminal], project: identity) == .saved(taskCount: 1))
@@ -1156,7 +1161,7 @@ struct AgentTaskReviewCycleTests {
                         passed: false,
                         cs: codeState("d"),
                         reference: "arm-final",
-                        at: Date(),
+                        at: Date(timeIntervalSince1970: 60_000.5),
                         sequence: 9
                     )
                 )
