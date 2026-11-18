@@ -593,6 +593,39 @@ final class AgentTaskRegistry {
         return .accepted
     }
 
+    /// Records an explicit logical settlement for a live run whose
+    /// provider process may remain live (#1756, #1795).
+    ///
+    /// The caller proved the turn's aggregate closure and supplies the
+    /// exact authority it was proven against. The registry fences the
+    /// claim to the current task/run/process/source/turn and settles the
+    /// attempt from its evidence. It never fabricates process
+    /// termination: liveness, `endedAt`, and process completion stay
+    /// untouched, and it implies no next-attempt dispatch.
+    @discardableResult
+    func recordLogicalSettlement(
+        _ settlement: AgentTaskLogicalSettlement,
+        taskID: UUID,
+        runID: UUID
+    ) -> AgentTaskLogicalSettlementAdmission {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID) else {
+            return .fencedOut(.unknownRun)
+        }
+        let admission = AgentTaskLifecycleReducer.admitLogicalSettlement(
+            settlement,
+            task: &tasks[index],
+            runID: runID
+        )
+        guard case .accepted = admission else { return admission }
+        tasks[index].updatedAt = max(
+            tasks[index].updatedAt,
+            settlement.settledAt
+        )
+        markDirty(tasks[index].project)
+        return .accepted
+    }
+
     /// Records user acceptance of a settled result. Acceptance is a separate
     /// fact from verification: it closes the task's work and records an
     /// identifiable snapshot, but it never upgrades the recorded outcome or
@@ -641,7 +674,7 @@ final class AgentTaskRegistry {
         tasks[index].acceptanceState = .accepted
         tasks[index].lifecycle = .completed
         tasks[index].attention = .completed
-        tasks[index].completedAt = run.endedAt
+        tasks[index].completedAt = run.settledAt
         tasks[index].executionState = AgentTaskLifecycleReducer.executionState(
             for: tasks[index]
         )
@@ -1422,7 +1455,11 @@ final class AgentTaskRegistry {
                 continue
             }
             tasks[taskIndex].runs[runIndex].liveness = .stale
-            tasks[taskIndex].attention = .none
+            // Detector unavailability does not un-settle a logically
+            // settled run: its outcome attention stays (#1756, #1795).
+            if tasks[taskIndex].runs[runIndex].logicalSettlement == nil {
+                tasks[taskIndex].attention = .none
+            }
             tasks[taskIndex].executionState = AgentTaskLifecycleReducer.executionState(
                 for: tasks[taskIndex]
             )
@@ -2285,7 +2322,12 @@ final class AgentTaskRegistry {
             changed = true
         }
         if changed {
-            task.attention = .none
+            // Relaunch voids channel attention (a waiting request on a dead
+            // channel is not actionable); outcome attention (completed/
+            // failed) is durable history and stays (#1756, #1795).
+            if task.attention == .waitingInput {
+                task.attention = .none
+            }
             if task.lifecycle == .active {
                 task.lifecycle = .paused
             }
@@ -2394,7 +2436,12 @@ final class AgentTaskRegistry {
         }
         task.runs[index].liveness = .terminated
         task.runs[index].endedAt = max(task.runs[index].lastObservedAt, timestamp)
-        task.runs[index].outcome = .superseded
+        // A run already logically settled keeps its recorded outcome: the
+        // outcome is a pure function of the bound evidence, never of the
+        // replacement (#1756, #1795).
+        if task.runs[index].logicalSettlement == nil {
+            task.runs[index].outcome = .superseded
+        }
     }
 
     @discardableResult
@@ -2491,6 +2538,10 @@ final class AgentTaskRegistry {
         to task: inout AgentTask,
         from run: AgentTaskRun
     ) {
+        // A logically settled run keeps its outcome attention: a detector
+        // poll cannot un-settle it or demote it to channel attention
+        // (#1756, #1795).
+        guard run.logicalSettlement == nil else { return }
         let next: AgentTaskAttention
         if run.liveness != .live {
             next = .none
@@ -2601,8 +2652,9 @@ final class AgentTaskRegistry {
               ) else {
             return
         }
-        let alreadySettled = tasks[taskIndex].runs[runIndex].liveness == .terminated
-            && tasks[taskIndex].runs[runIndex].outcome != nil
+        let alreadySettled = tasks[taskIndex].runs[runIndex].logicalSettlement != nil
+            || (tasks[taskIndex].runs[runIndex].liveness == .terminated
+                && tasks[taskIndex].runs[runIndex].outcome != nil)
         tasks[taskIndex].runs[runIndex].liveness = .terminated
         tasks[taskIndex].runs[runIndex].endedAt = max(
             tasks[taskIndex].runs[runIndex].lastObservedAt,
@@ -2618,6 +2670,10 @@ final class AgentTaskRegistry {
         }
         tasks[taskIndex].lifecycle = .paused
         tasks[taskIndex].attention = .none
+        // `completedAt` is one state with `lifecycle == .completed`:
+        // detaching a settled outcome task must clear it, or the
+        // evidence-based store validation rejects every later save.
+        tasks[taskIndex].completedAt = nil
         // The run just terminated: follow it with the stored execution
         // dimension (a terminated latest run presents unknown).
         tasks[taskIndex].executionState = AgentTaskLifecycleReducer.executionState(

@@ -72,6 +72,13 @@ nonisolated enum AgentTaskLifecycleReducer {
 
     static func executionState(for task: AgentTask) -> AgentTaskExecutionState {
         guard let run = task.runs.last else { return .unknown }
+        // A logically settled live run has its closure established by the
+        // provider: no active turn or outstanding request remains, so the
+        // execution dimension is idle — never working — whatever the
+        // detector's last state was (#1756, #1795).
+        if run.logicalSettlement != nil, run.liveness == .live {
+            return .idle
+        }
         return executionState(
             liveness: run.liveness,
             state: run.state,
@@ -170,8 +177,13 @@ nonisolated enum AgentTaskLifecycleReducer {
 
     // MARK: - Settlement
 
+    /// A run is settled when it physically terminated (the legacy basis:
+    /// liveness plus `endedAt`) or when it carries an explicit logical
+    /// settlement (#1756, #1795): a logically settled attempt may retain
+    /// a live provider process.
     static func isSettled(_ run: AgentTaskRun) -> Bool {
         run.liveness == .terminated && run.endedAt != nil
+            || run.logicalSettlement != nil
     }
 
     static func facts(
@@ -319,8 +331,12 @@ nonisolated enum AgentTaskLifecycleReducer {
         task: inout AgentTask,
         runIndex: Int
     ) {
+        // Physical termination only: this records a processCompletion
+        // fact, so the run must really be gone. A live logically
+        // settled run must never flow through here (#1756, #1795).
         guard task.runs.indices.contains(runIndex),
-              isSettled(task.runs[runIndex]) else {
+              task.runs[runIndex].liveness == .terminated,
+              task.runs[runIndex].endedAt != nil else {
             return
         }
         let run = task.runs[runIndex]
@@ -336,6 +352,88 @@ nonisolated enum AgentTaskLifecycleReducer {
             task.evidence.append(completion)
         }
         settleLatestRun(of: &task, runIndex: runIndex)
+    }
+
+    // MARK: - Logical settlement (#1756, #1795)
+
+    /// Shape validity of one logical settlement claim, shared by admission
+    /// and persistence validation: the current scheme, a finite settlement
+    /// time that does not predate the run, a positive process incarnation,
+    /// a positive source position when one is present, and a bounded
+    /// non-empty turn reference. The claim's incarnation must additionally
+    /// equal the run's: admission fences that as `.foreignProcess`, and the
+    /// persistence backstop rejects it.
+    static func validLogicalSettlement(
+        _ settlement: AgentTaskLogicalSettlement,
+        for run: AgentTaskRun
+    ) -> Bool {
+        settlement.scheme == AgentTaskLogicalSettlement.currentScheme
+            && settlement.settledAt.timeIntervalSinceReferenceDate.isFinite
+            && settlement.settledAt >= run.startedAt
+            && settlement.processGeneration > 0
+            && settlement.sourceSequence.map({ $0 > 0 }) ?? true
+            && !settlement.turn.isEmpty
+            && settlement.turn.utf8.count <= AgentTaskLogicalSettlement.maximumTurnReferenceBytes
+            && !settlement.turn.contains("\0")
+    }
+
+    /// Admits an explicit logical settlement for a run whose provider
+    /// process may remain live, and settles the attempt from its evidence.
+    ///
+    /// The settlement is the exact authority the caller proved for the
+    /// turn's aggregate closure: the current attempt, the process
+    /// incarnation, the source position (when the provider documents
+    /// ordered delivery), and the turn reference. A timestamp alone can
+    /// never admit a settlement, and admission never fabricates physical
+    /// termination: liveness, `endedAt`, and process completion stay
+    /// untouched, and the outcome remains a pure function of the bound
+    /// evidence — a settlement without the required facts settles
+    /// `unverified`, never `success`.
+    static func admitLogicalSettlement(
+        _ settlement: AgentTaskLogicalSettlement,
+        task: inout AgentTask,
+        runID: UUID
+    ) -> AgentTaskLogicalSettlementAdmission {
+        guard let runIndex = task.runs.firstIndex(where: { $0.id == runID }) else {
+            return .fencedOut(.unknownRun)
+        }
+        let run = task.runs[runIndex]
+        guard validLogicalSettlement(settlement, for: run) else {
+            return .fencedOut(.invalidClaim)
+        }
+        // Only the task's current attempt can settle logically: an older
+        // attempt's closure is superseded history, never authority over
+        // the live attempt.
+        guard runIndex == task.runs.indices.last else {
+            return .fencedOut(.supersededRun)
+        }
+        guard run.process.processGeneration == settlement.processGeneration else {
+            return .fencedOut(.foreignProcess)
+        }
+        // One settlement per run, physical or logical: a terminated run is
+        // already settled by its legacy basis, and a logically settled run
+        // keeps its first proven closure.
+        guard run.logicalSettlement == nil, run.liveness != .terminated else {
+            return .fencedOut(.alreadySettled)
+        }
+        // Settlement authority comes from a live, authenticated channel: a
+        // stale or replaced run can no longer prove its own closure.
+        guard run.liveness == .live else {
+            return .fencedOut(.notLive)
+        }
+        if let observed = Self.facts(forRun: run.id, in: task)
+                .compactMap(\.sourceSequence).max() {
+            // This run's delivery has documented an ordered source:
+            // a claim without a current source position is a stale
+            // replay, never a live closure.
+            guard let sequence = settlement.sourceSequence,
+                  sequence >= observed else {
+                return .fencedOut(.staleSource)
+            }
+        }
+        task.runs[runIndex].logicalSettlement = settlement
+        settleLatestRun(of: &task, runIndex: runIndex)
+        return .accepted
     }
 
     /// Re-settles the latest run's outcome and the task-level completion
@@ -377,7 +475,10 @@ nonisolated enum AgentTaskLifecycleReducer {
         case .success:
             task.lifecycle = .completed
             task.attention = .completed
-            task.completedAt = latest.endedAt
+            // `settledAt` is the logical settlement time when the attempt
+            // settled while its process stayed live; an eventual physical
+            // exit preserves that original timestamp (#1756, #1795).
+            task.completedAt = latest.settledAt
             // A stale verification never re-upgrades from later facts alone:
             // an invalidated result stays invalidated until an explicit
             // re-verification (the verification layer owns that action).
@@ -393,7 +494,7 @@ nonisolated enum AgentTaskLifecycleReducer {
         case .failure:
             task.lifecycle = .completed
             task.attention = .failed
-            task.completedAt = latest.endedAt
+            task.completedAt = latest.settledAt
             // A failed result cannot stay verified: the verification
             // dimension resets like an unverified settlement.
             task.verificationState = .none
