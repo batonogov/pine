@@ -19,7 +19,7 @@ struct KimiACPSessionTests {
 
     @Test func startBindsSessionAndRecordsEffectiveConfig() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         let snapshot = await fixture.concrete.snapshot()
         #expect(snapshot.state == .idle)
@@ -33,7 +33,7 @@ struct KimiACPSessionTests {
         let fixture = try await makeFixture(
             options: .init(accountGate: { false })
         ).fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         await #expect(throws: KimiACPWireError.authenticationRequired) {
             try await fixture.session.start()
         }
@@ -43,7 +43,7 @@ struct KimiACPSessionTests {
         let fixture = try await makeFixture(
             options: .init(action: .load(sessionID: "kimi_fixture_src"))
         ).fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         let snapshot = await fixture.concrete.snapshot()
         #expect(snapshot.state == .idle)
@@ -58,7 +58,7 @@ struct KimiACPSessionTests {
             options: .init(action: .load(sessionID: "kimi_fixture_src"), foreignReplay: true),
             sessionID: "kimi_fixture_other"
         ).fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         await #expect(throws: KimiACPWireError.invalidProtocol) {
             try await fixture.session.start()
         }
@@ -68,7 +68,7 @@ struct KimiACPSessionTests {
         let fixture = try await makeFixture(
             options: .init(action: .load(sessionID: "kimi_fixture_src"), rejectLoad: true)
         ).fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         await #expect(throws: KimiACPWireError.providerFailure(-32602)) {
             try await fixture.session.start()
         }
@@ -80,7 +80,7 @@ struct KimiACPSessionTests {
         let fixture = try await KimiTestFixture.make(
             options: options, sessionID: "kimi_fixture_new"
         ) { _ in .accepted }
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         await #expect(throws: KimiACPWireError.invalidProtocol) {
             try await fixture.session.start()
         }
@@ -91,7 +91,7 @@ struct KimiACPSessionTests {
             options: .init(action: .fork(sessionID: "kimi_fixture_src")),
             sessionID: "kimi_fixture_src"
         ).fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         let snapshot = await fixture.concrete.snapshot()
         #expect(snapshot.nativeSession?.rawValue == "kimi_fixture_src_forked")
@@ -111,7 +111,7 @@ struct KimiACPSessionTests {
             options: .init(action: .new(additionalDirectories: ["/fixture/shared"])),
             sessionID: "kimi_fixture_new"
         ).fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         let creation = try #require(fixture.transport.writes().first(where: { message in
             if case .request(_, "session/new", _) = message { return true }
@@ -123,7 +123,7 @@ struct KimiACPSessionTests {
 
     @Test func promptFlowProjectsWorkingAndSettlesUnverified() async throws {
         let (fixture, events) = try await makeFixture()
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(
             KimiACPPromptContent(text: "Fixture instruction")
@@ -154,7 +154,7 @@ struct KimiACPSessionTests {
 
     @Test func imageAndResourceContentRequireExplicitCapabilityAndUserSupply() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         let dispatch = try await fixture.concrete.submit(
             KimiACPPromptContent(
@@ -181,7 +181,7 @@ struct KimiACPSessionTests {
         let fixture = try await makeFixture(
             options: .init(imageCapability: false, embeddedContextCapability: false)
         ).fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         await #expect(throws: KimiACPWireError.unsupportedCapability) {
             _ = try await fixture.concrete.submit(
@@ -205,7 +205,7 @@ struct KimiACPSessionTests {
 
     @Test func cancelIsRequestedUntilProviderConfirms() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         let promptID = try #require(fixture.transport.promptRequestIDs.last)
@@ -220,7 +220,7 @@ struct KimiACPSessionTests {
 
     @Test func cancelAnswersPendingRequestsWithCancelledOutcome() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         let promptID = try #require(fixture.transport.promptRequestIDs.last)
@@ -240,7 +240,7 @@ struct KimiACPSessionTests {
 
     @Test func answeredRequestsAreOneShotAndReplayedIdempotently() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         let promptID = try #require(fixture.transport.promptRequestIDs.last)
@@ -274,7 +274,7 @@ struct KimiACPSessionTests {
 
     @Test func staleAndUnsupportedRequestsAreRejectedNotAnswered() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         let promptID = try #require(fixture.transport.promptRequestIDs.last)
@@ -295,7 +295,7 @@ struct KimiACPSessionTests {
 
     @Test func channelLossMidPromptIsUnknownNeverClean() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         _ = try await wait(fixture) { $0.state == .submitted || $0.state == .working }
@@ -311,7 +311,7 @@ struct KimiACPSessionTests {
 
     @Test func inFlightPromptRefusesASecondSubmit() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         _ = try await wait(fixture) { $0.state == .submitted }
@@ -322,7 +322,7 @@ struct KimiACPSessionTests {
 
     @Test func urlModeElicitationIsRejectedSoProviderFallsBack() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         let promptID = try #require(fixture.transport.promptRequestIDs.last)
@@ -340,7 +340,7 @@ struct KimiACPSessionTests {
 
     @Test func secretBearingPayloadsNeverSurfaceInReflection() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         let promptID = try #require(fixture.transport.promptRequestIDs.last)
@@ -371,7 +371,7 @@ struct KimiACPSessionTests {
 
     @Test func cancelledSettleAllowsResubmission() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         let promptID = try #require(fixture.transport.promptRequestIDs.last)
@@ -387,7 +387,7 @@ struct KimiACPSessionTests {
 
     @Test func openAskAtTurnEndFencesUnknown() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         let promptID = try #require(fixture.transport.promptRequestIDs.last)
@@ -409,7 +409,7 @@ struct KimiACPSessionTests {
 
     @Test func truncatedResultKeepsHeadAndFlags() async throws {
         let fixture = try await makeFixture().fixture
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        defer { Task { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) } }
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         let promptID = try #require(fixture.transport.promptRequestIDs.last)
