@@ -370,7 +370,8 @@ struct AgentTaskReviewCycleTests {
         let grant0 = try #require(correction0)
         #expect(grant0.runID == run.id)
         #expect(grant0.terminalID == run.terminalID)
-        #expect(grant0.cycleID == try #require(task.reviewCycle).id)
+        let cycleID = try #require(task.reviewCycle).id
+        #expect(grant0.cycleID == cycleID)
         #expect(grant0.feedbackReference == "finding-1")
         #expect(grant0.baselineCodeState == csA)
         // Reserved before dispatch: no second dispatch of any kind.
@@ -1125,7 +1126,7 @@ struct AgentTaskReviewCycleTests {
         #expect(AgentTaskReviewOrchestrator.requestCancellation(task: &cancelling))
         #expect(cancelling.reviewCycle?.state == .cancellationRequested)
         #expect(cancelling.reviewCycle?.pendingReviewOperation == nil)
-        #expect(cancelling.reviewCycle?.isValid(for: cancelling))
+        #expect(cancelling.reviewCycle?.isValid(for: cancelling) == true)
         #expect(await store.save(tasks: [cancelling], project: identity) == .saved(taskCount: 1))
         let reloadedCancelling = await store.load(project: identity)
         #expect(reloadedCancelling.status == .loaded)
