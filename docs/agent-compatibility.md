@@ -120,9 +120,9 @@ Deliberate boundaries:
 - `session/load` replays bounded history before settling; `session/resume`
   never replays; both start a NEW ACP process and a new Pine attempt/source
   namespace — neither is a reattachment to an old live process.
-- `session-fork` sends only the source session ID: Kimi ignores supplied
-  cwd/directories/MCP on fork, so no environment or configuration change is
-  advertised merely because a request field was accepted.
+- `session/fork` (capability `session-fork`) sends only the source session ID:
+  Kimi ignores supplied cwd/directories/MCP on fork, so no environment or
+  configuration change is advertised merely because a request field was accepted.
 - `additional-directories-new-only` is sent on `session/new` only; Kimi honors
   it there and nowhere else.
 - Prompt content blocks (`text`, `image`, `resource` with text) are included
