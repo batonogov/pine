@@ -66,7 +66,7 @@ struct AgentTaskReviewCycleTests {
     )
 
     private func letter(_ n: Int) -> Character {
-        Character(UnicodeScalar(96 + n) ?? 97)
+        Character(UnicodeScalar(96 + n) ?? UnicodeScalar(97))
     }
 
     private func makeAttempt(
