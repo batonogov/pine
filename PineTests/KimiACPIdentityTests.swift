@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Kimi executable identity and account authority")
 struct KimiACPIdentityTests {
-    private let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory)
+    private let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
         .appending(path: "pine-kimi-identity-\(UUID().uuidString)")
 
     private func makeTree(subdir: String,
@@ -26,7 +26,8 @@ struct KimiACPIdentityTests {
     }
 
     @Test func shebangEntryPinsEntryAndInterpreter() async throws {
-        let (entry, interpreter) = try makeTree(
+        let interpreter = tempRoot.appending(path: "pin/node")
+        let (entry, _) = try makeTree(
             subdir: "pin", entryBody: "#!\(interpreter.path)\n// fixture entry\n"
         )
         defer { cleanup() }
@@ -37,19 +38,19 @@ struct KimiACPIdentityTests {
         // Interpreter replacement must be detected.
         try "#!/bin/sh\nexit 0\n# rotated\n".write(to: interpreter, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: interpreter.path)
-        #expect(throws: KimiACPExecutableError.changed) {
+        await #expect(throws: KimiACPExecutableError.changed) {
             try await identity.revalidate(deadline: deadline)
         }
     }
 
     @Test func nativeMachOMagicIsAcceptedAndPlainScriptRefused() async throws {
-        let (entry, _) = try makeTree(subdir: "native",
-                                      entryBody: "\u{CF}\u{FA}\u{ED}\u{FE}fixture-macho")
+        let (entry, _) = try makeTree(subdir: "native", entryBody: "#!/bin/sh\nexit 0\n")
+        try Data([0xCF, 0xFA, 0xED, 0xFE] + Array("fixture-macho".utf8)).write(to: entry)
         defer { cleanup() }
         let deadline = ContinuousClock.now.advanced(by: .seconds(10))
         _ = try await KimiACPExecutableIdentity.capture(selectedURL: entry, deadline: deadline)
         let (plain, _) = try makeTree(subdir: "plain", entryBody: "console.log('fixture');\n")
-        #expect(throws: KimiACPExecutableError.unsupportedBinary) {
+        await #expect(throws: KimiACPExecutableError.unsupportedBinary) {
             _ = try await KimiACPExecutableIdentity.capture(selectedURL: plain, deadline: deadline)
         }
     }
@@ -58,7 +59,7 @@ struct KimiACPIdentityTests {
         let (entry, _) = try makeTree(subdir: "noexec", entryBody: "#!/bin/sh\nexit 0\n")
         defer { cleanup() }
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: entry.path)
-        #expect(throws: KimiACPExecutableError.unsupportedBinary) {
+        await #expect(throws: KimiACPExecutableError.unsupportedBinary) {
             _ = try await KimiACPExecutableIdentity.capture(
                 selectedURL: entry, deadline: ContinuousClock.now.advanced(by: .seconds(10))
             )
@@ -87,7 +88,7 @@ struct KimiACPIdentityTests {
             """
         )
         let otherIdentity = try await KimiACPExecutableIdentity.capture(selectedURL: other, deadline: deadline)
-        #expect(throws: KimiACPExecutableError.unsupportedVersion) {
+        await #expect(throws: KimiACPExecutableError.unsupportedVersion) {
             try await otherIdentity.probeVersion(at: tempRoot, deadline: deadline)
         }
     }

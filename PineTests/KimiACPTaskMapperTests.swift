@@ -95,7 +95,7 @@ struct KimiACPTaskMapperTests {
                                        params: permission(5).params)
             == .ignored)
         // The digest reference is deterministic for the same wire ID.
-        var second = try mapper()
+        var second = try self.mapper()
         try second.beginPrompt()
         guard case .attention(let secondAttention, _, _) = try second.noteRequest(
             .integer(5), method: "session/request_permission", params: permission(5).params
@@ -161,7 +161,7 @@ struct KimiACPTaskMapperTests {
         // Unknown future kinds are observed and ignored.
         #expect(try mapper.map(update("pine_future_update"), connection: connection).isEmpty)
         // Foreign sessions are ignored, never fatal.
-        let foreign = .notification(method: "session/update", params: .object([
+        let foreign: CodexAppServerMessage = .notification(method: "session/update", params: .object([
             "sessionId": .string("kimi_fixture_other"),
             "update": .object(["sessionUpdate": .string("agent_message_chunk")])
         ]))
@@ -224,7 +224,7 @@ struct KimiACPTaskMapperTests {
     @Test func unsupportedMethodsNeverReachAttention() throws {
         var mapper = try mapper()
         try mapper.beginPrompt()
-        let fs = .request(.integer(14), method: "fs/read_text_file",
+        let fs: CodexAppServerMessage = .request(.integer(14), method: "fs/read_text_file",
                           params: .object(["sessionId": .string(sessionID)]))
         #expect(try mapper.noteRequest(.integer(14), method: "fs/read_text_file",
                                        params: fs.params)

@@ -81,7 +81,7 @@ struct KimiACPConnectionTests {
         )
         let first = try connection.receive(request, connection: connection.identity) { _ in }
         #expect(first == .serverRequest(.integer(40), method: "session/request_permission",
-                                        params: request.params))
+                                        params: .object(["sessionId": .string("kimi_fixture_new")])))
         let second = try connection.receive(request, connection: connection.identity) { _ in }
         #expect(second == .duplicateRequest)
         let prepared = try connection.prepareAnswer(.integer(40),

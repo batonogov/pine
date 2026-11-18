@@ -30,9 +30,8 @@ struct KimiACPWireTests {
                                                     params: .object(["a": .string("b")]))
         let bytes = try KimiACPWire.encode(message)
         #expect(bytes.last == 10)
-        let fields = try KimiACPWire.object(
-            AgentEventJSONParser(data: bytes.dropLast()).parse()
-        )
+        var parser = AgentEventJSONParser(data: bytes.dropLast())
+        let fields = try KimiACPWire.object(parser.parse())
         #expect(fields["jsonrpc"] == .string("2.0"))
         #expect(fields["method"] == .string("session/prompt"))
         // Round-trips through the shared parser.

@@ -129,7 +129,7 @@ nonisolated struct KimiACPExecutableIdentity: Equatable, Sendable,
             } else {
                 // The kernel execs the interpreter for shebang entries.
                 guard let interpreterPath else {
-                    matches = false
+                    throw KimiACPExecutableError.changed
                 }
                 matches = lstat(value, &info) == 0 && value == interpreterPath
                     && interpreterStamp.map { Stamp(info) == $0 } ?? false
@@ -155,7 +155,7 @@ nonisolated struct KimiACPExecutableIdentity: Equatable, Sendable,
               before.st_size >= 4, before.st_size <= maximumEntryBytes else {
             throw KimiACPExecutableError.unsupportedBinary
         }
-        var buffer = [UInt8](repeating: 0, count: Int(min(before.st_size, 16)))
+        var buffer = [UInt8](repeating: 0, count: Int(min(before.st_size, 2 + 512 + 1)))
         guard read(descriptor, &buffer, buffer.count) == buffer.count else {
             throw KimiACPExecutableError.unavailable
         }
@@ -163,8 +163,7 @@ nonisolated struct KimiACPExecutableIdentity: Equatable, Sendable,
         let interpreter: (path: String, stamp: Stamp)?
         if buffer[0] == 35, buffer[1] == 33 {
             // Shebang entry: pin the interpreter the kernel will exec.
-            let line = String(bytes: buffer, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let line = String(bytes: buffer.prefix { $0 != 10 && $0 != 13 }, encoding: .utf8) ?? ""
             let parts = line.dropFirst(2).split(separator: " ", omittingEmptySubsequences: true)
             guard let first = parts.first, first.first?.isASCII == true,
                   first.utf8.count >= 2, first.utf8.count <= 512 else {
@@ -196,8 +195,9 @@ nonisolated struct KimiACPExecutableIdentity: Equatable, Sendable,
         }
         let expected = Stamp(before)
         var hasher = SHA256()
+        hasher.update(data: Data(buffer))
         var chunk = [UInt8](repeating: 0, count: 256 * 1_024)
-        var total = 0
+        var total = buffer.count
         while true {
             guard ContinuousClock.now < deadline else { throw KimiACPExecutableError.unavailable }
             let count = Darwin.read(descriptor, &chunk, chunk.count)

@@ -33,8 +33,8 @@ struct KimiACPSessionTests {
         let fixture = try await makeFixture(
             options: .init(accountGate: { false })
         ).fixture
-        await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
-        #expect(throws: KimiACPWireError.authenticationRequired) {
+        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        await #expect(throws: KimiACPWireError.authenticationRequired) {
             try await fixture.session.start()
         }
     }
@@ -58,8 +58,8 @@ struct KimiACPSessionTests {
             options: .init(action: .load(sessionID: "kimi_fixture_src"), foreignReplay: true),
             sessionID: "kimi_fixture_other"
         ).fixture
-        await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
-        #expect(throws: KimiACPWireError.invalidProtocol) {
+        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        await #expect(throws: KimiACPWireError.invalidProtocol) {
             try await fixture.session.start()
         }
     }
@@ -68,8 +68,8 @@ struct KimiACPSessionTests {
         let fixture = try await makeFixture(
             options: .init(action: .load(sessionID: "kimi_fixture_src"), rejectLoad: true)
         ).fixture
-        await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
-        #expect(throws: KimiACPWireError.providerFailure(-32602)) {
+        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        await #expect(throws: KimiACPWireError.providerFailure(-32602)) {
             try await fixture.session.start()
         }
     }
@@ -80,8 +80,8 @@ struct KimiACPSessionTests {
         let fixture = try await KimiTestFixture.make(
             options: options, sessionID: "kimi_fixture_new"
         ) { _ in .accepted }
-        await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
-        #expect(throws: KimiACPWireError.invalidProtocol) {
+        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
+        await #expect(throws: KimiACPWireError.invalidProtocol) {
             try await fixture.session.start()
         }
     }
@@ -173,8 +173,8 @@ struct KimiACPSessionTests {
             Issue.record("Expected prompt content blocks"); return
         }
         #expect(blocks.count == 3)
-        #expect(blocks[1]["type"] == .string("image"))
-        #expect(blocks[2]["type"] == .string("resource"))
+        #expect(try KimiACPWire.object(blocks[1])["type"] == .string("image"))
+        #expect(try KimiACPWire.object(blocks[2])["type"] == .string("resource"))
     }
 
     @Test func capabilityGatedContentIsRefusedBeforeSubmission() async throws {
@@ -183,7 +183,7 @@ struct KimiACPSessionTests {
         ).fixture
         defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(1))) }
         try await fixture.session.start()
-        #expect(throws: KimiACPWireError.unsupportedCapability) {
+        await #expect(throws: KimiACPWireError.unsupportedCapability) {
             _ = try await fixture.concrete.submit(
                 KimiACPPromptContent(
                     text: "Fixture instruction",
@@ -191,7 +191,7 @@ struct KimiACPSessionTests {
                 )
             )
         }
-        #expect(throws: KimiACPWireError.unsupportedCapability) {
+        await #expect(throws: KimiACPWireError.unsupportedCapability) {
             _ = try await fixture.concrete.submit(
                 KimiACPPromptContent(
                     text: "Fixture instruction",
@@ -257,11 +257,13 @@ struct KimiACPSessionTests {
         })
         // Redelivery replays the exact cached bytes and does not re-open the ask.
         fixture.transport.push(permission(wireID: 41))
-        _ = try await wait(fixture) { $0.questions.isEmpty }
+        _ = try await wait(fixture) { _ in
+            ((try? fixture.transport.writes().filter { $0 == answerWrite }.count) ?? 0) >= 2
+        }
         let replayed = try #require(try fixture.transport.lastWrite { $0 == answerWrite })
         #expect(replayed == answerWrite)
         // A second answer attempt must fail: one-shot.
-        #expect(throws: KimiACPWireError.self) {
+        await #expect(throws: KimiACPWireError.self) {
             _ = try await fixture.concrete.answerPermission(
                 question.request, context: question.context, decision: .allowOnce
             )
@@ -280,13 +282,13 @@ struct KimiACPSessionTests {
         _ = try await wait(fixture) { $0.state == .unverified }
         // Stale: a permission request with no active prompt.
         fixture.transport.push(permission(wireID: 42))
-        _ = try await wait(fixture) { $0.questions.isEmpty }
+        _ = try await wait(fixture) { _ in rejectsWrite(fixture, wireID: 42) }
         #expect(rejectsWrite(fixture, wireID: 42))
         // Unsupported reverse-RPC: fs is not owned by Pine.
         fixture.transport.push(.request(.integer(43), method: "fs/read_text_file", params: .object([
             "sessionId": .string("kimi_fixture_new"), "path": .string("/fixture/file.txt")
         ])))
-        _ = try await wait(fixture) { $0.questions.isEmpty }
+        _ = try await wait(fixture) { _ in rejectsWrite(fixture, wireID: 43) }
         #expect(rejectsWrite(fixture, wireID: 43))
         #expect((await fixture.concrete.snapshot()).state == .unverified)
     }
@@ -302,7 +304,7 @@ struct KimiACPSessionTests {
         #expect(lost.state == .unknown)
         #expect(lost.result == "fixture-output" || lost.result.isEmpty)
         // No clean re-open: input on a lost channel is refused.
-        #expect(throws: KimiACPWireError.self) {
+        await #expect(throws: AdapterSessionError.invalidLifecycle) {
             _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture again"))
         }
     }
@@ -313,7 +315,7 @@ struct KimiACPSessionTests {
         try await fixture.session.start()
         _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture instruction"))
         _ = try await wait(fixture) { $0.state == .submitted }
-        #expect(throws: KimiACPWireError.self) {
+        await #expect(throws: KimiACPWireError.self) {
             _ = try await fixture.concrete.submit(KimiACPPromptContent(text: "Fixture duplicate"))
         }
     }
@@ -330,7 +332,7 @@ struct KimiACPSessionTests {
             "url": .string("https://fixture.example/authorize"),
             "message": .string("Fixture authorize")
         ])))
-        _ = try await wait(fixture) { $0.questions.isEmpty }
+        _ = try await wait(fixture) { _ in rejectsWrite(fixture, wireID: 44) }
         #expect(rejectsWrite(fixture, wireID: 44))
         fixture.transport.push(.response(promptID, result: .object(["stopReason": .string("end_turn")])))
         _ = try await wait(fixture) { $0.state == .unverified }
@@ -445,8 +447,8 @@ struct KimiACPSessionTests {
         #expect(throws: KimiACPWireError.self) { try fixture.transport.validate() }
     }
 
-    private func rejectsWrite(_ fixture: KimiTestFixture, wireID: Int64) -> Bool {
-        guard let rejected = try? fixture.transport.lastWrite({ message in
+    nonisolated private func rejectsWrite(_ fixture: KimiTestFixture, wireID: Int64) -> Bool {
+        guard let rejected = try? fixture.transport.lastWrite(matching: { message in
             if case .failure(let id, let code) = message {
                 return id == .integer(wireID) && code == -32601
             }

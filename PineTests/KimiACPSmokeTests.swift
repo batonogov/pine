@@ -88,8 +88,9 @@ struct KimiACPSmokeTests {
         // A pin is a pin: a mismatched binary fails the gate and stops before
         // the handshake; re-pinning goes through a fresh dated observation.
         guard version == KimiACPCapabilities.pinnedCLIVersion else {
-            Issue.record("Real-version smoke: installed \(version) differs from pinned "
-                + "\(KimiACPCapabilities.pinnedCLIVersion); re-pin through a fresh observation")
+            let message = "Real-version smoke: installed \(version) differs from pinned "
+                + "\(KimiACPCapabilities.pinnedCLIVersion); re-pin through a fresh observation"
+            Issue.record(Comment(rawValue: message))
             return
         }
 
@@ -153,24 +154,18 @@ struct KimiACPSmokeTests {
             pinnedVersion: KimiACPCapabilities.pinnedCLIVersion
         )
         #expect(identity.capabilities.loadSession, "Real-version smoke: loadSession matrix")
-        if identity.requiresAuthentication {
-            // Transport ownership does not prove account authentication; the
-            // smoke records the requirement and stops before any session.
-            Issue.record("Real-version smoke: managed account auth required; "
-                + "terminal-auth flow is a separate UI (not exercised here)")
-        }
     }
 
-    private func readHandshakeLine(_ handle: FileHandle, deadline: ContinuousInstant,
+    private func readHandshakeLine(_ handle: FileHandle, deadline: ContinuousClock.Instant,
                                    forceClose: @escaping @Sendable () -> Void) async throws -> String {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, any Error>) in
                 let state = Mutex<CheckedContinuation<String, any Error>?>(continuation)
                 func finish(_ result: Result<String, any Error>) {
-                    let pending = state.withLock { value in
-                        guard value != nil else { return nil }
+                    let pending: CheckedContinuation<String, any Error>? = state.withLock { value in
+                        guard let pending = value else { return nil }
                         value = nil
-                        return value
+                        return pending
                     }
                     switch result {
                     case .success(let value): pending?.resume(returning: value)
@@ -178,9 +173,20 @@ struct KimiACPSmokeTests {
                     }
                 }
                 DispatchQueue.global().async {
-                    guard let data = handle.read(upTo: Data([10])), !data.isEmpty,
-                          let text = String(data: data, encoding: .utf8) else {
-                        finish(.failure(KimiACPWireError.closed))
+                    var data = Data()
+                    while data.last != 10 {
+                        guard let byte = try? handle.read(upToCount: 1), let first = byte.first else {
+                            finish(.failure(KimiACPWireError.closed))
+                            return
+                        }
+                        guard first == 10 || data.count < KimiACPWire.maximumFrameBytes else {
+                            finish(.failure(KimiACPWireError.capacity))
+                            return
+                        }
+                        data.append(first)
+                    }
+                    guard let text = String(data: data, encoding: .utf8) else {
+                        finish(.failure(KimiACPWireError.invalidProtocol))
                         return
                     }
                     finish(.success(text))

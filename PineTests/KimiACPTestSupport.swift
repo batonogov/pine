@@ -3,6 +3,17 @@ import Synchronization
 import Testing
 @testable import Pine
 
+extension CodexAppServerMessage {
+    var params: AgentEventJSON {
+        switch self {
+        case let .request(_, _, params), let .notification(_, params):
+            return params
+        case .response, .failure:
+            preconditionFailure("Only requests and notifications carry params")
+        }
+    }
+}
+
 // MARK: - Scripted transport
 
 /// Message-level scripted Kimi ACP provider. It auto-answers bootstrap
@@ -291,20 +302,14 @@ nonisolated struct KimiTestFixture: Sendable {
         )
         let recorder = KimiSessionRecorder()
         let factory = KimiFixtureFactory(
-            id: AdapterFactoryID(validating: "kimiAcpFixture"),
+            id: try AdapterFactoryID(validating: "kimi-acp-fixture"),
             transport: transport, recorder: recorder, options: options
         )
         let version = PineAdapterContractVersion(major: 1, minor: 1)
         let range = PineAdapterContractVersionRange(minimum: version, maximum: version)
-        let presentation = try AgentPresentationDescriptor(
-            agentID: AgentID(validating: "kimiCode"), displayName: "Kimi Code",
-            executableAliases: Set([
-                ExecutableAlias(validating: "kimi"), ExecutableAlias(validating: "kimi-code")
-            ]),
-            style: .generic
-        )
+        let presentation = try #require(try AgentPresentationCatalog.builtIn(stableIdentifier: "kimiCode"))
         let descriptor = try AdapterDescriptor(
-            adapterID: AdapterID(validating: "kimiAcp"),
+            adapterID: AdapterID(validating: "kimi-acp"),
             agentID: presentation.agentID,
             factoryID: factory.id,
             contractVersions: range,
