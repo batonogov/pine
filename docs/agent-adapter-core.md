@@ -150,6 +150,34 @@ fields; none keeps a parallel status store.
   closes the work and snapshots the identity, but never upgrades the
   outcome or the verification state.
 
+**State table.** The canonical meanings, one row per state. "Established
+by" is the only evidence that may produce the state; everything else —
+including process exit, terminal silence, and an agent claim — produces
+`unknown`/`unverified` instead.
+
+| State | Meaning | Established by | Never established by |
+| --- | --- | --- | --- |
+| execution `working` | The current attempt has an unresolved active turn | a live run with observed active state | silence, a queued delta, a claim |
+| execution `blocked` | A current live authenticated attempt has an unresolved question or approval request | a live, authenticated, positive provider request | transport loss (execution degrades to `unknown`; the historical request is not actionable until revalidated) |
+| execution `idle` | A current live session has no active turn or outstanding request | positive provider state or reconciliation for the current attempt | terminal silence, process exit, a quiet stream (stays `unknown`) |
+| execution `unknown` | Current execution evidence is absent, stale, contradictory, or unsupported | the default; any gap in positive evidence | — (fail-closed default) |
+| outcome `success` | A settled attempt with an agent-reported completion plus ALL required independent evidence bound to one shared code-state identity | `settleOutcome` over bound facts | process exit, silence, a claim alone |
+| outcome `failure` | A settled attempt whose claim a failing independent fact bound to the claim's own code state vetoes | a bound failing check or reviewer fact | a claim alone, a failing fact bound to an older state |
+| outcome `cancellation` | The user cancelled the attempt | a `userCancellation` fact | provider silence |
+| outcome `superseded` | The attempt was replaced by a newer one on the same route | run replacement (PID/process incarnation change) | a late event from the replaced process |
+| outcome `unverified` | An attempt ended or reported completion without all required independent evidence | the default settlement for any gap | optimistic presentation as success |
+| attention `none` / `isUnread` | No outstanding review signal / an unread transition exists | the settled outcome and attention transitions | — |
+| verification `none` / `pending` / `verified` / `stale` | No evidence recorded / re-verification in flight / required evidence complete and bound to the current identities / invalidated by a relevant change or relaunch | recording the required passing evidence (via shared settlement) or the verification layer's explicit actions | any later fact alone re-upgrading `stale` |
+| acceptance `notAccepted` / `accepted` | The user did not / did accept the recorded result | `recordUserAcceptance` with caller-proven identities | inheritance across relevant changes or attempts |
+
+**Invariants.** No transition maps process exit, terminal silence, or an
+agent claim directly to Ready. A finished attempt without required
+verification is explicitly `unverified`. Missing positive idle evidence is
+`unknown`, never `idle`. Ready is derived only from current required
+evidence and is never stored. Unknown future raw values decode fail-closed
+(`executionState` to `unknown`, `outcome` to `unverified`,
+`verificationState` to `stale`, `acceptanceState` to `notAccepted`).
+
 **Evidence facts.** `AgentTaskEvidenceFact` is one bounded fact bound to one
 attempt: kind (`processCompletion`, `agentReportedCompletion`,
 `independentCheck`, `reviewerOutcome`, `userAcceptance`,
@@ -182,6 +210,38 @@ observed timestamp quantized to millisecond precision, stable across the
 persistence encoding. Facts are also bounded (64 per task) at admission.
 Late, duplicate, replayed, nested, and foreign-provider events cannot settle
 a different or newer attempt.
+
+**Ordering and delivery.** Ordered/source-cursor delivery is negotiated ONLY
+when the provider documents a real lifecycle sequence and a replay cursor
+(the adapter profile carries both; replay without ordering is rejected at
+profile construction). Otherwise the delivery is unordered/no-replay:
+deduplication is scoped to the event identity (source sequence alone for
+ordered streams; the observed timestamp quantized to millisecond precision
+for unordered ones), and current state is re-established by reconciliation
+rather than by replay. Legitimate cross-scope reordering — facts of
+different attempts or runs arriving out of chronology — is admitted, never
+rejected: the fence orders facts only within their own attempt (identity,
+incarnation, session reference, chronology from the run start). Source
+sequences are never manufactured from arrival order: an unordered stream
+carries none, and an ordered stream that delivers a delta without a
+sequence fails closed at the hydration barrier rather than inventing one.
+
+**Hydration barrier.** A structured stream reconnecting to an already-live
+attempt hydrates through a race-free barrier
+(`AgentTaskHydrationBarrier`): the caller buffers incoming deltas while it
+obtains the reconciled current state of one attempt (outstanding turns and
+requests reconciled, attempt and vendor-session identity revalidated — the
+`AgentTaskHydrationSnapshot`), then applies only the buffered deltas proven
+newer within the same attempt: for ordered delivery, source sequences above
+the fetched state's watermark; for unordered delivery, the shared fence
+alone. At-or-below-watermark deltas are stale replays and are dropped; an
+ordered delta without a sequence is unprovable and is dropped. A snapshot
+that references an unknown attempt, a mismatched incarnation, or a vendor
+session that does not revalidate fences every delta and applies nothing,
+including its execution state; a snapshot of a replaced attempt never
+overwrites the current attempt's view. A quiet stream reconciles to
+`unknown`, never to a positive state, and never settles an outcome:
+silence is not completion.
 
 **Ready.** Ready is derived, never stored, and exists only from current
 required evidence: a settled `success` outcome, current `verified`
@@ -226,6 +286,19 @@ the same durable task snapshot, so a persisted write can never contain
 dependent positive evidence without its invalidation; a crash between a
 mutation and the metadata write leaves only the previous consistent state.
 
+**Crash ordering.** When one operation touches more than one durable
+surface, the task metadata — invalidation plus new-attempt state — must be
+durable BEFORE the dependent positive evidence (the fact recorded after the
+invalidation, or a provenance-journal record referencing the attempt). A
+crash between the metadata write and the journal/evidence write fails
+closed: recovery sees the durable invalidation without the dependent
+evidence, refuses Ready, and never adopts evidence whose durable attempt
+basis it cannot prove. Provenance-journal records are provenance history,
+not a promotion path into the task model: a journal record whose attempt is
+absent from the durable metadata is never adopted as evidence. Evidence
+that does land later re-settles through the shared fence and still cannot
+re-upgrade a stale verification on its own.
+
 **Durable relationship.** The task itself carries the bindings that survive
 individual runs. A task-level `environment` identity (the `bindEnvironment`
 seam, caller-proven and revalidated on every save and load) is the slot the
@@ -240,6 +313,16 @@ in that project (`rememberedAgentDescriptor(for:)`): an explicit choice at
 launch time always wins, and task dismissal and the retention sweep never
 erase the envelope state.
 
+**Integration deferral.** The composed UI/integration scenario from the
+additional acceptance criteria — create a task in a selected project with
+the remembered agent, record feedback/check/review/result metadata,
+relaunch, and continue without rebuilding context — is deferred to #1761
+(integrated acceptance); there is no composed UI test in this slice by
+design. Its legs are pinned separately: registry-level relaunch and
+continuation in a selected project with the remembered agent (base), and
+relaunch over real storage of the durable relationship with fail-closed
+crash ordering (this slice).
+
 **Recovery.** Application restoration loads the durable metadata and
 normalizes it fail-closed before any surface may present it: live execution
 evidence degrades to `unknown`, current `verified`/`pending` verification to
@@ -250,6 +333,20 @@ with an already-live process and an authenticated channel whose identity is
 revalidated (the structured layer, #1723). Starting a new agent process —
 including native provider resume — always requires explicit user action and
 creates a new run and source namespace, never a continuation of a lost one.
+
+**Legacy `.done` and task-completed notifications.** The run state `.done`
+and the legacy task-completed notification mean only that an agent reported
+or appeared to finish. They are observations, not evidence facts: a
+terminated `.done` run with no recorded facts settles `unverified`, and the
+legacy `.completed` notification kind may still fire for compatibility, but
+it never migrates into the new model — it does not record an
+`agentReportedCompletion` fact, does not upgrade the outcome or the
+verification state, and never establishes Ready. No verified-result or
+Ready notification kind exists: the notification surface is exactly
+`waitingInput`, `failed`, `completed` (legacy), and `processEnded`. At the
+persistence level the legacy completed state (completed lifecycle and
+attention without a recorded outcome and evidence basis) is rejected as
+invalid metadata rather than migrated.
 
 **Code-state and environment identity.** `AgentTaskCodeStateIdentity` is
 computed under content scheme 2: the worktree HEAD and framed hashes of actual
@@ -265,19 +362,49 @@ input/output declarations, editor preflight, and unsupported states. Provider-su
 until recomputed beneath the authorized no-follow root; the registry seams
 take caller-proven identities only.
 
-**Data classification and logs.** Every new durable field is bounded and
-content-free:
+**Data classification, retention, and logs.** Every durable field of the
+task model is classified, bounded, and content-free: the model persists
+bounded redacted metadata and references — never transcripts, prompts,
+file contents, environment values, visual attachments, or credentials.
+"Provider transmission" is what leaves Pine toward the provider: the model
+transmits only the opaque vendor identity (one argv element) and the launch
+executable; task content (title, objective, feedback) is never transmitted
+by the task model. Notification content is exactly the transition events'
+bounded fields (catalog display name ≤64 B, project name = last path
+component ≤80 B, title ≤120 B, elapsed time, and the UUID/generation
+routing keys); no field value, path, prompt, or output reaches a
+notification body. Logs emit valueless diagnostics only — rejection
+reasons and notification routing IDs — never field values, paths, labels,
+vendor identifiers, or event payloads.
 
-| Field | Class | Bound | Redaction | Notifications | Logs |
-| --- | --- | --- | --- | --- | --- |
-| task `environment` | identity | OS/tool identity ≤64 B each + 64-hex config fingerprint | opaque identifiers, never values | not emitted | not logged |
-| task `feedback` | reference | ≤32 records × ≤256 B reference | provider id or hash, never text | not emitted | not logged |
-| fact `pre/postOperationCodeState` | identity | 2 × code-state identity | fingerprints only | not emitted | not logged |
-| envelope `rememberedAgent` | identity | descriptor bounds (≤128 B identifier, ≤128 B executable) | stable identifier + executable name | not emitted | not logged |
+| Field | Class | Bound | Redaction | Provider transmission | Notifications | Logs |
+| --- | --- | --- | --- | --- | --- | --- |
+| task/run/route IDs, `paneID`, `tabID`, `terminalID` | identity | UUID | n/a | not transmitted | `userInfo` routing keys only | task/run UUID in rejection lines only |
+| `project.canonicalProjectPath` / `canonicalWorktreePath` | path | canonical absolute path | mode-0600 file only; never re-exposed | not transmitted | last path component ≤80 B | not logged |
+| `presentationContext.terminalLabel` | reference | ≤256 B, no NUL/CR/LF | the terminal's stable label only — never OSC title, cwd, command line, prompt, or output | not transmitted | quick-terminal project name only | not logged |
+| `descriptor.typeIdentifier` / `launchExecutable` | identity | ≤128 B each | stable catalog identifier + executable name | launch executable only | catalog display name ≤64 B | not logged |
+| `title` | text | ≤256 B | user-provided; sanitized for notification (control/newline removal, ≤120 B) | not transmitted | ≤120 B in body | not logged |
+| `objective` | text | ≤2048 B | user-provided | not transmitted | not emitted | not logged |
+| `runs[].process` (`processIdentifier`, `processGeneration`, `startIdentifier`, `observedStartedAt`) | observation | pid, generation, ≤512 B start, date | process observation; never provider-trusted beyond fencing | not transmitted | `generation` routing key | not logged |
+| `runs[].vendorIdentity` (`provider`, `opaqueIdentifier`, `executableVersion`) | opaque reference | ≤128 B / ≤1024 B / ≤256 B | opaque vendor identity; never rendered; one argv element at launch | the opaque identity, re-probed version-gated | not emitted | not logged |
+| `runs[].state` / `liveness` / `outcome`, `executionState`, `verificationState`, `acceptanceState`, `lifecycle`, `attention`, `isUnread`, timestamps | derived/attention | enum / date | n/a | not transmitted | event kind only (no field values) | not logged |
+| `evidence[]` facts | evidence | 64 facts/task; 12 bounded fields each | hashes, fingerprints, and identifiers only — no payload, transcript, prompt, or output | structured adapter records facts; never raw event payloads | not emitted | not logged |
+| `reviewedSnapshot` / `acceptedSnapshot` | identity | 1 code-state + environment identity each | fingerprints only | not transmitted | not emitted | not logged |
+| task `environment` | identity | OS/tool identity ≤64 B each + 64-hex config fingerprint | opaque identifiers, never environment values | not transmitted | not emitted | not logged |
+| `feedback[]` | reference | ≤32 records × ≤256 B reference | provider id or hash, never feedback text | not transmitted | not emitted | not logged |
+| `worktreeSetup` checkpoint | identity | scheme 1 bounded proofs | filesystem object/repository proofs, no contents | not transmitted | not emitted | not logged |
+| envelope `rememberedAgent` | identity | descriptor bounds (≤128 B identifier, ≤128 B executable) | stable identifier + executable name | not transmitted | not emitted | not logged |
 
-The delta adds no log lines; the pre-existing rejection-enum log lines
-emit valueless diagnostics only — no field value, path, or identifier is
-logged.
+**Retention.** Per project: ≤200 tasks, ≤1 MiB metadata file, ≤50 runs per
+task (trimming keeps the latest), ≤64 evidence facts, ≤32 feedback records.
+The registry's in-memory run-ID merge index (`historicalTaskIDByRunID`) is
+additionally bounded at 8 192 references — a load-time admission bound, not
+persisted references. The retention sweep dismisses a
+fully settled task (paused or completed, route missing, no live run, no
+pending claim) only after its last honest timestamp is at least 7 days old;
+dismissal keeps the durable metadata until the per-project cap reclaims it.
+Journal-side retention belongs to the provenance store's own bounded limits
+(count/byte/quarantine), never to the task model.
 
 **Legacy evidence.** Facts without an environment or operation fingerprints
 remain admissible as historical metadata. They cannot establish Ready or

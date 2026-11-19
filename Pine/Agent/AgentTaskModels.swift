@@ -645,6 +645,48 @@ nonisolated struct AgentTaskResultSnapshot: Codable, Hashable, Sendable {
     let recordedAt: Date
 }
 
+/// Explicit logical settlement of an attempt that may retain a live
+/// provider process (#1756, #1795).
+///
+/// A provider can close a turn with proven aggregate closure while its
+/// process stays live. This metadata is the durable basis for a live
+/// run's recorded outcome, fenced to the exact authority that proved the
+/// closure. It never fabricates physical termination: the run's
+/// `liveness` and `endedAt` stay untouched until the process actually
+/// exits, and no `processCompletion` fact is recorded on admission. The
+/// settlement timestamp is authoritative for the attempt's completion
+/// time; an eventual physical exit preserves it.
+nonisolated struct AgentTaskLogicalSettlement: Codable, Equatable, Hashable, Sendable {
+    static let currentScheme: UInt8 = 1
+    static let maximumTurnReferenceBytes = 256
+
+    let scheme: UInt8
+    /// When Pine recorded the settlement.
+    let settledAt: Date
+    /// The process incarnation the closure was proven against; must equal
+    /// the run's `process.processGeneration`.
+    let processGeneration: UInt64
+    /// The ordered-delivery position of the closure observation, when the
+    /// provider documents one. `nil` for unordered/no-replay delivery.
+    let sourceSequence: UInt64?
+    /// Bounded opaque provider turn reference the closure was proven for —
+    /// a redacted identity, never a transcript, command, or secret.
+    let turn: String
+
+    init(
+        settledAt: Date,
+        processGeneration: UInt64,
+        sourceSequence: UInt64?,
+        turn: String
+    ) {
+        scheme = Self.currentScheme
+        self.settledAt = settledAt
+        self.processGeneration = processGeneration
+        self.sourceSequence = sourceSequence
+        self.turn = turn
+    }
+}
+
 /// One bounded, content-free feedback record for a task (#1722).
 ///
 /// `reference` is a bounded redacted reference — a provider message
@@ -728,6 +770,30 @@ nonisolated enum AgentTaskEvidenceFence: String, Sendable, Equatable {
 nonisolated enum AgentTaskEvidenceAdmission: Sendable, Equatable {
     case accepted
     case fencedOut(AgentTaskEvidenceFence)
+}
+
+/// Why a logical settlement claim was fenced (#1756, #1795).
+nonisolated enum AgentTaskLogicalSettlementFence: String, Sendable, Equatable {
+    /// The claim violates its shape or authority contract.
+    case invalidClaim
+    /// The claim's run does not belong to this task.
+    case unknownRun
+    /// The claim's run is not the task's current (latest) attempt.
+    case supersededRun
+    /// The claim's process incarnation differs from the run's.
+    case foreignProcess
+    /// The run is already settled (logically or physically).
+    case alreadySettled
+    /// The run is no longer live: its channel authority is gone.
+    case notLive
+    /// Ordered delivery: the claim's source position predates an already
+    /// observed event for this run (a stale replay).
+    case staleSource
+}
+
+nonisolated enum AgentTaskLogicalSettlementAdmission: Sendable, Equatable {
+    case accepted
+    case fencedOut(AgentTaskLogicalSettlementFence)
 }
 
 /// Process-start evidence that prevents PID reuse from extending an old run.
@@ -824,8 +890,21 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
     var vendorIdentity: AgentVendorSessionIdentity?
     var lifecycleAccuracy: FirstPartyAgentNotificationAccuracy
     /// Recorded outcome of this attempt. `nil` while the attempt is in
-    /// flight; only a settled attempt may carry one (#1722).
+    /// flight; only a settled attempt may carry one (#1722). A live run
+    /// may carry an outcome only with an explicit logical settlement
+    /// (#1756, #1795).
     var outcome: AgentTaskOutcome?
+    /// Explicit logical settlement of this attempt, when the provider
+    /// proved the turn's aggregate closure while the process stayed live
+    /// (#1756, #1795). Additive: metadata persisted before this field
+    /// decodes to nil.
+    var logicalSettlement: AgentTaskLogicalSettlement?
+
+    /// Authoritative settlement timestamp: the explicit logical settlement
+    /// time when present, otherwise the physical termination time.
+    var settledAt: Date? {
+        logicalSettlement?.settledAt ?? endedAt
+    }
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -839,6 +918,7 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
         case vendorIdentity
         case lifecycleAccuracy
         case outcome
+        case logicalSettlement
     }
 
     init(_ input: AgentTaskRunInput) {
@@ -855,6 +935,7 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
         vendorIdentity = nil
         lifecycleAccuracy = input.lifecycleAccuracy
         outcome = nil
+        logicalSettlement = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -879,6 +960,10 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
             AgentTaskOutcome.self,
             forKey: .outcome
         )
+        logicalSettlement = try values.decodeIfPresent(
+            AgentTaskLogicalSettlement.self,
+            forKey: .logicalSettlement
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -894,6 +979,7 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
         try values.encodeIfPresent(vendorIdentity, forKey: .vendorIdentity)
         try values.encode(lifecycleAccuracy, forKey: .lifecycleAccuracy)
         try values.encodeIfPresent(outcome, forKey: .outcome)
+        try values.encodeIfPresent(logicalSettlement, forKey: .logicalSettlement)
     }
 }
 
@@ -979,6 +1065,9 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     var revisions: [AgentTaskRevisionRecord]
     var decisionReferences: [AgentTaskDecisionReference]
     var worktreeSetup: AgentTaskReservedWorktreeCheckpoint?
+    // Independent review and bounded corrections (#1755): the durable
+    // review-cycle journal. Additive: older metadata decodes to nil.
+    var reviewCycle: AgentTaskCorrectionCycle?
 
     var hasUnresolvedWorktreeSetup: Bool {
         worktreeSetup.map { $0.phase != .populated } ?? false
@@ -1015,6 +1104,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case revisions
         case decisionReferences
         case worktreeSetup
+        case reviewCycle
     }
 
     init(
@@ -1055,6 +1145,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         revisions = []
         decisionReferences = []
         worktreeSetup = nil
+        reviewCycle = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -1154,6 +1245,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             [AgentTaskDecisionReference].self, forKey: .decisionReferences
         ) ?? []
         worktreeSetup = try values.decodeIfPresent(AgentTaskReservedWorktreeCheckpoint.self, forKey: .worktreeSetup)
+        reviewCycle = try values.decodeIfPresent(AgentTaskCorrectionCycle.self, forKey: .reviewCycle)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1197,6 +1289,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         try values.encode(revisions, forKey: .revisions)
         try values.encode(decisionReferences, forKey: .decisionReferences)
         try values.encodeIfPresent(worktreeSetup, forKey: .worktreeSetup)
+        try values.encodeIfPresent(reviewCycle, forKey: .reviewCycle)
     }
 }
 

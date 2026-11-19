@@ -104,6 +104,10 @@ Public surfaces describe two things and never blur them:
   privacy-bounded notifications; a cross-project Agent Inbox that routes back to
   the exact live session; isolated agent worktrees; LSP code intelligence; Git
   integration; and session persistence with restoration.
+  Current built-in integrations detect processes, not verified waiting or success.
+  The [compatibility matrix](agent-compatibility.md) and
+  [dated capability audit](cli-capability-evidence-2026-11-14.md) distinguish
+  process detection, documented upstream interfaces, and verified Pine integration.
 - **Direction (Pine 3.0, this document):** durable tasks, validated
   task-owned environments, reliable agent lifecycle signals, Ready evidence
   from Pine-observed checks and independent review, attention in the current
