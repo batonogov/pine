@@ -191,6 +191,11 @@ nonisolated struct ClaudeCodeStreamConnection {
     mutating func reject(_ requestID: ClaudeCodeControlRequestID, write: (Data) throws -> Void) throws {
         guard phase == .ready else { throw ClaudeCodeWireError.invalidState }
         do {
+            guard remembered[requestID] == nil,
+                  !resolvedRequests.contains(requestID),
+                  preparingResponses[requestID] == nil else {
+                throw ClaudeCodeWireError.invalidState
+            }
             let bytes = try ClaudeCodeStreamMessage.controlErrorResponse(
                 id: requestID, reason: "Request not supported by Pine."
             )

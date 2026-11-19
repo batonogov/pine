@@ -243,7 +243,7 @@ struct ClaudeCodeStreamWireTests {
     @Test func framerBoundsAndFencesIngress() throws {
         var framer = ClaudeCodeStreamFramer()
         var delivered = 0
-        try framer.receive(Data(#"{"type":"system","subtype":"init","session_id":"s-1"}"#.utf8)) { _ in delivered += 1 }
+        try framer.receive(Data((#"{"type":"system","subtype":"init","session_id":"s-1"}"# + "\n").utf8)) { _ in delivered += 1 }
         #expect(delivered == 1)
         // Oversized frame.
         let big = String(repeating: "a", count: ClaudeCodeStreamFramer.maximumFrameBytes)
@@ -324,6 +324,23 @@ struct ClaudeCodeStreamWireTests {
         }
         #expect(behavior["behavior"] == .string("deny"))
         #expect(behavior["message"] == .string("Denied in Pine."))
+    }
+
+    @Test func userMessageEgressIsBoundedIncludingNewline() throws {
+        let empty = try ClaudeCodeStreamMessage.userMessage(
+            text: "", messageUUID: "msg-boundary", sessionID: "s-1")
+        let textBytes = ClaudeCodeStreamFramer.maximumFrameBytes + 1 - empty.count
+        let boundary = try ClaudeCodeStreamMessage.userMessage(
+            text: String(repeating: "a", count: textBytes),
+            messageUUID: "msg-boundary", sessionID: "s-1"
+        )
+        #expect(boundary.count == ClaudeCodeStreamFramer.maximumFrameBytes + 1)
+        #expect(throws: ClaudeCodeWireError.frameTooLarge) {
+            _ = try ClaudeCodeStreamMessage.userMessage(
+                text: String(repeating: "a", count: textBytes + 1),
+                messageUUID: "msg-boundary", sessionID: "s-1"
+            )
+        }
     }
 
     @Test func diagnosticsRedactProviderIdentifiers() throws {

@@ -93,13 +93,14 @@ struct ClaudeCodeStreamConnectionTests {
         let beforeAnswer = writes.count
         _ = try connection.answer(request.id, allow: true, write: { writes.append($0) })
         #expect(writes.count == beforeAnswer + 1)
-        #expect(throws: ClaudeCodeWireError.invalidState) {
-            _ = try connection.answer(request.id, allow: false, write: { writes.append($0) })
-        }
         // Redelivery replays the remembered response byte-for-byte.
         #expect(try connection.receive(.permissionRequest(request)) { writes.append($0) } == .replayedResponse)
         #expect(writes.count == beforeAnswer + 2)
         #expect(writes[beforeAnswer] == writes[beforeAnswer + 1])
+        #expect(throws: ClaudeCodeWireError.invalidState) {
+            _ = try connection.answer(request.id, allow: false, write: { writes.append($0) })
+        }
+        #expect(connection.phase == .closed)
     }
 
     @Test func duplicateRequestDoesNotReprompt() throws {
@@ -152,16 +153,22 @@ struct ClaudeCodeStreamConnectionTests {
         _ = try connection.receive(.permissionRequest(request)) { writes.append($0) }
         try connection.resolveRequest(request.id)
         #expect(throws: ClaudeCodeWireError.invalidState) {
-            _ = try connection.answer(request.id, allow: true, write: { writes.append($0) })
-        }
-        #expect(throws: ClaudeCodeWireError.invalidState) {
             _ = try connection.prepareAnswer(request.id, allow: true)
         }
+        #expect(throws: ClaudeCodeWireError.invalidState) {
+            _ = try connection.answer(request.id, allow: true, write: { writes.append($0) })
+        }
+        #expect(connection.phase == .closed)
         // A redelivery after provider resolution fences: the remembered
-        // identity no longer holds.
+        // identity no longer holds. Use a fresh connection because the failed
+        // answer above closed the first one.
+        connection = try initialize(&writes)
+        _ = try connection.receive(.permissionRequest(request)) { writes.append($0) }
+        try connection.resolveRequest(request.id)
         #expect(throws: ClaudeCodeWireError.invalidEnvelope) {
             _ = try connection.receive(.permissionRequest(request)) { writes.append($0) }
         }
+        #expect(connection.phase == .closed)
     }
 
     @Test func rejectWritesFixedTextAndRetainsNothing() throws {
@@ -176,6 +183,37 @@ struct ClaudeCodeStreamConnectionTests {
         // Rejecting an unknown request writes once without caching.
         let unknown = try ClaudeCodeControlRequestID("perm-unknown")
         _ = try connection.reject(unknown) { writes.append($0) }
+    }
+
+    @Test func rejectAfterAnswerCannotWriteConflictingResponse() throws {
+        var writes: [Data] = []
+        var connection = try initialize(&writes)
+        let request = try permission("perm-reject-answered")
+        _ = try connection.receive(.permissionRequest(request)) { writes.append($0) }
+        _ = try connection.answer(request.id, allow: true, write: { writes.append($0) })
+        let writeCount = writes.count
+        #expect(throws: ClaudeCodeWireError.invalidState) {
+            try connection.reject(request.id) { writes.append($0) }
+        }
+        #expect(connection.phase == .closed)
+        #expect(writes.count == writeCount)
+    }
+
+    @Test func rejectWhileAnswerIsPreparedFencesConfirmation() throws {
+        var writes: [Data] = []
+        var connection = try initialize(&writes)
+        let request = try permission("perm-reject-preparing")
+        _ = try connection.receive(.permissionRequest(request)) { writes.append($0) }
+        let prepared = try connection.prepareAnswer(request.id, allow: true)
+        let writeCount = writes.count
+        #expect(throws: ClaudeCodeWireError.invalidState) {
+            try connection.reject(request.id) { writes.append($0) }
+        }
+        #expect(connection.phase == .closed)
+        #expect(throws: ClaudeCodeWireError.invalidState) {
+            try connection.confirmResponseWritten(prepared)
+        }
+        #expect(writes.count == writeCount)
     }
 
     @Test func redeliveredPendingRequestsFlowThroughOneShotPath() throws {

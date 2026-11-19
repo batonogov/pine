@@ -111,6 +111,13 @@ struct ClaudeCodeStreamTaskMapperTests {
         #expect(try mismatched.map(assistant("turn-b"), connection: connection) == [.needsReconciliation])
     }
 
+    @Test func assistantBeforeSessionBindingNeedsReconciliation() throws {
+        var mapper = ClaudeCodeStreamTaskMapper(connectionID: connection)
+        try mapper.prepareTurn(messageUUID: "turn-1")
+        #expect(try mapper.map(assistant("turn-1"), connection: connection) == [.needsReconciliation])
+        #expect(mapper.isClosed)
+    }
+
     @Test func toolEventsCarryIdentityOnly() throws {
         var mapper = ClaudeCodeStreamTaskMapper(connectionID: connection)
         try bindSession(&mapper)

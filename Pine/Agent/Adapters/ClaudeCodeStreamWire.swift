@@ -406,6 +406,9 @@ nonisolated enum ClaudeCodeStreamMessage: Equatable, Sendable,
     private static func encode(_ fields: [String: AgentEventJSON]) throws -> Data {
         var data = try AgentEventJSON.object(fields).canonicalData()
         data.append(10)
+        guard data.count <= ClaudeCodeStreamFramer.maximumFrameBytes + 1 else {
+            throw ClaudeCodeWireError.frameTooLarge
+        }
         return data
     }
 

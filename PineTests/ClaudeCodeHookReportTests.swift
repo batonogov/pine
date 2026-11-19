@@ -64,6 +64,14 @@ struct ClaudeCodeHookReportTests {
         )) == .unsupportedEvent)
     }
 
+    @Test func oversizedEnvelopeIsRejected() {
+        let line = """
+        {"hook_event_name":"Stop","session_id":"\(Self.sessionID)","launch_token":"\(Self.token)",\
+        "prompt":"\(String(repeating: "a", count: ClaudeCodeStreamFramer.maximumFrameBytes))"}
+        """
+        #expect(ClaudeHookOutcome(ClaudeCodeHookEnvelope.parse(data: Data(line.utf8))) == .unsupportedEvent)
+    }
+
     @Test func validatorRejectsForeignNestedAndStaleReports() throws {
         let identity = try identity()
         var validator = ClaudeCodeHookReportValidator(identity: identity)
@@ -93,6 +101,12 @@ struct ClaudeCodeHookReportTests {
         guard case .success = validator.validate(live) else {
             throw ClaudeCodeHookError.invalidIdentity
         }
+        // Tool events without a tool name are malformed for the allowlist.
+        let noTool = try ClaudeCodeHookReport(
+            event: .postToolUse, sessionID: Self.sessionID, launchToken: Self.token,
+            toolName: nil, subagent: false, historical: false
+        )
+        #expect(validator.validate(noTool) == .failure(.missingToolName))
         // After SessionEnd the session is over: everything else is stale.
         let ended = try ClaudeCodeHookReport(
             event: .sessionEnd, sessionID: Self.sessionID, launchToken: Self.token,
@@ -106,12 +120,6 @@ struct ClaudeCodeHookReportTests {
             toolName: nil, subagent: false, historical: false
         )
         #expect(validator.validate(stale) == .failure(.stale))
-        // Tool events without a tool name are malformed for the allowlist.
-        let noTool = try ClaudeCodeHookReport(
-            event: .postToolUse, sessionID: Self.sessionID, launchToken: Self.token,
-            toolName: nil, subagent: false, historical: false
-        )
-        #expect(validator.validate(noTool) == .failure(.missingToolName))
     }
 
     @Test func historicalReportsCannotCreateCurrentState() throws {

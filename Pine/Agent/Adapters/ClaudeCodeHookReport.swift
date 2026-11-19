@@ -155,6 +155,9 @@ nonisolated enum ClaudeCodeHookEnvelope {
         data: Data,
         historical: Bool = false
     ) -> Result<ClaudeCodeHookReport, ClaudeCodeHookReportRejection> {
+        guard data.count <= ClaudeCodeStreamFramer.maximumFrameBytes else {
+            return .failure(.unsupportedEvent)
+        }
         var parser = AgentEventJSONParser(data: data)
         guard case .object(let fields) = try? parser.parse(),
               case .string(let eventName) = fields["hook_event_name"],

@@ -176,6 +176,10 @@ nonisolated struct ClaudeCodeStreamTaskMapper {
         userMessageUUID: String?,
         toolCalls: [ClaudeCodeToolCall]
     ) throws -> [Effect] {
+        guard session != nil else {
+            close()
+            return [.needsReconciliation]
+        }
         if activeTurn == nil {
             guard let pending = pendingTurnUUID else {
                 // Work without an authorized submission on this attempt.
