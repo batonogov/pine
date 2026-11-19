@@ -392,7 +392,7 @@ final class SettingsUITests: PineUITestCase {
         // full explanation exceeds that, so match a stable prefix.
         let explanationText = app.staticTexts.matching(
             NSPredicate(
-                format: "label BEGINSWITH %@",
+                format: "value BEGINSWITH %@",
                 "Process-only integrations do not send agent notifications"
             )
         ).firstMatch
