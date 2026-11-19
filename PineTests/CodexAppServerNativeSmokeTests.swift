@@ -148,7 +148,7 @@ nonisolated private enum Configuration {
     }
 }
 
-nonisolated private actor SmokeBindingValidator: AgentTaskNativeBindingValidator {
+private actor SmokeBindingValidator: AgentTaskNativeBindingValidator {
     let binding: AgentTaskEnvironmentBinding
     let lease: RecentAgentTaskFilesystemValidationLease
     init(binding: AgentTaskEnvironmentBinding, lease: RecentAgentTaskFilesystemValidationLease) {
@@ -171,14 +171,18 @@ nonisolated private struct SmokeFixture: Sendable {
 
     @MainActor
     init(executable: URL) async throws {
-        root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pine-native-smoke-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("pine-native-smoke-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]
+        )
         let project = AgentTaskProjectIdentity(
             canonicalProjectPath: root.path, canonicalWorktreePath: root.path
         )
-        let storage = root.appendingPathComponent("storage")
-        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+        let storage = root.appendingPathComponent("storage", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: storage, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]
+        )
         let store = AgentTaskMetadataStore(
             storageRoot: storage,
             configuration: AgentTaskStoreConfiguration()
@@ -201,7 +205,8 @@ nonisolated private struct SmokeFixture: Sendable {
         let validator = SmokeBindingValidator(binding: binding, lease: lease)
         guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: reservation.taskID, runID: reservation.runID, bindingID: binding.id,
-            selection: .init(agentID: try AgentID(validating: "codex"), selectedExecutable: executable)
+            selection: .init(agentID: try AgentID(validating: "codex"), selectedExecutable: executable),
+            provenance: testLaunchProvenance
         ) else {
             throw AgentTaskNativeAdmissionError.invalidPolicy
         }

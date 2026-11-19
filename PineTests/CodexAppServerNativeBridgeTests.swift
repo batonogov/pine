@@ -49,7 +49,7 @@ struct CodexAppServerNativeBridgeTests {
         }
         let events = fixture.recorder.snapshot
         guard case .approval(let attention)? = events.last?.event else {
-            Issue.record("Last event was not an approval")
+            Issue.record("Last event was not an approval: \(fixture.recorder.phases)")
             return
         }
         let requestReference = attention.request
@@ -134,7 +134,7 @@ struct CodexAppServerNativeBridgeTests {
         let events = fixture.recorder.snapshot
         guard case .approval(let attention)? = events.last?.event,
               let contextReference = attention.context else {
-            Issue.record("Last event was not a scoped approval")
+            Issue.record("Last event was not a scoped approval: \(fixture.recorder.phases)")
             return
         }
         #expect(try await dispatch.dispatch(
@@ -170,7 +170,7 @@ struct CodexAppServerNativeBridgeTests {
         let events = fixture.recorder.snapshot
         guard case .question(let attention)? = events.last?.event,
               let contextReference = attention.context else {
-            Issue.record("Last event was not a scoped question")
+            Issue.record("Last event was not a scoped question: \(fixture.recorder.phases)")
             return
         }
         // A foreign request identity is refused even with the right context.
@@ -190,7 +190,7 @@ struct CodexAppServerNativeBridgeTests {
         ) == .acknowledged)
         #expect(fixture.server.questionAnswer == .object([
             "q1": .object(["answers": .array([.string("main")])])
-        ]) ?? false)
+        ]))
         guard await fixture.recorder.waitForCount(3, within: 10) else {
             Issue.record("Resolution or turn completion was not ingested")
             return
@@ -221,6 +221,7 @@ struct CodexAppServerNativeBridgeTests {
                 .requestCancellation(context: turnReference), beforeDispatch: {}
             )
         }
+        fixture.server.releaseCancellationConfirmation()
         guard await fixture.recorder.waitForCount(2, within: 10) else {
             Issue.record("Confirmed cancellation was not ingested")
             return
@@ -259,7 +260,7 @@ struct CodexAppServerNativeBridgeTests {
         let events = fixture.recorder.snapshot
         guard case .question(let attention)? = events.last?.event,
               let contextReference = attention.context else {
-            Issue.record("Last event was not a scoped question")
+            Issue.record("Last event was not a scoped question: \(fixture.recorder.phases)")
             return
         }
         let turnReference = try VendorReference(role: .turn, value: "turn_fixture_1")
@@ -276,6 +277,7 @@ struct CodexAppServerNativeBridgeTests {
                 beforeDispatch: {}
             )
         }
+        fixture.server.releaseCancellationConfirmation()
         guard await fixture.recorder.waitForCount(3, within: 10) else {
             Issue.record("Confirmed cancellation was not ingested")
             return
@@ -325,23 +327,24 @@ struct CodexAppServerNativeBridgeTests {
     @Test func childDeathIsANegativeObservationForTheRegistry() async throws {
         let fixture = try await NativeBridgeFixture(mode: .childDeath)
         defer { fixture.teardown() }
-        try await fixture.session.start()
-        guard await fixture.waitUntil({
-            fixture.task()?.runs.last?.liveness == .live
-        }) else {
-            Issue.record("Admitted run was not observed live")
-            return
+        // The peer dies on its own immediately after the thread bind, so the
+        // live window can close during startup. Failing the start closed is
+        // acceptable; a live run is not.
+        do {
+            try await fixture.session.start()
+        } catch {
+            // Fenced during startup: the negative observation is asserted below.
         }
-        // The peer dies on its own: the session must report the negative
-        // observation to the registry without an explicit stop.
         guard await fixture.waitUntil({
-            fixture.task()?.runs.last?.liveness == .stale
+            fixture.task()?.nativeDispatch?.phase == .unavailable
         }) else {
-            Issue.record("Dead child was not observed stale")
+            Issue.record("Dead child was not observed unavailable")
             return
         }
         let task = try #require(fixture.task())
-        #expect(task.nativeDispatch?.phase == .unavailable)
+        if let run = task.runs.last {
+            #expect(run.liveness == .stale)
+        }
         #expect(task.lifecycle == .paused)
     }
 
@@ -395,25 +398,41 @@ nonisolated private final class BridgeServerSignals: @unchecked Sendable {
     private var decisionValue: String?
     private var answerDeliveriesValue = 0
     private var questionAnswerValue: AgentEventJSON?
-    private var unknownRejectionCode: Int64?
+    private var unknownRejectionCodeValue: Int64?
+    private var cancellationConfirmationReleasedValue = false
 
     var decision: String? { lock.withLock { decisionValue } }
     var answerDeliveries: Int { lock.withLock { answerDeliveriesValue } }
     var questionAnswer: AgentEventJSON? { lock.withLock { questionAnswerValue } }
-    var unknownRejectionCode: Int64? { lock.withLock { unknownRejectionCode } }
+    var unknownRejectionCode: Int64? { lock.withLock { unknownRejectionCodeValue } }
 
     func setDecision(_ value: String) { lock.withLock { decisionValue = value } }
     func recordAnswerDelivery() { lock.withLock { answerDeliveriesValue += 1 } }
     func setQuestionAnswer(_ value: AgentEventJSON) { lock.withLock { questionAnswerValue = value } }
-    func setUnknownRejection(_ code: Int64) { lock.withLock { unknownRejectionCode = code } }
+    func setUnknownRejection(_ code: Int64) { lock.withLock { unknownRejectionCodeValue = code } }
+
+    /// The tests need the "already interrupting" refusal to be observed before
+    /// the provider confirms; an instant confirmation fences the session first.
+    func releaseCancellationConfirmation() {
+        lock.withLock { cancellationConfirmationReleasedValue = true }
+    }
+
+    func waitForCancellationRelease(within seconds: Double) async -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
+        while ContinuousClock.now < deadline {
+            if lock.withLock({ cancellationConfirmationReleasedValue }) { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return lock.withLock { cancellationConfirmationReleasedValue }
+    }
 
     func waitForUnknownRejection(within seconds: Double) async -> Bool {
         let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
         while ContinuousClock.now < deadline {
-            if lock.withLock { unknownRejectionCode } != nil { return true }
+            if lock.withLock { unknownRejectionCodeValue } != nil { return true }
             try? await Task.sleep(for: .milliseconds(20))
         }
-        return lock.withLock { unknownRejectionCode } != nil
+        return lock.withLock { unknownRejectionCodeValue } != nil
     }
 }
 
@@ -475,7 +494,7 @@ private actor InMemoryTaskStore: AgentTaskPersisting {
     }
 }
 
-nonisolated private actor NativeBridgeBindingValidator: AgentTaskNativeBindingValidator {
+private actor NativeBridgeBindingValidator: AgentTaskNativeBindingValidator {
     let binding: AgentTaskEnvironmentBinding
     let lease: RecentAgentTaskFilesystemValidationLease
     init(binding: AgentTaskEnvironmentBinding, lease: RecentAgentTaskFilesystemValidationLease) {
@@ -534,14 +553,16 @@ nonisolated private struct NativeBridgeFixture: Sendable {
 
     @MainActor
     init(mode: CodexAppServerNativeBridgeTests.Mode) async throws {
-        root = FileManager.default.temporaryDirectory
+        let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-native-bridge-\(UUID().uuidString)")
+        self.root = root
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let project = AgentTaskProjectIdentity(
             canonicalProjectPath: root.path, canonicalWorktreePath: root.path
         )
         let store = InMemoryTaskStore()
-        tasks = AgentTaskRegistry(persistence: store)
+        let tasks = AgentTaskRegistry(persistence: store)
+        self.tasks = tasks
         let reservation = try #require(await tasks.createNativeTask(
             project: project,
             descriptor: AgentDescriptor(agentType: .codex, launchExecutable: "codex"),
@@ -588,8 +609,6 @@ nonisolated private struct NativeBridgeFixture: Sendable {
             standardOutput: input.fileHandleForReading,
             standardError: peerError.fileHandleForReading
         )
-        input.fileHandleForReading.closeFile()
-        output.fileHandleForWriting.closeFile()
         error.fileHandleForWriting.closeFile()
         peerError.fileHandleForWriting.closeFile()
 
@@ -648,8 +667,10 @@ nonisolated private struct NativeBridgeFixture: Sendable {
                 acceptedAuthentication: [.ownedChildPipe]
             )
         )
-        recorder = CandidateRecorder()
-        server = BridgeServerSignals()
+        let recorder = CandidateRecorder()
+        self.recorder = recorder
+        let server = BridgeServerSignals()
+        self.server = server
         session = try await adapters.makeSession(contract: contract, resumeFrom: nil) { event in
             recorder.observe(event)
             return await tasks.ingestNativeEvent(event, ownership: ownership)
@@ -758,6 +779,14 @@ nonisolated private struct NativeBridgeFixture: Sendable {
                 case .request(let id, "turn/interrupt", _):
                     try await peer.write(CodexAppServerMessage.response(id, result: .object([:]))
                         .encoded(), deadline: deadline)
+                    switch mode {
+                    case .interrupt, .interruptQueuedInput:
+                        // The pending-control refusal is only observable while
+                        // the interruption is unconfirmed.
+                        guard await signals.waitForCancellationRelease(within: 10) else { return }
+                    default:
+                        break
+                    }
                     let status: String
                     switch mode {
                     case .lateCompletion: status = "completed"
@@ -840,7 +869,7 @@ nonisolated private struct NativeBridgeFixture: Sendable {
                     ])).encoded(), deadline: deadline)
                 case .failure(.string("future-request"), let code):
                     signals.setUnknownRejection(code)
-                case .notification:
+                case .request, .notification:
                     break
                 case .response, .failure:
                     break

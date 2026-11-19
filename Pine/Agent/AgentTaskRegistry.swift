@@ -738,7 +738,7 @@ final class AgentTaskRegistry {
         ), title: title, objective: objective)
         let runID = UUID()
         task.lifecycle = .paused
-        task.nativeDispatch = AgentTaskNativeDispatch(runID: runID)
+        task.nativeDispatch = AgentTaskNativeDispatch(taskID: task.id, runID: runID)
         tasks.append(task)
         historicalTaskIDByRunID[runID] = task.id
         envelopeStateByProject[project] = AgentTaskEnvelopeState(
@@ -1024,7 +1024,8 @@ final class AgentTaskRegistry {
         updated.updatedAt = max(updated.updatedAt, Date())
         tasks[index] = updated
         markDirty(updated.project)
-        guard await flushPersistence(project: updated.project) == .saved, !isTerminating, !Task.isCancelled,
+        guard await flushPersistence(project: updated.project, allowsRetry: false) == .saved,
+              !isTerminating, !Task.isCancelled,
               nativeOwners[taskID] === ownership, task(for: taskID)?.nativeDispatch == checkpoint else {
             invalidateNativeOwnership(ownership)
             throw AgentTaskNativeAdmissionError.persistenceUnavailable
@@ -2664,9 +2665,11 @@ final class AgentTaskRegistry {
 
     /// Waits for loads and every queued save, with a five-second total and
     /// two-second per-tail monotonic deadline. A hung store fails closed.
+    /// A no-retry flush never publishes a completed non-durable save again.
     func flushPersistence(
         maximumDuration: Duration? = nil,
-        project scope: AgentTaskProjectIdentity? = nil
+        project scope: AgentTaskProjectIdentity? = nil,
+        allowsRetry: Bool = true
     ) async -> AgentTaskPersistenceFlushResult {
         let requestedDuration = maximumDuration.map {
             max(.zero, $0)
@@ -2723,7 +2726,7 @@ final class AgentTaskRegistry {
                let result = saveResultByProject[ticket.projectKey],
                !result.isDurablySaved {
                 failedAttempts += 1
-                if failedAttempts >= 3 { return .failed }
+                if !allowsRetry || failedAttempts >= 3 { return .failed }
             }
         }
         return .failed

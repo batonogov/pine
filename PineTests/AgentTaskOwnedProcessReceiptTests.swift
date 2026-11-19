@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 import Testing
 @testable import Pine
 
@@ -11,14 +12,14 @@ struct AgentTaskOwnedProcessReceiptTests {
         let fixture = try await ReceiptProcessFixture()
         defer { fixture.remove() }
         let ownership = fixture.ownership
-        let subprocess = await runOnBackground {
+        let subprocess = try await runOnBackground {
             try UserTaskSubprocess(
                 executableURL: URL(fileURLWithPath: "/bin/sleep"),
                 arguments: ["30"],
                 workingDirectory: fixture.root
             )
         }
-        let receipt = await runOnBackground {
+        let receipt = try await runOnBackground {
             try AgentTaskOwnedProcessReceipt(process: subprocess, ownership: ownership) {
                 try fixture.identity.validateProcessImageSynchronously(
                     processID: $0.processID, incarnation: $0
@@ -44,7 +45,7 @@ struct AgentTaskOwnedProcessReceiptTests {
         })
     }
 
-    @Test func syntheticReceiptTracksIdentityDrift() async {
+    @Test func syntheticReceiptTracksIdentityDrift() async throws {
         let fixture = try await ReceiptProcessFixture()
         defer { fixture.remove() }
         let ownership = fixture.ownership
@@ -78,8 +79,7 @@ nonisolated private struct ReceiptProcessFixture: Sendable {
         ownership = base.ownership
         otherOwnership = try AgentTaskNativeOwnership(
             policy: base.policy,
-            binding: AgentTaskEnvironmentBinding.nativeBindingForTesting(
-                taskID: base.reservation.taskID, runID: base.reservation.runID),
+            binding: base.ownership.binding,
             filesystem: base.lease, bindings: base.validator,
             environment: ProcessInfo.processInfo.environment
         )

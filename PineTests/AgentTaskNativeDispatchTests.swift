@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import Pine
 
 /// Pure journal state-machine tests. Receipt-bearing transitions
 /// (submissionAcknowledged/submissionResponseObserved) are exercised through
@@ -7,10 +8,11 @@ import Testing
 /// covers everything the journal validates without a runtime receipt.
 @MainActor
 struct AgentTaskNativeDispatchTests {
+    private let taskID = UUID()
     private let runID = UUID()
 
     private func makeTask(
-        id: UUID = UUID(),
+        id: UUID? = nil,
         route: AgentTaskRoute? = nil,
         vendorIdentity: AgentVendorSessionIdentity? = nil
     ) -> AgentTask {
@@ -24,7 +26,7 @@ struct AgentTaskNativeDispatchTests {
         if let vendorIdentity {
             task.runs.append(Self.makeRun(id: runID, vendorIdentity: vendorIdentity))
         }
-        return Self.rewriteID(task, to: id)
+        return Self.rewriteID(task, to: id ?? taskID)
     }
 
     /// `AgentTask.id` is fixed at init; the durable schema is the rewrite path.
@@ -60,7 +62,7 @@ struct AgentTaskNativeDispatchTests {
     }
 
     private func freshJournal() -> AgentTaskNativeDispatch {
-        AgentTaskNativeDispatch(runID: runID)
+        AgentTaskNativeDispatch(taskID: taskID, runID: runID)
     }
 
     /// The registry's own launch-intent publication: a direct checkpoint
@@ -73,8 +75,8 @@ struct AgentTaskNativeDispatchTests {
     }
 
     @Test func reservedJournalValidatesOnlyItsExactOwnedProcessTask() throws {
-        let taskID = UUID()
         let journal = freshJournal()
+        let taskID = journal.taskID
         let task = makeTask(id: taskID)
         // Owned-process routes carry no terminal identity.
         #expect(task.route.paneID == nil && task.route.tabID == nil && task.route.terminalID == nil)
@@ -149,7 +151,8 @@ struct AgentTaskNativeDispatchTests {
         journal = try journal.applying(.submissionUnknown(submissionID: firstID))
         #expect(journal.phase == .inputUnknown)
         #expect(journal.submissions[0].phase == .unknown)
-        #expect(journal == try journal.applying(.submissionUnknown(submissionID: firstID)))
+        let unknown = try journal.applying(.submissionUnknown(submissionID: firstID))
+        #expect(journal == unknown)
         // A lost intent is never retried as a fresh follow-up or new initial.
         #expect(throws: AgentTaskNativeAdmissionError.invalidTransition) {
             _ = try journal.applying(.initialInputIntent)
@@ -189,11 +192,11 @@ struct AgentTaskNativeDispatchTests {
     }
 
     @Test func stampedRunMustCarryTheExactVendorIdentity() throws {
-        let taskID = UUID()
         let identity = AgentVendorSessionIdentity(provider: "codex", opaqueIdentifier: "thr_1")
-        var journal = try launchedJournal()
+        let journal = try launchedJournal()
             .applying(.sessionBound(identity))
-        #expect(journal.isValid(for: makeTask(id: taskID)))
+        let taskID = journal.taskID
+        #expect(!journal.isValid(for: makeTask(id: taskID)))
         #expect(journal.isValid(for: makeTask(id: taskID, vendorIdentity: identity)))
         #expect(!journal.isValid(for: makeTask(
             id: taskID,
@@ -222,6 +225,7 @@ struct AgentTaskNativeDispatchTests {
             .applying(.initialInputAcknowledged(operationID: "turn_secret"))
         let data = try JSONEncoder().encode(journal)
         let decoded = try JSONDecoder().decode(AgentTaskNativeDispatch.self, from: data)
+        #expect(decoded.taskID == journal.taskID)
         #expect(decoded == journal)
         // Durable bytes carry the exact references; diagnostics redact them.
         var diagnostic = ""

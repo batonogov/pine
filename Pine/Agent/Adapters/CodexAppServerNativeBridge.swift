@@ -270,6 +270,9 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
     private var activeSubmission: AgentTaskNativeSubmissionReceipt?
     private var actionable: [CodexAppServerRequestID: ActionableRequest] = [:]
     private var pumpTask: Task<Void, Never>?
+    /// Resolved once a turn binding's effects are ingested; the pump waits on
+    /// it so wire order survives the response/notification interleaving.
+    private var bindBarrier: AsyncContinuationGate?
     private var accountState: CodexAppServerAccountState = .unknown
     private let turnStarted = CodexAppServerNativeFlag()
     private let replayFence = CodexAppServerNativeReplayFence()
@@ -426,6 +429,7 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
     private func pump() async {
         guard let client else { return }
         for await event in client.events {
+            if let barrier = bindBarrier { await barrier.wait() }
             await handle(event)
             if phase == .tornDown { return }
         }
@@ -600,6 +604,17 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
             self.mapper = current
             activeTurnValue = turnID
             turnStarted.set()
+            // Binding makes the mapper accept new traffic. Until the bound
+            // turn's effects are ingested, the pump must not map the next
+            // wire message: a fast provider can send an approval right after
+            // the turn response, and it would otherwise be published before
+            // the turn-start lifecycle.
+            let barrier = AsyncContinuationGate()
+            bindBarrier = barrier
+            defer {
+                bindBarrier = nil
+                barrier.resolve()
+            }
             let transition: AgentTaskNativeTransition = previous == nil
                 ? .initialInputAcknowledged(operationID: turnID)
                 : .submissionAcknowledged(receipt, operationID: turnID)
@@ -761,6 +776,8 @@ nonisolated final class CodexAppServerNativeFactory: AgentAdapterFactory, @unche
             .init(scope: .turn, phase: .started),
             .init(scope: .turn, phase: .waitingForQuestion),
             .init(scope: .turn, phase: .waitingForApproval),
+            // Contract 1.1 requestResolved candidates validate as `.settled`.
+            .init(scope: .turn, phase: .settled),
             .init(scope: .turn, phase: .failed),
             .init(scope: .turn, phase: .cancelled)
         ]

@@ -4,7 +4,7 @@ import Testing
 
 /// Test-host provenance for minted policies: the CLI's own credentials,
 /// the Pine process's own environment (#1723, #1765 launch contract).
-private let testLaunchProvenance = AgentTaskLaunchProvenance(
+let testLaunchProvenance = AgentTaskLaunchProvenance(
     authenticationOrigin: .inheritNative,
     environmentProvenance: .inheritedPineProcess
 )
@@ -64,8 +64,7 @@ struct AgentTaskNativeOwnershipTests {
         // A fresh, unbound ownership validates its selection but not itself.
         let unbound = try AgentTaskNativeOwnership(
             policy: fixture.policy,
-            binding: AgentTaskEnvironmentBinding.nativeBindingForTesting(
-                taskID: fixture.reservation.taskID, runID: fixture.reservation.runID),
+            binding: fixture.ownership.binding,
             filesystem: fixture.lease, bindings: fixture.validator,
             environment: ProcessInfo.processInfo.environment)
         try await runOnBackground { try unbound.validateSelection() }
@@ -99,8 +98,9 @@ struct AgentTaskNativeOwnershipTests {
         try await runOnBackground { try ownership.validateLaunch(environment: environment) }
         var mutated = environment
         mutated["PATH"] = "/different"
+        let invalidEnvironment = mutated
         await #expect(throws: AgentTaskNativeAdmissionError.invalidPolicy) {
-            try await runOnBackground { try ownership.validateLaunch(environment: mutated) }
+            try await runOnBackground { try ownership.validateLaunch(environment: invalidEnvironment) }
         }
     }
 
@@ -118,7 +118,7 @@ struct AgentTaskNativeOwnershipTests {
     }
 }
 
-nonisolated actor NativeOwnershipValidator: AgentTaskNativeBindingValidator {
+actor NativeOwnershipValidator: AgentTaskNativeBindingValidator {
     let binding: AgentTaskEnvironmentBinding
     let lease: RecentAgentTaskFilesystemValidationLease
     init(binding: AgentTaskEnvironmentBinding, lease: RecentAgentTaskFilesystemValidationLease) {
@@ -162,27 +162,28 @@ nonisolated struct NativeOwnershipFixture: Sendable {
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-native-ownership-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let reservation = AgentTaskNativeReservation(taskID: UUID(), runID: UUID())
+        reservation = AgentTaskNativeReservation(taskID: UUID(), runID: UUID())
         let binding = AgentTaskEnvironmentBinding.nativeBindingForTesting(
             taskID: reservation.taskID, runID: reservation.runID)
         let selection = AgentTaskNativeLaunchPolicy.Selection(
             agentID: try AgentID(validating: "codex"),
             selectedExecutable: URL(fileURLWithPath: "/selected/codex"))
-        policy = try #require({
-            guard case .eligible(let value) = AgentTaskNativeLaunchPolicy.evaluate(
-                taskID: reservation.taskID, runID: reservation.runID, bindingID: binding.id,
-                selection: selection,
-                provenance: testLaunchProvenance) else { return nil }
-            return value
-        }())
-        lease = try #require(
+        guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
+            taskID: reservation.taskID, runID: reservation.runID, bindingID: binding.id,
+            selection: selection,
+            provenance: testLaunchProvenance
+        ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
+        self.policy = policy
+        let rootPath = root.path
+        let lease = try #require(
             await runOnBackground {
                 RecentAgentTaskFilesystemValidator.validationLease(
-                    for: AgentTaskProjectIdentity(canonicalProjectPath: root.path, canonicalWorktreePath: root.path),
+                    for: AgentTaskProjectIdentity(canonicalProjectPath: rootPath, canonicalWorktreePath: rootPath),
                     expectedProof: nil
                 )
             }
         )
+        self.lease = lease
         validator = NativeOwnershipValidator(binding: binding, lease: lease)
         ownership = try AgentTaskNativeOwnership(
             policy: policy, binding: binding, filesystem: lease, bindings: validator,

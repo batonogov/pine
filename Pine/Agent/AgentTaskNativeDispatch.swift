@@ -27,6 +27,7 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
         var customMirror: Mirror { Mirror(self, children: ["value": description]) }
     }
     static let maximumSubmissions = 32
+    let taskID: UUID
     let runID: UUID
     var bindingID: UUID?
     var phase: Phase
@@ -35,7 +36,8 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
     var cancellationRequested: Bool
     var submissions: [Submission]
 
-    init(runID: UUID) {
+    init(taskID: UUID, runID: UUID) {
+        self.taskID = taskID
         self.runID = runID
         bindingID = nil
         phase = .reserved
@@ -50,7 +52,7 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
     var customMirror: Mirror { Mirror(self, children: ["value": description]) }
 
     func isValid(for task: AgentTask) -> Bool {
-        guard task.origin == .pineLaunched, task.route.surface == .ownedProcess,
+        guard task.id == taskID, task.origin == .pineLaunched, task.route.surface == .ownedProcess,
               task.route.paneID == nil, task.route.tabID == nil, task.route.terminalID == nil,
               task.presentationContext == nil, task.launchInterruption == nil,
               task.runs.count <= 1, task.runs.allSatisfy({ $0.id == runID && $0.terminalID == nil }),

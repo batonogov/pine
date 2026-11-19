@@ -488,6 +488,7 @@ struct AgentTaskNativeAdmissionTests {
         #expect(reserved.route.surface == .ownedProcess)
         #expect(reserved.route.paneID == nil && reserved.route.tabID == nil && reserved.route.terminalID == nil)
         #expect(reserved.runs.isEmpty)
+        #expect(reserved.nativeDispatch?.taskID == fixture.reservation.taskID)
         #expect(reserved.nativeDispatch?.runID == fixture.reservation.runID)
         #expect(throws: AgentTaskNativeAdmissionError.unavailable) { try fixture.ownership.validateInitialInput() }
         let ownership = fixture.ownership
@@ -501,7 +502,8 @@ struct AgentTaskNativeAdmissionTests {
             agentID: fixture.ownership.policy.agentID, selectedExecutable: URL(fileURLWithPath: "/selected/opencode")
         )
         guard case .eligible(let wrongPolicy) = AgentTaskNativeLaunchPolicy.evaluate(
-            taskID: fixture.reservation.taskID, runID: fixture.reservation.runID, bindingID: wrongBinding.id, selection: selection
+            taskID: fixture.reservation.taskID, runID: fixture.reservation.runID,
+            bindingID: wrongBinding.id, selection: selection, provenance: testLaunchProvenance
         ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
         #expect(throws: AgentTaskNativeAdmissionError.invalidPolicy) {
             try AgentTaskNativeOwnership(policy: wrongPolicy, binding: wrongBinding,
@@ -698,7 +700,8 @@ struct AgentTaskNativeAdmissionTests {
         guard case .eligible(let otherPolicy) = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: ownership.policy.taskID, runID: ownership.policy.runID, bindingID: otherBinding.id,
             selection: .init(agentID: ownership.policy.agentID,
-                             selectedExecutable: URL(fileURLWithPath: "/selected/opencode"))
+                             selectedExecutable: URL(fileURLWithPath: "/selected/opencode")),
+            provenance: testLaunchProvenance
         ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
         await #expect(throws: AgentTaskNativeAdmissionError.invalidPolicy) {
             try await restored.prepareNativeLaunch(
@@ -708,9 +711,11 @@ struct AgentTaskNativeAdmissionTests {
     }
 
     @Test func armedFaultBeforeAtomicReplacePreservesPriorFileAndFailsClosed() async throws {
-        let storage = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PineNativeArmedFault-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: false)
+        let storage = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("PineNativeArmedFault-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: storage, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]
+        )
         defer { try? FileManager.default.removeItem(at: storage) }
         let fault = ArmedCheckpointFault()
         let store = AgentTaskMetadataStore(
@@ -733,7 +738,7 @@ struct AgentTaskNativeAdmissionTests {
             selectedExecutable: URL(fileURLWithPath: "/selected/opencode")
         )
         guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
-            taskID: reservation.taskID, runID: reservation.runID, bindingID: binding.id, selection: selection
+            taskID: reservation.taskID, runID: reservation.runID, bindingID: binding.id, selection: selection, provenance: testLaunchProvenance
         ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
         let filesystem = try await runOnBackground {
             try #require(RecentAgentTaskFilesystemValidator.validationLease(for: project, expectedProof: nil))
@@ -786,6 +791,9 @@ struct AgentTaskNativeAdmissionTests {
         #expect(try Data(contentsOf: file) == before)
         // The ownership is retired: the gates stay closed...
         #expect((try? ownership.validateSelection()) == nil)
+        #expect(await registry.flushPersistence(project: project) == .failed)
+        #expect(try Data(contentsOf: file) == before)
+        fault.disarm()
         // ...and a relaunch from the restored registry is fail-closed.
         let restored = AgentTaskRegistry(persistence: store)
         #expect(await restored.prepareDurableWork(in: project))
@@ -832,7 +840,7 @@ private struct NativeAdmissionFixture {
             selectedExecutable: URL(fileURLWithPath: "/selected/opencode", isDirectory: false)
         )
         guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
-            taskID: reservation.taskID, runID: reservation.runID, bindingID: binding.id, selection: selection
+            taskID: reservation.taskID, runID: reservation.runID, bindingID: binding.id, selection: selection, provenance: testLaunchProvenance
         ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
         let filesystem = try await runOnBackground {
             try #require(RecentAgentTaskFilesystemValidator.validationLease(for: project, expectedProof: nil))
