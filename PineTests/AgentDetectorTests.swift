@@ -311,6 +311,22 @@ struct AgentDetectorTests {
         #expect(AgentDetector.extractExecutableName(from: "node.exe /opt/homebrew/bin/pi") == "pi")
     }
 
+    @Test func extractExecutableNameSkipsInterpreterFlags() {
+        // Interpreter flags before the wrapped script must not shadow it
+        // (CI regression: the controlled-agent fixture launches
+        // `python3 -I -S …/fixtures/pi` and the detector lost the match).
+        #expect(
+            AgentDetector.extractExecutableName(
+                from: "python3 -I -S /tmp/fixtures/pi /tmp/state none"
+            ) == "pi"
+        )
+        #expect(
+            AgentDetector.extractExecutableName(
+                from: "node --max-old-space-size=4096 /opt/homebrew/bin/pi"
+            ) == "pi"
+        )
+    }
+
     @Test func extractExecutableNameCaseInsensitiveInterpreter() {
         // The interpreter name is matched case-insensitively, while the resolved
         // CLI stem preserves its original casing.
@@ -924,6 +940,16 @@ struct AgentDetectorTests {
         #expect(!AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
             observedCommand: "node /opt/agents/claude.js --verbose",
             kernelArguments: ["/usr/local/bin/python3", "/opt/agents/claude.js"],
+            currentExecutable: "python3"
+        ))
+        #expect(AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+            observedCommand: "python3 -I -S /opt/agents/pi",
+            kernelArguments: ["/usr/bin/python3", "-I", "-S", "/opt/agents/pi"],
+            currentExecutable: "python3"
+        ))
+        #expect(!AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+            observedCommand: "python3 -I -S /opt/agents/pi",
+            kernelArguments: ["/usr/bin/python3", "-I", "-S", "/tmp/benign.py"],
             currentExecutable: "python3"
         ))
     }
