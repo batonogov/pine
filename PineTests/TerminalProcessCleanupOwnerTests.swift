@@ -94,8 +94,10 @@ struct TerminalProcessCleanupOwnerTests {
             .applicationTerminationControllers(from: [])
         #expect(barrierControllers.contains { $0 === controller })
 
+        // Wait on this exact owner so a sibling suite's in-flight cleanup
+        // cannot consume the deadline; the registry membership is pinned above.
         let quitCompleted = await TerminalTabCloseAuthorization
-            .waitForAuthorizedStops(barrierControllers, until: .now() + 10)
+            .waitForAuthorizedStops([controller], until: .now() + 10)
         #expect(quitCompleted)
         #expect(!PTYFixtureTrace.identityIsLive(childIdentity))
         #expect(PTYFixtureTrace.identityIsLive(unrelatedIdentity))
