@@ -1070,6 +1070,9 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     var decisionReferences: [AgentTaskDecisionReference]
     var worktreeSetup: AgentTaskReservedWorktreeCheckpoint?
     var nativeDispatch: AgentTaskNativeDispatch?
+    // Independent review and bounded corrections (#1755): the durable
+    // review-cycle journal. Additive: older metadata decodes to nil.
+    var reviewCycle: AgentTaskCorrectionCycle?
 
     var reservedAndObservedRunIDs: [UUID] {
         let observed = runs.map(\.id)
@@ -1111,6 +1114,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case decisionReferences
         case worktreeSetup
         case nativeDispatch
+        case reviewCycle
     }
 
     init(
@@ -1150,6 +1154,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         decisionReferences = []
         worktreeSetup = nil
         nativeDispatch = nil
+        reviewCycle = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -1242,6 +1247,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         ) ?? []
         worktreeSetup = try values.decodeIfPresent(AgentTaskReservedWorktreeCheckpoint.self, forKey: .worktreeSetup)
         nativeDispatch = try values.decodeIfPresent(AgentTaskNativeDispatch.self, forKey: .nativeDispatch)
+        reviewCycle = try values.decodeIfPresent(AgentTaskCorrectionCycle.self, forKey: .reviewCycle)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1284,6 +1290,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         try values.encode(decisionReferences, forKey: .decisionReferences)
         try values.encodeIfPresent(worktreeSetup, forKey: .worktreeSetup)
         try values.encodeIfPresent(nativeDispatch, forKey: .nativeDispatch)
+        try values.encodeIfPresent(reviewCycle, forKey: .reviewCycle)
     }
 }
 

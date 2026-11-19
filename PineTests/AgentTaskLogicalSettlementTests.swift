@@ -884,7 +884,7 @@ struct AgentTaskLogicalSettlementTests {
 
     // MARK: - Persistence
 
-    @Test("logical settlement persists as schema v4 and round-trips")
+    @Test("logical settlement persists as schema v5 and round-trips")
     func logicalSettlementRoundTrip() async throws {
         let fixture = try LSPersistenceFixture()
         defer { fixture.cleanup() }
@@ -907,7 +907,7 @@ struct AgentTaskLogicalSettlementTests {
             JSONSerialization.jsonObject(with: Data(contentsOf: file))
                 as? [String: Any]
         )
-        #expect(root["schemaVersion"] as? Int == 4)
+        #expect(root["schemaVersion"] as? Int == 5)
         let runs = try #require(
             (root["tasks"] as? [[String: Any]])?.first?["runs"] as? [[String: Any]]
         )
