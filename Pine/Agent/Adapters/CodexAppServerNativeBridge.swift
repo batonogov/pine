@@ -801,6 +801,37 @@ nonisolated final class CodexAppServerNativeFactory: AgentAdapterFactory, @unche
 
 // MARK: - Bounded RPC
 
+nonisolated private final class CodexAppServerRPCOutcome<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var settled = false
+    private var successValue: T?
+    private var failureValue: (any Error)?
+    private let semaphore = DispatchSemaphore(value: 0)
+
+    func settle(success value: T) {
+        lock.lock(); defer { lock.unlock() }
+        guard !settled else { return }
+        settled = true
+        successValue = value
+        semaphore.signal()
+    }
+
+    func settle(failure error: any Error) {
+        lock.lock(); defer { lock.unlock() }
+        guard !settled else { return }
+        settled = true
+        failureValue = error
+        semaphore.signal()
+    }
+
+    func wait(until deadline: DispatchTime) -> Bool {
+        semaphore.wait(timeout: deadline) == .success
+    }
+
+    var success: T? { lock.lock(); defer { lock.unlock() }; return successValue }
+    var failure: (any Error)? { lock.lock(); defer { lock.unlock() }; return failureValue }
+}
+
 /// Runs one bounded asynchronous client RPC from the registry's synchronous
 /// effect action. That action executes on an off-main global-queue thread, so
 /// blocking it is safe; the detached task carries the actor hops. A timeout
@@ -810,41 +841,18 @@ nonisolated private func runBoundedRPC<T: Sendable>(
     _ operation: @escaping @Sendable () async throws -> T
 ) throws -> T {
     guard ContinuousClock.now < deadline else { throw CodexAppServerClientError.unavailable }
-    final class Outcome: @unchecked Sendable {
-        private let lock = NSLock()
-        private var settled = false
-        private var success: T?
-        private var failure: (any Error)?
-        private let semaphore = DispatchSemaphore(value: 0)
-        func settle(success value: T) {
-            lock.lock(); defer { lock.unlock() }
-            guard !settled else { return }
-            settled = true
-            success = value
-            semaphore.signal()
-        }
-        func settle(failure error: any Error) {
-            lock.lock(); defer { lock.unlock() }
-            guard !settled else { return }
-            settled = true
-            failure = error
-            semaphore.signal()
-        }
-        func wait(until deadline: DispatchTime) -> Bool {
-            semaphore.wait(timeout: deadline) == .success
-        }
-        var success: T? { lock.lock(); defer { lock.unlock() }; return success }
-        var failure: (any Error)? { lock.lock(); defer { lock.unlock() }; return failure }
-    }
-    let outcome = Outcome<T>()
+    let outcome = CodexAppServerRPCOutcome<T>()
     let task = Task.detached {
-        do { outcome.settle(success: try await operation()) }
-        catch { outcome.settle(failure: error) }
+        do {
+            outcome.settle(success: try await operation())
+        } catch {
+            outcome.settle(failure: error)
+        }
     }
     // The RPC's own deadlines are bounded by `deadline`; the five-second
     // slack only covers settling after that bound.
     let timeout = ContinuousClock.now.duration(to: deadline).components
-    let slack = max(timeout.seconds + 5, 1)
+    let slack = max(Int(clamping: timeout.seconds + 5), 1)
     guard outcome.wait(until: DispatchTime.now() + .seconds(slack)) else {
         task.cancel()
         throw CodexAppServerClientError.unavailable

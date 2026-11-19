@@ -125,7 +125,9 @@ nonisolated private enum Configuration {
             if executable == nil {
                 return "codex is unavailable at PINE_CODEX_SMOKE_EXECUTABLE or the common Homebrew paths"
             }
-            return "machine codex reports '\(versionCheck?.output ?? "nothing")'; the pinned gate is '\(CodexAppServerExecutableIdentity.supportedVersion)'. Pass a matching PINE_CODEX_SMOKE_EXECUTABLE."
+            return "machine codex reports '\(versionCheck?.output ?? "nothing")'; "
+                + "the pinned gate is '\(CodexAppServerExecutableIdentity.supportedVersion)'. "
+                + "Pass a matching PINE_CODEX_SMOKE_EXECUTABLE."
         }
         return "Pass PINE_RUN_CODEX_NATIVE_SMOKE=1 (and optionally PINE_CODEX_SMOKE_EXECUTABLE) as xcodebuild settings"
     }
