@@ -2332,7 +2332,12 @@ struct WindowLifecycleTests {
         let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         let run = project.taskRunStore.start(makeTaskRun(id: "active"))
-        let probe = TerminationTaskProbe(waitResult: true)
+        let outcome = makeTaskOutcome(id: "active")
+        let probe = TerminationTaskProbe(waitResult: true, onWait: {
+            Task { @MainActor in
+                project.taskRunStore.finishRun(id: run.id, outcome: outcome, cancelled: false)
+            }
+        })
         project.taskRunStore.registerCancellation(
             probe.makeCancellation(),
             forRunID: run.id
@@ -3203,11 +3208,13 @@ private final class TrackingApplicationOwnerWindow: NSWindow {
 nonisolated private final class TerminationTaskProbe: @unchecked Sendable {
     private let lock = NSLock()
     private let waitResult: Bool
+    private let onWait: (@Sendable () -> Void)?
     private var cancellations = 0
     private var waits = 0
 
-    init(waitResult: Bool) {
+    init(waitResult: Bool, onWait: (@Sendable () -> Void)? = nil) {
         self.waitResult = waitResult
+        self.onWait = onWait
     }
 
     var cancellationCount: Int {
@@ -3230,6 +3237,7 @@ nonisolated private final class TerminationTaskProbe: @unchecked Sendable {
                 lock.withLock {
                     waits += 1
                 }
+                onWait?()
                 return waitResult
             }
         )

@@ -185,18 +185,14 @@ struct ProjectRegistryTests {
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: tempDir))
         let run = project.taskRunStore.start(makeTaskRun(id: "deleted"))
-        let probe = ProjectTaskCancellationProbe()
+        let outcome = makeTaskOutcome(id: "deleted")
+        let probe = ProjectTaskCancellationProbe(onWait: {
+            Task { @MainActor in
+                project.taskRunStore.finishRun(id: run.id, outcome: outcome, cancelled: true)
+            }
+        })
         project.taskRunStore.registerCancellation(
-            UserTaskCancellation(
-                terminate: {
-                    probe.recordCancellation()
-                    return true
-                },
-                waitForCompletion: { _ in
-                    probe.recordWait()
-                    return true
-                }
-            ),
+            probe.makeCancellation(),
             forRunID: run.id
         )
 
@@ -491,11 +487,13 @@ nonisolated private final class ProjectTaskCancellationProbe:
     @unchecked Sendable {
     private let lock = NSLock()
     private let waitResult: Bool
+    private let onWait: (@Sendable () -> Void)?
     private var cancellations = 0
     private var waits = 0
 
-    init(waitResult: Bool = true) {
+    init(waitResult: Bool = true, onWait: (@Sendable () -> Void)? = nil) {
         self.waitResult = waitResult
+        self.onWait = onWait
     }
 
     var cancellationCount: Int {
@@ -526,6 +524,7 @@ nonisolated private final class ProjectTaskCancellationProbe:
             },
             waitForCompletion: { [self] _ in
                 recordWait()
+                onWait?()
                 return waitResult
             }
         )
