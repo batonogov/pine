@@ -87,9 +87,9 @@ struct AgentTaskDataPolicyTests {
             "id", "project", "route", "presentationContext", "descriptor",
             "origin", "lifecycle", "runs", "createdAt", "updatedAt",
             "lastActivityAt", "isUnread", "attention", "title", "objective",
-            "executionState", "evidence", "verificationState",
+            "objectiveRevision", "executionState", "evidence", "verificationState",
             "acceptanceState", "reviewedSnapshot", "acceptedSnapshot",
-            "environment", "feedback",
+            "environment", "feedback", "decisionReferences",
         ])
     }
 
@@ -213,7 +213,7 @@ struct AgentTaskDataPolicyTests {
     func unorderedDedupScope() throws {
         var task = ADEContractFixtures.settledTask(seed: 66)
         let run = try #require(task.runs.first)
-        let base = Date()
+        let base = Date(timeIntervalSince1970: 1_000)
         // Two sub-millisecond-apart facts of the same kind within one
         // quantized millisecond are the same event identity: the second is
         // a duplicate.
