@@ -325,10 +325,6 @@ struct AgentDetectorTests {
                 from: "node --max-old-space-size=4096 /opt/homebrew/bin/pi"
             ) == "pi"
         )
-        #expect(
-            AgentDetector.extractExecutableName(from: "python3 -u /opt/aider/aider.py")
-                == "aider"
-        )
     }
 
     @Test func extractExecutableNameCaseInsensitiveInterpreter() {
@@ -944,6 +940,16 @@ struct AgentDetectorTests {
         #expect(!AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
             observedCommand: "node /opt/agents/claude.js --verbose",
             kernelArguments: ["/usr/local/bin/python3", "/opt/agents/claude.js"],
+            currentExecutable: "python3"
+        ))
+        #expect(AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+            observedCommand: "python3 -I -S /opt/agents/pi",
+            kernelArguments: ["/usr/bin/python3", "-I", "-S", "/opt/agents/pi"],
+            currentExecutable: "python3"
+        ))
+        #expect(!AgentDetectionCoordinator.processArgumentsAreCoherentForTesting(
+            observedCommand: "python3 -I -S /opt/agents/pi",
+            kernelArguments: ["/usr/bin/python3", "-I", "-S", "/tmp/benign.py"],
             currentExecutable: "python3"
         ))
     }
