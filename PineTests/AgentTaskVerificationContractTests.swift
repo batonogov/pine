@@ -78,7 +78,8 @@ struct AgentTaskVerificationContractTests {
         seed: Int
     ) throws -> AgentTask {
         let now = Date()
-        let route = AgentTaskRoute(paneID: UUID(), tabID: UUID(), terminalID: UUID())
+        let terminalID = UUID()
+        let route = AgentTaskRoute(paneID: UUID(), tabID: terminalID, terminalID: terminalID)
         let context = AgentTaskBridgeContext(
             project: fixture.project,
             route: route,
