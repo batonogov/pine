@@ -336,7 +336,7 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
             let started = try await client.call(
                 method: "thread/start",
                 params: .object(["cwd": .string(workingDirectory.path)]),
-                beforeDispatch: preflightGate()
+                beforeDispatch: preflightGate({})
             )
             guard case .object(let fields) = started,
                   case .object(let threadObject) = fields["thread"],
@@ -565,7 +565,7 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
         // Install it before the RPC: while the request is in flight the pump
         // buffers pre-binding traffic (turn/started, early questions, fast
         // completions) into this instance; the correlated response replays it.
-        let mapper = try CodexAppServerTaskMapper(connectionID: UUID(), threadID: threadValue)
+        var mapper = try CodexAppServerTaskMapper(connectionID: UUID(), threadID: threadValue)
         try mapper.prepareTurn()
         self.mapper = mapper
         let taskID = ownership.policy.taskID
@@ -595,7 +595,7 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
             // Bind against the installed copy: the pump may have buffered
             // pre-binding traffic into it while the RPC was in flight, and
             // bindTurnResponse replays exactly that buffer.
-            var current = self.mapper
+            guard var current = self.mapper else { throw CodexAppServerClientError.unavailable }
             let effects = try current.bindTurnResponse(turnID)
             self.mapper = current
             activeTurnValue = turnID
@@ -653,7 +653,7 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
         try await registry.performNativeEffect(.decision, ownership: ownership) {
             try runBoundedRPC(deadline: rpcDeadline) {
                 try await client.answer(entry.id, result: result,
-                                         replayAuthority: replayFence, beforeResponse: gate)
+                                         replayAuthority: self.replayFence, beforeResponse: gate)
             }
         }
         return .acknowledged
