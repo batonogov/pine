@@ -30,7 +30,7 @@
   "mini.nativeDesc": "Mit SwiftUI und AppKit gebaut. Vertraute Mac-Bedienelemente, keine Browser-Laufzeit.",
   "mini.focusedKicker": "Agentenbewusst",
   "mini.focusedTitle": "Agenten bleiben im Terminal",
-  "mini.focusedDesc": "Agenten bleiben im Terminal, während Pine zeigt, wer arbeitet, was sich geändert hat und wann Aufmerksamkeit nötig ist.",
+  "mini.focusedDesc": "Agenten im Terminal ausführen und Dateiänderungen prüfen. Aktuelle integrierte Anbindungen erkennen Prozesse, bestätigen aber weder Wartezustände noch erfolgreiche Ergebnisse.",
   "mini.leanKicker": "Fokussiert",
   "mini.leanTitle": "Kein KI-Dashboard",
   "mini.leanDesc": "Leichtgewichtige Benutzergrammatiken, Tasks und Tastenkürzel — ohne Erweiterungs-Marktplatz oder Browser-Runtime.",

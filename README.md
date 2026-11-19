@@ -22,6 +22,11 @@
 
 Pine reflects agent activity, file changes, diagnostics, and Git context across a fast native workspace without turning into another AI dashboard. Built with SwiftUI and AppKit for macOS 26 Liquid Glass — no Electron runtime.
 
+Current built-in integrations detect processes, not verified waiting or success.
+See the [compatibility matrix](docs/agent-compatibility.md) and its
+[dated capability audit](docs/cli-capability-evidence-2026-11-14.md) for the distinction
+between process detection, upstream interfaces, and verified Pine integration.
+
 ## One workspace for code and CLI agents
 
 <p align="center">

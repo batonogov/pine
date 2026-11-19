@@ -30,7 +30,7 @@
   "mini.nativeDesc": "使用 SwiftUI 和 AppKit 构建。熟悉的 Mac 控件，无需浏览器运行时。",
   "mini.focusedKicker": "感知代理",
   "mini.focusedTitle": "代理留在终端中",
-  "mini.focusedDesc": "代理在终端中工作，Pine 则显示谁正在工作、发生了什么变化，以及何时需要你的注意。",
+  "mini.focusedDesc": "在终端中运行智能体并检查文件变更。当前内置集成只检测进程，不验证等待状态或成功结果。",
   "mini.leanKicker": "专注",
   "mini.leanTitle": "没有 AI 仪表盘",
   "mini.leanDesc": "轻量的用户语法、任务和快捷键——没有扩展市场，也没有浏览器运行时。",

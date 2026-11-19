@@ -30,7 +30,7 @@
   "mini.nativeDesc": "Creado con SwiftUI y AppKit. Controles familiares de Mac, sin un entorno de ejecución de navegador.",
   "mini.focusedKicker": "Consciente de agentes",
   "mini.focusedTitle": "Los agentes permanecen en la terminal",
-  "mini.focusedDesc": "Los agentes trabajan en la terminal mientras Pine muestra quién trabaja, qué cambió y cuándo hace falta atención.",
+  "mini.focusedDesc": "Ejecuta agentes en la terminal e inspecciona los cambios en archivos. Las integraciones actuales detectan procesos, no estados verificados de espera o éxito.",
   "mini.leanKicker": "Enfocado",
   "mini.leanTitle": "Sin panel de IA",
   "mini.leanDesc": "Gramáticas, tareas y atajos de usuario ligeros — sin marketplace de extensiones ni runtime de navegador.",

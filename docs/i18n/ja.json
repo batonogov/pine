@@ -30,7 +30,7 @@
   "mini.nativeDesc": "SwiftUI と AppKit で構築。使い慣れた Mac の操作感で、ブラウザのランタイムは不要です。",
   "mini.focusedKicker": "エージェント対応",
   "mini.focusedTitle": "エージェントはターミナルの中に",
-  "mini.focusedDesc": "エージェントはターミナルで動き、Pine は誰が作業中か、何が変わったか、いつ注意が必要かを示します。",
+  "mini.focusedDesc": "ターミナルでエージェントを実行し、ファイルの変更を確認できます。現在の組み込み連携はプロセスを検出するもので、待機や成功を検証するものではありません。",
   "mini.leanKicker": "集中",
   "mini.leanTitle": "AI ダッシュボードなし",
   "mini.leanDesc": "軽量なユーザー文法、タスク、キーバインド — 拡張マーケットプレイスもブラウザランタイムもありません。",
