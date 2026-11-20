@@ -343,7 +343,7 @@ it never migrates into the new model — it does not record an
 `agentReportedCompletion` fact, does not upgrade the outcome or the
 verification state, and never establishes Ready. No verified-result or
 Ready notification kind exists: the notification surface is exactly
-`waitingInput`, `failed`, `completed` (legacy), and `processEnded`. At the
+`waitingInput`, `failed`, and `completed` (legacy). At the
 persistence level the legacy completed state (completed lifecycle and
 attention without a recorded outcome and evidence basis) is rejected as
 invalid metadata rather than migrated.
