@@ -206,18 +206,13 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
             waitForEnabled(openButton, timeout: 5),
             "Selecting the file should enable Open"
         )
-        // #1812: on the macOS 27 CI shard the sheet's Open button click
-        // never completed acceptance (the panel stayed up, no tab appeared).
-        // The row is demonstrably selected by that point (Open enables), so
-        // acceptance is driven through the row's own activation gesture, and
-        // the panel dismissal is asserted before the tab so any future
-        // drift fails at the acceptance boundary.
-        mainFile.coordinate(
-            withNormalizedOffset: CGVector(dx: -0.2, dy: 0.5)
-        ).doubleClick()
+        // #1812/#1839: on macOS 27 CI, neither the Open button nor row
+        // double-click reliably accepts the selected file. Open is the default
+        // button, so accept with Return and assert dismissal before the tab.
+        openPanel.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(
             openPanel.waitForNonExistence(timeout: 5),
-            "Activating the selected file row should dismiss the native Open panel"
+            "Pressing Return should dismiss the native Open panel"
         )
         XCTAssertTrue(
             waitForExistence(editorTab("main.swift"), timeout: 5),

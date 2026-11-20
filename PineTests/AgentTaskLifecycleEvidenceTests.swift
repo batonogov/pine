@@ -1645,8 +1645,8 @@ struct AgentTaskLifecycleEvidenceTests {
         #expect(events.map(\.taskID) == [settled.id])
     }
 
-    @Test("process-only accuracy never emits a completion event")
-    func processOnlyAccuracyStaysProcessEnded() throws {
+    @Test("process-only termination preserves unverified history without a notification")
+    func processOnlyTerminationIsSilent() throws {
         let registry = AgentTaskRegistry()
         let live = makeTask(
             seed: 73,
@@ -1669,7 +1669,7 @@ struct AgentTaskLifecycleEvidenceTests {
             to: [after],
             accuracy: { _ in .processTerminationOnly }
         )
-        #expect(events.map(\.kind) == [.processEnded])
+        #expect(events.isEmpty)
     }
 
     @Test("relaunch invalidates verified evidence but preserves history")

@@ -428,23 +428,28 @@ nonisolated enum AgentTaskReviewOrchestrator {
                 observedAt: event.observedAt,
                 codeState: cycle.codeState
             )
-            let operation = UUID()
-            if cycle.reserve(
-                operationID: operation,
-                feedback: feedback,
-                codeState: cycle.codeState,
-                environment: cycle.environment
-            ) {
-                dispatch = AgentTaskCorrectionDispatch(
+            if let terminalID = run.terminalID {
+                let operation = UUID()
+                if cycle.reserve(
                     operationID: operation,
-                    taskID: cycle.taskID,
-                    runID: cycle.runID,
-                    terminalID: run.terminalID,
-                    cycleID: cycle.id,
-                    feedbackReference: reference,
-                    baselineCodeState: cycle.codeState
-                )
-            } else if cycle.state == .needsDecision {
+                    feedback: feedback,
+                    codeState: cycle.codeState,
+                    environment: cycle.environment
+                ) {
+                    dispatch = AgentTaskCorrectionDispatch(
+                        operationID: operation,
+                        taskID: cycle.taskID,
+                        runID: cycle.runID,
+                        terminalID: terminalID,
+                        cycleID: cycle.id,
+                        feedbackReference: reference,
+                        baselineCodeState: cycle.codeState
+                    )
+                } else if cycle.state == .needsDecision {
+                    decision = Self.decisionRequest(for: cycle)
+                }
+            } else {
+                cycle.stop(.infrastructureFailure)
                 decision = Self.decisionRequest(for: cycle)
             }
         }
@@ -502,6 +507,11 @@ nonisolated enum AgentTaskReviewOrchestrator {
               ) else {
             return nil
         }
+        guard let terminalID = run.terminalID else {
+            cycle.stop(.infrastructureFailure)
+            task.reviewCycle = cycle
+            return nil
+        }
         let feedback = AgentTaskFeedbackRecord(
             reference: reference,
             observedAt: observedAt,
@@ -523,7 +533,7 @@ nonisolated enum AgentTaskReviewOrchestrator {
             operationID: operation,
             taskID: cycle.taskID,
             runID: cycle.runID,
-            terminalID: run.terminalID,
+            terminalID: terminalID,
             cycleID: cycle.id,
             feedbackReference: reference,
             baselineCodeState: codeState

@@ -34,6 +34,7 @@ final class AgentNotificationSettings {
     init(defaults: UserDefaults) {
         self.defaults = defaults
         isEnabled = (defaults.object(forKey: Keys.enabled) as? Bool) ?? false
+        // Retired event keys are ignored; keep saved preferences/history intact.
         enabledEvents = Set(AgentNotificationEventKind.allCases.filter { kind in
             (defaults.object(forKey: Keys.eventPrefix + kind.rawValue) as? Bool)
                 ?? true

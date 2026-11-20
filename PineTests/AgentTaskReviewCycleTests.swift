@@ -73,11 +73,12 @@ struct AgentTaskReviewCycleTests {
         seed: Int,
         state: AgentRunState = .executing,
         liveness: AgentRunLiveness = .live,
-        now: Date
+        now: Date,
+        hasTerminal: Bool = true
     ) -> AgentTaskRunInput {
         AgentTaskRunInput(
             id: uuid(seed + 200),
-            terminalID: uuid(seed + 100),
+            terminalID: hasTerminal ? uuid(seed + 100) : nil,
             process: AgentProcessEvidence(
                 processIdentifier: Int32(5_000 + seed),
                 processGeneration: UInt64(seed),
@@ -97,24 +98,25 @@ struct AgentTaskReviewCycleTests {
     private func makeTask(
         seed: Int,
         now: Date = Date(timeIntervalSince1970: 10_000),
-        projectPath: String? = nil
+        projectPath: String? = nil,
+        hasTerminal: Bool = true
     ) -> AgentTask {
         let context = AgentTaskBridgeContext(
             project: project(projectPath ?? "/tmp/pine-review-\(seed)"),
-            route: AgentTaskRoute(
+            route: hasTerminal ? AgentTaskRoute(
                 paneID: uuid(seed),
                 tabID: uuid(seed + 100),
                 terminalID: uuid(seed + 100),
                 availability: .available
-            ),
-            origin: .discoveredInTerminal,
+            ) : AgentTaskRoute(ownedProcessAvailability: .available),
+            origin: hasTerminal ? .discoveredInTerminal : .pineLaunched,
             observedAt: now
         )
         var task = AgentTask(
             descriptor: AgentDescriptor(agentType: .claudeCode),
             context: context
         )
-        var run = AgentTaskRun(makeAttempt(seed: seed, now: now))
+        var run = AgentTaskRun(makeAttempt(seed: seed, now: now, hasTerminal: hasTerminal))
         run.vendorIdentity = Self.implementerSession
         task.runs = [run]
         task.updatedAt = now
@@ -963,6 +965,34 @@ struct AgentTaskReviewCycleTests {
                 )
             )
         )
+    }
+
+    @Test("owned-process corrections escalate before reserving a terminal dispatch")
+    func ownedProcessCorrectionsNeedDecision() throws {
+        let cs = codeState("a")
+        var reviewTask = makeTask(seed: 71, hasTerminal: false)
+        #expect(begin(&reviewTask, cs: cs))
+        let review = try issueReview(&reviewTask)
+        guard case .accepted(_, let correction, let decision) = AgentTaskReviewOrchestrator.acceptReviewerOutcome(
+            task: &reviewTask,
+            event(review.operationID, passed: false, cs: cs, reference: "native-finding", at: reviewTask.updatedAt)
+        ) else {
+            Issue.record("expected the owned-process review verdict to be accepted")
+            return
+        }
+        #expect(correction == nil)
+        #expect(reviewTask.reviewCycle?.pending == nil)
+        #expect(reviewTask.reviewCycle?.state == .needsDecision)
+        #expect(decision?.blocker == .infrastructureFailure)
+
+        var checkTask = makeTask(seed: 72, hasTerminal: false)
+        #expect(begin(&checkTask, cs: cs))
+        #expect(AgentTaskReviewOrchestrator.routeFailedCheck(
+            task: &checkTask, reference: "native-check", codeState: cs, environment: environment
+        ) == nil)
+        #expect(checkTask.reviewCycle?.pending == nil)
+        #expect(checkTask.reviewCycle?.state == .needsDecision)
+        #expect(checkTask.reviewCycle?.blocker == .infrastructureFailure)
     }
 
     @Test("check-only failures share the correction budget and never loop")

@@ -37,7 +37,7 @@ The active catalog and all nine Help pages reflect this retirement.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [Pi](https://github.com/badlogic/pi-mono) | `pi` | 0.83.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Codex](https://github.com/openai/codex) | `codex` | 0.146.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
-| [Claude Code](https://github.com/anthropics/claude-code) | `claude` | 2.1.220 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Claude Code](https://github.com/anthropics/claude-code) | `claude` | 2.1.220 | Detected | Process snapshot; observed process generation | Manual terminal / new session only; native resume only by explicit user action as a new attempt | Process termination only | Structured transport not enabled in the app yet; the owned stream-json/control codec/model foundation is implemented with pinned floors (see below), recorded in the [2026-11-16 evidence](claude-stream-control-evidence-2026-11-16.md). |
 | [OpenCode](https://github.com/anomalyco/opencode) | `opencode` | 1.18.10 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | `github-copilot-cli`, `copilot` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Aider](https://github.com/Aider-AI/aider) | `aider` | 0.86.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
@@ -47,7 +47,7 @@ The active catalog and all nine Help pages reflect this retirement.
 | [Goose](https://github.com/aaif-goose/goose) | `goose` | 1.45.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Qwen Code](https://github.com/QwenLM/qwen-code) | `qwen` | 0.21.4 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Crush](https://github.com/charmbracelet/crush) | `crush` | 0.88.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
-| [Kimi Code](https://www.kimi.com/code/docs/en/) | `kimi`, `kimi-code` | 2.1.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Kimi Code](https://www.kimi.com/code/docs/en/) | `kimi`, `kimi-code` | 2.1.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | Structured `kimi acp` ACP floor recorded below; production activation stays pending the real-version smoke and task-owner wiring. |
 | [Antigravity](https://antigravity.google/docs/cli/headless) | `agy` | 1.5.6 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Droid](https://docs.factory.com/droid-cli/cli-reference) | `droid` | 1.9.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Cline](https://github.com/cline/cline) | `cline` | 3.0.74 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
@@ -60,6 +60,31 @@ metadata, and remembered defaults require a new explicit agent choice. Manual
 terminal commands remain available. Empry⊙ is excluded from Pine 3.0 structured
 adapter plans; historical release records remain unchanged.
 
+## Structured transport floors (Pine-owned, first slice)
+
+The first owned structured-adapter slice is Claude Code's
+stream-json/control protocol over supervised child stdio
+(#1727). Codex's owned app-server slice precedes it and Kimi/OpenCode
+extend the shared contracts; this table records the exact transport and
+version floors for Claude at the codec/model level. These floors are
+requirements of the implemented slice, not broad compatibility claims,
+and the app does not enable the transport until the registry integration
+and the real-version final gate (full turns, live permission exchange)
+pass.
+
+| Item | Claude Code value |
+| --- | --- |
+| Transport | Owned child stdio; `-p --input-format stream-json --output-format stream-json --verbose`; JSONL frames ≤ 1 MiB |
+| Pinned executable | 2.1.311 (verified handshake, 2026-11-16, unauthenticated, no model calls) |
+| Structured-slice minimum | 2.1.296 (max of the required feature floors) |
+| Feature floors | `capabilities` field and interrupt receipts ≥ 2.1.205; `cancel_queued` ≥ 2.1.219; `--system-prompt-snapshot off` ≥ 2.1.257; `--permission-prompts` ≥ 2.1.259; `pending_permission_requests` ≥ 2.1.268; `claude_code_version` ≥ 2.1.296 |
+| Feature detection | Observed `capabilities` array first (open set; unrecognized values ignored); recorded version floors when the array is absent; missing evidence is unknown, never "absent" |
+| Pending-request recovery | `pending_permission_requests` on the `initialize` response wrapper; a missing field means an older CLI, so post-reconnect approval state stays unknown rather than "no pending requests" |
+| Cancellation | `interrupt` control request; receipt (`still_queued`/`cancelled`) is observation only — queued messages are never auto-resent; a late completion after cancellation is a race outcome, never Ready |
+| Stop semantics | `result success` = agent-reported main-turn end only; may coexist with background work; never independently establishes verified completion or Ready |
+| Resume | Native `--resume` only through explicit user action, as a new Pine attempt/source namespace; registry checkpoints are never persisted as resume data; a new process is never live reattachment |
+| Limitations | No transport reconnect on owned stdio (process death ends the attempt); native user questions (`pending_user_dialog_requests`) are parsed as count-only and unmapped; `can_use_tool` wire shape implemented from the documented contract, live exchange is the final gate; hooks are reporting-only with consent/preview and project-local settings only |
+
 ## Tier meanings
 
 - **Generic:** Pine can host the command in a terminal but makes no identity or
@@ -69,7 +94,89 @@ adapter plans; historical release records remain unchanged.
 - **Attention-aware:** Pine has a verified provider signal for a user-action
   transition. No first-party adapter currently claims this tier.
 - **Structured:** Pine negotiates a documented, authenticated structured
-  lifecycle contract. No first-party adapter currently claims this tier.
+  lifecycle contract. No first-party adapter currently claims this tier in
+  the catalog above: the Kimi Code CLI structured adapter (#1732) below
+  stays **Detected** until its real-version smoke passes on the pinned binary.
+
+## Kimi Code CLI structured ACP floor (#1732)
+
+Pine ships a structured adapter for `kimi acp` (ACP protocol major 1, JSON-RPC
+over stdio). The column below records the exact pinned Kimi Code CLI version
+for every enabled capability; the pin is the version whose documented
+capability matrix was verified against the [kimi acp
+reference](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-acp.html),
+the [kimi command
+reference](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command.html),
+and the [session persistence
+guide](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/sessions.html).
+The gate is exact equality: any other version is refused until re-pinned
+through a fresh dated observation.
+
+| Capability | Pinned CLI version (exact) |
+| --- | --- |
+| initialize-capability-matrix | 2.6.2 |
+| session-new | 2.6.2 |
+| session-prompt-text | 2.6.2 |
+| session-prompt-image | 2.6.2 |
+| session-prompt-text-resource | 2.6.2 |
+| session-load-history-replay | 2.6.2 |
+| session-resume-no-replay | 2.6.2 |
+| session-fork | 2.6.2 |
+| session-cancel | 2.6.2 |
+| session-request-permission | 2.6.2 |
+| elicitation-form | 2.6.2 |
+| additional-directories-new-only | 2.6.2 |
+| config-options-dynamic-parse | 2.6.2 |
+
+Evidence status: the codec, mapping, request state machine, and sanitized
+fixture corpus are fixture-verified and deterministic. Re-probed
+2026-11-17T09:57:16Z (artifact `$TMPDIR/opencode/pine-1732-reprobe/`):
+`kimi --version` = 2.6.2 and ACP `initialize` observed at 2.6.2
+(protocolVersion 1, `loadSession` true, no server→client requests at init);
+`session/new` answered `Authentication required`, so the per-capability rows
+are documented-contract at the pinned version. The Kimi contract scenarios
+await the shared provider outcome table port (#1821). The real-version smoke (bounded `kimi --version` discovery plus an
+`initialize` handshake, terminated before any session call) is the final
+gate, PENDING; until it passes on the pinned binary, the catalog record above
+remains **Detected** and no structured tier is claimed.
+
+Deliberate boundaries:
+
+- `session/load` replays bounded history before settling; `session/resume`
+  never replays; both start a NEW ACP process and a new Pine attempt/source
+  namespace — neither is a reattachment to an old live process.
+- `session/fork` (capability `session-fork`) sends only the source session ID:
+  Kimi ignores supplied cwd/directories/MCP on fork, so no environment or
+  configuration change is advertised merely because a request field was accepted.
+- `additional-directories-new-only` is sent on `session/new` only; Kimi honors
+  it there and nowhere else.
+- Prompt content blocks (`text`, `image`, `resource` with text) are included
+  only when the user explicitly supplied them. Documented dropped blob
+  resources (no text) are rejected with an explanation before submission;
+  feedback and attachments are preserved under #1758.
+- Reverse-RPC client capabilities (`fs/read_text_file`, `fs/write_text_file`,
+  `terminal/*`) are NOT advertised: Pine does not implement their ownership,
+  authorization, bounds, cancellation, and teardown, so the agent acts on its
+  own supervised process. URL-mode `elicitation/create` is not advertised and
+  is rejected on receipt, letting Kimi fall back to
+  `session/request_permission`.
+- Provider authentication is checked separately from transport ownership: a
+  non-empty `authMethods` list requires a verified terminal-auth observation
+  from the separate auth UI before Pine creates a session. `--yolo`, `--auto`,
+  hook installation, `kimi web`, and `--dangerous-bypass-auth` are never used.
+- Dynamic `configOptions` are parsed with graceful unknown-type handling;
+  `providers/*`, `nes/*`, `document/*`, and `elicitation/complete` are not
+  implemented by Kimi and are never called.
+- A permission denial or cancellation is a first-class outcome; cancellation
+  is requested until the provider confirms the resulting turn state, and
+  nothing is auto-resent after cancellation or reconnect.
+- No in-channel reconnect: channel loss settles the attempt as `unknown`, and
+  recovery is an explicit relaunch + `session/load` of the durable session.
+- Form schemas outside the strict subset are refused (`methodNotFound`), and
+  Kimi falls back to `session/request_permission`, turning an open-ended
+  native question into a binary approval.
+- MCP inheritance is not recorded because Pine forwards no MCP servers
+  (`mcpServers: []` on every session call).
 
 ## Lifecycle and evidence contract (#1722)
 

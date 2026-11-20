@@ -12,7 +12,7 @@ import os
 nonisolated private struct AgentTaskTerminalKey: Hashable, Sendable {
     let project: AgentTaskProjectIdentity
     let surface: AgentTaskTerminalSurface
-    let terminalID: UUID
+    let terminalID: UUID?
 }
 
 nonisolated struct AgentTaskLaunchReservation: Hashable, Sendable {
@@ -105,6 +105,8 @@ final class AgentTaskRegistry {
     private var taskIDByTerminal: [AgentTaskTerminalKey: UUID] = [:]
     @ObservationIgnored
     private var pendingClaims: [AgentTaskTerminalKey: AgentTaskPendingClaim] = [:]
+    @ObservationIgnored
+    private var verificationPassIDByTaskID: [UUID: UUID] = [:]
     @ObservationIgnored
     private var pendingClaimKeyByToken: [UUID: AgentTaskTerminalKey] = [:]
     @ObservationIgnored
@@ -199,6 +201,18 @@ final class AgentTaskRegistry {
     private var worktreeSetupOperations: [UUID: UUID] = [:]
     @ObservationIgnored
     private var worktreeSetupRetirements: [ObjectIdentifier: Task<Void, Never>] = [:]
+    @ObservationIgnored
+    private var nativeOwners: [UUID: AgentTaskNativeOwnership] = [:]
+    @ObservationIgnored
+    private var nativePreparing = Set<UUID>()
+    @ObservationIgnored
+    private var nativeCheckpointWrites = Set<UUID>()
+    @ObservationIgnored
+    private var nativeSessions: [UUID: any AgentAdapterSession] = [:]
+    @ObservationIgnored
+    private var nativeAttention: [UUID: AgentAdapterAttentionState] = [:]
+    @ObservationIgnored
+    private var nativeRetirements: [ObjectIdentifier: Task<Void, Never>] = [:]
 
     init(
         persistence: any AgentTaskPersisting = AgentTaskMetadataStore(),
@@ -556,17 +570,20 @@ final class AgentTaskRegistry {
 
     /// Records one bounded evidence fact for a task, enforcing the fencing
     /// contract (attempt identity, process incarnation, provider session
-    /// reference, source sequence, chronology, and duplicates). Admitting a
-    /// fact for the latest settled run re-settles the attempt, so
-    /// verification recorded after termination can upgrade the recorded
-    /// outcome — for example `unverified` to `success`.
+    /// reference, source sequence, chronology, and duplicates). Settlement
+    /// normally follows admission; verification passes defer it so outcome
+    /// and current verification publish together after the final probe.
     @discardableResult
     func recordEvidence(
         _ fact: AgentTaskEvidenceFact,
-        taskID: UUID
+        taskID: UUID,
+        deferSettlement: Bool = false,
+        verificationPassID: UUID? = nil
     ) -> AgentTaskEvidenceAdmission {
         guard !isTerminating,
-              let index = taskIndex(for: taskID) else {
+              let index = taskIndex(for: taskID),
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID else {
             return .fencedOut(.unknownRun)
         }
         // The fact bound is enforced inside admit (ONE enforcement point
@@ -577,20 +594,25 @@ final class AgentTaskRegistry {
             into: tasks[index]
         )
         guard case .accepted = admission else { return admission }
-        tasks[index].evidence.append(fact)
-        if let runIndex = tasks[index].runs.firstIndex(where: {
-            $0.id == fact.runID
-        }), AgentTaskLifecycleReducer.isSettled(tasks[index].runs[runIndex]) {
+        var updated = tasks[index]
+        updated.evidence.append(fact)
+        if !deferSettlement,
+           let runIndex = updated.runs.firstIndex(where: {
+               $0.id == fact.runID
+           }), AgentTaskLifecycleReducer.isSettled(updated.runs[runIndex]) {
             AgentTaskLifecycleReducer.settleLatestRun(
-                of: &tasks[index],
+                of: &updated,
                 runIndex: runIndex
             )
         }
-        tasks[index].updatedAt = max(
-            tasks[index].updatedAt,
-            fact.observedAt
-        )
-        markDirty(tasks[index].project)
+        updated.updatedAt = max(updated.updatedAt, fact.observedAt)
+        tasks[index] = updated
+        markDirty(updated.project)
+        // The assignment synchronously notifies observers. They may dismiss,
+        // replace, or invalidate this task before control returns here.
+        guard task(for: taskID) == updated else {
+            return .fencedOut(.unknownRun)
+        }
         return .accepted
     }
 
@@ -704,6 +726,555 @@ final class AgentTaskRegistry {
         tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
         markDirty(tasks[index].project)
         return true
+    }
+
+    /// Metadata creation only. Request UI supplies explicit intent; neither
+    /// creation nor restoration launches a provider or replays an instruction.
+    func createNativeTask(
+        project: AgentTaskProjectIdentity, descriptor: AgentDescriptor?,
+        title: String?, objective: String?
+    ) async -> AgentTaskNativeReservation? {
+        guard await prepareDurableWork(in: project),
+              historicalTaskIDByRunID.count < limits.maxHistoricalRunIDs,
+              let descriptor = descriptor ?? rememberedAgentDescriptor(for: project),
+              !descriptor.isRetired,
+              validUserText(title, maximum: limits.maxTitleBytes),
+              validUserText(objective, maximum: limits.maxObjectiveBytes),
+              AgentTaskMetadataStore.validText(descriptor.typeIdentifier,
+                  maximum: limits.maxAgentIdentifierBytes, allowsEmpty: false),
+              AgentTaskMetadataStore.validOptionalExecutable(descriptor.launchExecutable, maximum: limits.maxAgentIdentifierBytes),
+              makeRoomForTask(in: project) else { return nil }
+        var task = AgentTask(descriptor: descriptor, context: AgentTaskBridgeContext(
+            project: project, route: AgentTaskRoute(ownedProcessAvailability: .missing), origin: .pineLaunched
+        ), title: title, objective: objective)
+        let runID = UUID()
+        task.lifecycle = .paused
+        task.nativeDispatch = AgentTaskNativeDispatch(taskID: task.id, runID: runID)
+        tasks.append(task)
+        historicalTaskIDByRunID[runID] = task.id
+        envelopeStateByProject[project] = AgentTaskEnvelopeState(
+            rememberedAgent: descriptor, rememberedAgentUpdatedAt: task.createdAt
+        )
+        markDirty(project)
+        guard await flushPersistence(project: project) == .saved, !isTerminating, !Task.isCancelled,
+              self.task(for: task.id)?.nativeDispatch == task.nativeDispatch else { return nil }
+        return AgentTaskNativeReservation(taskID: task.id, runID: runID)
+    }
+
+    /// Returns runtime preparation authority only after exact initial launch
+    /// intent is durable. An uncertain publication is not another launch grant.
+    ///
+    /// Re-prepare covers the in-session pre-admission retry: a failed start
+    /// leaves the journal `unavailable` without an observed run, and the same
+    /// still-live binding may be re-prepared (the registry revalidates the
+    /// binding and filesystem from scratch and persists the same intent
+    /// idempotently). A different binding, an observed run, or an admitted
+    /// process is refused; an unavailable phase with a run is final.
+    ///
+    /// Post-process-crash re-prepare is NOT delivered: binding identity is
+    /// runtime-fresh and not persisted, so a restored task re-adopts a new
+    /// binding ID and the same-binding fence refuses it. A crash-stuck task
+    /// is dismissed and re-created; durable binding identity is a follow-up.
+    func prepareNativeLaunch(
+        policy: AgentTaskNativeLaunchPolicy, binding: AgentTaskEnvironmentBinding,
+        bindings: any AgentTaskNativeBindingValidator
+    ) async throws -> AgentTaskNativeOwnership {
+        guard !isTerminating, !nativePreparing.contains(policy.taskID), nativeOwners[policy.taskID] == nil,
+              let task = task(for: policy.taskID), task.route.surface == .ownedProcess,
+              task.lifecycle == .paused, task.runs.isEmpty,
+              task.nativeDispatch.map({ checkpoint in
+                  checkpoint.runID == policy.runID &&
+                  (checkpoint.phase == .reserved ||
+                   (checkpoint.phase == .launchIntent || checkpoint.phase == .unavailable)
+                       && checkpoint.bindingID == policy.bindingID)
+              }) == true,
+              task.descriptor.typeIdentifier == policy.agentID.value,
+              binding.taskID == policy.taskID, binding.id == policy.bindingID else {
+            throw AgentTaskNativeAdmissionError.invalidPolicy
+        }
+        nativePreparing.insert(task.id)
+        defer { nativePreparing.remove(task.id) }
+        guard await prepareDurableWork(in: task.project) else { throw AgentTaskNativeAdmissionError.persistenceUnavailable }
+        let filesystem = try await bindings.revalidate(binding)
+        guard !isTerminating, !Task.isCancelled, self.task(for: task.id) == task else {
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+        let ownership = try AgentTaskNativeOwnership(
+            policy: policy, binding: binding, filesystem: filesystem, bindings: bindings,
+            environment: ProcessInfo.processInfo.environment
+        )
+        guard let index = taskIndex(for: task.id), var checkpoint = task.nativeDispatch else {
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+        checkpoint.bindingID = binding.id
+        checkpoint.phase = .launchIntent
+        nativeOwners[task.id] = ownership
+        tasks[index].nativeDispatch = checkpoint
+        tasks[index].updatedAt = max(tasks[index].updatedAt, Date())
+        markDirty(task.project)
+        guard await flushPersistence(project: task.project) == .saved,
+              !isTerminating, !Task.isCancelled, nativeOwners[task.id] === ownership,
+              self.task(for: task.id)?.nativeDispatch == checkpoint else {
+            invalidateNativeOwnership(ownership)
+            throw AgentTaskNativeAdmissionError.persistenceUnavailable
+        }
+        return ownership
+    }
+
+    func bindNativeSource(
+        _ ownership: AgentTaskNativeOwnership, registry: AgentAdapterRegistry, session: any AgentAdapterSession
+    ) throws {
+        guard nativeOwners[ownership.policy.taskID] === ownership, !isTerminating,
+              task(for: ownership.policy.taskID)?.nativeDispatch?.phase == .launchIntent,
+              session.contract.agentID == ownership.policy.agentID,
+              session.contract.profile.transport == .ownedStandardIO,
+              session.contract.profile.minimumAuthentication == .ownedChildPipe else {
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+        try ownership.bindSource(registry.sourceIdentity(for: session))
+        nativeSessions[ownership.policy.taskID] = session
+    }
+
+    /// Only the core native bridge can produce this receipt, never wire data.
+    /// Admission creates no terminal identity or physical-completion evidence.
+    func admitNativeProcess(_ ownership: AgentTaskNativeOwnership, receipt: AgentTaskOwnedProcessReceipt) async throws {
+        let taskID = ownership.policy.taskID
+        guard await waitForNativeCheckpoint(ownership) else { throw AgentTaskNativeAdmissionError.staleOwner }
+        guard nativeOwners[taskID] === ownership, nativeSessions[taskID] != nil, !isTerminating,
+              let task = task(for: taskID), task.nativeDispatch?.phase == .launchIntent,
+              task.runs.isEmpty else { throw AgentTaskNativeAdmissionError.staleOwner }
+        nativeCheckpointWrites.insert(taskID)
+        defer { nativeCheckpointWrites.remove(taskID) }
+        do { try await ownership.bindProcess(receipt) } catch {
+            invalidateNativeOwnership(ownership)
+            throw error
+        }
+        guard !isTerminating, !Task.isCancelled, nativeOwners[taskID] === ownership,
+              self.task(for: taskID) == task, let index = taskIndex(for: taskID) else {
+            invalidateNativeOwnership(ownership)
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+        let identity = receipt.identity
+        let started = Date(timeIntervalSince1970: Double(identity.startSeconds) + Double(identity.startMicroseconds) / 1_000_000)
+        let observed = max(Date(), max(task.updatedAt, started))
+        let process = AgentProcessEvidence(processIdentifier: identity.processID, processGeneration: 1,
+            startIdentifier: "\(identity.processID):\(identity.startSeconds):\(identity.startMicroseconds)",
+            observedStartedAt: started, startIsAuthoritative: true)
+        var updated = task
+        updated.runs = [AgentTaskRun(AgentTaskRunInput(id: ownership.policy.runID, terminalID: nil, process: process,
+            status: .init(state: .idle, liveness: .live, observedAt: observed)))]
+        updated.lifecycle = .active
+        updated.route.availability = .background
+        updated.updatedAt = observed
+        updated.lastActivityAt = observed
+        tasks[index] = updated
+        historicalTaskIDByRunID[ownership.policy.runID] = taskID
+        taskIDByRunID[ownership.policy.runID] = taskID
+        markDirty(task.project)
+        guard await flushPersistence(project: task.project) == .saved, !isTerminating, !Task.isCancelled,
+              nativeOwners[taskID] === ownership, self.task(for: taskID)?.runs.last?.id == ownership.policy.runID else {
+            invalidateNativeOwnership(ownership)
+            throw AgentTaskNativeAdmissionError.persistenceUnavailable
+        }
+        do { try ownership.markAdmitted() } catch {
+            invalidateNativeOwnership(ownership)
+            throw error
+        }
+    }
+
+    /// Explicit same-run input only. A duplicate predecessor returns its original
+    /// ID, never another dispatch claim or an automatic resend.
+    func prepareNativeSubmission(
+        afterResponseTo previous: UUID?, ownership: AgentTaskNativeOwnership
+    ) async throws -> UUID {
+        let taskID = ownership.policy.taskID
+        guard await waitForNativeCheckpoint(ownership) else { throw AgentTaskNativeAdmissionError.unavailable }
+        try await revalidateNativeOperation(ownership)
+        guard await waitForNativeCheckpoint(ownership),
+              let task = task(for: taskID), task.lifecycle == .active,
+              task.acceptanceState == .notAccepted, task.verificationState != .verified,
+              let checkpoint = task.nativeDispatch, !checkpoint.cancellationRequested,
+              checkpoint.runID == ownership.policy.runID, task.runs.last?.liveness == .live else {
+            throw AgentTaskNativeAdmissionError.unavailable
+        }
+        if let existing = checkpoint.submissions.first(where: { $0.afterResponseTo == previous }) {
+            return existing.id
+        }
+        do {
+            if let previous {
+                let id = UUID()
+                try await recordNativeTransition(.followupInputIntent(submissionID: id, afterResponseTo: previous),
+                    ownership: ownership, preparedSubmissionID: id)
+            } else {
+                try await recordNativeTransition(.initialInputIntent, ownership: ownership)
+            }
+        } catch AgentTaskNativeAdmissionError.invalidTransition {
+            // A concurrent preparation may already own this same predecessor.
+            guard await waitForNativeCheckpoint(ownership),
+                  self.task(for: taskID)?.nativeDispatch?.submissions.contains(where: { $0.afterResponseTo == previous }) == true else {
+                throw AgentTaskNativeAdmissionError.invalidTransition
+            }
+        }
+        guard let id = self.task(for: taskID)?.nativeDispatch?.submissions.first(where: { $0.afterResponseTo == previous })?.id else {
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+        return id
+    }
+
+    /// Only this guarded callback performs a native effect. It must not enqueue
+    /// a later unguarded write; registry/provider one-shot action gates still apply.
+    func performNativeEffect<Result: Sendable>(
+        _ effect: AgentTaskNativeOwnership.Effect, ownership: AgentTaskNativeOwnership,
+        action: @escaping @Sendable () throws -> Result
+    ) async throws -> Result {
+        guard nativeOwners[ownership.policy.taskID] === ownership, !isTerminating else {
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+        do { return try await ownership.perform(effect, action: action) } catch {
+            if (try? ownership.validate()) == nil { invalidateNativeOwnership(ownership) }
+            throw error
+        }
+    }
+
+    private func revalidateNativeOperation(_ ownership: AgentTaskNativeOwnership) async throws {
+        guard nativeOwners[ownership.policy.taskID] === ownership, !isTerminating else {
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+        do { try await ownership.validateOperation() } catch {
+            invalidateNativeOwnership(ownership)
+            throw error
+        }
+        guard nativeOwners[ownership.policy.taskID] === ownership, !isTerminating else {
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+    }
+
+    /// Every input-affecting transition is saved before its purpose gate opens.
+    /// Session/operation references come from correlated provider responses.
+    func recordNativeTransition(_ transition: AgentTaskNativeTransition, ownership: AgentTaskNativeOwnership) async throws {
+        do { try await recordNativeTransition(transition, ownership: ownership, preparedSubmissionID: nil) } catch {
+            if (try? ownership.validate()) == nil { invalidateNativeOwnership(ownership) }
+            throw error
+        }
+    }
+
+    private func recordNativeTransition(
+        _ transition: AgentTaskNativeTransition, ownership: AgentTaskNativeOwnership, preparedSubmissionID: UUID?
+    ) async throws {
+        let taskID = ownership.policy.taskID
+        if case .unavailable = transition {
+            guard nativeOwners[taskID] === ownership, let task = task(for: taskID) else {
+                throw AgentTaskNativeAdmissionError.staleOwner
+            }
+            let project = task.project
+            invalidateNativeOwnership(ownership)
+            guard await flushPersistence(project: project) == .saved else {
+                throw AgentTaskNativeAdmissionError.persistenceUnavailable
+            }
+            return
+        }
+        if case .cancellationRequested = transition, nativeOwners[taskID] === ownership {
+            ownership.fenceResponsesForCancellation()
+            try await revalidateNativeOperation(ownership)
+        }
+        if case .submissionUnknown(let id) = transition {
+            try ownership.fenceSubmission(id)
+        }
+        switch transition {
+        case .initialInputIntent:
+            try await revalidateNativeOperation(ownership)
+        case .submissionAcknowledged(let receipt, _), .submissionResponseObserved(let receipt, _):
+            try ownership.validateSubmissionCorrelation(receipt)
+            guard await ownership.revalidateProcess() else {
+                invalidateNativeOwnership(ownership)
+                throw AgentTaskNativeAdmissionError.unavailable
+            }
+        case .followupInputIntent(let id, _):
+            guard id == preparedSubmissionID else { throw AgentTaskNativeAdmissionError.invalidTransition }
+        default:
+            break
+        }
+        guard await waitForNativeCheckpoint(ownership),
+              nativeOwners[taskID] === ownership, let index = taskIndex(for: taskID),
+              var checkpoint = tasks[index].nativeDispatch else { throw AgentTaskNativeAdmissionError.staleOwner }
+        try ownership.validate()
+        guard !isTerminating, tasks[index].runs.last?.id == ownership.policy.runID,
+              tasks[index].runs.last?.liveness == .live else { throw AgentTaskNativeAdmissionError.staleOwner }
+        switch transition {
+        case .submissionAcknowledged(let receipt, _), .submissionResponseObserved(let receipt, _):
+            try ownership.validateSubmissionCorrelation(receipt)
+        case .initialInputIntent, .followupInputIntent:
+            guard tasks[index].lifecycle == .active, tasks[index].acceptanceState == .notAccepted,
+                  tasks[index].verificationState != .verified else { throw AgentTaskNativeAdmissionError.invalidTransition }
+        default:
+            break
+        }
+        checkpoint = try checkpoint.applying(transition)
+        switch transition {
+        case .cancellationConfirmed, .operationFailed:
+            throw AgentTaskNativeAdmissionError.invalidTransition // Positive provider state uses validated ingress below.
+        default:
+            break
+        }
+        var updated = tasks[index]
+        updated.nativeDispatch = checkpoint
+        if case .sessionBound(let conversation) = transition { updated.runs[0].vendorIdentity = conversation }
+        switch transition {
+        case .submissionResponseObserved, .submissionUnknown:
+            if updated.attention != .waitingInput {
+                updated.runs[0].state = .idle
+                updated.runs[0].lifecycleAccuracy = .processTerminationOnly
+                updated.executionState = .unknown
+            }
+        default:
+            break
+        }
+        guard checkpoint.isValid(for: updated) else { throw AgentTaskNativeAdmissionError.invalidTransition }
+        nativeCheckpointWrites.insert(taskID)
+        defer { nativeCheckpointWrites.remove(taskID) }
+        updated.updatedAt = max(updated.updatedAt, Date())
+        tasks[index] = updated
+        markDirty(updated.project)
+        guard await flushPersistence(project: updated.project, allowsRetry: false) == .saved,
+              !isTerminating, !Task.isCancelled,
+              nativeOwners[taskID] === ownership, task(for: taskID)?.nativeDispatch == checkpoint else {
+            invalidateNativeOwnership(ownership)
+            throw AgentTaskNativeAdmissionError.persistenceUnavailable
+        }
+        var fencedResponse = false
+        do {
+            switch transition {
+            case .initialInputIntent, .followupInputIntent:
+                guard let submission = checkpoint.submissions.last else { throw AgentTaskNativeAdmissionError.invalidTransition }
+                try ownership.authorizeSubmission(submission.id, initial: submission.afterResponseTo == nil)
+            case .initialInputAcknowledged: try ownership.acknowledgeInitialInput()
+            case .submissionAcknowledged: try ownership.acknowledgeInitialInput()
+            case .submissionResponseObserved: fencedResponse = try !ownership.closeSubmission(responded: true)
+            case .submissionUnknown: _ = try ownership.closeSubmission(responded: false)
+            case .cancellationRequested: try ownership.authorizeCancellation()
+            default: try ownership.validate()
+            }
+        } catch {
+            invalidateNativeOwnership(ownership)
+            throw error
+        }
+        if fencedResponse {
+            guard let index = taskIndex(for: taskID), nativeOwners[taskID] === ownership,
+                  var unknown = tasks[index].nativeDispatch, !unknown.submissions.isEmpty else {
+                throw AgentTaskNativeAdmissionError.staleOwner
+            }
+            // A timeout fenced this response during its save; persist unknown
+            // before releasing checkpoint waiters or enabling any feedback.
+            unknown.phase = .inputUnknown
+            unknown.submissions[unknown.submissions.count - 1].phase = .unknown
+            tasks[index].nativeDispatch = unknown
+            markDirty(updated.project)
+            guard await flushPersistence(project: updated.project) == .saved,
+                  nativeOwners[taskID] === ownership else {
+                invalidateNativeOwnership(ownership)
+                throw AgentTaskNativeAdmissionError.persistenceUnavailable
+            }
+            _ = try ownership.closeSubmission(responded: false)
+            throw AgentTaskNativeAdmissionError.unavailable
+        }
+    }
+
+    /// Called only downstream of the registry-owned validating sink. Provider
+    /// claims are scoped to this exact source/run/session and never settle it.
+    func ingestNativeEvent(_ event: ValidatedAgentEvent, ownership: AgentTaskNativeOwnership) async -> AdapterIngestOutcome {
+        let taskID = ownership.policy.taskID
+        guard nativeOwners[taskID] === ownership else { return .revoked }
+        guard ownership.accepts(event) else {
+            if (try? ownership.validate()) == nil { invalidateNativeOwnership(ownership) }
+            return .revoked
+        }
+        guard await waitForNativeCheckpoint(ownership) else {
+            invalidateNativeOwnership(ownership)
+            return .revoked
+        }
+        guard let beforeValidation = task(for: taskID),
+              let beforeCheckpoint = beforeValidation.nativeDispatch,
+              [.inputIntent, .inputAcknowledged, .parentSettlementUnknown, .inputUnknown,
+               .operationFailed, .cancellationConfirmed].contains(beforeCheckpoint.phase),
+              beforeValidation.runs.last?.liveness == .live else { return .droppedInvalid }
+        guard await ownership.revalidateProcess() else {
+            invalidateNativeOwnership(ownership)
+            return .revoked
+        }
+        guard await waitForNativeCheckpoint(ownership) else {
+            invalidateNativeOwnership(ownership)
+            return .revoked
+        }
+        guard !isTerminating, nativeOwners[taskID] === ownership, ownership.accepts(event),
+              let session = nativeSessions[taskID], let index = taskIndex(for: taskID),
+              let checkpoint = tasks[index].nativeDispatch,
+              [.inputIntent, .inputAcknowledged, .parentSettlementUnknown, .inputUnknown,
+               .operationFailed, .cancellationConfirmed].contains(checkpoint.phase),
+              tasks[index].runs.last?.id == ownership.policy.runID,
+              tasks[index].runs.last?.liveness == .live else { return .revoked }
+        let candidate = event.candidate.event
+        if [.operationFailed, .cancellationConfirmed].contains(checkpoint.phase) {
+            switch candidate {
+            case .question, .approval, .requestResolved: break
+            case .lifecycle(let value) where checkpoint.cancellationRequested && value.phase == .cancelled: break
+            default: return .droppedInvalid
+            }
+        }
+        guard nativeContextMatches(candidate, checkpoint: checkpoint) else { return .droppedInvalid }
+        var updated = tasks[index]
+        let isParentBoundary: Bool
+        if case .lifecycle(let value) = candidate {
+            isParentBoundary = [.succeeded, .settled].contains(value.phase)
+        } else { isParentBoundary = false }
+        // Parent end cannot expire questions or establish aggregate closure.
+        if isParentBoundary {
+            guard let next = try? checkpoint.applying(.parentSettlementUnknown) else { return .droppedInvalid }
+            updated.nativeDispatch = next
+            if updated.attention != .waitingInput {
+                updated.runs[0].state = .idle
+                updated.runs[0].lifecycleAccuracy = .processTerminationOnly
+                updated.executionState = .unknown
+            }
+        } else {
+            guard var attention = nativeAttention[taskID] ?? AgentAdapterAttentionState(owner: session, firstEvent: event) else {
+                return .revoked
+            }
+            let projection: AgentAdapterAttentionState.Outcome
+            if case .lifecycle(let value) = candidate, [.failed, .cancelled].contains(value.phase), let reference = value.reference {
+                // Parent failure without a real turn context is not closure
+                // of the session's retained questions or child work.
+                projection = value.scope == .turn || checkpoint.cancellationRequested
+                    ? attention.cancel(scope: value.scope, context: reference) : .unrelated
+            } else {
+                projection = attention.apply(event)
+            }
+            switch projection {
+            case .duplicate:
+                return .accepted
+            case .foreignSource, .mismatchedContext:
+                return .droppedInvalid
+            case .needsReconciliation:
+                invalidateNativeOwnership(ownership)
+                return .revoked
+            default:
+                break
+            }
+            nativeAttention[taskID] = attention
+            switch candidate {
+            case .question, .approval:
+                updated.runs[0].state = .waitingInput
+                updated.runs[0].lifecycleAccuracy = .verifiedLifecycleTransitions
+                updated.attention = .waitingInput
+                updated.executionState = .blocked
+                updated.isUnread = true
+            case .requestResolved:
+                updated.attention = attention.pendingCount > 0 ? .waitingInput : .none
+                if attention.pendingCount == 0 {
+                    updated.runs[0].state = .idle
+                    updated.runs[0].lifecycleAccuracy = .processTerminationOnly
+                    updated.executionState = .unknown
+                }
+            case .lifecycle(let value):
+                switch value.phase {
+                case .started, .working:
+                    if attention.pendingCount == 0 {
+                        updated.runs[0].state = .executing
+                        updated.runs[0].lifecycleAccuracy = .verifiedLifecycleTransitions
+                        updated.executionState = .working
+                    }
+                case .failed, .cancelled:
+                    ownership.suspendSubmission()
+                    updated.nativeDispatch = try? checkpoint.applying(
+                        value.phase == .cancelled ? .cancellationConfirmed : .operationFailed
+                    )
+                    guard updated.nativeDispatch != nil else { return .droppedInvalid }
+                    updated.runs[0].state = attention.pendingCount > 0 ? .waitingInput : .idle
+                    updated.runs[0].lifecycleAccuracy = attention.pendingCount > 0
+                        ? .verifiedLifecycleTransitions : .processTerminationOnly
+                    updated.attention = attention.pendingCount > 0 ? .waitingInput : .none
+                    updated.executionState = attention.pendingCount > 0 ? .blocked : .unknown
+                default:
+                    return .droppedInvalid
+                }
+            case .tool, .processExited:
+                return .droppedInvalid
+            }
+        }
+        let observed = max(Date(), updated.updatedAt)
+        updated.runs[0].lastObservedAt = observed
+        updated.updatedAt = observed
+        updated.lastActivityAt = observed
+        guard nativeOwners[taskID] === ownership, ownership.accepts(event) else { return .revoked }
+        tasks[index] = updated
+        markDirty(updated.project)
+        return .accepted
+    }
+
+    private func nativeContextMatches(_ event: AdapterCandidateEvent, checkpoint: AgentTaskNativeDispatch) -> Bool {
+        guard let conversation = checkpoint.conversation else { return false }
+        let routing: (scope: AdapterLifecycleScope, reference: VendorReference?)
+        switch event {
+        case .lifecycle(let value): routing = (value.scope, value.reference)
+        case .question(let value), .approval(let value): routing = (value.scope, value.context)
+        case .requestResolved(let value): routing = (value.scope, value.context)
+        case .tool, .processExited: return false
+        }
+        switch routing.scope {
+        case .session, .run:
+            return routing.reference?.role == .conversation && routing.reference?.rawValue == conversation.opaqueIdentifier
+        case .turn:
+            guard routing.reference?.role == .turn, let operationID = routing.reference?.rawValue else { return false }
+            switch event {
+            case .question, .approval, .requestResolved:
+                return checkpoint.submissions.contains { $0.operationID == operationID }
+            default:
+                return checkpoint.operationID == operationID
+            }
+        case .item:
+            return false
+        }
+    }
+
+    /// Backpressure, not another decoded-event queue. The validating source
+    /// already bounds concurrent ingress; no event may overtake durable intent.
+    private func waitForNativeCheckpoint(_ ownership: AgentTaskNativeOwnership) async -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: flushTotal + flushTail)
+        while nativeCheckpointWrites.contains(ownership.policy.taskID) {
+            guard ContinuousClock.now < deadline, !Task.isCancelled, !isTerminating,
+                  nativeOwners[ownership.policy.taskID] === ownership else { return false }
+            do { try await Task.sleep(for: .milliseconds(1)) } catch { return false }
+        }
+        return !Task.isCancelled && !isTerminating && nativeOwners[ownership.policy.taskID] === ownership
+    }
+
+    /// Negative-only and safe after transport/process loss or uncertain writes.
+    /// A stopped/quiet provider is not aggregate settlement or a process exit.
+    func invalidateNativeOwnership(_ ownership: AgentTaskNativeOwnership) {
+        ownership.revoke()
+        let taskID = ownership.policy.taskID
+        guard nativeOwners[taskID] === ownership else { return }
+        nativeOwners[taskID] = nil
+        nativeAttention[taskID] = nil
+        if let index = taskIndex(for: taskID) {
+            var updated = tasks[index]
+            updated.nativeDispatch?.phase = .unavailable
+            updated.route.availability = .missing
+            updated.attention = .none
+            updated.executionState = .unknown
+            if updated.lifecycle != .dismissed { updated.lifecycle = .paused }
+            if !updated.runs.isEmpty, updated.runs[0].liveness == .live { updated.runs[0].liveness = .stale }
+            updated.updatedAt = max(updated.updatedAt, Date())
+            tasks[index] = updated
+            taskIDByRunID[ownership.policy.runID] = nil
+            markDirty(updated.project)
+        }
+        if let session = nativeSessions.removeValue(forKey: taskID) {
+            let key = ObjectIdentifier(ownership)
+            nativeRetirements[key] = Task { [weak self] in
+                await session.stop(deadline: .now.advanced(by: .seconds(2)))
+                self?.nativeRetirements[key] = nil
+            }
+        }
     }
 
     /// Explicit setup action, before any provider run. A saved intent is never
@@ -968,10 +1539,12 @@ final class AgentTaskRegistry {
         taskID: UUID,
         codeState: AgentTaskCodeStateIdentity?,
         environment: AgentTaskEnvironmentIdentity?,
+        runID: UUID? = nil,
         at timestamp: Date = Date()
     ) -> [AgentTaskReadinessGap] {
         guard !isTerminating,
-              let index = taskIndex(for: taskID) else {
+              let index = taskIndex(for: taskID),
+              runID == nil || tasks[index].runs.last?.id == runID else {
             return []
         }
         let gaps = AgentTaskLifecycleReducer.invalidate(
@@ -986,23 +1559,165 @@ final class AgentTaskRegistry {
         return gaps
     }
 
-    /// Marks in-flight verification for a settled successful attempt.
-    ///
-    /// Produced by the verification layer while the required evidence is
-    /// being re-run after an invalidation. Idempotent while `.pending`.
+    func verificationPassIsCurrent(_ passID: UUID, taskID: UUID) -> Bool {
+        verificationPassIDByTaskID[taskID] == passID
+    }
+
+    /// Marks in-flight verification for a settled successful or unverified
+    /// attempt. Optional run, process, and pass fences leave replacements untouched.
     @discardableResult
-    func markVerificationPending(taskID: UUID) -> Bool {
+    func markVerificationPending(
+        taskID: UUID,
+        expectedRunID: UUID? = nil,
+        processGeneration: UInt64? = nil,
+        verificationPassID: UUID? = nil
+    ) -> Bool {
         guard !isTerminating,
-              let index = taskIndex(for: taskID) else {
+              let index = taskIndex(for: taskID),
+              expectedRunID == nil || tasks[index].runs.last?.id == expectedRunID,
+              processGeneration == nil
+                  || tasks[index].runs.last?.process.processGeneration == processGeneration else {
             return false
         }
-        let before = tasks[index].verificationState
-        AgentTaskLifecycleReducer.recordVerificationPending(&tasks[index])
-        if tasks[index].verificationState == .pending && before != .pending {
-            tasks[index].updatedAt = max(tasks[index].updatedAt, Date())
-            markDirty(tasks[index].project)
+        var updated = tasks[index]
+        AgentTaskLifecycleReducer.recordVerificationPending(&updated)
+        guard updated.verificationState == .pending else { return false }
+        if let verificationPassID {
+            verificationPassIDByTaskID[taskID] = verificationPassID
         }
-        return tasks[index].verificationState == .pending
+        if updated.verificationState != tasks[index].verificationState {
+            updated.updatedAt = max(updated.updatedAt, Date())
+            tasks[index] = updated
+            markDirty(updated.project)
+        }
+        // The assignment synchronously notifies observers. They may dismiss,
+        // replace, or invalidate this task before control returns here.
+        guard task(for: taskID) == updated,
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID else {
+            if let verificationPassID, let run = updated.runs.last {
+                clearVerificationPending(
+                    taskID: taskID, runID: run.id,
+                    processGeneration: run.process.processGeneration,
+                    verificationPassID: verificationPassID
+                )
+            }
+            return false
+        }
+        return true
+    }
+
+    /// Atomically settles one verification pass without publishing an
+    /// intermediate outcome or current-verification state.
+    @discardableResult
+    func settleVerificationPass(
+        taskID: UUID,
+        runID: UUID,
+        processGeneration: UInt64? = nil,
+        verificationPassID: UUID? = nil,
+        codeState: AgentTaskCodeStateIdentity,
+        environment: AgentTaskEnvironmentIdentity,
+        makeCurrent: Bool
+    ) -> AgentTaskReadiness? {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID,
+              let runIndex = tasks[index].runs.indices.last,
+              tasks[index].runs[runIndex].id == runID,
+              processGeneration == nil
+                  || tasks[index].runs[runIndex].process.processGeneration == processGeneration else {
+            return nil
+        }
+        var updated = tasks[index]
+        AgentTaskLifecycleReducer.settleLatestRun(of: &updated, runIndex: runIndex)
+        if makeCurrent {
+            AgentTaskLifecycleReducer.reverify(
+                &updated, codeState: codeState, environment: environment
+            )
+        }
+        tasks[index] = updated
+        markDirty(updated.project)
+        // The assignment synchronously notifies observers. They may dismiss,
+        // replace, or invalidate this task before control returns here.
+        guard let current = task(for: taskID), current == updated,
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID,
+              let latest = current.runs.last, latest.id == runID,
+              processGeneration == nil
+                  || latest.process.processGeneration == processGeneration else {
+            return nil
+        }
+        return AgentTaskLifecycleReducer.readiness(
+            for: current, codeState: codeState, environment: environment
+        )
+    }
+
+    /// Fails a current pass closed while preserving same-identity acceptance
+    /// and all historical evidence and snapshots.
+    @discardableResult
+    func failVerificationPass(
+        taskID: UUID,
+        runID: UUID,
+        processGeneration: UInt64? = nil,
+        verificationPassID: UUID? = nil,
+        codeState: AgentTaskCodeStateIdentity?,
+        environment: AgentTaskEnvironmentIdentity?
+    ) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID,
+              let latest = tasks[index].runs.last,
+              latest.id == runID,
+              processGeneration == nil
+                  || latest.process.processGeneration == processGeneration else {
+            return false
+        }
+        var updated = tasks[index]
+        _ = AgentTaskLifecycleReducer.invalidate(
+            &updated, codeState: codeState, environment: environment
+        )
+        updated.verificationState = .stale
+        updated.updatedAt = max(updated.updatedAt, Date())
+        tasks[index] = updated
+        markDirty(updated.project)
+        return true
+    }
+
+    /// Clears a terminal pass's in-flight marker without changing dismissal,
+    /// acceptance, evidence, snapshots, or a replacement process.
+    @discardableResult
+    func clearVerificationPending(
+        taskID: UUID,
+        runID: UUID,
+        processGeneration: UInt64,
+        verificationPassID: UUID? = nil
+    ) -> Bool {
+        guard verificationPassID == nil
+                || verificationPassIDByTaskID[taskID] == verificationPassID else {
+            return false
+        }
+        if let verificationPassID {
+            verificationPassIDByTaskID.removeValue(forKey: taskID)
+        }
+        guard let index = taskIndex(for: taskID),
+              let latest = tasks[index].runs.last,
+              latest.id == runID,
+              latest.process.processGeneration == processGeneration,
+              tasks[index].verificationState == .pending else {
+            return false
+        }
+        var updated = tasks[index]
+        let requiresStale = latest.outcome == .success
+            || updated.acceptanceState == .accepted
+            || updated.acceptedSnapshot != nil
+            || updated.reviewedSnapshot != nil
+        updated.verificationState = requiresStale ? .stale : .none
+        updated.updatedAt = max(updated.updatedAt, Date())
+        tasks[index] = updated
+        markDirty(updated.project)
+        return true
     }
 
     /// Re-establishes current verification from caller-proven identities —
@@ -1064,6 +1779,7 @@ final class AgentTaskRegistry {
             return false
         }
         revokeWorktreeSetup(taskID)
+        if let ownership = nativeOwners[taskID] { invalidateNativeOwnership(ownership) }
         tasks[index].lifecycle = .dismissed
         tasks[index].attention = .none
         tasks[index].isUnread = false
@@ -1104,6 +1820,7 @@ final class AgentTaskRegistry {
     private func isRetentionEligible(_ task: AgentTask, at now: Date) -> Bool {
         guard task.lifecycle == .paused || task.lifecycle == .completed,
               !task.hasUnresolvedWorktreeSetup,
+              task.nativeDispatch == nil,
               task.route.availability == .missing,
               task.runs.last?.liveness != .live,
               !pendingClaims.values.contains(where: { $0.taskID == task.id })
@@ -1148,10 +1865,11 @@ final class AgentTaskRegistry {
 
     func isExactLiveOwner(
         taskID: UUID,
-        terminalID: UUID,
+        terminalID: UUID?,
         runID: UUID
     ) -> Bool {
-        guard let task = task(for: taskID) else { return false }
+        guard let terminalID, let task = task(for: taskID),
+              task.route.surface != .ownedProcess else { return false }
         let key = AgentTaskTerminalKey(
             project: task.project,
             surface: task.route.surface,
@@ -1318,7 +2036,9 @@ final class AgentTaskRegistry {
         expireClaims()
         // Manual discovery is eligible only with a complete detector-owned
         // process observation. Never infer ownership from agent type or route.
-        guard !isTerminating, session.processEvidence != nil else {
+        guard !isTerminating, session.processEvidence != nil,
+              context.route.surface != .ownedProcess, context.route.paneID != nil,
+              context.route.terminalID != nil, context.route.tabID == context.route.terminalID else {
             return
         }
         if let existingTaskID = taskIDByRunID[session.id] {
@@ -1908,10 +2628,11 @@ final class AgentTaskRegistry {
     /// Updates a runtime route only for the uniquely owned terminal in the
     /// same canonical project/worktree scope. A move never ends its run.
     func updateRoute(
-        terminalID: UUID,
+        terminalID: UUID?,
         project: AgentTaskProjectIdentity,
         route: AgentTaskRoute
     ) {
+        guard let terminalID, route.surface != .ownedProcess, route.paneID != nil else { return }
         expireClaims()
         let key = AgentTaskTerminalKey(
             project: project,
@@ -1951,11 +2672,12 @@ final class AgentTaskRegistry {
     /// Closing a terminal is authoritative terminal-lifecycle evidence. The
     /// process observer may confirm termination later, but may not revive it.
     func markTerminalClosed(
-        terminalID: UUID,
+        terminalID: UUID?,
         project: AgentTaskProjectIdentity,
         surface: AgentTaskTerminalSurface = .projectWindow,
         at timestamp: Date = Date()
     ) {
+        guard let terminalID, surface != .ownedProcess else { return }
         expireClaims()
         guard !isTerminating else { return }
         let key = AgentTaskTerminalKey(
@@ -1999,6 +2721,7 @@ final class AgentTaskRegistry {
         rollbackPersistenceRetryTask?.cancel()
         rollbackPersistenceRetryTask = nil
         expireClaims()
+        for ownership in Array(nativeOwners.values) { invalidateNativeOwnership(ownership) }
         isTerminating = true
         worktreeSetupOperations.removeAll()
         worktreeSetups.values.forEach { retireWorktreeSetup($0) }
@@ -2188,9 +2911,11 @@ final class AgentTaskRegistry {
 
     /// Waits for loads and every queued save, with a five-second total and
     /// two-second per-tail monotonic deadline. A hung store fails closed.
+    /// A no-retry flush never publishes a completed non-durable save again.
     func flushPersistence(
         maximumDuration: Duration? = nil,
-        project scope: AgentTaskProjectIdentity? = nil
+        project scope: AgentTaskProjectIdentity? = nil,
+        allowsRetry: Bool = true
     ) async -> AgentTaskPersistenceFlushResult {
         let requestedDuration = maximumDuration.map {
             max(.zero, $0)
@@ -2247,7 +2972,7 @@ final class AgentTaskRegistry {
                let result = saveResultByProject[ticket.projectKey],
                !result.isDurablySaved {
                 failedAttempts += 1
-                if failedAttempts >= 3 { return .failed }
+                if !allowsRetry || failedAttempts >= 3 { return .failed }
             }
         }
         return .failed
@@ -2263,7 +2988,7 @@ final class AgentTaskRegistry {
             return
         }
         let currentTaskIDs = Set(tasks.map(\.id))
-        let currentRunIDs = Set(tasks.flatMap(\.runs).map(\.id))
+        let currentRunIDs = Set(tasks.flatMap(\.reservedAndObservedRunIDs))
         var stagedTaskIDs = Set<UUID>()
         var stagedRunIDs = Set<UUID>()
         var needsNormalizedSave = result.requiresMigration
@@ -2273,13 +2998,14 @@ final class AgentTaskRegistry {
             if loadedTask.origin == .pineLaunched,
                loadedTask.runs.isEmpty,
                loadedTask.launchInterruption == nil,
-               loadedTask.worktreeSetup == nil {
+               loadedTask.worktreeSetup == nil,
+               loadedTask.nativeDispatch == nil {
                 needsNormalizedSave = true
                 continue
             }
-            let loadedRunIDs = Set(loadedTask.runs.map(\.id))
+            let loadedRunIDs = Set(loadedTask.reservedAndObservedRunIDs)
             guard loadedTask.project == project,
-                  loadedRunIDs.count == loadedTask.runs.count,
+                  Set(loadedTask.runs.map(\.id)).count == loadedTask.runs.count,
                   !currentTaskIDs.contains(loadedTask.id),
                   stagedTaskIDs.insert(loadedTask.id).inserted,
                   currentRunIDs.isDisjoint(with: loadedRunIDs),
@@ -2306,17 +3032,17 @@ final class AgentTaskRegistry {
         }
         var stagedHistorical = historicalTaskIDByRunID
         for task in stagedTasks {
-            for run in task.runs {
-                if let existing = stagedHistorical[run.id], existing != task.id {
+            for runID in task.reservedAndObservedRunIDs {
+                if let existing = stagedHistorical[runID], existing != task.id {
                     quarantineLoadedProject(project, rejection: .invalidMetadata)
                     return
                 }
-                if stagedHistorical[run.id] == nil,
+                if stagedHistorical[runID] == nil,
                    stagedHistorical.count >= limits.maxHistoricalRunIDs {
                     quarantineLoadedProject(project, rejection: .storageLimit)
                     return
                 }
-                stagedHistorical[run.id] = task.id
+                stagedHistorical[runID] = task.id
             }
         }
         // Only a fully validated read can release quarantine. Local tasks and
@@ -2802,6 +3528,7 @@ final class AgentTaskRegistry {
         guard task.lifecycle == .active,
               run.liveness != .terminated else { return }
         taskIDByRunID[run.id] = task.id
+        guard task.route.surface != .ownedProcess, task.route.terminalID != nil else { return }
         taskIDByTerminal[AgentTaskTerminalKey(
             project: task.project,
             surface: task.route.surface,
@@ -3130,6 +3857,7 @@ final class AgentTaskRegistry {
 
     private func removeTaskFromMemory(at index: Int) {
         let task = tasks[index]
+        if let ownership = nativeOwners[task.id] { invalidateNativeOwnership(ownership) }
         revokeWorktreeSetup(task.id)
         worktreeSetups[task.id] = nil
         let claimKeys = pendingClaims.compactMap { key, claim in
@@ -3209,12 +3937,14 @@ final class AgentTaskRegistry {
     private func normalizedLaunchBoundary(_ date: Date) -> Date { date }
 
     private func validLaunchRoute(_ route: AgentTaskRoute) -> Bool {
-        route.terminalID == route.tabID && route.availability != .missing
+        route.surface != .ownedProcess && route.paneID != nil && route.terminalID != nil
+            && route.terminalID == route.tabID && route.availability != .missing
     }
 
     private func isResumableTask(at index: Int) -> Bool {
         let task = tasks[index]
         guard task.origin == .pineLaunched,
+              task.nativeDispatch == nil,
               task.lifecycle == .paused,
               task.route.availability == .missing,
               let executable = task.descriptor.launchExecutable,

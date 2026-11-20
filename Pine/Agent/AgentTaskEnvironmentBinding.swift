@@ -104,6 +104,20 @@ nonisolated struct AgentTaskEnvironmentBinding: Hashable, Sendable {
         reservationRunID = runID
         self.validity = validity
     }
+
+    #if PINE_TEST_HOST
+    /// Fake-backed native admission tests; production still revalidates through
+    /// AgentTaskEnvironmentBindings and its exact adopted-worktree proofs.
+    static func nativeBindingForTesting(taskID: UUID, runID: UUID) -> Self {
+        let path = "/tmp/pine-native/\(taskID.uuidString)/\(runID.uuidString)"
+        return Self(
+            taskID: taskID,
+            runID: runID,
+            identity: AgentTaskProjectIdentity(canonicalProjectPath: path, canonicalWorktreePath: path),
+            validity: AgentTaskSetupLeaseValidity()
+        )
+    }
+    #endif
 }
 
 nonisolated enum AgentTaskEnvironmentBindingError: Error, Equatable {
