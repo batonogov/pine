@@ -26,8 +26,6 @@ struct AgentTaskOwnedProcessReceiptTests {
                 )
             }
         }
-        defer { await runOnBackground { fixture.teardown(subprocess) } }
-
         #expect(receipt.belongs(to: ownership))
         #expect(!receipt.belongs(to: fixture.otherOwnership))
         #expect(await receipt.revalidate())
@@ -43,6 +41,8 @@ struct AgentTaskOwnedProcessReceiptTests {
         #expect(await runOnBackground {
             (try? ownership.validateSelection()) == nil
         })
+        // The macos-26 toolchain rejects an async call in a defer body.
+        await runOnBackground { fixture.teardown(subprocess) }
     }
 
     @Test func syntheticReceiptTracksIdentityDrift() async throws {
