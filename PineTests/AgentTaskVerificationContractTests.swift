@@ -1507,7 +1507,7 @@ struct AgentTaskVerificationContractTests {
         private func suspendIfNeeded() async {
             let gate = lock.withLock { () -> SuspensionGate? in
                 saveCount += 1
-                return saveCount == targetSave ? gate : nil
+                return saveCount == targetSave ? self.gate : nil
             }
             await gate?.suspend()
         }
