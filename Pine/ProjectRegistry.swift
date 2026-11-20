@@ -2593,11 +2593,11 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// pane or terminal tab.
     ///
     /// Presentation is read from the task's terminal route, which survives
-    /// process termination, rather than from run liveness: a `.processEnded`
-    /// notification is resolved from the same registry mutation that already
-    /// marked the run terminated, so a liveness-based check could never pass
-    /// by delivery time and the banner+sound fired for the very terminal the
-    /// user was watching.
+    /// process termination, rather than from run liveness. The retired
+    /// process-exit banner (#1760) resolved from the same registry mutation
+    /// that already marked the run terminated, so a liveness-based check
+    /// could never pass by delivery time and the banner+sound fired for the
+    /// very terminal the user was watching.
     func isAgentTaskPresented(_ taskID: UUID) -> Bool {
         guard let task = agentTasks.task(for: taskID) else { return false }
         if task.route.surface.isQuickTerminal {

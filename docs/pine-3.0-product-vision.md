@@ -23,6 +23,9 @@ supersede the older contextual editor/terminal proposal:
 - Preserve existing files, unsaved work, history, and environment ownership
   through deliberate migration. Removing UI does not authorize deleting data.
 
+The canonical removal/merge ledger is
+[design/pine-3/subtraction-ledger.md](design/pine-3/subtraction-ledger.md) (#1760).
+
 These are selected Pine 3.0 requirements, not shipped functionality. They do not
 change the released Pine 2.x feature record or establish provider compatibility.
 
@@ -96,6 +99,11 @@ than a separate Inbox. Command output and result-revision comparison remain
 task-local and do not imply arbitrary interactive TUI compatibility.
 
 ## Baseline: what Pine 2.x already ships
+
+In current source, process-only integrations send no agent notifications,
+including on process exit. Waiting-input, failure, and completion notifications
+require verified lifecycle events from a supported structured integration; no
+such integration is app-enabled yet. Released binaries may behave differently.
 
 Public surfaces describe two things and never blur them:
 

@@ -216,7 +216,6 @@ private struct AgentNotificationSettingsView: View {
                     eventToggle(.waitingInput, Strings.agentNotificationsWaiting)
                     eventToggle(.failed, Strings.agentNotificationsFailed)
                     eventToggle(.completed, Strings.agentNotificationsCompleted)
-                    eventToggle(.processEnded, Strings.agentNotificationsProcessEnded)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 4)

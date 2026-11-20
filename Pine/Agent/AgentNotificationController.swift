@@ -518,7 +518,6 @@ final class AgentNotificationController {
               run.process.processGeneration == event.processGeneration,
               run.liveness != .stale else { return nil }
         let isCurrent: Bool = switch event.kind {
-        case .processEnded: run.liveness == .terminated
         case .waitingInput: run.liveness == .live && run.state == .waitingInput
         case .failed: task.attention == .failed
         case .completed:
@@ -660,7 +659,7 @@ final class AgentNotificationController {
         Logger.agent.error(
             "Agent notification exhausted \(delays.count, privacy: .public) attempts (id=\(eventID, privacy: .public)); still undelivered"
         )
-        // Registry transitions are one-shot: an ended process will not emit
+        // Registry transitions are one-shot: an unanswered question will not emit
         // its event again when the notification service recovers. Retain it
         // in the bounded queue for the next activation/authorization refresh
         // rather than requiring an impossible replay of the transition.
@@ -680,7 +679,6 @@ final class AgentNotificationController {
         case .waitingInput: "agentNotifications.event.waiting"
         case .failed: "agentNotifications.event.failed"
         case .completed: "agentNotifications.event.completed"
-        case .processEnded: "agentNotifications.event.processEnded"
         }
         let state = String(localized: String.LocalizationValue(titleKey))
         let title = "\(event.agentName): \(state)"

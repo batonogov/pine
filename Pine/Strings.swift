@@ -1506,8 +1506,6 @@ enum Strings {
         "agentNotifications.event.failed"
     static let agentNotificationsCompleted: LocalizedStringKey =
         "agentNotifications.event.completed"
-    static let agentNotificationsProcessEnded: LocalizedStringKey =
-        "agentNotifications.event.processEnded"
     static let agentNotificationsAgents: LocalizedStringKey =
         "agentNotifications.agents"
     static let agentNotificationsProjects: LocalizedStringKey =

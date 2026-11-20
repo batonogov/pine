@@ -711,8 +711,9 @@ extension QuickTerminalController: QuickTerminalAgentRouting {
     }
 
     /// Presentation check by route, not by run liveness: after the agent
-    /// process exits, the tab remains what the user is looking at, and that
-    /// is exactly when a `.processEnded` banner must stay silent.
+    /// process exits, the tab remains what the user is looking at — the
+    /// state in which the retired process-exit banner (#1760) would have
+    /// fired for the watched terminal.
     func isQuickTerminalAgentTaskPresented(_ task: AgentTask) -> Bool {
         Self.isQuickTerminalRoutePresented(
             task.route,
