@@ -1,5 +1,30 @@
 # Changelog
 
+## [3.0.0](https://github.com/batonogov/pine/compare/v2.13.0...v3.0.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **agent:** retire process-only agent notifications ([#1826](https://github.com/batonogov/pine/issues/1826))
+
+### Features
+
+* **agent:** Claude stream-json control adapter with reporting-only hooks ([#1821](https://github.com/batonogov/pine/issues/1821)) ([e374fb1](https://github.com/batonogov/pine/commit/e374fb10b1f8865c98083f32c37fb6236147e018)), closes [#1727](https://github.com/batonogov/pine/issues/1727)
+* **agent:** Kimi Code CLI ACP adapter with pinned-version contract gate ([#1833](https://github.com/batonogov/pine/issues/1833)) ([7f4a0a5](https://github.com/batonogov/pine/commit/7f4a0a56324d8f3785bd977fcf319b816c0c6acc))
+* **agent:** native session ownership, per-turn dispatch, and durable launch intent ([#1837](https://github.com/batonogov/pine/issues/1837)) ([5bdbd76](https://github.com/batonogov/pine/commit/5bdbd7651c29e151e10cc8c0e2bcd3db6adcf5fa))
+* **agent:** revision continuation with explicit re-arm claims ([#1825](https://github.com/batonogov/pine/issues/1825)) ([77254ee](https://github.com/batonogov/pine/commit/77254ee17ae19b00257dcf9fe086c54b6495d99a))
+* **agent:** verification coordinator with independent review and bounded corrections ([#1830](https://github.com/batonogov/pine/issues/1830)) ([efb5937](https://github.com/batonogov/pine/commit/efb5937d5dce5a697f149f062fdf8677813970dd))
+
+
+### Bug Fixes
+
+* **extensibility:** durable user-task results that survive relaunch without wedging Quit ([#1829](https://github.com/batonogov/pine/issues/1829)) ([0438dde](https://github.com/batonogov/pine/commit/0438ddeaca8eb0494cc4132d6b1489206e90b102))
+
+
+### Code Refactoring
+
+* **agent:** retire process-only agent notifications ([#1826](https://github.com/batonogov/pine/issues/1826)) ([cfc62f3](https://github.com/batonogov/pine/commit/cfc62f3fc8513044bb906097b81de547daf5fff5))
+
 ## [2.13.0](https://github.com/batonogov/pine/compare/v2.12.4...v2.13.0) (2026-11-19)
 
 
