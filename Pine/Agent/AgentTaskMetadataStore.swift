@@ -506,7 +506,8 @@ nonisolated private final class AgentTaskStorageHandle {
 actor AgentTaskMetadataStore: AgentTaskPersisting {
     static let currentSchemaVersion = 4
     /// Keep ordinary task files readable by schema-3 Pine. Critical one-shot
-    /// setup journals require v4 so older readers preserve rather than shed them.
+    /// setup journals and explicit logical settlements (#1756, #1795)
+    /// require v4 so older readers preserve rather than shed them.
     private static let ordinarySchemaVersion = 3
     private static let directoryName = ".pine-agent-tasks-private"
 
@@ -582,7 +583,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         func encodeEnvelope(_ tasks: [AgentTask]) -> Data? {
             guard var data = try? encoder.encode(
                 AgentTaskMetadataEnvelope(
-                    schemaVersion: tasks.contains(where: { $0.worktreeSetup != nil })
+                    schemaVersion: tasks.contains(where: {
+                        $0.worktreeSetup != nil
+                            || $0.runs.contains(where: { $0.logicalSettlement != nil })
+                    })
                         ? Self.currentSchemaVersion : Self.ordinarySchemaVersion,
                     revision: nextDiskRevision,
                     canonicalProjectPath: project.canonicalProjectPath,
@@ -880,7 +884,11 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         default:
             return rejectedLoad(.unknownSchema)
         }
-        guard header.schemaVersion >= Self.currentSchemaVersion || !storedTasks.contains(where: { $0.worktreeSetup != nil }),
+        guard header.schemaVersion >= Self.currentSchemaVersion
+            || (!storedTasks.contains(where: { $0.worktreeSetup != nil })
+                && !storedTasks.contains(where: {
+                    $0.runs.contains(where: { $0.logicalSettlement != nil })
+                })),
               storedProjectPath == project.canonicalProjectPath,
               storedWorktreePath == project.canonicalWorktreePath,
               storedTasks.count <= limits.maxTasksPerProject,
@@ -2157,6 +2165,11 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               task.environment.map(Self.validStoredEnvironment) ?? true,
               task.worktreeSetup.map({ Self.validWorktreeSetup($0, for: task) }) ?? true,
               validateFeedback(task.feedback),
+              validateReviewCycle(task.reviewCycle, for: task),
+              task.decisionReferences.count <= AgentTaskDecisionReference.maximumCount,
+              task.decisionReferences.allSatisfy(\.isValid),
+              Set(task.decisionReferences.map(\.id)).count == task.decisionReferences.count,
+              task.objectiveRevision == 0 ? task.objective == nil : task.objective != nil,
               validateADEState(task),
               validateEvidence(task),
               validateChronology(task) else {
@@ -2261,6 +2274,67 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         return true
     }
 
+    /// Durable review-cycle journal (#1755): structural invariants via the
+    /// journal's own validator, plus the same text-shape bounds as the rest
+    /// of the metadata. A violation rejects the whole file fail-closed, so
+    /// a tampered round count, reservation, or candidate identity can never
+    /// load.
+    private func validateReviewCycle(
+        _ cycle: AgentTaskCorrectionCycle?,
+        for task: AgentTask
+    ) -> Bool {
+        guard let cycle else { return true }
+        guard cycle.isValid(for: task),
+              Self.validText(
+                  cycle.requestedOutcomeReference,
+                  maximum: limits.maxFeedbackReferenceBytes,
+                  allowsEmpty: false
+              ),
+              Self.validText(
+                  cycle.criteriaVersion,
+                  maximum: AgentTaskCorrectionCycle.maximumIdentityBytes,
+                  allowsEmpty: false
+              ),
+              Self.validText(
+                  cycle.checkPlanIdentity,
+                  maximum: AgentTaskCorrectionCycle.maximumIdentityBytes,
+                  allowsEmpty: false
+              ),
+              cycle.reviewEventKeys.count
+                  <= AgentTaskCorrectionCycle.maximumEventKeys,
+              cycle.reviewEventKeys.allSatisfy({
+                  Self.validText(
+                      $0,
+                      maximum: AgentTaskCorrectionCycle.maximumIdentityBytes,
+                      allowsEmpty: false
+                  )
+              }),
+              cycle.lastRejectedReference.map({
+                  Self.validText(
+                      $0,
+                      maximum: limits.maxFeedbackReferenceBytes,
+                      allowsEmpty: false
+                  )
+              }) ?? true else {
+            return false
+        }
+        if let session = cycle.reviewerSession {
+            guard Self.validText(
+                session.provider,
+                maximum: limits.maxVendorProviderBytes,
+                allowsEmpty: false
+            ), Self.validText(
+                session.opaqueIdentifier,
+                maximum: limits.maxVendorIdentityBytes,
+                allowsEmpty: false
+            ), Self.validOptionalText(
+                session.executableVersion,
+                maximum: limits.maxExecutableVersionBytes
+            ) else { return false }
+        }
+        return true
+    }
+
     /// Outcome-state persistence preconditions (#1722).
     ///
     /// The legacy guards rejected outcome states unconditionally, so
@@ -2268,9 +2342,11 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     /// non-nil `completedAt` had no production write path. They are now an
     /// evidence basis instead of a blanket reject: the state is writable only
     /// when the latest run is settled with a recorded outcome, the completion
-    /// timestamp is exactly the settled run's end, and at least one durable
-    /// evidence fact is bound to that run. A settled run without evidence
-    /// stays `paused` with an `unverified` outcome and no outcome attention.
+    /// timestamp is exactly the settled run's settlement time, and at least
+    /// one durable evidence fact is bound to that run. A settled run without
+    /// evidence stays `paused` with an `unverified` outcome and no outcome
+    /// attention. Settlement is the shared reducer basis (#1756, #1795): a
+    /// physical termination or an explicit logical settlement.
     private func validateADEState(_ task: AgentTask) -> Bool {
         // `completedAt` and `lifecycle == .completed` are one state: both or
         // neither.
@@ -2279,11 +2355,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         }
         if task.lifecycle == .completed {
             guard let last = task.runs.last,
-                  last.liveness == .terminated,
-                  last.endedAt != nil,
+                  AgentTaskLifecycleReducer.isSettled(last),
                   let outcome = last.outcome,
                   outcome != .superseded,
-                  task.completedAt == last.endedAt,
+                  task.completedAt == last.settledAt,
                   // The settled run must carry a durable evidence basis;
                   // outcome states without one are rejected.
                   task.evidence.contains(where: { $0.runID == last.id }) else {
@@ -2359,10 +2434,21 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         guard (run.liveness == .terminated) == (run.endedAt != nil) else {
             return false
         }
-        // An outcome is a settled-attempt fact: a live run can never carry
-        // one, and a terminated run may (#1722).
+        // An outcome is a settled-attempt fact: a live run can carry one
+        // only with an explicit logical settlement, and a settled run may
+        // (#1722, #1756, #1795).
         if run.outcome != nil {
-            guard run.liveness == .terminated, run.endedAt != nil else {
+            guard AgentTaskLifecycleReducer.isSettled(run) else {
+                return false
+            }
+        }
+        if let settlement = run.logicalSettlement {
+            guard AgentTaskLifecycleReducer.validLogicalSettlement(
+                settlement,
+                for: run
+            ),
+                  settlement.processGeneration
+                      == run.process.processGeneration else {
                 return false
             }
         }
@@ -2602,8 +2688,20 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                       task.route.availability != .missing else { return false }
             }
             if task.lifecycle == .paused {
-                guard last.liveness != .live,
-                      task.route.availability == .missing else { return false }
+                if last.liveness == .live {
+                    // A logically settled attempt may retain a live
+                    // provider process (#1756, #1795): the turn is closed,
+                    // so a paused task whose live tail is explicitly
+                    // settled is coherent.
+                    guard last.logicalSettlement != nil,
+                          task.route.availability != .missing else {
+                        return false
+                    }
+                } else {
+                    guard task.route.availability == .missing else {
+                        return false
+                    }
+                }
             }
             if task.lifecycle == .dismissed {
                 // Dismissal is an Inbox/history decision, not evidence that
