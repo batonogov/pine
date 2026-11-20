@@ -580,13 +580,11 @@ final class UserTaskRunStore {
 
     var hasNonDurableResults: Bool { !nonDurableResultRunIDs.isEmpty }
 
-    /// Empty read-only recovery has no sole copy to lose. Accepted results, Clear,
-    /// writes, and identity recovery with restored or still-loading results retain
-    /// ownership until their durable state is known.
+    /// Read-only recovery has no sole copy to lose. Accepted results, Clear,
+    /// and identity recovery retain ownership until their durable state is known.
     var hasUnpersistedResultOwnership: Bool {
         resultProjectRoot != nil && (!nonDurableResultRunIDs.isEmpty
-            || (resultRecoveryTask != nil && (resultLoadTask != nil || !resultRecords.isEmpty))
-            || (!resultRootMissing && (
+            || resultRecoveryTask != nil || (!resultRootMissing && (
                 resultGeneration != savedResultGeneration || resultWriteTask != nil
                     || !resultPreparationTasks.isEmpty || !pendingOutputRetentionIDs.isEmpty
             )))
