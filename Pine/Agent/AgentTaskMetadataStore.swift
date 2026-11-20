@@ -504,11 +504,15 @@ nonisolated private final class AgentTaskStorageHandle {
 /// Serializes all metadata I/O away from MainActor. Files are scoped by a hash
 /// of the canonical project path and contain value metadata only.
 actor AgentTaskMetadataStore: AgentTaskPersisting {
-    static let currentSchemaVersion = 4
+    static let currentSchemaVersion = 5
     /// Keep ordinary task files readable by schema-3 Pine. Critical one-shot
     /// setup journals and explicit logical settlements (#1756, #1795)
     /// require v4 so older readers preserve rather than shed them.
     private static let ordinarySchemaVersion = 3
+    /// v4 files carry the one-shot worktree setup journal. They stay readable
+    /// so older journals survive the v5 (nullable owned-task routes) upgrade;
+    /// v4 readers preserve rather than decode a v5 envelope.
+    private static let worktreeSetupSchemaVersion = 4
     private static let directoryName = ".pine-agent-tasks-private"
 
     private let storageRoot: URL?
@@ -585,6 +589,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 AgentTaskMetadataEnvelope(
                     schemaVersion: tasks.contains(where: {
                         $0.worktreeSetup != nil
+                            || $0.nativeDispatch != nil
                             || $0.runs.contains(where: { $0.logicalSettlement != nil })
                     })
                         ? Self.currentSchemaVersion : Self.ordinarySchemaVersion,
@@ -865,7 +870,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             )
             revision = .versioned(envelope.revision)
             requiresMigration = true
-        case Self.ordinarySchemaVersion, Self.currentSchemaVersion:
+        case Self.ordinarySchemaVersion, Self.worktreeSetupSchemaVersion, Self.currentSchemaVersion:
             guard let envelope = try? decoder.decode(
                 AgentTaskMetadataEnvelope.self,
                 from: data
@@ -885,7 +890,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             return rejectedLoad(.unknownSchema)
         }
         guard header.schemaVersion >= Self.currentSchemaVersion
-            || (!storedTasks.contains(where: { $0.worktreeSetup != nil })
+            || (!storedTasks.contains(where: { $0.worktreeSetup != nil || $0.nativeDispatch != nil })
                 && !storedTasks.contains(where: {
                     $0.runs.contains(where: { $0.logicalSettlement != nil })
                 })),
@@ -2081,8 +2086,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         for task in tasks where task.project == project {
             guard identifiers.insert(task.id).inserted,
                   validateTask(task),
-                  task.runs.allSatisfy({
-                      sessionIdentifiers.insert($0.id).inserted
+                  task.reservedAndObservedRunIDs.allSatisfy({
+                      sessionIdentifiers.insert($0).inserted
                   }) else {
                 return .failure(.invalidMetadata)
             }
@@ -2124,7 +2129,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                   taskIDs.insert(task.id).inserted,
                   task.runs.count <= limits.maxRunsPerTask,
                   validateTask(task),
-                  task.runs.allSatisfy({ runIDs.insert($0.id).inserted }) else {
+                  task.reservedAndObservedRunIDs.allSatisfy({ runIDs.insert($0).inserted }) else {
                 return false
             }
         }
@@ -2164,6 +2169,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               task.runs.allSatisfy(validateRun),
               task.environment.map(Self.validStoredEnvironment) ?? true,
               task.worktreeSetup.map({ Self.validWorktreeSetup($0, for: task) }) ?? true,
+              task.nativeDispatch.map({ $0.isValid(for: task) }) ?? (task.route.surface != .ownedProcess),
               validateFeedback(task.feedback),
               validateReviewCycle(task.reviewCycle, for: task),
               task.decisionReferences.count <= AgentTaskDecisionReference.maximumCount,
@@ -2486,6 +2492,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                   fact.processGeneration == run.process.processGeneration,
                   fact.observedAt.timeIntervalSinceReferenceDate.isFinite,
                   fact.observedAt >= run.startedAt,
+                  fact.kind == .reviewerOutcome
+                      || (fact.reviewerSession == nil && fact.criteriaDigest == nil),
                   fact.sourceSequence.map({ $0 > 0 }) ?? true,
                   AgentTaskLifecycleReducer.validOperationFingerprints(fact),
                   seen.insert(fact.eventIdentity).inserted else {
@@ -2526,6 +2534,29 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                            != runIdentity.opaqueIdentifier {
                     return false
                 }
+            }
+            if let reviewerSession = fact.reviewerSession {
+                guard Self.validText(
+                    reviewerSession.provider,
+                    maximum: limits.maxVendorProviderBytes,
+                    allowsEmpty: false
+                ), Self.validText(
+                    reviewerSession.opaqueIdentifier,
+                    maximum: limits.maxVendorIdentityBytes,
+                    allowsEmpty: false
+                ), Self.validOptionalText(
+                    reviewerSession.executableVersion,
+                    maximum: limits.maxExecutableVersionBytes
+                ) else { return false }
+                if let author = run.vendorIdentity,
+                   author.provider == reviewerSession.provider,
+                   author.opaqueIdentifier == reviewerSession.opaqueIdentifier {
+                    return false
+                }
+            }
+            if let criteriaDigest = fact.criteriaDigest,
+               !Self.validLowerHex(criteriaDigest, length: 64) {
+                return false
             }
         }
         return validateSnapshot(task.reviewedSnapshot)
@@ -2629,6 +2660,10 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
     }
 
     private func validateChronology(_ task: AgentTask) -> Bool {
+        if task.route.surface != .ownedProcess {
+            guard task.route.paneID != nil, task.route.tabID != nil, task.route.terminalID != nil,
+                  task.nativeDispatch == nil, task.runs.allSatisfy({ $0.terminalID != nil }) else { return false }
+        }
         guard task.route.tabID == task.route.terminalID else { return false }
         guard !task.runs.isEmpty else {
             return (task.lifecycle == .paused || task.lifecycle == .dismissed)
@@ -2644,9 +2679,11 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                     return false
                 }
             }
-            if let generation = generationByTerminal[run.terminalID],
-               run.process.processGeneration <= generation { return false }
-            generationByTerminal[run.terminalID] = run.process.processGeneration
+            if let terminalID = run.terminalID {
+                if let generation = generationByTerminal[terminalID],
+                   run.process.processGeneration <= generation { return false }
+                generationByTerminal[terminalID] = run.process.processGeneration
+            }
             prior = run
         }
         if let last = task.runs.last {

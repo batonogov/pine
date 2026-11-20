@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "2026-11-16",
+  "sanitization": "Synthetic ACP envelopes only; content fields, credentials, paths, provider state, and opaque identifiers are omitted or redacted. Session IDs are synthetic; the secret marker stands in for token-bearing payload.",
+  "agent": {
+    "stableIdentifier": "kimiCode",
+    "executableAliases": ["kimi", "kimi-code"],
+    "authority": "pine-launched-owned-stdio-acp-only",
+    "interface": "acp-stdio",
+    "agentName": "Kimi Code CLI",
+    "protocolVersion": 1,
+    "pinnedCLIVersion": "2.6.2",
+    "versionFloors": {
+      "initialize-capability-matrix": "2.6.2",
+      "session-new": "2.6.2",
+      "session-prompt-text": "2.6.2",
+      "session-prompt-image": "2.6.2",
+      "session-prompt-text-resource": "2.6.2",
+      "session-load-history-replay": "2.6.2",
+      "session-resume-no-replay": "2.6.2",
+      "session-fork": "2.6.2",
+      "session-cancel": "2.6.2",
+      "session-request-permission": "2.6.2",
+      "elicitation-form": "2.6.2",
+      "additional-directories-new-only": "2.6.2",
+      "config-options-dynamic-parse": "2.6.2"
+    },
+    "unimplementedAgentMethods": ["providers", "nes", "document", "elicitation/complete"],
+    "reverseRPCsNotOwned": [
+      "fs/read_text_file",
+      "fs/write_text_file",
+      "terminal/create",
+      "terminal/output",
+      "terminal/release",
+      "terminal/kill",
+      "terminal/wait_for_exit"
+    ],
+    "cases": [
+      {
+        "name": "documented-initialize",
+        "direction": "agent",
+        "expect": "accepted",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"protocolVersion\":1,\"agentInfo\":{\"name\":\"Kimi Code CLI\",\"version\":\"2.6.2\"},\"agentCapabilities\":{\"loadSession\":true,\"promptCapabilities\":{\"image\":true,\"audio\":false,\"embeddedContext\":true},\"sessionCapabilities\":{\"list\":{},\"resume\":{},\"close\":{},\"delete\":{},\"fork\":{},\"additionalDirectories\":{}},\"mcpCapabilities\":{\"http\":true,\"sse\":true},\"auth\":{\"logout\":{}}},\"authMethods\":[{\"id\":\"login\",\"name\":\"Kimi login\"}]}}"
+      },
+      {
+        "name": "initialize-wrong-protocol-version",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"protocolVersion\":2,\"agentInfo\":{\"name\":\"Kimi Code CLI\",\"version\":\"2.6.2\"}}}"
+      },
+      {
+        "name": "initialize-wrong-agent-name",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"protocolVersion\":1,\"agentInfo\":{\"name\":\"Other Agent\",\"version\":\"2.6.2\"}}}"
+      },
+      {
+        "name": "initialize-below-version-floor",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"protocolVersion\":1,\"agentInfo\":{\"name\":\"Kimi Code CLI\",\"version\":\"2.1.1\"},\"agentCapabilities\":{\"loadSession\":true}}}"
+      },
+      {
+        "name": "initialize-no-auth-methods",
+        "direction": "agent",
+        "expect": "accepted",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"protocolVersion\":1,\"agentInfo\":{\"name\":\"Kimi Code CLI\",\"version\":\"2.6.2\"},\"agentCapabilities\":{\"loadSession\":true,\"promptCapabilities\":{\"image\":true,\"embeddedContext\":true},\"sessionCapabilities\":{\"resume\":{},\"fork\":{}}},\"authMethods\":[]}}"
+      },
+      {
+        "name": "session-new-with-unknown-config-option",
+        "direction": "agent",
+        "expect": "accepted",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"sessionId\":\"kimi_fixture_new\",\"configOptions\":[{\"id\":\"mode\",\"name\":\"Session Mode\",\"type\":\"select\",\"currentValue\":\"ask\"},{\"id\":\"future\",\"name\":\"Future\",\"type\":\"pine_future_type\",\"currentValue\":\"x\"}]}}"
+      },
+      {
+        "name": "session-load-replay",
+        "direction": "agent",
+        "expect": "accepted",
+        "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"kimi_fixture_src\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"fixture-history\"}}}}"
+      },
+      {
+        "name": "session-load-replay-foreign-session",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"kimi_fixture_other\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"fixture-history\"}}}}"
+      },
+      {
+        "name": "session-resume-replay-violation",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"kimi_fixture_src\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"fixture-history\"}}}}"
+      },
+      {
+        "name": "permission-request",
+        "direction": "agent",
+        "expect": "attention",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"toolCall\":{\"toolCallId\":\"tool_fixture_1\",\"title\":\"Fixture write\",\"kind\":\"edit\"},\"options\":[{\"optionId\":\"allow-once\",\"name\":\"Allow once\",\"kind\":\"allow_once\"},{\"optionId\":\"reject-once\",\"name\":\"Reject\",\"kind\":\"reject_once\"}]}}"
+      },
+      {
+        "name": "permission-request-missing-deny-option",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"toolCall\":{\"toolCallId\":\"tool_fixture_2\",\"title\":\"Fixture write\",\"kind\":\"edit\"},\"options\":[{\"optionId\":\"allow-once\",\"name\":\"Allow once\",\"kind\":\"allow_once\"}]}}"
+      },
+      {
+        "name": "permission-request-foreign-session",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"kimi_fixture_other\",\"toolCall\":{\"toolCallId\":\"tool_fixture_3\",\"title\":\"Fixture write\",\"kind\":\"edit\"},\"options\":[{\"optionId\":\"allow-once\",\"name\":\"Allow once\",\"kind\":\"allow_once\"},{\"optionId\":\"reject-once\",\"name\":\"Reject\",\"kind\":\"reject_once\"}]}}"
+      },
+      {
+        "name": "elicitation-form-request",
+        "direction": "agent",
+        "expect": "attention",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"elicitation/create\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"mode\":\"form\",\"message\":\"Fixture question\",\"toolCallId\":\"tool_fixture_4\",\"requestedSchema\":{\"type\":\"object\",\"required\":[\"choice\"],\"properties\":{\"choice\":{\"type\":\"string\",\"oneOf\":[{\"const\":\"blue\",\"title\":\"Blue\"},{\"const\":\"amber\",\"title\":\"Amber\"}]}}}}}"
+      },
+      {
+        "name": "elicitation-url-mode-request",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"elicitation/create\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"mode\":\"url\",\"elicitationId\":\"fixture-oauth\",\"url\":\"https://fixture.example/authorize\",\"message\":\"Fixture authorize\"}}"
+      },
+      {
+        "name": "fs-read-reverse-rpc",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"fs/read_text_file\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"path\":\"/fixture/file.txt\"}}"
+      },
+      {
+        "name": "terminal-create-reverse-rpc",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"terminal/create\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"command\":[\"fixture\"],\"cwd\":\"/fixture\"}}"
+      },
+      {
+        "name": "agent-message-chunk",
+        "direction": "agent",
+        "expect": "working",
+        "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"fixture-output\"}}}}"
+      },
+      {
+        "name": "tool-call-started",
+        "direction": "agent",
+        "expect": "working",
+        "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"update\":{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"tool_fixture_1\",\"title\":\"Fixture write\",\"kind\":\"edit\",\"status\":\"pending\"}}}"
+      },
+      {
+        "name": "tool-call-completed",
+        "direction": "agent",
+        "expect": "working",
+        "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"update\":{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"tool_fixture_1\",\"status\":\"completed\"}}}"
+      },
+      {
+        "name": "plan-update",
+        "direction": "agent",
+        "expect": "working",
+        "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"update\":{\"sessionUpdate\":\"plan\",\"entries\":[{\"content\":\"fixture step\",\"priority\":\"high\",\"status\":\"pending\"}]}}}"
+      },
+      {
+        "name": "future-schema-session-update",
+        "direction": "agent",
+        "expect": "ignored",
+        "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"update\":{\"sessionUpdate\":\"pine_future_update\",\"value\":1}}}"
+      },
+      {
+        "name": "stop-reason-end-turn",
+        "direction": "agent",
+        "expect": "settled",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"stopReason\":\"end_turn\"}}"
+      },
+      {
+        "name": "stop-reason-cancelled",
+        "direction": "agent",
+        "expect": "cancelled",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"stopReason\":\"cancelled\"}}"
+      },
+      {
+        "name": "stop-reason-unrecognized",
+        "direction": "agent",
+        "expect": "unknown",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"stopReason\":\"pine_future_reason\"}}"
+      },
+      {
+        "name": "prompt-failure",
+        "direction": "agent",
+        "expect": "failed",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32000,\"message\":\"fixture failure\"}}"
+      },
+      {
+        "name": "malformed-frame",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{"
+      },
+      {
+        "name": "empty-wire",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": ""
+      },
+      {
+        "name": "oversized-frame",
+        "direction": "agent",
+        "expect": "rejected",
+        "inputBytes": 1048577,
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"stopReason\":\"end_turn\",\"padding\":\"fixture\"}}"
+      },
+      {
+        "name": "foreign-jsonrpc-version",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"3.0\",\"id\":2,\"result\":{\"stopReason\":\"end_turn\"}}"
+      },
+      {
+        "name": "secret-bearing-permission-request",
+        "direction": "agent",
+        "expect": "accepted",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"toolCall\":{\"toolCallId\":\"tool_fixture_5\",\"title\":\"Fixture secret\",\"kind\":\"other\",\"rawInput\":{\"token\":\"FIXTURE_SECRET_MARKER\"}},\"options\":[{\"optionId\":\"allow-once\",\"name\":\"Allow once\",\"kind\":\"allow_once\"},{\"optionId\":\"reject-once\",\"name\":\"Reject\",\"kind\":\"reject_once\"}]}}"
+      },
+      {
+        "name": "stale-permission-request",
+        "direction": "agent",
+        "expect": "rejected",
+        "wire": "{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"kimi_fixture_new\",\"toolCall\":{\"toolCallId\":\"tool_fixture_6\",\"title\":\"Fixture write\",\"kind\":\"edit\"},\"options\":[{\"optionId\":\"allow-once\",\"name\":\"Allow once\",\"kind\":\"allow_once\"},{\"optionId\":\"reject-once\",\"name\":\"Reject\",\"kind\":\"reject_once\"}]}}"
+      }
+    ]
+  }
+}

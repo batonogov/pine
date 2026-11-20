@@ -67,7 +67,7 @@
   "features.title": "Todo lo necesario para editar junto a un agente.",
   "features.desc": "Pine sigue siendo un editor de código enfocado y hace visible el trabajo con agentes desde la terminal.",
   "features.01title": "Mira el trabajo del agente mientras ocurre.",
-  "features.01desc": "La Bandeja de agentes conserva el contexto de las tareas entre proyectos y enlaza con las sesiones activas. En el código actual, los avisos de agentes detectados indican el fin del proceso, no espera, éxito ni resultados comprobados. Las versiones publicadas pueden comportarse de otro modo.",
+  "features.01desc": "La Bandeja de agentes conserva el contexto de las tareas entre proyectos y enlaza con las sesiones activas. Las integraciones actuales que solo observan procesos no envían notificaciones de agentes, ni siquiera al terminar un proceso. Las notificaciones de espera de entrada, error y finalización requieren eventos de ciclo de vida verificados de una integración estructurada compatible; ninguna integración de este tipo está activada todavía en la aplicación. Las versiones publicadas pueden comportarse de otro modo.",
   "features.02title": "Velocidad nativa e inteligencia de código real.",
   "features.02desc": "Gramáticas de lenguaje incluidas, diagnósticos LSP, autocompletado, hover, definición, acciones de código, renombrado, símbolos, plegado, minimapa y búsqueda de proyecto.",
   "features.03title": "Un espacio para varios proyectos.",

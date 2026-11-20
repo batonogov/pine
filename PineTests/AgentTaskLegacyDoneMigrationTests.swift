@@ -88,8 +88,8 @@ struct AgentTaskLegacyDoneMigrationTests {
         )
     }
 
-    @Test("process-only accuracy never turns a .done run into a completion event")
-    func doneRunStaysProcessEnded() throws {
+    @Test("process-only accuracy never turns a .done run into a notification event")
+    func doneRunStaysSilent() throws {
         let (live, settled) = terminatedDoneRun(
             seed: 42,
             accuracy: .processTerminationOnly
@@ -102,17 +102,16 @@ struct AgentTaskLegacyDoneMigrationTests {
             to: [settled],
             accuracy: { _ in .processTerminationOnly }
         )
-        #expect(events.map(\.kind) == [.processEnded])
+        #expect(events.isEmpty)
     }
 
     @Test("no verified-result or Ready notification kind exists")
     func notificationKindsHaveNoVerifiedResult() {
-        // The kind set is the whole notification surface: the legacy
-        // `.completed` and `.processEnded` signals remain, and there is no
-        // verified-result, verified, or Ready kind that a legacy `.done`
-        // could migrate into.
+        // The kind set is the whole notification surface: only actionable
+        // interruption signals remain, and there is no verified-result,
+        // verified, or Ready kind that a legacy `.done` could migrate into.
         #expect(Set(AgentNotificationEventKind.allCases) == [
-            .waitingInput, .failed, .completed, .processEnded,
+            .waitingInput, .failed, .completed,
         ])
     }
 
