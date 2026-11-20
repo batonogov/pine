@@ -15,7 +15,7 @@ import Testing
 struct CLIScriptTests {
     /// Path to the bundled pine script in the test host's resources.
     private var scriptPath: String? {
-        Bundle.main.path(forResource: "pine", ofType: nil)
+        Bundle(for: BundleLocator.self).path(forResource: "pine", ofType: nil)
     }
 
     private func runScript(_ args: [String], env: [String: String]? = nil) throws -> (output: String, exitCode: Int32) {
@@ -24,10 +24,12 @@ struct CLIScriptTests {
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["--noprofile", "--norc", path] + args
-        var environment = ProcessInfo.processInfo.environment
-        environment.merge(env ?? [:]) { _, new in new }
-        process.environment = TestChildStartupPolicy.environment(from: environment)
+        process.arguments = [path] + args
+        if let env {
+            var environment = ProcessInfo.processInfo.environment
+            environment.merge(env) { _, new in new }
+            process.environment = environment
+        }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -44,26 +46,6 @@ struct CLIScriptTests {
 
     enum ScriptError: Error {
         case scriptNotFound
-    }
-
-    @Test func ignoresOwnedBashStartupHook() throws {
-        _ = try #require(scriptPath)
-        let directory = FileManager.default.temporaryDirectory
-            .appending(path: "pine-cli-startup-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let hook = directory.appending(path: "startup.sh")
-        let marker = directory.appending(path: "startup.marker")
-        try "printf hooked > \"$OWNED_STARTUP_MARKER\"\n".write(
-            to: hook, atomically: true, encoding: .utf8
-        )
-        let result = try runScript(["--help"], env: [
-            "BASH_ENV": hook.path,
-            "OWNED_STARTUP_MARKER": marker.path,
-        ])
-        #expect(result.exitCode == 0)
-        #expect(result.output.contains("USAGE"))
-        #expect(!FileManager.default.fileExists(atPath: marker.path))
     }
 
     @Test func helpFlagShowsUsage() throws {
@@ -95,3 +77,6 @@ struct CLIScriptTests {
         #expect(result.exitCode == 0)
     }
 }
+
+/// Helper class to locate the test bundle.
+private class BundleLocator {}

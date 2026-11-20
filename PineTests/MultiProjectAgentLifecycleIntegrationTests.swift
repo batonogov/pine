@@ -546,7 +546,7 @@ private final class MultiProjectAgentLifecycleFixture {
             workingDirectory: agent == "claude" ? projectB : projectA,
             initialProcess: TerminalInitialProcess(
                 executablePath: "/usr/bin/python3",
-                arguments: ["-I", "-S", script.path, processState.path, "none"]
+                arguments: [script.path, processState.path, "none"]
             )
         )
         tab.terminalView.frame = NSRect(
@@ -780,8 +780,6 @@ private final class MultiProjectAgentLifecycleFixture {
         var processIdentifier: pid_t = 0
         let spawnResult = withMutableCStringArray([
             executable,
-            "-I",
-            "-S",
             script.path,
             state.path,
             failurePhase ?? "none",

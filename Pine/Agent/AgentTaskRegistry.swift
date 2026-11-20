@@ -30,6 +30,7 @@ nonisolated private enum AgentTaskClaimKind: Sendable {
     case initialLaunch
     case interruptedInitialLaunch
     case resume(previousRunID: UUID)
+    case continuation(previousRunID: UUID)
 }
 
 nonisolated private enum AgentTaskClaimState: Equatable, Sendable {
@@ -2313,6 +2314,97 @@ final class AgentTaskRegistry {
         return isResumableTask(at: index)
     }
 
+    /// Explicit continuation of a Ready or accepted result as a NEW logical
+    /// attempt of the SAME durable task (#1756).
+    ///
+    /// The user-submitted revision — with its verification/acceptance
+    /// invalidation and, for explicit revisions, the candidate-generation
+    /// advance — is recorded durably BEFORE any launch claim exists, so
+    /// dependent positive evidence or a dispatch can never be accepted
+    /// ahead of the transition. The claim is runtime-only (the same policy
+    /// as every other launch intent): a crash, dispatch rejection, or
+    /// cancellation leaves the recorded transition with an honest pending
+    /// state, never a silently restored old Ready result.
+    ///
+    /// A duplicate click/event cannot create a second attempt: a task with
+    /// a pending claim is rejected, and the exact same pending reference is
+    /// fenced by the reducer as already recorded (idempotent re-arm).
+    ///
+    /// `origin` is REQUIRED and has no default: the explicit-user origin
+    /// grants cycle-advancing authority, so omission must never silently
+    /// produce the stronger origin (the #1755 automatic-correction caller
+    /// must pass `.automaticReviewer` and keep the round limit intact).
+    @discardableResult
+    // swiftlint:disable:next function_parameter_count
+    func prepareContinuation(
+        taskID: UUID,
+        context: AgentTaskBridgeContext,
+        feedbackReference: String,
+        codeState: AgentTaskCodeStateIdentity?,
+        environment: AgentTaskEnvironmentIdentity?,
+        origin: AgentTaskRevisionOrigin,
+        boundary: AgentTaskLaunchBoundary
+    ) -> AgentTaskLaunchResult {
+        expireClaims()
+        guard let index = taskIndex(for: taskID),
+              let previousRunID = tasks[index].runs.last?.id,
+              !isTerminating,
+              !registeredProjects.contains(context.project)
+                || canAdmitDurableWork(in: context.project),
+              context.origin == .pineLaunched,
+              validLaunchRoute(context.route),
+              tasks[index].project == context.project,
+              tasks[index].origin == .pineLaunched,
+              tasks[index].lifecycle != .dismissed,
+              tasks[index].route.availability == .missing,
+              let executable = tasks[index].descriptor.launchExecutable,
+              tasks[index].descriptor.agentType.cliNames.contains(executable),
+              !executable.contains(where: { $0.isWhitespace }),
+              tasks[index].runs.last.map({ $0.liveness != .live }) == true,
+              pendingClaims[terminalKey(context)] == nil,
+              taskIDByTerminal[terminalKey(context)] == nil,
+              !pendingClaims.values.contains { $0.taskID == taskID },
+              validUserText(feedbackReference, maximum: limits.maxFeedbackReferenceBytes)
+        else {
+            return .rejected
+        }
+        let decision = AgentTaskContinuation.submitRevision(
+            &tasks[index],
+            feedbackReference: feedbackReference,
+            codeState: codeState,
+            environment: environment,
+            origin: origin,
+            at: Date()
+        )
+        if case .rejected = decision {
+            return .rejected
+        }
+        let reservation = AgentTaskLaunchReservation(
+            taskID: taskID,
+            token: UUID()
+        )
+        installClaim(AgentTaskPendingClaim(
+            token: reservation.token,
+            taskID: taskID,
+            project: context.project,
+            route: context.route,
+            descriptor: tasks[index].descriptor,
+            kind: .continuation(previousRunID: previousRunID),
+            expectedRunCount: tasks[index].runs.count,
+            generationFloor: boundary.generationFloor,
+            launchBoundary: normalizedLaunchBoundary(boundary.capturedAt),
+            deadline: monotonicNow().advanced(by: claimTTL),
+            state: .dormant
+        ), key: terminalKey(context))
+        // The transition is persisted only when it mutated the task; an
+        // idempotent re-arm leaves an already-durable record untouched, and
+        // the claim itself is runtime-only like every launch intent.
+        if case .recorded = decision {
+            markDirty(tasks[index].project)
+        }
+        return .reserved(reservation)
+    }
+
     /// Makes a reserved claim consumable only after Pine's exact PTY write was
     /// acknowledged in full. Dormant claims still occupy their route and TTL,
     /// but detector evidence cannot consume them.
@@ -3332,7 +3424,11 @@ final class AgentTaskRegistry {
     ) -> Bool {
         guard let task = task(for: claim.taskID),
               let evidence = session.processEvidence else { return false }
-        guard task.runs.count == claim.expectedRunCount,
+        // Dismissal is the last user intent: no claim kind may resurrect a
+        // dismissed task with a new run (the retention sweep already fences
+        // its own dismissals; this covers user-initiated ones).
+        guard task.lifecycle != .dismissed,
+              task.runs.count == claim.expectedRunCount,
               context.origin == .pineLaunched,
               task.origin == .pineLaunched,
               task.project == claim.project,
@@ -3368,6 +3464,22 @@ final class AgentTaskRegistry {
             return previous.id == previousRunID
                 && (terminatedTail || interruptedTail)
                 && generationIsValid
+        case .continuation(let previousRunID):
+            // The previous attempt must be genuinely settled (a recorded
+            // outcome, never a fabricated one), and the new attempt carries
+            // a truthful new process incarnation: strictly newer generation
+            // on the same terminal.
+            guard let previous = task.runs.last,
+                  previous.id == previousRunID,
+                  previous.liveness == .terminated,
+                  previous.endedAt != nil,
+                  previous.outcome != nil else {
+                return false
+            }
+            let generationIsValid = previous.terminalID != context.route.terminalID
+                || evidence.processGeneration
+                    > previous.process.processGeneration
+            return generationIsValid
         }
     }
 
@@ -3486,7 +3598,9 @@ final class AgentTaskRegistry {
             }
             tasks.remove(at: index)
             markDirty(project)
-        } else {
+        } else if tasks[index].lifecycle != .dismissed {
+            // Dismissal is the last user intent: a cancelled or expired
+            // claim never un-dismisses a task.
             tasks[index].lifecycle = .paused
             markDirty(tasks[index].project)
         }

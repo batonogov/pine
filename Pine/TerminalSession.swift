@@ -2296,41 +2296,12 @@ final class TerminalTab: Identifiable, Hashable {
     /// - `TERM=xterm-256color` — standard 256-color terminal type
     /// - `COLORTERM=truecolor` — advertises 24-bit color support to TUIs
     func buildEnvironment() -> [String: String] {
-        let environment = Self.normalizedEnvironment(
+        Self.normalizedEnvironment(
             from: ProcessInfo.processInfo.environment,
             workingDirectory: workingDirectory,
             readOnlyContextEnabled: agentHandoffSettings
                 .isReadOnlyContextEnabled
         )
-        #if PINE_TEST_HOST
-        // Test host only: strip child startup/history/prompt injection.
-        return TestChildStartupPolicy.environment(from: environment)
-        #else
-        return environment
-        #endif
-    }
-
-    /// Exact executable/argv the tab launches. An explicitly configured
-    /// process always wins; under the private test host a configured *shell*
-    /// becomes the controlled non-login shell, while a non-shell child is an
-    /// explicit test seam (e.g. `/usr/bin/yes sunny`) and keeps its exact
-    /// argv (#1792).
-    var resolvedInitialProcess: TerminalInitialProcess {
-        if let initialProcess { return initialProcess }
-        let configured = TerminalInitialProcess(
-            executablePath: shellSettings.resolvedShellPath,
-            arguments: shellSettings.shellArgs
-        )
-        #if PINE_TEST_HOST
-        let base = (configured.executablePath as NSString).lastPathComponent
-        guard TestChildStartupPolicy.isShell(base) else { return configured }
-        return TerminalInitialProcess(
-            executablePath: TestChildStartupPolicy.executablePath,
-            arguments: TestChildStartupPolicy.arguments
-        )
-        #else
-        return configured
-        #endif
     }
 
     /// Normalizes the host process environment for Pine's embedded terminal.
@@ -2478,9 +2449,9 @@ final class TerminalTab: Identifiable, Hashable {
         let retention = TerminalWorkingDirectoryRetention(canonicalDirectory: canonicalDirectory)
         workingDirectoryRetention = retention
 
-        let process = resolvedInitialProcess
-        let executable = process.executablePath
-        let arguments = process.arguments
+        let executable = initialProcess?.executablePath
+            ?? shellSettings.resolvedShellPath
+        let arguments = initialProcess?.arguments ?? shellSettings.shellArgs
         let launch: Result<Void, LocalProcessError>
         #if PINE_TEST_HOST
         RecoveryUITestEvidence.shared.processLaunches.append(id)

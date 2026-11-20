@@ -634,13 +634,13 @@ nonisolated final class AgentDetectionCoordinator:
         }
         while cursor < bytes.count, bytes[cursor] == 0 { cursor += 1 }
         var arguments: [String] = []
-        while arguments.count < argumentCount, cursor < bytes.count {
+        while arguments.count < min(argumentCount, 2), cursor < bytes.count {
             guard let argument = consumeCString(in: bytes, cursor: &cursor) else {
                 return nil
             }
             arguments.append(argument)
         }
-        return arguments.count == argumentCount ? arguments : nil
+        return arguments.count == min(argumentCount, 2) ? arguments : nil
     }
 
     nonisolated private static func consumeCString(

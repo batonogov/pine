@@ -3312,10 +3312,12 @@ struct AgentTaskRegistryTests {
         ])
         let task = try #require((root["tasks"] as? [[String: Any]])?.first)
         #expect(Set(task.keys) == [
-            "acceptanceState", "attention", "createdAt", "descriptor",
+            "acceptanceState", "attention", "candidateGeneration",
+            "createdAt", "descriptor",
             "decisionReferences", "evidence", "executionState", "feedback",
             "id", "isUnread", "lastActivityAt", "lifecycle", "objective",
-            "objectiveRevision", "origin", "project", "route", "runs",
+            "objectiveRevision", "origin", "project", "revisions", "route",
+            "runs",
             "title", "updatedAt", "verificationState",
         ])
         let projectObject = try #require(task["project"] as? [String: Any])

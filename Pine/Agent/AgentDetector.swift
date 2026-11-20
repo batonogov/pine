@@ -516,15 +516,10 @@ final class AgentDetector {
         guard let firstToken = arguments.first else { return "" }
         let firstBase = (firstToken as NSString).lastPathComponent
 
-        if interpreterWrappers.contains(firstBase.lowercased()) {
-            // Interpreter flags precede the wrapped script (`python3 -I -S
-            // …/pi`, `node --max-old-space-size=… …/pi`); the first
-            // non-flag token is the real CLI.
-            for token in arguments.dropFirst() where !token.hasPrefix("-") {
-                return strippingScriptExtension(
-                    (token as NSString).lastPathComponent
-                )
-            }
+        if interpreterWrappers.contains(firstBase.lowercased()),
+           arguments.count >= 2 {
+            let scriptBase = (arguments[1] as NSString).lastPathComponent
+            return strippingScriptExtension(scriptBase)
         }
         return firstBase
     }

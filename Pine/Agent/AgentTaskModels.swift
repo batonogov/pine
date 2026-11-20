@@ -1075,6 +1075,11 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     // decodes to nil/empty.
     var environment: AgentTaskEnvironmentIdentity?
     var feedback: [AgentTaskFeedbackRecord]
+    // Same-task continuation (#1756): a new logical attempt per submitted
+    // revision. Additive: metadata persisted before these fields decodes to
+    // 0/empty.
+    var candidateGeneration: UInt64
+    var revisions: [AgentTaskRevisionRecord]
     var decisionReferences: [AgentTaskDecisionReference]
     var worktreeSetup: AgentTaskReservedWorktreeCheckpoint?
     var nativeDispatch: AgentTaskNativeDispatch?
@@ -1119,6 +1124,8 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case acceptedSnapshot
         case environment
         case feedback
+        case candidateGeneration
+        case revisions
         case decisionReferences
         case worktreeSetup
         case nativeDispatch
@@ -1159,6 +1166,8 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         acceptedSnapshot = nil
         environment = nil
         feedback = []
+        candidateGeneration = 0
+        revisions = []
         decisionReferences = []
         worktreeSetup = nil
         nativeDispatch = nil
@@ -1250,6 +1259,14 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             [AgentTaskFeedbackRecord].self,
             forKey: .feedback
         ) ?? []
+        candidateGeneration = try values.decodeIfPresent(
+            UInt64.self,
+            forKey: .candidateGeneration
+        ) ?? 0
+        revisions = try values.decodeIfPresent(
+            [AgentTaskRevisionRecord].self,
+            forKey: .revisions
+        ) ?? []
         decisionReferences = try values.decodeIfPresent(
             [AgentTaskDecisionReference].self, forKey: .decisionReferences
         ) ?? []
@@ -1295,6 +1312,8 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         )
         try values.encodeIfPresent(environment, forKey: .environment)
         try values.encode(feedback, forKey: .feedback)
+        try values.encode(candidateGeneration, forKey: .candidateGeneration)
+        try values.encode(revisions, forKey: .revisions)
         try values.encode(decisionReferences, forKey: .decisionReferences)
         try values.encodeIfPresent(worktreeSetup, forKey: .worktreeSetup)
         try values.encodeIfPresent(nativeDispatch, forKey: .nativeDispatch)

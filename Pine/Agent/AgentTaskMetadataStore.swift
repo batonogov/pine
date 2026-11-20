@@ -24,6 +24,7 @@ nonisolated struct AgentTaskPersistenceLimits: Sendable {
     let maxEvidenceFactsPerTask: Int
     let maxFeedbackRecordsPerTask: Int
     let maxFeedbackReferenceBytes: Int
+    let maxRevisionRecordsPerTask: Int
 
     init(
         maxTasksPerProject: Int = 200,
@@ -31,7 +32,8 @@ nonisolated struct AgentTaskPersistenceLimits: Sendable {
         maxHistoricalRunIDs: Int = 8_192,
         maxFileBytes: Int = 1_048_576,
         maxEvidenceFactsPerTask: Int = 64,
-        maxFeedbackRecordsPerTask: Int = 32
+        maxFeedbackRecordsPerTask: Int = 32,
+        maxRevisionRecordsPerTask: Int = 50
     ) {
         self.maxTasksPerProject = max(1, maxTasksPerProject)
         self.maxRunsPerTask = max(1, maxRunsPerTask)
@@ -46,6 +48,7 @@ nonisolated struct AgentTaskPersistenceLimits: Sendable {
         maxObjectiveBytes = 2_048
         self.maxEvidenceFactsPerTask = max(1, maxEvidenceFactsPerTask)
         self.maxFeedbackRecordsPerTask = max(1, maxFeedbackRecordsPerTask)
+        self.maxRevisionRecordsPerTask = max(1, maxRevisionRecordsPerTask)
         maxFeedbackReferenceBytes = AgentTaskFeedbackRecord.maximumReferenceBytes
     }
 }
@@ -2171,6 +2174,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               task.worktreeSetup.map({ Self.validWorktreeSetup($0, for: task) }) ?? true,
               task.nativeDispatch.map({ $0.isValid(for: task) }) ?? (task.route.surface != .ownedProcess),
               validateFeedback(task.feedback),
+              validateRevisions(task),
               validateReviewCycle(task.reviewCycle, for: task),
               task.decisionReferences.count <= AgentTaskDecisionReference.maximumCount,
               task.decisionReferences.allSatisfy(\.isValid),
@@ -2278,6 +2282,42 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             }
         }
         return true
+    }
+
+    /// Bounded, content-free revision records (#1756): scheme 1, a
+    /// non-empty reference within the byte bound, a finite observed time, a
+    /// validated code-state binding when present, the per-task count bound,
+    /// and the candidate-generation contract: records are monotonic in
+    /// generation, an explicit record always advances from at least zero,
+    /// and the task's current generation is exactly its last record's
+    /// (or 0 without records). A violation rejects the whole file
+    /// fail-closed.
+    private func validateRevisions(_ task: AgentTask) -> Bool {
+        guard task.revisions.count <= limits.maxRevisionRecordsPerTask else {
+            return false
+        }
+        var previousGeneration: UInt64 = 0
+        for record in task.revisions {
+            guard record.scheme == AgentTaskRevisionRecord.currentScheme,
+                  record.candidateGeneration >= previousGeneration,
+                  record.origin == .explicitUser
+                      ? record.candidateGeneration > 0
+                      : true,
+                  Self.validText(
+                      record.feedbackReference,
+                      maximum: limits.maxFeedbackReferenceBytes,
+                      allowsEmpty: false
+                  ),
+                  validDate(record.observedAt) else {
+                return false
+            }
+            if let codeState = record.codeState,
+               !Self.validStoredCodeState(codeState) {
+                return false
+            }
+            previousGeneration = record.candidateGeneration
+        }
+        return task.candidateGeneration == previousGeneration
     }
 
     /// Durable review-cycle journal (#1755): structural invariants via the
