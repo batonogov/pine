@@ -1,5 +1,62 @@
 # Changelog
 
+## [2.13.0](https://github.com/batonogov/pine/compare/v2.12.4...v2.13.0) (2026-11-19)
+
+
+### Features
+
+* **agent:** bind task environments to validated identities ([#1791](https://github.com/batonogov/pine/issues/1791)) ([6d5cd91](https://github.com/batonogov/pine/commit/6d5cd916096458535374d9434a426968547a75c4))
+* **agent:** bounded automatic correction cycle for review ([#1831](https://github.com/batonogov/pine/issues/1831)) ([237fe58](https://github.com/batonogov/pine/commit/237fe58067a34b3a4d08ba903371a20ceceeae4b))
+* **agent:** bounded parallel-task admission, event boundaries, and settings isolation ([#1728](https://github.com/batonogov/pine/issues/1728)) ([#1824](https://github.com/batonogov/pine/issues/1824)) ([8e29a95](https://github.com/batonogov/pine/commit/8e29a953025f1f558b84e2e31b182c73bf144a42))
+* **agent:** capture content-bound code and environment identities ([#1783](https://github.com/batonogov/pine/issues/1783)) ([8aab5e3](https://github.com/batonogov/pine/commit/8aab5e33fc81d4755db61028e12c84fc2ddd075c))
+* **agent:** correlate Codex requests and scoped attention ([#1789](https://github.com/batonogov/pine/issues/1789)) ([0ca861c](https://github.com/batonogov/pine/commit/0ca861c5db3799547da0ad3cc28b2fb289f72456))
+* **agent:** create and reconcile reserved task worktrees ([#1804](https://github.com/batonogov/pine/issues/1804)) ([715455e](https://github.com/batonogov/pine/commit/715455e8c406513a6e9425475f1135e3e20d04e0))
+* **agent:** define the ADE task lifecycle and evidence model ([#1740](https://github.com/batonogov/pine/issues/1740)) ([c06806a](https://github.com/batonogov/pine/commit/c06806a677fe9925543d8c908995620c138ce890))
+* **agent:** detect Antigravity, Droid, Cline, Grok Build, and Kilo Code CLIs ([#1739](https://github.com/batonogov/pine/issues/1739)) ([87d12cc](https://github.com/batonogov/pine/commit/87d12ccef554ed1d7ae38a83c8e3c18ed1cc8076)), closes [#1726](https://github.com/batonogov/pine/issues/1726)
+* **agent:** feedback references, delivery states, and revision comparison ([#1758](https://github.com/batonogov/pine/issues/1758)) ([#1822](https://github.com/batonogov/pine/issues/1822)) ([94df396](https://github.com/batonogov/pine/commit/94df39676e6f2452f57fb93af53ddb471563d18a))
+* **agent:** native launch intent + discovery contract ([#1820](https://github.com/batonogov/pine/issues/1820)) ([29e8db2](https://github.com/batonogov/pine/commit/29e8db26b83bf24338c8e75ee76e4929cd5967cf))
+* **agent:** one-stop-shop metadata boundary with fail-closed decode and hydration barrier ([#1835](https://github.com/batonogov/pine/issues/1835)) ([d45a3bf](https://github.com/batonogov/pine/commit/d45a3bf4aee656c046adc624df325e824b443454))
+* **agent:** project recipe contract with preparation states and owned result actions ([#1836](https://github.com/batonogov/pine/issues/1836)) ([9313cdd](https://github.com/batonogov/pine/commit/9313cddf0da8331989ffeee394a4a32011a1d60c))
+* **agent:** separate logical settlement from provider process exit ([#1795](https://github.com/batonogov/pine/issues/1795)) ([#1818](https://github.com/batonogov/pine/issues/1818)) ([4668cfa](https://github.com/batonogov/pine/commit/4668cfad42af5dbded05aaf9b6b2893120bb09de))
+* **agent:** shared verification-identity revalidation + boundary tests ([#1819](https://github.com/batonogov/pine/issues/1819)) ([69a8ce9](https://github.com/batonogov/pine/commit/69a8ce974f30f96855b78729e080b04020cbe0fe))
+* **agent:** task brief projection with versioned decision annotations ([#1759](https://github.com/batonogov/pine/issues/1759)) ([#1827](https://github.com/batonogov/pine/issues/1827)) ([8e52438](https://github.com/batonogov/pine/commit/8e5243897335fcb9c221cdb6ad7b5dc85db84ae2))
+* **process:** supervise bounded literal argv checks ([#1797](https://github.com/batonogov/pine/issues/1797)) ([19c7060](https://github.com/batonogov/pine/commit/19c70602d4483ad64c18e90d693621e3ac31685b))
+* **process:** support bounded literal argument launches ([#1752](https://github.com/batonogov/pine/issues/1752)) ([4b3f753](https://github.com/batonogov/pine/commit/4b3f753bc683acde7d55ca12b21618e5a8605015))
+
+
+### Bug Fixes
+
+* **agent:** attribute reviewed snapshots to settled candidates ([#1807](https://github.com/batonogov/pine/issues/1807)) ([8732074](https://github.com/batonogov/pine/commit/8732074665fd73ab1319655a0ec7b708f01057e1))
+* **agent:** recover task metadata after transient load failures ([#1775](https://github.com/batonogov/pine/issues/1775)) ([0c1a66c](https://github.com/batonogov/pine/commit/0c1a66c27539da5f1c63f961c91da4454bc9691f))
+* **agent:** require complete operation identities before Ready ([#1750](https://github.com/batonogov/pine/issues/1750)) ([7cfdc67](https://github.com/batonogov/pine/commit/7cfdc675efa8a2d41ca31fa49aa814c1f4f85b6c))
+* **agent:** retain completed history until durable acknowledgement ([#1776](https://github.com/batonogov/pine/issues/1776)) ([e174179](https://github.com/batonogov/pine/commit/e174179fb7d09eeb7ea33d81ef0ef346df26ea3a))
+* **agent:** tolerate filesystem birthtime drift ([#1743](https://github.com/batonogov/pine/issues/1743)) ([cd86759](https://github.com/batonogov/pine/commit/cd867598101c68af9680bd9ac5f317334326e3d0))
+* **agent:** tolerate heartbeats during exact task routing ([#1805](https://github.com/batonogov/pine/issues/1805)) ([cbc218a](https://github.com/batonogov/pine/commit/cbc218aaa5f92a61f0dd1346bb11e00e54eebac7))
+* **ci:** install the static SwiftLint build on Linux runners ([#1816](https://github.com/batonogov/pine/issues/1816)) ([399fab5](https://github.com/batonogov/pine/commit/399fab55cb1eae9796d59009022be10203f650d0))
+* **concurrency:** dispatch background work without a MainActor hop ([#1773](https://github.com/batonogov/pine/issues/1773)) ([26af795](https://github.com/batonogov/pine/commit/26af79594436b4c61fd5b00f3017af69eec4fc5f))
+* **test:** isolate application persistence before reset and launch ([#1774](https://github.com/batonogov/pine/issues/1774)) ([2c2452e](https://github.com/batonogov/pine/commit/2c2452e1c9628b13eaa9e51957ec36624bd97b18))
+* **workspace:** fence asynchronous presentation intent ([#1801](https://github.com/batonogov/pine/issues/1801)) ([9bf933e](https://github.com/batonogov/pine/commit/9bf933e8f39a479f2b18b42c6028d87271881828))
+
+
+### Performance Improvements
+
+* **terminal:** coalesce per-terminal process-tree polling into one shared capture wave ([#1746](https://github.com/batonogov/pine/issues/1746)) ([421a54a](https://github.com/batonogov/pine/commit/421a54a3258583c396d52f977fd8206ceff2c5a3))
+
+
+### Documentation
+
+* **ade:** align product vision with OpenCode-first sequence and prepare GitHub About copy ([#1813](https://github.com/batonogov/pine/issues/1813)) ([806e0ac](https://github.com/batonogov/pine/commit/806e0ac1dd8f1364e27c9274f9be5ea4ae5e04a1))
+* **ade:** synchronize selected future direction across locales ([#1808](https://github.com/batonogov/pine/issues/1808)) ([8e27073](https://github.com/batonogov/pine/commit/8e27073e48041e9137ae371f05651ebe5fe1cc51))
+* **agent:** clarify process-only integration claims ([#1809](https://github.com/batonogov/pine/issues/1809)) ([b3673f7](https://github.com/batonogov/pine/commit/b3673f7be054fb311e94fc16a7f60cc90330817c))
+* **agent:** map T3 integration mechanisms to Pine ADE ([#1800](https://github.com/batonogov/pine/issues/1800)) ([697a701](https://github.com/batonogov/pine/commit/697a7017a74142357d727d78de76c2b550bb295b))
+* **agent:** position Pine 3.0 as outcome-first ADE across public surfaces ([#1738](https://github.com/batonogov/pine/issues/1738)) ([23f4bf3](https://github.com/batonogov/pine/commit/23f4bf383935db0d2001eaa20d013a3fea805ec1))
+* **agent:** refresh capability-specific CLI compatibility evidence ([#1781](https://github.com/batonogov/pine/issues/1781)) ([b1766da](https://github.com/batonogov/pine/commit/b1766da1b7507540dac0220b89df3d143bb1de95))
+* **design:** compare two project and task workspace compositions ([#1751](https://github.com/batonogov/pine/issues/1751)) ([ff62c87](https://github.com/batonogov/pine/commit/ff62c870b78d6d63a505e642112f88ba51f3280f))
+* **design:** preserve interactive Pine 3 workspace concept ([#1763](https://github.com/batonogov/pine/issues/1763)) ([0e84d52](https://github.com/batonogov/pine/commit/0e84d5259323ca39fe4755e8a2ae1e2ff9626425))
+* **public:** refine landing voice and current capability guidance ([#1803](https://github.com/batonogov/pine/issues/1803)) ([88095d5](https://github.com/batonogov/pine/commit/88095d583d2a1a9fbf9a45079d12bbe7cf383de9))
+* **ux:** define boundary-focused ADE acceptance protocol ([#1810](https://github.com/batonogov/pine/issues/1810)) ([5cd4707](https://github.com/batonogov/pine/commit/5cd4707b148ab926ced8f7d4f878d8e4c5709056))
+* **web:** showcase the Pine 3 vision on the landing page ([#1764](https://github.com/batonogov/pine/issues/1764)) ([7faf90d](https://github.com/batonogov/pine/commit/7faf90d473b93ff743e1436bc2d51825659e864f))
+
 ## [2.12.4](https://github.com/batonogov/pine/compare/v2.12.3...v2.12.4) (2026-11-12)
 
 
