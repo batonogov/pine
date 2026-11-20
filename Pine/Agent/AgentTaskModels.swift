@@ -593,6 +593,10 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
     /// Provider session reference where available. `nil` for facts the
     /// provider did not state (for example Pine process observations).
     let vendorSession: AgentVendorSessionIdentity?
+    /// Separate reviewer session and exact criteria digest for review facts.
+    /// Both remain optional so legacy review facts decode as history.
+    let reviewerSession: AgentVendorSessionIdentity?
+    let criteriaDigest: String?
     /// Source sequence for ordered structured delivery. `nil` for unordered
     /// or non-structured sources.
     let sourceSequence: UInt64?
@@ -613,6 +617,8 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
         codeState: AgentTaskCodeStateIdentity? = nil,
         environment: AgentTaskEnvironmentIdentity? = nil,
         vendorSession: AgentVendorSessionIdentity? = nil,
+        reviewerSession: AgentVendorSessionIdentity? = nil,
+        criteriaDigest: String? = nil,
         sourceSequence: UInt64? = nil,
         preOperationCodeState: AgentTaskCodeStateIdentity? = nil,
         postOperationCodeState: AgentTaskCodeStateIdentity? = nil
@@ -626,6 +632,8 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
         self.codeState = codeState
         self.environment = environment
         self.vendorSession = vendorSession
+        self.reviewerSession = reviewerSession
+        self.criteriaDigest = criteriaDigest
         self.sourceSequence = sourceSequence
         self.preOperationCodeState = preOperationCodeState
         self.postOperationCodeState = postOperationCodeState

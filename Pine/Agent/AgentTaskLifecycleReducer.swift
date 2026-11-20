@@ -95,6 +95,8 @@ nonisolated enum AgentTaskLifecycleReducer {
               fact.kind.allowsVerifiedTrust || fact.trust != .verified,
               fact.observedAt.timeIntervalSinceReferenceDate.isFinite,
               fact.processGeneration > 0,
+              fact.kind == .reviewerOutcome
+                  || (fact.reviewerSession == nil && fact.criteriaDigest == nil),
               fact.sourceSequence.map({ $0 > 0 }) ?? true else {
             return false
         }
@@ -163,6 +165,14 @@ nonisolated enum AgentTaskLifecycleReducer {
                   vendorSession.opaqueIdentifier == vendorIdentity.opaqueIdentifier
             else {
                 return .fencedOut(.foreignVendorSession)
+            }
+        }
+        if fact.kind == .reviewerOutcome,
+           let author = run.vendorIdentity,
+           let reviewer = fact.reviewerSession {
+            guard author.provider != reviewer.provider
+                    || author.opaqueIdentifier != reviewer.opaqueIdentifier else {
+                return .fencedOut(.invalidFact)
             }
         }
         guard fact.observedAt >= run.startedAt else {
@@ -479,10 +489,11 @@ nonisolated enum AgentTaskLifecycleReducer {
             // settled while its process stayed live; an eventual physical
             // exit preserves that original timestamp (#1756, #1795).
             task.completedAt = latest.settledAt
-            // A stale verification never re-upgrades from later facts alone:
-            // an invalidated result stays invalidated until an explicit
-            // re-verification (the verification layer owns that action).
-            if task.verificationState != .stale {
+            // Settlement alone establishes verification only before an
+            // explicit verification pass has claimed the attempt. A stale or
+            // failed result therefore never re-upgrades from later facts
+            // alone: the verification layer owns that action.
+            if task.verificationState == .none {
                 task.verificationState = .verified
             }
             task.reviewedSnapshot = Self.latestSnapshot(
@@ -644,19 +655,12 @@ nonisolated enum AgentTaskLifecycleReducer {
 
     // MARK: - Re-verification
 
-    /// Marks in-flight verification on a settled successful attempt.
-    ///
-    /// Produced by the verification layer while the required evidence is
-    /// being re-run. Legal from `.none` and `.stale`; idempotent on
-    /// `.pending`; it never demotes `.verified` (only invalidation does) and
-    /// it never touches a non-successful settled attempt.
+    /// Marks in-flight verification for a settled successful or unverified
+    /// attempt. Any current positive state becomes pending immediately.
     static func recordVerificationPending(_ task: inout AgentTask) {
         guard let latest = task.runs.last,
               isSettled(latest),
-              latest.outcome == .success,
-              task.verificationState == .none
-                  || task.verificationState == .stale
-                  || task.verificationState == .pending else {
+              latest.outcome == .success || latest.outcome == .unverified else {
             return
         }
         task.verificationState = .pending
