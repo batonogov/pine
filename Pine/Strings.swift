@@ -2440,16 +2440,23 @@ enum Strings {
     static var userTaskResultSaveFailed: String {
         String(
             localized: "userTask.result.saveFailed",
-            defaultValue: "Command results could not be loaded or saved. Unsaved results remain in memory for recovery."
+            defaultValue: "Command results could not be loaded or saved. Check storage access, then try again."
+        )
+    }
+
+    static var userTaskResultNonDurable: String {
+        String(
+            localized: "userTask.result.nonDurable",
+            defaultValue: "Project identity could not be verified; these results are memory-only."
         )
     }
 
     static var userTaskResultSaving: String {
-        String(localized: "userTask.result.saving", defaultValue: "Saving command results…")
+        String(localized: "userTask.result.saving", defaultValue: "Loading or saving command results…")
     }
 
     static var userTaskResultRetry: String {
-        String(localized: "userTask.result.retry", defaultValue: "Retry Save")
+        String(localized: "userTask.result.retry", defaultValue: "Retry")
     }
 
     static var userTaskCloseOutput: String {

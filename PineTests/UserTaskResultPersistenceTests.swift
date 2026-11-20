@@ -73,6 +73,7 @@ struct UserTaskResultPersistenceTests {
         defer { try? FileManager.default.removeItem(at: fixture.base) }
         let store = UserTaskRunStore(resultPersistence: fixture.persistence)
         try #require(store.updateResultRoot(fixture.root))
+        try #require(await store.flushResultPersistence())
         let run = start(in: store)
         finish(run, in: store)
         try #require(await store.flushResultPersistence())
@@ -156,6 +157,7 @@ struct UserTaskResultPersistenceTests {
         defer { try? FileManager.default.removeItem(at: fixture.base) }
         let store = UserTaskRunStore(resultPersistence: fixture.persistence)
         try #require(store.updateResultRoot(fixture.root))
+        try #require(await store.flushResultPersistence())
         let run = start(in: store)
         finish(run, in: store)
         try #require(await store.flushResultPersistence())
@@ -211,6 +213,38 @@ struct UserTaskResultPersistenceTests {
         #expect(recovered.runs.isEmpty)
     }
 
+    @Test("failed Clear survives unchanged-root reopen until repair and fresh reload")
+    func failedClearSurvivesUnchangedRootReopen() async throws {
+        let failure = CommandResultWriteFailure()
+        let fixture = try makeFixture(beforeWrite: { try failure.check() })
+        defer { try? FileManager.default.removeItem(at: fixture.base) }
+        let store = UserTaskRunStore(resultPersistence: fixture.persistence)
+        try #require(store.updateResultRoot(fixture.root))
+        try #require(await store.flushResultPersistence())
+        let run = start(in: store)
+        finish(run, in: store)
+        try #require(await store.flushResultPersistence())
+        let workspace = try await fixture.persistence.load(root: fixture.root).workspace
+        failure.setFailing(true)
+        store.clearFinished()
+        #expect(!(await store.flushResultPersistence()))
+
+        store.recoverRecreatedRoot()
+        #expect(!(await store.flushResultPersistence()))
+        #expect(store.run(forID: run.id) == nil)
+        #expect(try await fixture.persistence.load(root: fixture.root).workspace == workspace)
+        failure.setFailing(false)
+        store.retryFailedResultPersistence()
+        try #require(await store.flushResultPersistence())
+        let fresh = UserTaskRunStore(resultPersistence: fixture.persistence)
+        try #require(fresh.updateResultRoot(fixture.root))
+        try #require(await fresh.flushResultPersistence())
+        #expect(fresh.runs.isEmpty)
+        let disk = try await fixture.persistence.load(root: fixture.root)
+        #expect(disk.workspace == workspace)
+        #expect(disk.records.isEmpty)
+    }
+
     @Test("stream limits preserve UTF-8 and report truncation independently")
     func streamLimits() {
         let output = UserTaskResultRecord.Output(
@@ -229,6 +263,7 @@ struct UserTaskResultPersistenceTests {
         defer { try? FileManager.default.removeItem(at: fixture.base) }
         let store = UserTaskRunStore(resultPersistence: fixture.persistence)
         try #require(store.updateResultRoot(fixture.root))
+        try #require(await store.flushResultPersistence())
         let run = start(in: store)
         await store.retainOutput(forRunID: run.id)
         store.finishRun(

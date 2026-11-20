@@ -58,7 +58,11 @@ private struct UserTaskRunHistoryView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if store.resultPersistenceFailed {
+            if store.hasNonDurableResults {
+                Text(Strings.userTaskResultNonDurable)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if store.resultPersistenceFailed {
                 HStack {
                     Text(Strings.userTaskResultSaveFailed)
                         .foregroundStyle(.red)

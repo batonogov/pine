@@ -2219,6 +2219,7 @@ struct WindowLifecycleTests {
         defer { cleanup(dir) }
         let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
+        try #require(await project.taskRunStore.flushResultPersistence())
         let run = project.taskRunStore.start(makeTaskRun(id: "active"))
         let probe = TerminationTaskProbe(waitResult: false)
         project.taskRunStore.registerCancellation(
@@ -2258,6 +2259,7 @@ struct WindowLifecycleTests {
             outcome: makeTaskOutcome(id: "active"),
             cancelled: false
         )
+        #expect(await project.flushCommandResultPersistence())
         #expect(registry.destroyAllProjects())
     }
 
@@ -2275,6 +2277,8 @@ struct WindowLifecycleTests {
         let secondProject = try #require(
             registry.projectManager(for: secondDirectory)
         )
+        try #require(await firstProject.taskRunStore.flushResultPersistence())
+        try #require(await secondProject.taskRunStore.flushResultPersistence())
         let firstRun = firstProject.taskRunStore.start(
             makeTaskRun(id: "first-detached")
         )
@@ -2322,6 +2326,9 @@ struct WindowLifecycleTests {
         )
         #expect(await waitUntilMainActor {
             !registry.hasOutstandingUserTaskExecution
+                && firstProject.taskRunStore.runs.isEmpty
+                && secondProject.taskRunStore.runs.isEmpty
+                && registry.detachedUserTaskCleanupCount == 0
         })
         #expect(registry.destroyAllProjects())
     }
@@ -2331,6 +2338,7 @@ struct WindowLifecycleTests {
         defer { cleanup(dir) }
         let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
+        try #require(await project.taskRunStore.flushResultPersistence())
         let run = project.taskRunStore.start(makeTaskRun(id: "active"))
         let outcome = makeTaskOutcome(id: "active")
         let probe = TerminationTaskProbe(waitResult: true, onWait: {
@@ -2368,6 +2376,7 @@ struct WindowLifecycleTests {
         let registry = makeRegistry()
         let project = try #require(registry.projectManager(for: dir))
         project.primaryTabManager.openTab(url: file)
+        try #require(await project.taskRunStore.flushResultPersistence())
         let run = project.taskRunStore.start(makeTaskRun(id: "active"))
         let probe = BlockingTerminationTaskProbe()
         project.taskRunStore.registerCancellation(

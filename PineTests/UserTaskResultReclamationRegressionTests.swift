@@ -3,7 +3,7 @@ import Testing
 
 @testable import Pine
 
-/// Uses only base APIs: the exact test can run RED without candidate types.
+/// Runtime scenario uses base APIs; the identity-derivation helper is candidate-only cleanup support.
 @Suite("Command result reclamation regression", .serialized)
 @MainActor
 struct UserTaskResultReclamationRegressionTests {
@@ -25,6 +25,7 @@ struct UserTaskResultReclamationRegressionTests {
         )
         defer { _ = registry.destroyAllProjects() }
         let original = try #require(registry.projectManager(for: root))
+        try #require(await original.taskRunStore.flushResultPersistence())
         let run = original.taskRunStore.start(UserTaskRun(
             taskID: "controlled-result", taskLabel: "Controlled result",
             command: "printf controlled-result", replacesFileContent: false

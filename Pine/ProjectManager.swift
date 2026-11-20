@@ -3088,8 +3088,7 @@ final class ProjectManager {
     }
 
     func flushCommandResultPersistence() async -> Bool {
-        // Read-only recovery has no sole copy to lose and must not block Quit.
-        guard hasPendingCommandResults else { return true }
+        // Missing roots still need a fresh identity probe before Quit can release ownership.
         let saved = await taskRunStore.flushResultPersistence()
         return saved || !hasPendingCommandResults
     }

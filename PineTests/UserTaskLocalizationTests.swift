@@ -51,6 +51,7 @@ struct UserTaskLocalizationTests {
         "userTask.result.stdoutTruncated",
         "userTask.result.stderrTruncated",
         "userTask.result.saveFailed",
+        "userTask.result.nonDurable",
         "userTask.result.saving",
         "userTask.result.retry",
     ]
@@ -84,6 +85,23 @@ struct UserTaskLocalizationTests {
                     "Placeholder mismatch for \(key) [\(locale)]"
                 )
             }
+        }
+    }
+
+    @Test("Result IO copy stays neutral about retained data")
+    func resultIOCopyIsNeutral() throws {
+        let catalog = try loadCatalog()
+        let expected = [
+            "userTask.result.saveFailed": "Command results could not be loaded or saved. Check storage access, then try again.",
+            "userTask.result.nonDurable": "Project identity could not be verified; these results are memory-only.",
+            "userTask.result.saving": "Loading or saving command results…",
+            "userTask.result.retry": "Retry",
+        ]
+        for (key, value) in expected {
+            let entry = try #require(catalog[key] as? [String: Any])
+            let localizations = try #require(entry["localizations"] as? [String: Any])
+            #expect(Set(localizations.keys) == Self.locales)
+            #expect(try localizedValue(in: localizations, locale: "en") == value)
         }
     }
 

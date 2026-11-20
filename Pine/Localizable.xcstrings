@@ -105,43 +105,56 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存的标准错误输出已截断至64 KiB。" } }
       }
     },
+    "userTask.result.nonDurable" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Projektidentität konnte nicht bestätigt werden; diese Ergebnisse sind nur im Speicher." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Project identity could not be verified; these results are memory-only." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No se pudo verificar la identidad del proyecto; estos resultados solo están en memoria." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Impossible de vérifier l’identité du projet ; ces résultats sont uniquement en mémoire." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "プロジェクトの識別情報を確認できなかったため、これらの結果はメモリ内にのみ保持されます。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "프로젝트 ID를 확인할 수 없어 이 결과는 메모리에만 저장됩니다." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível verificar a identidade do projeto; estes resultados estão apenas na memória." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Не удалось подтвердить идентичность проекта; результаты хранятся только в памяти." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法验证项目身份；这些结果仅保存在内存中。" } }
+      }
+    },
     "userTask.result.saveFailed" : {
       "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Befehlsergebnisse konnten nicht geladen oder gespeichert werden. Ungespeicherte Ergebnisse bleiben zur Wiederherstellung im Speicher." } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Command results could not be loaded or saved. Unsaved results remain in memory for recovery." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "No se pudieron cargar o guardar los resultados. Los resultados sin guardar permanecen en memoria para recuperarlos." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Impossible de charger ou d’enregistrer les résultats. Les résultats non enregistrés restent en mémoire pour récupération." } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "コマンド結果を読み込むか保存することができませんでした。未保存の結果は復旧のためメモリ内に保持されます。" } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : "명령 결과를 불러오거나 저장할 수 없습니다. 저장되지 않은 결과는 복구를 위해 메모리에 유지됩니다." } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível carregar ou salvar os resultados. Resultados não salvos permanecem na memória para recuperação." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Не удалось загрузить или сохранить результаты команд. Несохранённые результаты остаются в памяти для восстановления." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法加载或保存命令结果。未保存的结果将保留在内存中以便恢复。" } }
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Befehlsergebnisse konnten nicht geladen oder gespeichert werden. Prüfe den Speicherzugriff und versuche es erneut." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Command results could not be loaded or saved. Check storage access, then try again." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No se pudieron cargar o guardar los resultados de los comandos. Comprueba el acceso al almacenamiento e inténtalo de nuevo." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Impossible de charger ou d’enregistrer les résultats des commandes. Vérifiez l’accès au stockage, puis réessayez." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "コマンド結果を読み込むか保存することができませんでした。ストレージへのアクセスを確認してから再試行してください。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "명령 결과를 불러오거나 저장할 수 없습니다. 저장 공간 접근 권한을 확인한 후 다시 시도하세요." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível carregar ou salvar os resultados dos comandos. Verifique o acesso ao armazenamento e tente novamente." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Не удалось загрузить или сохранить результаты команд. Проверьте доступ к хранилищу и повторите попытку." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法加载或保存命令结果。请检查存储访问权限，然后重试。" } }
       }
     },
     "userTask.result.saving" : {
       "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Befehlsergebnisse werden gespeichert…" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saving command results…" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Guardando resultados de comandos…" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Enregistrement des résultats…" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "コマンド結果を保存中…" } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : "명령 결과 저장 중…" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salvando resultados de comandos…" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сохранение результатов команд…" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在保存命令结果…" } }
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Befehlsergebnisse werden geladen oder gespeichert…" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading or saving command results…" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cargando o guardando resultados de comandos…" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Chargement ou enregistrement des résultats des commandes…" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "コマンド結果を読み込みまたは保存中…" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "명령 결과를 불러오거나 저장하는 중…" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando ou salvando resultados de comandos…" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Загрузка или сохранение результатов команд…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在加载或保存命令结果…" } }
       }
     },
     "userTask.result.retry" : {
       "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Erneut speichern" } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry Save" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Reintentar guardar" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réessayer l’enregistrement" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "保存を再試行" } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : "저장 재시도" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tentar salvar novamente" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Повторить сохранение" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试保存" } }
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Erneut versuchen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Reintentar" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réessayer" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "再試行" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "다시 시도" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tentar novamente" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Повторить" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } }
       }
     },
     "agentMetadata.futureSchema" : {

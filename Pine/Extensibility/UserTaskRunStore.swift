@@ -109,13 +109,17 @@ final class UserTaskRunStore {
     private(set) var resultProjectRoot: URL?
     private(set) var resultPersistenceFailed = false
     private var resultRootGeneration = UUID()
+    private var resultIOGeneration = UUID()
     private var resultGeneration: UInt64 = 0
     private var savedResultGeneration: UInt64 = 0
+    private var resultWorkspace: UserTaskResultPersistence.Workspace?
     private var resultSnapshot: UserTaskResultPersistence.Snapshot?
     private var attemptedResultRevision: UUID?
     private var resultRecords: [UUID: UserTaskResultRecord] = [:]
     private var removedResultIDs: Set<UUID> = []
     private var clearedResultsDuringLoad = false
+    private var discardedResultRunIDs: Set<UUID> = []
+    private var nonDurableResultRunIDs: Set<UUID> = []
     /// Set when reclamation destroys the owning manager.
     private var resultStoreReleased = false
     /// The project directory is gone; its durable target can never exist
@@ -123,8 +127,9 @@ final class UserTaskRunStore {
     private var resultRootMissing = false
     private var outputRetentionRunIDs: Set<UUID> = []
     private var pendingOutputRetentionIDs: Set<UUID> = []
-    private var resultLoadTask: Task<Void, Never>?
+    private var resultLoadTask: Task<UserTaskResultPersistence.Workspace?, Never>?
     @ObservationIgnored private var resultWriteTask: Task<Void, Never>?
+    @ObservationIgnored private var resultRecoveryTask: Task<Void, Never>?
     @ObservationIgnored private var resultExpiryTask: Task<Void, Never>?
     @ObservationIgnored private var resultPreparationTasks: [UUID: Task<Void, Never>] = [:]
     #if DEBUG
@@ -154,6 +159,10 @@ final class UserTaskRunStore {
     /// progress. Returns the run so the caller can drive its state.
     @discardableResult
     func start(_ run: UserTaskRun) -> UserTaskRun {
+        if resultRootMissing { recoverRecreatedRoot() }
+        if resultWorkspace == nil || resultRecoveryTask != nil || resultRootMissing {
+            nonDurableResultRunIDs.insert(run.id)
+        }
         preparedShutdownAuthorization = nil
         launchGeneration = UUID()
         runs.insert(run, at: 0)
@@ -233,6 +242,14 @@ final class UserTaskRunStore {
             unresolvedCleanupRunIDs.insert(id)
         }
 
+        if discardedResultRunIDs.contains(id) {
+            outputRetentionRunIDs.remove(id)
+            pendingOutputRetentionIDs.remove(id)
+            runs.removeAll { $0.id == id }
+            discardedResultRunIDs.remove(id)
+            return true
+        }
+
         guard let run else {
             pruneResolvedCleanupOwnership()
             return false
@@ -304,14 +321,33 @@ final class UserTaskRunStore {
 
     /// Clears all finished runs.
     func clearFinished() {
+        let hasDurableResultState = resultPreparationTasks.keys.contains {
+            !nonDurableResultRunIDs.contains($0)
+        } || resultRecords.keys.contains { !nonDurableResultRunIDs.contains($0) }
+            || runs.contains { !nonDurableResultRunIDs.contains($0.id) }
+        let tracksDurableClear = nonDurableResultRunIDs.isEmpty || hasDurableResultState
+            || resultLoadTask != nil || resultRecoveryTask != nil
+            || resultSnapshot?.records.isEmpty == false
+            || resultGeneration != savedResultGeneration
         // Clear also covers restored rows not yet delivered by the asynchronous load.
-        clearedResultsDuringLoad = resultLoadTask != nil || resultSnapshot == nil
-        for id in Array(resultPreparationTasks.keys) { removeResult(id: id) }
-        for id in Array(resultRecords.keys) { removeResult(id: id) }
-        resultsChanged()
+        if tracksDurableClear {
+            clearedResultsDuringLoad = clearedResultsDuringLoad
+                || resultLoadTask != nil || resultRecoveryTask != nil || resultSnapshot == nil
+        }
+        var clearedDurableResult = false
+        for id in Array(resultPreparationTasks.keys) {
+            clearedDurableResult = removeResult(id: id) || clearedDurableResult
+        }
+        for id in Array(resultRecords.keys) {
+            clearedDurableResult = removeResult(id: id) || clearedDurableResult
+        }
+        if clearedDurableResult || (tracksDurableClear && clearedResultsDuringLoad) {
+            resultsChanged()
+        }
         let finishedIDs = Set(
             runs.lazy.filter { !$0.state.isActive }.map { $0.id }
         )
+        nonDurableResultRunIDs.subtract(finishedIDs)
         runs.removeAll { finishedIDs.contains($0.id) }
         cancellationHandles = cancellationHandles.filter {
             !finishedIDs.contains($0.key)
@@ -339,6 +375,7 @@ final class UserTaskRunStore {
             }
         }
         runs.removeAll()
+        nonDurableResultRunIDs.removeAll()
         outputRetentionRunIDs.removeAll()
     }
 
@@ -488,6 +525,7 @@ final class UserTaskRunStore {
     ) {
         precondition(preparedShutdownAuthorization == authorization)
         resultLoadTask?.cancel()
+        resultRecoveryTask?.cancel()
         resultExpiryTask?.cancel()
         runs.removeAll()
         cancellationHandles.removeAll()
@@ -532,24 +570,24 @@ final class UserTaskRunStore {
     // MARK: - Durable completed results
 
     var hasPendingResultPersistence: Bool {
-        resultProjectRoot != nil && !resultRootMissing && (
+        resultProjectRoot != nil && (resultRecoveryTask != nil || (!resultRootMissing && (
             resultLoadTask != nil || resultSnapshot == nil
                 || resultWriteTask != nil || !resultPreparationTasks.isEmpty
                 || !pendingOutputRetentionIDs.isEmpty
                 || resultGeneration != savedResultGeneration
-        )
+        )))
     }
 
-    /// An in-flight recovery load never retains: the manager may be reclaimed
-    /// while it runs, and the abandoned load publishes nothing (the durable
-    /// file stays intact and is pruned on next access). Failed read-only
-    /// recovery has no sole copy to lose; accepted results and Clear always
-    /// retain ownership.
+    var hasNonDurableResults: Bool { !nonDurableResultRunIDs.isEmpty }
+
+    /// Read-only recovery has no sole copy to lose. Accepted results, Clear,
+    /// and identity recovery retain ownership until their durable state is known.
     var hasUnpersistedResultOwnership: Bool {
-        resultProjectRoot != nil && (
-            resultGeneration != savedResultGeneration || resultWriteTask != nil
-                || !resultPreparationTasks.isEmpty || !pendingOutputRetentionIDs.isEmpty
-        )
+        resultProjectRoot != nil && (!nonDurableResultRunIDs.isEmpty
+            || resultRecoveryTask != nil || (!resultRootMissing && (
+                resultGeneration != savedResultGeneration || resultWriteTask != nil
+                    || !resultPreparationTasks.isEmpty || !pendingOutputRetentionIDs.isEmpty
+            )))
     }
 
     /// Reclamation destroyed the owning manager. A still-running recovery
@@ -558,36 +596,75 @@ final class UserTaskRunStore {
         resultStoreReleased = true
     }
 
-    /// Background reopen of a project directory that may have been deleted
-    /// and recreated while backgrounded: the workspace identity (path,
-    /// device, inode) can only have changed, so the stale snapshot and the
-    /// missing-root state can never match the new root. Re-derive from disk,
-    /// letting an in-flight write finish first so its save is not orphaned.
+    /// Starts identity recovery synchronously so new runs and persistence
+    /// barriers can await one fenced transition from the old workspace.
     func recoverRecreatedRoot() {
-        guard resultProjectRoot != nil else { return }
-        resultRootMissing = false
+        guard let root = resultProjectRoot, resultRecoveryTask == nil else { return }
+        let oldRunIDs = Set(runs.map(\.id))
+        let preparations = Array(resultPreparationTasks.values)
+        let retentionIDs = pendingOutputRetentionIDs
+        let removedIDs = removedResultIDs
+        let cleared = clearedResultsDuringLoad
+        let generation = resultGeneration
+        let rootGeneration = resultRootGeneration
+        let previousWorkspace = resultWorkspace
+        let ioGeneration = UUID()
+        let load = resultLoadTask
+        let write = resultWriteTask
+        resultIOGeneration = ioGeneration
+        load?.cancel()
+        write?.cancel()
         attemptedResultRevision = nil
-        let inFlightWrite = resultWriteTask
         resultSnapshot = nil
-        guard inFlightWrite != nil else {
-            loadResults()
-            return
-        }
-        Task { [self] in
-            _ = await inFlightWrite?.value
-            guard resultProjectRoot != nil else { return }
-            // A write straddling the delete→recreate gap can re-set the
-            // missing-root flag after the reset above; re-assert for the
-            // live root. If the root was deleted again, loadResults' own
-            // rootMissing catch re-sets it.
-            resultRootMissing = false
-            attemptedResultRevision = nil
-            loadResults()
+        resultRecoveryTask = Task { [self] in
+            defer { resultRecoveryTask = nil }
+            let loadWorkspace = await load?.value
+            _ = await write?.value
+            for preparation in preparations { await preparation.value }
+            while !retentionIDs.isDisjoint(with: pendingOutputRetentionIDs) {
+                do { try await Task.sleep(for: .milliseconds(1)) } catch { return }
+            }
+            do {
+                let loaded = try await resultPersistence.load(root: root)
+                #if DEBUG
+                await resultCheckpointForTesting?(.recovered)
+                #endif
+                guard !Task.isCancelled, ioGeneration == resultIOGeneration,
+                      rootGeneration == resultRootGeneration,
+                      root == resultProjectRoot else { return }
+                if resultStoreReleased {
+                    #if DEBUG
+                    await resultCheckpointForTesting?(.recoveryDropped)
+                    #endif
+                    return
+                }
+                installLoadedResults(
+                    loaded, oldRunIDs: oldRunIDs, removedIDs: removedIDs,
+                    cleared: cleared, generation: generation,
+                    previousWorkspace: previousWorkspace ?? loadWorkspace
+                )
+                resultRootMissing = false
+                resultPersistenceFailed = false
+                resultRecoveryTask = nil
+                trimToCapacity()
+                scheduleResultExpiry()
+                persistResults()
+            } catch {
+                guard !Task.isCancelled, ioGeneration == resultIOGeneration,
+                      rootGeneration == resultRootGeneration,
+                      root == resultProjectRoot else { return }
+                if case UserTaskResultPersistence.Failure.rootMissing = error {
+                    handleMissingResultRoot(oldRunIDs: oldRunIDs)
+                } else {
+                    resultPersistenceFailed = true
+                }
+            }
         }
     }
 
     func canChangeResultRoot(to root: URL) -> Bool {
-        resultProjectRoot == root || (!hasPendingResultPersistence && !hasOutstandingExecutionOwnership)
+        resultProjectRoot == root || (nonDurableResultRunIDs.isEmpty
+            && !hasPendingResultPersistence && !hasOutstandingExecutionOwnership)
     }
 
     @discardableResult
@@ -595,16 +672,21 @@ final class UserTaskRunStore {
         if resultProjectRoot == root { return true }
         guard canChangeResultRoot(to: root) else { return false }
         resultRootGeneration = UUID()
+        resultIOGeneration = UUID()
         resultProjectRoot = root
+        resultWorkspace = nil
         resultSnapshot = nil
         attemptedResultRevision = nil
         resultRecords.removeAll()
         removedResultIDs.removeAll()
         clearedResultsDuringLoad = false
+        discardedResultRunIDs.removeAll()
         resultGeneration = 0
         savedResultGeneration = 0
         resultRootMissing = false
         runs.removeAll()
+        outputRetentionRunIDs.removeAll()
+        pendingOutputRetentionIDs.removeAll()
         resultExpiryTask?.cancel()
         loadResults()
         return true
@@ -612,8 +694,13 @@ final class UserTaskRunStore {
 
     private func loadResults() {
         guard let root = resultProjectRoot, resultLoadTask == nil,
-              !resultRootMissing else { return }
+              resultRecoveryTask == nil, !resultRootMissing else { return }
         let rootGeneration = resultRootGeneration
+        let ioGeneration = resultIOGeneration
+        let oldRunIDs = Set(runs.map(\.id))
+        let removedIDs = removedResultIDs
+        let cleared = clearedResultsDuringLoad
+        let generation = resultGeneration
         resultLoadTask = Task { [self] in
             defer { resultLoadTask = nil }
             do {
@@ -621,50 +708,129 @@ final class UserTaskRunStore {
                 #if DEBUG
                 await resultCheckpointForTesting?(.recovered)
                 #endif
-                guard !Task.isCancelled, rootGeneration == resultRootGeneration,
-                      root == resultProjectRoot else { return }
+                guard !Task.isCancelled, ioGeneration == resultIOGeneration,
+                      rootGeneration == resultRootGeneration,
+                      root == resultProjectRoot else { return loaded.workspace }
                 if resultStoreReleased {
                     // The manager is gone: publish nothing, keep the file intact.
                     #if DEBUG
                     await resultCheckpointForTesting?(.recoveryDropped)
                     #endif
-                    return
+                    return loaded.workspace
                 }
-                resultSnapshot = loaded
-                let retained = UserTaskResultRecord.retained(loaded.records, now: Date())
-                if !clearedResultsDuringLoad {
-                    for record in retained
-                    where !removedResultIDs.contains(record.id) && resultRecords[record.id] == nil {
-                        resultRecords[record.id] = record
-                        if run(forID: record.id) == nil { runs.append(UserTaskRun(result: record)) }
-                    }
-                }
-                removedResultIDs.removeAll()
-                if loaded.records != retained { resultGeneration &+= 1 }
+                installLoadedResults(
+                    loaded, oldRunIDs: oldRunIDs, removedIDs: removedIDs,
+                    cleared: cleared, generation: generation
+                )
+                resultRootMissing = false
                 resultPersistenceFailed = false
                 trimToCapacity()
                 scheduleResultExpiry()
                 persistResults()
-            } catch UserTaskResultPersistence.Failure.rootMissing {
-                // No directory, no durable file: nothing to restore or persist.
-                resultRootMissing = true
+                return loaded.workspace
             } catch {
-                resultPersistenceFailed = true
+                guard !Task.isCancelled, ioGeneration == resultIOGeneration,
+                      rootGeneration == resultRootGeneration,
+                      root == resultProjectRoot else { return nil }
+                if case UserTaskResultPersistence.Failure.rootMissing = error {
+                    handleMissingResultRoot(oldRunIDs: oldRunIDs)
+                } else {
+                    resultPersistenceFailed = true
+                }
+                return nil
             }
         }
+    }
+
+    private func installLoadedResults(
+        _ loaded: UserTaskResultPersistence.Snapshot,
+        oldRunIDs: Set<UUID>, removedIDs: Set<UUID>, cleared: Bool,
+        generation: UInt64,
+        previousWorkspace: UserTaskResultPersistence.Workspace? = nil
+    ) {
+        let changedDuringLoad = resultGeneration != generation
+        if let workspace = previousWorkspace ?? resultWorkspace, workspace != loaded.workspace {
+            let duringLoadRemoved = removedResultIDs.subtracting(removedIDs)
+            let duringLoadCleared = clearedResultsDuringLoad && !cleared
+            resultRootGeneration = UUID()
+            discardOldResultRuns(oldRunIDs)
+            resultRecords = resultRecords.filter { nonDurableResultRunIDs.contains($0.key) }
+            removedResultIDs = duringLoadRemoved
+            clearedResultsDuringLoad = duringLoadCleared
+            attemptedResultRevision = nil
+            savedResultGeneration = changedDuringLoad ? generation : resultGeneration
+        }
+        resultWorkspace = loaded.workspace
+        resultSnapshot = loaded
+        let retained = UserTaskResultRecord.retained(loaded.records, now: Date())
+        if !clearedResultsDuringLoad {
+            for record in retained
+            where !removedResultIDs.contains(record.id) && resultRecords[record.id] == nil {
+                resultRecords[record.id] = record
+                if run(forID: record.id) == nil { runs.append(UserTaskRun(result: record)) }
+            }
+        }
+        if loaded.records != retained { resultGeneration &+= 1 }
+    }
+
+    private func discardOldResultRuns(_ oldRunIDs: Set<UUID>) {
+        let discardedIDs = oldRunIDs.subtracting(nonDurableResultRunIDs)
+        for run in runs where discardedIDs.contains(run.id) {
+            run.setRetainedOutput(nil)
+            if run.state.isActive { discardedResultRunIDs.insert(run.id) }
+        }
+        runs.removeAll { discardedIDs.contains($0.id) && !$0.state.isActive }
+        outputRetentionRunIDs.subtract(discardedIDs)
+        pendingOutputRetentionIDs.subtract(discardedIDs)
+    }
+
+    private func handleMissingResultRoot(oldRunIDs: Set<UUID>) {
+        resultRootMissing = true
+        resultRootGeneration = UUID()
+        resultIOGeneration = UUID()
+        resultLoadTask?.cancel()
+        resultWriteTask?.cancel()
+        for (id, preparation) in resultPreparationTasks
+        where !nonDurableResultRunIDs.contains(id) {
+            preparation.cancel()
+        }
+        resultRecords = resultRecords.filter { nonDurableResultRunIDs.contains($0.key) }
+        resultSnapshot = nil
+        attemptedResultRevision = nil
+        removedResultIDs.removeAll()
+        clearedResultsDuringLoad = false
+        savedResultGeneration = resultGeneration
+        outputRetentionRunIDs = outputRetentionRunIDs.filter { nonDurableResultRunIDs.contains($0) }
+        pendingOutputRetentionIDs = pendingOutputRetentionIDs.filter { nonDurableResultRunIDs.contains($0) }
+        discardOldResultRuns(oldRunIDs)
+        for run in runs where !nonDurableResultRunIDs.contains(run.id) {
+            run.setRetainedOutput(nil)
+        }
+        resultPersistenceFailed = false
+        resultExpiryTask?.cancel()
     }
 
     private func prepareResult(_ run: UserTaskRun, outcome: UserTaskOutcome) {
         guard resultProjectRoot != nil, let finishedAt = run.finishedAt else { return }
         let id = run.id
-        let rootGeneration = resultRootGeneration
+        let nonDurable = nonDurableResultRunIDs.contains(id)
+        let recovery = nonDurable ? nil : resultRecoveryTask
+        let rootGeneration = nonDurable || recovery != nil ? nil : resultRootGeneration
         let command = run.command
         let taskID = run.taskID
         let startedAt = run.startedAt
         let state = run.state
         let retainOutput = outputRetentionRunIDs.contains(id)
-        resultGeneration &+= 1
+        if !nonDurable { resultGeneration &+= 1 }
         resultPreparationTasks[id] = Task { [self] in
+            defer { resultPreparationTasks.removeValue(forKey: id) }
+            if let recovery { await recovery.value }
+            let preparationRootGeneration = rootGeneration ?? resultRootGeneration
+            guard !Task.isCancelled,
+                  nonDurable || (preparationRootGeneration == resultRootGeneration
+                    && !resultRootMissing),
+                  !removedResultIDs.contains(id),
+                  !discardedResultRunIDs.contains(id) else { return }
             #if DEBUG
             await resultCheckpointForTesting?(.preparing(id))
             #endif
@@ -684,8 +850,9 @@ final class UserTaskRunStore {
                     output: retainOutput ? .init(stdout: outcome.stdout, stderr: outcome.stderr) : nil
                 )
             }
-            guard !Task.isCancelled, rootGeneration == resultRootGeneration,
-                  !removedResultIDs.contains(id) else { return }
+            guard !Task.isCancelled,
+                  nonDurable || preparationRootGeneration == resultRootGeneration,
+                  !removedResultIDs.contains(id), !discardedResultRunIDs.contains(id) else { return }
             resultRecords[id] = record
             run.setRetainedOutput(record.output)
             if pendingOutputRetentionIDs.contains(id) { run.requestOutputRetention() }
@@ -693,27 +860,29 @@ final class UserTaskRunStore {
             resultPreparationTasks.removeValue(forKey: id)
             expireResults()
             // A writer may have captured admission without this prepared record.
-            resultsChanged()
+            if !nonDurable { resultsChanged() }
         }
     }
 
     /// This run only; execution consent never implies output-retention consent.
     func retainOutput(forRunID id: UUID) async {
         guard resultProjectRoot != nil, let run = run(forID: id),
-              !run.outputRetentionRequested, !run.isRestoredResult else { return }
+              !run.outputRetentionRequested, !run.isRestoredResult,
+              !discardedResultRunIDs.contains(id) else { return }
         if run.state.isActive {
             outputRetentionRunIDs.insert(id)
             run.requestOutputRetention()
             return
         }
+        let nonDurable = nonDurableResultRunIDs.contains(id)
         guard !pendingOutputRetentionIDs.contains(id),
               resultRecords[id] != nil || resultPreparationTasks[id] != nil else { return }
         pendingOutputRetentionIDs.insert(id)
         run.requestOutputRetention()
-        resultGeneration &+= 1
+        if !nonDurable { resultGeneration &+= 1 }
         defer {
             pendingOutputRetentionIDs.remove(id)
-            persistResults()
+            if !nonDurable { persistResults() }
         }
         if let preparation = resultPreparationTasks[id] { await preparation.value }
         guard let record = resultRecords[id], record.expiresAt > Date(), record.output == nil else {
@@ -726,22 +895,27 @@ final class UserTaskRunStore {
         let output = await runOnBackground(qos: .utility) {
             UserTaskResultRecord.Output(stdout: stdout, stderr: stderr)
         }
-        guard rootGeneration == resultRootGeneration, resultRecords[id] == record,
+        guard nonDurable || rootGeneration == resultRootGeneration,
+              resultRecords[id] == record,
               var current = resultRecords[id], current.expiresAt > Date() else { return }
         current.output = output
         resultRecords[id] = current
         run.setRetainedOutput(output)
-        resultsChanged()
+        if !nonDurable { resultsChanged() }
     }
 
-    private func removeResult(id: UUID) {
-        guard resultProjectRoot != nil else { return }
-        if resultLoadTask != nil || resultSnapshot == nil { removedResultIDs.insert(id) }
+    @discardableResult
+    private func removeResult(id: UUID) -> Bool {
+        let nonDurable = nonDurableResultRunIDs.remove(id) != nil
+        guard resultProjectRoot != nil else { return false }
         resultPreparationTasks.removeValue(forKey: id)?.cancel()
         outputRetentionRunIDs.remove(id)
         pendingOutputRetentionIDs.remove(id)
         resultRecords.removeValue(forKey: id)
+        guard !nonDurable else { return false }
+        removedResultIDs.insert(id)
         resultsChanged()
+        return true
     }
 
     private func resultsChanged() {
@@ -750,10 +924,13 @@ final class UserTaskRunStore {
         persistResults()
     }
 
+    /// Quarantined records are exempt from expiry until explicit Clear; expiring
+    /// their only copy would silently destroy results that could not be persisted.
     private func expireResults() {
-        let retained = UserTaskResultRecord.retained(Array(resultRecords.values), now: Date())
+        let durableRecords = resultRecords.values.filter { !nonDurableResultRunIDs.contains($0.id) }
+        let retained = UserTaskResultRecord.retained(durableRecords, now: Date())
         let retainedIDs = Set(retained.map(\.id))
-        let expired = Set(resultRecords.keys).subtracting(retainedIDs)
+        let expired = Set(durableRecords.map(\.id)).subtracting(retainedIDs)
         for id in expired {
             resultRecords.removeValue(forKey: id)
             run(forID: id)?.setRetainedOutput(nil)
@@ -765,7 +942,10 @@ final class UserTaskRunStore {
 
     private func scheduleResultExpiry() {
         resultExpiryTask?.cancel()
-        guard let next = resultRecords.values.map(\.expiresAt).min() else { return }
+        let next = resultRecords.values
+            .filter { !nonDurableResultRunIDs.contains($0.id) }
+            .map(\.expiresAt).min()
+        guard let next else { return }
         resultExpiryTask = Task { [weak self] in
             do {
                 let delay = min(UserTaskResultRecord.lifetime, max(0, next.timeIntervalSinceNow))
@@ -779,8 +959,10 @@ final class UserTaskRunStore {
 
     private func persistResults() {
         guard resultProjectRoot != nil, resultSnapshot != nil, !resultRootMissing,
-              resultWriteTask == nil, pendingOutputRetentionIDs.isEmpty,
+              resultRecoveryTask == nil, resultWriteTask == nil,
+              pendingOutputRetentionIDs.isEmpty,
               resultGeneration != savedResultGeneration else { return }
+        let ioGeneration = resultIOGeneration
         resultWriteTask = Task { [self] in
             defer { resultWriteTask = nil }
             while let root = resultProjectRoot, let previous = resultSnapshot {
@@ -789,13 +971,17 @@ final class UserTaskRunStore {
                 await resultCheckpointForTesting?(.capturedPreparations(Set(preparations.map(\.key))))
                 #endif
                 for (_, preparation) in preparations { await preparation.value }
-                guard pendingOutputRetentionIDs.isEmpty else { return }
+                guard !Task.isCancelled, ioGeneration == resultIOGeneration,
+                      pendingOutputRetentionIDs.isEmpty else { return }
                 expireResults()
                 let generation = resultGeneration
                 let rootGeneration = resultRootGeneration
+                let durableRecords = resultRecords.values.filter {
+                    !nonDurableResultRunIDs.contains($0.id)
+                }
                 let candidate = UserTaskResultPersistence.Snapshot(
                     version: 1, workspace: previous.workspace, revision: UUID(),
-                    records: UserTaskResultRecord.retained(Array(resultRecords.values), now: Date())
+                    records: UserTaskResultRecord.retained(durableRecords, now: Date())
                 )
                 let recoveryRevision = attemptedResultRevision
                 #if DEBUG
@@ -806,25 +992,23 @@ final class UserTaskRunStore {
                         candidate, root: root, replacing: previous.revision,
                         recovering: recoveryRevision
                     )
-                    guard root == resultProjectRoot, rootGeneration == resultRootGeneration else { return }
+                    guard !Task.isCancelled, ioGeneration == resultIOGeneration,
+                          root == resultProjectRoot, rootGeneration == resultRootGeneration else { return }
+                    resultWorkspace = saved.workspace
                     resultSnapshot = saved
                     attemptedResultRevision = nil
                     savedResultGeneration = generation
                     resultPersistenceFailed = false
-                    if generation == resultGeneration { return }
+                    if generation == resultGeneration {
+                        removedResultIDs.removeAll()
+                        clearedResultsDuringLoad = false
+                        return
+                    }
                 } catch {
+                    guard !Task.isCancelled, ioGeneration == resultIOGeneration,
+                          root == resultProjectRoot, rootGeneration == resultRootGeneration else { return }
                     if case UserTaskResultPersistence.Failure.rootMissing = error {
-                        // The project directory is gone: a recreated directory gets a
-                        // new workspace identity, so this durable file can never be
-                        // reached again. Drop the in-memory copy and release ownership
-                        // instead of blocking reclamation and Quit.
-                        resultRootMissing = true
-                        resultRecords.removeAll()
-                        resultSnapshot = nil
-                        savedResultGeneration = resultGeneration
-                        pendingOutputRetentionIDs.removeAll()
-                        outputRetentionRunIDs.removeAll()
-                        runs.removeAll { $0.isRestoredResult }
+                        handleMissingResultRoot(oldRunIDs: Set(runs.map(\.id)))
                         return
                     }
                     if let failure = error as? UserTaskResultPersistence.WriteFailure {
@@ -844,11 +1028,21 @@ final class UserTaskRunStore {
     /// A result-bearing barrier, not a queue drain. Concurrent mutation fails closed.
     func flushResultPersistence() async -> Bool {
         guard resultProjectRoot != nil else { return true }
-        guard !Task.isCancelled else { return false }
-        if resultSnapshot == nil, resultLoadTask == nil, hasUnpersistedResultOwnership {
-            loadResults()
+        if let recovery = resultRecoveryTask { await recovery.value }
+        if resultRootMissing {
+            recoverRecreatedRoot()
+            if let recovery = resultRecoveryTask { await recovery.value }
         }
+        guard !Task.isCancelled else { return false }
+        if resultRootMissing { return !hasPendingResultPersistence && nonDurableResultRunIDs.isEmpty }
+        if resultSnapshot == nil, resultLoadTask == nil { loadResults() }
         if let load = resultLoadTask { await load.value }
+        if resultRootMissing {
+            recoverRecreatedRoot()
+            if let recovery = resultRecoveryTask { await recovery.value }
+        }
+        guard !Task.isCancelled else { return false }
+        if resultRootMissing { return !hasPendingResultPersistence && nonDurableResultRunIDs.isEmpty }
         guard resultSnapshot != nil else { return false }
         for preparation in Array(resultPreparationTasks.values) { await preparation.value }
         while !pendingOutputRetentionIDs.isEmpty {
@@ -858,7 +1052,7 @@ final class UserTaskRunStore {
         expireResults()
         retryFailedResultPersistence()
         if let write = resultWriteTask { await write.value }
-        return !hasPendingResultPersistence
+        return !hasPendingResultPersistence && nonDurableResultRunIDs.isEmpty
     }
 
     // Fail-closed edge: a permanently unreadable result file (0o400/ACL/corrupt)
@@ -871,7 +1065,8 @@ final class UserTaskRunStore {
 
     func canRetainOutput(forRunID id: UUID) -> Bool {
         guard resultProjectRoot != nil, let run = run(forID: id),
-              !run.outputRetentionRequested, !run.isRestoredResult else { return false }
+              !run.outputRetentionRequested, !run.isRestoredResult,
+              !discardedResultRunIDs.contains(id) else { return false }
         if run.state.isActive { return true }
         if resultPreparationTasks[id] != nil { return run.hasOutput }
         guard run.hasOutput, let record = resultRecords[id] else { return false }
@@ -905,13 +1100,15 @@ final class UserTaskRunStore {
     }
 
     private func trimToCapacity() {
-        // Never trim active runs. Remove oldest terminal runs until both the
-        // count and retained-byte limits hold after every terminal transition.
+        // Never trim active runs. Quarantined results are exempt from count/output
+        // trimming until explicit Clear: losing their only copy is worse than the
+        // temporary memory growth. Remove oldest durable terminal runs instead.
         var finishedCount = runs.lazy.filter { !$0.state.isActive }.count
         var retainedBytes = retainedOutputByteCount
         var toDrop: Set<UUID> = []
 
-        for run in runs.reversed() where !run.state.isActive {
+        for run in runs.reversed() where !run.state.isActive
+            && (resultProjectRoot == nil || !nonDurableResultRunIDs.contains(run.id)) {
             guard finishedCount > maximumRuns
                     || retainedBytes > maximumRetainedOutputBytes else {
                 break
