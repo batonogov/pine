@@ -28,12 +28,10 @@
 //    escalate to Needs decision with a concrete, safe recommendation
 //    (`requiredAction`) only; they never produce Ready or a reassuring
 //    success state.
-//  - The re-probe -> publication window is closed after the fact: the
-//    immediate pre-publication re-probe is an await, so an off-main disk
-//    edit can land before the re-verification write, and the registry's
-//    existing invalidation contract (relaunch normalization plus the
-//    editor-observation invalidate path) revokes the positive state in that
-//    case.
+//  - Every suspension is fenced by pass lease, task, attempt, and process
+//    generation. Evidence admission does not settle the attempt; one atomic registry
+//    assignment publishes outcome and current verification only after the
+//    final probe succeeds.
 //
 //  Pending integration seams (real-provider end-to-end follows #1811/#1723):
 //  - `probeIdentity`    <- #1753: `AgentVerificationIdentityCapture.revalidate`
@@ -81,6 +79,9 @@ nonisolated struct AgentTaskCheckObservation: Equatable, Sendable {
         var isPassing: Bool { status == .succeeded }
     }
 
+    let taskID: UUID
+    let runID: UUID
+    let passID: UUID
     let results: [CommandResult]
     let preCodeState: AgentTaskCodeStateIdentity?
     let postCodeState: AgentTaskCodeStateIdentity?
@@ -142,6 +143,11 @@ nonisolated struct AgentTaskReviewObservation: Equatable, Sendable {
         }
     }
 
+    let taskID: UUID
+    let runID: UUID
+    let passID: UUID
+    let reviewerSession: AgentVendorSessionIdentity
+    let criteriaDigest: String
     let outcome: Outcome
     let preCodeState: AgentTaskCodeStateIdentity?
     let postCodeState: AgentTaskCodeStateIdentity?
@@ -175,6 +181,7 @@ nonisolated private func verificationIdentitiesAreStable(
 nonisolated struct AgentTaskVerificationCheckRequest: Equatable, Sendable {
     let taskID: UUID
     let runID: UUID
+    let passID: UUID
     let expected: AgentVerificationIdentitySnapshot
     /// 1-based infrastructure attempt within this pass.
     let attempt: Int
@@ -185,8 +192,13 @@ nonisolated struct AgentTaskVerificationCheckRequest: Equatable, Sendable {
 nonisolated struct AgentTaskVerificationReviewRequest: Equatable, Sendable {
     let taskID: UUID
     let runID: UUID
+    let passID: UUID
     let expected: AgentVerificationIdentitySnapshot
     let criteria: String
+
+    var criteriaDigest: String {
+        AgentHistoryContentHash.sha256Hex(Data(criteria.utf8))
+    }
 }
 
 // MARK: - Result
@@ -269,6 +281,14 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
         let action: AgentTaskVerificationResult.RequiredAction?
     }
 
+    private struct VerificationPass {
+        let id: UUID
+        let taskID: UUID
+        let runID: UUID
+        let processGeneration: UInt64
+        let project: AgentTaskProjectIdentity
+    }
+
     /// Bounded infrastructure retry for check execution within one pass.
     /// This is a separate bound from the three review-correction rounds
     /// owned by #1755's durable cycle.
@@ -311,10 +331,7 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
         taskID: UUID, criteria: String, registry: AgentTaskRegistry
     ) async -> AgentTaskVerificationResult {
         guard let task = registry.task(for: taskID) else {
-            return finish(
-                registry, taskID: taskID, identity: nil,
-                status: .notReady
-            )
+            return finish(registry, taskID: taskID, identity: nil, status: .notReady)
         }
         guard Self.validCriteria(criteria) else {
             return finish(
@@ -323,119 +340,217 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
             )
         }
         guard let run = task.runs.last, AgentTaskLifecycleReducer.isSettled(run) else {
-            return finish(
-                registry, taskID: taskID, identity: nil,
-                status: .notReady
+            return finish(registry, taskID: taskID, identity: nil, status: .notReady)
+        }
+        let pass = VerificationPass(
+            id: UUID(),
+            taskID: taskID,
+            runID: run.id,
+            processGeneration: run.process.processGeneration,
+            project: task.project
+        )
+        guard !Task.isCancelled, task.lifecycle != .dismissed else {
+            return obsoleteResult(registry, pass: pass)
+        }
+        guard registry.markVerificationPending(
+            taskID: taskID, expectedRunID: run.id,
+            processGeneration: pass.processGeneration,
+            verificationPassID: pass.id
+        ) else {
+            return finish(registry, taskID: taskID, identity: nil, status: .notReady)
+        }
+        defer {
+            registry.clearVerificationPending(
+                taskID: taskID, runID: run.id,
+                processGeneration: pass.processGeneration,
+                verificationPassID: pass.id
             )
         }
-        let runID = run.id
 
-        // 1. Anchor the pass to the current identity; fail closed when it
-        // cannot be proven.
-        guard let anchor = await ports.probeIdentity(task) else {
-            _ = registry.invalidateEvidence(taskID: taskID, codeState: nil, environment: nil)
-            guard await durableFlush(registry, project: task.project) else {
+        // Claim the pass before the first suspension so an already-Ready task
+        // cannot remain publishable while re-verification is in flight.
+        let initialProbe = await ports.probeIdentity(task)
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
+        }
+        guard let anchor = initialProbe else {
+            _ = registry.invalidateEvidence(
+                taskID: taskID, codeState: nil, environment: nil, runID: run.id
+            )
+            let saved = await durableFlush(registry, project: pass.project)
+            guard passIsCurrent(registry, pass: pass) else {
+                return obsoleteResult(registry, pass: pass)
+            }
+            if !saved {
+                registry.failVerificationPass(
+                    taskID: taskID, runID: run.id,
+                    processGeneration: pass.processGeneration,
+                    verificationPassID: pass.id, codeState: nil, environment: nil
+                )
                 return finish(
-                    registry, taskID: taskID, identity: nil,
-                    status: .notReady,
+                    registry, taskID: taskID, identity: nil, status: .notReady,
                     escalation: .init(reason: .persistenceUnavailable, action: nil)
                 )
             }
             return finish(
-                registry, taskID: taskID, identity: nil,
-                status: .notReady,
+                registry, taskID: taskID, identity: nil, status: .notReady,
                 escalation: .init(reason: .identityNotCurrent, action: nil)
             )
         }
 
-        // 2. Persist the invalidation before the dependent positive
-        // evidence: a crash here leaves no positive state behind.
         _ = registry.invalidateEvidence(
-            taskID: taskID, codeState: anchor.code, environment: anchor.environment
+            taskID: taskID,
+            codeState: anchor.code,
+            environment: anchor.environment,
+            runID: run.id
         )
-        guard await durableFlush(registry, project: task.project) else {
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
+        }
+        registry.markVerificationPending(
+            taskID: taskID, expectedRunID: run.id,
+            processGeneration: pass.processGeneration,
+            verificationPassID: pass.id
+        )
+        let initialSaved = await durableFlush(registry, project: pass.project)
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
+        }
+        guard initialSaved else {
+            registry.failVerificationPass(
+                taskID: taskID, runID: run.id,
+                processGeneration: pass.processGeneration,
+                verificationPassID: pass.id,
+                codeState: anchor.code, environment: anchor.environment
+            )
             return finish(
-                registry, taskID: taskID, identity: anchor,
-                status: .notReady,
+                registry, taskID: taskID, identity: anchor, status: .notReady,
                 escalation: .init(reason: .persistenceUnavailable, action: nil)
             )
         }
-        registry.markVerificationPending(taskID: taskID)
 
-        // 3. Grant-gated required checks with the bounded infrastructure
-        // retry. The grant is revalidated immediately before each attempt.
         let checks = await runRequiredChecks(
-            registry, task: task, run: run, anchor: anchor
+            registry, task: task, pass: pass, anchor: anchor
         )
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
+        }
         guard case let .judgment(observation) = checks else {
             guard case let .terminal(result) = checks else {
-                // Unreachable: CheckPhase carries exactly these cases.
                 return finish(
-                    registry, taskID: taskID, identity: anchor,
-                    status: .notReady,
+                    registry, taskID: taskID, identity: anchor, status: .notReady,
                     escalation: .init(reason: .evidenceNotAdmitted, action: nil)
                 )
             }
             return result
         }
 
-        // 4. The check judgment must be durable before review starts.
         let checkRecord = await record(
             registry,
             Self.checkFact(for: run, observation: observation, now: now()),
-            taskID: taskID, project: task.project
+            pass: pass
         )
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
+        }
         guard checkRecord == .saved else {
             let reason: AgentTaskVerificationResult.Reason =
                 checkRecord == .notAdmitted ? .evidenceNotAdmitted : .persistenceUnavailable
+            if checkRecord == .flushFailed {
+                registry.failVerificationPass(
+                    taskID: taskID, runID: run.id,
+                    processGeneration: pass.processGeneration,
+                    verificationPassID: pass.id,
+                    codeState: anchor.code, environment: anchor.environment
+                )
+            }
             return finish(
                 registry, taskID: taskID, identity: anchor,
                 status: .notReady, escalation: .init(reason: reason, action: nil)
             )
         }
         guard observation.requiredSucceeded else {
+            guard let readiness = registry.settleVerificationPass(
+                taskID: taskID, runID: run.id,
+                processGeneration: pass.processGeneration,
+                verificationPassID: pass.id,
+                codeState: anchor.code, environment: anchor.environment,
+                makeCurrent: false
+            ) else {
+                return obsoleteResult(registry, pass: pass)
+            }
             return finish(
-                registry, taskID: taskID, identity: anchor,
-                status: .notReady,
-                escalation: .init(reason: .checksFailed, action: .rerunRequiredChecks)
+                registry, taskID: taskID, identity: anchor, status: .notReady,
+                escalation: .init(reason: .checksFailed, action: .rerunRequiredChecks),
+                readiness: readiness
             )
         }
 
-        // 5. Review only after the required checks pass.
-        guard passStillCurrent(registry, taskID: taskID, runID: runID) else {
-            return finish(registry, taskID: taskID, identity: anchor, status: .cancelled)
-        }
         let reviewRequest = AgentTaskVerificationReviewRequest(
-            taskID: taskID, runID: runID, expected: anchor, criteria: criteria
+            taskID: taskID, runID: run.id, passID: pass.id,
+            expected: anchor, criteria: criteria
         )
-        guard let review = try? await ports.startReview(reviewRequest) else {
+        let review: AgentTaskReviewObservation
+        do {
+            review = try await ports.startReview(reviewRequest)
+        } catch {
+            guard passIsCurrent(registry, pass: pass) else {
+                return obsoleteResult(registry, pass: pass)
+            }
+            if error is CancellationError {
+                return finish(registry, taskID: taskID, identity: anchor, status: .cancelled)
+            }
             return finish(
-                registry, taskID: taskID, identity: anchor,
-                status: .notReady,
+                registry, taskID: taskID, identity: anchor, status: .notReady,
                 escalation: .init(reason: .reviewNotObserved, action: .rerunReview)
             )
+        }
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
         }
         if review.outcome == .cancelled {
             return finish(registry, taskID: taskID, identity: anchor, status: .cancelled)
         }
-        guard let reviewResult = review.evidenceResult, review.identitiesAreStable else {
-            // A review that cannot bind to the exact candidate state —
-            // including a candidate that moved mid-review — is not an
-            // independent pass and records no judgment.
+        guard let reviewResult = review.evidenceResult else {
             return finish(
-                registry, taskID: taskID, identity: anchor,
-                status: .notReady,
+                registry, taskID: taskID, identity: anchor, status: .notReady,
                 escalation: .init(reason: .reviewNotObserved, action: .rerunReview)
+            )
+        }
+        guard let authorSession = run.vendorIdentity,
+              authorSession.provider != review.reviewerSession.provider
+                  || authorSession.opaqueIdentifier != review.reviewerSession.opaqueIdentifier,
+              review.taskID == reviewRequest.taskID,
+              review.runID == reviewRequest.runID,
+              review.passID == reviewRequest.passID,
+              review.criteriaDigest == reviewRequest.criteriaDigest,
+              review.preCodeState == anchor.code,
+              review.postCodeState == anchor.code,
+              review.environment == anchor.environment else {
+            return finish(
+                registry, taskID: taskID, identity: anchor, status: .notReady,
+                escalation: .init(reason: .identityNotCurrent, action: nil)
             )
         }
         let reviewRecord = await record(
             registry,
             Self.reviewFact(for: run, result: reviewResult, observation: review, now: now()),
-            taskID: taskID, project: task.project
+            pass: pass
         )
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
+        }
         guard reviewRecord == .saved else {
             let reason: AgentTaskVerificationResult.Reason =
                 reviewRecord == .notAdmitted ? .evidenceNotAdmitted : .persistenceUnavailable
+            if reviewRecord == .flushFailed {
+                registry.failVerificationPass(
+                    taskID: taskID, runID: run.id,
+                    processGeneration: pass.processGeneration,
+                    verificationPassID: pass.id,
+                    codeState: anchor.code, environment: anchor.environment
+                )
+            }
             return finish(
                 registry, taskID: taskID, identity: anchor,
                 status: .notReady, escalation: .init(reason: reason, action: nil)
@@ -451,46 +566,66 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
                 escalation = .init(reason: .reviewFailed, action: nil)
                 status = .notReady
             }
+            guard let readiness = registry.settleVerificationPass(
+                taskID: taskID, runID: run.id,
+                processGeneration: pass.processGeneration,
+                verificationPassID: pass.id,
+                codeState: anchor.code, environment: anchor.environment,
+                makeCurrent: false
+            ) else {
+                return obsoleteResult(registry, pass: pass)
+            }
             return finish(
                 registry, taskID: taskID, identity: anchor,
-                status: status, escalation: escalation
+                status: status, escalation: escalation, readiness: readiness
             )
         }
 
-        // 6. Re-probe immediately before publishing Ready; a moved or
-        // unprovable environment invalidates (persisted first) and refuses.
-        guard passStillCurrent(registry, taskID: taskID, runID: runID) else {
-            return finish(registry, taskID: taskID, identity: anchor, status: .cancelled)
-        }
         let reprobe = await ports.probeIdentity(task)
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
+        }
         guard let reprobe, reprobe == anchor else {
             _ = registry.invalidateEvidence(
-                taskID: taskID, codeState: reprobe?.code, environment: reprobe?.environment
+                taskID: taskID,
+                codeState: reprobe?.code,
+                environment: reprobe?.environment,
+                runID: run.id
             )
-            guard await durableFlush(registry, project: task.project) else {
+            let saved = await durableFlush(registry, project: pass.project)
+            guard passIsCurrent(registry, pass: pass) else {
+                return obsoleteResult(registry, pass: pass)
+            }
+            if !saved {
+                registry.failVerificationPass(
+                    taskID: taskID, runID: run.id,
+                    processGeneration: pass.processGeneration,
+                    verificationPassID: pass.id,
+                    codeState: reprobe?.code, environment: reprobe?.environment
+                )
                 return finish(
-                    registry, taskID: taskID, identity: reprobe,
-                    status: .notReady,
+                    registry, taskID: taskID, identity: reprobe, status: .notReady,
                     escalation: .init(reason: .persistenceUnavailable, action: nil)
                 )
             }
             return finish(
-                registry, taskID: taskID, identity: reprobe,
-                status: .notReady,
+                registry, taskID: taskID, identity: reprobe, status: .notReady,
                 escalation: .init(reason: .identityNotCurrent, action: nil)
             )
         }
-        registry.markVerificationCurrent(
-            taskID: taskID, codeState: anchor.code, environment: anchor.environment
-        )
-        let readiness = registry.readiness(
-            for: taskID, codeState: anchor.code, environment: anchor.environment
-        )
-        return AgentTaskVerificationResult(
+        guard let readiness = registry.settleVerificationPass(
+            taskID: taskID, runID: run.id,
+            processGeneration: pass.processGeneration,
+            verificationPassID: pass.id,
+            codeState: anchor.code, environment: anchor.environment,
+            makeCurrent: true
+        ) else {
+            return obsoleteResult(registry, pass: pass)
+        }
+        return finish(
+            registry, taskID: taskID, identity: anchor,
             status: readiness.isReady ? .ready : .notReady,
-            readiness: readiness,
-            reason: nil,
-            requiredAction: nil
+            readiness: readiness
         )
     }
 
@@ -505,41 +640,69 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
 
     @MainActor
     private func runRequiredChecks(
-        _ registry: AgentTaskRegistry, task: AgentTask, run: AgentTaskRun,
+        _ registry: AgentTaskRegistry, task: AgentTask, pass: VerificationPass,
         anchor: AgentVerificationIdentitySnapshot
     ) async -> CheckPhase {
         for attempt in 1...(Self.maximumCheckRetries + 1) {
-            guard passStillCurrent(registry, taskID: task.id, runID: run.id) else {
-                return .terminal(finish(registry, taskID: task.id, identity: anchor, status: .cancelled))
+            guard passIsCurrent(registry, pass: pass) else {
+                return .terminal(obsoleteResult(registry, pass: pass))
             }
-            guard await ports.grantIsCurrent(task) else {
+            let grantIsCurrent = await ports.grantIsCurrent(task)
+            guard passIsCurrent(registry, pass: pass) else {
+                return .terminal(obsoleteResult(registry, pass: pass))
+            }
+            guard grantIsCurrent else {
                 return .terminal(finish(
-                    registry, taskID: task.id, identity: anchor,
+                    registry, taskID: pass.taskID, identity: anchor,
                     status: .notReady,
                     escalation: .init(reason: .checkGrantNotCurrent, action: .approveCheckGrant)
                 ))
             }
             let request = AgentTaskVerificationCheckRequest(
-                taskID: task.id, runID: run.id, expected: anchor, attempt: attempt
+                taskID: pass.taskID, runID: pass.runID, passID: pass.id,
+                expected: anchor, attempt: attempt
             )
+            let observation: AgentTaskCheckObservation
             do {
-                let observation = try await ports.runRequiredChecks(request)
-                if observation.requiredCancelled {
-                    // A cancelled run records no judgment and starts no
-                    // review; it consumes no correction round.
+                observation = try await ports.runRequiredChecks(request)
+            } catch {
+                guard passIsCurrent(registry, pass: pass) else {
+                    return .terminal(obsoleteResult(registry, pass: pass))
+                }
+                if error is CancellationError {
                     return .terminal(finish(
-                        registry, taskID: task.id, identity: anchor, status: .cancelled
+                        registry, taskID: pass.taskID, identity: anchor, status: .cancelled
                     ))
                 }
-                if observation.isJudgment { return .judgment(observation) }
-            } catch {
-                // An executor hard failure is an infrastructure attempt.
+                continue
             }
-            // Non-judgment infrastructure results (timeout, launch,
-            // identity, authority) retry within the bound, never beyond.
+            guard passIsCurrent(registry, pass: pass) else {
+                return .terminal(obsoleteResult(registry, pass: pass))
+            }
+            if observation.requiredCancelled {
+                return .terminal(finish(
+                    registry, taskID: pass.taskID, identity: anchor, status: .cancelled
+                ))
+            }
+            let required = observation.results.filter(\.required)
+            if !required.isEmpty && required.allSatisfy(\.isJudgment) {
+                guard observation.taskID == request.taskID,
+                      observation.runID == request.runID,
+                      observation.passID == request.passID,
+                      observation.preCodeState == anchor.code,
+                      observation.postCodeState == anchor.code,
+                      observation.environment == anchor.environment else {
+                    return .terminal(finish(
+                        registry, taskID: pass.taskID, identity: anchor, status: .notReady,
+                        escalation: .init(reason: .identityNotCurrent, action: nil)
+                    ))
+                }
+                return .judgment(observation)
+            }
+            // Non-judgment infrastructure results retry within the bound.
         }
         return .terminal(finish(
-            registry, taskID: task.id, identity: anchor,
+            registry, taskID: pass.taskID, identity: anchor,
             status: .needsDecision,
             escalation: .init(reason: .checksNotObserved, action: .rerunRequiredChecks)
         ))
@@ -554,28 +717,57 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
     @MainActor
     private func record(
         _ registry: AgentTaskRegistry, _ fact: AgentTaskEvidenceFact,
-        taskID: UUID, project: AgentTaskProjectIdentity
+        pass: VerificationPass
     ) async -> RecordStep {
-        guard case .accepted = registry.recordEvidence(fact, taskID: taskID) else {
+        guard case .accepted = registry.recordEvidence(
+            fact, taskID: pass.taskID, deferSettlement: true,
+            verificationPassID: pass.id
+        ) else {
             return .notAdmitted
         }
-        return await durableFlush(registry, project: project) ? .saved : .flushFailed
+        return await durableFlush(registry, project: pass.project) ? .saved : .flushFailed
     }
 
-    /// The pass may only continue while the attempt it started for is still
-    /// the task's current, undismissed attempt without a user cancellation.
+    /// The pass may only continue for its exact current process incarnation.
     @MainActor
-    private func passStillCurrent(
-        _ registry: AgentTaskRegistry, taskID: UUID, runID: UUID
+    private func passIsCurrent(
+        _ registry: AgentTaskRegistry, pass: VerificationPass
     ) -> Bool {
-        guard let task = registry.task(for: taskID),
+        guard !Task.isCancelled,
+              registry.verificationPassIsCurrent(pass.id, taskID: pass.taskID),
+              let task = registry.task(for: pass.taskID),
               task.lifecycle != .dismissed,
-              let latest = task.runs.last, latest.id == runID else {
+              let latest = task.runs.last,
+              latest.id == pass.runID,
+              latest.process.processGeneration == pass.processGeneration else {
             return false
         }
         return !task.evidence.contains {
-            $0.kind == .userCancellation && $0.runID == runID
+            $0.kind == .userCancellation && $0.runID == pass.runID
         }
+    }
+
+    @MainActor
+    private func obsoleteResult(
+        _ registry: AgentTaskRegistry, pass: VerificationPass
+    ) -> AgentTaskVerificationResult {
+        let gaps: [AgentTaskReadinessGap]
+        if let task = registry.task(for: pass.taskID),
+           let latest = task.runs.last,
+           latest.id == pass.runID,
+           latest.process.processGeneration == pass.processGeneration {
+            gaps = [.cancelledAttempt]
+        } else if registry.task(for: pass.taskID) == nil {
+            gaps = [.noSettledAttempt]
+        } else {
+            gaps = [.supersededAttempt]
+        }
+        return AgentTaskVerificationResult(
+            status: .cancelled,
+            readiness: AgentTaskReadiness(isReady: false, gaps: gaps),
+            reason: nil,
+            requiredAction: nil
+        )
     }
 
     @MainActor
@@ -591,15 +783,26 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
         taskID: UUID,
         identity: AgentVerificationIdentitySnapshot?,
         status: AgentTaskVerificationResult.Status,
-        escalation: Escalation? = nil
+        escalation: Escalation? = nil,
+        readiness: AgentTaskReadiness? = nil
     ) -> AgentTaskVerificationResult {
-        AgentTaskVerificationResult(
-            status: status,
-            readiness: registry.readiness(
-                for: taskID,
-                codeState: identity?.code,
-                environment: identity?.environment
-            ),
+        var resolvedStatus = status
+        var resolvedReadiness = readiness ?? registry.readiness(
+            for: taskID,
+            codeState: identity?.code,
+            environment: identity?.environment
+        )
+        if resolvedStatus == .ready && !resolvedReadiness.isReady {
+            resolvedStatus = .notReady
+        }
+        if resolvedStatus != .ready && resolvedReadiness.isReady {
+            resolvedReadiness = AgentTaskReadiness(
+                isReady: false, gaps: [.verificationNotCurrent]
+            )
+        }
+        return AgentTaskVerificationResult(
+            status: resolvedStatus,
+            readiness: resolvedReadiness,
             reason: escalation?.reason,
             requiredAction: escalation?.action
         )
@@ -608,7 +811,7 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
     // MARK: - Fact construction
 
     static func validCriteria(_ criteria: String) -> Bool {
-        !criteria.isEmpty
+        !criteria.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && criteria.utf8.count <= maximumCriteriaBytes
             && !criteria.unicodeScalars.contains(where: {
                 CharacterSet.controlCharacters.contains($0)
@@ -653,6 +856,8 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
             observedAt: now,
             codeState: observation.preCodeState,
             environment: observation.environment,
+            reviewerSession: observation.reviewerSession,
+            criteriaDigest: observation.criteriaDigest,
             preOperationCodeState: observation.preCodeState,
             postOperationCodeState: observation.postCodeState
         )

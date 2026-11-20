@@ -105,6 +105,8 @@ final class AgentTaskRegistry {
     @ObservationIgnored
     private var pendingClaims: [AgentTaskTerminalKey: AgentTaskPendingClaim] = [:]
     @ObservationIgnored
+    private var verificationPassIDByTaskID: [UUID: UUID] = [:]
+    @ObservationIgnored
     private var pendingClaimKeyByToken: [UUID: AgentTaskTerminalKey] = [:]
     @ObservationIgnored
     private var terminationDecisionClaimRemaining: [UUID: Duration] = [:]
@@ -466,17 +468,20 @@ final class AgentTaskRegistry {
 
     /// Records one bounded evidence fact for a task, enforcing the fencing
     /// contract (attempt identity, process incarnation, provider session
-    /// reference, source sequence, chronology, and duplicates). Admitting a
-    /// fact for the latest settled run re-settles the attempt, so
-    /// verification recorded after termination can upgrade the recorded
-    /// outcome — for example `unverified` to `success`.
+    /// reference, source sequence, chronology, and duplicates). Settlement
+    /// normally follows admission; verification passes defer it so outcome
+    /// and current verification publish together after the final probe.
     @discardableResult
     func recordEvidence(
         _ fact: AgentTaskEvidenceFact,
-        taskID: UUID
+        taskID: UUID,
+        deferSettlement: Bool = false,
+        verificationPassID: UUID? = nil
     ) -> AgentTaskEvidenceAdmission {
         guard !isTerminating,
-              let index = taskIndex(for: taskID) else {
+              let index = taskIndex(for: taskID),
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID else {
             return .fencedOut(.unknownRun)
         }
         // The fact bound is enforced inside admit (ONE enforcement point
@@ -487,20 +492,25 @@ final class AgentTaskRegistry {
             into: tasks[index]
         )
         guard case .accepted = admission else { return admission }
-        tasks[index].evidence.append(fact)
-        if let runIndex = tasks[index].runs.firstIndex(where: {
-            $0.id == fact.runID
-        }), AgentTaskLifecycleReducer.isSettled(tasks[index].runs[runIndex]) {
+        var updated = tasks[index]
+        updated.evidence.append(fact)
+        if !deferSettlement,
+           let runIndex = updated.runs.firstIndex(where: {
+               $0.id == fact.runID
+           }), AgentTaskLifecycleReducer.isSettled(updated.runs[runIndex]) {
             AgentTaskLifecycleReducer.settleLatestRun(
-                of: &tasks[index],
+                of: &updated,
                 runIndex: runIndex
             )
         }
-        tasks[index].updatedAt = max(
-            tasks[index].updatedAt,
-            fact.observedAt
-        )
-        markDirty(tasks[index].project)
+        updated.updatedAt = max(updated.updatedAt, fact.observedAt)
+        tasks[index] = updated
+        markDirty(updated.project)
+        // The assignment synchronously notifies observers. They may dismiss,
+        // replace, or invalidate this task before control returns here.
+        guard task(for: taskID) == updated else {
+            return .fencedOut(.unknownRun)
+        }
         return .accepted
     }
 
@@ -845,10 +855,12 @@ final class AgentTaskRegistry {
         taskID: UUID,
         codeState: AgentTaskCodeStateIdentity?,
         environment: AgentTaskEnvironmentIdentity?,
+        runID: UUID? = nil,
         at timestamp: Date = Date()
     ) -> [AgentTaskReadinessGap] {
         guard !isTerminating,
-              let index = taskIndex(for: taskID) else {
+              let index = taskIndex(for: taskID),
+              runID == nil || tasks[index].runs.last?.id == runID else {
             return []
         }
         let gaps = AgentTaskLifecycleReducer.invalidate(
@@ -863,23 +875,165 @@ final class AgentTaskRegistry {
         return gaps
     }
 
-    /// Marks in-flight verification for a settled successful attempt.
-    ///
-    /// Produced by the verification layer while the required evidence is
-    /// being re-run after an invalidation. Idempotent while `.pending`.
+    func verificationPassIsCurrent(_ passID: UUID, taskID: UUID) -> Bool {
+        verificationPassIDByTaskID[taskID] == passID
+    }
+
+    /// Marks in-flight verification for a settled successful or unverified
+    /// attempt. Optional run, process, and pass fences leave replacements untouched.
     @discardableResult
-    func markVerificationPending(taskID: UUID) -> Bool {
+    func markVerificationPending(
+        taskID: UUID,
+        expectedRunID: UUID? = nil,
+        processGeneration: UInt64? = nil,
+        verificationPassID: UUID? = nil
+    ) -> Bool {
         guard !isTerminating,
-              let index = taskIndex(for: taskID) else {
+              let index = taskIndex(for: taskID),
+              expectedRunID == nil || tasks[index].runs.last?.id == expectedRunID,
+              processGeneration == nil
+                  || tasks[index].runs.last?.process.processGeneration == processGeneration else {
             return false
         }
-        let before = tasks[index].verificationState
-        AgentTaskLifecycleReducer.recordVerificationPending(&tasks[index])
-        if tasks[index].verificationState == .pending && before != .pending {
-            tasks[index].updatedAt = max(tasks[index].updatedAt, Date())
-            markDirty(tasks[index].project)
+        var updated = tasks[index]
+        AgentTaskLifecycleReducer.recordVerificationPending(&updated)
+        guard updated.verificationState == .pending else { return false }
+        if let verificationPassID {
+            verificationPassIDByTaskID[taskID] = verificationPassID
         }
-        return tasks[index].verificationState == .pending
+        if updated.verificationState != tasks[index].verificationState {
+            updated.updatedAt = max(updated.updatedAt, Date())
+            tasks[index] = updated
+            markDirty(updated.project)
+        }
+        // The assignment synchronously notifies observers. They may dismiss,
+        // replace, or invalidate this task before control returns here.
+        guard task(for: taskID) == updated,
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID else {
+            if let verificationPassID, let run = updated.runs.last {
+                clearVerificationPending(
+                    taskID: taskID, runID: run.id,
+                    processGeneration: run.process.processGeneration,
+                    verificationPassID: verificationPassID
+                )
+            }
+            return false
+        }
+        return true
+    }
+
+    /// Atomically settles one verification pass without publishing an
+    /// intermediate outcome or current-verification state.
+    @discardableResult
+    func settleVerificationPass(
+        taskID: UUID,
+        runID: UUID,
+        processGeneration: UInt64? = nil,
+        verificationPassID: UUID? = nil,
+        codeState: AgentTaskCodeStateIdentity,
+        environment: AgentTaskEnvironmentIdentity,
+        makeCurrent: Bool
+    ) -> AgentTaskReadiness? {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID,
+              let runIndex = tasks[index].runs.indices.last,
+              tasks[index].runs[runIndex].id == runID,
+              processGeneration == nil
+                  || tasks[index].runs[runIndex].process.processGeneration == processGeneration else {
+            return nil
+        }
+        var updated = tasks[index]
+        AgentTaskLifecycleReducer.settleLatestRun(of: &updated, runIndex: runIndex)
+        if makeCurrent {
+            AgentTaskLifecycleReducer.reverify(
+                &updated, codeState: codeState, environment: environment
+            )
+        }
+        tasks[index] = updated
+        markDirty(updated.project)
+        // The assignment synchronously notifies observers. They may dismiss,
+        // replace, or invalidate this task before control returns here.
+        guard let current = task(for: taskID), current == updated,
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID,
+              let latest = current.runs.last, latest.id == runID,
+              processGeneration == nil
+                  || latest.process.processGeneration == processGeneration else {
+            return nil
+        }
+        return AgentTaskLifecycleReducer.readiness(
+            for: current, codeState: codeState, environment: environment
+        )
+    }
+
+    /// Fails a current pass closed while preserving same-identity acceptance
+    /// and all historical evidence and snapshots.
+    @discardableResult
+    func failVerificationPass(
+        taskID: UUID,
+        runID: UUID,
+        processGeneration: UInt64? = nil,
+        verificationPassID: UUID? = nil,
+        codeState: AgentTaskCodeStateIdentity?,
+        environment: AgentTaskEnvironmentIdentity?
+    ) -> Bool {
+        guard !isTerminating,
+              let index = taskIndex(for: taskID),
+              verificationPassID == nil
+                  || verificationPassIDByTaskID[taskID] == verificationPassID,
+              let latest = tasks[index].runs.last,
+              latest.id == runID,
+              processGeneration == nil
+                  || latest.process.processGeneration == processGeneration else {
+            return false
+        }
+        var updated = tasks[index]
+        _ = AgentTaskLifecycleReducer.invalidate(
+            &updated, codeState: codeState, environment: environment
+        )
+        updated.verificationState = .stale
+        updated.updatedAt = max(updated.updatedAt, Date())
+        tasks[index] = updated
+        markDirty(updated.project)
+        return true
+    }
+
+    /// Clears a terminal pass's in-flight marker without changing dismissal,
+    /// acceptance, evidence, snapshots, or a replacement process.
+    @discardableResult
+    func clearVerificationPending(
+        taskID: UUID,
+        runID: UUID,
+        processGeneration: UInt64,
+        verificationPassID: UUID? = nil
+    ) -> Bool {
+        guard verificationPassID == nil
+                || verificationPassIDByTaskID[taskID] == verificationPassID else {
+            return false
+        }
+        if let verificationPassID {
+            verificationPassIDByTaskID.removeValue(forKey: taskID)
+        }
+        guard let index = taskIndex(for: taskID),
+              let latest = tasks[index].runs.last,
+              latest.id == runID,
+              latest.process.processGeneration == processGeneration,
+              tasks[index].verificationState == .pending else {
+            return false
+        }
+        var updated = tasks[index]
+        let requiresStale = latest.outcome == .success
+            || updated.acceptanceState == .accepted
+            || updated.acceptedSnapshot != nil
+            || updated.reviewedSnapshot != nil
+        updated.verificationState = requiresStale ? .stale : .none
+        updated.updatedAt = max(updated.updatedAt, Date())
+        tasks[index] = updated
+        markDirty(updated.project)
+        return true
     }
 
     /// Re-establishes current verification from caller-proven identities —

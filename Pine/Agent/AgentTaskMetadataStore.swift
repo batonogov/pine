@@ -2400,6 +2400,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                   fact.processGeneration == run.process.processGeneration,
                   fact.observedAt.timeIntervalSinceReferenceDate.isFinite,
                   fact.observedAt >= run.startedAt,
+                  fact.kind == .reviewerOutcome
+                      || (fact.reviewerSession == nil && fact.criteriaDigest == nil),
                   fact.sourceSequence.map({ $0 > 0 }) ?? true,
                   AgentTaskLifecycleReducer.validOperationFingerprints(fact),
                   seen.insert(fact.eventIdentity).inserted else {
@@ -2440,6 +2442,29 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                            != runIdentity.opaqueIdentifier {
                     return false
                 }
+            }
+            if let reviewerSession = fact.reviewerSession {
+                guard Self.validText(
+                    reviewerSession.provider,
+                    maximum: limits.maxVendorProviderBytes,
+                    allowsEmpty: false
+                ), Self.validText(
+                    reviewerSession.opaqueIdentifier,
+                    maximum: limits.maxVendorIdentityBytes,
+                    allowsEmpty: false
+                ), Self.validOptionalText(
+                    reviewerSession.executableVersion,
+                    maximum: limits.maxExecutableVersionBytes
+                ) else { return false }
+                if let author = run.vendorIdentity,
+                   author.provider == reviewerSession.provider,
+                   author.opaqueIdentifier == reviewerSession.opaqueIdentifier {
+                    return false
+                }
+            }
+            if let criteriaDigest = fact.criteriaDigest,
+               !Self.validLowerHex(criteriaDigest, length: 64) {
+                return false
             }
         }
         return validateSnapshot(task.reviewedSnapshot)
