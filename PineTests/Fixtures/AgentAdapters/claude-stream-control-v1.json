@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "2026-11-16",
+  "agent": "claudeCode",
+  "transport": "owned-stdio-stream-json-control",
+  "pinnedExecutableVersion": "2.1.311",
+  "sanitization": "Synthetic envelopes only; no prompts, tool inputs, assistant text, transcripts, environment values, credentials, or repository paths. The initialize/control_response envelope shapes were verified against a real 2.1.311 handshake on 2026-11-16 (unauthenticated, --no-session-persistence, no model calls).",
+  "cases": [
+    {
+      "name": "documented-init",
+      "wire": "{\"type\":\"system\",\"subtype\":\"init\",\"uuid\":\"f0000000-0000-4000-8000-000000000001\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"claude_code_version\":\"2.1.311\",\"current_permission_mode\":\"default\",\"model\":\"fixture-model\",\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"ui_surface_v1\"],\"account\":{\"tokenSource\":\"none\",\"apiProvider\":\"firstParty\"}}",
+      "expect": "systemInit"
+    },
+    {
+      "name": "assistant-tool-use",
+      "wire": "{\"type\":\"assistant\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"uuid\":\"f0000000-0000-4000-8000-000000000002\",\"user_message_uuid\":\"turn-0001\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"FIXTURE-TEXT\"},{\"type\":\"tool_use\",\"id\":\"tool-0001\",\"name\":\"Bash\",\"input\":{\"command\":\"FIXTURE-INPUT\"}}]}}",
+      "expect": "assistant"
+    },
+    {
+      "name": "user-tool-result",
+      "wire": "{\"type\":\"user\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"tool-0001\",\"content\":\"FIXTURE-RESULT\",\"is_error\":false}]}}",
+      "expect": "userToolResults"
+    },
+    {
+      "name": "result-success",
+      "wire": "{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"num_turns\":1,\"result\":\"FIXTURE-RESULT-TEXT\",\"total_cost_usd\":0.5}",
+      "expect": "result-success"
+    },
+    {
+      "name": "result-error-during-execution",
+      "wire": "{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"num_turns\":1}",
+      "expect": "result-error"
+    },
+    {
+      "name": "permission-request",
+      "wire": "{\"type\":\"control_request\",\"request_id\":\"f0000000-0000-4000-8000-0000000000a1\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"Bash\",\"tool_use_id\":\"tool-0002\",\"permission_suggestions\":[],\"input\":{\"command\":\"FIXTURE-INPUT\"}}}",
+      "expect": "permissionRequest"
+    },
+    {
+      "name": "permission-allow-response",
+      "wire": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"f0000000-0000-4000-8000-0000000000a1\",\"response\":{\"behavior\":\"allow\",\"tool_use_id\":\"tool-0002\"}}}",
+      "expect": "controlResponseSuccess"
+    },
+    {
+      "name": "initialize-response-with-redelivery",
+      "wire": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"f0000000-0000-4000-8000-0000000000a0\",\"response\":{\"claude_code_version\":\"2.1.311\",\"account\":{\"tokenSource\":\"none\",\"apiProvider\":\"firstParty\"}},\"pending_permission_requests\":[{\"type\":\"control_request\",\"request_id\":\"f0000000-0000-4000-8000-0000000000a1\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"Bash\",\"tool_use_id\":\"tool-0002\",\"input\":{\"command\":\"FIXTURE-INPUT\"}}}],\"pending_user_dialog_requests\":[]}}",
+      "expect": "controlResponseSuccess"
+    },
+    {
+      "name": "interrupt-receipt",
+      "wire": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"f0000000-0000-4000-8000-0000000000a2\",\"response\":{\"still_queued\":[\"queued-0001\"],\"cancelled\":[]}}}",
+      "expect": "interruptReceipt"
+    },
+    {
+      "name": "control-error",
+      "wire": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"error\",\"request_id\":\"f0000000-0000-4000-8000-0000000000a3\",\"error\":\"auth required\"}}",
+      "expect": "controlResponseError"
+    },
+    {
+      "name": "permission-denied",
+      "wire": "{\"type\":\"system\",\"subtype\":\"permission_denied\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"tool_use_id\":\"tool-0003\"}",
+      "expect": "permissionDenied"
+    },
+    {
+      "name": "hook-progress-data-only",
+      "wire": "{\"type\":\"hook_progress\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"stdout\":\"FIXTURE-HOOK-OUTPUT\"}",
+      "expect": "dataOnly"
+    },
+    {
+      "name": "future-schema-data-only",
+      "wire": "{\"type\":\"future_event\",\"payload\":\"FIXTURE\"}",
+      "expect": "dataOnly"
+    },
+    {
+      "name": "malformed-json",
+      "wire": "{",
+      "expect": "invalid"
+    },
+    {
+      "name": "missing-session-id",
+      "wire": "{\"type\":\"result\",\"subtype\":\"success\"}",
+      "expect": "invalid"
+    },
+    {
+      "name": "future-result-subtype",
+      "wire": "{\"type\":\"result\",\"subtype\":\"future\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\"}",
+      "expect": "invalid"
+    }
+  ]
+}

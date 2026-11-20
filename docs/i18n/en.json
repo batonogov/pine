@@ -30,7 +30,7 @@
   "mini.nativeDesc": "Built with SwiftUI and AppKit. Familiar Mac controls, no browser runtime.",
   "mini.focusedKicker": "Agent-aware",
   "mini.focusedTitle": "Agents stay in the terminal",
-  "mini.focusedDesc": "Agents stay in the terminal while Pine shows who is working, what changed, and when attention is needed.",
+  "mini.focusedDesc": "Run agents in the terminal and inspect file changes. Current built-in integrations detect processes, not verified waiting or success.",
   "mini.leanKicker": "Focused",
   "mini.leanTitle": "No AI dashboard",
   "mini.leanDesc": "Lightweight user grammars, tasks, and keybindings — no extension marketplace or browser runtime.",

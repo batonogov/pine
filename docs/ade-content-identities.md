@@ -32,6 +32,43 @@ witness. Unsaved bytes must match the actual disk read, and the revision witness
 must remain current. Missing editor coverage, missing buffers on disk, or a
 mismatch refuses capture. Capture never saves, discards, or substitutes buffers.
 
+## Shared revalidation and operation binding
+
+One shared surface serves pre/post-operation checks, review, Ready
+publication, and result actions: `capture()` returns the current typed result
+and `revalidate(_:)` requires equality with a previously recorded snapshot.
+A recorded snapshot is a point-in-time commitment, never a perpetual
+freshness token; each consumer re-captures immediately before its own
+operation or publication.
+
+Check operations additionally bind the surface to their live execution inputs
+through `forCheckOperation(_:)`: the operation's task, environment binding,
+plan, command, and capture inputs must agree, the binding's
+authority is revalidated before and during capture, and the supplied values
+are the exact environment the runner will spawn with. Before capture, the
+executor's pre-spawn gate checks current task, run, processGeneration,
+selection, and live grant/binding/lease authority; the factory does not replace
+those executor checks. After capture and the expected pre/post comparison, the
+#1754 executor MUST revalidate all of that authority immediately before every
+external effect (including posix_spawn) and immediately before publishing
+current evidence. Any change or revocation, and any unavailable or non-current
+result, means no effect and no current evidence. This primitive does not
+implement that final executor gate; #1754 needs an integration test that revokes
+authority during capture.
+
+Editor coverage is observed rather than asserted: `observing(_:)` and
+`ProjectRegistry.verificationEditorPreflight()` track the open
+project/pane/tab collections and dirty state, so opening, closing, or editing
+after preflight revokes the witness. Any unsaved buffer refuses capture;
+capture never saves or substitutes buffers.
+
+Persisted identities stay bounded: scheme, head-commit digest, and 64-hex
+fingerprint hashes for code state; scheme, OS build, and 64-hex
+toolchain/configuration hashes for environment. Check plan and grant
+persistence stores content-free fingerprints only — never command arguments,
+source contents, environment values, credentials, or raw paths — and
+display/debug descriptions redact them.
+
 ## Canonical encoding
 
 Scheme 2 uses SHA-256. Each field is encoded as an unsigned 64-bit big-endian

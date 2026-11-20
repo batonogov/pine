@@ -37,7 +37,7 @@ The active catalog and all nine Help pages reflect this retirement.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [Pi](https://github.com/badlogic/pi-mono) | `pi` | 0.83.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Codex](https://github.com/openai/codex) | `codex` | 0.146.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
-| [Claude Code](https://github.com/anthropics/claude-code) | `claude` | 2.1.220 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Claude Code](https://github.com/anthropics/claude-code) | `claude` | 2.1.220 | Detected | Process snapshot; observed process generation | Manual terminal / new session only; native resume only by explicit user action as a new attempt | Process termination only | Structured transport not enabled in the app yet; the owned stream-json/control codec/model foundation is implemented with pinned floors (see below), recorded in the [2026-11-16 evidence](claude-stream-control-evidence-2026-11-16.md). |
 | [OpenCode](https://github.com/anomalyco/opencode) | `opencode` | 1.18.10 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | `github-copilot-cli`, `copilot` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Aider](https://github.com/Aider-AI/aider) | `aider` | 0.86.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
@@ -59,6 +59,31 @@ Empry⊙ first-party detection and presentation were retired on November 14,
 metadata, and remembered defaults require a new explicit agent choice. Manual
 terminal commands remain available. Empry⊙ is excluded from Pine 3.0 structured
 adapter plans; historical release records remain unchanged.
+
+## Structured transport floors (Pine-owned, first slice)
+
+The first owned structured-adapter slice is Claude Code's
+stream-json/control protocol over supervised child stdio
+(#1727). Codex's owned app-server slice precedes it and Kimi/OpenCode
+extend the shared contracts; this table records the exact transport and
+version floors for Claude at the codec/model level. These floors are
+requirements of the implemented slice, not broad compatibility claims,
+and the app does not enable the transport until the registry integration
+and the real-version final gate (full turns, live permission exchange)
+pass.
+
+| Item | Claude Code value |
+| --- | --- |
+| Transport | Owned child stdio; `-p --input-format stream-json --output-format stream-json --verbose`; JSONL frames ≤ 1 MiB |
+| Pinned executable | 2.1.311 (verified handshake, 2026-11-16, unauthenticated, no model calls) |
+| Structured-slice minimum | 2.1.296 (max of the required feature floors) |
+| Feature floors | `capabilities` field and interrupt receipts ≥ 2.1.205; `cancel_queued` ≥ 2.1.219; `--system-prompt-snapshot off` ≥ 2.1.257; `--permission-prompts` ≥ 2.1.259; `pending_permission_requests` ≥ 2.1.268; `claude_code_version` ≥ 2.1.296 |
+| Feature detection | Observed `capabilities` array first (open set; unrecognized values ignored); recorded version floors when the array is absent; missing evidence is unknown, never "absent" |
+| Pending-request recovery | `pending_permission_requests` on the `initialize` response wrapper; a missing field means an older CLI, so post-reconnect approval state stays unknown rather than "no pending requests" |
+| Cancellation | `interrupt` control request; receipt (`still_queued`/`cancelled`) is observation only — queued messages are never auto-resent; a late completion after cancellation is a race outcome, never Ready |
+| Stop semantics | `result success` = agent-reported main-turn end only; may coexist with background work; never independently establishes verified completion or Ready |
+| Resume | Native `--resume` only through explicit user action, as a new Pine attempt/source namespace; registry checkpoints are never persisted as resume data; a new process is never live reattachment |
+| Limitations | No transport reconnect on owned stdio (process death ends the attempt); native user questions (`pending_user_dialog_requests`) are parsed as count-only and unmapped; `can_use_tool` wire shape implemented from the documented contract, live exchange is the final gate; hooks are reporting-only with consent/preview and project-local settings only |
 
 ## Tier meanings
 
