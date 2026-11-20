@@ -714,12 +714,12 @@ nonisolated private struct NativeBridgeFixture: Sendable {
                     try await peer.write(CodexAppServerMessage.response(id, result: .object([
                         "thread": .object(["id": .string(thread)])
                     ])).encoded(), deadline: deadline)
-                    if mode == .unknownRequest {
+                    if case .unknownRequest = mode {
                         try await peer.write(CodexAppServerMessage.request(
                             .string("future-request"), method: "future/execute", params: .object([:])
                         ).encoded(), deadline: deadline)
                     }
-                    if mode == .childDeath {
+                    if case .childDeath = mode {
                         // The child dies after the thread bind: EOF on the
                         // pipes is the death event.
                         peer.close()
@@ -805,7 +805,7 @@ nonisolated private struct NativeBridgeFixture: Sendable {
                     if case .object(let fields) = result, case .string(let decision)? = fields["decision"] {
                         signals.setDecision(decision)
                     }
-                    if mode == .approvalDuplicate {
+                    if case .approvalDuplicate = mode {
                         if !awaitingApprovalReplay {
                             // First answer: redeliver the same request before
                             // resolving it. The client must replay the written
