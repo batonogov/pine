@@ -80,16 +80,18 @@ struct AgentTaskDataPolicyTests {
             at: task.lastActivityAt
         ))
         // The persisted field set is exactly the documented contract:
-        // bounded identifiers, fingerprints, and references. There is no
-        // payload, transcript, prompt, attachment, or credential field to
-        // leak.
+        // bounded identifiers, fingerprints, and references. Continuation
+        // metadata (#1756) is a generation counter plus bounded, redacted
+        // revision references. There is no payload, transcript, prompt,
+        // attachment, or credential field to leak.
         #expect(try encodeKeys(task) == [
             "id", "project", "route", "presentationContext", "descriptor",
             "origin", "lifecycle", "runs", "createdAt", "updatedAt",
             "lastActivityAt", "isUnread", "attention", "title", "objective",
             "objectiveRevision", "executionState", "evidence", "verificationState",
             "acceptanceState", "reviewedSnapshot", "acceptedSnapshot",
-            "environment", "feedback", "decisionReferences",
+            "environment", "feedback", "candidateGeneration", "revisions",
+            "decisionReferences",
         ])
     }
 
