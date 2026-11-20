@@ -1121,7 +1121,8 @@ struct AgentTaskLogicalSettlementTests {
             runID: run.id
         ) == .accepted)
         #expect(writer.recordUserAcceptance(
-            taskID: taskID, codeState: cs, environment: environment
+            taskID: taskID, codeState: cs, environment: environment,
+            at: settledAt.addingTimeInterval(1)
         ) == true)
         #expect(await writer.flushPersistence() == .saved)
 
