@@ -3487,9 +3487,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     operation: { await projectManager.flushAgentHistoryPersistence() }
                 ), saved else { return false }
             }
+            for projectManager in registry.commandResultOwners {
+                guard let saved = await valueBeforeTerminationDeadline(
+                    forwardDeadline,
+                    deadlineObserver: terminationDeadlineObserver,
+                    onTimeout: {},
+                    operation: { await projectManager.flushCommandResultPersistence() }
+                ), saved else { return false }
+            }
             return registry.openProjects.values.allSatisfy {
                 !$0.hasPendingAgentHistory
-            }
+            } && !registry.hasPendingCommandResults
         }
         guard await persistCompletedHistoryBeforeDeadline() else {
             await presentTerminationFailure()
@@ -3753,6 +3761,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // Terminal shutdown may have completed another owned session since
         // preflight. Acknowledge that generation before the final commit too.
         guard await persistCompletedHistoryBeforeDeadline() else {
+            await rollbackAfterRequestedTerminalStops()
+            await presentTerminationFailure()
+            return false
+        }
+
+        // A result, retention choice, or Clear may arrive during the history await.
+        guard !registry.hasPendingCommandResults else {
             await rollbackAfterRequestedTerminalStops()
             await presentTerminationFailure()
             return false
