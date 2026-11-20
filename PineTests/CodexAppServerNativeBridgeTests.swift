@@ -333,7 +333,9 @@ struct CodexAppServerNativeBridgeTests {
         do {
             try await fixture.session.start()
         } catch {
-            // Fenced during startup: the negative observation is asserted below.
+            // Only the peer's own post-bind death may fence the start; an
+            // unrelated startup failure must still fail this test.
+            #expect(fixture.server.childDeathClosed, "Start failed before the peer died: \(error)")
         }
         guard await fixture.waitUntil({
             fixture.task()?.nativeDispatch?.phase == .unavailable
@@ -400,13 +402,16 @@ nonisolated private final class BridgeServerSignals: @unchecked Sendable {
     private var questionAnswerValue: AgentEventJSON?
     private var unknownRejectionCodeValue: Int64?
     private var cancellationConfirmationReleasedValue = false
+    private var childDeathClosedValue = false
 
     var decision: String? { lock.withLock { decisionValue } }
     var answerDeliveries: Int { lock.withLock { answerDeliveriesValue } }
     var questionAnswer: AgentEventJSON? { lock.withLock { questionAnswerValue } }
     var unknownRejectionCode: Int64? { lock.withLock { unknownRejectionCodeValue } }
+    var childDeathClosed: Bool { lock.withLock { childDeathClosedValue } }
 
     func setDecision(_ value: String) { lock.withLock { decisionValue = value } }
+    func markChildDeathClosed() { lock.withLock { childDeathClosedValue = true } }
     func recordAnswerDelivery() { lock.withLock { answerDeliveriesValue += 1 } }
     func setQuestionAnswer(_ value: AgentEventJSON) { lock.withLock { questionAnswerValue = value } }
     func setUnknownRejection(_ code: Int64) { lock.withLock { unknownRejectionCodeValue = code } }
@@ -721,7 +726,9 @@ nonisolated private struct NativeBridgeFixture: Sendable {
                     }
                     if case .childDeath = mode {
                         // The child dies after the thread bind: EOF on the
-                        // pipes is the death event.
+                        // pipes is the death event. Record it so the test can
+                        // tell this fence apart from an unrelated start error.
+                        signals.markChildDeathClosed()
                         peer.close()
                         return
                     }
