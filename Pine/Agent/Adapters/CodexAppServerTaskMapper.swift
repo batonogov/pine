@@ -200,6 +200,13 @@ nonisolated struct CodexAppServerTaskMapper {
         if status == "completed" {
             guard !parentCompletionObserved else { return .ignored }
             parentCompletionObserved = true
+            guard !cancellationRequested else {
+                // The provider completed a turn Pine already asked to
+                // interrupt: a race outcome, never Ready.
+                closedTurns.insert(turnReference)
+                close()
+                return .lateCompletionAfterCancellation
+            }
             return .parentSettlementUnknown
         }
         let phase: AdapterLifecyclePhase

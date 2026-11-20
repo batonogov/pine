@@ -139,7 +139,7 @@ struct AgentTaskWorktreeSetupPersistenceTests {
         )
         #expect(await store.save(tasks: [task], project: fixture.identity).isDurablySaved)
         let critical = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixture.metadata)) as? [String: Any])
-        #expect(critical["schemaVersion"] as? Int == 4)
+        #expect(critical["schemaVersion"] as? Int == 5)
         let loaded = await store.load(project: fixture.identity)
         #expect(loaded.status == .loaded)
         #expect(loaded.tasks == [task])

@@ -2604,7 +2604,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             return quickTerminalAgentRouter?
                 .isQuickTerminalAgentTaskPresented(task) == true
         }
-        guard task.route.surface == .projectWindow else { return false }
+        guard task.route.surface == .projectWindow, let paneID = task.route.paneID else { return false }
         let projectURL = URL(
             fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
@@ -2615,7 +2615,7 @@ final class ProjectRegistry: LSPSettingsObserver {
               manager.rootURL == projectURL,
               manager.paneManager.activePaneID.id == task.route.paneID,
               manager.paneManager.terminalState(
-                  for: PaneID(id: task.route.paneID)
+                  for: PaneID(id: paneID)
               )?.activeTerminalID == task.route.tabID,
               let window = manager.dialogOwnerWindow,
               window.isVisible,
@@ -2867,9 +2867,10 @@ final class ProjectRegistry: LSPSettingsObserver {
             return .projectUnavailable
         }
 
-        guard manager.terminal.activateTerminal(
-            paneID: PaneID(id: route.paneID),
-            tabID: route.tabID
+        guard let paneID = route.paneID, let tabID = route.tabID,
+              manager.terminal.activateTerminal(
+            paneID: PaneID(id: paneID),
+            tabID: tabID
         ) else {
             return .routeStale
         }
@@ -2981,9 +2982,10 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard let route = resolveAgentRecoveryTerminal(
             terminalID,
             in: manager
-        ), manager.terminal.activateTerminal(
-            paneID: PaneID(id: route.paneID),
-            tabID: route.tabID
+        ), let paneID = route.paneID, let tabID = route.tabID,
+           manager.terminal.activateTerminal(
+            paneID: PaneID(id: paneID),
+            tabID: tabID
         ) else { return .launchRejected }
 
         if let activateApplication {

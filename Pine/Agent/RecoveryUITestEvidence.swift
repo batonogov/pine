@@ -13,7 +13,7 @@ final class RecoveryUITestEvidence {
 
     private struct Run: Encodable {
         let id: UUID
-        let terminalID: UUID
+        let terminalID: UUID?
         let startedAt: Date
         let endedAt: Date?
         let outcome: AgentTaskOutcome?
