@@ -38,15 +38,19 @@ Russian-language simulation, not the downloadable app.
 The [README](../README.md), SEO/social descriptions, and in-app Help do not need
 the same jokes: no new product capability or positioning is introduced here.
 The landing's agent-feature description and matching README feature bullet
-also narrow the old “verified events” wording: current-source detected-agent
-notifications report process termination, not input waiting, success, or checked
-results. Released binaries may differ; inspecting current source is not evidence
-of historical behavior in the v2.12.4 download. This describes the catalog's
-`processTerminationOnly` accuracy policy, not Pine-observed checks, independent
-review, or Ready. It does not change the legacy verified undo-preview contract.
+now state the current-source boundary plainly. Current process-only integrations
+send no agent notifications, including on process exit. Waiting-input, failure,
+and completion notifications require verified lifecycle events from a supported
+structured integration; no such integration is app-enabled yet. Released binaries
+may differ; inspecting current source is not evidence of historical behavior in
+the v2.12.4 download. This describes the catalog's `processTerminationOnly`
+accuracy policy and the removed process-ended category, not Pine-observed checks,
+independent review, or Ready. It does not change the legacy verified undo-preview
+contract.
 MIT wording follows the [license](../LICENSE), including retained notices, and
 does not replace its full terms or third-party licenses. The canonical Homebrew
 command, release links, macOS requirements, and existing demo limitations are
-unchanged. Help, its indexes, README build commands, and GitHub About are outside
-this candidate. Broader public-claim auditing remains with
+unchanged. Help topic copy is updated in all nine locales. Help indexes, README
+build commands, and GitHub About are outside this candidate. Broader
+public-claim auditing remains with
 [#1730](https://github.com/batonogov/pine/issues/1730).

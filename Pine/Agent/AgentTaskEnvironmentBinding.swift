@@ -83,6 +83,8 @@ nonisolated private final class AgentTaskSetupLeaseValidity: Sendable, Hashable 
 nonisolated struct AgentTaskEnvironmentBinding: Hashable, Sendable {
     let id: UUID
     let taskID: UUID
+    /// Pine-observed roots at adoption, not a provider-reported cwd.
+    let identity: AgentTaskProjectIdentity
     /// Original environment-creation reservation, distinct from later logical
     /// attempts that reuse this environment and provider process.
     let reservationRunID: UUID
@@ -95,12 +97,27 @@ nonisolated struct AgentTaskEnvironmentBinding: Hashable, Sendable {
     }
     fileprivate func invalidate() { validity.invalidate() }
 
-    fileprivate init(taskID: UUID, runID: UUID, validity: AgentTaskSetupLeaseValidity) {
+    fileprivate init(taskID: UUID, runID: UUID, identity: AgentTaskProjectIdentity, validity: AgentTaskSetupLeaseValidity) {
         id = UUID()
         self.taskID = taskID
+        self.identity = identity
         reservationRunID = runID
         self.validity = validity
     }
+
+    #if PINE_TEST_HOST
+    /// Fake-backed native admission tests; production still revalidates through
+    /// AgentTaskEnvironmentBindings and its exact adopted-worktree proofs.
+    static func nativeBindingForTesting(taskID: UUID, runID: UUID) -> Self {
+        let path = "/tmp/pine-native/\(taskID.uuidString)/\(runID.uuidString)"
+        return Self(
+            taskID: taskID,
+            runID: runID,
+            identity: AgentTaskProjectIdentity(canonicalProjectPath: path, canonicalWorktreePath: path),
+            validity: AgentTaskSetupLeaseValidity()
+        )
+    }
+    #endif
 }
 
 nonisolated enum AgentTaskEnvironmentBindingError: Error, Equatable {
@@ -303,7 +320,9 @@ actor AgentTaskEnvironmentBindings {
         // Adoption ends setup, not ownership. The retained binding shares the
         // exact reservation token so owner revocation remains synchronous.
         guard current.setupLease.validity.finishSetup() else { throw AgentTaskEnvironmentBindingError.staleBinding }
-        let binding = AgentTaskEnvironmentBinding(taskID: taskID, runID: runID, validity: current.setupLease.validity)
+        let binding = AgentTaskEnvironmentBinding(
+            taskID: taskID, runID: runID, identity: captured.identity, validity: current.setupLease.validity
+        )
         var bound = current
         bound.binding = binding
         bound.identity = captured.identity

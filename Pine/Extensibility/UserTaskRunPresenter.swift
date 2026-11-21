@@ -19,6 +19,12 @@ enum UserTaskOutputClipboard {
 struct UserTaskRunPresenter: ViewModifier {
     let store: UserTaskRunStore
 
+    var showsOutputButton: Bool {
+        !store.isOutputVisible && (
+            !store.runs.isEmpty || store.resultPersistenceFailed || store.hasUnpersistedResultOwnership
+        )
+    }
+
     func body(content: Content) -> some View {
         content
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -27,7 +33,7 @@ struct UserTaskRunPresenter: ViewModifier {
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                if !store.isOutputVisible, !store.runs.isEmpty {
+                if showsOutputButton {
                     Button {
                         store.isOutputVisible = true
                     } label: {
@@ -52,6 +58,22 @@ private struct UserTaskRunHistoryView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if store.hasNonDurableResults {
+                Text(Strings.userTaskResultNonDurable)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if store.resultPersistenceFailed {
+                HStack {
+                    Text(Strings.userTaskResultSaveFailed)
+                        .foregroundStyle(.red)
+                    Button(Strings.userTaskResultRetry) {
+                        store.retryFailedResultPersistence()
+                    }
+                }
+                .padding(8)
+            } else if store.hasPendingResultPersistence {
+                Text(Strings.userTaskResultSaving).font(.caption)
+            }
             if store.runs.isEmpty {
                 Text(Strings.userTaskOutputEmpty)
                     .foregroundStyle(.secondary)
@@ -62,6 +84,10 @@ private struct UserTaskRunHistoryView: View {
                         ForEach(store.runs) { run in
                             UserTaskRunRow(
                                 run: run,
+                                canRetainOutput: store.canRetainOutput(forRunID: run.id),
+                                retainOutput: {
+                                    Task { await store.retainOutput(forRunID: run.id) }
+                                },
                                 cancel: {
                                     store.cancelRun(id: run.id)
                                 }
@@ -115,6 +141,8 @@ private struct UserTaskRunHistoryView: View {
 
 private struct UserTaskRunRow: View {
     let run: UserTaskRun
+    let canRetainOutput: Bool
+    let retainOutput: () -> Void
     let cancel: () -> Void
 
     var body: some View {
@@ -169,10 +197,36 @@ private struct UserTaskRunRow: View {
                 }
             }
 
-            Text(verbatim: run.command)
+            Text(verbatim: run.isRestoredResult ? Strings.userTaskCommandNotSaved : run.command)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+
+            if !run.outputCaptureSucceeded {
+                Text(Strings.userTaskOutputCaptureIncomplete).font(.caption)
+            }
+            if run.outputRetentionRequested {
+                Text(Strings.userTaskOutputRetentionSelected).font(.caption)
+                if let output = run.retainedOutput {
+                    if output.stdoutTruncated {
+                        Text(Strings.userTaskRetainedStdoutTruncated).font(.caption)
+                    }
+                    if output.stderrTruncated {
+                        Text(Strings.userTaskRetainedStderrTruncated).font(.caption)
+                    }
+                }
+            } else {
+                if !run.state.isActive {
+                    Text(Strings.userTaskOutputNotSaved).font(.caption)
+                }
+                if canRetainOutput {
+                    Button(Strings.userTaskRetainOutput, action: retainOutput)
+                        .help(Strings.userTaskOutputRetentionWarning)
+                    Text(Strings.userTaskOutputRetentionWarning)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             if run.hasOutput {
                 VStack(alignment: .leading, spacing: 6) {

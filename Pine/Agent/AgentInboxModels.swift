@@ -140,7 +140,7 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
         tasks: [AgentTask],
         accuracyPolicy: AgentLifecycleAccuracyPolicy = .production
     ) {
-        let visibleTasks = tasks.filter { $0.lifecycle != .dismissed }
+        let visibleTasks = tasks.filter { $0.lifecycle != .dismissed && $0.route.surface != .ownedProcess }
         let projectBackedTasks = visibleTasks.filter {
             $0.route.surface.isProjectBacked
         }
@@ -162,7 +162,7 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
             by: Self.terminalLabelScope
         )
         let terminalIDsByScope = terminalScopes.mapValues { tasks in
-            Set(tasks.map(\.route.terminalID))
+            Set(tasks.compactMap(\.route.terminalID))
         }
         let terminalTokensByScope = terminalIDsByScope.mapValues { identifiers in
             Self.uniqueOpaqueTokens(Array(identifiers))
@@ -257,13 +257,14 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
         terminalIDsByScope: [TerminalLabelScope: Set<UUID>],
         tokensByScope: [TerminalLabelScope: [UUID: String]]
     ) -> String {
+        guard let terminalID = task.route.terminalID else { return task.descriptor.agentType.displayName }
         if task.route.surface == .quickTerminalStandalone {
             return task.presentationContext?.terminalLabel
                 ?? Strings.quickTerminalText()
         }
         let scope = terminalLabelScope(for: task)
-        let token = tokensByScope[scope]?[task.route.terminalID]
-            ?? task.route.terminalID.uuidString
+        let token = tokensByScope[scope]?[terminalID]
+            ?? terminalID.uuidString
         guard let stableLabel = task.presentationContext?.terminalLabel else {
             return "\(Strings.terminalLabelText()) #\(token)"
         }

@@ -765,6 +765,152 @@ struct AgentTaskRegistryTests {
         )
     }
 
+    @Test("explicit decision annotations persist creation correction and removal")
+    func decisionAnnotationsPersistAcrossFreshStoreLoads() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let writer = AgentTaskRegistry(persistence: AgentTaskMetadataStore(storageRoot: fixture.storage))
+        writer.registerProject(identity)
+        #expect(await writer.flushPersistence() == .saved)
+        let session = makeSession(pid: 1759, generation: 1, observedAt: Date())
+        writer.bridge(session, replacing: nil, context: context(project: identity, routeSeed: 1759))
+        let task = try #require(writer.task(forSessionID: session.id))
+        let decision = AgentTaskDecisionReference(
+            id: UUID(), kind: .decision, reference: "approved-decision-id",
+            runID: session.id, revision: 1,
+            recordedAt: Date(timeIntervalSince1970: task.updatedAt.timeIntervalSince1970.rounded(.up))
+        )
+        #expect(writer.setDecisionReference(decision, expectedRevision: nil, taskID: task.id))
+        #expect(await writer.flushPersistence() == .saved)
+        let created = await AgentTaskMetadataStore(storageRoot: fixture.storage).load(project: identity)
+        #expect(created.status == .loaded)
+        #expect(created.tasks.count == 1)
+        #expect(created.tasks.first?.decisionReferences == [decision])
+
+        let corrected = AgentTaskDecisionReference(
+            id: decision.id, kind: decision.kind, reference: "corrected-decision-id",
+            runID: decision.runID, revision: 2, recordedAt: decision.recordedAt
+        )
+        #expect(writer.setDecisionReference(corrected, expectedRevision: 1, taskID: task.id))
+        #expect(await writer.flushPersistence() == .saved)
+        let updated = await AgentTaskMetadataStore(storageRoot: fixture.storage).load(project: identity)
+        #expect(updated.status == .loaded)
+        #expect(updated.tasks.first?.decisionReferences == [corrected])
+
+        #expect(writer.removeDecisionReference(id: decision.id, expectedRevision: 2, taskID: task.id))
+        #expect(await writer.flushPersistence() == .saved)
+        let removed = await AgentTaskMetadataStore(storageRoot: fixture.storage).load(project: identity)
+        #expect(removed.status == .loaded)
+        #expect(removed.tasks.first?.id == task.id)
+        #expect(removed.tasks.first?.decisionReferences.isEmpty == true)
+        #expect(removed.tasks.first?.runs.map(\.id) == task.runs.map(\.id))
+    }
+
+    @Test("private metadata rejects malformed, unknown-kind and legacy empty annotations")
+    func decisionAnnotationStoreValidationAndLegacyDefaults() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let writer = AgentTaskRegistry(persistence: AgentTaskMetadataStore(storageRoot: fixture.storage))
+        writer.registerProject(identity)
+        #expect(await writer.flushPersistence() == .saved)
+        let session = makeSession(pid: 1760, generation: 1, observedAt: Date())
+        writer.bridge(session, replacing: nil, context: context(project: identity, routeSeed: 1760))
+        let task = try #require(writer.task(forSessionID: session.id))
+        let decision = AgentTaskDecisionReference(
+            id: UUID(), kind: .unresolvedQuestion, reference: "question-id",
+            runID: session.id, revision: 1,
+            recordedAt: Date(timeIntervalSince1970: task.updatedAt.timeIntervalSince1970.rounded(.up))
+        )
+        #expect(writer.setDecisionReference(decision, expectedRevision: nil, taskID: task.id))
+        #expect(await writer.flushPersistence() == .saved)
+        let fileURL = AgentTaskMetadataStore.metadataURL(for: identity, storageRoot: fixture.storage)
+        var root = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [String: Any])
+        var tasks = try #require(root["tasks"] as? [[String: Any]])
+        try #require(tasks.count == 1)
+        var annotations = try #require(tasks[0]["decisionReferences"] as? [[String: Any]])
+        try #require(annotations.count == 1)
+        annotations[0]["reference"] = ""
+        tasks[0]["decisionReferences"] = annotations
+        root["tasks"] = tasks
+        let malformed = try JSONSerialization.data(withJSONObject: root)
+        try malformed.write(to: fileURL)
+        let rejected = await AgentTaskMetadataStore(storageRoot: fixture.storage).load(project: identity)
+        #expect(rejected.status == .rejected(.invalidMetadata))
+        #expect(rejected.tasks.isEmpty)
+        #expect(try Data(contentsOf: fileURL) == malformed)
+
+        // Decode level: an unknown future kind throws during envelope
+        // decoding, before validation runs — fail closed to .corrupt.
+        annotations[0]["kind"] = "futureKind"
+        tasks[0]["decisionReferences"] = annotations
+        root["tasks"] = tasks
+        let futureKind = try JSONSerialization.data(withJSONObject: root)
+        try futureKind.write(to: fileURL)
+        let corrupt = await AgentTaskMetadataStore(storageRoot: fixture.storage).load(project: identity)
+        #expect(corrupt.status == .rejected(.corrupt))
+        #expect(corrupt.tasks.isEmpty)
+        #expect(try Data(contentsOf: fileURL) == futureKind)
+
+        tasks[0].removeValue(forKey: "decisionReferences")
+        root["tasks"] = tasks
+        try JSONSerialization.data(withJSONObject: root).write(to: fileURL)
+        let legacy = await AgentTaskMetadataStore(storageRoot: fixture.storage).load(project: identity)
+        #expect(legacy.status == .loaded)
+        #expect(legacy.tasks.first?.id == task.id)
+        #expect(legacy.tasks.first?.decisionReferences.isEmpty == true)
+        #expect(legacy.tasks.first?.runs.map(\.id) == task.runs.map(\.id))
+    }
+
+    @Test("private metadata rejects goal/revision disagreement and loads legacy goals")
+    func goalRevisionStoreInvariantAndLegacyDefault() async throws {
+        let fixture = try PersistenceFixture()
+        defer { fixture.cleanup() }
+        let identity = project(fixture.project.path)
+        let writer = AgentTaskRegistry(persistence: AgentTaskMetadataStore(storageRoot: fixture.storage))
+        writer.registerProject(identity)
+        #expect(await writer.flushPersistence() == .saved)
+        let session = makeSession(pid: 1761, generation: 1, observedAt: Date())
+        writer.bridge(session, replacing: nil, context: context(project: identity, routeSeed: 1761))
+        let task = try #require(writer.task(forSessionID: session.id))
+        #expect(task.objective == nil)
+        #expect(task.objectiveRevision == 0)
+        #expect(writer.setObjective("Ship the brief", expectedRevision: 0, taskID: task.id))
+        #expect(await writer.flushPersistence() == .saved)
+        let fileURL = AgentTaskMetadataStore.metadataURL(for: identity, storageRoot: fixture.storage)
+        let loaded = await AgentTaskMetadataStore(storageRoot: fixture.storage).load(project: identity)
+        #expect(loaded.status == .loaded)
+        #expect(loaded.tasks.first?.objective == "Ship the brief")
+        #expect(loaded.tasks.first?.objectiveRevision == 1)
+
+        var root = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [String: Any])
+        var tasks = try #require(root["tasks"] as? [[String: Any]])
+        try #require(tasks.count == 1)
+
+        // Disagreement: goal removed while the revision claims a version.
+        tasks[0].removeValue(forKey: "objective")
+        root["tasks"] = tasks
+        let mismatched = try JSONSerialization.data(withJSONObject: root)
+        try mismatched.write(to: fileURL)
+        let rejected = await AgentTaskMetadataStore(storageRoot: fixture.storage).load(project: identity)
+        #expect(rejected.status == .rejected(.invalidMetadata))
+        #expect(rejected.tasks.isEmpty)
+        #expect(try Data(contentsOf: fileURL) == mismatched)
+
+        // Legacy: revision key absent while a goal exists loads as version 1.
+        root = try #require(JSONSerialization.jsonObject(with: mismatched) as? [String: Any])
+        tasks = try #require(root["tasks"] as? [[String: Any]])
+        tasks[0]["objective"] = "Legacy goal"
+        tasks[0].removeValue(forKey: "objectiveRevision")
+        root["tasks"] = tasks
+        try JSONSerialization.data(withJSONObject: root).write(to: fileURL)
+        let legacy = await AgentTaskMetadataStore(storageRoot: fixture.storage).load(project: identity)
+        #expect(legacy.status == .loaded)
+        #expect(legacy.tasks.first?.objective == "Legacy goal")
+        #expect(legacy.tasks.first?.objectiveRevision == 1)
+    }
+
     @Test("pre-accuracy schema-v2 waiting history loads fail-closed")
     func legacyWaitingHistoryRetainsTaskWithoutAttention() async throws {
         let fixture = try PersistenceFixture()
@@ -3166,11 +3312,13 @@ struct AgentTaskRegistryTests {
         ])
         let task = try #require((root["tasks"] as? [[String: Any]])?.first)
         #expect(Set(task.keys) == [
-            "acceptanceState", "attention", "createdAt", "descriptor",
-            "evidence", "executionState", "feedback", "id", "isUnread",
-            "lastActivityAt", "lifecycle", "objective", "origin",
-            "project", "route", "runs", "title", "updatedAt",
-            "verificationState",
+            "acceptanceState", "attention", "candidateGeneration",
+            "createdAt", "descriptor",
+            "decisionReferences", "evidence", "executionState", "feedback",
+            "id", "isUnread", "lastActivityAt", "lifecycle", "objective",
+            "objectiveRevision", "origin", "project", "revisions", "route",
+            "runs",
+            "title", "updatedAt", "verificationState",
         ])
         let projectObject = try #require(task["project"] as? [String: Any])
         #expect(Set(projectObject.keys) == [

@@ -39,8 +39,8 @@ struct AgentNotificationPresentationTests {
         harness.manager.bindDialogOwnerWindow(window)
         defer { harness.manager.unbindDialogOwnerWindow(window) }
         // The exact #1640-A regression: the run is terminated and the task
-        // paused, yet the user is watching its terminal, so the
-        // `.processEnded` banner must stay suppressed.
+        // paused, yet the user is watching its terminal, so a banner for
+        // this route must stay suppressed.
         #expect(harness.registry.isAgentTaskPresented(harness.taskID))
 
         // The same route stops being presented the moment the hosting
@@ -211,7 +211,8 @@ struct AgentNotificationPresentationTests {
 
     /// Bridges a live agent session into a real pane/tab and then terminates
     /// it, leaving a paused task whose route points at the still-open
-    /// terminal — the exact state a `.processEnded` event is resolved from.
+    /// terminal — the exact state the retired process-exit event (#1760)
+    /// used to resolve from.
     private func makeHarness(
         fixture: ProjectFixture,
         seed: Int

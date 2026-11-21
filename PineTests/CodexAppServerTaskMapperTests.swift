@@ -128,8 +128,8 @@ struct CodexAppServerTaskMapperTests {
             Issue.record("Interrupt acknowledgement settled turn")
             return
         }
-        guard case .parentSettlementUnknown = try mapper.map(turn("turn/completed", status: "completed"), connection: connection) else {
-            Issue.record("Late completion after cancellation became success")
+        guard case .lateCompletionAfterCancellation = try mapper.map(turn("turn/completed", status: "completed"), connection: connection) else {
+            Issue.record("Late completion after cancellation was not fenced")
             return
         }
     }

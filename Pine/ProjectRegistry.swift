@@ -1672,6 +1672,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard let manager = openProjects[root] else { return true }
         manager.finalizeAgentSessionsForHistory()
         manager.agentHistory.retryFailedPersistence()
+        manager.retryCommandResultPersistence()
         guard backgroundProjects.contains(root),
               backgroundPresentationLeases[root]?.isEmpty != false,
               !manager.requiresBackgroundRetention,
@@ -1982,7 +1983,10 @@ final class ProjectRegistry: LSPSettingsObserver {
                     ), isDir.boolValue else {
                         // Failed history remains owned even if its directory
                         // disappeared. Removing this manager would discard the
-                        // only recoverable pending snapshot.
+                        // only recoverable pending snapshot. Command results do
+                        // not block: a deleted root can never be persisted to
+                        // again, and the store's rootMissing path releases that
+                        // ownership by design.
                         guard !existing.hasPendingAgentHistory else { return nil }
                         // Directory was deleted while in background — clean up
                         existing.requestUserTaskShutdown()
@@ -2017,6 +2021,10 @@ final class ProjectRegistry: LSPSettingsObserver {
                         return nil
                     }
                 }
+                // The directory may have been deleted and recreated while the
+                // project was backgrounded: its result workspace identity is
+                // stale and must be re-derived before the manager is reused.
+                existing.recoverRecreatedResultRoot()
                 if reopenBackgroundProject {
                     existing.prepareForWindowPresentation()
                     _ = markProjectWindowOpen(
@@ -2490,6 +2498,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             }
             manager.finalizeAgentSessionsForHistory()
             manager.agentHistory.retryFailedPersistence()
+            manager.retryCommandResultPersistence()
             guard backgroundPresentationLeases[canonical]?.isEmpty != false,
                   !manager.requiresBackgroundRetention,
                   !hasTerminalWorkingDirectoryRetention(in: canonical) else {
@@ -2593,18 +2602,18 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// pane or terminal tab.
     ///
     /// Presentation is read from the task's terminal route, which survives
-    /// process termination, rather than from run liveness: a `.processEnded`
-    /// notification is resolved from the same registry mutation that already
-    /// marked the run terminated, so a liveness-based check could never pass
-    /// by delivery time and the banner+sound fired for the very terminal the
-    /// user was watching.
+    /// process termination, rather than from run liveness. The retired
+    /// process-exit banner (#1760) resolved from the same registry mutation
+    /// that already marked the run terminated, so a liveness-based check
+    /// could never pass by delivery time and the banner+sound fired for the
+    /// very terminal the user was watching.
     func isAgentTaskPresented(_ taskID: UUID) -> Bool {
         guard let task = agentTasks.task(for: taskID) else { return false }
         if task.route.surface.isQuickTerminal {
             return quickTerminalAgentRouter?
                 .isQuickTerminalAgentTaskPresented(task) == true
         }
-        guard task.route.surface == .projectWindow else { return false }
+        guard task.route.surface == .projectWindow, let paneID = task.route.paneID else { return false }
         let projectURL = URL(
             fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
@@ -2615,7 +2624,7 @@ final class ProjectRegistry: LSPSettingsObserver {
               manager.rootURL == projectURL,
               manager.paneManager.activePaneID.id == task.route.paneID,
               manager.paneManager.terminalState(
-                  for: PaneID(id: task.route.paneID)
+                  for: PaneID(id: paneID)
               )?.activeTerminalID == task.route.tabID,
               let window = manager.dialogOwnerWindow,
               window.isVisible,
@@ -2867,9 +2876,10 @@ final class ProjectRegistry: LSPSettingsObserver {
             return .projectUnavailable
         }
 
-        guard manager.terminal.activateTerminal(
-            paneID: PaneID(id: route.paneID),
-            tabID: route.tabID
+        guard let paneID = route.paneID, let tabID = route.tabID,
+              manager.terminal.activateTerminal(
+            paneID: PaneID(id: paneID),
+            tabID: tabID
         ) else {
             return .routeStale
         }
@@ -2981,9 +2991,10 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard let route = resolveAgentRecoveryTerminal(
             terminalID,
             in: manager
-        ), manager.terminal.activateTerminal(
-            paneID: PaneID(id: route.paneID),
-            tabID: route.tabID
+        ), let paneID = route.paneID, let tabID = route.tabID,
+           manager.terminal.activateTerminal(
+            paneID: PaneID(id: paneID),
+            tabID: tabID
         ) else { return .launchRejected }
 
         if let activateApplication {
@@ -3592,10 +3603,10 @@ final class ProjectRegistry: LSPSettingsObserver {
             )
         }
         detachedTaskCleanupProjects = detachedTaskCleanupProjects.filter {
-            $0.value.hasOutstandingUserTaskExecution
+            $0.value.hasOutstandingUserTaskExecution || $0.value.hasPendingCommandResults
         }
         return !userTaskOwners.contains(where: {
-            $0.hasOutstandingUserTaskExecution
+            $0.hasOutstandingUserTaskExecution || $0.hasPendingCommandResults
         })
     }
 
@@ -3622,7 +3633,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
         guard !openProjects.values.contains(where: {
             $0.hasPendingAgentHistory
-        }) else { return false }
+        }), !hasPendingCommandResults else { return false }
         guard !userTaskOwners.contains(where: {
             $0.hasOutstandingUserTaskExecution
         }) else {
@@ -4075,6 +4086,13 @@ final class ProjectRegistry: LSPSettingsObserver {
             fileURLWithPath: canonical.path,
             isDirectory: true
         ).standardizedFileURL
+    }
+
+    /// Includes removed managers still owning a completed result or cleanup.
+    var commandResultOwners: [ProjectManager] { userTaskOwners }
+
+    var hasPendingCommandResults: Bool {
+        commandResultOwners.contains { $0.hasPendingCommandResults }
     }
 
     private var userTaskOwners: [ProjectManager] {

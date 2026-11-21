@@ -41,7 +41,7 @@ nonisolated enum AgentTaskRouteAvailability: String, Codable, Sendable {
     case missing
 }
 
-/// The runtime surface that owns a terminal route.
+/// The runtime surface that owns a task route. Owned processes have no terminal.
 ///
 /// Surface identity is navigation and lifecycle authority. A project pane and
 /// the application-wide Quick Terminal must never become interchangeable only
@@ -50,9 +50,11 @@ nonisolated enum AgentTaskTerminalSurface: String, Codable, Hashable, Sendable {
     case projectWindow
     case quickTerminalProject
     case quickTerminalStandalone
+    /// An owned adapter task has no terminal, tab or pane identity.
+    case ownedProcess
 
     var isQuickTerminal: Bool {
-        self != .projectWindow
+        self == .quickTerminalProject || self == .quickTerminalStandalone
     }
 
     var isProjectBacked: Bool {
@@ -60,15 +62,15 @@ nonisolated enum AgentTaskTerminalSurface: String, Codable, Hashable, Sendable {
     }
 }
 
-/// Stable value route back to the terminal surface that owns a run.
+/// Stable value route back to the surface that owns a run.
 ///
 /// `terminalID` identifies the terminal lifetime; `tabID` and `paneID` locate
-/// it in the current layout. Moving a tab changes only `paneID`.
+/// it in the current layout. All three are absent for owned stdio tasks.
 nonisolated struct AgentTaskRoute: Codable, Equatable, Sendable {
     let surface: AgentTaskTerminalSurface
-    let paneID: UUID
-    let tabID: UUID
-    let terminalID: UUID
+    let paneID: UUID?
+    let tabID: UUID?
+    let terminalID: UUID?
     var availability: AgentTaskRouteAvailability
 
     private enum CodingKeys: String, CodingKey {
@@ -81,9 +83,9 @@ nonisolated struct AgentTaskRoute: Codable, Equatable, Sendable {
 
     init(
         surface: AgentTaskTerminalSurface = .projectWindow,
-        paneID: UUID,
-        tabID: UUID,
-        terminalID: UUID,
+        paneID: UUID?,
+        tabID: UUID?,
+        terminalID: UUID?,
         availability: AgentTaskRouteAvailability = .available
     ) {
         self.surface = surface
@@ -91,6 +93,14 @@ nonisolated struct AgentTaskRoute: Codable, Equatable, Sendable {
         self.tabID = tabID
         self.terminalID = terminalID
         self.availability = availability
+    }
+
+    init(ownedProcessAvailability: AgentTaskRouteAvailability) {
+        surface = .ownedProcess
+        paneID = nil
+        tabID = nil
+        terminalID = nil
+        availability = ownedProcessAvailability
     }
 
     init(from decoder: Decoder) throws {
@@ -101,9 +111,9 @@ nonisolated struct AgentTaskRoute: Codable, Equatable, Sendable {
             AgentTaskTerminalSurface.self,
             forKey: .surface
         ) ?? .projectWindow
-        paneID = try values.decode(UUID.self, forKey: .paneID)
-        tabID = try values.decode(UUID.self, forKey: .tabID)
-        terminalID = try values.decode(UUID.self, forKey: .terminalID)
+        paneID = try values.decodeIfPresent(UUID.self, forKey: .paneID)
+        tabID = try values.decodeIfPresent(UUID.self, forKey: .tabID)
+        terminalID = try values.decodeIfPresent(UUID.self, forKey: .terminalID)
         availability = try values.decode(
             AgentTaskRouteAvailability.self,
             forKey: .availability
@@ -147,7 +157,7 @@ nonisolated struct AgentTaskPresentationContext: Codable, Equatable, Sendable {
 nonisolated enum AgentTaskOrigin: String, Codable, Sendable {
     /// A user launched an agent manually and Pine discovered its process.
     case discoveredInTerminal
-    /// Pine reserved the task before launching an agent in its terminal.
+    /// Pine reserved the task before launching its owned execution.
     case pineLaunched
 }
 
@@ -401,6 +411,11 @@ nonisolated struct AgentTaskCodeStateIdentity: Codable, Hashable, Sendable {
 ///
 /// Components are opaque bounded strings; the configuration fingerprint
 /// covers the relevant configuration inputs without storing their values.
+/// A missing `osBuild`, `toolchain`, or `configurationFingerprint` each
+/// prevent proving equivalence: current readiness, re-verification, and
+/// grant matching (`AgentTaskMetadataStore.validEnvironment`,
+/// `AgentTaskCheckGrant.matchesScope`) require all three, while bounded
+/// historical values stay storable without authority.
 nonisolated struct AgentTaskEnvironmentIdentity: Codable, Hashable, Sendable {
     /// Scheme 2 binds observed tool/configuration inputs and capture policy.
     static let currentScheme: UInt8 = 2
@@ -578,6 +593,10 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
     /// Provider session reference where available. `nil` for facts the
     /// provider did not state (for example Pine process observations).
     let vendorSession: AgentVendorSessionIdentity?
+    /// Separate reviewer session and exact criteria digest for review facts.
+    /// Both remain optional so legacy review facts decode as history.
+    let reviewerSession: AgentVendorSessionIdentity?
+    let criteriaDigest: String?
     /// Source sequence for ordered structured delivery. `nil` for unordered
     /// or non-structured sources.
     let sourceSequence: UInt64?
@@ -598,6 +617,8 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
         codeState: AgentTaskCodeStateIdentity? = nil,
         environment: AgentTaskEnvironmentIdentity? = nil,
         vendorSession: AgentVendorSessionIdentity? = nil,
+        reviewerSession: AgentVendorSessionIdentity? = nil,
+        criteriaDigest: String? = nil,
         sourceSequence: UInt64? = nil,
         preOperationCodeState: AgentTaskCodeStateIdentity? = nil,
         postOperationCodeState: AgentTaskCodeStateIdentity? = nil
@@ -611,6 +632,8 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
         self.codeState = codeState
         self.environment = environment
         self.vendorSession = vendorSession
+        self.reviewerSession = reviewerSession
+        self.criteriaDigest = criteriaDigest
         self.sourceSequence = sourceSequence
         self.preOperationCodeState = preOperationCodeState
         self.postOperationCodeState = postOperationCodeState
@@ -638,6 +661,48 @@ nonisolated struct AgentTaskResultSnapshot: Codable, Hashable, Sendable {
     let codeState: AgentTaskCodeStateIdentity?
     let environment: AgentTaskEnvironmentIdentity?
     let recordedAt: Date
+}
+
+/// Explicit logical settlement of an attempt that may retain a live
+/// provider process (#1756, #1795).
+///
+/// A provider can close a turn with proven aggregate closure while its
+/// process stays live. This metadata is the durable basis for a live
+/// run's recorded outcome, fenced to the exact authority that proved the
+/// closure. It never fabricates physical termination: the run's
+/// `liveness` and `endedAt` stay untouched until the process actually
+/// exits, and no `processCompletion` fact is recorded on admission. The
+/// settlement timestamp is authoritative for the attempt's completion
+/// time; an eventual physical exit preserves it.
+nonisolated struct AgentTaskLogicalSettlement: Codable, Equatable, Hashable, Sendable {
+    static let currentScheme: UInt8 = 1
+    static let maximumTurnReferenceBytes = 256
+
+    let scheme: UInt8
+    /// When Pine recorded the settlement.
+    let settledAt: Date
+    /// The process incarnation the closure was proven against; must equal
+    /// the run's `process.processGeneration`.
+    let processGeneration: UInt64
+    /// The ordered-delivery position of the closure observation, when the
+    /// provider documents one. `nil` for unordered/no-replay delivery.
+    let sourceSequence: UInt64?
+    /// Bounded opaque provider turn reference the closure was proven for —
+    /// a redacted identity, never a transcript, command, or secret.
+    let turn: String
+
+    init(
+        settledAt: Date,
+        processGeneration: UInt64,
+        sourceSequence: UInt64?,
+        turn: String
+    ) {
+        scheme = Self.currentScheme
+        self.settledAt = settledAt
+        self.processGeneration = processGeneration
+        self.sourceSequence = sourceSequence
+        self.turn = turn
+    }
 }
 
 /// One bounded, content-free feedback record for a task (#1722).
@@ -725,6 +790,30 @@ nonisolated enum AgentTaskEvidenceAdmission: Sendable, Equatable {
     case fencedOut(AgentTaskEvidenceFence)
 }
 
+/// Why a logical settlement claim was fenced (#1756, #1795).
+nonisolated enum AgentTaskLogicalSettlementFence: String, Sendable, Equatable {
+    /// The claim violates its shape or authority contract.
+    case invalidClaim
+    /// The claim's run does not belong to this task.
+    case unknownRun
+    /// The claim's run is not the task's current (latest) attempt.
+    case supersededRun
+    /// The claim's process incarnation differs from the run's.
+    case foreignProcess
+    /// The run is already settled (logically or physically).
+    case alreadySettled
+    /// The run is no longer live: its channel authority is gone.
+    case notLive
+    /// Ordered delivery: the claim's source position predates an already
+    /// observed event for this run (a stale replay).
+    case staleSource
+}
+
+nonisolated enum AgentTaskLogicalSettlementAdmission: Sendable, Equatable {
+    case accepted
+    case fencedOut(AgentTaskLogicalSettlementFence)
+}
+
 /// Process-start evidence that prevents PID reuse from extending an old run.
 nonisolated struct AgentProcessEvidence: Codable, Equatable, Sendable {
     let processIdentifier: Int32?
@@ -776,19 +865,18 @@ nonisolated struct AgentProcessEvidence: Codable, Equatable, Sendable {
     }
 }
 
-/// One observed execution of an agent task. The UUID intentionally equals the
-/// bridged legacy `AgentSession.id` so Activity, History, provenance, verified
-/// patches, and checked undo retain their existing join key.
+/// One observed execution. Terminal runs retain the bridged AgentSession.id;
+/// owned stdio runs use the core's reserved attempt ID and have no terminal.
 nonisolated struct AgentTaskRunInput: Sendable {
     let id: UUID
-    let terminalID: UUID
+    let terminalID: UUID?
     let process: AgentProcessEvidence
     let status: AgentTaskRunStatus
     let lifecycleAccuracy: FirstPartyAgentNotificationAccuracy
 
     init(
         id: UUID,
-        terminalID: UUID,
+        terminalID: UUID?,
         process: AgentProcessEvidence,
         status: AgentTaskRunStatus,
         lifecycleAccuracy: FirstPartyAgentNotificationAccuracy = .processTerminationOnly
@@ -809,7 +897,7 @@ nonisolated struct AgentTaskRunStatus: Sendable {
 
 nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
     let id: UUID
-    let terminalID: UUID
+    let terminalID: UUID?
     var process: AgentProcessEvidence
     var state: AgentRunState
     var liveness: AgentRunLiveness
@@ -819,8 +907,21 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
     var vendorIdentity: AgentVendorSessionIdentity?
     var lifecycleAccuracy: FirstPartyAgentNotificationAccuracy
     /// Recorded outcome of this attempt. `nil` while the attempt is in
-    /// flight; only a settled attempt may carry one (#1722).
+    /// flight; only a settled attempt may carry one (#1722). A live run
+    /// may carry an outcome only with an explicit logical settlement
+    /// (#1756, #1795).
     var outcome: AgentTaskOutcome?
+    /// Explicit logical settlement of this attempt, when the provider
+    /// proved the turn's aggregate closure while the process stayed live
+    /// (#1756, #1795). Additive: metadata persisted before this field
+    /// decodes to nil.
+    var logicalSettlement: AgentTaskLogicalSettlement?
+
+    /// Authoritative settlement timestamp: the explicit logical settlement
+    /// time when present, otherwise the physical termination time.
+    var settledAt: Date? {
+        logicalSettlement?.settledAt ?? endedAt
+    }
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -834,6 +935,7 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
         case vendorIdentity
         case lifecycleAccuracy
         case outcome
+        case logicalSettlement
     }
 
     init(_ input: AgentTaskRunInput) {
@@ -850,12 +952,13 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
         vendorIdentity = nil
         lifecycleAccuracy = input.lifecycleAccuracy
         outcome = nil
+        logicalSettlement = nil
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(UUID.self, forKey: .id)
-        terminalID = try values.decode(UUID.self, forKey: .terminalID)
+        terminalID = try values.decodeIfPresent(UUID.self, forKey: .terminalID)
         process = try values.decode(AgentProcessEvidence.self, forKey: .process)
         state = try values.decode(AgentRunState.self, forKey: .state)
         liveness = try values.decode(AgentRunLiveness.self, forKey: .liveness)
@@ -874,6 +977,10 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
             AgentTaskOutcome.self,
             forKey: .outcome
         )
+        logicalSettlement = try values.decodeIfPresent(
+            AgentTaskLogicalSettlement.self,
+            forKey: .logicalSettlement
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -889,6 +996,7 @@ nonisolated struct AgentTaskRun: Codable, Equatable, Sendable, Identifiable {
         try values.encodeIfPresent(vendorIdentity, forKey: .vendorIdentity)
         try values.encode(lifecycleAccuracy, forKey: .lifecycleAccuracy)
         try values.encodeIfPresent(outcome, forKey: .outcome)
+        try values.encodeIfPresent(logicalSettlement, forKey: .logicalSettlement)
     }
 }
 
@@ -949,6 +1057,10 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     var attention: AgentTaskAttention
     var title: String?
     var objective: String?
+    /// Version of `objective`: `0` while the goal is unset, bumped once per
+    /// accepted change. Evidence recorded under an older version stays
+    /// identifiable but is invalidated, never rewritten (#1759).
+    var objectiveRevision: UInt64
     var launchInterruption: AgentTaskLaunchInterruption?
     // ADE lifecycle and evidence contract (#1722). All additive: metadata
     // persisted before schema v3 decodes to the fail-closed defaults.
@@ -963,7 +1075,23 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     // decodes to nil/empty.
     var environment: AgentTaskEnvironmentIdentity?
     var feedback: [AgentTaskFeedbackRecord]
+    // Same-task continuation (#1756): a new logical attempt per submitted
+    // revision. Additive: metadata persisted before these fields decodes to
+    // 0/empty.
+    var candidateGeneration: UInt64
+    var revisions: [AgentTaskRevisionRecord]
+    var decisionReferences: [AgentTaskDecisionReference]
     var worktreeSetup: AgentTaskReservedWorktreeCheckpoint?
+    var nativeDispatch: AgentTaskNativeDispatch?
+    // Independent review and bounded corrections (#1755): the durable
+    // review-cycle journal. Additive: older metadata decodes to nil.
+    var reviewCycle: AgentTaskCorrectionCycle?
+
+    var reservedAndObservedRunIDs: [UUID] {
+        let observed = runs.map(\.id)
+        guard let reserved = nativeDispatch?.runID, !observed.contains(reserved) else { return observed }
+        return observed + [reserved]
+    }
 
     var hasUnresolvedWorktreeSetup: Bool {
         worktreeSetup.map { $0.phase != .populated } ?? false
@@ -986,6 +1114,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case attention
         case title
         case objective
+        case objectiveRevision
         case launchInterruption
         case executionState
         case evidence
@@ -995,7 +1124,12 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case acceptedSnapshot
         case environment
         case feedback
+        case candidateGeneration
+        case revisions
+        case decisionReferences
         case worktreeSetup
+        case nativeDispatch
+        case reviewCycle
     }
 
     init(
@@ -1022,6 +1156,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         attention = .none
         self.title = title
         self.objective = objective
+        objectiveRevision = objective == nil ? 0 : 1
         launchInterruption = nil
         executionState = .unknown
         evidence = []
@@ -1031,7 +1166,12 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         acceptedSnapshot = nil
         environment = nil
         feedback = []
+        candidateGeneration = 0
+        revisions = []
+        decisionReferences = []
         worktreeSetup = nil
+        nativeDispatch = nil
+        reviewCycle = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -1076,6 +1216,12 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             String.self,
             forKey: .objective
         )
+        // Metadata persisted before goal versioning decodes to version 1
+        // when a goal exists: it was the first and only version.
+        objectiveRevision = try values.decodeIfPresent(
+            UInt64.self,
+            forKey: .objectiveRevision
+        ) ?? (objective == nil ? 0 : 1)
         launchInterruption = try values.decodeIfPresent(
             AgentTaskLaunchInterruption.self,
             forKey: .launchInterruption
@@ -1113,7 +1259,20 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
             [AgentTaskFeedbackRecord].self,
             forKey: .feedback
         ) ?? []
+        candidateGeneration = try values.decodeIfPresent(
+            UInt64.self,
+            forKey: .candidateGeneration
+        ) ?? 0
+        revisions = try values.decodeIfPresent(
+            [AgentTaskRevisionRecord].self,
+            forKey: .revisions
+        ) ?? []
+        decisionReferences = try values.decodeIfPresent(
+            [AgentTaskDecisionReference].self, forKey: .decisionReferences
+        ) ?? []
         worktreeSetup = try values.decodeIfPresent(AgentTaskReservedWorktreeCheckpoint.self, forKey: .worktreeSetup)
+        nativeDispatch = try values.decodeIfPresent(AgentTaskNativeDispatch.self, forKey: .nativeDispatch)
+        reviewCycle = try values.decodeIfPresent(AgentTaskCorrectionCycle.self, forKey: .reviewCycle)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1137,6 +1296,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         try values.encode(attention, forKey: .attention)
         try values.encodeIfPresent(title, forKey: .title)
         try values.encodeIfPresent(objective, forKey: .objective)
+        try values.encode(objectiveRevision, forKey: .objectiveRevision)
         try values.encodeIfPresent(
             launchInterruption,
             forKey: .launchInterruption
@@ -1152,7 +1312,12 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         )
         try values.encodeIfPresent(environment, forKey: .environment)
         try values.encode(feedback, forKey: .feedback)
+        try values.encode(candidateGeneration, forKey: .candidateGeneration)
+        try values.encode(revisions, forKey: .revisions)
+        try values.encode(decisionReferences, forKey: .decisionReferences)
         try values.encodeIfPresent(worktreeSetup, forKey: .worktreeSetup)
+        try values.encodeIfPresent(nativeDispatch, forKey: .nativeDispatch)
+        try values.encodeIfPresent(reviewCycle, forKey: .reviewCycle)
     }
 }
 
