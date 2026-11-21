@@ -22,6 +22,16 @@ import Testing
 struct AgentInboxHostOptionsTests {
     // MARK: - What becomes a candidate
 
+    @Test("fixture windows do not animate onto the screen")
+    func fixtureWindowsDoNotAnimate() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+
+        let window = fixture.makeWindow()
+
+        #expect(window.animationBehavior == .none)
+    }
+
     @Test("a window without Pine's close delegate is never a candidate")
     func foreignWindowsAreNotCandidates() throws {
         let fixture = try Fixture()
@@ -858,6 +868,8 @@ struct AgentInboxHostOptionsTests {
             window.contentView = NSView(
                 frame: window.contentRect(forFrameRect: window.frame)
             )
+            // Visibility fixtures do not need animations that retain dispatch workers (#1782).
+            window.animationBehavior = .none
             if onScreen {
                 window.orderFront(nil)
             }
