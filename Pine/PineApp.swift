@@ -27,6 +27,7 @@ struct PineApp: App {
             arguments: CommandLine.arguments,
             environment: ProcessInfo.processInfo.environment
         )
+        appDelegate.terminalProcessCleanupOwnerRegistry = .shared
     }
 
     private var registry: ProjectRegistry { appDelegate.registry }
@@ -1033,6 +1034,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             bindQuickTerminalAgentRouting()
         }
     }
+
+    var terminalProcessCleanupOwnerRegistry = TerminalProcessCleanupOwnerRegistry()
 
     /// Application-wide, permission-gated agent notification coordinator.
     lazy var agentNotifications = AgentNotificationController(
@@ -3749,6 +3752,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         terminalStopControllers.append(
             contentsOf: quickTerminalControllers
         )
+        // A tab or project closed before Quit may already be cleaning up with
+        // no live inventory reference left. The pre-termination barrier must
+        // account for those detached owners as well (#1786).
+        terminalStopControllers = terminalProcessCleanupOwnerRegistry
+            .applicationTerminationControllers(
+                from: terminalStopControllers
+            )
         guard await TerminalTabCloseAuthorization.waitForAuthorizedStops(
             terminalStopControllers,
             until: forwardDeadline

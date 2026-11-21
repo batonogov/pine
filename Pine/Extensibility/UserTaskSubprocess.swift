@@ -444,7 +444,9 @@ nonisolated enum UserTaskProcessExitPoll: Sendable, Equatable {
     case waitFailed(Int32)
 }
 
-/// Owns termination of one isolated POSIX process group.
+/// Owns identity-safe termination of one isolated POSIX process group.
+/// A caller whose direct child has another lifecycle owner can exclude that
+/// leader from signals while retaining group membership and liveness tracking.
 ///
 /// TERM is followed by a bounded KILL fallback. The completion group lets the
 /// runner wait until cleanup finishes before it reports the task as complete.
@@ -464,14 +466,16 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
     private let lock = NSLock()
     private let terminationCompletion = DispatchGroup()
     private let leader: UserTaskProcessIdentity?
+    private let signalsLeader: Bool
     private var knownMembers: [pid_t: UserTaskProcessIdentity] = [:]
     private var terminationRequested = false
     private var terminationFinished = false
     private var terminationSucceeded = true
 
-    init(identifier: pid_t) {
+    init(identifier: pid_t, signalsLeader: Bool = true) {
         precondition(identifier > 1)
         self.identifier = identifier
+        self.signalsLeader = signalsLeader
         leader = UserTaskProcessInspector.identity(for: identifier)
         if let leader {
             knownMembers[leader.processID] = leader
@@ -630,7 +634,10 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
                 }
             }
             guard !liveMembers.isEmpty else { return }
-            _ = signalKnownMembers(SIGKILL, identities: liveMembers)
+            _ = signalKnownMembers(
+                SIGKILL,
+                identities: signalTargets(liveMembers)
+            )
             Darwin.usleep(Self.pollIntervalMicroseconds)
         }
     }
@@ -668,12 +675,15 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
     /// still Pine's original group. When inspection is unknown, signal known
     /// identities individually rather than risking an unrelated reused pgid.
     private func signalIdentitySafeGroup(_ signalValue: Int32) -> Bool {
-        let identities = lock.withLock { Array(knownMembers.values) }
-        let hasCurrentAnchor = identities.contains {
+        let knownIdentities = lock.withLock { Array(knownMembers.values) }
+        let hasCurrentAnchor = knownIdentities.contains {
             Self.isCurrentGroupMember($0, group: identifier)
         }
-        guard hasCurrentAnchor else {
-            return signalKnownMembers(signalValue, identities: identities)
+        guard signalsLeader, hasCurrentAnchor else {
+            return signalKnownMembers(
+                signalValue,
+                identities: signalTargets(knownIdentities)
+            )
         }
 
         if Darwin.kill(-identifier, signalValue) == 0 || errno == ESRCH {
@@ -683,6 +693,13 @@ nonisolated final class UserTaskProcessGroup: @unchecked Sendable {
             "Failed to signal task process group \(self.identifier): errno \(errno)"
         )
         return false
+    }
+
+    private func signalTargets(
+        _ identities: [UserTaskProcessIdentity]
+    ) -> [UserTaskProcessIdentity] {
+        guard !signalsLeader, let leader else { return identities }
+        return identities.filter { $0 != leader }
     }
 
     private func signalKnownMembers(
