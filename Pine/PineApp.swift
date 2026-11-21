@@ -27,6 +27,7 @@ struct PineApp: App {
             arguments: CommandLine.arguments,
             environment: ProcessInfo.processInfo.environment
         )
+        appDelegate.terminalProcessCleanupOwnerRegistry = .shared
     }
 
     private var registry: ProjectRegistry { appDelegate.registry }
@@ -1034,8 +1035,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
     }
 
-    var terminalProcessCleanupOwnerRegistry:
-        TerminalProcessCleanupOwnerRegistry = .shared
+    var terminalProcessCleanupOwnerRegistry = TerminalProcessCleanupOwnerRegistry()
 
     /// Application-wide, permission-gated agent notification coordinator.
     lazy var agentNotifications = AgentNotificationController(
