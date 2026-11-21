@@ -30,7 +30,13 @@ announce_ready() {
 }
 
 spawn_ignoring_child() {
-  /bin/sh -c 'trap "" HUP INT TERM; while :; do /bin/sleep 1; done' &
+  /bin/sh -c '
+    trap "" HUP INT TERM
+    process_group=$(/bin/ps -o pgid= -p "$$" 2>/dev/null | /usr/bin/tr -d " ")
+    printf "phase=child-ready pid=%s pgid=%s\n" \
+      "$$" "${process_group:-0}" >> "$1"
+    while :; do /bin/sleep 1; done
+  ' _ "$trace_file" &
   fixture_child=$!
   record_phase child "$fixture_child"
 }

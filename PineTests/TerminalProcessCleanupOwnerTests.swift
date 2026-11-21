@@ -50,6 +50,7 @@ struct TerminalProcessCleanupOwnerTests {
             }
         }
 
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let paneState = TerminalPaneState()
         let tab = paneState.addTab(
             workingDirectory: directoryURL,
@@ -62,6 +63,8 @@ struct TerminalProcessCleanupOwnerTests {
                 ]
             )
         )
+        tab.processCleanupOwnerRegistry = ownerRegistry
+        defer { paneState.removeTab(id: tab.id) }
         tab.terminalView.frame = NSRect(
             x: 0,
             y: 0,
@@ -75,7 +78,7 @@ struct TerminalProcessCleanupOwnerTests {
             throw PTYFixtureError.processDidNotStart
         }
         let child = try #require(await PTYFixtureTrace.wait(
-            for: "child",
+            for: "child-ready",
             at: traceURL
         ))
         let childIdentity = try #require(child.identity)
@@ -86,23 +89,26 @@ struct TerminalProcessCleanupOwnerTests {
         #expect(paneState.terminalTabs.isEmpty)
         #expect(PTYFixtureTrace.identityIsLive(childIdentity))
 
-        // The barrier application Quit computes: controllers stopped from the
-        // live inventory (empty — the tab is gone) plus the detached
-        // in-flight owners. The removed tab's owner must still be found
-        // (#1786).
-        let barrierControllers = TerminalProcessCleanupOwnerRegistry
-            .applicationTerminationControllers(from: [])
-        #expect(barrierControllers.contains { $0 === controller })
-
-        // Wait on this exact owner so a sibling suite's in-flight cleanup
-        // cannot consume the deadline; the registry membership is pinned above.
-        let quitCompleted = await TerminalTabCloseAuthorization
-            .waitForAuthorizedStops([controller], until: .now() + 10)
+        // Drive the actual AppDelegate Quit transaction. Its live inventory is
+        // empty, so only the injected detached-owner registry can find this tab.
+        let appDelegate = AppDelegate()
+        appDelegate.registry = ProjectRegistry()
+        appDelegate.terminalProcessCleanupOwnerRegistry = ownerRegistry
+        var presentedFailure = false
+        let quitCompleted = await appDelegate.confirmApplicationTermination(
+            presentAlert: { template, _, _, _ in
+                if template == .applicationQuitFailure {
+                    presentedFailure = true
+                }
+                return .alertFirstButtonReturn
+            },
+            terminationDeadlineOverride: .now() + 10
+        )
         #expect(quitCompleted)
+        #expect(!presentedFailure)
         #expect(!PTYFixtureTrace.identityIsLive(childIdentity))
         #expect(PTYFixtureTrace.identityIsLive(unrelatedIdentity))
-        #expect(!TerminalProcessCleanupOwnerRegistry
-            .shared.inFlightControllers.contains { $0 === controller })
+        #expect(!ownerRegistry.inFlightControllers.contains { $0 === controller })
     }
 
     @Test("application termination waits for a suspended detached owner")
@@ -115,8 +121,10 @@ struct TerminalProcessCleanupOwnerTests {
             releaseCleanup.signal()
             retention.finishCleanup(succeeded: true)
         }
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let controller = TerminalProcessTreeController(
             retention: retention,
+            ownerRegistry: ownerRegistry,
             cleanupForTesting: { false },
             deferredCleanupForTesting: {
                 _ = releaseCleanup.wait(timeout: .now() + 5)
@@ -133,7 +141,7 @@ struct TerminalProcessCleanupOwnerTests {
 
         // No tab or manager references this owner any more; only the
         // detached-owner record keeps it in the barrier.
-        let barrierControllers = TerminalProcessCleanupOwnerRegistry
+        let barrierControllers = ownerRegistry
             .applicationTerminationControllers(from: [])
         #expect(barrierControllers.contains { $0 === controller })
 
@@ -151,49 +159,75 @@ struct TerminalProcessCleanupOwnerTests {
             .waitForAuthorizedStops([controller], until: .now() + 5)
         #expect(completed)
         #expect(!retention.isRetained)
-        #expect(!TerminalProcessCleanupOwnerRegistry
-            .shared.inFlightControllers.contains { $0 === controller })
+        #expect(!ownerRegistry.inFlightControllers.contains { $0 === controller })
     }
 
     @Test("multi-element deferred cleanup releases the owner once, after all works")
     func multiElementDeferredCleanupPublishesOnceAfterAllWorks() async throws {
-        // No deferredCleanupForTesting seam: the real multi-element list
-        // (nil-group no-op, pid-0 descendant no-op, pid-0 root no-op) runs,
-        // so the frozen work total must cover every element before the owner
-        // record drops (#1786).
-        for _ in 0..<5 {
-            let retention = TerminalWorkingDirectoryRetention(
-                canonicalDirectory: FileManager.default.temporaryDirectory
-            )
-            defer { retention.finishCleanup(succeeded: true) }
-            let controller = TerminalProcessTreeController(
-                retention: retention,
-                cleanupForTesting: { false }
-            )
-            controller.requestTermination()
-
-            // The owner record drops only after every work has returned;
-            // poll with a bounded deadline and fail closed on it (#1786).
-            let released = await Task.detached(priority: .utility) {
-                let deadline = DispatchTime.now() + 5
-                let stillTracked = {
-                    TerminalProcessCleanupOwnerRegistry
-                        .shared.inFlightControllers
-                        .contains { $0 === controller }
-                }
-                while stillTracked(), DispatchTime.now() < deadline {
-                    Darwin.usleep(10_000)
-                }
-                return !stillTracked()
-            }.value
-            #expect(released)
-
-            // A bounded failure stays fail-closed: the fence is retained
-            // (the Quit path commits it) and the termination truth is a
-            // truthful failure, never a published success (#1786).
-            #expect(retention.isRetained)
-            #expect(!controller.waitForTermination(timeout: 0))
+        let retention = TerminalWorkingDirectoryRetention(
+            canonicalDirectory: FileManager.default.temporaryDirectory
+        )
+        defer { retention.finishCleanup(succeeded: true) }
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
+        let started = (0..<3).map { _ in DispatchSemaphore(value: 0) }
+        let release = (0..<3).map { _ in DispatchSemaphore(value: 0) }
+        let finished = (0..<3).map { _ in DispatchSemaphore(value: 0) }
+        defer { release.forEach { $0.signal() } }
+        let works: [@Sendable () -> Void] = (0..<3).map { index in
+            {
+                started[index].signal()
+                _ = release[index].wait(timeout: .now() + 10)
+                finished[index].signal()
+            }
         }
+        let controller = TerminalProcessTreeController(
+            retention: retention,
+            ownerRegistry: ownerRegistry,
+            cleanupForTesting: { false },
+            deferredCleanupWorksForTesting: works
+        )
+        controller.requestTermination()
+
+        for semaphore in started {
+            let waitForEntry: @Sendable () -> Bool = {
+                semaphore.wait(timeout: .now() + 5) == .success
+            }
+            let entered = await Task.detached(
+                priority: .utility,
+                operation: waitForEntry
+            ).value
+            try #require(entered)
+        }
+        #expect(ownerRegistry.releaseCountForTesting(controller) == 0)
+
+        for index in 0..<2 {
+            release[index].signal()
+            let waitForCompletion: @Sendable () -> Bool = {
+                finished[index].wait(timeout: .now() + 5) == .success
+            }
+            let completed = await Task.detached(
+                priority: .utility,
+                operation: waitForCompletion
+            ).value
+            try #require(completed)
+            #expect(ownerRegistry.releaseCountForTesting(controller) == 0)
+            #expect(ownerRegistry.inFlightControllers.contains { $0 === controller })
+            #expect(retention.isRetained)
+        }
+
+        release[2].signal()
+        let published = await Task.detached(priority: .utility) {
+            let deadline = DispatchTime.now() + 5
+            while ownerRegistry.releaseCountForTesting(controller) == 0,
+                  DispatchTime.now() < deadline {
+                Darwin.usleep(10_000)
+            }
+            return ownerRegistry.releaseCountForTesting(controller)
+        }.value
+        #expect(published == 1)
+        #expect(!ownerRegistry.inFlightControllers.contains { $0 === controller })
+        #expect(!retention.isRetained)
+        #expect(!controller.waitForTermination(timeout: 0))
     }
 
     @Test("repeated close and completion do not leak owner records")
@@ -206,8 +240,10 @@ struct TerminalProcessCleanupOwnerTests {
         // the success-path release is asynchronous on the state queue, and
         // an ungated read could observe the record already gone.
         let phaseGate = DispatchSemaphore(value: 0)
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let controller = TerminalProcessTreeController(
             retention: retention,
+            ownerRegistry: ownerRegistry,
             cleanupForTesting: {
                 _ = phaseGate.wait(timeout: .now() + 5)
                 return true
@@ -217,18 +253,14 @@ struct TerminalProcessCleanupOwnerTests {
         controller.requestTermination()
         controller.requestTermination()
 
-        let recorded = TerminalProcessCleanupOwnerRegistry
-            .shared.inFlightControllers
+        let recorded = ownerRegistry.inFlightControllers
             .filter { $0 === controller }
             .count
         #expect(recorded == 1)
 
         // A controller present in both the live list and the detached-owner
-        // registry must merge to a single element (#1786). Unrelated
-        // in-flight owners from other tests may also appear in the shared
-        // registry; the invariant is this controller's deduplication, not
-        // an empty registry.
-        let merged = TerminalProcessCleanupOwnerRegistry
+        // registry must merge to a single element (#1786).
+        let merged = ownerRegistry
             .applicationTerminationControllers(from: [controller])
         #expect(merged.filter { $0 === controller }.count == 1)
 
@@ -241,7 +273,6 @@ struct TerminalProcessCleanupOwnerTests {
         }.value
         #expect(finished)
         #expect(!retention.isRetained)
-        #expect(!TerminalProcessCleanupOwnerRegistry
-            .shared.inFlightControllers.contains { $0 === controller })
+        #expect(!ownerRegistry.inFlightControllers.contains { $0 === controller })
     }
 }

@@ -258,8 +258,10 @@ struct TerminalPTYProcessTreeTests {
             canonicalDirectory: FileManager.default.temporaryDirectory
         )
         defer { retention.finishCleanup(succeeded: true) }
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let controller = TerminalProcessTreeController(
             retention: retention,
+            ownerRegistry: ownerRegistry,
             cleanupForTesting: { false },
             deferredCleanupForTesting: { Darwin.usleep(100_000) }
         )
@@ -290,8 +292,10 @@ struct TerminalPTYProcessTreeTests {
             releaseCleanup.signal()
             retention.finishCleanup(succeeded: true)
         }
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let controller = TerminalProcessTreeController(
             retention: retention,
+            ownerRegistry: ownerRegistry,
             cleanupForTesting: { false },
             deferredCleanupForTesting: {
                 _ = releaseCleanup.wait(timeout: .now() + 5)
@@ -316,8 +320,10 @@ struct TerminalPTYProcessTreeTests {
         )
         defer { retention.finishCleanup(succeeded: true) }
         let deferredFinished = DispatchSemaphore(value: 0)
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let controller = TerminalProcessTreeController(
             retention: retention,
+            ownerRegistry: ownerRegistry,
             cleanupForTesting: { false },
             deferredCleanupForTesting: { deferredFinished.signal() }
         )
@@ -336,13 +342,12 @@ struct TerminalPTYProcessTreeTests {
         ).value
         #expect(deferredCompleted)
         #expect(!controller.waitForApplicationTermination(timeout: 0))
-        // Deferred completion drops the owner record, but cannot release the
-        // fence or turn an expired application deadline into success (#1786).
+        // Deferred completion releases the fence and owner, but cannot turn
+        // an expired application deadline or bounded failure into success.
         let ownerReleased = await Task.detached(priority: .utility) {
             let deadline = DispatchTime.now() + 5
             let stillTracked = {
-                TerminalProcessCleanupOwnerRegistry
-                    .shared.inFlightControllers
+                ownerRegistry.inFlightControllers
                     .contains { $0 === controller }
             }
             while stillTracked(), DispatchTime.now() < deadline {
@@ -351,7 +356,7 @@ struct TerminalPTYProcessTreeTests {
             return !stillTracked()
         }.value
         #expect(ownerReleased)
-        #expect(retention.isRetained)
+        #expect(!retention.isRetained)
         #expect(!controller.waitForTermination(timeout: 0))
     }
 
@@ -362,10 +367,17 @@ struct TerminalPTYProcessTreeTests {
         )
         defer { retention.finishCleanup(succeeded: true) }
         let deferredFinished = DispatchSemaphore(value: 0)
+        let releaseDeferred = DispatchSemaphore(value: 0)
+        defer { releaseDeferred.signal() }
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let controller = TerminalProcessTreeController(
             retention: retention,
+            ownerRegistry: ownerRegistry,
             cleanupForTesting: { false },
-            deferredCleanupForTesting: { deferredFinished.signal() }
+            deferredCleanupForTesting: {
+                _ = releaseDeferred.wait(timeout: .now() + 5)
+                deferredFinished.signal()
+            }
         )
         controller.requestTermination()
 
@@ -376,6 +388,7 @@ struct TerminalPTYProcessTreeTests {
         // Fail-closed while the deferred outcome is still unknown.
         #expect(retention.isRetained)
 
+        releaseDeferred.signal()
         let waitForDeferred: @Sendable () -> Bool = {
             deferredFinished.wait(timeout: .now() + 3) == .success
         }
@@ -390,8 +403,7 @@ struct TerminalPTYProcessTreeTests {
         let released = await Task.detached(priority: .utility) {
             let deadline = DispatchTime.now() + 5
             let stillTracked = {
-                TerminalProcessCleanupOwnerRegistry
-                    .shared.inFlightControllers
+                ownerRegistry.inFlightControllers
                     .contains { $0 === controller }
             }
             while stillTracked(), DispatchTime.now() < deadline {
@@ -400,10 +412,9 @@ struct TerminalPTYProcessTreeTests {
             return !stillTracked()
         }.value
         #expect(released)
-        // The bounded failure stays fail-closed: the fence is retained (the
-        // Quit path commits it) and the termination truth is a truthful
-        // failure, never a success published against it (#1786).
-        #expect(retention.isRetained)
+        // Actual deferred completion releases the fence without Quit. The
+        // bounded phase remains a truthful failure in its own wait result.
+        #expect(!retention.isRetained)
         #expect(!controller.waitForTermination(timeout: 0))
     }
 

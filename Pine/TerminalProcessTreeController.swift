@@ -7,14 +7,13 @@ import Darwin
 import Dispatch
 import Foundation
 import os
+import SwiftTerm
 
 /// Owns the exact process generation launched for one terminal tab.
 ///
-/// SwiftTerm closes the PTY and sends `SIGTERM` to only its direct child.
-/// Interactive jobs normally move into separate foreground process groups,
-/// and background children can outlive that shell. While the tab is alive,
-/// the shared capture wave samples the identity-qualified descendant tree on
-/// a 25 ms cadence; teardown then runs a bounded TERM-to-KILL cleanup away
+/// SwiftTerm owns TERM/KILL and reaping for its direct child. Pine owns the
+/// identity-qualified descendant tree: the shared capture wave samples it on
+/// a 25 ms cadence, then teardown runs a bounded TERM-to-KILL cleanup away
 /// from the main actor. Start timestamps in the shared process inspectors
 /// prevent PID/PGID reuse from redirecting a signal to an unrelated process.
 nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
@@ -34,7 +33,10 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     private let stateQueue: DispatchQueue
     private let processGroup: UserTaskProcessGroup?
     private let descendantTracker: UserTaskDescendantTracker
+    private let swiftTermOwnsRootLifecycle: Bool
+    private let cleanupOwnerRegistry: TerminalProcessCleanupOwnerRegistry
     private let lock = NSLock()
+    private var rootProcess: LocalProcess?
     private let terminationCompletion = DispatchGroup()
     private let deferredCleanupCompletion = DispatchGroup()
     private var terminationRequested = false
@@ -50,6 +52,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     private let scheduledCaptureCount = UserTaskProcessTelemetryCounter()
     private var cleanupForTesting: (@Sendable () -> Bool)?
     private var deferredCleanupForTesting: (@Sendable () -> Void)?
+    private var deferredCleanupWorksForTesting: [@Sendable () -> Void]?
 
     /// Observes how often the shared wave captured this controller.
     var scheduledCaptureCountForTesting: UInt64 {
@@ -59,8 +62,10 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     /// Pauses/completes the same asynchronous completion path without a PTY.
     init(
         retention: TerminalWorkingDirectoryRetention,
+        ownerRegistry: TerminalProcessCleanupOwnerRegistry = .shared,
         cleanupForTesting: @escaping @Sendable () -> Bool,
-        deferredCleanupForTesting: (@Sendable () -> Void)? = nil
+        deferredCleanupForTesting: (@Sendable () -> Void)? = nil,
+        deferredCleanupWorksForTesting: [@Sendable () -> Void]? = nil
     ) {
         rootIdentity = UserTaskProcessIdentity(
             processID: 0, startSeconds: 0, startMicroseconds: 0
@@ -68,15 +73,21 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         processGroupIdentifier = nil
         processGroup = nil
         descendantTracker = UserTaskDescendantTracker(rootProcessID: 0)
+        swiftTermOwnsRootLifecycle = false
+        cleanupOwnerRegistry = ownerRegistry
+        rootProcess = nil
         stateQueue = DispatchQueue(label: "com.pine.terminal-process-tree.test")
         workingDirectoryRetention = retention
         self.cleanupForTesting = cleanupForTesting
         self.deferredCleanupForTesting = deferredCleanupForTesting
+        self.deferredCleanupWorksForTesting = deferredCleanupWorksForTesting
     }
     #endif
 
     init?(
         rootProcessID: pid_t,
+        rootProcess: LocalProcess? = nil,
+        ownerRegistry: TerminalProcessCleanupOwnerRegistry = .shared,
         retention: TerminalWorkingDirectoryRetention
     ) {
         guard let rootIdentity = UserTaskProcessInspector.identity(
@@ -86,6 +97,9 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         }
 
         self.rootIdentity = rootIdentity
+        self.rootProcess = rootProcess
+        swiftTermOwnsRootLifecycle = rootProcess != nil
+        cleanupOwnerRegistry = ownerRegistry
         workingDirectoryRetention = retention
         // `forkpty` makes its child a session and process-group leader. Never
         // claim a broader inherited group if a future SwiftTerm path changes
@@ -93,7 +107,10 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         let observedGroup = Darwin.getpgid(rootProcessID)
         if observedGroup == rootProcessID {
             processGroupIdentifier = observedGroup
-            processGroup = UserTaskProcessGroup(identifier: observedGroup)
+            processGroup = UserTaskProcessGroup(
+                identifier: observedGroup,
+                signalsLeader: rootProcess == nil
+            )
         } else {
             processGroupIdentifier = nil
             processGroup = nil
@@ -121,7 +138,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         // that started it. A tab closed before application Quit must not drop
         // an in-flight TERM-to-KILL cleanup from the pre-termination barrier
         // (#1786).
-        TerminalProcessCleanupOwnerRegistry.shared.retain(self)
+        cleanupOwnerRegistry.retain(self)
 
         #if DEBUG
         if let cleanupForTesting {
@@ -144,6 +161,8 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
                             descendantTracker.captureDescendants()
                         }
                     )
+                    descendantTracker.captureDescendants()
+                    terminateSwiftTermRootProcess()
                     let descendantsStopped = descendantTracker
                         .terminateTrackedProcesses()
                     let rootStopped = reapRootAfterTerminationRequest()
@@ -182,13 +201,10 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         return lock.withLock { terminationSucceeded }
     }
 
-    /// Application Quit can await the already-running deferred cleanup after
-    /// the ordinary bounded close fails. The caller supplies the outer
-    /// deadline. Once the bounded phase has finished and every deferred work
-    /// has returned, the app is terminating anyway: commit the fence and the
-    /// success truth, and drop the owner record — the same commit the
-    /// pre-#1786 Quit path made. A still-pending cleanup fails the
-    /// termination truthfully at the deadline (#1786).
+    /// Application Quit can await deferred cleanup after the ordinary bounded
+    /// close fails. Completion publishes the fence release and owner removal;
+    /// this wait additionally records successful application termination only
+    /// when that completion arrives before the caller's absolute deadline.
     func waitForApplicationTermination(timeout: TimeInterval) -> Bool {
         let deadline = DispatchTime.now() + max(timeout, 0)
         guard DispatchTime.now() < deadline else { return false }
@@ -205,7 +221,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         else { return false }
         workingDirectoryRetention.finishCleanup(succeeded: true)
         lock.withLock { terminationSucceeded = true }
-        TerminalProcessCleanupOwnerRegistry.shared.release(self)
+        cleanupOwnerRegistry.release(self)
         return true
     }
 
@@ -226,7 +242,9 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
     private func startDeferredCleanup(rootNeedsCleanup: Bool) {
         let works: [@Sendable () -> Void]
         #if DEBUG
-        if let deferredCleanupForTesting {
+        if let deferredCleanupWorksForTesting {
+            works = deferredCleanupWorksForTesting
+        } else if let deferredCleanupForTesting {
             works = [deferredCleanupForTesting]
         } else {
             works = deferredProductionWorks(rootNeedsCleanup: rootNeedsCleanup)
@@ -281,19 +299,33 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         }
     }
 
-    /// Deferred workers run only after a bounded failure, and they return
-    /// only after every observed process is gone. Their completion releases
-    /// the app-termination owner record exactly once — without requiring an
-    /// application Quit (#1786). The working-directory fence and the
-    /// termination truth follow the bounded result only: a bounded failure
-    /// keeps the fence fail-closed (a failed production cleanup must never
-    /// release it) and is never reported as success.
+    /// Deferred workers return only after every observed process is gone.
+    /// Publish that positive completion before dropping the detached owner;
+    /// the bounded `waitForTermination` result remains a separate truth.
     private func publishDeferredCleanupCompletion() {
-        TerminalProcessCleanupOwnerRegistry.shared.release(self)
+        workingDirectoryRetention.finishCleanup(succeeded: true)
+        cleanupOwnerRegistry.release(self)
+    }
+
+    private func terminateSwiftTermRootProcess() {
+        guard swiftTermOwnsRootLifecycle else { return }
+        let process = lock.withLock {
+            defer { rootProcess = nil }
+            return rootProcess
+        }
+        if let process {
+            process.terminate(escalatingAfter: process.killEscalationDelay)
+        }
     }
 
     private func finishDeferredRootCleanup() {
         guard rootIdentity.processID > 1 else { return }
+        if swiftTermOwnsRootLifecycle {
+            while !rootWasReapedBySwiftTerm() {
+                Darwin.usleep(10_000)
+            }
+            return
+        }
         var status: Int32 = 0
         while true {
             let result = Darwin.waitpid(
@@ -325,7 +357,7 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
             terminationFinished = true
         }
         if succeeded {
-            TerminalProcessCleanupOwnerRegistry.shared.release(self)
+            cleanupOwnerRegistry.release(self)
         }
         terminationCompletion.leave()
     }
@@ -363,12 +395,19 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
         descendantTracker.captureDescendants()
     }
 
-    /// SwiftTerm's explicit `terminate()` cancels its process monitor before
-    /// the monitor can call `waitpid`, so Pine becomes responsible for reaping
-    /// that exact direct child. `waitpid` cannot target an unrelated reused
-    /// PID: after the owned child is reaped it returns `ECHILD` instead.
+    /// SwiftTerm retains exclusive signal/waitpid ownership of its direct
+    /// child. Pine only observes that child's reap with non-reaping `waitid`.
+    /// Directly spawned test workloads keep the original Pine-owned path.
     private func reapRootAfterTerminationRequest() -> Bool {
         let deadline = DispatchTime.now() + Self.completionWaitPeriod
+        if swiftTermOwnsRootLifecycle {
+            repeat {
+                if rootWasReapedBySwiftTerm() { return true }
+                Darwin.usleep(10_000)
+            } while DispatchTime.now() < deadline
+            return rootWasReapedBySwiftTerm()
+        }
+
         var status: Int32 = 0
         repeat {
             let result = Darwin.waitpid(
@@ -383,6 +422,17 @@ nonisolated final class TerminalProcessTreeController: @unchecked Sendable {
             Darwin.usleep(10_000)
         } while DispatchTime.now() < deadline
         return false
+    }
+
+    private func rootWasReapedBySwiftTerm() -> Bool {
+        var info = siginfo_t()
+        let result = Darwin.waitid(
+            P_PID,
+            id_t(rootIdentity.processID),
+            &info,
+            WEXITED | WNOHANG | WNOWAIT
+        )
+        return result == -1 && errno == ECHILD
     }
 }
 
@@ -402,8 +452,11 @@ nonisolated final class TerminalProcessCleanupOwnerRegistry:
 
     private let lock = NSLock()
     private var owners: [ObjectIdentifier: TerminalProcessTreeController] = [:]
+    #if DEBUG
+    private var releaseCounts: [ObjectIdentifier: Int] = [:]
+    #endif
 
-    private init() {}
+    init() {}
 
     func retain(_ controller: TerminalProcessTreeController) {
         lock.withLock {
@@ -413,9 +466,21 @@ nonisolated final class TerminalProcessCleanupOwnerRegistry:
 
     func release(_ controller: TerminalProcessTreeController) {
         lock.withLock {
-            _ = owners.removeValue(forKey: ObjectIdentifier(controller))
+            let identifier = ObjectIdentifier(controller)
+            _ = owners.removeValue(forKey: identifier)
+            #if DEBUG
+            releaseCounts[identifier, default: 0] += 1
+            #endif
         }
     }
+
+    #if DEBUG
+    func releaseCountForTesting(
+        _ controller: TerminalProcessTreeController
+    ) -> Int {
+        lock.withLock { releaseCounts[ObjectIdentifier(controller)] ?? 0 }
+    }
+    #endif
 
     /// Detached owners whose cleanup is still in flight.
     var inFlightControllers: [TerminalProcessTreeController] {
@@ -425,7 +490,7 @@ nonisolated final class TerminalProcessCleanupOwnerRegistry:
     /// Pre-termination barrier input: the attached controllers a Quit
     /// transaction stopped plus every detached in-flight owner, deduplicated
     /// so one owner is waited on once (#1786).
-    static func applicationTerminationControllers(
+    func applicationTerminationControllers(
         from liveControllers: [TerminalProcessTreeController]
     ) -> [TerminalProcessTreeController] {
         var merged: [TerminalProcessTreeController] = []
@@ -434,7 +499,7 @@ nonisolated final class TerminalProcessCleanupOwnerRegistry:
             where seen.insert(ObjectIdentifier(controller)).inserted {
             merged.append(controller)
         }
-        for controller in shared.inFlightControllers
+        for controller in inFlightControllers
             where seen.insert(ObjectIdentifier(controller)).inserted {
             merged.append(controller)
         }
