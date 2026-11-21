@@ -1034,6 +1034,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
     }
 
+    var terminalProcessCleanupOwnerRegistry:
+        TerminalProcessCleanupOwnerRegistry = .shared
+
     /// Application-wide, permission-gated agent notification coordinator.
     lazy var agentNotifications = AgentNotificationController(
         registry: registry.agentTasks,
@@ -3749,6 +3752,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         terminalStopControllers.append(
             contentsOf: quickTerminalControllers
         )
+        // A tab or project closed before Quit may already be cleaning up with
+        // no live inventory reference left. The pre-termination barrier must
+        // account for those detached owners as well (#1786).
+        terminalStopControllers = terminalProcessCleanupOwnerRegistry
+            .applicationTerminationControllers(
+                from: terminalStopControllers
+            )
         guard await TerminalTabCloseAuthorization.waitForAuthorizedStops(
             terminalStopControllers,
             until: forwardDeadline

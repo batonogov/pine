@@ -32,7 +32,7 @@ paths:
 
 ## Adding a dependency
 
-- **Dependency:** SwiftTerm added via Xcode SPM (File > Add Package Dependencies > `https://github.com/migueldeicaza/SwiftTerm.git` — upstream, pinned to an exact tag; Pine's rendering patches were upstreamed in 1.99.2, so bumping means updating the pin, not cutting a fork tag)
+- **Dependency:** SwiftTerm added via Xcode SPM. The current pin is `https://github.com/batonogov/SwiftTerm.git` at full revision `17236297368215ed34614dd5315cbe69264c7ac2`, a descendant of upstream v1.99.3 that adds exact-generation TERM-to-KILL escalation while SwiftTerm retains reaping ownership (#1786). Return to an upstream tag once an equivalent lifecycle API is released. Pine's rendering patches were upstreamed in 1.99.2; review every dependency revision and keep `Package.resolved` exact.
 
 ## Utility scripts
 

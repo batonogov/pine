@@ -105,12 +105,24 @@ struct ProjectWindowSessionWorktreeCleanupTests {
         defer { retention.finishCleanup(succeeded: true) }
         let enteredCleanup = DispatchSemaphore(value: 0)
         let releaseCleanup = DispatchSemaphore(value: 0)
+        let releaseDeferredCleanup = DispatchSemaphore(value: 0)
         defer { releaseCleanup.signal() }
-        let processController = TerminalProcessTreeController(retention: retention) {
-            enteredCleanup.signal()
-            guard releaseCleanup.wait(timeout: .now() + 30) == .success else { return false }
-            return cleanupSucceeded
-        }
+        defer { releaseDeferredCleanup.signal() }
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
+        let processController = TerminalProcessTreeController(
+            retention: retention,
+            ownerRegistry: ownerRegistry,
+            cleanupForTesting: {
+                enteredCleanup.signal()
+                guard releaseCleanup.wait(timeout: .now() + 30) == .success else { return false }
+                return cleanupSucceeded
+            },
+            deferredCleanupForTesting: {
+                if !cleanupSucceeded {
+                    _ = releaseDeferredCleanup.wait(timeout: .now() + 30)
+                }
+            }
+        )
         tab.installProcessTreeControllerForTesting(processController)
         // The shell exits now; its descendant cleanup is deterministically paused.
         tab.processDidTerminate()
@@ -135,6 +147,13 @@ struct ProjectWindowSessionWorktreeCleanupTests {
         #expect(tab.requiresWorkingDirectoryRetention == !cleanupSucceeded)
         let completedResult = await registry.withWorktreeRemoval(worktree) { .removed }
         #expect(completedResult == (cleanupSucceeded ? .removed : .failed(.liveProject)))
+        if !cleanupSucceeded {
+            releaseDeferredCleanup.signal()
+            let deferredCompleted = await Task.detached {
+                processController.waitForApplicationTermination(timeout: 10)
+            }.value
+            #expect(deferredCompleted)
+        }
     }
 
     @Test("Detached process cleanup prevents both explicit and automatic project reclamation",

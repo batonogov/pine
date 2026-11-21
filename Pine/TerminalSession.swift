@@ -1987,6 +1987,7 @@ final class TerminalTab: Identifiable, Hashable {
     /// Identity-qualified ownership for the exact shell generation and every
     /// observed descendant launched through this tab's real PTY.
     private var processTreeController: TerminalProcessTreeController?
+    var processCleanupOwnerRegistry: TerminalProcessCleanupOwnerRegistry = .shared
     private var workingDirectoryRetention: TerminalWorkingDirectoryRetention?
     private var processStartValidationTask: Task<Void, Never>?
     private var processStartValidationGeneration = UUID()
@@ -2483,6 +2484,8 @@ final class TerminalTab: Identifiable, Hashable {
         kickPTYWindowSize()
         processTreeController = TerminalProcessTreeController(
             rootProcessID: terminalView.process.shellPid,
+            rootProcess: terminalView.process,
+            ownerRegistry: processCleanupOwnerRegistry,
             retention: retention
         )
         _ = acknowledgedPTYLease.acquire(
@@ -2500,9 +2503,12 @@ final class TerminalTab: Identifiable, Hashable {
         processStartValidationGeneration = UUID()
         processStartValidationTask?.cancel()
         processStartValidationTask = nil
-        processTreeController?.requestTermination()
+        if let processTreeController {
+            processTreeController.requestTermination()
+        } else if let process = terminalView.process {
+            process.terminate(escalatingAfter: process.killEscalationDelay)
+        }
         acknowledgedPTYLease.invalidate()
-        terminalView.terminate()
     }
 
     /// Starts final application-termination cleanup and returns the exact
