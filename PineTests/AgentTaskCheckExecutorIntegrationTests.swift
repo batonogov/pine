@@ -8,6 +8,14 @@ nonisolated private struct CheckCaptureFailure: Error {
     let result: String
 }
 
+/// The executor is driven only from this MainActor-serialized suite, so a
+/// plain holder is safe to send to the main queue from @Sendable callbacks.
+/// The strict cross-toolchain send checker rejects Mutex<AgentTaskCheckExecutor?>
+/// because the executor's mutable state is not Sendable.
+private final class ExecutorHolder: @unchecked Sendable {
+    var executor: AgentTaskCheckExecutor?
+}
+
 @MainActor
 @Suite(.serialized)
 struct AgentTaskCheckExecutorIntegrationTests {
@@ -284,12 +292,12 @@ struct AgentTaskCheckExecutorIntegrationTests {
         let prepared = try await PreparedChecks()
         defer { prepared.fixture.remove() }
         let spawned = Mutex(0)
-        let executorBox = Mutex<AgentTaskCheckExecutor?>(nil)
+        let holder = ExecutorHolder()
         let executor = AgentTaskCheckExecutor(
             registry: prepared.registry, bindings: prepared.bindings,
             runner: { timeout in UserTaskRunner(timeout: timeout, processDidSpawn: { _ in spawned.withLock { $0 += 1 } }) }
         )
-        executorBox.withLock { $0 = executor }
+        holder.executor = executor
         let entered = Mutex(false)
         let editor = AgentVerificationEditorPreflight.available([], isCurrent: {
             let shouldCancel = entered.withLock { value in
@@ -298,7 +306,7 @@ struct AgentTaskCheckExecutorIntegrationTests {
                 return true
             }
             if shouldCancel {
-                DispatchQueue.main.async { executorBox.withLock { $0 }?.cancel(taskID: prepared.task.id) }
+                DispatchQueue.main.async { holder.executor?.cancel(taskID: prepared.task.id) }
             }
             return true
         })
@@ -321,16 +329,16 @@ struct AgentTaskCheckExecutorIntegrationTests {
         let prepared = try await PreparedChecks(commands: [optional, required])
         defer { prepared.fixture.remove() }
         let spawned = Mutex(0)
-        let executorBox = Mutex<AgentTaskCheckExecutor?>(nil)
+        let holder = ExecutorHolder()
         let executor = AgentTaskCheckExecutor(
             registry: prepared.registry, bindings: prepared.bindings,
             runner: { timeout in UserTaskRunner(timeout: timeout, processDidSpawn: { _ in
                 if spawned.withLock({ $0 += 1; return $0 }) == 1 {
-                    DispatchQueue.main.async { executorBox.withLock { $0 }?.cancel(taskID: prepared.task.id) }
+                    DispatchQueue.main.async { holder.executor?.cancel(taskID: prepared.task.id) }
                 }
             }) }
         )
-        executorBox.withLock { $0 = executor }
+        holder.executor = executor
         #expect(await executor.approve(taskID: prepared.task.id, plan: prepared.plan, environment: prepared.environment))
         let result = await prepared.verify(executor)
         #expect(result.status == .cancelled)
