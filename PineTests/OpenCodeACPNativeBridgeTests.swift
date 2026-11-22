@@ -222,7 +222,9 @@ struct OpenCodeACPNativeBridgeTests {
         // failed effect (which would be .unknown).
         #expect(snapshot.state == .cancelled && !snapshot.inputFenced)
         #expect(snapshot.questions.isEmpty && !snapshot.submittedQuestions.isEmpty)
-        #expect(fixture.server.terminalReplyCount == 1)
+        // The terminal reply is written asynchronously: wait for the fake
+        // server to record it instead of racing the pipe read.
+        try #require(await waitUntilMainActor { fixture.server.terminalReplyCount == 1 })
         #expect(fixture.task()?.runs.last?.outcome == nil)
         await fixture.session.stop(deadline: .now.advanced(by: .seconds(2)))
     }
