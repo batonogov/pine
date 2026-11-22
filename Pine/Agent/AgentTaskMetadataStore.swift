@@ -508,6 +508,7 @@ nonisolated private final class AgentTaskStorageHandle {
 /// of the canonical project path and contain value metadata only.
 actor AgentTaskMetadataStore: AgentTaskPersisting {
     static let currentSchemaVersion = 5
+    private static let checkSchemaVersion = 6
     /// Keep ordinary task files readable by schema-3 Pine. Critical one-shot
     /// setup journals and explicit logical settlements (#1756, #1795)
     /// require v4 so older readers preserve rather than shed them.
@@ -591,11 +592,13 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             guard var data = try? encoder.encode(
                 AgentTaskMetadataEnvelope(
                     schemaVersion: tasks.contains(where: {
+                        $0.checkGrant != nil || $0.checkExecution != nil || $0.checkProblem != nil
+                            || $0.evidence.contains(where: { $0.checkExecutionID != nil })
+                    }) ? Self.checkSchemaVersion : (tasks.contains(where: {
                         $0.worktreeSetup != nil
                             || $0.nativeDispatch != nil
                             || $0.runs.contains(where: { $0.logicalSettlement != nil })
-                    })
-                        ? Self.currentSchemaVersion : Self.ordinarySchemaVersion,
+                    }) ? Self.currentSchemaVersion : Self.ordinarySchemaVersion),
                     revision: nextDiskRevision,
                     canonicalProjectPath: project.canonicalProjectPath,
                     canonicalWorktreePath: project.canonicalWorktreePath,
@@ -873,7 +876,8 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             )
             revision = .versioned(envelope.revision)
             requiresMigration = true
-        case Self.ordinarySchemaVersion, Self.worktreeSetupSchemaVersion, Self.currentSchemaVersion:
+        case Self.ordinarySchemaVersion, Self.worktreeSetupSchemaVersion,
+             Self.currentSchemaVersion, Self.checkSchemaVersion:
             guard let envelope = try? decoder.decode(
                 AgentTaskMetadataEnvelope.self,
                 from: data
@@ -892,7 +896,12 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
         default:
             return rejectedLoad(.unknownSchema)
         }
-        guard header.schemaVersion >= Self.currentSchemaVersion
+        guard header.schemaVersion >= Self.checkSchemaVersion
+            || !storedTasks.contains(where: {
+                $0.checkGrant != nil || $0.checkExecution != nil || $0.checkProblem != nil
+                    || $0.evidence.contains(where: { $0.checkExecutionID != nil })
+            }),
+              header.schemaVersion >= Self.currentSchemaVersion
             || (!storedTasks.contains(where: { $0.worktreeSetup != nil || $0.nativeDispatch != nil })
                 && !storedTasks.contains(where: {
                     $0.runs.contains(where: { $0.logicalSettlement != nil })
@@ -1684,7 +1693,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             // Every versioned schema (v2 and up) carries the revision UUID
             // used for the publication fence.
             guard header.schemaVersion >= 2,
-                  header.schemaVersion <= Self.currentSchemaVersion,
+                  header.schemaVersion <= Self.checkSchemaVersion,
                   let revision = header.revision else { return false }
             return expected == .versioned(revision)
         }
@@ -2102,6 +2111,9 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                 // Facts must stay bound to runs that survive the trim; an
                 // orphaned runID would fail validateEvidence on re-save.
                 let retainedRunIDs = Set(bounded.runs.map(\.id))
+                if bounded.checkExecution.map({ !retainedRunIDs.contains($0.runID) }) == true {
+                    bounded.checkExecution = nil
+                }
                 bounded.evidence = bounded.evidence.filter {
                     retainedRunIDs.contains($0.runID)
                 }
@@ -2172,6 +2184,18 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               task.runs.allSatisfy(validateRun),
               task.environment.map(Self.validStoredEnvironment) ?? true,
               task.worktreeSetup.map({ Self.validWorktreeSetup($0, for: task) }) ?? true,
+              task.checkGrant.map({
+                  $0.scheme == AgentTaskCheckGrant.currentScheme && $0.taskID == task.id
+                      && AgentTaskCheckPlan.validFingerprint($0.planFingerprint)
+                      && Self.validEnvironment($0.environment) && validDate($0.approvedAt)
+                      && validOptionalDate($0.revokedAt)
+              }) ?? true,
+              task.checkExecution.map({ execution in
+                  execution.isValid(for: task) && task.checkGrant.map {
+                      $0.id == execution.grantID && $0.planFingerprint == execution.planFingerprint
+                          && $0.environment == execution.environment
+                  } == true
+              }) ?? true,
               task.nativeDispatch.map({ $0.isValid(for: task) }) ?? (task.route.surface != .ownedProcess),
               validateFeedback(task.feedback),
               validateRevisions(task),
@@ -2532,6 +2556,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
                   fact.processGeneration == run.process.processGeneration,
                   fact.observedAt.timeIntervalSinceReferenceDate.isFinite,
                   fact.observedAt >= run.startedAt,
+                  fact.checkExecutionID == nil || fact.kind == .independentCheck,
                   fact.kind == .reviewerOutcome
                       || (fact.reviewerSession == nil && fact.criteriaDigest == nil),
                   fact.sourceSequence.map({ $0 > 0 }) ?? true,

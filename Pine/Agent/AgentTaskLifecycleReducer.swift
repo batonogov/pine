@@ -95,6 +95,7 @@ nonisolated enum AgentTaskLifecycleReducer {
               fact.kind.allowsVerifiedTrust || fact.trust != .verified,
               fact.observedAt.timeIntervalSinceReferenceDate.isFinite,
               fact.processGeneration > 0,
+              fact.checkExecutionID == nil || fact.kind == .independentCheck,
               fact.kind == .reviewerOutcome
                   || (fact.reviewerSession == nil && fact.criteriaDigest == nil),
               fact.sourceSequence.map({ $0 > 0 }) ?? true else {

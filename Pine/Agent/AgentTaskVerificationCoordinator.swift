@@ -69,6 +69,7 @@ nonisolated struct AgentTaskCheckObservation: Equatable, Sendable {
     }
 
     struct CommandResult: Equatable, Sendable {
+        let operationID: UUID
         /// 64-hex command fingerprint; never the literal arguments.
         let fingerprint: String
         let required: Bool
@@ -82,6 +83,14 @@ nonisolated struct AgentTaskCheckObservation: Equatable, Sendable {
     let taskID: UUID
     let runID: UUID
     let passID: UUID
+    let executionID: UUID
+    let planFingerprint: String
+    let processGeneration: UInt64
+    let journalCompleted: Bool
+    /// Terminal cancellation of the whole execution, including after a completed journal.
+    var cancelled = false
+    /// Any runtime authority revocation invalidates the observation, even if its persistence raced a write.
+    var authorityRevoked = false
     let results: [CommandResult]
     let preCodeState: AgentTaskCodeStateIdentity?
     let postCodeState: AgentTaskCodeStateIdentity?
@@ -97,11 +106,18 @@ nonisolated struct AgentTaskCheckObservation: Equatable, Sendable {
     /// The required set produced a verdict against stable, fully observed
     /// identities. Anything else (timeout, cancellation, launch, identity,
     /// or authority problems) establishes no fact at all.
-    var isJudgment: Bool {
+    var hasCompleteRequiredJudgment: Bool {
         let required = results.filter(\.required)
-        return !required.isEmpty
-            && required.allSatisfy(\.isJudgment)
-            && identitiesAreStable
+        return journalCompleted && processGeneration > 0 && !authorityRevoked
+            && AgentTaskCheckPlan.validFingerprint(planFingerprint)
+            && !required.isEmpty && required.allSatisfy(\.isJudgment)
+            && Set(results.map(\.operationID)).count == results.count
+            && Set(results.map(\.fingerprint)).count == results.count
+            && results.allSatisfy { AgentTaskCheckPlan.validFingerprint($0.fingerprint) }
+    }
+
+    var isJudgment: Bool {
+        hasCompleteRequiredJudgment && identitiesAreStable
     }
 
     var requiredSucceeded: Bool {
@@ -110,7 +126,21 @@ nonisolated struct AgentTaskCheckObservation: Equatable, Sendable {
     }
 
     var requiredCancelled: Bool {
-        results.contains { $0.required && $0.status == .cancelled }
+        cancelled || results.contains { $0.required && $0.status == .cancelled }
+    }
+
+    static func blocked(
+        request: AgentTaskVerificationCheckRequest, planFingerprint: String,
+        cancelled: Bool, authorityRevoked: Bool
+    ) -> Self {
+        AgentTaskCheckObservation(
+            taskID: request.taskID, runID: request.runID, passID: request.passID,
+            executionID: UUID(), planFingerprint: planFingerprint,
+            processGeneration: request.processGeneration, journalCompleted: false,
+            cancelled: cancelled, authorityRevoked: authorityRevoked,
+            results: [], preCodeState: nil, postCodeState: nil,
+            environment: request.expected.environment
+        )
     }
 }
 
@@ -182,6 +212,7 @@ nonisolated struct AgentTaskVerificationCheckRequest: Equatable, Sendable {
     let taskID: UUID
     let runID: UUID
     let passID: UUID
+    let processGeneration: UInt64
     let expected: AgentVerificationIdentitySnapshot
     /// 1-based infrastructure attempt within this pass.
     let attempt: Int
@@ -444,6 +475,34 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
             }
             return result
         }
+        // The executor returned a durable journal; revalidate authority and
+        // identity again before this coordinator admits its aggregate fact.
+        guard let grantTask = registry.task(for: taskID) else {
+            return obsoleteResult(registry, pass: pass)
+        }
+        let grantBeforeEvidence = await ports.grantIsCurrent(grantTask)
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
+        }
+        guard grantBeforeEvidence else {
+            return finish(
+                registry, taskID: taskID, identity: anchor, status: .notReady,
+                escalation: .init(reason: .checkGrantNotCurrent, action: .approveCheckGrant)
+            )
+        }
+        guard let identityTask = registry.task(for: taskID) else {
+            return obsoleteResult(registry, pass: pass)
+        }
+        let identityBeforeEvidence = await ports.probeIdentity(identityTask)
+        guard passIsCurrent(registry, pass: pass) else {
+            return obsoleteResult(registry, pass: pass)
+        }
+        guard identityBeforeEvidence == anchor else {
+            return finish(
+                registry, taskID: taskID, identity: identityBeforeEvidence, status: .notReady,
+                escalation: .init(reason: .identityNotCurrent, action: nil)
+            )
+        }
 
         let checkRecord = await record(
             registry,
@@ -660,7 +719,7 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
             }
             let request = AgentTaskVerificationCheckRequest(
                 taskID: pass.taskID, runID: pass.runID, passID: pass.id,
-                expected: anchor, attempt: attempt
+                processGeneration: pass.processGeneration, expected: anchor, attempt: attempt
             )
             let observation: AgentTaskCheckObservation
             do {
@@ -684,11 +743,11 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
                     registry, taskID: pass.taskID, identity: anchor, status: .cancelled
                 ))
             }
-            let required = observation.results.filter(\.required)
-            if !required.isEmpty && required.allSatisfy(\.isJudgment) {
+            if observation.hasCompleteRequiredJudgment {
                 guard observation.taskID == request.taskID,
                       observation.runID == request.runID,
                       observation.passID == request.passID,
+                      observation.processGeneration == pass.processGeneration,
                       observation.preCodeState == anchor.code,
                       observation.postCodeState == anchor.code,
                       observation.environment == anchor.environment else {
@@ -835,7 +894,8 @@ nonisolated struct AgentTaskVerificationCoordinator: Sendable {
             codeState: observation.preCodeState,
             environment: observation.environment,
             preOperationCodeState: observation.preCodeState,
-            postOperationCodeState: observation.postCodeState
+            postOperationCodeState: observation.postCodeState,
+            checkExecutionID: observation.executionID
         )
     }
 

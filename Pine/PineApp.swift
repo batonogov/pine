@@ -3651,6 +3651,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
 
+        guard await registry.shutdownCheckExecutions(until: forwardDeadline) else {
+            await rollbackAgentTasks()
+            await presentTerminationFailure()
+            return false
+        }
         var preparedUserTaskShutdown = false
         if registry.hasOutstandingUserTaskExecution {
             guard await registry.shutdownUserTasks(
@@ -3785,7 +3790,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
         // The waits above suspend the main actor. Reject any process/tab/task
         // generation that appeared before the final synchronous commit.
-        guard destructiveAuthorizationsStillCoverCurrentState() else {
+        guard destructiveAuthorizationsStillCoverCurrentState(),
+              registry.agentTasks.checkShutdownIsPrepared else {
             await rollbackAfterRequestedTerminalStops()
             await presentTerminationFailure()
             return false

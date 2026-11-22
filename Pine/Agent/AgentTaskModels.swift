@@ -606,6 +606,8 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
     /// this fact's `codeState`. Every other fact kind carries neither.
     let preOperationCodeState: AgentTaskCodeStateIdentity?
     let postOperationCodeState: AgentTaskCodeStateIdentity?
+    /// Pine-owned aggregate journal, never a provider-reported pass.
+    let checkExecutionID: UUID?
 
     init(
         kind: AgentTaskEvidenceKind,
@@ -621,7 +623,8 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
         criteriaDigest: String? = nil,
         sourceSequence: UInt64? = nil,
         preOperationCodeState: AgentTaskCodeStateIdentity? = nil,
-        postOperationCodeState: AgentTaskCodeStateIdentity? = nil
+        postOperationCodeState: AgentTaskCodeStateIdentity? = nil,
+        checkExecutionID: UUID? = nil
     ) {
         self.kind = kind
         self.runID = runID
@@ -637,6 +640,7 @@ nonisolated struct AgentTaskEvidenceFact: Codable, Hashable, Sendable {
         self.sourceSequence = sourceSequence
         self.preOperationCodeState = preOperationCodeState
         self.postOperationCodeState = postOperationCodeState
+        self.checkExecutionID = checkExecutionID
     }
 
     var eventIdentity: AgentTaskEvidenceEventIdentity {
@@ -1086,6 +1090,10 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     // Independent review and bounded corrections (#1755): the durable
     // review-cycle journal. Additive: older metadata decodes to nil.
     var reviewCycle: AgentTaskCorrectionCycle?
+    // Pine-observed required checks (#1754); no literal argv or output.
+    var checkGrant: AgentTaskCheckGrant?
+    var checkExecution: AgentTaskCheckExecution?
+    var checkProblem: AgentTaskCheckExecution.Status?
 
     var reservedAndObservedRunIDs: [UUID] {
         let observed = runs.map(\.id)
@@ -1130,6 +1138,9 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case worktreeSetup
         case nativeDispatch
         case reviewCycle
+        case checkGrant
+        case checkExecution
+        case checkProblem
     }
 
     init(
@@ -1172,6 +1183,9 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         worktreeSetup = nil
         nativeDispatch = nil
         reviewCycle = nil
+        checkGrant = nil
+        checkExecution = nil
+        checkProblem = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -1273,6 +1287,9 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         worktreeSetup = try values.decodeIfPresent(AgentTaskReservedWorktreeCheckpoint.self, forKey: .worktreeSetup)
         nativeDispatch = try values.decodeIfPresent(AgentTaskNativeDispatch.self, forKey: .nativeDispatch)
         reviewCycle = try values.decodeIfPresent(AgentTaskCorrectionCycle.self, forKey: .reviewCycle)
+        checkGrant = try values.decodeIfPresent(AgentTaskCheckGrant.self, forKey: .checkGrant)
+        checkExecution = try values.decodeIfPresent(AgentTaskCheckExecution.self, forKey: .checkExecution)
+        checkProblem = try values.decodeIfPresent(AgentTaskCheckExecution.Status.self, forKey: .checkProblem)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1318,6 +1335,9 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         try values.encodeIfPresent(worktreeSetup, forKey: .worktreeSetup)
         try values.encodeIfPresent(nativeDispatch, forKey: .nativeDispatch)
         try values.encodeIfPresent(reviewCycle, forKey: .reviewCycle)
+        try values.encodeIfPresent(checkGrant, forKey: .checkGrant)
+        try values.encodeIfPresent(checkExecution, forKey: .checkExecution)
+        try values.encodeIfPresent(checkProblem, forKey: .checkProblem)
     }
 }
 
