@@ -12,6 +12,26 @@ nonisolated enum CodexAppServerRequestID: Hashable, Sendable,
     case integer(Int64)
     case string(String)
 
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case let (.integer(left), .integer(right)): left == right
+        case let (.string(left), .string(right)): left.utf8.elementsEqual(right.utf8)
+        default: false
+        }
+    }
+
+    func hash(into hasher: inout Hasher) {
+        switch self {
+        case .integer(let value):
+            hasher.combine(0)
+            hasher.combine(value)
+        case .string(let value):
+            hasher.combine(1)
+            hasher.combine(value.utf8.count)
+            for byte in value.utf8 { hasher.combine(byte) }
+        }
+    }
+
     var description: String { "<redacted:codex-request-id>" }
     var debugDescription: String { description }
     var customMirror: Mirror { Mirror(self, children: ["value": description]) }
@@ -52,10 +72,10 @@ nonisolated enum CodexAppServerMessage: Equatable, Sendable,
     var debugDescription: String { description }
     var customMirror: Mirror { Mirror(self, children: ["value": description]) }
 
-    init(data: Data) throws {
+    init(data: Data, requireJSONRPCVersion: Bool = false) throws {
         var parser = AgentEventJSONParser(data: data)
         guard case .object(let fields) = try parser.parse(),
-              fields["jsonrpc"] == nil || fields["jsonrpc"] == .string("2.0") else {
+              fields["jsonrpc"] == .string("2.0") || (!requireJSONRPCVersion && fields["jsonrpc"] == nil) else {
             throw CodexAppServerWireError.invalidEnvelope
         }
         if let methodValue = fields["method"] {
@@ -118,6 +138,11 @@ nonisolated struct CodexAppServerFramer {
     static let maximumDepth = 64
     private var frame = Data()
     private(set) var isClosed = false
+    private let requireJSONRPCVersion: Bool
+
+    init(requireJSONRPCVersion: Bool = false) {
+        self.requireJSONRPCVersion = requireJSONRPCVersion
+    }
 
     mutating func receive(
         _ bytes: Data,
@@ -129,7 +154,7 @@ nonisolated struct CodexAppServerFramer {
                 if byte == 10 {
                     guard !frame.isEmpty else { throw CodexAppServerWireError.invalidEnvelope }
                     try validateDepth()
-                    let message = try CodexAppServerMessage(data: frame)
+                    let message = try CodexAppServerMessage(data: frame, requireJSONRPCVersion: requireJSONRPCVersion)
                     frame.removeAll(keepingCapacity: true)
                     try deliver(message)
                 } else {

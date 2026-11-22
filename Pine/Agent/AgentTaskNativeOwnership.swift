@@ -46,6 +46,9 @@ nonisolated final class AgentTaskNativeOwnership: Sendable, CustomStringConverti
         var initialInput: InitialInput = .disabled
         var cancellationPending = false
         var cancellationDurable = false
+        /// Once the cancellation persisted, terminal wire answers to owned
+        /// requests stay permitted even after the submission is suspended.
+        var cancellationWasDurable = false
         var submissionID: UUID?
         var submissionReceipt: AgentTaskNativeSubmissionReceipt?
         var isInitialSubmission = true
@@ -83,6 +86,9 @@ nonisolated final class AgentTaskNativeOwnership: Sendable, CustomStringConverti
         self.filesystem = filesystem
         self.bindings = bindings
         environmentDigest = try Self.digest(environment)
+        if policy.agentID.value == "openCode" {
+            NotificationCenter.default.post(name: .openCodeNativeOwnershipPrepared, object: self)
+        }
     }
 
     func bindSource(_ source: ValidatedAgentSourceIdentity) throws {
@@ -301,7 +307,21 @@ nonisolated final class AgentTaskNativeOwnership: Sendable, CustomStringConverti
     func validateLaunch(environment: [String: String]) throws { try checkLaunch(environment: environment) }
     func validateSubmission(_ receipt: AgentTaskNativeSubmissionReceipt) throws { try checkSubmission(receipt) }
     func validateControl() throws { try checkControl() }
-    func validateCancellation() throws { try checkCancellation() }
+    func validateCancellation() throws {
+        try validate()
+        try state.withLock {
+            // Strict durable window: once the provider confirmed the
+            // cancellation and the submission was suspended, the
+            // cancellation is consumed and must no longer validate. The
+            // production .cancellation wire gate (checkCancellation) is
+            // deliberately broader: terminal answers to owned requests
+            // stay permitted after suspension (cancellationWasDurable).
+            guard $0.active, $0.admitted, $0.cancellationPending,
+                  $0.cancellationDurable else {
+                throw AgentTaskNativeAdmissionError.unavailable
+            }
+        }
+    }
     func validateInitialInput() throws {
         try validate()
         try state.withLock {
@@ -328,12 +348,14 @@ nonisolated final class AgentTaskNativeOwnership: Sendable, CustomStringConverti
         try state.withLock {
             guard $0.admitted, $0.cancellationPending else { throw AgentTaskNativeAdmissionError.invalidTransition }
             $0.cancellationDurable = true
+            $0.cancellationWasDurable = true
         }
     }
     private func checkCancellation() throws {
         try validate()
         try state.withLock {
-            guard $0.active, $0.admitted, $0.cancellationPending, $0.cancellationDurable else {
+            guard $0.active, $0.admitted, $0.cancellationPending,
+                  $0.cancellationDurable || $0.cancellationWasDurable else {
                 throw AgentTaskNativeAdmissionError.unavailable
             }
         }

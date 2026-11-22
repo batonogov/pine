@@ -16,14 +16,18 @@ nonisolated final class CodexAppServerStdioChannel: @unchecked Sendable {
     private var active: Set<Direction> = []
     private var handlesClosed = false
     // Accessed exclusively by the single admitted output operation.
-    private var framer = CodexAppServerFramer()
+    private var framer: CodexAppServerFramer
+    let requiresJSONRPCVersion: Bool
     private var buffered = Data()
     private var outputEnded = false
 
-    init(standardInput: FileHandle, standardOutput: FileHandle, standardError: FileHandle) throws {
+    init(standardInput: FileHandle, standardOutput: FileHandle, standardError: FileHandle,
+         requireJSONRPCVersion: Bool = false) throws {
         input = standardInput
         output = standardOutput
         error = standardError
+        requiresJSONRPCVersion = requireJSONRPCVersion
+        framer = CodexAppServerFramer(requireJSONRPCVersion: requireJSONRPCVersion)
         do {
             for handle in [input, output, error] {
                 let flags = fcntl(handle.fileDescriptor, F_GETFL)
