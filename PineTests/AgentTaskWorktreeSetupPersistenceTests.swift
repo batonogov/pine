@@ -471,7 +471,7 @@ nonisolated private struct SetupPersistenceFixture: Sendable {
         let terminal = UUID()
         return AgentTaskBridgeContext(project: identity, route: AgentTaskRoute(paneID: UUID(), tabID: terminal,
             terminalID: terminal, availability: availability), origin: .pineLaunched,
-            observedAt: Date(timeIntervalSince1970: 1_794_700_000))
+            observedAt: Date())
     }
     @MainActor func task() -> AgentTask {
         var task = AgentTask(descriptor: AgentDescriptor(agentType: .codex), context: context())
