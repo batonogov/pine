@@ -1293,6 +1293,10 @@ final class ProjectRegistry: LSPSettingsObserver {
     let lspSettings: LSPSettings
     /// Application-lifetime durable agent identity across every project.
     let agentTasks: AgentTaskRegistry
+    /// The existing app owner retains OpenCode runtimes; this is not a task store.
+    @ObservationIgnored private lazy var openCodeNativeComposition =
+        OpenCodeACPNativeComposition(tasks: agentTasks)
+    @ObservationIgnored private var openCodeNativeObserver: NSObjectProtocol?
     @ObservationIgnored
     weak var quickTerminalAgentRouter: (any QuickTerminalAgentRouting)?
 
@@ -1499,6 +1503,36 @@ final class ProjectRegistry: LSPSettingsObserver {
         _ = self.agentTasks.addTaskChangeObserver { [weak self] _, tasks in
             self?.recomputeAgentInboxAttentionCounts(tasks: tasks)
         }
+        openCodeNativeObserver = NotificationCenter.default.addObserver(
+            forName: .openCodeNativeOwnershipPrepared, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let ownership = note.object as? AgentTaskNativeOwnership else { return }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let task = self.agentTasks.task(for: ownership.policy.taskID),
+                      task.descriptor.typeIdentifier == ownership.policy.agentID.value else {
+                    return
+                }
+                await self.openCodeNativeComposition.prepare(ownership)
+            }
+        }
+    }
+
+    isolated deinit {
+        if let openCodeNativeObserver {
+            NotificationCenter.default.removeObserver(openCodeNativeObserver)
+        }
+    }
+
+    func openCodeRuntime(for taskID: UUID) -> OpenCodeACPTaskRuntime? {
+        openCodeNativeComposition.runtime(for: taskID)
+    }
+
+    @discardableResult
+    func composeOpenCodeRuntime(
+        _ materials: OpenCodeACPNativeMaterials
+    ) async throws -> OpenCodeACPTaskRuntime {
+        try await openCodeNativeComposition.compose(materials)
     }
 
     private static func makeDefaultAgentTaskRegistry() -> AgentTaskRegistry {

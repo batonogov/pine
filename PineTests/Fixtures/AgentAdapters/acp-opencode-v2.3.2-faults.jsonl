@@ -1,0 +1,8 @@
+{"method":"session/update","params":{}}
+{not-json
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_foreign","update":{"sessionUpdate":"tool_call"}}}
+{"id":30,"jsonrpc":"2.0","method":"elicitation/create","params":{"message":"Which color?","mode":"form","requestedSchema":{"properties":{"color":{"oneOf":[{"const":"blue","title":"Blue"},{"const":"amber","title":"Amber"}],"type":"string"}},"required":["color"],"type":"object"},"sessionId":"ses_fixture"}}
+{"jsonrpc":"2.0","method":"$/cancel_request","params":{"requestId":999}}
+{"jsonrpc":"2.0","method":"opencode/session/child_update","params":{"rootSessionId":"ses_fixture","childSessionId":"ses_child","parentSessionId":"ses_fixture","depth":0,"type":"status","status":"running"}}
+{"id":31,"jsonrpc":"2.0","method":"session/request_permission","params":{"options":[{"kind":"allow_once","optionId":"once"}],"sessionId":"ses_fixture","toolCall":{"title":"Write fixture.txt","toolCallId":"write_1"}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_fixture","update":{"content":[{"content":{"text":"token sk-fake-SECRET-abc123 in tool output","type":"text"},"type":"content"}],"sessionUpdate":"tool_call_update","status":"completed","toolCallId":"secret-tool"}}}
