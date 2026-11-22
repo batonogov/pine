@@ -307,7 +307,21 @@ nonisolated final class AgentTaskNativeOwnership: Sendable, CustomStringConverti
     func validateLaunch(environment: [String: String]) throws { try checkLaunch(environment: environment) }
     func validateSubmission(_ receipt: AgentTaskNativeSubmissionReceipt) throws { try checkSubmission(receipt) }
     func validateControl() throws { try checkControl() }
-    func validateCancellation() throws { try checkCancellation() }
+    func validateCancellation() throws {
+        try validate()
+        try state.withLock {
+            // Strict durable window: once the provider confirmed the
+            // cancellation and the submission was suspended, the
+            // cancellation is consumed and must no longer validate. The
+            // production .cancellation wire gate (checkCancellation) is
+            // deliberately broader: terminal answers to owned requests
+            // stay permitted after suspension (cancellationWasDurable).
+            guard $0.active, $0.admitted, $0.cancellationPending,
+                  $0.cancellationDurable else {
+                throw AgentTaskNativeAdmissionError.unavailable
+            }
+        }
+    }
     func validateInitialInput() throws {
         try validate()
         try state.withLock {
