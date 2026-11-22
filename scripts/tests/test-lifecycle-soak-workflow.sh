@@ -53,8 +53,6 @@ required_test_evidence=(
     "hasActiveFileWatcherForTesting"
     "AgentDetector(maxSessionHistory: 4)"
     "Fixtures/codex"
-    "exerciseLSPCrashAndRestart"
-    "shutdownGracefully"
     "descriptorNoiseAllowance"
     "minimumHardMemoryBytes"
 )

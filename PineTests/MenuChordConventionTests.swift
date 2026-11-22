@@ -87,18 +87,6 @@ struct MenuChordConventionTests {
         #expect(chord.displayText == "⌥⌘Z")
     }
 
-    @Test(
-        "diagnostics moved off bare F8 onto Command-Option arrows mirroring change navigation"
-    )
-    func diagnosticChords() throws {
-        let next = try #require(UserCommand.nextDiagnostic.defaultChord)
-        let previous = try #require(UserCommand.previousDiagnostic.defaultChord)
-        #expect(next == UserKeybindingRegistry.parse("cmd+option+down"))
-        #expect(previous == UserKeybindingRegistry.parse("cmd+option+up"))
-        #expect(next.displayText == "⌥⌘↓")
-        #expect(previous.displayText == "⌥⌘↑")
-    }
-
     /// The retired chords must stay retired. If a future command picks up
     /// `option+z`, `f8`, or `shift+f8` as its default, it reintroduces the
     /// #1564 defect through the back door.
@@ -125,17 +113,4 @@ struct MenuChordConventionTests {
         }
     }
 
-    /// The replacement chords mirror Next/Previous Change (⌃⌥↓/↑) on the
-    /// Command family. That pairing is only useful while the two families
-    /// stay distinct — ⌥⌘↓ must never quietly become the change chord.
-    @Test("diagnostic arrows stay distinct from change arrows")
-    func diagnosticArrowsDoNotCollideWithChangeArrows() throws {
-        let nextChange = try #require(UserCommand.nextChange.defaultChord)
-        let nextDiagnostic = try #require(
-            UserCommand.nextDiagnostic.defaultChord
-        )
-        #expect(nextChange != nextDiagnostic)
-        #expect(nextChange.displayText == "⌃⌥↓")
-        #expect(nextDiagnostic.displayText == "⌥⌘↓")
-    }
 }

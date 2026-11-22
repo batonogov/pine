@@ -55,9 +55,8 @@ final class ConfigValidator {
     private(set) var diagnosticsRevision: UInt64?
 
     /// Advances whenever a validation result is committed, including an empty
-    /// result identical to the preceding one. Observing the diagnostics array
-    /// alone misses that case and can leave an old revision attributed to new
-    /// content in the project-wide Problems panel.
+    /// result identical to the preceding one, so consumers can distinguish a
+    /// fresh empty result from an older revision.
     private(set) var diagnosticsResultGeneration: UInt64 = 0
 
     /// Whether validation is currently running.

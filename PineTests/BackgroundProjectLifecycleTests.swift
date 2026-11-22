@@ -99,7 +99,6 @@ struct BackgroundProjectLifecycleTests {
         #expect(manager.workspace.isSuspended)
         #expect(!manager.workspace.hasActiveFileWatcherForTesting)
         #expect(manager.recoveryManager?.isPeriodicSnapshotting == false)
-        #expect(manager.lspManager.presentationLifecycle == .backgroundSuspended)
         #expect(manager.editorServiceSuspendCountForTesting == 1)
 
         let reopened = try #require(registry.projectManager(for: directory))
@@ -111,7 +110,6 @@ struct BackgroundProjectLifecycleTests {
         #expect(!manager.workspace.isSuspended)
         #expect(manager.workspace.hasActiveFileWatcherForTesting)
         #expect(manager.recoveryManager?.isPeriodicSnapshotting == true)
-        #expect(manager.lspManager.presentationLifecycle == .active)
         #expect(manager.editorServiceResumeCountForTesting == 1)
     }
 
@@ -768,7 +766,6 @@ struct BackgroundProjectLifecycleTests {
 
         #expect(manager.presentationLifecycle == .destroyed)
         #expect(manager.workspace.isSuspended)
-        #expect(manager.lspManager.presentationLifecycle == .invalidated)
         #expect(manager.terminal.isPermanentlyInvalidated)
         #expect(!manager.terminal.isAgentDetectionPolling)
         #expect(registry.agentSnapshotSubscriberCountForTesting == 0)

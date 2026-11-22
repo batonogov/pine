@@ -18,7 +18,6 @@ nonisolated enum LogCategory: String, CaseIterable {
     case editor
     case app
     case migration
-    case lsp
     case task
     case extensibility
     case agent
@@ -52,9 +51,6 @@ nonisolated extension Logger {
 
     /// Миграции данных.
     static let migration = Logger(subsystem: LogCategory.subsystem, category: LogCategory.migration.rawValue)
-
-    /// LSP: language server lifecycle, JSON-RPC transport, diagnostics.
-    static let lsp = Logger(subsystem: LogCategory.subsystem, category: LogCategory.lsp.rawValue)
 
     /// User-defined tasks/commands (issue #1009).
     static let task = Logger(subsystem: LogCategory.subsystem, category: LogCategory.task.rawValue)

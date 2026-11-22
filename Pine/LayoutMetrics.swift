@@ -57,11 +57,4 @@ nonisolated enum LayoutMetrics {
     /// Horizontal padding for search result rows and headers.
     static let searchResultHorizontalPadding: CGFloat = 8
 
-    // MARK: - Problems panel (#1236)
-
-    /// Problems panel header bar height (title + close button row).
-    static let problemsPanelHeaderHeight: CGFloat = 28
-
-    /// Fixed height of the collapsible bottom Problems panel.
-    static let problemsPanelHeight: CGFloat = 220
 }

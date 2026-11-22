@@ -9,10 +9,9 @@ import Foundation
 
 /// A pure, UTF-16 based Python indentation-fold calculator.
 ///
-/// Python's configured LSP server (Pyright) does not advertise
-/// `textDocument/foldingRange`, so bracket pairs alone cannot preserve useful
-/// offline folding for `class`, `def`, and control-flow suites. This
-/// calculator supplies that local structure without adding a parser
+/// Bracket pairs alone cannot preserve useful folding for `class`, `def`,
+/// and control-flow suites. This calculator supplies that local structure
+/// without adding a parser
 /// dependency. It is intentionally tolerant of incomplete buffers: malformed
 /// nested declarations cannot erase a valid enclosing suite.
 ///

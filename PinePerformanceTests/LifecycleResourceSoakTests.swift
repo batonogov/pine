@@ -375,7 +375,6 @@ final class LifecycleResourceSoakTests: XCTestCase {
 
         let defaultsName = "io.github.batonogov.pine.lifecycle-soak.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
-        defaults.set(false, forKey: LSPSettings.Keys.enabled)
         defer { defaults.removePersistentDomain(forName: defaultsName) }
 
         let startedAt = ContinuousClock.now
@@ -593,15 +592,14 @@ final class LifecycleResourceSoakTests: XCTestCase {
             rendererMode: rendererMode,
             terminalWindow: terminalWindow
         )
-        try await exerciseLSPCrashAndRestart(projectURL: projectURL)
         return renderer
     }
 
-    // The external-process startup gates (project load, terminal child,
-    // LSP initialize) wait with short timeouts that flake under shared-runner
+    // The external-process startup gates (project load and terminal child)
+    // wait with short timeouts that flake under shared-runner
     // CPU starvation at the start of a run (#1619). A timed-out cycle leaves
     // no persistent state behind — every attempt builds a fresh project
-    // manager, terminal tab, and LSP client — so one retry absorbs transient
+    // manager and terminal tab — so one retry absorbs transient
     // load while a genuine hang still fails the run. Invariant failures are
     // rethrown immediately: they signal lifecycle breakage, not environment
     // noise, and must not be masked.
@@ -633,8 +631,7 @@ final class LifecycleResourceSoakTests: XCTestCase {
             )
         }
 
-        let settings = LSPSettings(defaults: defaults)
-        let manager = ProjectManager(lspSettings: settings)
+        let manager = ProjectManager(sessionDefaults: defaults)
         defer { manager.shutdownReclaimableProject() }
         manager.workspace.loadDirectory(url: projectURL)
         guard await waitUntil(timeout: .seconds(5), {
@@ -681,8 +678,7 @@ final class LifecycleResourceSoakTests: XCTestCase {
 
         manager.suspendEditorServices()
         guard manager.workspace.isSuspended,
-              !manager.workspace.hasActiveFileWatcherForTesting,
-              manager.lspManager.presentationLifecycle == .backgroundSuspended else {
+              !manager.workspace.hasActiveFileWatcherForTesting else {
             throw LifecycleSoakError.invariant("background services did not suspend")
         }
         manager.resumeEditorServices()
@@ -692,15 +688,12 @@ final class LifecycleResourceSoakTests: XCTestCase {
             throw LifecycleSoakError.timeout("project resume")
         }
         guard !manager.workspace.isSuspended,
-              manager.workspace.hasActiveFileWatcherForTesting,
-              manager.lspManager.presentationLifecycle == .active else {
+              manager.workspace.hasActiveFileWatcherForTesting else {
             throw LifecycleSoakError.invariant("background services did not resume")
         }
 
         manager.shutdownReclaimableProject()
-        guard !manager.workspace.hasActiveFileWatcherForTesting,
-              manager.lspManager.presentationLifecycle == .invalidated,
-              manager.lspManager.servers.isEmpty else {
+        guard !manager.workspace.hasActiveFileWatcherForTesting else {
             throw LifecycleSoakError.invariant("project teardown retained editor services")
         }
     }
@@ -818,66 +811,6 @@ final class LifecycleResourceSoakTests: XCTestCase {
             recreationAttempted: wasUsingMetal,
             recreationSucceeded: wasUsingMetal && isUsingMetal
         )
-    }
-
-    private func exerciseLSPCrashAndRestart(
-        projectURL: URL
-    ) async throws {
-        let signpost = PerformanceSignposts.beginInterval(
-            "lifecycle.soak.lsp"
-        )
-        defer {
-            PerformanceSignposts.endInterval(
-                "lifecycle.soak.lsp",
-                signpost
-            )
-        }
-
-        let fixtureURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appending(path: "Fixtures/fake-lsp.py")
-        let crashClient = LSPClient(language: "soak")
-        defer { crashClient.shutdown() }
-        guard await crashClient.start(
-            command: "/usr/bin/python3",
-            arguments: [fixtureURL.path, "crash"],
-            rootURI: projectURL.absoluteString,
-            environment: ["PYTHONUNBUFFERED": "1"],
-            currentDirectoryURL: projectURL,
-            initializationTimeout: .seconds(2)
-        ) else {
-            crashClient.shutdown()
-            throw LifecycleSoakError.invariant("crashing LSP did not initialize")
-        }
-        guard await waitUntil(timeout: .seconds(2), {
-            !crashClient.transport.isRunning
-        }) else {
-            crashClient.shutdown()
-            throw LifecycleSoakError.timeout("LSP crash cleanup")
-        }
-        guard crashClient.pendingRequestCount == 0 else {
-            throw LifecycleSoakError.invariant("crashed LSP retained requests")
-        }
-
-        let restartedClient = LSPClient(language: "soak")
-        defer { restartedClient.shutdown() }
-        guard await restartedClient.start(
-            command: "/usr/bin/python3",
-            arguments: [fixtureURL.path, "graceful"],
-            rootURI: projectURL.absoluteString,
-            environment: ["PYTHONUNBUFFERED": "1"],
-            currentDirectoryURL: projectURL,
-            initializationTimeout: .seconds(2)
-        ) else {
-            restartedClient.shutdown()
-            throw LifecycleSoakError.invariant("replacement LSP did not initialize")
-        }
-        guard await restartedClient.shutdownGracefully(timeout: .seconds(2)),
-              !restartedClient.transport.isRunning,
-              restartedClient.pendingRequestCount == 0 else {
-            restartedClient.shutdown()
-            throw LifecycleSoakError.invariant("replacement LSP did not shut down cleanly")
-        }
     }
 
     private func waitUntil(

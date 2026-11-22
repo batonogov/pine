@@ -777,8 +777,8 @@ struct RecoveryTerminationSweepTests {
 
     @Test("A file the sweep cannot read is kept, not aged out")
     func anUnreadableSnapshotIsKept() throws {
-        // Launch is when every language server, file-system watcher and
-        // terminal in the app is starting at once, so a transient `EIO` or
+        // Launch is when every file-system watcher and terminal in the app
+        // is starting at once, so a transient `EIO` or
         // `EMFILE` here is a live possibility. A file the process could not
         // open has not told anybody how old it is, and ageing it out by its
         // modification date means deleting undecided work on the strength of
@@ -1236,8 +1236,7 @@ struct RecoveryTerminationSweepTests {
 }
 
 /// Parks whoever calls ``pause()`` until ``release()``, and lets the test wait
-/// for that to have happened. Modelled on `FoldingDecodeGate` in
-/// `LSPFoldingRangeTests`.
+/// for that to have happened.
 private actor RecoveryListingGate {
     private var isPaused = false
     private var pausedWaiters: [CheckedContinuation<Void, Never>] = []

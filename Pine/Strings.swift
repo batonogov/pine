@@ -14,14 +14,13 @@ enum Strings {
     static let settingsTabKeyBindings: LocalizedStringKey =
         "settings.tab.keyBindings"
 
-    /// The five Settings tab titles, in the order the tab strip draws them.
+    /// The four Settings tab titles, in the order the tab strip draws them.
     /// `SettingsWindowMetrics` measures these to size the window, so they have
     /// to resolve to `String` rather than stay `LocalizedStringKey` (#1531).
     static func settingsTabTitles(locale: Locale = .current) -> [String] {
         [
             ("settings.tab.general", "General"),
             ("settings.tab.terminal", "Terminal"),
-            ("settings.tab.languageServers", "Language Servers"),
             ("settings.tab.agentHandoff", "Agent Handoff"),
             ("settings.tab.keyBindings", "Key Bindings & Tasks"),
         ].map { key, fallback in
@@ -165,8 +164,6 @@ enum Strings {
         )
     }
 
-    static let settingsLanguageServersTab: LocalizedStringKey =
-        "settings.tab.languageServers"
     static let settingsAgentHandoffTab: LocalizedStringKey =
         "settings.tab.agentHandoff"
     static let settingsTerminalTab: LocalizedStringKey =
@@ -189,38 +186,6 @@ enum Strings {
         "settings.agentHandoff.status.enabled"
     static let agentHandoffStatusDisabled: LocalizedStringKey =
         "settings.agentHandoff.status.disabled"
-
-    static let lspSettingsTitle: LocalizedStringKey =
-        "settings.lsp.title"
-    static let lspEnabled: LocalizedStringKey =
-        "settings.lsp.enabled"
-    static let lspEnabledHelp: LocalizedStringKey =
-        "settings.lsp.enabled.help"
-    static let lspLanguages: LocalizedStringKey =
-        "settings.lsp.languages"
-    static let lspExecutablePlaceholder: LocalizedStringKey =
-        "settings.lsp.executable.placeholder"
-    static let lspCustomArguments: LocalizedStringKey =
-        "settings.lsp.arguments.custom"
-    static let lspArgumentsHelp: LocalizedStringKey =
-        "settings.lsp.arguments.help"
-    static let lspDirectLaunchHelp: LocalizedStringKey =
-        "settings.lsp.directLaunch.help"
-    static let lspChooseExecutable: LocalizedStringKey =
-        "settings.lsp.executable.choose"
-    static var lspChooseExecutablePrompt: String {
-        lspChooseExecutablePrompt(locale: .current)
-    }
-
-    static func lspChooseExecutablePrompt(locale: Locale) -> String {
-        localizedString(
-            forKey: "settings.lsp.executable.prompt",
-            fallback: "Choose",
-            locale: locale
-        )
-    }
-    static let lspReset: LocalizedStringKey =
-        "settings.lsp.reset"
 
     // MARK: - Quick Terminal settings (#1243)
 
@@ -3345,132 +3310,6 @@ enum Strings {
         return String(format: format, locale: .current, line, column)
     }
 
-    // MARK: - LSP / Problems panel (#1010)
-
-    static var problemsNoIssues: String {
-        String(localized: "problems.noIssues", defaultValue: "No problems detected")
-    }
-
-    static var problemsNoFilterMatches: String {
-        String(
-            localized: "problems.noFilterMatches",
-            defaultValue: "No problems match the current filters"
-        )
-    }
-
-    // Problems panel chrome wiring (#1236)
-
-    static var problemsPanelTitle: String {
-        String(localized: "problems.panelTitle", defaultValue: "Problems")
-    }
-
-    static var problemsClose: String {
-        String(localized: "problems.close", defaultValue: "Close panel")
-    }
-
-    static var menuProblems: String {
-        String(localized: "menu.problems", defaultValue: "Problems")
-    }
-
-    static var menuNextDiagnostic: String {
-        String(localized: "menu.nextDiagnostic", defaultValue: "Next Diagnostic")
-    }
-
-    static var menuPreviousDiagnostic: String {
-        String(localized: "menu.previousDiagnostic", defaultValue: "Previous Diagnostic")
-    }
-
-    // MARK: - LSP Rename popover (#1536)
-    //
-    // The popover's label and placeholder were the only English literals in
-    // the LSP UI.
-
-    static func lspRenameLabel(locale: Locale = .current) -> String {
-        localizedString(
-            forKey: "lsp.rename.label",
-            fallback: "Rename symbol to:",
-            locale: locale
-        )
-    }
-
-    static func lspRenamePlaceholder(locale: Locale = .current) -> String {
-        localizedString(
-            forKey: "lsp.rename.placeholder",
-            fallback: "New name",
-            locale: locale
-        )
-    }
-
-    /// The panel and status-bar counts share the pluralized validation keys;
-    /// the former hand-rolled "1 error" special case lives in the catalog's
-    /// plural variations now (#1536).
-    static func problemsErrorCount(
-        _ count: Int,
-        locale: Locale = .current
-    ) -> String {
-        validationErrorCount(count, locale: locale)
-    }
-
-    static func problemsWarningCount(
-        _ count: Int,
-        locale: Locale = .current
-    ) -> String {
-        validationWarningCount(count, locale: locale)
-    }
-
-    static var problemsSeverityFilter: String {
-        String(
-            localized: "problems.filter.severity",
-            defaultValue: "Severity"
-        )
-    }
-
-    static var problemsSourceFilter: String {
-        String(localized: "problems.filter.source", defaultValue: "Source")
-    }
-
-    static var problemsAllSeverities: String {
-        String(
-            localized: "problems.filter.allSeverities",
-            defaultValue: "All Severities"
-        )
-    }
-
-    static var problemsAllSources: String {
-        String(
-            localized: "problems.filter.allSources",
-            defaultValue: "All Sources"
-        )
-    }
-
-    static var problemsDisabled: String {
-        String(
-            localized: "problems.state.disabled",
-            defaultValue: "Language servers are disabled"
-        )
-    }
-
-    static var problemsUnsupported: String {
-        String(
-            localized: "problems.state.unsupported",
-            defaultValue: "No diagnostics are available for this language"
-        )
-    }
-
-    static var problemsLoading: String {
-        String(
-            localized: "problems.state.loading",
-            defaultValue: "Loading diagnostics…"
-        )
-    }
-
-    static var problemsUnavailable: String {
-        String(
-            localized: "problems.state.unavailable",
-            defaultValue: "The language server is unavailable"
-        )
-    }
-
     // MARK: - Accessibility (#1003)
     //
     // VoiceOver labels / hints for custom controls. These are resolved into
@@ -3634,19 +3473,6 @@ enum Strings {
         String(
             localized: "a11y.statusBar.fileSize",
             defaultValue: "File size"
-        )
-
-    // MARK: - Go-to-Definition quick pick (#1533)
-
-    static let a11yDefinitionQuickPickLabel: String =
-        String(
-            localized: "a11y.definitionQuickPick.label",
-            defaultValue: "Definitions"
-        )
-    static let a11yDefinitionQuickPickHint: String =
-        String(
-            localized: "a11y.definitionQuickPick.item.hint",
-            defaultValue: "Opens this definition"
         )
 
     // MARK: - Global Tab Switcher overlay (#1239)

@@ -2,9 +2,9 @@
 //  LocalFoldProvider.swift
 //  Pine
 //
-//  Issue #1008 — the universal local fallback behind FoldRangeProviding.
+//  Issue #1008 — the local FoldRangeProviding implementation.
 //
-//  One local provider owns the complete fallback result for a revision:
+//  One local provider owns the complete result for a revision:
 //  bracket-pair folding for every language, plus indentation suites for
 //  Python and YAML (neither has an available foldingRange provider in Pine).
 //
@@ -16,11 +16,10 @@ import Foundation
 /// The provider is always available. Python adds declaration/control-flow
 /// suites; YAML adds block mapping, sequence, and scalar ranges. Every
 /// language keeps bracket folding. Combining local algorithms happens inside
-/// this provider, so LSP/local ownership remains deterministic and provider
-/// results are never merged.
+/// this provider.
 ///
 /// Syntax extraction and all scanning run on a detached task against an
-/// immutable snapshot, so the local fallback never blocks AppKit.
+/// immutable snapshot, so folding never blocks AppKit.
 nonisolated struct LocalFoldProvider: FoldRangeProviding {
     private let language: String
 

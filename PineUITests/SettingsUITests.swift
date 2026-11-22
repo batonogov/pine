@@ -454,12 +454,6 @@ final class SettingsUITests: PineUITestCase {
                 ]
             ),
             (
-                tab: "Language Servers",
-                contentIdentifier: "lsp-settings-executable",
-                expectedLabels: [],
-                expectedIdentifiers: []
-            ),
-            (
                 tab: "Agent Handoff",
                 contentIdentifier: "agentHandoffReadOnlyContextToggle",
                 expectedLabels: [],
@@ -520,12 +514,6 @@ final class SettingsUITests: PineUITestCase {
                     "terminalFontFamilyPicker",
                     "terminalFontSizeSlider",
                 ]
-            ),
-            (
-                tab: "Языковые серверы",
-                contentIdentifier: "lsp-settings-executable",
-                expectedLabels: [],
-                expectedIdentifiers: []
             ),
             (
                 tab: "Передача контекста",

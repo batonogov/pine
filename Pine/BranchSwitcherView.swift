@@ -240,7 +240,7 @@ private struct BranchRowSelectionAccessibility: ViewModifier {
 
 /// The checkout-failure footer. The symbol pairs with the message so the
 /// error state is never carried by the red hue alone (#1540) — the same
-/// distinct-SF-Symbol-per-level pattern the Problems panel uses. The message
+/// distinct-SF-Symbol-per-level pattern used by diagnostic rows. The message
 /// text already announces the failure, so the glyph stays decorative.
 struct BranchSwitcherErrorRow: View {
     let message: String

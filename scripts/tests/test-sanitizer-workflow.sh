@@ -66,7 +66,6 @@ required_suites=(
     PineTests/AgentDetectionCoordinatorTests
     PineTests/AgentTaskRegistryTests
     PineTests/FileSystemWatcherTests
-    PineTests/LSPProcessTransportTests
     PineTests/ProjectRegistryTests
     PineTests/TerminationSaveCoordinatorSecurityTests
 )

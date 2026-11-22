@@ -126,9 +126,6 @@ struct MenuPlacementGuardTests {
             "Strings.menuToggleMinimap",
             "Strings.menuToggleBlame",
             "Strings.menuToggleWordWrap",
-            "Strings.menuProblems",
-            "Strings.menuNextDiagnostic",
-            "Strings.menuPreviousDiagnostic",
             "Strings.projectSwitcherNewAgent",
             "Strings.menuAgentWorktrees",
         ] {

@@ -15,7 +15,7 @@ struct HelpBookTests {
         "en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans",
     ]
     private let topicSlugs = [
-        "getting-started", "workspace", "terminal", "git", "lsp",
+        "getting-started", "workspace", "terminal", "git",
         "agents", "settings", "shortcuts", "troubleshooting", "support",
     ]
 
@@ -165,7 +165,6 @@ struct HelpBookTests {
             PineHelp.Anchor.workspace,
             PineHelp.Anchor.terminal,
             PineHelp.Anchor.git,
-            PineHelp.Anchor.languageServers,
             PineHelp.Anchor.agents,
             PineHelp.Anchor.agentInbox,
             PineHelp.Anchor.agentSettings,
@@ -195,9 +194,9 @@ struct HelpBookTests {
 
     @Test func compactHelpButtonUsesNativeAccessibilityContract() {
         let button = PineNativeHelpButton(
-            anchor: PineHelp.Anchor.languageServers,
+            anchor: PineHelp.Anchor.agentInbox,
             book: PineHelp.bookName,
-            accessibilityIdentifier: AccessibilityID.problemsHelpButton,
+            accessibilityIdentifier: AccessibilityID.agentInboxHelpButton,
             controlSize: .small
         )
 
@@ -207,11 +206,11 @@ struct HelpBookTests {
         #expect(button.accessibilityRole() == .button)
         #expect(
             button.accessibilityIdentifier()
-                == AccessibilityID.problemsHelpButton
+                == AccessibilityID.agentInboxHelpButton
         )
         #expect(
             button.identifier?.rawValue
-                == AccessibilityID.problemsHelpButton
+                == AccessibilityID.agentInboxHelpButton
         )
         #expect(button.intrinsicContentSize.width > 0)
         #expect(button.intrinsicContentSize.height > 0)
