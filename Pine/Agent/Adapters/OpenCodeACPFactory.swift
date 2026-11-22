@@ -9,6 +9,8 @@ nonisolated struct OpenCodeACPAdmission: Sendable {
     /// fenced by the stderr drain deadline.
     let launch: @Sendable (ContinuousClock.Instant) async throws -> any OpenCodeACPTransport
     let cwd: String
+    let selectedExecutable: URL
+    let environmentProvenance: AgentTaskLaunchEnvironmentProvenance
     /// Outer cap for the bounded launch/bootstrap windows only. Session I/O
     /// keeps per-operation bounds and outlives this instant.
     let deadline: ContinuousClock.Instant
@@ -39,7 +41,7 @@ nonisolated struct OpenCodeACPFactory: AgentAdapterFactory {
 
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
         try Task.checkCancellation()
-        _ = try await probe()
+        let observation = try await probe()
         guard request.resumeFrom == nil else { throw AdapterSessionError.checkpointNotSupported }
         let admission = try await admit(request)
         do {
@@ -47,6 +49,12 @@ nonisolated struct OpenCodeACPFactory: AgentAdapterFactory {
             let session = try OpenCodeACPSession(
                 request: request, launch: admission.launch, cwd: admission.cwd,
                 deadline: admission.deadline, loadSession: admission.loadSession,
+                discovery: OpenCodeACPSession.DiscoveryInput(
+                    selectedExecutable: admission.selectedExecutable,
+                    versionProbe: observation.detectedVendorVersion,
+                    factoryAdmission: observation,
+                    environmentProvenance: admission.environmentProvenance
+                ),
                 beforeStartWrite: admission.beforeStartWrite, revokeOwnership: admission.revokeOwnership,
                 sessionBound: admission.sessionBound, promptResponded: admission.promptResponded
             )

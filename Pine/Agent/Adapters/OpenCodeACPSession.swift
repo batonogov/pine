@@ -14,6 +14,12 @@ actor OpenCodeACPSession: AgentAdapterControlledSession, CustomStringConvertible
         case cancelRequested, cancelled, failed, blocked, unknown, stopped
     }
     enum ResponseDisposition: Sendable { case recorded, fenced }
+    struct DiscoveryInput: Sendable {
+        let selectedExecutable: URL
+        let versionProbe: DetectedVendorVersion
+        let factoryAdmission: AdapterProbeResult
+        let environmentProvenance: AgentTaskLaunchEnvironmentProvenance
+    }
     struct Question: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
         let id: UUID
         let request: VendorReference
@@ -79,7 +85,11 @@ actor OpenCodeACPSession: AgentAdapterControlledSession, CustomStringConvertible
     private let sessionBound: @Sendable (VendorReference) async throws -> Void
     private let promptResponded: @Sendable (State) async throws -> ResponseDisposition
     private let loadSession: VendorReference?
+    private let discovery: DiscoveryInput
     private let native: OpenCodeACPNativeControl?
+    /// Produced from the actual pinned probe/admission and session response.
+    /// Effective setting recovery remains deliberately unimplemented.
+    private(set) var discoveryReport: AgentTaskDiscoveryReport?
     private var nativeSubmission: OpenCodeACPNativeSubmission?
     private var nativeResponseClaimedID: UUID?
     private var children: [VendorReference: String] = [:]
@@ -123,6 +133,7 @@ actor OpenCodeACPSession: AgentAdapterControlledSession, CustomStringConvertible
          launch: @escaping @Sendable (ContinuousClock.Instant) async throws -> any OpenCodeACPTransport,
          cwd: String, deadline: ContinuousClock.Instant,
          loadSession: VendorReference? = nil,
+         discovery: DiscoveryInput,
          native: OpenCodeACPNativeControl? = nil,
          beforeStartWrite: @escaping @Sendable () throws -> Void,
          revokeOwnership: @escaping @Sendable () -> Void,
@@ -147,6 +158,7 @@ actor OpenCodeACPSession: AgentAdapterControlledSession, CustomStringConvertible
         self.sessionBound = sessionBound
         self.promptResponded = promptResponded
         self.loadSession = loadSession
+        self.discovery = discovery
         self.native = native
     }
 
@@ -237,6 +249,14 @@ actor OpenCodeACPSession: AgentAdapterControlledSession, CustomStringConvertible
                   loadSession == nil || sessionID == loadSession?.rawValue else {
                 throw OpenCodeACPError.invalidProtocol
             }
+            discoveryReport = try OpenCodeACPConfigurationDiscovery.report(
+                selectedExecutable: discovery.selectedExecutable,
+                versionProbe: discovery.versionProbe,
+                factoryAdmission: discovery.factoryAdmission,
+                sessionConfigOptions: fields["configOptions"],
+                sessionStarted: true,
+                environmentProvenance: discovery.environmentProvenance
+            )
             nativeSession = sessionID
             try await sessionBound(VendorReference(role: .conversation, value: sessionID))
             guard state == .starting else { throw OpenCodeACPError.unavailable }
