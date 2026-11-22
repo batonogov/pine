@@ -812,6 +812,12 @@ struct AgentTaskCheckExecutorIntegrationTests {
         let result = await prepared.verify(executor)
         #expect(result.status != .ready)
         #expect(hits.withLock { $0 } > 0)
+        // Settle the first registry's in-flight save before a second store
+        // opens the same path (otherwise the restored load is rejected with
+        // lockContention). The fault injector is still armed, so the flush
+        // itself may fail — we only need the save attempt to finish and
+        // release the flock, not a successful save.
+        _ = await prepared.registry.flushPersistence(project: prepared.task.project)
         let fresh = AgentTaskMetadataStore(
             storageRoot: prepared.fixture.root.appending(path: "metadata"),
             configuration: AgentTaskStoreConfiguration(privateComponentCount: 1, faultInjector: .none)
@@ -843,6 +849,10 @@ struct AgentTaskCheckExecutorIntegrationTests {
         #expect(result.status == .ready)
         let journal = try #require(prepared.registry.task(for: prepared.task.id)?.checkExecution)
         let count = spawned.withLock { $0 }
+        // The first registry must finish its pending save before the
+        // restored store opens the same path (otherwise the load is
+        // rejected with lockContention under load).
+        #expect(await prepared.registry.flushPersistence(project: prepared.task.project) == .saved)
         let fresh = AgentTaskMetadataStore(
             storageRoot: prepared.fixture.root.appending(path: "metadata"),
             configuration: AgentTaskStoreConfiguration(privateComponentCount: 1, faultInjector: .none)
