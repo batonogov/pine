@@ -3610,6 +3610,11 @@ final class ProjectRegistry: LSPSettingsObserver {
         })
     }
 
+    /// Required checks own runners outside the per-project user-task stores.
+    func shutdownCheckExecutions(until deadline: DispatchTime) async -> Bool {
+        await agentTasks.shutdownCheckExecutions(until: deadline)
+    }
+
     /// Legacy project-teardown entry point. Its snapshot is captured at the
     /// call boundary, so it cannot cancel executions created after an await.
     @discardableResult

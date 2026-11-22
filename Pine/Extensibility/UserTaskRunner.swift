@@ -229,6 +229,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
     /// Internal lifecycle observation used by process-ownership tests. The
     /// public progress contract deliberately does not expose process IDs.
     private let processDidSpawn: (@Sendable (pid_t) -> Void)?
+    private let logOutput: Bool
     private let admissionLock = NSLock()
     /// Includes deferred ownership cleanup; queued requests allocate no threads.
     private let maximumConcurrentExecutions: Int
@@ -247,6 +248,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         executionScheduler: (any UserTaskExecutionScheduling)? = nil,
         ioExecutionPolicy: UserTaskIOExecutionPolicy? = nil,
         processDidSpawn: (@Sendable (pid_t) -> Void)? = nil,
+        logOutput: Bool = true,
         maximumConcurrentExecutions: Int = 4
     ) {
         self.timeout = timeout
@@ -259,6 +261,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
             shutdownDeadline: Self.ioShutdownDeadline
         )
         self.processDidSpawn = processDidSpawn
+        self.logOutput = logOutput
         precondition(maximumConcurrentExecutions > 0)
         self.maximumConcurrentExecutions = maximumConcurrentExecutions
     }
@@ -448,7 +451,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 Logger.task.error(
                     "Task '\(taskID, privacy: .public)' exit \(exitCode), timedOut: \(timedOut), cancelled: \(didCancel)"
                 )
-                if !stderr.isEmpty {
+                if self.logOutput && !stderr.isEmpty {
                     Logger.task.error("stderr: \(stderr, privacy: .private)")
                 }
             }
@@ -612,7 +615,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                     ),
                     exitCode: -1,
                     timedOut: false,
-                    cleanupSucceeded: false,
+                    cleanupSucceeded: true,
                     preSpawnRejected: error is PreSpawnRejection
                 ),
                 cancelled: config.executionState.closeWithoutProcess() == .cancelled

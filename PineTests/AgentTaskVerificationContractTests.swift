@@ -75,14 +75,56 @@ struct AgentTaskVerificationContractTests {
             taskID: taskID,
             runID: runID,
             passID: passID,
+            executionID: UUID(),
+            planFingerprint: hex("f"),
+            processGeneration: 1,
+            journalCompleted: true,
             results: [
-                .init(fingerprint: hex("1"), required: true, status: requiredStatus),
-                .init(fingerprint: hex("2"), required: false, status: .succeeded)
+                .init(operationID: UUID(), fingerprint: hex("1"), required: true, status: requiredStatus),
+                .init(operationID: UUID(), fingerprint: hex("2"), required: false, status: .succeeded)
             ],
             preCodeState: pre ?? state,
             postCodeState: post ?? state,
             environment: observedEnvironment ?? environment
         )
+    }
+
+    @MainActor
+    private static func installCheckJournal(
+        _ observation: AgentTaskCheckObservation,
+        request: AgentTaskVerificationCheckRequest,
+        registry: AgentTaskRegistry
+    ) {
+        guard observation.hasCompleteRequiredJudgment,
+              observation.taskID == request.taskID, observation.runID == request.runID,
+              observation.passID == request.passID,
+              observation.processGeneration == request.processGeneration,
+              var task = registry.task(for: request.taskID),
+              let run = task.runs.first(where: { $0.id == request.runID }) else { return }
+        let grantID = UUID()
+        let operations = observation.results.compactMap { result -> AgentTaskCheckExecution.Operation? in
+            guard let status = AgentTaskCheckExecution.Status(rawValue: result.status.rawValue) else { return nil }
+            return AgentTaskCheckExecution.Operation(
+                id: result.operationID, commandFingerprint: result.fingerprint, required: result.required,
+                startedAt: run.startedAt, finishedAt: run.startedAt,
+                status: status, exitCode: status == .succeeded ? 0 : 1, identitiesMatched: true
+            )
+        }
+        guard operations.count == observation.results.count else { return }
+        task.checkGrant = AgentTaskCheckGrant(
+            scheme: AgentTaskCheckGrant.currentScheme, id: grantID, taskID: task.id,
+            planFingerprint: observation.planFingerprint, environment: request.expected.environment,
+            approvedAt: run.startedAt, revokedAt: nil
+        )
+        task.checkExecution = AgentTaskCheckExecution(
+            id: observation.executionID, runID: request.runID,
+            processGeneration: request.processGeneration, passID: request.passID,
+            attempt: request.attempt, grantID: grantID, planFingerprint: observation.planFingerprint,
+            requiredCommands: Set(observation.results.filter(\.required).map(\.fingerprint)),
+            code: request.expected.code, environment: request.expected.environment,
+            operations: operations, completed: true
+        )
+        registry.setTasksForTesting(registry.tasks.map { $0.id == task.id ? task : $0 })
     }
 
     private var otherEnvironment: AgentTaskEnvironmentIdentity {
@@ -189,12 +231,13 @@ struct AgentTaskVerificationContractTests {
         )
         #expect(await registry.flushPersistence(project: fixture.project) == .saved)
 
+        let check = checkObservation(state, requiredStatus: .succeeded)
         let probe = PortProbe(
-            check: checkObservation(state, requiredStatus: .succeeded),
+            check: check,
             review: reviewObservation(.passed, state)
         )
         probe.anchor = snapshot(state)
-        let coordinator = probe.coordinator
+        let coordinator = probe.coordinator(registry)
 
         let result = await coordinator.runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
@@ -214,6 +257,7 @@ struct AgentTaskVerificationContractTests {
             #expect(fact.preOperationCodeState == state)
             #expect(fact.postOperationCodeState == state)
         }
+        #expect(settled.evidence.first { $0.kind == .independentCheck }?.checkExecutionID == check.executionID)
         let reviewFact = try #require(settled.evidence.first {
             $0.kind == .reviewerOutcome
         })
@@ -243,7 +287,7 @@ struct AgentTaskVerificationContractTests {
             review: reviewObservation(.passed, stateA)
         )
         probe.anchor = snapshot(stateA)
-        let coordinator = probe.coordinator
+        let coordinator = probe.coordinator(registry)
         #expect((await coordinator.runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
@@ -306,7 +350,7 @@ struct AgentTaskVerificationContractTests {
             review: reviewObservation(.requestedChanges, state)
         )
         probe.anchor = snapshot(state)
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -318,7 +362,10 @@ struct AgentTaskVerificationContractTests {
 
         let settled = try #require(registry.task(for: task.id))
         #expect(settled.runs.last?.outcome == .failure)
-        #expect(settled.verificationState == .none)
+        // The failed pass still recorded a reviewerOutcome fact, so the
+        // pass-death clear must leave the non-promotable `.stale` state
+        // (a bare `.none` would expose the legacy promotion path).
+        #expect(settled.verificationState == .stale)
         #expect(settled.evidence.contains {
             $0.kind == .reviewerOutcome && $0.result == .requestedChanges
         })
@@ -344,7 +391,7 @@ struct AgentTaskVerificationContractTests {
             review: reviewObservation(.passed, state)
         )
         probe.anchor = snapshot(state)
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -381,7 +428,7 @@ struct AgentTaskVerificationContractTests {
         )
         probe.anchor = snapshot(state)
         probe.grantIsCurrent = false
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -423,7 +470,7 @@ struct AgentTaskVerificationContractTests {
         )
         probe.anchor = snapshot(state)
         probe.onReview = { fault.arm() }
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -473,7 +520,7 @@ struct AgentTaskVerificationContractTests {
             review: reviewObservation(.passed, state)
         )
         probe.anchor = snapshot(state)
-        #expect((await probe.coordinator.runVerificationPass(
+        #expect((await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )).status == .ready)
@@ -520,7 +567,7 @@ struct AgentTaskVerificationContractTests {
             review: reviewObservation(.passed, stateA, post: stateB)
         )
         probe.anchor = snapshot(stateA)
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -556,13 +603,13 @@ struct AgentTaskVerificationContractTests {
         )
         probe.anchor = snapshot(state)
         probe.checkFailsBelowAttempt = 1
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
         #expect(result.status == .ready)
         #expect(probe.checkCalls == 2)
-        #expect(probe.grantCalls == 2)
+        #expect(probe.grantCalls == 3)
         #expect(probe.reviewCalls == 1)
     }
 
@@ -584,7 +631,7 @@ struct AgentTaskVerificationContractTests {
             review: reviewObservation(.passed, state)
         )
         probe.anchor = snapshot(state)
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -623,7 +670,7 @@ struct AgentTaskVerificationContractTests {
         let gate = SuspensionGate()
         olderProbe.suspensionPoint = .initialProbe
         olderProbe.suspensionGate = gate
-        let olderCoordinator = olderProbe.coordinator
+        let olderCoordinator = olderProbe.coordinator(registry)
         let olderPass = Task { @MainActor in
             await olderCoordinator.runVerificationPass(
                 taskID: task.id, criteria: "Candidate meets the issue acceptance",
@@ -638,7 +685,7 @@ struct AgentTaskVerificationContractTests {
         )
         newerProbe.anchor = snapshot(state)
         newerProbe.grantIsCurrent = false
-        let newerResult = await newerProbe.coordinator.runVerificationPass(
+        let newerResult = await newerProbe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -693,7 +740,7 @@ struct AgentTaskVerificationContractTests {
             probe.suspensionPoint = point
             probe.suspensionGate = gate
         }
-        let coordinator = probe.coordinator
+        let coordinator = probe.coordinator(registry)
         let running = Task { @MainActor in
             await coordinator.runVerificationPass(
                 taskID: task.id, criteria: "Candidate meets the issue acceptance",
@@ -748,7 +795,7 @@ struct AgentTaskVerificationContractTests {
         let gate = SuspensionGate()
         probe.suspensionPoint = .initialProbe
         probe.suspensionGate = gate
-        let coordinator = probe.coordinator
+        let coordinator = probe.coordinator(registry)
         let running = Task { @MainActor in
             await coordinator.runVerificationPass(
                 taskID: task.id, criteria: "Candidate meets the issue acceptance",
@@ -887,7 +934,7 @@ struct AgentTaskVerificationContractTests {
             }
         }
         defer { registry.removeTaskChangeObserver(token) }
-        let coordinator = probe.coordinator
+        let coordinator = probe.coordinator(registry)
         let running = Task { @MainActor in
             await coordinator.runVerificationPass(
                 taskID: task.id, criteria: "Candidate meets the issue acceptance",
@@ -932,7 +979,7 @@ struct AgentTaskVerificationContractTests {
         probe.anchor = snapshot(state)
         probe.checkCancellation = port == .checks
         probe.reviewCancellation = port == .review
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -961,13 +1008,17 @@ struct AgentTaskVerificationContractTests {
             probeIdentity: { _ in anchor },
             grantIsCurrent: { _ in true },
             runRequiredChecks: { request in
-                AgentTaskCheckObservation(
+                let observation = AgentTaskCheckObservation(
                     taskID: request.taskID, runID: request.runID, passID: request.passID,
+                    executionID: check.executionID, planFingerprint: check.planFingerprint,
+                    processGeneration: request.processGeneration, journalCompleted: check.journalCompleted,
                     results: check.results,
                     preCodeState: check.preCodeState,
                     postCodeState: check.postCodeState,
                     environment: check.environment
                 )
+                await Self.installCheckJournal(observation, request: request, registry: registry)
+                return observation
             },
             startReview: { _ in throw PortFailure() }
         )
@@ -1006,7 +1057,7 @@ struct AgentTaskVerificationContractTests {
             review: reviewObservation(.passed, state)
         )
         probe.anchor = snapshot(state)
-        #expect((await probe.coordinator.runVerificationPass(
+        #expect((await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )).status == .ready)
@@ -1020,7 +1071,7 @@ struct AgentTaskVerificationContractTests {
         case .persistence:
             fault.arm()
         }
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -1057,7 +1108,7 @@ struct AgentTaskVerificationContractTests {
             review: reviewObservation(.passed, stateA)
         )
         probe.anchor = snapshot(stateA)
-        #expect((await probe.coordinator.runVerificationPass(
+        #expect((await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )).status == .ready)
@@ -1067,7 +1118,7 @@ struct AgentTaskVerificationContractTests {
         let accepted = try #require(registry.task(for: task.id))
         probe.anchor = snapshot(changedIdentity ? stateB : stateA)
         fault.arm()
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -1133,7 +1184,7 @@ struct AgentTaskVerificationContractTests {
         default: break
         }
         probe.anchor = snapshot(state)
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -1189,7 +1240,7 @@ struct AgentTaskVerificationContractTests {
         default: break
         }
         probe.anchor = snapshot(state)
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -1234,7 +1285,7 @@ struct AgentTaskVerificationContractTests {
         )
         probe.reviewCriteriaDigest = wrongCriteriaDigest
         probe.anchor = snapshot(state)
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: "Candidate meets the issue acceptance",
             registry: registry
         )
@@ -1274,7 +1325,7 @@ struct AgentTaskVerificationContractTests {
         )
         probe.anchor = snapshot(state)
         let criteria = "  Candidate meets the issue acceptance  "
-        let result = await probe.coordinator.runVerificationPass(
+        let result = await probe.coordinator(registry).runVerificationPass(
             taskID: task.id, criteria: criteria, registry: registry
         )
         #expect(result.status == .ready)
@@ -1653,6 +1704,8 @@ struct AgentTaskVerificationContractTests {
             guard echoCheckRequest else { return observation }
             return AgentTaskCheckObservation(
                 taskID: request.taskID, runID: request.runID, passID: request.passID,
+                executionID: observation.executionID, planFingerprint: observation.planFingerprint,
+                processGeneration: request.processGeneration, journalCompleted: observation.journalCompleted,
                 results: observation.results,
                 preCodeState: observation.preCodeState,
                 postCodeState: observation.postCodeState,
@@ -1676,7 +1729,7 @@ struct AgentTaskVerificationContractTests {
             )
         }
 
-        var coordinator: AgentTaskVerificationCoordinator {
+        func coordinator(_ registry: AgentTaskRegistry) -> AgentTaskVerificationCoordinator {
             AgentTaskVerificationCoordinator(
                 probeIdentity: { [weak self] _ in
                     guard let self else { return nil }
@@ -1684,7 +1737,11 @@ struct AgentTaskVerificationContractTests {
                         self._probeCalls += 1
                         return self._probeCalls
                     }
-                    await self.suspendIfNeeded(call == 1 ? .initialProbe : .finalProbe)
+                    if call == 1 {
+                        await self.suspendIfNeeded(.initialProbe)
+                    } else if call >= 3 {
+                        await self.suspendIfNeeded(.finalProbe)
+                    }
                     return self.anchor
                 },
                 grantIsCurrent: { [weak self] _ in
@@ -1701,7 +1758,11 @@ struct AgentTaskVerificationContractTests {
                     if request.attempt <= self.checkFailsBelowAttempt {
                         throw PortFailure()
                     }
-                    return self.checkResult(for: request)
+                    let observation = self.checkResult(for: request)
+                    await AgentTaskVerificationContractTests.installCheckJournal(
+                        observation, request: request, registry: registry
+                    )
+                    return observation
                 },
                 startReview: { [weak self] request in
                     guard let self else { throw PortFailure() }

@@ -213,6 +213,18 @@ final class AgentTaskRegistry {
     private var nativeAttention: [UUID: AgentAdapterAttentionState] = [:]
     @ObservationIgnored
     private var nativeRetirements: [ObjectIdentifier: Task<Void, Never>] = [:]
+    @ObservationIgnored
+    private var checkStateWrites = Set<UUID>()
+    @ObservationIgnored
+    private var checkRuns: [UUID: CheckRun] = [:]
+    private struct CheckRun {
+        let owner: AgentTaskCheckAuthority
+        let generation: UUID
+        let runID: UUID
+        let processGeneration: UInt64
+        let grantID: UUID
+        let passID: UUID
+    }
 
     init(
         persistence: any AgentTaskPersisting = AgentTaskMetadataStore(),
@@ -568,6 +580,267 @@ final class AgentTaskRegistry {
         return true
     }
 
+    func claimCheckRun(taskID: UUID, owner: AgentTaskCheckAuthority) -> Bool {
+        guard !isTerminating, checkRuns.count < 4, checkRuns[taskID] == nil,
+              let task = task(for: taskID), let run = task.runs.last, let grant = task.checkGrant,
+              let passID = verificationPassIDByTaskID[taskID] else { return false }
+        checkRuns[taskID] = CheckRun(
+            owner: owner, generation: persistenceGeneration, runID: run.id,
+            processGeneration: run.process.processGeneration, grantID: grant.id, passID: passID
+        )
+        return true
+    }
+
+    func finishCheckRun(taskID: UUID) { checkRuns.removeValue(forKey: taskID) }
+
+    var checkShutdownIsPrepared: Bool { checkRuns.values.allSatisfy { $0.owner.shutdownConfirmed } }
+
+    func shutdownCheckExecutions(until deadline: DispatchTime) async -> Bool {
+        let owners = checkRuns.values.map(\.owner)
+        owners.forEach { $0.revoke() }
+        let complete = await runOnBackground {
+            owners.allSatisfy { $0.waitForShutdown(until: deadline) }
+        }
+        return complete && checkShutdownIsPrepared
+    }
+
+    /// Finish an already-started bounded write without treating caller
+    /// cancellation as a hung persistence owner and advancing its generation.
+    /// Admission and post-write cancellation checks remain with the caller.
+    func flushCheckPersistence(project: AgentTaskProjectIdentity) async -> AgentTaskPersistenceFlushResult {
+        await Task { @MainActor in await self.flushPersistence(project: project) }.value
+    }
+
+    /// A local approval/revocation replaces the scope and invalidates first.
+    /// No raw command, environment values or diagnostic streams are persisted.
+    func persistCheckSelection(
+        _ grant: AgentTaskCheckGrant, taskID: UUID, resettingExecution: Bool = false
+    ) async -> Bool {
+        guard !isTerminating, !checkStateWrites.contains(taskID),
+              let task = task(for: taskID), grant.taskID == taskID,
+              grant.scheme == AgentTaskCheckGrant.currentScheme,
+              AgentTaskCheckPlan.validFingerprint(grant.planFingerprint),
+               AgentTaskMetadataStore.validEnvironment(grant.environment),
+               grant.approvedAt.timeIntervalSince1970.isFinite,
+               grant.revokedAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true else { return false }
+        let prepared: Bool
+        if resettingExecution {
+            guard !Task.isCancelled, checkRuns[taskID]?.generation == persistenceGeneration,
+                  checkRuns[taskID]?.grantID == grant.id,
+                  verificationPassIDByTaskID[taskID] == checkRuns[taskID]?.passID else { return false }
+            prepared = await Task { @MainActor in await self.prepareDurableWork(in: task.project) }.value
+        } else {
+            prepared = await prepareDurableWork(in: task.project)
+        }
+        guard prepared, !checkStateWrites.contains(taskID),
+               !resettingExecution || (checkRuns[taskID]?.generation == persistenceGeneration
+                   && verificationPassIDByTaskID[taskID] == checkRuns[taskID]?.passID),
+               let index = taskIndex(for: taskID),
+               tasks[index].checkGrant == task.checkGrant else { return false }
+        if !resettingExecution, tasks[index].checkGrant != grant {
+            checkRuns[taskID]?.owner.revoke()
+            verificationPassIDByTaskID.removeValue(forKey: taskID)
+        }
+        checkStateWrites.insert(taskID)
+        defer { checkStateWrites.remove(taskID) }
+        let generation = persistenceGeneration
+        var updated = tasks[index]
+        if resettingExecution {
+            guard let scope = checkRuns[taskID], let latest = updated.runs.last,
+                  latest.id == scope.runID,
+                  latest.process.processGeneration == scope.processGeneration,
+                  verificationPassIDByTaskID[taskID] == scope.passID else { return false }
+        }
+        _ = AgentTaskLifecycleReducer.invalidate(&updated, codeState: nil, environment: nil)
+        if resettingExecution || updated.checkGrant?.id != grant.id { updated.checkExecution = nil }
+        updated.checkGrant = grant
+        updated.checkProblem = grant.revokedAt == nil ? nil : .authorityChanged
+        updated.updatedAt = max(updated.updatedAt, Date())
+        tasks[index] = updated
+        markDirty(task.project)
+        let saved: AgentTaskPersistenceFlushResult
+        if resettingExecution {
+            saved = await flushCheckPersistence(project: task.project)
+        } else {
+            saved = await flushPersistence(project: task.project)
+        }
+        return saved == .saved
+            && generation == persistenceGeneration && !Task.isCancelled && !isTerminating
+            && self.task(for: taskID)?.checkGrant == grant
+    }
+
+    func persistCheckProblem(
+        _ problem: AgentTaskCheckExecution.Status, taskID: UUID, runID: UUID, grantID: UUID
+    ) async {
+        if Task.isCancelled {
+            guard [.cancelled, .authorityChanged, .cleanupFailed].contains(problem) else { return }
+            let generation = persistenceGeneration
+            await Task { @MainActor in
+                guard generation == self.persistenceGeneration else { return }
+                await self.persistCheckProblem(problem, taskID: taskID, runID: runID, grantID: grantID)
+            }.value
+            return
+        }
+        guard !isTerminating, !checkStateWrites.contains(taskID),
+              let scope = checkRuns[taskID], scope.generation == persistenceGeneration,
+              scope.runID == runID, scope.grantID == grantID,
+              verificationPassIDByTaskID[taskID] == scope.passID,
+              let index = taskIndex(for: taskID), tasks[index].checkGrant?.id == grantID,
+              let latest = tasks[index].runs.last,
+              latest.id == runID, latest.process.processGeneration == scope.processGeneration else { return }
+        checkStateWrites.insert(taskID)
+        defer { checkStateWrites.remove(taskID) }
+        let project = tasks[index].project
+        var updated = tasks[index]
+        _ = AgentTaskLifecycleReducer.invalidate(&updated, codeState: nil, environment: nil)
+        updated.checkProblem = problem
+        tasks[index] = updated
+        markDirty(project)
+        _ = await flushCheckPersistence(project: project)
+    }
+
+    /// Write-ahead journal: a new set invalidates before any process can launch;
+    /// complete constituent results are durable before admitting aggregate evidence.
+    func persistCheckExecution(
+        _ next: AgentTaskCheckExecution, taskID: UUID, replacing executionID: UUID?
+    ) async -> Bool {
+        guard !Task.isCancelled, !isTerminating, !checkStateWrites.contains(taskID),
+              let scope = checkRuns[taskID], scope.generation == persistenceGeneration,
+              scope.passID == next.passID, verificationPassIDByTaskID[taskID] == next.passID,
+              scope.runID == next.runID, scope.processGeneration == next.processGeneration,
+              let index = taskIndex(for: taskID), let grant = tasks[index].checkGrant,
+              grant.id == next.grantID,
+              grant.revokedAt == nil || (executionID != nil && !next.completed
+                  && next.operations.last.map { $0.status == .cancelled || $0.status == .authorityChanged } == true),
+              grant.planFingerprint == next.planFingerprint,
+              grant.environment == next.environment,
+              next.isValid(for: tasks[index]), tasks[index].runs.last?.id == next.runID,
+              tasks[index].runs.last?.process.processGeneration == next.processGeneration,
+              tasks[index].lifecycle != .dismissed,
+              executionID == nil || tasks[index].checkExecution?.id == executionID,
+              loadedProjects.contains(tasks[index].project), !quarantinedProjects.contains(tasks[index].project) else {
+            return false
+        }
+        if let previous = tasks[index].checkExecution, executionID != nil {
+            guard !previous.completed, previous.id == next.id,
+                  previous.operations == Array(next.operations.prefix(previous.operations.count)),
+                  previous.passID == next.passID, previous.attempt == next.attempt,
+                  previous.code == next.code, previous.environment == next.environment,
+                  previous.requiredCommands == next.requiredCommands else { return false }
+        }
+        checkStateWrites.insert(taskID)
+        defer { checkStateWrites.remove(taskID) }
+        let project = tasks[index].project
+        let generation = persistenceGeneration
+        var updated = tasks[index]
+        if executionID == nil {
+            _ = AgentTaskLifecycleReducer.invalidate(&updated, codeState: nil, environment: nil)
+        }
+        updated.checkExecution = next
+        updated.checkProblem = next.problem
+        updated.updatedAt = max(updated.updatedAt, Date())
+        tasks[index] = updated
+        markDirty(project)
+        return await flushCheckPersistence(project: project) == .saved
+            && !Task.isCancelled && !isTerminating && generation == persistenceGeneration
+            && task(for: taskID)?.checkExecution == next && task(for: taskID)?.checkGrant == grant
+    }
+
+    /// Cancellation after a write preserves its truthful prefix/completion
+    /// marker and adds only a negative blocker. No operation/evidence is created.
+    func persistCancelledCheckProblem(
+        taskID: UUID, runID: UUID, grant: AgentTaskCheckGrant,
+        executionID: UUID?, owner: AgentTaskCheckAuthority
+    ) async -> Bool {
+        guard Task.isCancelled else { return false }
+        return await Task { @MainActor in
+            guard !self.checkStateWrites.contains(taskID),
+                  let scope = self.checkRuns[taskID], scope.owner === owner,
+                  scope.generation == self.persistenceGeneration, scope.runID == runID, scope.grantID == grant.id,
+                  self.verificationPassIDByTaskID[taskID] == scope.passID,
+                  let index = self.taskIndex(for: taskID), let currentRun = self.tasks[index].runs.last,
+                  currentRun.id == runID, currentRun.process.processGeneration == scope.processGeneration,
+                  let currentGrant = self.tasks[index].checkGrant,
+                  currentGrant.id == grant.id, currentGrant.taskID == taskID, currentGrant.scheme == grant.scheme,
+                  currentGrant.planFingerprint == grant.planFingerprint, currentGrant.environment == grant.environment,
+                  currentGrant.approvedAt == grant.approvedAt, self.tasks[index].lifecycle != .dismissed else { return false }
+            if let existing = self.tasks[index].checkExecution {
+                guard executionID == nil || existing.id == executionID,
+                      existing.runID == runID, existing.processGeneration == scope.processGeneration,
+                      existing.grantID == grant.id, existing.planFingerprint == grant.planFingerprint,
+                      existing.environment == grant.environment else { return false }
+            }
+            self.checkStateWrites.insert(taskID)
+            defer { self.checkStateWrites.remove(taskID) }
+            let problem: AgentTaskCheckExecution.Status =
+                self.tasks[index].checkExecution?.operations.last?.status == .cleanupFailed ? .cleanupFailed : .cancelled
+            let prefix = self.tasks[index].checkExecution
+            let project = self.tasks[index].project
+            var updated = self.tasks[index]
+            _ = AgentTaskLifecycleReducer.invalidate(&updated, codeState: nil, environment: nil)
+            updated.checkProblem = problem
+            updated.updatedAt = max(updated.updatedAt, Date())
+            self.tasks[index] = updated
+            self.markDirty(project)
+            return await self.flushPersistence(project: project) == .saved
+                && scope.generation == self.persistenceGeneration
+                && self.checkRuns[taskID]?.owner === owner
+                && self.task(for: taskID)?.checkGrant == currentGrant
+                && self.task(for: taskID)?.runs.last?.id == runID
+                && self.task(for: taskID)?.runs.last?.process.processGeneration == scope.processGeneration
+                && self.task(for: taskID)?.lifecycle != .dismissed
+                && self.task(for: taskID)?.checkExecution == prefix
+                && self.task(for: taskID)?.checkProblem == problem
+        }.value
+    }
+
+    /// Only an observed terminal cancellation/uncertain-cleanup result may
+    /// escape caller cancellation. This task is owned until its bounded flush
+    /// completes; it cannot append success, complete a set or admit evidence.
+    func persistCancelledCheckOperation(
+        _ next: AgentTaskCheckExecution, taskID: UUID, owner: AgentTaskCheckAuthority
+    ) async -> Bool {
+        guard Task.isCancelled else { return false }
+        return await Task { @MainActor in
+            guard !next.completed, !self.checkStateWrites.contains(taskID),
+                  self.checkRuns[taskID]?.generation == self.persistenceGeneration,
+                  self.checkRuns[taskID]?.owner === owner,
+                  self.checkRuns[taskID]?.passID == next.passID,
+                  self.verificationPassIDByTaskID[taskID] == next.passID,
+                  let index = self.taskIndex(for: taskID),
+                  let previous = self.tasks[index].checkExecution, !previous.completed,
+                  previous.id == next.id, previous.runID == next.runID,
+                  previous.processGeneration == next.processGeneration,
+                  previous.grantID == next.grantID, previous.planFingerprint == next.planFingerprint,
+                  previous.code == next.code, previous.environment == next.environment,
+                  previous.requiredCommands == next.requiredCommands,
+                  next.operations.count == previous.operations.count + 1,
+                  previous.operations == Array(next.operations.dropLast()),
+                  let terminal = next.operations.last, !terminal.identitiesMatched,
+                  terminal.status == .cancelled || terminal.status == .cleanupFailed,
+                  self.tasks[index].runs.last?.id == next.runID,
+                  self.tasks[index].runs.last?.process.processGeneration == next.processGeneration,
+                  let grant = self.tasks[index].checkGrant, grant.id == next.grantID,
+                  grant.planFingerprint == next.planFingerprint, grant.environment == next.environment,
+                  self.tasks[index].lifecycle != .dismissed, next.isValid(for: self.tasks[index]) else { return false }
+            self.checkStateWrites.insert(taskID)
+            defer { self.checkStateWrites.remove(taskID) }
+            let generation = self.persistenceGeneration
+            let project = self.tasks[index].project
+            var updated = self.tasks[index]
+            _ = AgentTaskLifecycleReducer.invalidate(&updated, codeState: nil, environment: nil)
+            updated.checkExecution = next
+            updated.checkProblem = terminal.status
+            updated.updatedAt = max(updated.updatedAt, terminal.finishedAt)
+            self.tasks[index] = updated
+            self.markDirty(project)
+            return await self.flushPersistence(project: project) == .saved
+                && generation == self.persistenceGeneration
+                && self.task(for: taskID)?.checkExecution == next
+                && self.task(for: taskID)?.checkGrant == grant
+        }.value
+    }
+
     /// Records one bounded evidence fact for a task, enforcing the fencing
     /// contract (attempt identity, process incarnation, provider session
     /// reference, source sequence, chronology, and duplicates). Settlement
@@ -585,6 +858,15 @@ final class AgentTaskRegistry {
               verificationPassID == nil
                   || verificationPassIDByTaskID[taskID] == verificationPassID else {
             return .fencedOut(.unknownRun)
+        }
+        if fact.kind == .independentCheck, verificationPassID != nil {
+            guard let verificationPassID, let execution = tasks[index].checkExecution,
+                  execution.passID == verificationPassID,
+                  let grant = tasks[index].checkGrant, grant.revokedAt == nil,
+                  grant.id == execution.grantID, grant.planFingerprint == execution.planFingerprint,
+                  grant.environment == execution.environment,
+                  tasks[index].checkProblem == nil || tasks[index].checkProblem == .failed,
+                  execution.authorizes(fact) else { return .fencedOut(.invalidFact) }
         }
         // The fact bound is enforced inside admit (ONE enforcement point
         // for every entry path); the store keeps its own count guard as a
@@ -1583,6 +1865,9 @@ final class AgentTaskRegistry {
         AgentTaskLifecycleReducer.recordVerificationPending(&updated)
         guard updated.verificationState == .pending else { return false }
         if let verificationPassID {
+            if verificationPassIDByTaskID[taskID] != verificationPassID {
+                checkRuns[taskID]?.owner.revoke()
+            }
             verificationPassIDByTaskID[taskID] = verificationPassID
         }
         if updated.verificationState != tasks[index].verificationState {
@@ -1628,6 +1913,19 @@ final class AgentTaskRegistry {
               processGeneration == nil
                   || tasks[index].runs[runIndex].process.processGeneration == processGeneration else {
             return nil
+        }
+        if makeCurrent {
+            guard let verificationPassID, let execution = tasks[index].checkExecution,
+                  execution.passID == verificationPassID,
+                  let grant = tasks[index].checkGrant, grant.revokedAt == nil,
+                  grant.id == execution.grantID, grant.planFingerprint == execution.planFingerprint,
+                  grant.environment == execution.environment,
+                  tasks[index].checkProblem == nil,
+                  execution.code == codeState, execution.environment == environment,
+                  tasks[index].evidence.contains(where: {
+                      $0.kind == .independentCheck && $0.checkExecutionID == execution.id
+                          && execution.authorizes($0)
+                  }) else { return nil }
         }
         var updated = tasks[index]
         AgentTaskLifecycleReducer.settleLatestRun(of: &updated, runIndex: runIndex)
@@ -1700,19 +1998,29 @@ final class AgentTaskRegistry {
         }
         if let verificationPassID {
             verificationPassIDByTaskID.removeValue(forKey: taskID)
+            checkRuns[taskID]?.owner.revoke()
         }
         guard let index = taskIndex(for: taskID),
               let latest = tasks[index].runs.last,
               latest.id == runID,
               latest.process.processGeneration == processGeneration,
-              tasks[index].verificationState == .pending else {
+              // A mid-pass termination re-settlement can clobber the claimed
+              // `.pending` back to no-pass `.none` (applySettledOutcome), so
+              // both states must be clearable on pass death.
+              [.pending, .none].contains(tasks[index].verificationState) else {
             return false
         }
         var updated = tasks[index]
+        // A pass that already recorded required independent facts claimed the
+        // attempt: dying before the final settle must leave `.stale`, never
+        // no-pass `.none`, whose legacy `.none → .verified` promotion on a
+        // later re-settlement would bypass the final-settlement gate.
         let requiresStale = latest.outcome == .success
             || updated.acceptanceState == .accepted
             || updated.acceptedSnapshot != nil
             || updated.reviewedSnapshot != nil
+            || updated.evidence.contains { $0.runID == latest.id
+                && AgentTaskLifecycleReducer.requiredEvidenceForSuccess.contains($0.kind) }
         updated.verificationState = requiresStale ? .stale : .none
         updated.updatedAt = max(updated.updatedAt, Date())
         tasks[index] = updated
@@ -2723,6 +3031,7 @@ final class AgentTaskRegistry {
         expireClaims()
         for ownership in Array(nativeOwners.values) { invalidateNativeOwnership(ownership) }
         isTerminating = true
+        for run in checkRuns.values { run.owner.revoke() }
         worktreeSetupOperations.removeAll()
         worktreeSetups.values.forEach { retireWorktreeSetup($0) }
         let now = monotonicNow()
@@ -3911,6 +4220,9 @@ final class AgentTaskRegistry {
               }) {
             let runID = tasks[taskIndex].runs.remove(at: removalIndex).id
             taskIDByRunID[runID] = nil
+            if tasks[taskIndex].checkExecution?.runID == runID {
+                tasks[taskIndex].checkExecution = nil
+            }
             // Facts bound to the removed run are history that can no longer
             // validate: shed them, or every subsequent save of the project
             // is rejected until relaunch.
