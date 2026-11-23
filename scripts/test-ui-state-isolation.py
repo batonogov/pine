@@ -287,12 +287,11 @@ struct PineApp {
         'PINE_DISABLE_METAL': '1', 'PINE_DISABLE_QUICK_TERMINAL': '1',
         'PINE_OPEN_PROJECT': '/owned/fixture-project',
     }
-    for overrides in [{}, {'PINE_SEARCH_QUERY': 'normal query'}]:
-        result = subprocess.run([str(guard_binary), *release_arguments],
-                                env={**release_environment, **overrides}, check=False)
-        if result.returncode != 42:
-            raise SystemExit('FAIL: release-smoke or normal search launch contract was changed')
-    print('PASS: ordinary/release-smoke/search vectors reach harmless stub initialization', flush=True)
+    result = subprocess.run([str(guard_binary), *release_arguments],
+                            env=release_environment, check=False)
+    if result.returncode != 42:
+        raise SystemExit('FAIL: release-smoke launch contract was changed')
+    print('PASS: ordinary/release-smoke vectors reach harmless stub initialization', flush=True)
     # Metadata belongs only to this harmless stub bundle. A build without the
     # test compile flag must refuse the reserved test identity even with no
     # fixture marker; the stub never accesses preferences or NSApplication.

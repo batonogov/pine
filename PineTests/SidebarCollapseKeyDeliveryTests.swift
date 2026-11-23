@@ -7,26 +7,13 @@
 //  The #1544 evidence chain: the collapse command path (responder keyDown
 //  -> handleSidebarCommand -> setExpanded -> render) is a single indivisible
 //  state, so a lost collapse means the key never reached the responder.
-//  A hosted experiment (see the issue discussion) isolated the ancestor
-//  `onKeyPress(.escape)` that used to sit over both branches of
-//  `SidebarSearchableContent` as the delivery interceptor: without it the
-//  window delivered Left-arrow 8/8 across the post-press timing window;
-//  with it, 0/8 in four harness configurations, while first responder and
-//  the direct command path stayed healthy. The exact platform mechanism
-//  (which focus state arms the hosting-layer claim) is not established,
-//  and this harness does not reproduce the production window
-//  (NavigationSplitView + .searchable), so the final regression gate for
-//  the flake is the CI `SidebarFolderClickTests` run; an A/B run on the
-//  probe branch supplies the numbers.
+//  This harness does not reproduce the production NavigationSplitView, so
+//  the final regression gate for the flake is the CI
+//  `SidebarFolderClickTests` run.
 //
-//  What this suite does lock down:
-//  1. Delivery smoke — a real Left-arrow posted straight into the hosted
-//     production sidebar window collapses an expanded folder through the
-//     AppKit responder, with no reliance on process-wide key-window state.
-//  2. Escape coverage — the relocated `.onKeyPress(.escape)` handler
-//     clears an active search query and returns the file tree, the
-//     behaviour SearchResultsView deliberately forwards to it
-//     (`.dismissSearch` -> `.ignored` bubbles up).
+//  What this suite locks down: a real Left-arrow posted straight into the
+//  hosted production sidebar window collapses an expanded folder through the
+//  AppKit responder, with no reliance on process-wide key-window state.
 //
 //  Window scheme follows the hosted-suite convention (see
 //  AgentHistoryUndoReviewHostedTests / AccessibilityTreeProbe): an
@@ -61,42 +48,6 @@ struct SidebarCollapseKeyDeliveryTests {
         case .harnessUnhealthy(let stage):
             Issue.record("delivery harness failed at stage: \(stage)")
         }
-    }
-
-    @Test("Clearing an active search query returns the file tree branch")
-    func clearingActiveSearchReturnsFileTree() async throws {
-        let fixture = try await makeFixture()
-        defer { fixture.tearDown() }
-
-        // Open the search branch: a non-empty query renders SearchResultsView.
-        fixture.projectManager.searchProvider.query = "alpha"
-
-        let searchBranchShown = await waitFor(seconds: 3) {
-            // The file-tree branch's accessibility row disappears once the
-            // search branch replaces it in the same hosted hierarchy.
-            Self.row(named: "fileNode_alpha", in: fixture.hosting) == nil
-        }
-        guard searchBranchShown else {
-            Issue.record("search branch did not replace the file tree")
-            return
-        }
-
-        // The relocated `.onKeyPress(.escape)` handler performs exactly
-        // these two calls. SwiftUI key handlers need SwiftUI focus, which a
-        // hosted window cannot grant to this branch (the list focus state is
-        // private to SearchResultsView), so the key stroke itself cannot be
-        // replayed here — the handler's effect on the branch selection is
-        // what this case locks down instead.
-        fixture.projectManager.searchProvider.query = ""
-        fixture.projectManager.searchProvider.cancel()
-
-        let treeRestored = await waitFor(seconds: 3) {
-            Self.row(named: "fileNode_alpha", in: fixture.hosting) != nil
-        }
-        #expect(
-            treeRestored,
-            "File tree should return after the search query clears"
-        )
     }
 
     // MARK: - Outcomes
@@ -168,8 +119,8 @@ struct SidebarCollapseKeyDeliveryTests {
         }
 
         let selection = SelectionBox()
-        let rootView = SidebarSearchableContent(
-            selectedNode: Binding(
+        let rootView = SidebarView(
+            selectedFile: Binding(
                 get: { selection.node },
                 set: { selection.node = $0 }
             ),

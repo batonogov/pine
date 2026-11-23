@@ -28,7 +28,7 @@ struct BranchSwitcherView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            QuickOpenSearchField(
+            CommandOverlaySearchField(
                 text: $searchText,
                 placeholder: Strings.branchFilterPlaceholder,
                 accessibility: CommandOverlayTextFieldAccessibility(

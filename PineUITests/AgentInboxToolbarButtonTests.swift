@@ -21,17 +21,6 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         app.descendants(matching: .any)["agentInbox"].firstMatch
     }
 
-    /// The project search field — the `NSSearchToolbarItem` that `.searchable`
-    /// installs in the project window's toolbar. Matched by placeholder, not
-    /// `firstMatch`: the sidebar can surface a search field of its own, and
-    /// the two must not be confused. The placeholder string is stable in UI
-    /// tests because the launch arguments force the English locale.
-    private var projectSearchField: XCUIElement {
-        app.searchFields.matching(
-            NSPredicate(format: "placeholderValue == %@", "Search in Project")
-        ).firstMatch
-    }
-
     /// Binds the project window by its title.
     ///
     /// `app.windows.firstMatch` must never be used here: AX window lists run
@@ -96,20 +85,19 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         )
     }
 
-    /// #1665: the button belongs on the trailing edge of the toolbar, next to
-    /// the search field. When #1643 hid the window title for good, the
+    /// #1665: the button belongs on the trailing edge of the toolbar. When
+    /// #1643 hid the window title for good, the
     /// `.primaryAction` item collapsed into the leading cluster beside the
     /// project-switcher pill — only a live window shows it, because the
     /// misplacement is the toolbar's layout, not the item's existence.
     ///
     /// The assertions are geometric rather than tied to an absolute offset:
-    /// the button must sit in the window's trailing half, right of the pill,
-    /// and immediately left of the project search field — the neighbours it
-    /// had in every release before 2.10.0. They run twice: once at rest, and
+    /// the button must sit in the window's trailing half and right of the
+    /// pill. They run twice: once at rest, and
     /// again after opening a file, because the retitling that follows churns
     /// `.navigationTitle` and re-applies the toolbar configuration on
     /// macOS 27 — the moment a placement that only holds at rest would slip.
-    func testToolbarButtonSitsAtTrailingEdgeNextToSearch() throws {
+    func testToolbarButtonSitsAtTrailingEdge() throws {
         // A short project name on purpose: the default UUID fixture makes the
         // pill ~380pt wide, and on a narrow CI window the toolbar then has no
         // slack — the flexible space collapses and the button packs against
@@ -140,19 +128,14 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
             waitForExistence(pill, timeout: 10),
             "The project switcher pill should be visible in the toolbar"
         )
-        XCTAssertTrue(
-            waitForExistence(projectSearchField, timeout: 10),
-            "The project search field should be visible in the toolbar"
-        )
-
         assertTrailingPlacement(window: window, pill: pill)
 
         openFile("hello.swift")
         assertTrailingPlacement(window: window, pill: pill)
     }
 
-    /// Asserts the inbox button sits in the window's trailing half, right of
-    /// the switcher pill, and left of the project search field.
+    /// Asserts the inbox button sits in the window's trailing half and right
+    /// of the switcher pill.
     private func assertTrailingPlacement(
         window: XCUIElement,
         pill: XCUIElement,
@@ -179,10 +162,9 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         )
         XCTAssertLessThanOrEqual(
             buttonFrame.maxX,
-            projectSearchField.frame.minX,
-            "The Agent Inbox button must sit left of the search field — the "
-                + "trailing-edge pair it was part of before 2.10.0 (button "
-                + "at \(buttonFrame), search at \(projectSearchField.frame))",
+            window.frame.maxX,
+            "The Agent Inbox button must remain inside the project window "
+                + "(button at \(buttonFrame), window at \(window.frame))",
             file: file,
             line: line
         )

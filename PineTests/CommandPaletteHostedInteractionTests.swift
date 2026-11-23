@@ -42,7 +42,7 @@ struct CommandPaletteHostedInteractionTests {
         let hosted = hostPalette(state: state, items: makeItems())
         let field = try #require(findTextField(in: hosted))
         let coordinator = try #require(
-            field.delegate as? QuickOpenSearchField.Coordinator
+            field.delegate as? CommandOverlaySearchField.Coordinator
         )
         let editor = NSTextView()
 
@@ -69,7 +69,7 @@ struct CommandPaletteHostedInteractionTests {
         let hosted = hostPalette(state: state, items: makeItems())
         let field = try #require(findTextField(in: hosted))
         let coordinator = try #require(
-            field.delegate as? QuickOpenSearchField.Coordinator
+            field.delegate as? CommandOverlaySearchField.Coordinator
         )
 
         #expect(coordinator.control(
@@ -94,11 +94,11 @@ struct CommandPaletteHostedInteractionTests {
     @Test("Invocation can replace Command Palette without stale dismissal")
     func replacementSurvivesInvocation() throws {
         let state = HostedState()
-        state.replacementOnInvoke = .quickOpen
+        state.replacementOnInvoke = .agentAttention
         let hosted = hostPalette(state: state, items: makeItems())
         let field = try #require(findTextField(in: hosted))
         let coordinator = try #require(
-            field.delegate as? QuickOpenSearchField.Coordinator
+            field.delegate as? CommandOverlaySearchField.Coordinator
         )
 
         #expect(coordinator.control(
@@ -108,9 +108,9 @@ struct CommandPaletteHostedInteractionTests {
         ))
         drainMainRunLoop()
 
-        #expect(state.invoked == [.builtIn(.quickOpen)])
+        #expect(state.invoked == [.builtIn(.openFile)])
         #expect(state.presentationAtInvocation == [.commandPalette])
-        #expect(state.activePresentation == .quickOpen)
+        #expect(state.activePresentation == .agentAttention)
     }
 
     @Test("Escape dismisses without invoking a command")
@@ -119,7 +119,7 @@ struct CommandPaletteHostedInteractionTests {
         let hosted = hostPalette(state: state, items: makeItems())
         let field = try #require(findTextField(in: hosted))
         let coordinator = try #require(
-            field.delegate as? QuickOpenSearchField.Coordinator
+            field.delegate as? CommandOverlaySearchField.Coordinator
         )
 
         #expect(coordinator.control(
@@ -150,7 +150,7 @@ struct CommandPaletteHostedInteractionTests {
         let hosted = hostPalette(state: state, items: items)
         let field = try #require(findTextField(in: hosted))
         let coordinator = try #require(
-            field.delegate as? QuickOpenSearchField.Coordinator
+            field.delegate as? CommandOverlaySearchField.Coordinator
         )
 
         #expect(coordinator.control(
@@ -181,7 +181,7 @@ struct CommandPaletteHostedInteractionTests {
         let hosted = hostPalette(state: state, items: items)
         let field = try #require(findTextField(in: hosted))
         let coordinator = try #require(
-            field.delegate as? QuickOpenSearchField.Coordinator
+            field.delegate as? CommandOverlaySearchField.Coordinator
         )
 
         #expect(coordinator.control(
@@ -196,7 +196,7 @@ struct CommandPaletteHostedInteractionTests {
         ))
         drainMainRunLoop()
 
-        #expect(state.invoked == [.builtIn(.findInFile)])
+        #expect(state.invoked == [.builtIn(.toggleComment)])
         #expect(state.isPresented == false)
     }
 
@@ -218,7 +218,7 @@ struct CommandPaletteHostedInteractionTests {
         let hosted = hostPalette(state: state, items: items)
         let field = try #require(findTextField(in: hosted))
         let coordinator = try #require(
-            field.delegate as? QuickOpenSearchField.Coordinator
+            field.delegate as? CommandOverlaySearchField.Coordinator
         )
 
         #expect(coordinator.control(
@@ -253,9 +253,9 @@ struct CommandPaletteHostedInteractionTests {
 
     private func makeItems() -> [CommandPaletteItem] {
         [
-            makeItem(id: .builtIn(.quickOpen), title: "Quick Open"),
+            makeItem(id: .builtIn(.openFile), title: "Open File"),
             makeItem(id: .task("second"), title: "Second Task"),
-            makeItem(id: .builtIn(.findInFile), title: "Find"),
+            makeItem(id: .builtIn(.toggleComment), title: "Toggle Comment"),
         ]
     }
 

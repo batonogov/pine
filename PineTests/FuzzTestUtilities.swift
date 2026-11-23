@@ -12,11 +12,8 @@ import Foundation
 // Each fuzz test suite uses a unique seed range to avoid correlation.
 // Seed  42–46: FuzzGitParserTests (diff=42, hunk=43, blame=44, status=45, ignored=46)
 // Seed  47:    FuzzSyntaxHighlighterTests
-// Seed  48–49: FuzzQuickOpenProviderTests (score=48, subseq=49)
-// Seed  50–52: FuzzSymbolParserTests (parse=50, filter=51, lineNum=52)
 // Seed  53–60: FuzzConfigValidatorTests (yamllint=53, shellcheck=54, terraform=55,
 //              hadolint=56, builtinYAML=57, dockerfile=58, shell=59, detector=60)
-// Seed  61:    FuzzGoToLineParserTests
 // Seed  62–65: FuzzAgentBoundaryTests (envelope=62, values=63, trust=64, redaction=65)
 //
 // Next available seed: 66

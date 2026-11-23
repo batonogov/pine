@@ -48,12 +48,6 @@ struct ConstantsTests {
         #expect(TabManager.hugeFilePartialLoadSize == FileSizeConstants.oneMB)
     }
 
-    // MARK: - ProjectSearchProvider uses shared constants
-
-    @Test func projectSearchMaxFileSizeMatchesOneMB() {
-        #expect(ProjectSearchProvider.maxFileSize == FileSizeConstants.oneMB)
-    }
-
     // MARK: - Bracket search radius
 
     @Test func bracketSearchRadiusIsPositive() {
@@ -65,18 +59,6 @@ struct ConstantsTests {
         #expect(EditorConstants.bracketSearchRadius >= 500)
         // But not so large it defeats the purpose of windowed search
         #expect(EditorConstants.bracketSearchRadius <= 50_000)
-    }
-
-    // MARK: - Search constants
-
-    @Test func lineContentPrefixLimitIsPositive() {
-        #expect(SearchConstants.lineContentPrefixLimit > 0)
-    }
-
-    @Test func lineContentPrefixLimitIsReasonable() {
-        // Should show meaningful context but not unlimited
-        #expect(SearchConstants.lineContentPrefixLimit >= 80)
-        #expect(SearchConstants.lineContentPrefixLimit <= 1000)
     }
 
     // MARK: - Minimap constants

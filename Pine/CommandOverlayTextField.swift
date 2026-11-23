@@ -1,0 +1,217 @@
+//
+//  CommandOverlayTextField.swift
+//  Pine
+//
+//  Shared native text field and accessibility helpers for command overlays.
+//
+
+import SwiftUI
+
+nonisolated enum CommandOverlayRowAccessibility {
+    static func selectionTraits(isSelected: Bool) -> AccessibilityTraits {
+        isSelected ? .isSelected : []
+    }
+}
+
+// MARK: - AppKit Search Field with key interception
+
+/// NSTextField wrapper that intercepts arrow keys, Return, and Escape
+/// via the delegate's `control(_:textView:doCommandBy:)` method.
+/// This preserves the normal text cursor and field editor behavior
+/// while redirecting navigation keys to the overlay result list.
+struct CommandOverlayTextFieldAccessibility: Equatable {
+    let identifier: String
+    let label: String?
+    let help: String?
+
+    init(
+        identifier: String,
+        label: String? = nil,
+        help: String? = nil
+    ) {
+        self.identifier = identifier
+        self.label = label
+        self.help = help
+    }
+}
+
+/// Native field shared by command overlays.
+///
+/// SwiftUI accessibility modifiers applied to an `NSViewRepresentable` do not
+/// reliably reach its underlying AppKit view when it is hosted in a separate
+/// `NSPanel`. Configure the native element directly and request first responder
+/// only after AppKit has attached it to a window.
+@MainActor
+final class CommandOverlayTextField: NSTextField {
+    private static let maximumFocusAttempts = 2
+
+    private weak var focusWindow: NSWindow?
+    private var focusAttemptCount = 0
+    private var focusAttemptScheduled = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+
+        if focusWindow !== window {
+            focusWindow = window
+            focusAttemptCount = 0
+            focusAttemptScheduled = false
+        }
+        requestInitialFocus()
+    }
+
+    func applyAccessibility(
+        _ accessibility: CommandOverlayTextFieldAccessibility
+    ) {
+        // `NSTextField` normally derives its accessibility exposure from its
+        // cell. SwiftUI's `NSViewRepresentable` host can suppress that
+        // implicit element on macOS 26 when the view lives in an NSPanel:
+        // the panel/container remains visible to AX, but the represented
+        // field is omitted from its descendants. Declare the native contract
+        // explicitly so VoiceOver and role-scoped XCUITest queries see the
+        // field as an editable text field on both macOS 26 and 27.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.textField)
+        identifier = NSUserInterfaceItemIdentifier(
+            accessibility.identifier
+        )
+        setAccessibilityIdentifier(accessibility.identifier)
+        setAccessibilityLabel(accessibility.label)
+        setAccessibilityHelp(accessibility.help)
+    }
+
+    /// Schedules focus after the current AppKit/SwiftUI attachment transaction.
+    ///
+    /// The command panel also invokes this after becoming key. Coalescing both
+    /// lifecycle paths avoids races without repeatedly stealing focus while a
+    /// user edits the field.
+    func requestInitialFocus() {
+        guard window != nil else { return }
+        guard focusAttemptCount < Self.maximumFocusAttempts else { return }
+        guard !focusAttemptScheduled else { return }
+
+        focusAttemptScheduled = true
+        let expectedWindow = window
+        DispatchQueue.main.async { [weak self, weak expectedWindow] in
+            guard let self else { return }
+            self.focusAttemptScheduled = false
+            guard let expectedWindow,
+                  self.window === expectedWindow else { return }
+
+            self.focusAttemptCount += 1
+            if !expectedWindow.makeFirstResponder(self) {
+                self.requestInitialFocus()
+            }
+        }
+    }
+}
+
+struct CommandOverlaySearchField: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    let accessibility: CommandOverlayTextFieldAccessibility
+    var onArrowUp: () -> Void
+    var onArrowDown: () -> Void
+    var onReturn: () -> Void
+    var onEscape: () -> Void
+    /// Optional Tab handler. When `nil`, Tab keeps AppKit's default key-view
+    /// loop behaviour.
+    var onTab: (() -> Void)?
+
+    func makeNSView(context: Context) -> CommandOverlayTextField {
+        let field = CommandOverlayTextField()
+        field.delegate = context.coordinator
+        field.font = .systemFont(ofSize: 14)
+        field.placeholderString = placeholder
+        field.bezelStyle = .roundedBezel
+        field.focusRingType = .exterior
+        field.cell?.sendsActionOnEndEditing = false
+        field.applyAccessibility(accessibility)
+        return field
+    }
+
+    func updateNSView(
+        _ nsView: CommandOverlayTextField,
+        context: Context
+    ) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        nsView.placeholderString = placeholder
+        nsView.applyAccessibility(accessibility)
+        // Keep callbacks up to date
+        context.coordinator.onArrowUp = onArrowUp
+        context.coordinator.onArrowDown = onArrowDown
+        context.coordinator.onReturn = onReturn
+        context.coordinator.onEscape = onEscape
+        context.coordinator.onTab = onTab
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            text: $text,
+            onArrowUp: onArrowUp,
+            onArrowDown: onArrowDown,
+            onReturn: onReturn,
+            onEscape: onEscape,
+            onTab: onTab
+        )
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding var text: String
+        var onArrowUp: () -> Void
+        var onArrowDown: () -> Void
+        var onReturn: () -> Void
+        var onEscape: () -> Void
+        var onTab: (() -> Void)?
+
+        init(
+            text: Binding<String>,
+            onArrowUp: @escaping () -> Void,
+            onArrowDown: @escaping () -> Void,
+            onReturn: @escaping () -> Void,
+            onEscape: @escaping () -> Void,
+            onTab: (() -> Void)? = nil
+        ) {
+            _text = text
+            self.onArrowUp = onArrowUp
+            self.onArrowDown = onArrowDown
+            self.onReturn = onReturn
+            self.onEscape = onEscape
+            self.onTab = onTab
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            text = field.stringValue
+        }
+
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.moveUp(_:)):
+                onArrowUp()
+                return true
+            case #selector(NSResponder.moveDown(_:)):
+                onArrowDown()
+                return true
+            case #selector(NSResponder.insertNewline(_:)):
+                onReturn()
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                onEscape()
+                return true
+            case #selector(NSResponder.insertTab(_:)):
+                guard let onTab else { return false }
+                onTab()
+                return true
+            default:
+                return false
+            }
+        }
+    }
+}

@@ -3,7 +3,7 @@
 //  PineUITests
 //
 //  UI tests for editor save workflows: save via menu, status bar info,
-//  find bar opening via menu, and cursor position display.
+//  and cursor position display.
 //
 
 import XCTest
@@ -68,24 +68,6 @@ final class EditorSaveFlowTests: PineUITestCase {
             "Save menu item should exist"
         )
         XCTAssertTrue(saveItem.isEnabled, "Save menu item should be enabled after opening a file")
-    }
-
-    // MARK: - Find menu item exists in Edit menu
-
-    func testFindMenuItemExistsInEditMenu() throws {
-        launchWithProject(projectURL)
-
-        openFile("main.swift")
-
-        // Open Edit menu — Find… should be a direct menu item (not a submenu)
-        app.activate()
-        clickMenuBarItem("Edit")
-
-        let findItem = app.menuItems["Find…"]
-        XCTAssertTrue(
-            waitForExistence(findItem, timeout: 3),
-            "Find… item should exist in Edit menu"
-        )
     }
 
     // MARK: - Encoding indicator visible

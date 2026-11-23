@@ -666,14 +666,6 @@ final class LifecycleResourceSoakTests: XCTestCase {
             throw LifecycleSoakError.invariant("tab/pane churn could not split")
         }
 
-        let searchResults = await ProjectSearchProvider.performSearch(
-            query: "pine-soak-token",
-            isCaseSensitive: false,
-            rootURL: projectURL
-        )
-        guard !searchResults.isEmpty else {
-            throw LifecycleSoakError.invariant("large-project search returned no fixture result")
-        }
         manager.paneManager.removePane(splitPane)
 
         manager.suspendEditorServices()

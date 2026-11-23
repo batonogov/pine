@@ -115,33 +115,6 @@ struct PaneManagerPruneEmptyEditorTests {
         #expect(manager.root.leafCount(ofType: .editor) == 1)
     }
 
-    /// Quick Open path: simulates `QuickOpenView.openFile` against a
-    /// terminals-only layout — must transparently recreate an editor leaf
-    /// and open the file in it. Mirrors the production code path
-    /// `paneManager.ensureEditorPane().openTab(url:)`.
-    @Test func quickOpen_inTerminalsOnlyLayout_recreatesEditorAndOpensFile() {
-        let manager = PaneManager()
-        let editorID = manager.activePaneID
-        _ = manager.createTerminalPane(
-            relativeTo: editorID, axis: .horizontal, workingDirectory: nil
-        )
-        manager.pruneEmptyEditorLeaves()
-        #expect(manager.root.leafCount(ofType: .editor) == 0)
-
-        // Simulate Quick Open's openFile flow.
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pine-quick-open-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("opened-via-quick-open.swift")
-        try? "// quick open".write(to: url, atomically: true, encoding: .utf8)
-        manager.ensureEditorPane().openTab(url: url)
-
-        #expect(manager.root.leafCount(ofType: .editor) == 1)
-        let activeTM = manager.tabManagers[manager.activePaneID]
-        #expect(activeTM?.tabs.count == 1)
-        #expect(activeTM?.tabs.first?.url == url)
-    }
-
     @Test func ensureEditorPane_thenOpenFile_endToEnd() {
         let manager = PaneManager()
         let editorID = manager.activePaneID

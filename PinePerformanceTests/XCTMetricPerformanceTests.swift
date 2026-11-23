@@ -52,28 +52,6 @@ final class XCTMetricPerformanceTests: XCTestCase {
         }
     }
 
-    // MARK: - XCTStorageMetric — disk read throughput
-
-    /// Project search reads files from disk; `XCTStorageMetric` quantifies
-    /// the I/O cost that the clock-only baselines hide. This mirrors the
-    /// `ProjectSearchProvider.searchFile` path measured in the nightly suite.
-    func testSearchStorageIOMetric() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PineXCTMetric-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        // A single large file to exercise the disk-read path.
-        let lines = (0..<5000).map { "let value\($0) = compute(\($0)) // target marker" }
-        let content = lines.joined(separator: "\n")
-        let file = tempDir.appendingPathComponent("large.swift")
-        try content.write(to: file, atomically: true, encoding: .utf8)
-
-        measure(metrics: [XCTClockMetric(), XCTStorageMetric()]) {
-            _ = ProjectSearchProvider.searchFile(at: file, query: "target", isCaseSensitive: false)
-        }
-    }
-
     // MARK: - Helpers
 
     private func generateManyBlocks(count: Int, linesPerBlock: Int) -> String {

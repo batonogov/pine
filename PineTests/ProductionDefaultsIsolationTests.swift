@@ -8,11 +8,10 @@
 //  fixtures into the developer's real preference domain — the exact defect
 //  that accumulated 618 dead keys on the maintainer's machine.
 //
-//  Leak detection keys off the fixture's temporary path: both `sessionState:`
-//  and `quickOpen.recentFiles.` keys embed the project root path, so a leaked
-//  write is always visible as a key containing that path. Filtering by the
-//  path keeps the guard immune to unrelated AppKit keys appearing in
-//  `.standard` while the suite runs.
+//  Leak detection keys off the fixture's temporary path: `sessionState:` keys
+//  embed the project root path, so a leaked write is always visible as a key
+//  containing that path. Filtering by the path keeps the guard immune to
+//  unrelated AppKit keys appearing in `.standard` while the suite runs.
 //
 
 import Foundation
@@ -61,28 +60,6 @@ struct ProductionDefaultsIsolationTests {
         #expect(leakedProductionKeys(containing: dir.path).isEmpty)
         // The session itself must be present in the injected suite.
         #expect(SessionState.load(for: canonical, defaults: defaults) != nil)
-    }
-
-    @Test("QuickOpenProvider recents stay inside the injected suite")
-    func quickOpenRecentsStayScoped() throws {
-        let (dir, file) = try makeFixtureProject()
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        let suiteName = "PineTests.Isolation.QuickOpen.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let root = FileNode(url: dir, projectRoot: dir)
-        let provider = QuickOpenProvider(defaults: defaults)
-        provider.buildIndex(from: [root], rootURL: dir)
-
-        provider.recordOpened(url: file)
-        _ = provider.search(query: "")
-
-        #expect(leakedProductionKeys(containing: dir.resolvingSymlinksInPath().path).isEmpty)
-        // The recents list must be readable back from the injected suite.
-        let results = provider.search(query: "")
-        #expect(results.map(\.fileName) == ["main.swift"])
     }
 
     @Test("SessionState.save with an injected suite stays out of the production domain")

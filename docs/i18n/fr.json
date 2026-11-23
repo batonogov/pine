@@ -69,7 +69,7 @@
   "features.01title": "Suivez le travail de l'agent en direct.",
   "features.01desc": "La boîte des agents conserve le contexte des tâches entre projets et mène aux sessions actives. Les intégrations actuelles qui observent uniquement les processus n'envoient aucune notification d'agent, y compris à l'arrêt d'un processus. Les notifications d'attente de saisie, d'échec et d'achèvement exigent des événements de cycle de vie vérifiés provenant d'une intégration structurée prise en charge ; aucune intégration de ce type n'est encore activée dans l'application. Les versions publiées peuvent se comporter différemment.",
   "features.02title": "Vitesse native.",
-  "features.02desc": "Grammaires de langage intégrées, symboles, pliage, minimap et recherche de projet.",
+  "features.02desc": "Grammaires de langage intégrées, pliage et minimap.",
   "features.03title": "Un espace pour plusieurs projets.",
   "features.03desc": "Gardez les projets liés dans une fenêtre, changez depuis la barre d’outils, divisez éditeurs et terminaux, déplacez les onglets, redimensionnez et maximisez.",
   "features.04title": "Un terminal conçu pour de vrais workflows.",

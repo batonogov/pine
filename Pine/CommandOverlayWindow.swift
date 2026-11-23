@@ -2,9 +2,9 @@
 //  CommandOverlayWindow.swift
 //  Pine
 //
-//  Lightweight `NSPanel` that hosts command-overlay content (Quick Open,
-//  Symbol Navigator, Go to Line, Command Palette, Agent Attention) as a real
-//  window so hosted SwiftUI views get a complete accessibility tree (#975).
+//  Lightweight `NSPanel` that hosts command-overlay content (Command Palette,
+//  Agent Attention) as a real window so hosted SwiftUI views get a complete
+//  accessibility tree (#975).
 //
 //  Why a window and not SwiftUI `.overlay`:
 //    PR #986 briefly presented the navigation flows through a SwiftUI ZStack

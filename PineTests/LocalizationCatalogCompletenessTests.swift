@@ -24,7 +24,6 @@ struct LocalizationCatalogCompletenessTests {
         "…",
         "%@%@%@",
         "%lld",
-        "1–%lld",
     ])
 
     @Test("Every user-facing entry covers all supported locales")

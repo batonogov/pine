@@ -370,8 +370,6 @@ final class ProjectManager {
     /// when the user opens a file again. The reference remains as the stable
     /// fallback used by project-level commands while no editor pane exists.
     let primaryTabManager = TabManager()
-    let searchProvider = ProjectSearchProvider()
-    let quickOpenProvider: QuickOpenProvider
     let progress = ProgressTracker()
     let contextFileWriter: ContextFileWriter
     /// Weak anchor for every native dialog owned by this project.
@@ -1847,7 +1845,6 @@ final class ProjectManager {
         self.agentHistory = AgentHistoryStore(privateStore: agentHistoryPrivateStore)
         self.taskRunStore = UserTaskRunStore(resultPersistence: taskResultPersistence)
         self.agentHistoryPathResolver = agentHistoryPathResolver
-        self.quickOpenProvider = QuickOpenProvider(defaults: sessionDefaults)
         self.workspace = WorkspaceManager(
             filesystemValidationSeam: workspaceFilesystemValidationSeam
         )
@@ -1859,10 +1856,6 @@ final class ProjectManager {
         )
         terminal.onAgentHistoryBoundary = { [weak self] in
             self?.finalizeAgentSessionsForHistory()
-        }
-        workspace.setOnRootNodesChanged { [weak self] nodes in
-            guard let self, let rootURL = self.workspace.rootURL else { return }
-            self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)
         }
         workspace.setOnRefreshAccepted { [weak self] rootURL in
             self?.correlateAgentActivity(rootURL: rootURL)
@@ -2079,7 +2072,6 @@ final class ProjectManager {
         recoveryManager?.cancelScheduledSnapshot()
         recoveryManager?.stopPeriodicSnapshots()
         workspace.suspend()
-        searchProvider.cancel()
         cleanupEditorContext()
     }
 
@@ -2105,7 +2097,6 @@ final class ProjectManager {
         recoveryManager?.cancelScheduledSnapshot()
         recoveryManager?.stopPeriodicSnapshots()
         workspace.suspend()
-        searchProvider.cancel()
         terminal.shutdownPermanently()
         agentTaskFilesystemAdmission = nil
         agentTaskFilesystemAdmissionGeneration = UUID()

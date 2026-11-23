@@ -144,26 +144,6 @@ struct LocalizationPluralRulesTests {
         )
     }
 
-    // MARK: - Search truncation
-
-    @Test("Per-file truncation footers pluralize the match cap")
-    func truncatedPerFilePlurals() {
-        #expect(
-            Strings.searchTruncatedPerFile(1, locale: Self.english)
-                == "Per-file results limited to 1 match — refine your query"
-        )
-        #expect(
-            Strings.searchTruncatedPerFile(2, locale: Self.english)
-                == "Per-file results limited to 2 matches — refine your query"
-        )
-        // Russian phrasing keeps the numeral bare, so every category
-        // resolves to the same sentence — still through the plural path.
-        #expect(
-            Strings.searchTruncatedPerFile(5, locale: Self.russian)
-                == "Результатов на файл: не более 5 — уточните запрос"
-        )
-    }
-
     // MARK: - Reload toasts
 
     @Test("Reload toasts pluralize the file count and keep the name list")

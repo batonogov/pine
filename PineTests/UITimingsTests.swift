@@ -61,10 +61,6 @@ struct UITimingsTests {
         #expect(UITimings.Debounce.fileWatcher == 0.15)
     }
 
-    @Test func debounceProjectSearchIsExactly300ms() {
-        #expect(UITimings.Debounce.projectSearch == 0.3)
-    }
-
     @Test func debounceConfigValidationIsExactly300ms() {
         #expect(UITimings.Debounce.configValidation == 0.3)
     }
@@ -98,13 +94,6 @@ struct UITimingsTests {
         #expect(UITimings.Debounce.foldRecalc >= UITimings.Debounce.edit)
     }
 
-    /// Project-wide search fires far less often than per-tab edit
-    /// highlighting — it walks the entire file tree and reads every
-    /// matching file. Must outpace `edit` by a real margin.
-    @Test func projectSearchDebounceIsLongerThanEditDebounce() {
-        #expect(UITimings.Debounce.projectSearch > UITimings.Debounce.edit)
-    }
-
     /// Delay tier ordering: short < standard < long. If anyone "tunes"
     /// these without checking, they'd silently invert the meaning.
     @Test func delayTiersAreInAscendingOrder() {
@@ -122,7 +111,6 @@ struct UITimingsTests {
             UITimings.Debounce.edit,
             UITimings.Debounce.foldRecalc,
             UITimings.Debounce.fileWatcher,
-            UITimings.Debounce.projectSearch,
             UITimings.Debounce.configValidation
         ]
         let allDelays = [
@@ -150,7 +138,6 @@ struct UITimingsTests {
             UITimings.Debounce.edit,
             UITimings.Debounce.foldRecalc,
             UITimings.Debounce.fileWatcher,
-            UITimings.Debounce.projectSearch,
             UITimings.Debounce.configValidation,
             UITimings.Render.minimapRedraw
         ]
@@ -172,7 +159,6 @@ struct UITimingsTests {
             UITimings.Debounce.edit,
             UITimings.Debounce.foldRecalc,
             UITimings.Debounce.fileWatcher,
-            UITimings.Debounce.projectSearch,
             UITimings.Debounce.configValidation,
             UITimings.Render.minimapRedraw
         ]
@@ -187,8 +173,8 @@ struct UITimingsTests {
     /// `.seconds(UITimings.…)` round-trips to the expected millisecond
     /// quantity — guards against a future Swift change to `Duration`'s
     /// conversion of `Double` seconds.
-    @Test func projectSearchDurationRoundsTripToMilliseconds() {
-        let asSeconds: Duration = .seconds(UITimings.Debounce.projectSearch)
+    @Test func configValidationDurationRoundsTripToMilliseconds() {
+        let asSeconds: Duration = .seconds(UITimings.Debounce.configValidation)
         let asMilliseconds: Duration = .milliseconds(300)
         #expect(asSeconds == asMilliseconds)
     }

@@ -446,10 +446,7 @@ jobs:
             -skip-testing:PineTests/FuzzGitBlameParserTests \
             -skip-testing:PineTests/FuzzGitStatusParserTests \
             -skip-testing:PineTests/FuzzSyntaxHighlighterTests \
-            -skip-testing:PineTests/FuzzQuickOpenProviderTests \
-            -skip-testing:PineTests/FuzzSymbolParserTests \
             -skip-testing:PineTests/FuzzConfigValidatorTests \
-            -skip-testing:PineTests/FuzzGoToLineParserTests \
             -retry-tests-on-failure \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
@@ -625,7 +622,7 @@ jobs:
             --workflow .github/workflows/ci.yml \
             --max-delta 3
 
-  # UI test shards — 7 shards × 2 OS axes = 14 jobs, 34-37 tests each (delta 3).
+  # UI test shards — 7 shards × 2 OS axes = 14 jobs, 32-34 tests each (delta 2).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   # shard-name is a real matrix axis (not only an include key): an include
@@ -648,34 +645,33 @@ jobs:
           - "Navigation"
           - "Editor Chrome"
           - "Files & Save"
-          - "Search & Panes"
+          - "Panes & Files"
           - "Security & Layout"
         include:
-          # Shard 1 — Terminal (36 tests)
+          # Shard 1 — Terminal
           - shard-name: "Terminal"
             test-classes: >-
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
-              -only-testing:PineUITests/TerminalFindStepMenuUITests
               -only-testing:PineUITests/SessionRestoreTests
-              -only-testing:PineUITests/AgentAttentionKeyboardUITests
               -only-testing:PineUITests/AgentMenuBarCommandsUITests
-          # Shard 2 — Welcome & Session (36 tests)
+          # Shard 2 — Welcome & Session (32 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
-              -only-testing:PineUITests/SidebarFolderClickTests
-              -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
-          # Shard 3 — Navigation (35 tests; accessibility matrix skips here)
+          # Shard 3 — Navigation (accessibility matrix skips here)
           - shard-name: "Navigation"
             test-classes: >-
-              -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
-              -only-testing:PineUITests/QuickOpenUITests
+              -only-testing:PineUITests/TabOverflowExternalChangesUITests
+              -only-testing:PineUITests/CommandPaletteUITests
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
-          # Shard 4 — Editor Chrome (36 tests)
+              -only-testing:PineUITests/AgentAttentionKeyboardUITests
+              -only-testing:PineUITests/SidebarFolderClickTests
+              -only-testing:PineUITests/CheckForUpdatesTests
+          # Shard 4 — Editor Chrome (35 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
@@ -685,7 +681,7 @@ jobs:
               -only-testing:PineUITests/BlameViewTests
               -only-testing:PineUITests/ToggleCommentTests
               -only-testing:PineUITests/OpenCodeTaskUITests
-          # Shard 5 — Files & Save (37 tests, release smoke skips outside release CI)
+          # Shard 5 — Files & Save (33 tests, release smoke skips outside release CI)
           - shard-name: "Files & Save"
             test-classes: >-
               -only-testing:PineUITests/EditorSaveFlowTests
@@ -695,18 +691,19 @@ jobs:
               -only-testing:PineUITests/UserTaskExecutionUITests
               -only-testing:PineUITests/UnsavedChangesUITests
               -only-testing:PineUITests/ReleaseArtifactSmokeTests
-              -only-testing:PineUITests/CheckForUpdatesTests
-          # Shard 6 — Search & Panes (37 tests)
-          - shard-name: "Search & Panes"
+          # Shard 6 — Panes & Files
+          - shard-name: "Panes & Files"
             test-classes: >-
               -only-testing:PineUITests/CloseProjectMenuTests
-              -only-testing:PineUITests/SidebarSearchTests
               -only-testing:PineUITests/DuplicateTests
               -only-testing:PineUITests/SplitPaneLifecycleTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
               -only-testing:PineUITests/MinimapTests
-          # Shard 7 — Security & Layout (35 tests)
+              -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
+              -only-testing:PineUITests/LineNumberGutterUITests
+              -only-testing:PineUITests/HCLFormatOnSaveTests
+          # Shard 7 — Security & Layout (34 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
               -only-testing:PineUITests/AgentInboxToolbarButtonTests
@@ -714,9 +711,7 @@ jobs:
               -only-testing:PineUITests/SymlinkSecurityUITests
               -only-testing:PineUITests/MultiWindowTests
               -only-testing:PineUITests/InlineRenameAlignmentTests
-              -only-testing:PineUITests/LineNumberGutterUITests
               -only-testing:PineUITests/SettingsUITests
-              -only-testing:PineUITests/HCLFormatOnSaveTests
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
@@ -1163,10 +1158,7 @@ jobs:
             -only-testing:PineTests/FuzzGitBlameParserTests \
             -only-testing:PineTests/FuzzGitStatusParserTests \
             -only-testing:PineTests/FuzzSyntaxHighlighterTests \
-            -only-testing:PineTests/FuzzQuickOpenProviderTests \
-            -only-testing:PineTests/FuzzSymbolParserTests \
             -only-testing:PineTests/FuzzConfigValidatorTests \
-            -only-testing:PineTests/FuzzGoToLineParserTests \
             -only-testing:PineTests/FuzzAgentBoundaryTests \
             -resultBundlePath FuzzResults.xcresult \
             CODE_SIGN_IDENTITY=- \

@@ -53,9 +53,7 @@ struct MenuShortcutOverrideTests {
             .newFile: AdvertisedShortcut("n", .command),
             .openFile: AdvertisedShortcut("o", .command),
             .openFolder: AdvertisedShortcut("o", [.command, .shift]),
-            .quickOpen: AdvertisedShortcut("p", .command),
             .commandPalette: AdvertisedShortcut("p", [.command, .option]),
-            .symbolNavigator: AdvertisedShortcut("r", .command),
             .closeTab: AdvertisedShortcut("w", .command),
             .closeProject: AdvertisedShortcut("w", [.command, .control]),
             .closeWindow: AdvertisedShortcut("w", [.command, .shift]),
@@ -65,13 +63,6 @@ struct MenuShortcutOverrideTests {
             .duplicate: AdvertisedShortcut("d", [.command, .shift]),
             // Edit
             .toggleComment: AdvertisedShortcut("/", .command),
-            .findInFile: AdvertisedShortcut("f", .command),
-            .findAndReplace: AdvertisedShortcut("f", [.command, .option]),
-            .findNext: AdvertisedShortcut("g", .command),
-            .findPrevious: AdvertisedShortcut("g", [.command, .shift]),
-            .useSelectionForFind: AdvertisedShortcut("e", .command),
-            .findInProject: AdvertisedShortcut("f", [.command, .shift]),
-            .goToLine: AdvertisedShortcut("l", .command),
             .nextChange: AdvertisedShortcut(.downArrow, [.control, .option]),
             .previousChange: AdvertisedShortcut(.upArrow, [.control, .option]),
             .acceptChange: AdvertisedShortcut(.return, [.control, .option]),
@@ -159,17 +150,17 @@ struct MenuShortcutOverrideTests {
     @Test("a rebind replaces the advertised chord instead of adding to it")
     func rebindReplacesTheAdvertisedChord() async throws {
         let keybindings = try await Self.registry(
-            loading: #"[{"command": "findInFile", "key": "cmd+k"}]"#
+            loading: #"[{"command": "toggleComment", "key": "cmd+k"}]"#
         )
 
         let shortcut = try #require(
-            MenuKeyboardShortcut(keybindings.effectiveChord(for: .findInFile))
+            MenuKeyboardShortcut(keybindings.effectiveChord(for: .toggleComment))
         )
         #expect(shortcut.key.character == "k")
         #expect(shortcut.modifiers == .command)
         #expect(
             keybindings.suppressesBuiltInShortcut(
-                for: try #require(Self.keyDown("f", modifiers: .command))
+                for: try #require(Self.keyDown("/", modifiers: .command))
             )
         )
     }
@@ -178,19 +169,19 @@ struct MenuShortcutOverrideTests {
     @Test("rebinding a command retires its replaced chord")
     func rebindRetiresTheBuiltInChord() async throws {
         let keybindings = try await Self.registry(
-            loading: #"[{"command": "quickOpen", "key": "cmd+j"}]"#
+            loading: #"[{"command": "commandPalette", "key": "cmd+j"}]"#
         )
 
         let shortcut = try #require(
             MenuKeyboardShortcut(
-                keybindings.effectiveChord(for: .quickOpen)
+                keybindings.effectiveChord(for: .commandPalette)
             )
         )
         #expect(shortcut.key.character == "j")
         #expect(
             keybindings.suppressesBuiltInShortcut(
                 for: try #require(
-                    Self.keyDown("p", modifiers: [.command])
+                    Self.keyDown("p", modifiers: [.command, .option])
                 )
             )
         )
@@ -221,7 +212,7 @@ struct MenuShortcutOverrideTests {
     @Test("the typed ⇧⌘= form survives while ⌘+ is not rebound")
     func typedPlusFormFallsThroughWithoutRebind() async throws {
         let keybindings = try await Self.registry(
-            loading: #"[{"command": "findInFile", "key": "cmd+k"}]"#
+            loading: #"[{"command": "toggleComment", "key": "cmd+k"}]"#
         )
 
         let typedPlus = try #require(Self.typedKeyDown(
@@ -234,19 +225,19 @@ struct MenuShortcutOverrideTests {
     }
 
     /// Shift that only upper-cases a letter is a real chord modifier:
-    /// ⇧⌘F is not a typed form of ⌘F and must not suppress a rebound ⌘F.
+    /// ⇧⌘S is not a typed form of ⌘S and must not suppress a rebound ⌘S.
     @Test("case-only Shift stays a chord modifier")
     func caseOnlyShiftDoesNotSuppressTheUnshiftedChord() async throws {
         let keybindings = try await Self.registry(
-            loading: #"[{"command": "findInFile", "key": "cmd+k"}]"#
+            loading: #"[{"command": "save", "key": "cmd+k"}]"#
         )
 
-        let shiftF = try #require(Self.typedKeyDown(
-            "f",
-            shifted: "F",
+        let shiftS = try #require(Self.typedKeyDown(
+            "s",
+            shifted: "S",
             modifiers: [.command, .shift]
         ))
-        #expect(!keybindings.suppressesBuiltInShortcut(for: shiftF))
+        #expect(!keybindings.suppressesBuiltInShortcut(for: shiftS))
     }
 
     /// The #1611 scenario itself: increaseFontSize rebound off ⌘+, the user

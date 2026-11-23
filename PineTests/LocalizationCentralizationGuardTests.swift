@@ -32,13 +32,10 @@ struct LocalizationCentralizationGuardTests {
         "Pine/Extensibility/UserCommand+Palette.swift",
         "Pine/Extensibility/UserConfigurationDiagnostic+Localized.swift",
         "Pine/Extensibility/UserConfigurationEditor.swift",
-        "Pine/GoToLineView.swift",
         "Pine/NativeRecentProjectsMenu.swift",
         "Pine/PineAppMenuCommands.swift",
         "Pine/ProjectWindowSession.swift",
-        "Pine/QuickOpenView.swift",
         "Pine/Strings.swift",
-        "Pine/SymbolNavigatorView.swift",
         "Pine/Tabs/TabPersistence.swift",
     ]
 
@@ -54,7 +51,6 @@ struct LocalizationCentralizationGuardTests {
     /// - `a11y.statusBar.git.*`: "Category: N" accessibility labels, which
     ///   need no plural agreement in any supported locale (#1533).
     private static let nonPluralCountKeyAllowlist: Set<String> = [
-        "%@ — line %lld",
         "a11y.statusBar.cursorPosition.value %lld %lld",
         "a11y.statusBar.git.added %lld",
         "a11y.statusBar.git.modified %lld",
@@ -64,18 +60,13 @@ struct LocalizationCentralizationGuardTests {
         // commandOverlay.announcement.oneResult), so the English plural is
         // always grammatical; the Russian phrasing is count-invariant.
         "commandOverlay.announcement.manyResults",
-        // Line ordinal inside a VoiceOver announcement.
-        "commandOverlay.announcement.symbol",
         // Line/column ordinals.
         "diagnostic.lineColumn",
         "diagnostic.line",
-        "Enter a line number from 1 to %lld",
         // "3 of 4" position ratio.
         "globalTabSwitcher.announcement",
-        "Line %lld is out of range (1–%lld)",
         "pane.positionLabel",
         "quit.summary.message %lld",
-        "search.truncatedTotal %lld %lld",
         // Label-shaped reload summary: neither count agrees a noun, so
         // every (tasks, keybindings) pair is grammatical through the single
         // format production reads (cf. quit.summary.message).

@@ -108,34 +108,6 @@ struct ErrorHandlingTests {
         #expect(loaded == nil)
     }
 
-    // MARK: - ProjectSearchProvider error handling
-
-    @Test func searchFileReturnsEmptyForNonexistentFile() {
-        let fakeURL = URL(fileURLWithPath: "/nonexistent/file.swift")
-        let results = ProjectSearchProvider.searchFile(
-            at: fakeURL,
-            query: "test",
-            isCaseSensitive: false
-        )
-        #expect(results.isEmpty)
-    }
-
-    @Test func searchFileReturnsEmptyForBinaryFile() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-
-        let binaryFile = dir.appendingPathComponent("binary.dat")
-        // Write bytes that are not valid UTF-8
-        try Data([0xFF, 0xFE, 0x00, 0x01, 0x80, 0x81]).write(to: binaryFile)
-
-        let results = ProjectSearchProvider.searchFile(
-            at: binaryFile,
-            query: "test",
-            isCaseSensitive: false
-        )
-        #expect(results.isEmpty)
-    }
-
     // MARK: - TabManager file reading error handling
 
     @Test func reloadTabHandlesNonexistentFile() {

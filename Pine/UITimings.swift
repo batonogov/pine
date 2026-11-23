@@ -27,8 +27,7 @@ import Foundation
 /// Typed namespace for UI-facing delays, debounces, and render cadences.
 ///
 /// Marked `nonisolated` so the compile-time constants can be referenced
-/// from `nonisolated` static properties (e.g. `ProjectSearchProvider.
-/// debounceInterval`) under Pine's project-wide
+/// from `nonisolated` static properties under Pine's project-wide
 /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` setting. The whole enum
 /// is pure constant data, so isolation never matters at runtime — but
 /// without `nonisolated` Swift 6 inherits MainActor isolation and
@@ -62,8 +61,8 @@ nonisolated enum UITimings {
     }
 
     /// Debounce intervals for trailing-edge work that's expensive to run
-    /// per-event (regex highlighting, fold recalculation, project-wide
-    /// search, FSEvents fan-out, validators).
+    /// per-event (regex highlighting, fold recalculation, FSEvents fan-out,
+    /// validators).
     enum Debounce {
         /// Syntax highlight on scroll. Roughly three frames at 120 Hz —
         /// fast enough to feel instant on ProMotion, slow enough to
@@ -88,11 +87,6 @@ nonisolated enum UITimings {
         /// bursts (npm install, git checkout) into a handful of
         /// refreshes. See WorkspaceManager#839.
         static let fileWatcher: TimeInterval = 0.15
-
-        /// Project-wide search debounce — full-tree text scan with
-        /// `.gitignore` filtering. Tuned so a fast typist sees results
-        /// once they pause, not once per keystroke.
-        static let projectSearch: TimeInterval = 0.3
 
         /// Config validator (yamllint / shellcheck / hadolint /
         /// terraform validate) debounce. Validators spawn external
