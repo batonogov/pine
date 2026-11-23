@@ -147,7 +147,13 @@ struct ContentView: View {
                 )
             }
 
-            ToolbarItem(placement: .primaryAction) {
+            // Kept on `.navigation`, not `.primaryAction`: the layout pin
+            // (`AgentInboxToolbarLayoutTracker`) assumes exactly one
+            // `.primaryAction` item — the Inbox button — and a second one
+            // disturbed the Inbox's outside-click dismissal/reopen on
+            // macOS 27, where retitling re-applies the toolbar. The visual
+            // position is the same leading cluster either way.
+            ToolbarItem(placement: .navigation) {
                 Button {
                     isOpenCodeTaskPresented = true
                 } label: {
