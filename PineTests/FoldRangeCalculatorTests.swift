@@ -189,4 +189,37 @@ struct FoldRangeCalculatorTests {
         #expect(ranges[0].startCharIndex == 0)
         #expect(ranges[0].endCharIndex == 6)
     }
+
+    @Test("Bracket fallback parsing runs off the main thread")
+    func bracketFallbackRunsOffMain() async throws {
+        let probe = FoldExecutionProbe()
+        let provider = LocalFoldProvider(language: "swift") { _ in
+            probe.record(isMainThread: Thread.isMainThread)
+            return []
+        }
+        let snapshot = DocumentSnapshot(
+            uri: "file:///test.swift",
+            text: "{\n}\n",
+            revision: DocumentRevision(0)
+        )
+        let ranges = try #require(await provider.foldRanges(for: snapshot))
+
+        #expect(probe.wasMainThread == false)
+        #expect(ranges.count == 1)
+    }
+}
+
+nonisolated private final class FoldExecutionProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedMainThread: Bool?
+
+    var wasMainThread: Bool? {
+        lock.withLock { recordedMainThread }
+    }
+
+    func record(isMainThread: Bool) {
+        lock.withLock {
+            recordedMainThread = isMainThread
+        }
+    }
 }

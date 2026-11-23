@@ -35,7 +35,6 @@ struct AccessibilityLocalizationMatrixTests {
         // Settings.
         "settings.tab.general",
         "settings.tab.terminal",
-        "settings.tab.languageServers",
         "settings.tab.agentHandoff",
         "settings.tab.keyBindings",
         "settings.general.autoSave",

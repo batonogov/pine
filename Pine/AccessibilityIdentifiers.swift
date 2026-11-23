@@ -271,25 +271,7 @@ nonisolated enum AccessibilityID {
         ].joined(separator: "_")
     }
 
-    // MARK: - Go-to-Definition quick pick (#1533)
-    static let definitionQuickPickList = "definitionQuickPickList"
-    static func definitionQuickPickRow(_ index: Int) -> String {
-        "definitionQuickPickRow_\(index)"
-    }
-
-    // MARK: - LSP / Problems panel (#1010)
-    static let problemsIndicator = "problemsIndicator"
-    static let problemsPanel = "problemsPanel"
-    static let problemsEmptyState = "problemsEmptyState"
-    static let problemsHelpButton = "problemsHelpButton"
-    static let problemsLanguageSettingsButton =
-        "problemsLanguageSettingsButton"
     static let agentStatusBarMenu = "agentStatusBarMenu"
-
-    // MARK: - LSP completion popup (#1012)
-    static let completionPopup = "completionPopup"
-    static let completionPopupList = "completionPopupList"
-    static func completionItem(_ label: String) -> String { "completionItem_\(label)" }
 
     // MARK: - Agent Activity Panel (#1072)
     static let agentActivityPanel = "agentActivityPanel"

@@ -20,7 +20,6 @@ nonisolated enum PineHelp {
         static let workspace: NSHelpManager.AnchorName = "pine-workspace"
         static let terminal: NSHelpManager.AnchorName = "pine-terminal"
         static let git: NSHelpManager.AnchorName = "pine-git"
-        static let languageServers: NSHelpManager.AnchorName = "pine-lsp"
         static let agents: NSHelpManager.AnchorName = "pine-agents"
         static let agentInbox: NSHelpManager.AnchorName =
             "pine-agent-inbox"
@@ -36,8 +35,7 @@ nonisolated enum PineHelp {
 /// A native AppKit help button for compact SwiftUI chrome.
 ///
 /// `HelpLink` remains the preferred control in regular SwiftUI layouts. The
-/// Problems panel header is short enough that its represented help control can
-/// be omitted from the accessibility hierarchy on macOS 26. This bridge uses
+/// This bridge uses
 /// AppKit's standard help-button bezel and publishes the native accessibility
 /// contract explicitly, matching Pine's other represented controls.
 @MainActor

@@ -112,27 +112,6 @@ struct StructuralBracketProviderTests {
         )
     }
 
-    @Test("Language capabilities derive from provider and server registries")
-    func derivedLanguageCapabilities() {
-        let swift = StructuralLanguageRegistry.capabilities(
-            for: URL(fileURLWithPath: "/project/App.swift")
-        )
-        let unsupported = StructuralLanguageRegistry.capabilities(
-            for: URL(fileURLWithPath: "/project/file.unknown")
-        )
-
-        #expect(swift.hasConfiguredLSPServer)
-        #expect(swift.hasRegexSymbols)
-        #expect(swift.hasBoundedBracketMatching)
-        #expect(!unsupported.hasConfiguredLSPServer)
-        #expect(!unsupported.hasRegexSymbols)
-        #expect(unsupported.hasBoundedBracketMatching)
-        #expect(
-            StructuralLanguageRegistry.lspLanguages
-                == LanguageServerRegistry.supportedLanguages.sorted()
-        )
-    }
-
     private func snapshot(_ text: String) -> DocumentSnapshot {
         DocumentSnapshot(
             uri: "file:///test.unknown",

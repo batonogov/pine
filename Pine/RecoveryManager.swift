@@ -544,7 +544,7 @@ final class RecoveryManager {
     ///   waiting for the calendar to catch up with a wrong clock.
     ///
     /// A file that cannot be *read* is kept, whatever its dates say. Launch is
-    /// when every language server, file-system watcher and terminal in the app
+    /// when every file-system watcher and terminal in the app
     /// is starting at once, so `EIO` and `EMFILE` are live possibilities here,
     /// and a file the process could not open has not told anybody how old it
     /// is.

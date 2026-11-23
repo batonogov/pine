@@ -51,7 +51,7 @@ import Foundation
 ///   cancelled task `Task.sleep` throws before sleeping at all, and a `try?`
 ///   would swallow that, turning the poll into a hot spin on the main actor
 ///   until the ceiling expires. A cancelled caller returns `false`
-///   immediately instead (same pattern as the SourceKit-LSP smoke wait).
+///   immediately instead.
 @MainActor
 func waitUntilMainActor(
     _ condition: @MainActor () -> Bool,

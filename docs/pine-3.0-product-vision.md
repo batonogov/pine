@@ -110,7 +110,7 @@ Public surfaces describe two things and never blur them:
 - **Shipped now (Pine 2.x):** a native SwiftUI + AppKit code editor; a full
   VT100/xterm built-in terminal; CLI-agent detection with badges, activity, and
   privacy-bounded notifications; a cross-project Agent Inbox that routes back to
-  the exact live session; isolated agent worktrees; LSP code intelligence; Git
+  the exact live session; isolated agent worktrees; Git
   integration; and session persistence with restoration.
   Current built-in integrations detect processes, not verified waiting or success.
   The [compatibility matrix](agent-compatibility.md) and

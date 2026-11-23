@@ -1253,7 +1253,7 @@ struct TerminationSaveInventoryAuthorization {
 /// Each project directory maps to a single ProjectManager instance.
 @MainActor
 @Observable
-final class ProjectRegistry: LSPSettingsObserver {
+final class ProjectRegistry {
     private struct AgentInboxWindowIntent {
         let session: ProjectWindowSession
         let generation: UUID
@@ -1289,8 +1289,6 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// Recently opened project paths (most recent first), persisted to UserDefaults.
     var recentProjects: [URL] = []
 
-    /// Application-wide LSP preferences shared by every project manager.
-    let lspSettings: LSPSettings
     /// Application-lifetime durable agent identity across every project.
     let agentTasks: AgentTaskRegistry
     /// The existing app owner retains OpenCode runtimes; this is not a task store.
@@ -1406,10 +1404,6 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// invalidated only when a count they display actually moves.
     private var agentInboxAttentionCounts: [URL: Int] = [:]
 
-    /// Serializes settings lifecycle changes so rapid Apply/Reset operations
-    /// cannot race each other across projects.
-    @ObservationIgnored
-    private var lspSettingsChangeTask: Task<Void, Never>?
     /// Prevents a ProjectManager from being created without a matching agent
     /// metadata registration while that registry has frozen admission.
     @ObservationIgnored
@@ -1420,7 +1414,6 @@ final class ProjectRegistry: LSPSettingsObserver {
     private var worktreeRemovalReservations: Set<URL> = []
 
     init(
-        lspSettings: LSPSettings = .shared,
         defaults: UserDefaults = PineStorageContext.defaults,
         agentHistoryPrivateStore: AgentHistoryPrivateStore? = nil,
         fileManager: FileManager = .default,
@@ -1442,7 +1435,6 @@ final class ProjectRegistry: LSPSettingsObserver {
             "--clear-recent-projects"
         )
     ) {
-        self.lspSettings = lspSettings
         self.agentTasks = agentTasks ?? Self.makeDefaultAgentTaskRegistry()
         self.defaults = defaults
         self.agentHistoryPrivateStore = agentHistoryPrivateStore
@@ -1496,7 +1488,6 @@ final class ProjectRegistry: LSPSettingsObserver {
             self.agentTasks.seedMarketingInboxForUITesting()
         }
         #endif
-        lspSettings.addObserver(self)
         // Keeps the toolbar attention badge current (#1337). The token is not
         // retained: this registry owns `agentTasks`, so the observer cannot
         // outlive its target, and the closure holds `self` weakly.
@@ -2094,7 +2085,6 @@ final class ProjectRegistry: LSPSettingsObserver {
         let contextEpoch = contextPresentationEpochs[canonical, default: 0] &+ 1
         contextPresentationEpochs[canonical] = contextEpoch
         let pm = ProjectManager(
-            lspSettings: lspSettings,
             sessionDefaults: defaults,
             agentHistoryPrivateStore: agentHistoryPrivateStore ?? AgentHistoryPrivateStore(),
             agentProcessSnapshotPoller: agentProcessSnapshotPoller,
@@ -3682,8 +3672,6 @@ final class ProjectRegistry: LSPSettingsObserver {
             return false
         }
 
-        lspSettingsChangeTask?.cancel()
-        lspSettingsChangeTask = nil
         backgroundReclamationTask?.cancel()
         backgroundReclamationTask = nil
         backgroundReclamationQueue.removeAll()
@@ -3888,28 +3876,6 @@ final class ProjectRegistry: LSPSettingsObserver {
             guard let count = countsByIdentity[identity] else { continue }
             counts[url] = count
         }
-    }
-
-    // MARK: - Language Server Settings
-
-    func lspSettingsDidChange(_ change: LSPSettingsChange) {
-        let previous = lspSettingsChangeTask
-        lspSettingsChangeTask = Task { @MainActor [weak self] in
-            if let previous {
-                await previous.value
-            }
-            guard let self, !Task.isCancelled else { return }
-            let projectManagers = Array(self.openProjects.values)
-            for projectManager in projectManagers {
-                guard !Task.isCancelled else { return }
-                await projectManager.lspManager.applySettingsChange(change)
-            }
-        }
-    }
-
-    /// Test synchronization point for asynchronous graceful restarts.
-    func waitForLSPSettingsChanges() async {
-        await lspSettingsChangeTask?.value
     }
 
     // MARK: - Recent Projects

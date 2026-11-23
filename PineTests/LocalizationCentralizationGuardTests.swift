@@ -87,7 +87,6 @@ struct LocalizationCentralizationGuardTests {
         // 2...8) naming a setting, not counting objects; every translation
         // phrases it as a count-invariant "label: N".
         "statusbar.indentation.spaces %lld",
-        "settings.lsp.error.argument %lld",
         "terminal.numberedName %lld",
         "terminal.search.matchCount %lld %lld",
         // Entry ordinals ("duplicates entry 3"), not counts.

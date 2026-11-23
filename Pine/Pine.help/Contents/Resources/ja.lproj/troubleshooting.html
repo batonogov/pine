@@ -4,8 +4,8 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
-    <meta name="description" content="Pineでプロジェクトを開き、コード編集、ペイン、ターミナル、Git、LSP診断、エージェント機能、キーボードショートカットを使う方法を説明します。" />
-    <meta name="KEYWORDS" content="トラブルシューティング, Pine, ヘルプ, エディタ, プロジェクト, タブ, ペイン, ターミナル, Git, LSP, 診断, エージェント, ショートカット, 設定, キーバインド, 折りたたみ, ミニマップ, 検索, 置換" />
+    <meta name="description" content="Pineでプロジェクトを開き、コード編集、ペイン、ターミナル、Git、エージェント機能、キーボードショートカットを使う方法を説明します。" />
+    <meta name="KEYWORDS" content="トラブルシューティング, Pine, ヘルプ, エディタ, プロジェクト, タブ, ペイン, ターミナル, Git, 診断, エージェント, ショートカット, 設定, キーバインド, 折りたたみ, ミニマップ, 検索, 置換" />
     <title>トラブルシューティング — Pineヘルプ</title>
     <link rel="stylesheet" type="text/css" href="../style.css" />
 </head>
@@ -20,10 +20,6 @@
             <li>
                 <strong>ターミナルが黒い画面を表示する</strong>
                 <span>Pineは既定でMetalレンダラーを使用します。黒い画面になる場合は、optionキーを押しながら再起動するか、<code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code>を実行してCoreGraphicsに切り替えてください。</span>
-            </li>
-            <li>
-                <strong>LSPの補完や診断が機能しない</strong>
-                <span>「設定」&gt;「言語」を開き、サーバー実行ファイルのパスを確認してください。Pineはサーバーのエラーをステータスバーに表示します。</span>
             </li>
             <li>
                 <strong>大きなファイルが遅い</strong>

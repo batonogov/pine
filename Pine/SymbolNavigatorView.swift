@@ -2,7 +2,7 @@
 //  SymbolNavigatorView.swift
 //  Pine
 //
-//  Hierarchical LSP-first symbol navigation with regex fallback (#1008).
+//  Hierarchical symbol navigation (#1008).
 //
 
 import SwiftUI
@@ -175,14 +175,6 @@ struct SymbolNavigatorView: View {
         ) { _, _ in
             loadSymbols()
         }
-        .onChange(
-            of: projectManager.lspManager.foldingRefreshGeneration
-        ) { _, _ in
-            // The navigator may open while didOpen is still initializing the
-            // server. Retry when that shared structural lifecycle token says
-            // the exact editor buffer is queryable.
-            loadSymbols()
-        }
         .accessibilityIdentifier(
             AccessibilityID.symbolNavigatorOverlay
         )
@@ -342,7 +334,6 @@ struct SymbolNavigatorView: View {
         }
 
         let identityURL = tab.url
-        let fileURL = tab.fileURL
         let text = tab.content
         let revision = symbolCoordinator.beginRevision()
         let snapshot = DocumentSnapshot(
@@ -354,20 +345,6 @@ struct SymbolNavigatorView: View {
             fileExtension: tab.language
         )
         let coordinator = symbolCoordinator
-        let lspManager = projectManager.lspManager
-        let lspProvider: (any SymbolProviding)? = if let fileURL,
-            StructuralLanguageRegistry.capabilities(
-                for: fileURL
-            ).hasConfiguredLSPServer {
-            LSPDocumentSymbolProvider { requestSnapshot in
-                await lspManager.documentSymbols(
-                    url: fileURL,
-                    text: requestSnapshot.text
-                )
-            }
-        } else {
-            nil
-        }
 
         symbolTask = Task {
             let regexSymbols =
@@ -388,31 +365,7 @@ struct SymbolNavigatorView: View {
                 return
             }
 
-            // Keep the local result visible throughout the LSP request.
             applyEntries(regexEntries)
-            let resolution = await coordinator.refine(
-                snapshot: snapshot,
-                regexSymbols: regexSymbols,
-                lspProvider: lspProvider
-            )
-
-            if case .resolved(let symbols, source: .lsp) = resolution {
-                let lspEntries = await Task.detached {
-                    SymbolNavigatorEntry.flatten(
-                        symbols,
-                        snapshot: snapshot
-                    )
-                }.value
-                guard !Task.isCancelled,
-                      isSnapshotCurrent(
-                        identityURL: identityURL,
-                        text: text,
-                        revision: revision
-                      ) else {
-                    return
-                }
-                applyEntries(lspEntries)
-            }
         }
     }
 

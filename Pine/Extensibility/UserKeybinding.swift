@@ -99,10 +99,6 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case editKeybindings
     case editTasks
     case reloadUserConfiguration
-    // Problems panel (#1236) — chrome wiring
-    case showProblems
-    case nextDiagnostic
-    case previousDiagnostic
 
     /// The string key for the `Notification.Name` posted when this command fires.
     /// Use `Notification.Name(rawValue:)` on the MainActor side to convert.
@@ -162,9 +158,6 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
         case .editKeybindings: "user.editKeybindings"
         case .editTasks: "user.editTasks"
         case .reloadUserConfiguration: "user.reloadUserConfiguration"
-        case .showProblems: "showProblems"
-        case .nextDiagnostic: "nextDiagnostic"
-        case .previousDiagnostic: "previousDiagnostic"
         }
     }
 
@@ -253,6 +246,11 @@ nonisolated struct ResolvedUserKeybinding: Equatable, Sendable {
 @MainActor
 @Observable
 final class UserKeybindingRegistry {
+    // Removed LSP commands stay inert without invalidating other user bindings.
+    nonisolated private static let retiredCommandIDs: Set<String> = [
+        "showProblems", "nextDiagnostic", "previousDiagnostic",
+    ]
+
     /// Parsed entries in declaration order.
     private(set) var entries: [ResolvedUserKeybinding] = []
 
@@ -342,6 +340,9 @@ final class UserKeybindingRegistry {
         var firstEntryForChord: [ParsedKeyChord: Int] = [:]
         var firstEntryForCommand: [UserCommand: Int] = [:]
         for (index, entry) in raw.enumerated() {
+            guard !Self.retiredCommandIDs.contains(entry.command) else {
+                continue
+            }
             let entryNumber = index + 1
             let command = UserCommand.from(entry.command)
             let chord = Self.parse(entry.key)

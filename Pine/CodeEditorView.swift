@@ -28,8 +28,7 @@ struct CodeEditorView: NSViewRepresentable {
     var contentVersion: UInt64 = 0
     var language: String
     var fileName: String?
-    /// Real filesystem URL. `nil` for an untitled buffer so filesystem and
-    /// LSP operations cannot accidentally consume its private identity URI.
+    /// Real filesystem URL. `nil` for an untitled buffer.
     var fileURL: URL?
     /// Stable identity used only to match editor reload notifications. This
     /// may use a private non-file scheme for an untitled buffer.
@@ -71,19 +70,6 @@ struct CodeEditorView: NSViewRepresentable {
     var initialCursorPosition: Int = 0
     /// Scroll offset to restore when the view is created (tab switch).
     var initialScrollOffset: CGFloat = 0
-    /// Definition quick-pick controller, passed from PaneLeafView so the
-    /// overlay and the coordinator share the same observable instance.
-    var definitionQuickPickController: DefinitionQuickPickController?
-    /// Project-scoped structural folding request. This is injected per editor
-    /// instead of routed through the process-wide UI endpoint because folding
-    /// runs automatically in every visible pane, not only in the first
-    /// responder.
-    var lspFoldRangeRequester:
-        (@MainActor @Sendable (URL, String) async -> [LSPFoldingRange]?)? = nil
-    /// Advances after this editor's project announces pending documents to
-    /// an initialized language server. A changed value retries structural
-    /// folding for the current immutable buffer without waiting for an edit.
-    var lspFoldRefreshGeneration: Int = 0
     /// Called when cursor position or scroll offset changes, so the caller can persist them.
     var onStateChange: ((Int, CGFloat) -> Void)?
     /// Called when a new syntax highlight result is computed, so the caller can cache it in the tab.
@@ -351,15 +337,6 @@ struct CodeEditorView: NSViewRepresentable {
         // Calculate initial foldable ranges
         context.coordinator.recalculateFoldableRanges()
 
-        // Install the LSP mouse handler so hover/definition/code-action/rename
-        // mouse events route to the coordinator.
-        context.coordinator.installLSPMouseHandler()
-
-        // Wire the definition quick-pick controller from the parent view.
-        if let controller = definitionQuickPickController {
-            context.coordinator.definitionQuickPickController = controller
-        }
-
         return container
     }
 
@@ -469,10 +446,6 @@ struct CodeEditorView: NSViewRepresentable {
             fileName: fileName,
             font: editorFont
         )
-        context.coordinator.refreshStructuralFoldRangesIfNeeded(
-            generation: lspFoldRefreshGeneration
-        )
-
         // Обновляем шрифт при изменении размера (Cmd+Plus/Minus)
         context.coordinator.updateFontIfNeeded(font: editorFont, gutterFont: gutterFont)
 

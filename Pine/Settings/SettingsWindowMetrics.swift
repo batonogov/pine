@@ -11,7 +11,7 @@ import SwiftUI
 /// Sizing for the consolidated Settings scene.
 ///
 /// Settings declared `720 × 540` in six separate files. This type owns those
-/// numbers once and lets the window widen when — and only when — the five
+/// numbers once and lets the window widen when — and only when — the four
 /// localized `.tabItem` titles genuinely need more room.
 ///
 /// ## What the tab strip actually does
@@ -22,20 +22,19 @@ import SwiftUI
 /// - Tab items stack the SF Symbol **above** the title, so an item's width is
 ///   driven by its text alone. The symbol costs height, not width.
 /// - Item widths are identical whether the window is 720 pt or 900 pt wide:
-///   `68, 66.5, 117, 123.5, 165` for Russian in both. Nothing is compressed
+///   `68, 66.5, 123.5, 165` for Russian in both. Nothing is compressed
 ///   and nothing is ellipsised.
 /// - The strip is centred, and the widest shipped locale (Russian) spans
-///   540 pt inside the 720 pt window — 88 pt of slack on each side.
+///   423 pt inside the 720 pt window — 148.5 pt of slack on each side.
 ///
 /// So no shipped locale overflows, and `windowWidth` resolves to exactly
 /// `baselineWidth` for all nine of them: shipped geometry is unchanged.
 ///
 /// ## The overflow that is real
 ///
-/// Under `-NSDoubleLocalizedStrings` the strip needs roughly 815 pt, and at
-/// 720 pt AppKit does not truncate — it drops the fifth tab out of the window
-/// entirely, removing "Key Bindings & Tasks" from the accessibility tree. That
-/// is the failure mode worth guarding: silent, total, and reachable by any
+/// When long translations overflow 720 pt, AppKit does not truncate — it can
+/// drop the last tab out of the window, removing it from the accessibility tree.
+/// That is the failure mode worth guarding: silent, total, and reachable by any
 /// future translation longer than today's.
 @MainActor
 enum SettingsWindowMetrics {

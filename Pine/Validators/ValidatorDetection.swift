@@ -17,9 +17,8 @@ nonisolated enum ValidationSeverity: Sendable, Equatable {
 }
 
 extension ValidationSeverity {
-    /// Spoken severity name. Shared by the diagnostic popover and the
-    /// Problems panel so the two surfaces cannot disagree about what a
-    /// diagnostic is called (#1533). Main-actor because `Strings` is.
+    /// Spoken severity name for the diagnostic popover. Main-actor because
+    /// `Strings` is.
     @MainActor var displayName: String {
         switch self {
         case .error: return Strings.diagnosticSeverityError

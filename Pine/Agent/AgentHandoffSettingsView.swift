@@ -35,7 +35,6 @@ nonisolated enum AgentNotificationSettingsProjection {
 
 @MainActor
 struct PineSettingsView: View {
-    let lspSettings: LSPSettings
     let handoffSettings: AgentHandoffSettings
     let notificationController: AgentNotificationController
     let agentTasks: AgentTaskRegistry
@@ -54,7 +53,6 @@ struct PineSettingsView: View {
     @Environment(\.locale) private var locale
 
     init(
-        lspSettings: LSPSettings,
         handoffSettings: AgentHandoffSettings,
         notificationController: AgentNotificationController,
         agentTasks: AgentTaskRegistry,
@@ -65,7 +63,6 @@ struct PineSettingsView: View {
         terminalFontSettings: TerminalFontSettings = .shared,
         quickTerminalSettings: QuickTerminalSettings = .shared
     ) {
-        self.lspSettings = lspSettings
         self.handoffSettings = handoffSettings
         self.notificationController = notificationController
         self.agentTasks = agentTasks
@@ -99,15 +96,6 @@ struct PineSettingsView: View {
                 Label(Strings.settingsTabTerminal, systemImage: "terminal")
             }
             .tag(SettingsPane.SettingsPaneID.terminal)
-
-            LSPSettingsView(settings: lspSettings)
-                .tabItem {
-                    Label(
-                        Strings.settingsLanguageServersTab,
-                        systemImage: "server.rack"
-                    )
-                }
-                .tag(SettingsPane.SettingsPaneID.languages)
 
             AgentSettingsView(
                 handoffSettings: handoffSettings,
@@ -349,7 +337,6 @@ enum SettingsPane {
     enum SettingsPaneID: String, CaseIterable {
         case general
         case terminal
-        case languages
         case agents
         case keyBindings
     }
@@ -362,8 +349,6 @@ private extension SettingsPane.SettingsPaneID {
             PineHelp.Anchor.settings
         case .terminal:
             PineHelp.Anchor.terminal
-        case .languages:
-            PineHelp.Anchor.languageServers
         case .agents:
             PineHelp.Anchor.agentSettings
         }

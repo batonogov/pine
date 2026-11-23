@@ -506,8 +506,7 @@ struct NativeFileWindowMenuTests {
         try content.write(to: file, atomically: true, encoding: .utf8)
 
         let defaults = makeIsolatedDefaults()
-        let settings = LSPSettings(defaults: defaults)
-        let project = ProjectManager(lspSettings: settings, sessionDefaults: defaults)
+        let project = ProjectManager(sessionDefaults: defaults)
         project.workspace.loadDirectory(url: root)
         let originalPaneID = try #require(project.nativeFileCommandPaneID())
         let untitledID = try #require(project.createUntitledFile(in: originalPaneID))
@@ -515,7 +514,7 @@ struct NativeFileWindowMenuTests {
         #expect(originalTabs.activeTabID == untitledID)
         #expect(originalTabs.activeTab?.fileURL == nil)
 
-        let registry = ProjectRegistry(lspSettings: settings, defaults: defaults)
+        let registry = ProjectRegistry(defaults: defaults)
         let appDelegate = AppDelegate()
         let closeDelegate = CloseDelegate(
             projectManager: project,
@@ -567,10 +566,7 @@ struct NativeFileWindowMenuTests {
             encoding: .utf8
         )
 
-        let defaults = makeIsolatedDefaults()
-        let projectManager = ProjectManager(
-            lspSettings: LSPSettings(defaults: defaults)
-        )
+        let projectManager = ProjectManager()
         projectManager.workspace.loadDirectory(url: root)
         let firstTabID = try #require(
             projectManager.createUntitledFile()
@@ -699,7 +695,6 @@ struct NativeFileWindowMenuTests {
             forKey: "recentProjectPaths"
         )
         let registry = ProjectRegistry(
-            lspSettings: LSPSettings(defaults: defaults),
             defaults: defaults,
             clearRecentProjects: false
         )
@@ -770,7 +765,6 @@ struct NativeFileWindowMenuTests {
         )
         let defaults = makeIsolatedDefaults()
         let registry = ProjectRegistry(
-            lspSettings: LSPSettings(defaults: defaults),
             defaults: defaults,
             clearRecentProjects: false
         )
@@ -896,7 +890,6 @@ struct NativeFileWindowMenuTests {
             forKey: "recentProjectPaths"
         )
         let registry = ProjectRegistry(
-            lspSettings: LSPSettings(defaults: defaults),
             defaults: defaults,
             clearRecentProjects: false
         )

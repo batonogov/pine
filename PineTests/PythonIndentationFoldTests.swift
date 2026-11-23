@@ -248,7 +248,7 @@ struct PythonIndentationFoldTests {
         #expect(actual == expected)
     }
 
-    @Test("Valid and malformed folding fixtures cover every LSP language")
+    @Test("Valid and malformed folding fixtures cover local language providers")
     func initialLanguageFixtures() async throws {
         let fixtures: [LanguageFoldFixture] = [
             LanguageFoldFixture(
@@ -279,11 +279,6 @@ struct PythonIndentationFoldTests {
                 malformedEndLine: 3
             )
         ]
-        #expect(
-            Set(fixtures.map(\.language))
-                == Set(LanguageServerRegistry.supportedLanguages)
-        )
-
         for fixture in fixtures {
             for (text, expectedEndLine) in [
                 (fixture.valid, fixture.validEndLine),

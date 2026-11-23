@@ -81,7 +81,6 @@ struct PineApp: App {
 
         Settings {
             PineSettingsView(
-                lspSettings: registry.lspSettings,
                 handoffSettings: .shared,
                 notificationController: appDelegate.agentNotifications,
                 agentTasks: registry.agentTasks,
@@ -2394,8 +2393,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         for (_, pm) in registry.openProjects {
             pm.saveSession()
             pm.cleanupEditorContext()
-            // Shut down language servers so no orphan process survives (#1010).
-            pm.shutdownLanguageServers()
             // Clean up the recovery snapshots this session is answerable for:
             // the ones belonging to its open tabs. Emptying the whole
             // directory would also take the crash snapshots nobody has decided

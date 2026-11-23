@@ -109,7 +109,6 @@ Read these Markdown files explicitly when relevant; their frontmatter describes 
 | `terminal.md` | Terminal, quick terminal, renderer and lifecycle changes |
 | `ui-tests.md` | Any XCUITest changes or runs; launch arguments and known limitations |
 | `snapshot-tests.md` | Snapshot changes, backing scale, per-OS reference recording |
-| `lsp.md` | LSP changes and SourceKit-LSP smoke checks |
 | `ci-release.md` | CI, scripts, dependencies and release validation |
 | `localization.md` | `Strings.swift` and `Localizable.xcstrings` |
 | `marketing-surfaces.md` | README, docs, assets and marketing screenshots |

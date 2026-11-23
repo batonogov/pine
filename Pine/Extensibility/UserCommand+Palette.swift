@@ -132,12 +132,6 @@ nonisolated extension UserCommand {
             String(localized: "menu.editTasks")
         case .reloadUserConfiguration:
             String(localized: "menu.reloadUserConfiguration")
-        case .showProblems:
-            String(localized: "menu.problems")
-        case .nextDiagnostic:
-            String(localized: "menu.nextDiagnostic")
-        case .previousDiagnostic:
-            String(localized: "menu.previousDiagnostic")
         }
     }
 
@@ -160,12 +154,10 @@ nonisolated extension UserCommand {
              .toggleWordWrap, .toggleMinimap, .toggleBlame, .togglePreview,
              .revealFileInFinder, .revealProjectInFinder,
              .showAgentActivity, .showAgentHistory, .showAgentInbox,
-             .showProblems, .newAgent:
+             .newAgent:
             .view
         case .nextProjectInWindow, .previousProjectInWindow:
             .file
-        case .nextDiagnostic, .previousDiagnostic:
-            .edit
         case .showBranchSwitcher:
             .git
         case .toggleTerminal, .newTerminalTab, .findInTerminal,
@@ -292,12 +284,6 @@ nonisolated extension UserCommand {
             MenuIcons.editTasks
         case .reloadUserConfiguration:
             MenuIcons.reloadUserConfiguration
-        case .showProblems:
-            MenuIcons.problems
-        case .nextDiagnostic:
-            MenuIcons.nextDiagnostic
-        case .previousDiagnostic:
-            MenuIcons.previousDiagnostic
         }
     }
 
@@ -314,8 +300,7 @@ nonisolated extension UserCommand {
              .closeTab, .closeWindow, .closeProject,
              .findInProject, .toggleTerminal, .newTerminalTab,
              .toggleMinimap, .toggleBlame, .toggleWordWrap,
-             .revealProjectInFinder, .showAgentActivity, .showAgentHistory,
-             .showProblems, .nextDiagnostic, .previousDiagnostic:
+             .revealProjectInFinder, .showAgentActivity, .showAgentHistory:
             .project
         case .newAgent:
             .agentWorktree
@@ -464,17 +449,6 @@ nonisolated extension UserCommand {
             // cmd+shift+w already closes the window; closing one project
             // inside it is the narrower action and takes the freer chord.
             value = "ctrl+cmd+w"
-        case .showProblems:
-            value = "cmd+shift+x"
-        case .nextDiagnostic:
-            // ⌥⌘↓ / ⌥⌘↑ mirror Next/Previous Change (⌃⌥↓/↑) on the Command
-            // family. The former bare F8/⇧F8 demanded Fn under default macOS
-            // settings and collided with the system feature keys (#1564);
-            // a user who wants F8 back binds it — `FunctionKeyToken` makes
-            // "f8" a first-class rebindable chord (#1539).
-            value = "cmd+option+down"
-        case .previousDiagnostic:
-            value = "cmd+option+up"
         }
         return value.flatMap(UserKeybindingRegistry.parse)
     }

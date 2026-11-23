@@ -374,14 +374,6 @@ final class ProjectManager {
     let quickOpenProvider: QuickOpenProvider
     let progress = ProgressTracker()
     let contextFileWriter: ContextFileWriter
-    /// Language Server Protocol manager — owns per-language server processes
-    /// and aggregates diagnostics (#1010, parent #994). Spawned lazily on the
-    /// first open of a matching file; shut down on project close / app quit.
-    let lspManager: LSPManager
-    /// Project-scoped diagnostics aggregate for the Problems panel (#1236).
-    /// Merges LSP diagnostics (read live) with config-validator diagnostics
-    /// (revision-guarded). Owned here so every window observes the same truth.
-    let problemsController: ProblemsPanelController
     /// Weak anchor for every native dialog owned by this project.
     ///
     /// The window owns the visible project surface; keeping this reference
@@ -1838,7 +1830,6 @@ final class ProjectManager {
     #endif
 
     init(
-        lspSettings: LSPSettings = .shared,
         sessionDefaults: UserDefaults = PineStorageContext.defaults,
         agentHistoryPrivateStore: AgentHistoryPrivateStore = AgentHistoryPrivateStore(),
         taskResultPersistence: UserTaskResultPersistence = UserTaskResultPersistence(),
@@ -1866,8 +1857,6 @@ final class ProjectManager {
             agentProcessSnapshotPoller: agentProcessSnapshotPoller,
             agentTaskRegistry: agentTaskRegistry
         )
-        self.lspManager = LSPManager(settings: lspSettings)
-        self.problemsController = ProblemsPanelController(lspManager: lspManager)
         terminal.onAgentHistoryBoundary = { [weak self] in
             self?.finalizeAgentSessionsForHistory()
         }
@@ -1886,9 +1875,6 @@ final class ProjectManager {
         paneManager.configureTerminalTab = { [weak self] tab in
             self?.terminal.configureAgentLifecycle(for: tab)
             self?.configureFilesystemAdmission(for: tab)
-        }
-        problemsController.configureDocumentStatesProvider { [weak self] in
-            self?.problemsDocumentStates ?? []
         }
         // Wire TerminalManager to PaneManager (lazy wiring)
         terminal.paneManager = paneManager
@@ -2094,7 +2080,6 @@ final class ProjectManager {
         recoveryManager?.stopPeriodicSnapshots()
         workspace.suspend()
         searchProvider.cancel()
-        lspManager.suspendForBackground()
         cleanupEditorContext()
     }
 
@@ -2107,9 +2092,7 @@ final class ProjectManager {
         #endif
         workspace.resume()
         recoveryManager?.startPeriodicSnapshots()
-        lspManager.resumeFromBackground()
         synchronizeAgentHandoff()
-        problemsController.refreshDocumentOwnership()
     }
 
     /// Final resource teardown used only after registry reclamation proves
@@ -2123,7 +2106,6 @@ final class ProjectManager {
         recoveryManager?.stopPeriodicSnapshots()
         workspace.suspend()
         searchProvider.cancel()
-        lspManager.shutdownAll()
         terminal.shutdownPermanently()
         agentTaskFilesystemAdmission = nil
         agentTaskFilesystemAdmissionGeneration = UUID()
@@ -2151,73 +2133,7 @@ final class ProjectManager {
         tabManager.onEditorContextChanged = { [weak self] in
             guard let self else { return }
             self.updateEditorContext()
-            self.problemsController.refreshDocumentOwnership()
         }
-    }
-
-    /// Visible editor documents with exact project/pane/tab/revision
-    /// ownership. Config validators and LSP views exist only for active tabs,
-    /// so inactive tabs intentionally do not validate an old panel record.
-    private var problemsDocumentStates: [ProblemsDocumentState] {
-        paneManager.root.leafIDs.compactMap { paneID in
-            guard paneManager.root.content(for: paneID) == .editor,
-                  let tabManager = paneManager.tabManager(for: paneID) else {
-                return nil
-            }
-            guard let tab = tabManager.activeTab,
-                  let fileURL = tab.fileURL else {
-                return nil
-            }
-            return ProblemsDocumentState(
-                owner: problemsController.documentOwner(
-                    paneID: paneID,
-                    tabID: tab.id,
-                    uri: fileURL.absoluteString
-                ),
-                contentRevision: tab.contentVersion,
-                isFocusedPane: paneManager.activePaneID == paneID
-            )
-        }
-    }
-
-    /// Routes a Problems row to the editor instance that produced it. The
-    /// controller proves freshness first, then this final check confirms the
-    /// live pane/tab/URL/content revision before changing focus.
-    @discardableResult
-    func navigateToProblem(
-        _ diagnostic: ProblemsFlatDiagnostic
-    ) -> Bool {
-        guard let target = problemsController.navigationTarget(
-            for: diagnostic
-        ),
-        let tabManager = paneManager.tabManager(for: target.owner.paneID),
-        let tab = tabManager.activeTab,
-        let fileURL = tab.fileURL,
-        tab.id == target.owner.tabID,
-        fileURL.absoluteString == target.owner.uri else {
-            return false
-        }
-
-        let expectedContentRevision: UInt64
-        switch target.revision {
-        case .editor(let revision):
-            expectedContentRevision = revision
-        case .lsp(_, let contentRevision):
-            expectedContentRevision = contentRevision
-        }
-        guard tab.contentVersion == expectedContentRevision,
-              paneManager.selectEditorTab(
-                  target.owner.tabID,
-                  in: target.owner.paneID
-              ) else {
-            return false
-        }
-
-        tabManager.pendingGoToLocation = EditorNavigationLocation(
-            line: target.line,
-            column: target.column
-        )
-        return true
     }
 
     /// Persists current session (project + open file tabs) to UserDefaults.
@@ -2447,7 +2363,6 @@ final class ProjectManager {
         // on disk with nothing to reveal it.
         setupRecovery(projectURL: url)
         synchronizeAgentHandoff(projectRoot: url)
-        lspManager.setWorkspaceRoot(url)
         #if DEBUG
         seedAgentActivityUITestFixture(projectURL: url)
         seedAgentAttentionUITestFixture(projectURL: url)
@@ -2999,13 +2914,6 @@ final class ProjectManager {
         } else {
             cleanupEditorContext()
         }
-    }
-
-    /// Shuts down all language servers for this project. Called on window
-    /// close and app termination so no orphan language-server process
-    /// survives (acceptance criterion #1010). Safe to call multiple times.
-    func shutdownLanguageServers() {
-        lspManager.shutdownAll()
     }
 
     /// Requests cancellation without waiting. Closing a project window does

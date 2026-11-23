@@ -4,9 +4,9 @@
 //
 //  Issue #1531. The window was pinned to 720 pt in six files. Measuring a live
 //  Settings window showed no shipped locale actually overflows that — tab items
-//  stack their symbol above the title, so Russian's strip spans 540 pt inside
-//  720 pt with nothing truncated. What does overflow is doubled-length text,
-//  and AppKit's response is not an ellipsis: it drops the fifth tab out of the
+//  stack their symbol above the title, so Russian's strip spans 423 pt inside
+//  720 pt with nothing truncated. Tripled-length text still overflows, and
+//  AppKit's response is not an ellipsis: it can drop the last tab out of the
 //  window entirely. These tests pin both halves of that.
 //
 
@@ -29,10 +29,10 @@ struct SettingsWindowMetricsTests {
     /// at 720 pt and 900 pt of window width, which is what proves the strip is
     /// never compressed.
     private static let measuredRussianItemWidths: [CGFloat] = [
-        68, 66.5, 117, 123.5, 165,
+        68, 66.5, 123.5, 165,
     ]
     private static let measuredEnglishItemWidths: [CGFloat] = [
-        55, 57, 106.5, 88.5, 123.5,
+        55, 57, 88.5, 123.5,
     ]
 
     // MARK: - Catalog input
@@ -43,7 +43,6 @@ struct SettingsWindowMetricsTests {
             titles("en") == [
                 "General",
                 "Terminal",
-                "Language Servers",
                 "Agent Handoff",
                 "Key Bindings & Tasks",
             ]
@@ -52,13 +51,12 @@ struct SettingsWindowMetricsTests {
             titles("ru") == [
                 "Основные",
                 "Терминал",
-                "Языковые серверы",
                 "Передача контекста",
                 "Сочетания клавиш и задачи",
             ]
         )
         for identifier in Self.shippedLocales {
-            #expect(titles(identifier).count == 5)
+            #expect(titles(identifier).count == 4)
             #expect(titles(identifier).allSatisfy { !$0.isEmpty })
         }
     }
@@ -118,7 +116,7 @@ struct SettingsWindowMetricsTests {
     @Test("A whole shipped strip estimates within a tab of the real one")
     func stripWidthTracksMeasuredWindow() {
         // Measured span of the Russian strip, outermost edge to outermost edge.
-        let measured: CGFloat = 540
+        let measured: CGFloat = 423
         let estimate = SettingsWindowMetrics.tabStripWidth(
             forTabTitles: titles("ru")
         ) - SettingsWindowMetrics.tabStripInset
@@ -127,19 +125,19 @@ struct SettingsWindowMetricsTests {
 
     // MARK: - The overflow that is real
 
-    @Test("Doubled-length titles widen the window past the baseline")
-    func doubledTitlesWidenTheWindow() {
-        let doubled = titles("en").map { "\($0) \($0)" }
-        let width = SettingsWindowMetrics.windowWidth(forTabTitles: doubled)
+    @Test("Tripled-length titles widen the window past the baseline")
+    func tripledTitlesWidenTheWindow() {
+        let tripled = titles("en").map { String(repeating: $0, count: 3) }
+        let width = SettingsWindowMetrics.windowWidth(forTabTitles: tripled)
         #expect(
             width > SettingsWindowMetrics.baselineWidth,
             """
-            Doubled strings span roughly 815 pt; at 720 pt AppKit drops the \
-            fifth tab out of the window instead of truncating it
+            Tripled strings overflow 720 pt; AppKit drops the \
+            last tab out of the window instead of truncating it
             """
         )
         #expect(
-            width >= SettingsWindowMetrics.tabStripWidth(forTabTitles: doubled)
+            width >= SettingsWindowMetrics.tabStripWidth(forTabTitles: tripled)
         )
     }
 
@@ -203,14 +201,14 @@ struct SettingsWindowMetricsTests {
         // *call site* to a literal 720 is only observable under a real
         // overflow, which is what the pseudolocalized `A11y & Localization`
         // lane asserts.
-        let doubled = titles("en").map { "\($0) \($0)" }
+        let tripled = titles("en").map { String(repeating: $0, count: 3) }
         let host = NSHostingView(
-            rootView: Color.clear.settingsWindowSize(tabTitles: doubled)
+            rootView: Color.clear.settingsWindowSize(tabTitles: tripled)
         )
         host.layoutSubtreeIfNeeded()
         #expect(
             host.fittingSize.width
-                == SettingsWindowMetrics.windowWidth(forTabTitles: doubled)
+                == SettingsWindowMetrics.windowWidth(forTabTitles: tripled)
         )
         #expect(host.fittingSize.width > SettingsWindowMetrics.baselineWidth)
 
@@ -257,10 +255,6 @@ struct SettingsWindowMetricsTests {
                     quickTerminal: QuickTerminalSettings(defaults: defaults)
                 )
             ),
-            (
-                "Language Servers",
-                LSPSettingsView(settings: LSPSettings(defaults: defaults))
-            ),
             ("Key Bindings & Tasks", KeyBindingsTasksSettingsView()),
         ]
 
@@ -288,7 +282,6 @@ struct SettingsWindowMetricsTests {
         let defaults = try isolatedDefaults()
         let registry = AgentTaskRegistry()
         return PineSettingsView(
-            lspSettings: LSPSettings(defaults: defaults),
             handoffSettings: AgentHandoffSettings(defaults: defaults),
             notificationController: AgentNotificationController(
                 registry: registry,

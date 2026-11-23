@@ -161,12 +161,7 @@ struct UserConfigurationReloadTests {
         #expect(registry.isEmpty)
     }
 
-    /// #1564 moved Next/Previous Diagnostic off the bare function keys and
-    /// promised that a user who wants F8 back can bind it. A function-key
-    /// chord carries no dispatch modifier, but it is not text input either —
-    /// rejecting it as `textInputChord` would throw away the user's entire
-    /// keybindings file for the sake of two entries.
-    @Test func functionKeyChordsLoadAsRebindsNotTextInput() async throws {
+    @Test func retiredLSPCommandsDoNotRejectOtherBindings() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("keybindings.json")
@@ -174,8 +169,9 @@ struct UserConfigurationReloadTests {
         try write(
             """
             [
-              {"command": "nextDiagnostic", "key": "f8"},
-              {"command": "previousDiagnostic", "key": "shift+f8"},
+              {"command": "showProblems", "key": "cmd+shift+x"},
+              {"command": "nextDiagnostic", "key": "cmd+option+down"},
+              {"command": "previousDiagnostic", "key": "cmd+option+up"},
               {"command": "quickOpen", "key": "cmd+p"}
             ]
             """,
@@ -186,16 +182,42 @@ struct UserConfigurationReloadTests {
 
         #expect(report.outcome == .loaded)
         #expect(report.diagnostics.isEmpty)
-        #expect(report.activeEntryCount == 3)
+        #expect(report.activeEntryCount == 1)
         #expect(
-            registry.effectiveChord(for: .nextDiagnostic)
+            registry.effectiveChord(for: .quickOpen)
+                == UserKeybindingRegistry.parse("cmd+p")
+        )
+    }
+
+    /// Function-key chords carry no dispatch modifier, but are not text input.
+    @Test func functionKeyChordsLoadAsRebindsNotTextInput() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("keybindings.json")
+        let registry = UserKeybindingRegistry()
+        try write(
+            """
+            [
+              {"command": "quickOpen", "key": "f8"},
+              {"command": "findInFile", "key": "shift+f8"}
+            ]
+            """,
+            to: file
+        )
+
+        let report = await registry.load(from: file)
+
+        #expect(report.outcome == .loaded)
+        #expect(report.diagnostics.isEmpty)
+        #expect(report.activeEntryCount == 2)
+        #expect(
+            registry.effectiveChord(for: .quickOpen)
                 == UserKeybindingRegistry.parse("f8")
         )
         #expect(
-            registry.effectiveChord(for: .previousDiagnostic)
+            registry.effectiveChord(for: .findInFile)
                 == UserKeybindingRegistry.parse("shift+f8")
         )
-        #expect(registry.effectiveChord(for: .quickOpen) != nil)
     }
 
     @Test func namedKeybindingsMatchAppKitKeyEvents() async throws {
