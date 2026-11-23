@@ -129,6 +129,7 @@ private struct AgentTaskResultUITestRoot: View {
         let action = binding.map(AgentTaskResultActionState.init)
         let check = AgentTaskResultCheckEntry(
             result: AgentTaskCheckObservation.CommandResult(
+                operationID: UUID(),
                 fingerprint: String(repeating: "e", count: 64),
                 required: true, status: .succeeded
             ),

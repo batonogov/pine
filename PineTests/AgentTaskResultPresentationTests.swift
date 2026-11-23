@@ -426,6 +426,7 @@ struct AgentTaskResultPresentationTests {
 
     @Test func checkJournalShowsFingerprintRequirementExitAndEnvironment() {
         let result = AgentTaskCheckObservation.CommandResult(
+            operationID: UUID(),
             fingerprint: String(repeating: "a", count: 64),
             required: true, status: .failed
         )
