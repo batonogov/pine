@@ -1628,7 +1628,7 @@ enum Strings {
         case unknown, codeIdentity
         case contextPlaceholder, decisionConsequence
         case unresolvedFinding, preservedWork, replyPlaceholder, sendReply, verifyAgain
-        case staleDecisionDetail, historicalReview
+        case staleDecisionDetail, historicalReview, replyDeliveryFailed
         case prepared, starting, actionReady, actionFailed, portConflict, stopping
         case stopped, cancelled, stale, startupFailed, missingPrerequisite, processExited
         case bindingChanged, launchNotReady, grantNotCurrent, environmentUnavailable
@@ -1702,6 +1702,8 @@ enum Strings {
             case .staleDecisionDetail:
                 "This request belongs to an earlier result and can no longer be answered."
             case .historicalReview: "Historical review for code %@; not current Ready evidence."
+            case .replyDeliveryFailed:
+                "The reply could not be dispatched. The pending revision is preserved; retry explicitly."
             case .prepared: "Prepared; not running"
             case .starting: "Starting"
             case .actionReady: "Result available"

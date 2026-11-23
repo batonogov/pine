@@ -37,15 +37,25 @@ final class AgentInboxActionStatusStore {
 }
 
 @MainActor
-private struct AgentInboxResultSheet: View {
+@Observable
+final class AgentInboxResultStore {
+    var taskID: UUID?
+    var controllers: [UUID: AgentTaskResultController] = [:]
+}
+
+@MainActor
+struct AgentInboxResultSheet: View {
     let controller: AgentTaskResultController
 
-    var body: some View {
+    var body: some View { resultView }
+
+    var resultView: AgentTaskResultView {
         let presentation = controller.presentation
         return AgentTaskResultView(
             model: presentation,
             onLaunch: { controller.launchResult() },
             onStop: { controller.stopResult() },
+            onReply: { controller.reply($0) },
             onSelectRecipe: controller.proposal == nil ? nil : {
                 controller.selectRecipe()
             },
@@ -67,8 +77,7 @@ struct AgentInboxView: View {
     @Environment(\.locale) private var locale
     @State private var selectedTaskID: UUID?
     @State private var recoveryActionsTaskID: UUID?
-    @State private var resultTaskID: UUID?
-    @State private var resultControllers: [UUID: AgentTaskResultController] = [:]
+    @State var resultStore = AgentInboxResultStore()
     /// Not `private`: this is the Inbox's own status storage, and the only
     /// way a test can see that a failed action really captioned the popover.
     @State var actionStatus = AgentInboxActionStatusStore()
@@ -229,10 +238,10 @@ struct AgentInboxView: View {
             return .handled
         }
         .sheet(isPresented: Binding(
-            get: { resultTaskID != nil },
+            get: { resultStore.taskID != nil },
             set: { if !$0 { closeResult() } }
         )) {
-            if let resultTaskID, let controller = resultControllers[resultTaskID] {
+            if let taskID = resultStore.taskID, let controller = resultStore.controllers[taskID] {
                 AgentInboxResultSheet(controller: controller)
             }
         }
@@ -385,30 +394,36 @@ struct AgentInboxView: View {
     }
 
     private func openResult(for taskID: UUID) {
-        if resultControllers[taskID] == nil,
+        if resultStore.controllers[taskID] == nil,
            let controller = AgentTaskResultController(
                 registry: registry.agentTasks, taskID: taskID,
-                editorPreflight: { registry.verificationEditorPreflight() }
+                editorPreflight: { registry.verificationEditorPreflight() },
+                replyDispatcher: { text, decision in
+                    guard let runtime = registry.openCodeRuntime(for: decision.taskID) else {
+                        return false
+                    }
+                    return await runtime.submitResultDecisionReply(text, decision: decision)
+                }
            ) {
-            resultControllers[taskID] = controller
+            resultStore.controllers[taskID] = controller
         }
-        resultTaskID = taskID
+        resultStore.taskID = taskID
         // Opening changes viewed/unread only. It never selects a recipe,
         // accepts a result, authorizes a command, or starts an agent.
         _ = registry.agentTasks.setReviewed(true, taskID: taskID)
     }
 
     private func closeResult() {
-        guard let resultTaskID else { return }
-        resultControllers[resultTaskID]?.close()
-        resultControllers.removeValue(forKey: resultTaskID)
-        self.resultTaskID = nil
+        guard let taskID = resultStore.taskID else { return }
+        resultStore.controllers[taskID]?.close()
+        resultStore.controllers.removeValue(forKey: taskID)
+        resultStore.taskID = nil
     }
 
     private func closeAllResults() {
-        for controller in resultControllers.values { controller.close() }
-        resultControllers.removeAll()
-        resultTaskID = nil
+        for controller in resultStore.controllers.values { controller.close() }
+        resultStore.controllers.removeAll()
+        resultStore.taskID = nil
     }
 
     private var presentedRecoveryRow: AgentInboxRow? {
@@ -612,26 +627,29 @@ struct AgentInboxView: View {
     }
 
     private func activateSelection() {
-        guard let selectedTaskID,
-              let row = snapshot.rows.first(where: { $0.id == selectedTaskID })
-        else { return }
+        guard let selectedTaskID else { return }
+        activateSelection(taskID: selectedTaskID)
+    }
+
+    func activateSelection(taskID: UUID) {
+        guard let row = snapshot.rows.first(where: { $0.id == taskID }) else { return }
         if row.canOpenResult {
-            openResult(for: selectedTaskID)
+            openResult(for: taskID)
             return
         }
-        let canResume = registry.canOfferAgentTaskVendorResume(selectedTaskID)
+        let canResume = registry.canOfferAgentTaskVendorResume(taskID)
         switch AgentInboxActivation.resolve(
             row: row,
             recoveryActionsArePresented:
-                recoveryActionsTaskID == selectedTaskID,
+                recoveryActionsTaskID == taskID,
             canResumeVendorSession: canResume
         ) {
         case .navigate:
-            navigate(to: selectedTaskID)
+            navigate(to: taskID)
         case .presentRecoveryActions:
             presentRecoveryActions(for: row)
         case .recover(let action):
-            recover(selectedTaskID, action: action)
+            recover(taskID, action: action)
         }
     }
 
@@ -661,9 +679,9 @@ struct AgentInboxView: View {
 
     private func dismiss(_ taskID: UUID) {
         recoveryActionsTaskID = nil
-        resultControllers[taskID]?.close()
-        resultControllers.removeValue(forKey: taskID)
-        if resultTaskID == taskID { resultTaskID = nil }
+        resultStore.controllers[taskID]?.close()
+        resultStore.controllers.removeValue(forKey: taskID)
+        if resultStore.taskID == taskID { resultStore.taskID = nil }
         _ = registry.agentTasks.dismissTask(taskID)
     }
 

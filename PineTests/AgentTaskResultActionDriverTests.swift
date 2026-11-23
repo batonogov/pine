@@ -2,6 +2,16 @@ import Foundation
 import Testing
 @testable import Pine
 
+nonisolated private final class AgentResultCleanupGate: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+
+    func wait(until deadline: DispatchTime) -> Bool {
+        semaphore.wait(timeout: deadline) == .success
+    }
+
+    func open() { semaphore.signal() }
+}
+
 nonisolated private final class AgentResultExecutorDouble: @unchecked Sendable {
     struct Invocation: Sendable {
         let command: AgentTaskCheckCommand
@@ -15,6 +25,7 @@ nonisolated private final class AgentResultExecutorDouble: @unchecked Sendable {
     private var invocations: [Invocation] = []
     private var cancellationWasRequested = false
     private var cancellationResult = true
+    private var cleanupGate: AgentResultCleanupGate?
 
     var count: Int { lock.withLock { invocations.count } }
     var isEmpty: Bool { lock.withLock { invocations.isEmpty } }
@@ -34,6 +45,12 @@ nonisolated private final class AgentResultExecutorDouble: @unchecked Sendable {
 
     func refuseCancellation() {
         lock.withLock { cancellationResult = false }
+    }
+
+    func gateCleanup() -> AgentResultCleanupGate {
+        let gate = AgentResultCleanupGate()
+        lock.withLock { cleanupGate = gate }
+        return gate
     }
 
     func spawn(
@@ -74,7 +91,43 @@ extension AgentResultExecutorDouble: AgentTaskResultActionExecuting {
             preSpawnValidation: preSpawnValidation,
             processObserved: processObserved, progress: progress
         ))
-        return UserTaskCancellation { self.requestCancellation() }
+        let gate = lock.withLock { cleanupGate }
+        return UserTaskCancellation(
+            terminate: { self.requestCancellation() },
+            waitForCompletion: { deadline in gate?.wait(until: deadline) ?? true }
+        )
+    }
+}
+
+private actor AgentResultReplyStore: AgentTaskPersisting {
+    private var data = Data("[]".utf8)
+    private var saveSucceeds = true
+
+    func setSaveSucceeds(_ value: Bool) { saveSucceeds = value }
+
+    func savedRevisionCount(_ reference: String) -> Int {
+        let tasks = (try? JSONDecoder().decode([AgentTask].self, from: data)) ?? []
+        return tasks.flatMap(\.revisions).filter { $0.feedbackReference == reference }.count
+    }
+
+    func load(project: AgentTaskProjectIdentity) async -> AgentTaskMetadataLoadResult {
+        AgentTaskMetadataLoadResult(
+            status: .loaded,
+            tasks: (try? JSONDecoder().decode([AgentTask].self, from: data)) ?? [],
+            revision: nil, requiresMigration: false, envelope: .empty
+        )
+    }
+
+    func save(
+        tasks: [AgentTask], project: AgentTaskProjectIdentity,
+        authorization: AgentTaskPublicationAuthorization?
+    ) async -> AgentTaskMetadataSaveResult {
+        guard saveSucceeds else { return .rejected(.ioFailure) }
+        guard let encoded = try? JSONEncoder().encode(tasks) else {
+            return .rejected(.invalidMetadata)
+        }
+        data = encoded
+        return .saved(taskCount: tasks.count)
     }
 }
 
@@ -183,6 +236,24 @@ struct AgentTaskResultActionDriverTests {
             approvedAt: Date(), revokedAt: nil
         )
         return Fixture(task: task, binding: binding, selection: selection, grant: grant)
+    }
+
+    private func decisionTask() throws -> AgentTask {
+        let code = ADEContractFixtures.codeState("a")
+        let environment = ADEContractFixtures.environment
+        var task = try ADEContractFixtures.verifiedSuccessTask(
+            seed: 1760, codeState: code, environment: environment
+        )
+        let run = try #require(task.runs.last)
+        var cycle = AgentTaskCorrectionCycle(
+            taskID: task.id, runID: run.id, codeState: code, environment: environment,
+            requestedOutcomeReference: "outcome", criteriaVersion: "criteria",
+            checkPlanIdentity: ADEContractFixtures.hex("f"),
+            reviewerControl: .writeDisabledAtAdapter
+        )
+        cycle.stop(.checksFailed)
+        task.reviewCycle = cycle
+        return task
     }
 
     nonisolated private func context(
@@ -396,9 +467,10 @@ struct AgentTaskResultActionDriverTests {
         try #require(await waitUntilMainActor { driver.state.phase == .ready })
     }
 
-    @Test func candidateChangeDuringLaunchCancelsAndFencesLateCompletion() async throws {
+    @Test func candidateChangeDuringLaunchFencesRelaunchUntilFinalCleanup() async throws {
         let fixture = try fixture()
         let executor = AgentResultExecutorDouble()
+        let cleanupGate = executor.gateCleanup()
         let authority = AgentResultAuthorityProbe(grant: fixture.grant)
         let driver = AgentTaskResultActionDriver(binding: fixture.binding, executor: executor)
         driver.launch { _ in context(fixture, authority: authority) }
@@ -407,13 +479,60 @@ struct AgentTaskResultActionDriverTests {
         try #require(await waitUntilMainActor { driver.state.ownership?.processID == 7 })
 
         driver.candidateChanged()
-        #expect(driver.state.phase == .cancelled)
-        #expect(driver.state.ownership == nil)
+        #expect(driver.state.phase == .stopping)
+        #expect(driver.state.ownership?.processID == 7)
         #expect(executor.cancellationRequested)
-        try executor.finish(0)
+        driver.launch { _ in context(fixture, authority: authority) }
         await Task.yield()
-        #expect(driver.state.phase == .cancelled)
+        #expect(executor.count == 1)
+        let rebound = AgentTaskResultActionBinding(
+            taskID: fixture.binding.taskID, project: fixture.binding.project,
+            recipeFingerprint: fixture.binding.recipeFingerprint,
+            resultActionID: fixture.binding.resultActionID, output: fixture.binding.output,
+            snapshot: AgentVerificationIdentitySnapshot(
+                code: ADEContractFixtures.codeState("b"),
+                environment: fixture.binding.snapshot.environment
+            )
+        )
+        #expect(!driver.rebind(to: rebound))
         #expect(driver.lastOutcome == nil)
+
+        try executor.finish(0, cancelled: true)
+        try #require(await waitUntilMainActor { driver.lastOutcome != nil })
+        #expect(driver.state.phase == .stopping)
+        driver.launch { _ in context(fixture, authority: authority) }
+        await Task.yield()
+        #expect(executor.count == 1)
+        #expect(!driver.rebind(to: rebound))
+
+        cleanupGate.open()
+        try #require(await waitUntilMainActor { driver.state.phase == .cancelled })
+        #expect(driver.state.ownership == nil)
+        #expect(driver.rebind(to: rebound))
+        let refreshed = Fixture(
+            task: fixture.task, binding: rebound,
+            selection: fixture.selection, grant: fixture.grant
+        )
+        driver.launch { _ in context(refreshed, authority: authority) }
+        try #require(await waitUntilMainActor { executor.count == 2 })
+    }
+
+    @Test func preSpawnRejectionWhileStoppingFinishesAndAllowsFreshLaunch() async throws {
+        let fixture = try fixture()
+        let executor = AgentResultExecutorDouble()
+        let authority = AgentResultAuthorityProbe(grant: fixture.grant)
+        let driver = AgentTaskResultActionDriver(binding: fixture.binding, executor: executor)
+        driver.launch { _ in context(fixture, authority: authority) }
+        try #require(await waitUntilMainActor { executor.count == 1 })
+        driver.candidateChanged()
+        #expect(driver.state.phase == .stopping)
+
+        try executor.finish(0, cancelled: true, preSpawnRejected: true)
+        try #require(await waitUntilMainActor { driver.state.phase == .cancelled })
+        #expect(driver.state.ownership == nil)
+
+        driver.launch { _ in context(fixture, authority: authority) }
+        try #require(await waitUntilMainActor { executor.count == 2 })
     }
 
     @Test func registryCandidateChangeDrivesProductionController() async throws {
@@ -439,6 +558,255 @@ struct AgentTaskResultActionDriverTests {
         registry.setTasksForTesting([changed])
         #expect(driver.state.phase == .stale)
         withExtendedLifetime(controller) {}
+    }
+
+    @Test func replyPersistsBeforeDispatchAndAllowsExplicitRetryAfterFailure() async throws {
+        let store = AgentResultReplyStore()
+        let registry = AgentTaskRegistry(persistence: store)
+        let task = try decisionTask()
+        registry.registerProject(task.project)
+        #expect(await registry.flushPersistence(project: task.project) == .saved)
+        registry.setTasksForTesting([task])
+        await store.setSaveSucceeds(false)
+        let text = "Fix the build, then repeat the check"
+        let reference = AgentHistoryContentHash.sha256Hex(Data(text.utf8))
+        var deliveries: [String] = []
+        var deliverySucceeds = true
+        let created = AgentTaskResultController(
+            registry: registry, taskID: task.id,
+            editorPreflight: { .available([], isCurrent: { true }) },
+            replyDispatcher: { reply, decision in
+                #expect(decision.taskID == task.id)
+                let replyReference = AgentHistoryContentHash.sha256Hex(Data(reply.utf8))
+                #expect(await store.savedRevisionCount(replyReference) == 1)
+                deliveries.append(reply)
+                return deliverySucceeds
+            }
+        )
+        let controller = try #require(created)
+        defer { controller.close() }
+        #expect(controller.presentation.canReplyToDecision)
+
+        controller.reply(text)
+        try #require(await waitUntilMainActor {
+            controller.replyDeliveryFailed && !controller.presentation.replyInFlight
+        })
+        #expect(deliveries.isEmpty)
+        #expect(registry.task(for: task.id)?.revisions.count == 1)
+        #expect(await store.savedRevisionCount(reference) == 0)
+        #expect(controller.presentation.canReplyToDecision)
+
+        await store.setSaveSucceeds(true)
+        controller.reply(text)
+        try #require(await waitUntilMainActor { deliveries.count == 1 })
+        try #require(await waitUntilMainActor { !controller.presentation.replyInFlight })
+        #expect(deliveries == [text])
+        #expect(!controller.replyDeliveryFailed)
+        #expect(registry.task(for: task.id)?.revisions.count == 1)
+        #expect(await store.savedRevisionCount(reference) == 1)
+
+        deliverySucceeds = false
+        controller.reply("Revise the failed check")
+        try #require(await waitUntilMainActor {
+            deliveries.count == 2 && controller.replyDeliveryFailed
+                && !controller.presentation.replyInFlight
+        })
+        await Task.yield()
+        #expect(deliveries.count == 2)
+        #expect(registry.task(for: task.id)?.revisions.count == 2)
+    }
+
+    @Test func closeReopenSharesFinalCleanupFenceAndPreventsDuplicateLaunch() async throws {
+        let fixture = try fixture()
+        let registry = AgentTaskRegistry()
+        registry.setTasksForTesting([fixture.task])
+        let executor = AgentResultExecutorDouble()
+        let cleanupGate = executor.gateCleanup()
+        let authority = AgentResultAuthorityProbe(grant: fixture.grant)
+        let driver = AgentTaskResultActionDriver(binding: fixture.binding, executor: executor)
+        var first: AgentTaskResultController? = try #require(AgentTaskResultController(
+            registry: registry, taskID: fixture.task.id,
+            editorPreflight: { .available([], isCurrent: { true }) },
+            executor: executor, initialDriver: driver
+        ))
+        driver.launch { _ in context(fixture, authority: authority) }
+        try #require(await waitUntilMainActor { executor.count == 1 })
+        try executor.spawn(71)
+        try #require(await waitUntilMainActor { driver.state.ownership?.processID == 71 })
+
+        first?.close()
+        #expect(driver.state.phase == .stopping)
+        #expect(executor.cancellationRequested)
+        #expect(first?.driver == nil)
+        first = nil
+        let reopened = try #require(AgentTaskResultController(
+            registry: registry, taskID: fixture.task.id,
+            editorPreflight: { .available([], isCurrent: { true }) }, executor: executor
+        ))
+        #expect(reopened.driver === driver)
+        reopened.driver?.launch { _ in context(fixture, authority: authority) }
+        await Task.yield()
+        #expect(executor.count == 1)
+
+        try executor.finish(0, cancelled: true)
+        try #require(await waitUntilMainActor { driver.lastOutcome != nil })
+        #expect(driver.state.phase == .stopping)
+        reopened.driver?.launch { _ in context(fixture, authority: authority) }
+        await Task.yield()
+        #expect(executor.count == 1)
+
+        cleanupGate.open()
+        try #require(await waitUntilMainActor { driver.state.phase == .cancelled })
+        reopened.driver?.launch { _ in context(fixture, authority: authority) }
+        try #require(await waitUntilMainActor { executor.count == 2 })
+    }
+
+    @Test func productionReopenRestoresPreparationAndLaunchesThroughController() async throws {
+        let base = try fixture()
+        let code = ADEContractFixtures.codeState("a")
+        let environment = ADEContractFixtures.environment
+        var task = base.task
+        task.runs = [AgentTaskRun(ADEContractFixtures.makeAttempt(seed: 1761))]
+        let run = try #require(task.runs.last)
+        task.evidence.append(ADEContractFixtures.fact(
+            .agentReportedCompletion, runID: run.id, generation: run.process.processGeneration,
+            result: .reported, at: run.lastObservedAt, codeState: code, environment: environment,
+            sequence: 1
+        ))
+        task.evidence.append(ADEContractFixtures.fact(
+            .independentCheck, runID: run.id, generation: run.process.processGeneration,
+            result: .succeeded, at: run.lastObservedAt.addingTimeInterval(1),
+            codeState: code, environment: environment, sequence: 2, pre: code, post: code
+        ))
+        task.evidence.append(ADEContractFixtures.fact(
+            .reviewerOutcome, runID: run.id, generation: run.process.processGeneration,
+            result: .succeeded, at: run.lastObservedAt.addingTimeInterval(2),
+            codeState: code, environment: environment, sequence: 3, pre: code, post: code
+        ))
+        AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: task.runs.count - 1)
+        let binding = try #require(AgentTaskResultActionBinding(
+            task: task, selection: base.selection, actionID: "run-example",
+            snapshot: AgentVerificationIdentitySnapshot(code: code, environment: environment)
+        ))
+        let grant = AgentTaskCheckGrant(
+            scheme: AgentTaskCheckGrant.currentScheme, id: UUID(), taskID: task.id,
+            planFingerprint: base.selection.plan.fingerprint, environment: environment,
+            approvedAt: Date(), revokedAt: nil
+        )
+        let fixture = Fixture(
+            task: task, binding: binding, selection: base.selection, grant: grant
+        )
+        let registry = AgentTaskRegistry()
+        registry.setTasksForTesting([task])
+        let executor = AgentResultExecutorDouble()
+        let authority = AgentResultAuthorityProbe(grant: grant)
+        let driver = registry.retainResultActionDriver(
+            AgentTaskResultActionDriver(binding: binding, executor: executor)
+        )
+        var preparation = AgentProjectPreparation(recipe: base.selection.recipe)
+        for name in preparation.prerequisiteNames {
+            preparation = preparation.reduced(by: .prerequisiteResolved(name))
+        }
+        for action in preparation.setupActionIDs {
+            preparation = preparation.reduced(by: .setupSucceeded(action))
+        }
+        registry.updateResultActionSelection(base.selection, for: task.id)
+        registry.updateResultActionPreparation(preparation, for: task.id)
+        let commandAuthority: AgentTaskResultCommandAuthorityProvider = { _, _ in
+            context(fixture, authority: authority).authority
+        }
+        var first: AgentTaskResultController? = try #require(AgentTaskResultController(
+            registry: registry, taskID: task.id,
+            editorPreflight: { .available([], isCurrent: { true }) },
+            executor: executor, commandAuthority: commandAuthority
+        ))
+        #expect(first?.presentation.canLaunchAction == true)
+
+        first?.close()
+        first = nil
+        let reopened = try #require(AgentTaskResultController(
+            registry: registry, taskID: task.id,
+            editorPreflight: { .available([], isCurrent: { true }) },
+            executor: executor, commandAuthority: commandAuthority
+        ))
+        #expect(reopened.presentation.canLaunchAction)
+        #expect(reopened.presentation.preparation == preparation)
+
+        reopened.launchResult()
+        try #require(await waitUntilMainActor { executor.count == 1 })
+        #expect(driver.state.phase == .starting)
+    }
+
+    @Test func preparationRetryAndReopenWaitForDeferredCleanup() async throws {
+        let fixture = try fixture()
+        let registry = AgentTaskRegistry()
+        registry.setTasksForTesting([fixture.task])
+        let executor = AgentResultExecutorDouble()
+        let cleanupGate = executor.gateCleanup()
+        let authority = AgentResultAuthorityProbe(grant: fixture.grant)
+        let driver = AgentTaskResultActionDriver(binding: fixture.binding, executor: executor)
+        let created = AgentTaskResultController(
+            registry: registry, taskID: fixture.task.id,
+            editorPreflight: { .available([], isCurrent: { true }) },
+            executor: executor, initialDriver: driver, initialSelection: fixture.selection,
+            commandAuthority: { _, _ in context(fixture, authority: authority).authority }
+        )
+        let controller = try #require(created)
+        controller.prepareResult()
+        try #require(await waitUntilMainActor { executor.count == 1 })
+
+        try executor.finish(1)
+        #expect(registry.resultPreparationExecutionIsPending(for: fixture.task.id))
+        controller.prepareResult()
+        let reopenedController = AgentTaskResultController(
+            registry: registry, taskID: fixture.task.id,
+            editorPreflight: { .available([], isCurrent: { true }) },
+            executor: executor, initialSelection: fixture.selection,
+            commandAuthority: { _, _ in context(fixture, authority: authority).authority }
+        )
+        let reopened = try #require(reopenedController)
+        #expect(reopened.driver === driver)
+        reopened.prepareResult()
+        await Task.yield()
+        #expect(executor.count == 1)
+
+        cleanupGate.open()
+        try #require(await waitUntilMainActor {
+            !registry.resultPreparationExecutionIsPending(for: fixture.task.id)
+        })
+        reopened.prepareResult()
+        try #require(await waitUntilMainActor { executor.count == 2 })
+
+        cleanupGate.open()
+        try executor.finish(1)
+        try #require(await waitUntilMainActor {
+            !registry.resultPreparationExecutionIsPending(for: fixture.task.id)
+        })
+    }
+
+    @Test func dismissalStopsAndEvictsRunningResultOwner() async throws {
+        let fixture = try fixture()
+        let registry = AgentTaskRegistry()
+        registry.setTasksForTesting([fixture.task])
+        let executor = AgentResultExecutorDouble()
+        let authority = AgentResultAuthorityProbe(grant: fixture.grant)
+        let driver = AgentTaskResultActionDriver(binding: fixture.binding, executor: executor)
+        let controller = try #require(AgentTaskResultController(
+            registry: registry, taskID: fixture.task.id,
+            editorPreflight: { .available([], isCurrent: { true }) },
+            executor: executor, initialDriver: driver
+        ))
+        driver.launch { _ in context(fixture, authority: authority) }
+        try #require(await waitUntilMainActor { executor.count == 1 })
+        try executor.spawn(72)
+        try #require(await waitUntilMainActor { driver.state.ownership?.processID == 72 })
+
+        var dismissed = fixture.task
+        dismissed.lifecycle = .dismissed
+        registry.setTasksForTesting([dismissed])
+        #expect(driver.state.phase == .stopping)
+        #expect(executor.cancellationRequested)
+        #expect(controller.driver == nil)
     }
 
     @Test func staleResultRebindsFreshBeforeAnExplicitRelaunch() async throws {

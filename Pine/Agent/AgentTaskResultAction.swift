@@ -621,24 +621,30 @@ final class AgentTaskResultActionDriver {
     ) {
         guard activeAttempt == attempt else { return }
         if outcome.preSpawnRejected {
-            refuse(.authorityChanged, attempt: attempt)
-            return
-        }
-        switch state.phase {
-        case .starting where cancelled:
+            guard state.phase == .stopping else {
+                refuse(.authorityChanged, attempt: attempt)
+                return
+            }
+            // Cancellation already owns this launch: finish that transition
+            // instead of emitting a refusal the stopping reducer cannot accept.
             state = state.reduced(by: .cancelled)
-        case .starting:
-            let exitCode = outcome.succeeded
-                ? 0 : (outcome.processExitCode == 0 ? -1 : outcome.processExitCode ?? -1)
-            state = state.reduced(by: .processExited(exitCode))
-        case .stopping where cancelled:
-            state = state.reduced(by: .cancelled)
-        case .stopping:
-            state = state.reduced(by: .processExited(outcome.processExitCode ?? 0))
-        case .ready, .stale:
-            state = state.reduced(by: .processExited(outcome.processExitCode ?? -1))
-        default:
-            break
+        } else {
+            switch state.phase {
+            case .starting where cancelled:
+                state = state.reduced(by: .cancelled)
+            case .starting:
+                let exitCode = outcome.succeeded
+                    ? 0 : (outcome.processExitCode == 0 ? -1 : outcome.processExitCode ?? -1)
+                state = state.reduced(by: .processExited(exitCode))
+            case .stopping where cancelled:
+                state = state.reduced(by: .cancelled)
+            case .stopping:
+                state = state.reduced(by: .processExited(outcome.processExitCode ?? 0))
+            case .ready, .stale:
+                state = state.reduced(by: .processExited(outcome.processExitCode ?? -1))
+            default:
+                break
+            }
         }
         activeAttempt = nil
         cancellation = nil

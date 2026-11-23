@@ -2,6 +2,14 @@ import Foundation
 import Observation
 import Synchronization
 
+typealias AgentTaskResultReplyDispatcher = @MainActor (
+    String, AgentTaskReviewDecision
+) async -> Bool
+
+typealias AgentTaskResultCommandAuthorityProvider = @MainActor (
+    AgentProjectRecipe.Selected, AgentVerificationIdentitySnapshot
+) -> AgentTaskResultCommandAuthority?
+
 nonisolated private final class AgentTaskResultGrantStore: Sendable {
     private let state = Mutex<AgentTaskCheckGrant?>(nil)
     var current: AgentTaskCheckGrant? { state.withLock { $0 } }
@@ -44,19 +52,27 @@ final class AgentTaskResultController {
     private let registry: AgentTaskRegistry
     private let editorPreflight: () -> AgentVerificationEditorPreflight
     private let executor: any AgentTaskResultActionExecuting
+    private let commandAuthority: AgentTaskResultCommandAuthorityProvider?
+    private let replyDispatcher: AgentTaskResultReplyDispatcher?
     private let grant = AgentTaskResultGrantStore()
     private var task: AgentTask
     private var taskSignature: TaskSignature
     private var observerToken: UUID?
     private var snapshot: AgentVerificationIdentitySnapshot?
-    private var selection: AgentProjectRecipe.Selected?
+    private var selection: AgentProjectRecipe.Selected? {
+        didSet { registry.updateResultActionSelection(selection, for: taskID) }
+    }
     private var selectionOperation = UUID()
     private var preparationOperation = UUID()
     private var preparationTask: Task<Void, Never>?
     private var preparationCancellation: UserTaskCancellation?
+    private var replyInFlight = false
 
+    private(set) var replyDeliveryFailed = false
     private(set) var proposal: AgentProjectRecipe?
-    private(set) var preparation: AgentProjectPreparation?
+    private(set) var preparation: AgentProjectPreparation? {
+        didSet { registry.updateResultActionPreparation(preparation, for: taskID) }
+    }
     private(set) var driver: AgentTaskResultActionDriver?
 
     var presentation: AgentTaskResultPresentation {
@@ -64,7 +80,8 @@ final class AgentTaskResultController {
             task: task, codeState: snapshot?.code, environment: snapshot?.environment,
             action: driver?.state, preparation: preparation,
             preparationIsRunning: preparationTask != nil,
-            lastOutcome: driver?.lastOutcome
+            lastOutcome: driver?.lastOutcome,
+            replyInFlight: replyInFlight, replyDeliveryFailed: replyDeliveryFailed
         )
     }
 
@@ -73,19 +90,41 @@ final class AgentTaskResultController {
         taskID: UUID,
         editorPreflight: @escaping () -> AgentVerificationEditorPreflight,
         executor: any AgentTaskResultActionExecuting = AgentTaskResultProcessExecutor(),
-        initialDriver: AgentTaskResultActionDriver? = nil
+        initialDriver: AgentTaskResultActionDriver? = nil,
+        initialSelection: AgentProjectRecipe.Selected? = nil,
+        commandAuthority: AgentTaskResultCommandAuthorityProvider? = nil,
+        replyDispatcher: AgentTaskResultReplyDispatcher? = nil
     ) {
         guard let task = registry.task(for: taskID) else { return nil }
         self.registry = registry
         self.task = task
         self.editorPreflight = editorPreflight
         self.executor = executor
+        self.commandAuthority = commandAuthority
+        self.replyDispatcher = replyDispatcher
+        snapshot = AgentTaskReviewOrchestrator.decisionRequest(for: task).map {
+            AgentVerificationIdentitySnapshot(
+                code: $0.candidateCodeState, environment: $0.candidateEnvironment
+            )
+        }
         taskSignature = TaskSignature(task)
         if let initialDriver, initialDriver.state.binding.taskID == taskID,
            initialDriver.state.binding.project == task.project {
-            driver = initialDriver
-            snapshot = initialDriver.state.binding.snapshot
-            selection = nil
+            driver = registry.retainResultActionDriver(initialDriver)
+        } else {
+            driver = registry.resultActionDriver(for: taskID)
+        }
+        if let driver {
+            snapshot = driver.state.binding.snapshot
+            selection = registry.resultActionSelection(for: taskID)
+            preparation = registry.resultActionPreparation(for: taskID)
+            if let initialSelection,
+               initialSelection.recipe.fingerprint == driver.state.binding.recipeFingerprint {
+                selection = initialSelection
+                preparation = AgentProjectPreparation(recipe: initialSelection.recipe)
+                registry.updateResultActionSelection(initialSelection, for: taskID)
+                registry.updateResultActionPreparation(preparation, for: taskID)
+            }
         }
         observerToken = registry.addTaskChangeObserver { [weak self] _, tasks in
             self?.observe(tasks)
@@ -104,7 +143,8 @@ final class AgentTaskResultController {
 
     /// Explicit recipe selection and identity capture; never a command grant.
     func selectRecipe() {
-        guard let proposal else { return }
+        guard let proposal,
+              !registry.resultPreparationExecutionIsPending(for: taskID) else { return }
         let operation = UUID()
         selectionOperation = operation
         Task { @MainActor [weak self] in
@@ -124,13 +164,14 @@ final class AgentTaskResultController {
                     task: self.task, selection: selection,
                     actionID: "run-example", snapshot: snapshot
                 ) else { return }
-                if let driver = self.driver, driver.state.binding != binding {
-                    guard driver.rebind(to: binding) else { return }
-                } else if self.driver == nil {
-                    self.driver = AgentTaskResultActionDriver(
+                let driver = self.driver ?? self.registry.resultActionDriver(for: self.taskID)
+                    ?? self.registry.retainResultActionDriver(AgentTaskResultActionDriver(
                         binding: binding, executor: self.executor
-                    )
+                    ))
+                if driver.state.binding != binding {
+                    guard driver.rebind(to: binding) else { return }
                 }
+                self.driver = driver
                 self.selection = selection
                 self.snapshot = snapshot
                 self.preparation = AgentProjectPreparation(recipe: proposal)
@@ -143,6 +184,8 @@ final class AgentTaskResultController {
     /// Explicit setup command authorization and bounded execution.
     func prepareResult() {
         guard let selection, let snapshot, var preparation,
+              preparationTask == nil,
+              !registry.resultPreparationExecutionIsPending(for: taskID),
               !preparation.isUsable else { return }
         if preparation.phase == .failed {
             preparation = preparation.reduced(by: .retryRequested)
@@ -174,25 +217,34 @@ final class AgentTaskResultController {
                     continue
                 }
                 guard self.preparationOperation == operation, !Task.isCancelled else { return }
-                guard let owner = self.registry.resultActionOwnership(for: self.taskID) else {
+                let authority: AgentTaskResultCommandAuthority?
+                if let commandAuthority = self.commandAuthority {
+                    authority = commandAuthority(selection, snapshot)
+                } else {
+                    guard let owner = self.registry.resultActionOwnership(for: self.taskID) else {
+                        self.cancelPreparation()
+                        return
+                    }
+                    do {
+                        try await owner.validateOperation()
+                    } catch {
+                        self.cancelPreparation()
+                        return
+                    }
+                    authority = self.authority(
+                        owner: owner, selection: selection, snapshot: snapshot
+                    )
+                }
+                guard let authority else {
                     self.cancelPreparation()
                     return
                 }
-                do {
-                    try await owner.validateOperation()
-                } catch {
-                    self.cancelPreparation()
-                    return
-                }
-                guard let authority = self.authority(
-                    owner: owner, selection: selection, snapshot: snapshot
+                guard let outcome = await self.executeSetup(
+                    command: command, authority: authority, operation: operation
                 ) else {
                     self.cancelPreparation()
                     return
                 }
-                let outcome = await self.executeSetup(
-                    command: command, authority: authority, operation: operation
-                )
                 guard self.preparationOperation == operation, !Task.isCancelled else { return }
                 if outcome.succeeded {
                     self.applyPreparation(.setupSucceeded(command.id), operation: operation)
@@ -221,12 +273,23 @@ final class AgentTaskResultController {
     /// Distinct result launch. The driver calls the closure before execution,
     /// and the authority recaptures identity again inside the spawn gate.
     func launchResult() {
-        guard let driver, let selection, let preparation else { return }
+        guard let driver, let selection, let preparation,
+              !registry.resultPreparationExecutionIsPending(for: taskID) else { return }
         if grant.current == nil {
             issueGrant(plan: selection.plan, snapshot: driver.state.binding.snapshot)
         }
+        let commandAuthority = commandAuthority
         driver.launch { [weak self] binding in
             guard let self else { return nil }
+            if let commandAuthority {
+                guard let authority = await commandAuthority(selection, binding.snapshot) else {
+                    return nil
+                }
+                return AgentTaskResultLaunchContext.make(
+                    binding: binding, selection: selection,
+                    preparation: preparation, authority: authority
+                )
+            }
             guard let owner = await self.registry.resultActionOwnership(for: self.taskID) else {
                 return nil
             }
@@ -249,6 +312,37 @@ final class AgentTaskResultController {
         driver?.stop()
     }
 
+    /// Durably records the current decision reply before one same-session
+    /// dispatch. Failure remains a visible pending revision, never a success.
+    func reply(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !replyInFlight,
+              let decision = presentation.decision,
+              let replyDispatcher else { return }
+        replyDeliveryFailed = false
+        replyInFlight = true
+        let reference = AgentHistoryContentHash.sha256Hex(Data(trimmed.utf8))
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let outcome = await self.registry.recordResultDecisionReply(
+                decision, feedbackReference: reference
+            )
+            guard let outcome else {
+                self.replyDeliveryFailed = true
+                self.replyInFlight = false
+                return
+            }
+            if case .rejected = outcome {
+                self.replyDeliveryFailed = true
+                self.replyInFlight = false
+                return
+            }
+            let delivered = await replyDispatcher(trimmed, decision)
+            self.replyDeliveryFailed = !delivered
+            self.replyInFlight = false
+        }
+    }
+
     /// Ends UI ownership of this result. The runner retains its own bounded
     /// cleanup after stop; no live result command stays available without an
     /// owning controller.
@@ -259,8 +353,8 @@ final class AgentTaskResultController {
         driver?.stop()
         driver = nil
         snapshot = nil
-        selection = nil
-        preparation = nil
+        // Selection and preparation stay with the registry-owned driver so a
+        // production reopen resumes the same launch/preparation controls.
         proposal = nil
         if let observerToken {
             registry.removeTaskChangeObserver(observerToken)
@@ -280,7 +374,12 @@ final class AgentTaskResultController {
         guard signature != taskSignature else { return }
         taskSignature = signature
         selectionOperation = UUID()
-        snapshot = nil
+        let decisionSnapshot = AgentTaskReviewOrchestrator.decisionRequest(for: current).map {
+            AgentVerificationIdentitySnapshot(
+                code: $0.candidateCodeState, environment: $0.candidateEnvironment
+            )
+        }
+        if snapshot != decisionSnapshot { snapshot = nil }
         grant.clear()
         cancelPreparation()
         if current.lifecycle == .dismissed || current.nativeDispatch?.phase == .unavailable {
@@ -325,9 +424,12 @@ final class AgentTaskResultController {
         command: AgentTaskCheckCommand,
         authority: AgentTaskResultCommandAuthority,
         operation: UUID
-    ) async -> UserTaskOutcome {
+    ) async -> UserTaskOutcome? {
+        guard let executionID = registry.beginResultPreparationExecution(for: taskID) else {
+            return nil
+        }
         let cancellation = Mutex<UserTaskCancellation?>(nil)
-        return await withTaskCancellationHandler {
+        let outcome = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 let handle = executor.execute(
                     command: command,
@@ -343,7 +445,9 @@ final class AgentTaskResultController {
                     })
                 )
                 cancellation.withLock { $0 = handle }
-                if preparationOperation == operation {
+                if registry.registerResultPreparationCancellation(
+                    for: taskID, executionID: executionID, handle: handle
+                ), preparationOperation == operation {
                     preparationCancellation = handle
                 } else {
                     handle.cancel()
@@ -352,6 +456,10 @@ final class AgentTaskResultController {
         } onCancel: {
             cancellation.withLock { $0 }?.cancel()
         }
+        guard await registry.finishResultPreparationExecution(
+            for: taskID, executionID: executionID
+        ) else { return nil }
+        return outcome
     }
 
     private func workingDirectory(for command: AgentTaskCheckCommand) -> URL {

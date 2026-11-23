@@ -381,6 +381,12 @@ final class OpenCodeACPNativeComposition {
 
     func runtime(for taskID: UUID) -> OpenCodeACPTaskRuntime? { runtimes[taskID] }
 
+    #if DEBUG
+    func installRuntimeForTesting(_ runtime: OpenCodeACPTaskRuntime) {
+        runtimes[runtime.taskID] = runtime
+    }
+    #endif
+
     func prepare(_ ownership: AgentTaskNativeOwnership) async {
         let taskID = ownership.policy.taskID
         guard !preparing.contains(taskID) else { return }

@@ -63,8 +63,9 @@ nonisolated private struct AgentTaskTerminationRollback: Sendable {
 
 /// Application-lifetime durable task ownership. The registry is MainActor so
 /// terminal lifecycle mutations are ordered, while its metadata actor performs
-/// all file I/O. Stored state consists only of value models and identifier maps:
-/// no ProjectManager, window, view, TerminalTab, Process, or session references.
+/// all file I/O. Durable state consists only of value models and identifier maps;
+/// runtime-only result drivers and cleanup handles stay task-scoped, are never
+/// encoded, and hold no ProjectManager, window, view, TerminalTab, or session.
 @MainActor
 @Observable
 final class AgentTaskRegistry {
@@ -107,6 +108,19 @@ final class AgentTaskRegistry {
     private var pendingClaims: [AgentTaskTerminalKey: AgentTaskPendingClaim] = [:]
     @ObservationIgnored
     private var verificationPassIDByTaskID: [UUID: UUID] = [:]
+    private struct ResultActionOwner {
+        let driver: AgentTaskResultActionDriver
+        var selection: AgentProjectRecipe.Selected?
+        var preparation: AgentProjectPreparation?
+    }
+    @ObservationIgnored
+    private var resultActionOwners: [UUID: ResultActionOwner] = [:]
+    private struct ResultPreparationExecution {
+        let id: UUID
+        var cancellation: UserTaskCancellation?
+    }
+    @ObservationIgnored
+    private var resultPreparationExecutions: [UUID: ResultPreparationExecution] = [:]
     @ObservationIgnored
     private var pendingClaimKeyByToken: [UUID: AgentTaskTerminalKey] = [:]
     @ObservationIgnored
@@ -1173,7 +1187,11 @@ final class AgentTaskRegistry {
         guard await waitForNativeCheckpoint(ownership) else { throw AgentTaskNativeAdmissionError.unavailable }
         try await revalidateNativeOperation(ownership)
         guard await waitForNativeCheckpoint(ownership),
-              let task = task(for: taskID), task.lifecycle == .active,
+              let task = task(for: taskID),
+              task.lifecycle == .active || (
+                  previous != nil && task.lifecycle == .paused
+                      && AgentTaskContinuation.hasPendingRevision(task)
+              ),
               task.acceptanceState == .notAccepted, task.verificationState != .verified,
               let checkpoint = task.nativeDispatch, !checkpoint.cancellationRequested,
               checkpoint.runID == ownership.policy.runID, task.runs.last?.liveness == .live else {
@@ -1285,9 +1303,18 @@ final class AgentTaskRegistry {
         switch transition {
         case .submissionAcknowledged(let receipt, _), .submissionResponseObserved(let receipt, _):
             try ownership.validateSubmissionCorrelation(receipt)
-        case .initialInputIntent, .followupInputIntent:
+        case .initialInputIntent:
             guard tasks[index].lifecycle == .active, tasks[index].acceptanceState == .notAccepted,
                   tasks[index].verificationState != .verified else { throw AgentTaskNativeAdmissionError.invalidTransition }
+        case .followupInputIntent:
+            guard tasks[index].lifecycle == .active || (
+                      tasks[index].lifecycle == .paused
+                          && AgentTaskContinuation.hasPendingRevision(tasks[index])
+                  ),
+                  tasks[index].acceptanceState == .notAccepted,
+                  tasks[index].verificationState != .verified else {
+                throw AgentTaskNativeAdmissionError.invalidTransition
+            }
         default:
             break
         }
@@ -1527,6 +1554,86 @@ final class AgentTaskRegistry {
             do { try await Task.sleep(for: .milliseconds(1)) } catch { return false }
         }
         return !Task.isCancelled && !isTerminating && nativeOwners[ownership.policy.taskID] === ownership
+    }
+
+    /// Result process ownership is task-scoped, not sheet-scoped. A closing
+    /// controller stops its driver but the registry retains the final-cleanup
+    /// fence for any controller reopened for the same task.
+    func resultActionDriver(for taskID: UUID) -> AgentTaskResultActionDriver? {
+        resultActionOwners[taskID]?.driver
+    }
+
+    func resultActionSelection(for taskID: UUID) -> AgentProjectRecipe.Selected? {
+        resultActionOwners[taskID]?.selection
+    }
+
+    func resultActionPreparation(for taskID: UUID) -> AgentProjectPreparation? {
+        resultActionOwners[taskID]?.preparation
+    }
+
+    @discardableResult
+    func retainResultActionDriver(
+        _ driver: AgentTaskResultActionDriver
+    ) -> AgentTaskResultActionDriver {
+        let taskID = driver.state.binding.taskID
+        if let existing = resultActionOwners[taskID] { return existing.driver }
+        resultActionOwners[taskID] = ResultActionOwner(
+            driver: driver, selection: nil, preparation: nil
+        )
+        return driver
+    }
+
+    func updateResultActionSelection(
+        _ selection: AgentProjectRecipe.Selected?, for taskID: UUID
+    ) {
+        resultActionOwners[taskID]?.selection = selection
+    }
+
+    func updateResultActionPreparation(
+        _ preparation: AgentProjectPreparation?, for taskID: UUID
+    ) {
+        resultActionOwners[taskID]?.preparation = preparation
+    }
+
+    func resultPreparationExecutionIsPending(for taskID: UUID) -> Bool {
+        resultPreparationExecutions[taskID] != nil
+    }
+
+    func beginResultPreparationExecution(for taskID: UUID) -> UUID? {
+        guard resultPreparationExecutions[taskID] == nil else { return nil }
+        let id = UUID()
+        resultPreparationExecutions[taskID] = ResultPreparationExecution(
+            id: id, cancellation: nil
+        )
+        return id
+    }
+
+    func registerResultPreparationCancellation(
+        for taskID: UUID, executionID: UUID, handle: UserTaskCancellation
+    ) -> Bool {
+        guard var execution = resultPreparationExecutions[taskID],
+              execution.id == executionID else { return false }
+        execution.cancellation = handle
+        resultPreparationExecutions[taskID] = execution
+        return true
+    }
+
+    /// Waits for the runner's deferred process-tree and pipe cleanup. Timeout
+    /// keeps the task-scoped execution record, so retry remains fail-closed.
+    func finishResultPreparationExecution(
+        for taskID: UUID, executionID: UUID
+    ) async -> Bool {
+        guard let execution = resultPreparationExecutions[taskID],
+              execution.id == executionID else { return true }
+        let handle = execution.cancellation
+        let released = await runOnBackground {
+            handle?.wait(until: .now() + 30) ?? true
+        }
+        guard released else { return false }
+        if resultPreparationExecutions[taskID]?.id == executionID {
+            resultPreparationExecutions[taskID] = nil
+        }
+        return true
     }
 
     /// Current native environment owner for result inspection/execution. The
@@ -2630,6 +2737,49 @@ final class AgentTaskRegistry {
         guard !isTerminating,
               let index = taskIndex(for: taskID) else { return false }
         return isResumableTask(at: index)
+    }
+
+    /// Records an explicit reply to the current native Needs-decision result
+    /// before the owning live session may dispatch it. No launch claim is made:
+    /// OpenCode reuses the already-live authenticated channel. The persisted
+    /// revision remains pending until provider activity produces a new attempt.
+    @discardableResult
+    func recordResultDecisionReply(
+        _ decision: AgentTaskReviewDecision,
+        feedbackReference: String
+    ) async -> AgentTaskContinuationDecision? {
+        guard let index = taskIndex(for: decision.taskID),
+              !isTerminating,
+              AgentTaskReviewOrchestrator.decisionRequest(for: tasks[index]) == decision else {
+            return .rejected(.notReady)
+        }
+        let project = tasks[index].project
+        let result = AgentTaskContinuation.submitRevision(
+            &tasks[index], feedbackReference: feedbackReference,
+            codeState: decision.candidateCodeState,
+            environment: decision.candidateEnvironment,
+            origin: .explicitUser, at: Date()
+        )
+        if case .recorded = result { markDirty(project) }
+        let generation: UInt64
+        switch result {
+        case .recorded(let candidateGeneration),
+                .alreadyRecorded(let candidateGeneration):
+            generation = candidateGeneration
+        case .rejected:
+            return result
+        }
+        guard await flushPersistence(project: project) == .saved,
+              let current = task(for: decision.taskID),
+              AgentTaskReviewOrchestrator.decisionRequest(for: current) == decision,
+              current.runs.last?.id == decision.runID,
+              current.candidateGeneration == generation,
+              current.revisions.last?.feedbackReference == feedbackReference,
+              current.revisions.last?.candidateGeneration == generation,
+              AgentTaskContinuation.hasPendingRevision(current) else {
+            return nil
+        }
+        return result
     }
 
     /// Explicit continuation of a Ready or accepted result as a NEW logical

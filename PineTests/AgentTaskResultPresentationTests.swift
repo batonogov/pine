@@ -20,6 +20,76 @@ struct AgentTaskResultPresentationTests {
         #expect(!row.canNavigateToLiveRun)
     }
 
+    @Test func realInboxReturnActivationOpensSelectedResult() throws {
+        var task = try ADEContractFixtures.verifiedSuccessTask(
+            seed: 1738, codeState: code, environment: environment
+        )
+        task.route = AgentTaskRoute(ownedProcessAvailability: .missing)
+        let tasks = AgentTaskRegistry()
+        tasks.setTasksForTesting([task])
+        let view = AgentInboxView(registry: ProjectRegistry(agentTasks: tasks))
+        #expect(tasks.task(for: task.id)?.isUnread == true)
+
+        // The Return handler delegates here after resolving its focused selection.
+        view.activateSelection(taskID: task.id)
+
+        // Opening a result, unlike navigating or recovering it, marks it viewed
+        // and creates the controller that the sheet presents.
+        #expect(tasks.task(for: task.id)?.isUnread == false)
+        #expect(view.resultStore.taskID == task.id)
+        #expect(view.resultStore.controllers[task.id]?.presentation.taskID == task.id)
+    }
+
+    @Test func returnKeyPresentsActualResultSheet() async throws {
+        var task = try ADEContractFixtures.verifiedSuccessTask(
+            seed: 1739, codeState: code, environment: environment
+        )
+        task.route = AgentTaskRoute(ownedProcessAvailability: .missing)
+        let tasks = AgentTaskRegistry()
+        tasks.setTasksForTesting([task])
+        let view = AgentInboxView(registry: ProjectRegistry(agentTasks: tasks))
+        let hosting = NSHostingView(rootView: view)
+        hosting.frame = NSRect(x: 0, y: 0, width: 520, height: 540)
+        let window = NSWindow(
+            contentRect: hosting.frame, styleMask: [.titled],
+            backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        let previousKeyWindow = NSApp.keyWindow
+        defer {
+            for sheet in window.sheets { window.endSheet(sheet) }
+            window.contentView = nil
+            window.close()
+            previousKeyWindow?.makeKeyAndOrderFront(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(hosting)
+        hosting.layoutSubtreeIfNeeded()
+        await Task.yield()
+        hosting.layoutSubtreeIfNeeded()
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r",
+            isARepeat: false, keyCode: 36
+        ))
+
+        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
+
+        try #require(await waitUntilMainActor {
+            view.resultStore.taskID == task.id && !window.sheets.isEmpty
+        })
+        let sheet = try #require(window.sheets.first)
+        let content = try #require(sheet.contentView)
+        AccessibilityTreeProbe.awaken()
+        #expect(AccessibilityTreeProbe.element(
+            under: content, identifier: AccessibilityID.agentTaskResult
+        ) != nil)
+    }
+
     @Test func readySectionsKeepTheirRequiredOrder() throws {
         let task = try ADEContractFixtures.verifiedSuccessTask(
             seed: 1725, codeState: code, environment: environment
@@ -185,6 +255,55 @@ struct AgentTaskResultPresentationTests {
         #expect(historical.reviewerOutcome?.codeState == code)
     }
 
+    @Test func reviewerEvidenceRejectsEachMismatchedIdentityDimension() throws {
+        let task = try ADEContractFixtures.verifiedSuccessTask(
+            seed: 1737, codeState: code, environment: environment
+        )
+        let run = try #require(task.runs.last)
+        let review = try #require(task.evidence.last)
+        let otherCode = ADEContractFixtures.codeState("b")
+        let otherEnvironment = AgentTaskEnvironmentIdentity(
+            osBuild: "other", toolchain: "other",
+            configurationFingerprint: ADEContractFixtures.hex("e")
+        )
+        let cases: [String: AgentTaskEvidenceFact] = [
+            "code": ADEContractFixtures.fact(
+                .reviewerOutcome, runID: run.id, generation: review.processGeneration,
+                result: .succeeded, at: review.observedAt.addingTimeInterval(1),
+                codeState: otherCode, environment: environment,
+                sequence: review.sourceSequence, pre: otherCode, post: otherCode
+            ),
+            "environment": ADEContractFixtures.fact(
+                .reviewerOutcome, runID: run.id, generation: review.processGeneration,
+                result: .succeeded, at: review.observedAt.addingTimeInterval(1),
+                codeState: code, environment: otherEnvironment,
+                sequence: review.sourceSequence, pre: code, post: code
+            ),
+            "pre-operation": ADEContractFixtures.fact(
+                .reviewerOutcome, runID: run.id, generation: review.processGeneration,
+                result: .succeeded, at: review.observedAt.addingTimeInterval(1),
+                codeState: code, environment: environment,
+                sequence: review.sourceSequence, pre: otherCode, post: code
+            ),
+            "post-operation": ADEContractFixtures.fact(
+                .reviewerOutcome, runID: run.id, generation: review.processGeneration,
+                result: .succeeded, at: review.observedAt.addingTimeInterval(1),
+                codeState: code, environment: environment,
+                sequence: review.sourceSequence, pre: code, post: otherCode
+            ),
+        ]
+        for (name, mismatch) in cases {
+            var candidate = task
+            candidate.evidence.removeLast()
+            candidate.evidence.append(mismatch)
+            let model = AgentTaskResultPresentation(
+                task: candidate, codeState: code, environment: environment
+            )
+            #expect(!model.reviewerOutcomeIsCurrent, "Mismatch: \(name)")
+            #expect(model.reviewerOutcome == mismatch, "Mismatch: \(name)")
+        }
+    }
+
     @Test func accessibilityRetainsCompleteEvidenceAndOutput() throws {
         let task = try ADEContractFixtures.verifiedSuccessTask(
             seed: 1732, codeState: code, environment: environment
@@ -230,6 +349,10 @@ struct AgentTaskResultPresentationTests {
         )
         #expect(!model.canLaunchAction)
         #expect(!model.preparationIsRunning)
+        let missingPreparation = AgentTaskResultPresentation(
+            task: task, codeState: code, environment: environment, action: model.action
+        )
+        #expect(!missingPreparation.canLaunchAction)
         model = AgentTaskResultPresentation(
             task: task, codeState: code, environment: environment,
             action: model.action, preparation: preparation, preparationIsRunning: true

@@ -87,6 +87,8 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
     let decision: AgentTaskReviewDecision?
     let hasDecisionRequest: Bool
     let revisionComparison: AgentRevisionComparison?
+    let replyInFlight: Bool
+    let replyDeliveryFailed: Bool
 
     init(
         task: AgentTask,
@@ -101,7 +103,9 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
         lastOutcome: UserTaskOutcome? = nil,
         checkJournal: [AgentTaskResultCheckEntry] = [],
         limitations: [String] = [],
-        revisionComparison: AgentRevisionComparison? = nil
+        revisionComparison: AgentRevisionComparison? = nil,
+        replyInFlight: Bool = false,
+        replyDeliveryFailed: Bool = false
     ) {
         taskID = task.id
         objective = task.objective ?? ""
@@ -129,6 +133,8 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
         self.limitations = limitations
         self.revisionComparison = revisionComparison?.taskID == task.id
             ? revisionComparison : nil
+        self.replyInFlight = replyInFlight
+        self.replyDeliveryFailed = replyDeliveryFailed
         if let run = task.runs.last {
             let reviews = task.evidence.filter {
                 $0.runID == run.id && $0.kind == .reviewerOutcome
@@ -180,17 +186,14 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
 
     var needsDecision: Bool { decision != nil }
     var hasStaleDecision: Bool { hasDecisionRequest && decision == nil }
-    var canReplyToDecision: Bool { decision != nil }
+    var canReplyToDecision: Bool { decision != nil && !replyInFlight }
     var actionSupportsExecution: Bool { action?.binding.output.isOneShot == true }
 
     var canLaunchAction: Bool {
         guard readiness.isReady, !hasDecisionRequest,
               actionMatchesCurrentCandidate, actionSupportsExecution,
-              let action else { return false }
-        if let preparation {
-            return preparation.isCurrentFor(action.binding.recipeFingerprint)
-        }
-        return true
+              let action, let preparation else { return false }
+        return preparation.isCurrentFor(action.binding.recipeFingerprint)
     }
 
     var actionMatchesCurrentCandidate: Bool {
@@ -656,6 +659,12 @@ struct AgentTaskResultView: View {
             } else {
                 Text(verbatim: copy(.staleDecisionDetail))
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if model.replyDeliveryFailed {
+                Text(verbatim: copy(.replyDeliveryFailed))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text(verbatim: copy(.preservedWork))
