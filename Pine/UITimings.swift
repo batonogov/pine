@@ -62,7 +62,7 @@ nonisolated enum UITimings {
     }
 
     /// Debounce intervals for trailing-edge work that's expensive to run
-    /// per-event (regex highlighting, fold recalculation, project-wide
+    /// per-event (regex highlighting, project-wide
     /// search, FSEvents fan-out, validators).
     enum Debounce {
         /// Syntax highlight on scroll. Roughly three frames at 120 Hz —
@@ -76,11 +76,6 @@ nonisolated enum UITimings {
         /// trigger a full repaint, short enough that highlight catches
         /// up before the user finishes a token.
         static let edit: TimeInterval = 0.1
-
-        /// Fold-range recalculation. Heavier than highlighting (full
-        /// bracket-matching scan with comment/string skip ranges), so
-        /// it's debounced longer than `edit` to avoid stalling typing.
-        static let foldRecalc: TimeInterval = 0.15
 
         /// FSEvents debounce for the workspace file watcher. Short
         /// enough that changes made in the built-in terminal show up in
@@ -115,13 +110,6 @@ nonisolated enum UITimings {
     /// scroll/edit notification. These are *upper bounds* on redraw
     /// frequency, not delays before a single action.
     enum Render {
-        /// Minimap redraw throttle (~3 frames at 120 Hz ProMotion). Each
-        /// minimap repaint enumerates layout-manager line fragments and
-        /// re-walks per-glyph foreground colors, so it must stay under
-        /// the per-frame budget; trailing redraws coalesce via a
-        /// scheduled work item to capture the final scroll position.
-        static let minimapRedraw: TimeInterval = 0.025
-
         /// Bounded retries for the first Metal terminal frame. A freshly
         /// attached `CAMetalLayer` may legitimately have no drawable yet;
         /// SwiftTerm 1.14.0 records that missed draw but only consumes the

@@ -274,7 +274,7 @@ final class CommandOverlayRouter {
     /// Dismisses the matching presentation, restores its document window, and
     /// invokes `action` only after AppKit has had a runloop turn to retire the
     /// panel. Commands selected from Command Palette use this path so
-    /// key-window-gated responders (find, comment, folding, and similar
+    /// key-window-gated responders (find, comment, and similar
     /// editor commands) see the document window rather than the outgoing
     /// command panel.
     func dismiss(

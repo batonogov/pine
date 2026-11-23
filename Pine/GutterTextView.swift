@@ -10,7 +10,6 @@
 //    • Current-line highlight
 //    • Indent guides
 //    • Inline diff overlay (added/deleted line rendering)
-//    • Inline blame annotation
 //    • Auto-indent on newline
 //    • Escape-to-collapse for expanded diff hunks
 //    • Comment toggling
@@ -120,48 +119,6 @@ final class GutterTextView: NSTextView {
         }
     }
 
-    /// Blame lookup: line number → GitBlameLine (O(1) access).
-    private(set) var blameLookup: [Int: GitBlameLine] = [:]
-    /// Previous blame data count — avoids rebuilding the dictionary on every updateNSView.
-    private(set) var blameLineCount: Int = -1
-    var isBlameVisible: Bool = false
-
-    /// Sets blame data and rebuilds O(1) lookup dictionary.
-    func setBlameLines(_ lines: [GitBlameLine]) {
-        guard lines.count != blameLineCount || lines.first != blameLookup[lines.first?.finalLine ?? 0] else {
-            return
-        }
-        blameLineCount = lines.count
-        blameLookup = Dictionary(lines.map { ($0.finalLine, $0) }, uniquingKeysWith: { _, last in last })
-        if isBlameVisible { display() }
-    }
-
-    private static let blameFont: NSFont = {
-        let descriptor = NSFont.systemFont(ofSize: 12, weight: .regular)
-            .fontDescriptor.withSymbolicTraits(.italic)
-        return NSFont(descriptor: descriptor, size: 12) ?? NSFont.systemFont(ofSize: 12)
-    }()
-    private static let blameColor = NSColor(name: nil) { appearance in
-        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return NSColor.white.withAlphaComponent(0.3)
-        } else {
-            return NSColor.black.withAlphaComponent(0.3)
-        }
-    }
-
-    private static let blameIcon: NSImage? = {
-        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .light)
-        return NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)?
-            .pine_tinted(with: blameColor)
-    }()
-
-    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
-    }()
-
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
 
@@ -195,10 +152,6 @@ final class GutterTextView: NSTextView {
         currentLineColor.setFill()
         lineRect.fill()
 
-        // ── Inline blame annotation ──
-        if isBlameVisible, !blameLookup.isEmpty {
-            drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
-        }
     }
 
     // MARK: - Inline diff drawing
@@ -338,87 +291,6 @@ final class GutterTextView: NSTextView {
         separatorPath.lineWidth = 0.5
         Self.deletedSeparatorColor.setStroke()
         separatorPath.stroke()
-    }
-
-    /// Draws inline blame annotation after the line content on the cursor line.
-    /// Computes line number directly from selectedRange() to stay in sync with
-    /// the actual selection state during each draw call (no caching — drawBackground
-    /// can be called multiple times per display cycle with different selection states).
-    private func drawInlineBlame(lineRect: NSRect, layoutManager: NSLayoutManager) {
-        let source = string as NSString
-        guard source.length > 0, let container = textContainer else { return }
-
-        let cursorLocation = min(selectedRange().location, source.length)
-
-        // Compute 1-based line number from cursor position
-        var lineNumber = 1
-        for i in 0..<cursorLocation where source.character(at: i) == ASCII.newline {
-            lineNumber += 1
-        }
-
-        guard let blame = blameLookup[lineNumber] else { return }
-
-        // Find end of line content
-        let lineRange = source.lineRange(for: NSRange(location: cursorLocation, length: 0))
-        var lineEnd = NSMaxRange(lineRange)
-        if lineEnd > lineRange.location && lineEnd <= source.length
-            && source.character(at: lineEnd - 1) == ASCII.newline {
-            lineEnd -= 1
-        }
-
-        // Get x position after the last character
-        let glyphIndex = layoutManager.glyphIndexForCharacter(at: max(lineEnd, lineRange.location))
-        let lineEndX: CGFloat
-        if lineEnd > lineRange.location {
-            let charRect = layoutManager.boundingRect(
-                forGlyphRange: NSRange(location: glyphIndex, length: 0),
-                in: container
-            )
-            lineEndX = charRect.maxX + textContainerOrigin.x
-        } else {
-            let usedRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            lineEndX = usedRect.origin.x + textContainerOrigin.x
-        }
-
-        let text: String
-        if blame.isUncommitted {
-            text = "Uncommitted"
-        } else {
-            let relativeDate = Self.relativeDateFormatter.localizedString(
-                for: blame.authorTime, relativeTo: Date()
-            )
-            text = "\(blame.author), \(relativeDate)"
-        }
-
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: Self.blameFont,
-            .foregroundColor: Self.blameColor
-        ]
-
-        let minBlameX = textContainerOrigin.x + gutterInset + 250
-        var drawX = max(lineEndX + 24, minBlameX)
-        let drawY = lineRect.origin.y + (lineRect.height - Self.blameFont.pointSize) / 2
-
-        // Git branch icon (cached to avoid copy+tint on every draw)
-        if let icon = Self.blameIcon {
-            let iconY = lineRect.origin.y + (lineRect.height - icon.size.height) / 2
-            icon.draw(
-                in: NSRect(x: drawX, y: iconY, width: icon.size.width, height: icon.size.height),
-                from: .zero, operation: .sourceOver, fraction: 1,
-                respectFlipped: true, hints: nil
-            )
-            drawX += icon.size.width + 4
-        }
-
-        (text as NSString).draw(at: NSPoint(x: drawX, y: drawY), withAttributes: attrs)
-    }
-
-    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
-        // Mark full bounds dirty BEFORE super so its drawing pass erases the
-        // old blame annotation in a single frame (no flicker).
-        if isBlameVisible { setNeedsDisplay(bounds) }
-        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
-        needsDisplay = true
     }
 
     // MARK: - Toggle comment

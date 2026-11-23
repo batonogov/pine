@@ -299,7 +299,7 @@ struct ValidationGutterTests {
     // MARK: - Icon position does not overlap line numbers
 
     @Test func diagnosticIcon_positionedWithinFoldArea() {
-        // The icon starts at x=1, within the fold indicator area (0–14px)
+        // The icon starts at x=1, within the leftmost gutter region (0–14px)
         let iconX: CGFloat = 1
         let foldAreaEnd: CGFloat = 14
         #expect(iconX >= 0 && iconX < foldAreaEnd)

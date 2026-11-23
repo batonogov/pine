@@ -8,7 +8,7 @@
 //  - a command that needs further input is titled with an ellipsis, like its
 //    siblings "Quick Open…", "Find…", and "Save As…";
 //  - a `Toggle(isOn:)` item renders a checkmark, so its title names the
-//    state ("Minimap"), not the verb ("Toggle Minimap").
+//    state, not the verb.
 //
 //  The values live in the xcstrings catalog keyed by Strings.swift, so the
 //  catalog is the single place both conventions can be verified for all
@@ -38,7 +38,7 @@ enum LocalizationCatalog {
     }
 
     /// Resolves the catalog key behind a Swift identifier like
-    /// `menuToggleMinimap` → `menu.toggleMinimap`, matching case- and
+    /// `menuToggleWordWrap` → `menu.toggleWordWrap`, matching case- and
     /// dot-insensitively so the mapping holds however the identifier is
     /// cased in source.
     static func key(forIdentifier identifier: String) -> String? {

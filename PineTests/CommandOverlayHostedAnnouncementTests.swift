@@ -20,7 +20,7 @@ import Testing
 /// other hosted suites that drain the same main runloop without being
 /// serialized against this one (`CommandPaletteHostedInteractionTests:303`,
 /// `GoToLineViewAccessibilityTests:45`, `QuickTerminalContentHostedTests:105`,
-/// `GlobalTabSwitcherOverlayHostedTests:400`). `settle` itself sleeps and
+/// The hosted switcher suites). `settle` itself sleeps and
 /// leaves the main actor free, so the waiting is not what needs serializing.
 ///
 /// Time-limited deliberately: the settle gate below is budgeted in polls, not

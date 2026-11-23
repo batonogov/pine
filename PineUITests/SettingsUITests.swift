@@ -428,7 +428,6 @@ final class SettingsUITests: PineUITestCase {
                     "Format on Save",
                     "Smart List Continuation",
                     "Word Wrap",
-                    "Minimap",
                 ],
                 expectedIdentifiers: ["generalFontSizeSlider"]
             ),

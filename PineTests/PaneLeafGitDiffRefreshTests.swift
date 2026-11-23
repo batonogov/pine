@@ -289,51 +289,6 @@ struct PaneLeafGitDiffRefreshTests {
     /// Verifies that in a split-pane layout each pane's own `TabManager`
     /// exposes its own `activeTab?.contentVersion`, so subscriptions in each
     /// `PaneLeafView` are independent and do not interfere.
-    @Test("split panes have independent contentVersion streams per TabManager")
-    func splitPanesIndependentContentVersion() {
-        let manager = PaneManager()
-        let firstPane = manager.activePaneID
-        let urlA = URL(fileURLWithPath: "/tmp/pine-split-a-\(UUID().uuidString).txt")
-        let urlB = URL(fileURLWithPath: "/tmp/pine-split-b-\(UUID().uuidString).txt")
-        try? "A".write(to: urlA, atomically: true, encoding: .utf8)
-        try? "B".write(to: urlB, atomically: true, encoding: .utf8)
-        defer {
-            try? FileManager.default.removeItem(at: urlA)
-            try? FileManager.default.removeItem(at: urlB)
-        }
-
-        manager.tabManager(for: firstPane)?.openTab(url: urlA)
-        guard let secondPane = manager.splitPane(firstPane, axis: .horizontal) else {
-            Issue.record("Split failed")
-            return
-        }
-        manager.tabManager(for: secondPane)?.openTab(url: urlB)
-
-        guard let tmA = manager.tabManager(for: firstPane),
-              let tmB = manager.tabManager(for: secondPane) else {
-            Issue.record("TabManagers missing after split")
-            return
-        }
-
-        let v0A = tmA.activeTab?.contentVersion ?? 0
-        let v0B = tmB.activeTab?.contentVersion ?? 0
-
-        // Edit only pane A
-        tmA.updateContent("A edited")
-
-        let v1A = tmA.activeTab?.contentVersion ?? 0
-        let v1B = tmB.activeTab?.contentVersion ?? 0
-
-        #expect(v1A > v0A, "pane A contentVersion must bump")
-        #expect(v1B == v0B, "pane B contentVersion must NOT bump — independent subscriptions")
-    }
-
-    // MARK: - Signal 5: integration — full save flow updates diffs
-
-    /// End-to-end: simulates the user editing a file in an editor tab,
-    /// saving it, and verifies `diffForFileAsync` (the method called by
-    /// the subscription handler) reflects the modification. This is the
-    /// exact flow that issue #780 reported as broken.
     @Test("full edit → save → refresh → diffForFileAsync flow")
     func fullEditSaveRefreshFlow() async throws {
         let dir = try makeGitRepo()

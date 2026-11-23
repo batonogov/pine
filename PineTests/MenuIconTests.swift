@@ -27,7 +27,6 @@ struct MenuIconTests {
         (MenuIcons.resetFontSize, "Reset Font Size"),
         (MenuIcons.toggleTerminal, "Toggle Terminal"),
         (MenuIcons.togglePreview, "Toggle Markdown Preview"),
-        (MenuIcons.toggleMinimap, "Minimap"),
         (MenuIcons.revealFileInFinder, "Reveal File in Finder"),
         (MenuIcons.revealProjectInFinder, "Reveal Project in Finder"),
         (MenuIcons.newTerminalTab, "New Terminal Tab"),
@@ -35,10 +34,7 @@ struct MenuIconTests {
         (MenuIcons.findInProject, "Find in Project"),
         (MenuIcons.nextChange, "Next Change"),
         (MenuIcons.previousChange, "Previous Change"),
-        (MenuIcons.switchBranch, "Switch Branch"),
         (MenuIcons.sidebarOperations, "Sidebar (File menu submenu)"),
-        (MenuIcons.splitRight, "Split Right"),
-        (MenuIcons.splitDown, "Split Down"),
         (MenuIcons.pinTab, "Pin Tab"),
         (MenuIcons.unpinTab, "Unpin Tab"),
     ])

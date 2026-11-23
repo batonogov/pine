@@ -32,7 +32,6 @@ struct DiffVersionBridgeTests {
             text: .constant("hello"),
             language: "swift",
             diffVersion: 0,
-            foldState: .constant(FoldState())
         )
         #expect(view.diffVersion == 0)
     }
@@ -45,13 +44,11 @@ struct DiffVersionBridgeTests {
             text: .constant("hello"),
             language: "swift",
             diffVersion: 1,
-            foldState: .constant(FoldState())
         )
         let viewB = CodeEditorView(
             text: .constant("hello"),
             language: "swift",
             diffVersion: 2,
-            foldState: .constant(FoldState())
         )
         #expect(viewA.diffVersion != viewB.diffVersion,
                 "Different diffVersion values must be distinguishable to force updateNSView")

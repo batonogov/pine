@@ -338,47 +338,6 @@ final class ScreenshotTests: PineUITestCase {
         sleep(1)
     }
 
-    // MARK: - Minimap
-
-    func testCaptureMinimap() throws {
-        // Create a file with enough content to make the minimap useful
-        let lines = (1...80).map { "let line\($0) = \($0) * \($0)" }.joined(separator: "\n")
-        let swiftCode = """
-        import Foundation
-
-        struct Calculator {
-        \(lines)
-
-            func sum() -> Int {
-                return line1 + line2 + line3
-            }
-        }
-        """
-
-        projectURL = try createTempProject(files: [
-            "Calculator.swift": swiftCode
-        ], projectName: "Pine Demo")
-        launchWithProject(try XCTUnwrap(projectURL))
-
-        let sidebar = app.scrollViews["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
-
-        // Open the file
-        let fileRow = app.sidebarNodes["fileNode_Calculator.swift"]
-        XCTAssertTrue(waitForExistence(fileRow, timeout: 5), "File should appear in sidebar")
-        fileRow.doubleClick()
-
-        // Minimap should be visible by default
-        let minimap = app.groups["minimap"]
-        XCTAssertTrue(waitForExistence(minimap, timeout: 5), "Minimap should be visible")
-
-        // Wait for syntax highlighting and minimap to render
-        Thread.sleep(forTimeInterval: 2.0)
-
-        let screenshot = app.windows.firstMatch.screenshot()
-        attachScreenshot(screenshot, name: "screenshot-minimap")
-    }
-
     // MARK: - Markdown Preview
 
     func testCaptureMarkdownPreview() throws {
@@ -390,9 +349,9 @@ final class ScreenshotTests: PineUITestCase {
         ## Features
 
         - Syntax highlighting for 37 languages
-        - Split editor and terminal panes
+        - Editor with an adjacent terminal
         - Git context and live agent activity
-        - Minimap, folding, and project search
+        - Project search
 
         ## Getting Started
 

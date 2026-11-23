@@ -29,8 +29,6 @@ TRANSIENT_XCCOV_DIAGNOSTICS = ("no coverage data in result bundle",)
 EXCLUDED_VIEWS = frozenset(
     {
         "AccessibilityIdentifiers.swift",
-        "BranchSubtitleClickHandler.swift",
-        "BranchSwitcherView.swift",
         "CodeEditorView.swift",
         "ContentView.swift",
         "ContentView+Helpers.swift",

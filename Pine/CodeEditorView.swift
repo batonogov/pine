@@ -8,12 +8,11 @@
 //  the initial view/viewport setup. Related responsibilities live in:
 //
 //    • GutterTextView.swift — NSTextView subclass (gutter inset, current line
-//      highlight, inline diff, inline blame, auto-indent, comment toggling).
+//      highlight, inline diff, auto-indent, comment toggling).
 //    • EditorContainerViews.swift — EditorScrollView, EditorContainerView,
 //      GoToRequest.
 //    • CodeEditorView+Coordinator.swift — the Coordinator class driving
-//      highlighting, folding, find, and every NS*Delegate callback.
-//    • NSImage+Tinted.swift — shared NSImage tint helper used by gutter blame.
+//      highlighting, find, and every NS*Delegate callback.
 //
 //  Split performed on 2026-04-09 as part of issue #755 — strictly mechanical,
 //  no behavior change, no public API change.
@@ -54,14 +53,6 @@ struct CodeEditorView: NSViewRepresentable {
     var diffHunks: [DiffHunk] = []
     /// Validation diagnostics for gutter icons (error/warning/info).
     var validationDiagnostics: [ValidationDiagnostic] = []
-    /// Whether inline blame annotation is visible on the cursor line.
-    var isBlameVisible: Bool = false
-    /// Blame data for the current file.
-    var blameLines: [GitBlameLine] = []
-    /// Binding to the fold state for the active tab.
-    @Binding var foldState: FoldState
-    /// Whether the minimap panel is visible.
-    var isMinimapVisible: Bool = true
     /// Whether word wrap is enabled (wrap at window edge vs. horizontal scroll).
     var isWordWrapEnabled: Bool = true
     /// Whether syntax highlighting is disabled for this tab (e.g. large files).
@@ -113,10 +104,9 @@ struct CodeEditorView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let gutterWidth: CGFloat = 40
 
-        // ── Контейнер — держит scroll view, line number view и minimap ──
+        // ── Контейнер — держит scroll view и line number view ──
         let container = EditorContainerView()
         container.wantsLayer = true
-        container.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
 
         // ── ScrollView ──
         let scrollView = EditorScrollView()
@@ -169,8 +159,6 @@ struct CodeEditorView: NSViewRepresentable {
 
         textView.fileExtension = language
         textView.exactFileName = fileName
-        textView.setBlameLines(blameLines)
-        textView.isBlameVisible = isBlameVisible
         textView.indentStyle = indentStyle
         textView.addedLineNumbers = InlineDiffProvider.addedLineNumbers(from: diffHunks)
         textView.deletedLineBlocks = InlineDiffProvider.deletedLineBlocks(from: diffHunks)
@@ -182,34 +170,21 @@ struct CodeEditorView: NSViewRepresentable {
 
         container.addSubview(scrollView)
 
-        // ── NSLayoutManager delegate for code folding ──
-        layoutManager.delegate = context.coordinator
-
         // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
         let lineNumberView = LineNumberView(textView: textView, clipView: scrollView.contentView)
         lineNumberView.gutterWidth = gutterWidth
         lineNumberView.gutterFont = gutterFont
         lineNumberView.editorFont = editorFont
-        lineNumberView.foldState = foldState
-        let coordinator = context.coordinator
-        lineNumberView.onFoldToggle = { [weak coordinator] foldable in
-            coordinator?.handleFoldToggle(foldable)
-        }
         lineNumberView.diffHunks = diffHunks
         lineNumberView.validationDiagnostics = validationDiagnostics
+        let coordinator = context.coordinator
         lineNumberView.onDiffMarkerClick = { [weak coordinator] hunk in
             coordinator?.handleDiffMarkerClick(hunk)
         }
         container.addSubview(lineNumberView)
 
-        // ── Minimap — справа от scroll view ──
-        let minimapView = MinimapView(textView: textView, clipView: scrollView.contentView)
-        minimapView.isHidden = !isMinimapVisible
-        container.addSubview(minimapView)
-
         context.coordinator.scrollView = scrollView
         context.coordinator.lineNumberView = lineNumberView
-        context.coordinator.minimapView = minimapView
         context.coordinator.lastFontSize = editorFont.pointSize
         context.coordinator.syncContentVersion()
 
@@ -277,11 +252,9 @@ struct CodeEditorView: NSViewRepresentable {
             textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
         }
 
-        // Minimap redraw and first responder need the view to be in the window
-        // hierarchy, so defer only those non-visual operations.
+        // First responder needs the view to be in the window hierarchy.
         let canBecomeInitialFirstResponder = canBecomeInitialFirstResponder
         DispatchQueue.main.async {
-            minimapView.needsDisplay = true
             Self.attemptInitialFocus(
                 on: textView,
                 canAttempt: canBecomeInitialFirstResponder
@@ -318,14 +291,6 @@ struct CodeEditorView: NSViewRepresentable {
             )
         }
 
-        // Observe fold code notifications (Cmd+Option+arrows)
-        NotificationCenter.default.addObserver(
-            context.coordinator,
-            selector: #selector(Coordinator.handleFoldCode(_:)),
-            name: .foldCode,
-            object: nil
-        )
-
         // Observe send to terminal notification (Cmd+Shift+Enter)
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -333,9 +298,6 @@ struct CodeEditorView: NSViewRepresentable {
             name: .sendToTerminal,
             object: nil
         )
-
-        // Calculate initial foldable ranges
-        context.coordinator.recalculateFoldableRanges()
 
         return container
     }
@@ -359,8 +321,6 @@ struct CodeEditorView: NSViewRepresentable {
     }
 
     func updateNSView(_ container: NSView, context: Context) {
-        // Adopt the new tab's fold state before content synchronization can
-        // force TextKit layout for cursor/scroll restoration.
         context.coordinator.prepareForViewUpdate(self)
 
         guard let editorContainer = container as? EditorContainerView else { return }
@@ -373,13 +333,6 @@ struct CodeEditorView: NSViewRepresentable {
             canAttempt: canAttemptFocusRequest,
             onResult: onFocusRequestResult
         )
-
-        // Minimap visibility — triggers relayout via needsLayout
-        if let minimapView = context.coordinator.minimapView {
-            minimapView.isHidden = !isMinimapVisible
-        }
-        editorContainer.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
-        editorContainer.needsLayout = true
 
         // Word wrap toggle — update text container and scroll view
         if let sv = context.coordinator.scrollView,
@@ -411,18 +364,13 @@ struct CodeEditorView: NSViewRepresentable {
             }
         }
 
-        // Keep GutterTextView's language info and blame data in sync
+        // Keep GutterTextView's language info in sync
         if let sv = context.coordinator.scrollView,
            let gutterView = sv.documentView as? GutterTextView {
             gutterView.fileExtension = language
             gutterView.exactFileName = fileName
             gutterView.indentStyle = indentStyle
             gutterView.smartListContinuationEnabled = EditorSettings.shared.smartListContinuation
-            gutterView.setBlameLines(blameLines)
-            if gutterView.isBlameVisible != isBlameVisible {
-                gutterView.isBlameVisible = isBlameVisible
-                gutterView.display()
-            }
             // Update inline diff highlight data
             let newAddedLines = InlineDiffProvider.addedLineNumbers(from: diffHunks)
             let newDeletedBlocks = InlineDiffProvider.deletedLineBlocks(from: diffHunks)
@@ -449,14 +397,11 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем шрифт при изменении размера (Cmd+Plus/Minus)
         context.coordinator.updateFontIfNeeded(font: editorFont, gutterFont: gutterFont)
 
-        // Обновляем diff-данные LineNumberView и MinimapView
+        // Обновляем diff-данные LineNumberView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
             lineNumberView.diffHunks = diffHunks
             lineNumberView.validationDiagnostics = validationDiagnostics
-        }
-        if let minimapView = context.coordinator.minimapView {
-            minimapView.lineDiffs = lineDiffs
         }
 
         // Navigate to a specific offset (e.g. next/previous change)

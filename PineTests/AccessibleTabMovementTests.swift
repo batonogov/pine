@@ -1,11 +1,5 @@
-//
-//  AccessibleTabMovementTests.swift
-//  PineTests
-//
-
 import Foundation
 import Testing
-
 @testable import Pine
 
 @Suite("Keyboard and VoiceOver Tab Movement")
@@ -35,121 +29,19 @@ struct AccessibleTabMovementTests {
         #expect(manager.pendingFocusTabID == activeID)
     }
 
-    @Test("Cross-pane editor move promotes preview and preserves identity and editor state")
-    func editorCrossPaneMove() throws {
+    @Test("Terminal tabs reorder in their single adjacent strip")
+    func terminalReorder() throws {
         let paneManager = PaneManager()
-        let sourcePane = paneManager.activePaneID
-        let destinationPane = try #require(
-            paneManager.splitPane(sourcePane, axis: .horizontal)
-        )
-        let source = try #require(paneManager.tabManager(for: sourcePane))
-        let destination = try #require(paneManager.tabManager(for: destinationPane))
-        var preview = EditorTab(
-            url: URL(fileURLWithPath: "/project/preview.swift"),
-            content: "let value = 1",
-            savedContent: "let value = 1"
-        )
-        preview.isTransientPreview = true
-        preview.cursorPosition = 7
-        preview.scrollOffset = 42
-        source.tabs = [preview]
-        source.activeTabID = preview.id
-        paneManager.activePaneID = sourcePane
+        let terminalPane = paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let state = try #require(paneManager.terminalState(for: terminalPane))
+        let original = try #require(state.terminalTabs.first)
+        let extra = state.addTab(workingDirectory: nil)
+        state.activeTerminalID = original.id
+        paneManager.activePaneID = terminalPane
 
-        #expect(paneManager.canMoveActiveTab(.nextPane))
-        #expect(paneManager.moveActiveTab(.nextPane))
-
-        #expect(paneManager.root.leafIDs == [destinationPane])
-        let moved = try #require(destination.tabs.first)
-        #expect(moved.id == preview.id)
-        #expect(!moved.isTransientPreview)
-        #expect(moved.cursorPosition == 7)
-        #expect(moved.scrollOffset == 42)
-        #expect(destination.activeTabID == moved.id)
-        #expect(destination.pendingFocusTabID == moved.id)
-        #expect(paneManager.activePaneID == destinationPane)
-    }
-
-    @Test("Terminal tabs reorder and move across terminal panes")
-    func terminalMovement() throws {
-        let paneManager = PaneManager()
-        let editorPane = paneManager.activePaneID
-        let firstTerminal = paneManager.createTerminalPane(
-            relativeTo: editorPane,
-            axis: .vertical,
-            workingDirectory: nil
-        )
-        let firstPane = try #require(firstTerminal)
-        let secondTerminal = paneManager.createTerminalPane(
-            relativeTo: firstPane,
-            axis: .horizontal,
-            workingDirectory: nil
-        )
-        let secondPane = try #require(secondTerminal)
-        let firstState = try #require(paneManager.terminalState(for: firstPane))
-        let secondState = try #require(paneManager.terminalState(for: secondPane))
-        let extra = firstState.addTab(workingDirectory: nil)
-        paneManager.activePaneID = firstPane
-
-        #expect(paneManager.moveActiveTab(.leading))
-        #expect(firstState.terminalTabs.first?.id == extra.id)
-        #expect(firstState.pendingFocusTabID == extra.id)
-
-        #expect(paneManager.moveActiveTab(.nextPane))
-        #expect(firstState.terminalTabs.count == 1)
-        #expect(secondState.terminalTabs.last?.id == extra.id)
-        #expect(secondState.activeTerminalID == extra.id)
-        #expect(secondState.pendingFocusTabID == extra.id)
-        #expect(paneManager.activePaneID == secondPane)
-    }
-
-    @Test("Maximized layout rejects hidden cross-pane mutation")
-    func maximizedRejectsCrossPaneMove() throws {
-        let paneManager = PaneManager()
-        let firstPane = paneManager.activePaneID
-        let secondPane = try #require(
-            paneManager.splitPane(firstPane, axis: .horizontal)
-        )
-        let first = try #require(paneManager.tabManager(for: firstPane))
-        let second = try #require(paneManager.tabManager(for: secondPane))
-        let tab = EditorTab(url: URL(fileURLWithPath: "/project/main.swift"))
-        first.tabs = [tab]
-        first.activeTabID = tab.id
-        second.tabs = [EditorTab(url: URL(fileURLWithPath: "/project/other.swift"))]
-        second.activeTabID = second.tabs[0].id
-        paneManager.activePaneID = firstPane
-        paneManager.maximize(paneID: firstPane)
-
-        #expect(!paneManager.canMoveActiveTab(.nextPane))
-        #expect(!paneManager.moveActiveTab(.nextPane))
-        #expect(first.tabs.map(\.id) == [tab.id])
-        #expect(second.tabs.count == 1)
-    }
-
-    @Test("Pane movement skips incompatible content and chooses nearest matching pane")
-    func skipsIncompatiblePanes() throws {
-        let paneManager = PaneManager()
-        let firstEditor = paneManager.activePaneID
-        let terminal = paneManager.createTerminalPane(
-            relativeTo: firstEditor,
-            axis: .horizontal,
-            workingDirectory: nil
-        )
-        let terminalPane = try #require(terminal)
-        let secondEditor = try #require(
-            paneManager.splitPane(terminalPane, axis: .horizontal)
-        )
-        let first = try #require(paneManager.tabManager(for: firstEditor))
-        let second = try #require(paneManager.tabManager(for: secondEditor))
-        let tab = EditorTab(url: URL(fileURLWithPath: "/project/main.swift"))
-        first.tabs = [tab]
-        first.activeTabID = tab.id
-        second.tabs = [EditorTab(url: URL(fileURLWithPath: "/project/other.swift"))]
-        second.activeTabID = second.tabs[0].id
-        paneManager.activePaneID = firstEditor
-
-        #expect(paneManager.moveActiveTab(.nextPane))
-        #expect(second.tabs.contains(where: { $0.id == tab.id }))
-        #expect(paneManager.root.content(for: terminalPane) == .terminal)
+        #expect(paneManager.moveActiveTab(.trailing))
+        #expect(state.terminalTabs.map(\.id) == [extra.id, original.id])
+        #expect(state.terminalTabs.first?.id == extra.id)
+        #expect(state.pendingFocusTabID == original.id)
     }
 }

@@ -31,7 +31,7 @@ nonisolated extension Logger {
     /// Подсветка синтаксиса: загрузка грамматик, компиляция regex, применение стилей.
     static let syntax = Logger(subsystem: LogCategory.subsystem, category: LogCategory.syntax.rawValue)
 
-    /// Git-операции: статус, diff, blame, ветки.
+    /// Git-операции: статус, diff, ветки.
     static let git = Logger(subsystem: LogCategory.subsystem, category: LogCategory.git.rawValue)
 
     /// Файловое дерево: загрузка, обновление, FSEvents.

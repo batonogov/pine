@@ -2,12 +2,11 @@
 //  TerminalPaneTabBar.swift
 //  Pine
 //
-//  Tab bar for a terminal pane with drag-and-drop support,
-//  maximize/restore, and close-with-process confirmation.
+//  Tab bar for the adjacent terminal with maximize/restore and
+//  close-with-process confirmation.
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct TerminalPaneTabBar: View {
     let paneID: PaneID
@@ -16,29 +15,8 @@ struct TerminalPaneTabBar: View {
     var projectManager: ProjectManager? = nil
     @Environment(PaneManager.self) private var paneManager
     @Environment(ProjectRegistry.self) private var projectRegistry
-    @State private var tabFrames: [UUID: CGRect] = [:]
-    @State private var autoScrollSession = TabStripAutoScrollSession()
 
     private var coordinateSpaceName: String { "terminal-tab-strip-\(paneID.id.uuidString)" }
-
-    private var activeAutoScrollOwner: TabStripAutoScrollOwner? {
-        TabStripAutoScrollOwner.current(
-            activeDrag: paneManager.activeDrag,
-            previewIntent: paneManager.tabDragCoordinator.previewIntent
-        )
-    }
-
-    private var insertionIndicatorX: CGFloat? {
-        guard let intent = paneManager.tabDragCoordinator.previewIntent,
-              intent.destinationPaneID == paneID,
-              intent.drag.contentType == .terminal,
-              let insertionIndex = intent.insertionIndex else { return nil }
-        return TabStripInsertionGeometry.indicatorX(
-            for: insertionIndex,
-            orderedTabIDs: terminalState.terminalTabs.map(\.id),
-            frames: tabFrames
-        )
-    }
 
     private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
         let project = projectManager
@@ -104,88 +82,15 @@ struct TerminalPaneTabBar: View {
         }
     }
 
-    private func dropDelegate(
-        orderedTabIDs: [UUID],
-        frames: [UUID: CGRect],
-        viewportWidth: CGFloat
-    ) -> TabStripDropDelegate {
-        TabStripDropDelegate(
-            paneID: paneID,
-            contentType: .terminal,
-            orderedTabIDs: orderedTabIDs,
-            frames: frames,
-            paneManager: paneManager,
-            onHover: { dragID, locationX in
-                autoScrollSession.updateHover(
-                    owner: TabStripAutoScrollOwner(
-                        dragID: dragID,
-                        destinationPaneID: paneID.id
-                    ),
-                    locationX: locationX,
-                    viewportWidth: viewportWidth,
-                    orderedTabIDs: orderedTabIDs,
-                    frames: frames
-                )
-            },
-            onExit: {
-                autoScrollSession.end()
-            }
-        )
-    }
-
-    private func refreshPreviewAfterGeometryChange(
-        orderedTabIDs: [UUID],
-        frames: [UUID: CGRect],
-        viewportWidth: CGFloat
-    ) {
-        guard let locationX = autoScrollSession.hoverLocationX,
-              autoScrollSession.hoveredOwner == activeAutoScrollOwner else {
-            autoScrollSession.end()
-            return
-        }
-        _ = dropDelegate(
-            orderedTabIDs: orderedTabIDs,
-            frames: frames,
-            viewportWidth: viewportWidth
-        ).preview(atX: locationX)
-    }
-
-    private func runAutoScroll(
-        request: TabStripAutoScrollRequest,
-        proxy: ScrollViewProxy
-    ) async {
-        while !Task.isCancelled {
-            guard autoScrollSession.request == request,
-                  activeAutoScrollOwner == request.owner,
-                  let targetID = autoScrollSession.targetID else {
-                return
-            }
-            proxy.scrollTo(
-                targetID,
-                anchor: request.direction == .leading ? .leading : .trailing
-            )
-            do {
-                try await Task.sleep(for: TabStripAutoScrollGeometry.stepDelay)
-            } catch {
-                return
-            }
-        }
-    }
-
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 0) {
-                GeometryReader { geometry in
+                GeometryReader { _ in
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 2) {
                                 ForEach(terminalState.terminalTabs) { tab in
                                     let isActive = tab.id == terminalState.activeTerminalID
-                                    let isDragged = paneManager.activeDrag.map { drag in
-                                        drag.paneID == paneID.id
-                                            && drag.tabID == tab.id
-                                            && drag.contentType == .terminal
-                                    } ?? false
                                     TerminalNativeTabItem(
                                         tab: tab,
                                         isActive: isActive,
@@ -223,53 +128,12 @@ struct TerminalPaneTabBar: View {
                                                 action: .trailing
                                             )
                                         } : nil,
-                                        onMoveToPreviousPane: paneManager.canMoveTab(
-                                            tab.id,
-                                            from: paneID,
-                                            contentType: .terminal,
-                                            action: .previousPane
-                                        ) ? {
-                                            paneManager.moveTab(
-                                                tab.id,
-                                                from: paneID,
-                                                contentType: .terminal,
-                                                action: .previousPane
-                                            )
-                                        } : nil,
-                                        onMoveToNextPane: paneManager.canMoveTab(
-                                            tab.id,
-                                            from: paneID,
-                                            contentType: .terminal,
-                                            action: .nextPane
-                                        ) ? {
-                                            paneManager.moveTab(
-                                                tab.id,
-                                                from: paneID,
-                                                contentType: .terminal,
-                                                action: .nextPane
-                                            )
-                                        } : nil,
                                         agentResumeActions: agentResumeActions(
                                             for: tab
                                         )
                                     )
-                                    .opacity(isDragged ? 0.4 : 1.0)
-                                    .scaleEffect(isDragged ? 0.95 : 1.0)
                                     .transaction { $0.animation = nil }
                                     .id(tab.id)
-                                    .reportTabStripFrame(
-                                        tabID: tab.id,
-                                        coordinateSpace: coordinateSpaceName
-                                    )
-                                    .onDrag {
-                                        let info = paneManager.beginTabDrag(
-                                            paneID: paneID,
-                                            tabID: tab.id,
-                                            fileURL: nil,
-                                            contentType: .terminal
-                                        )
-                                        return info.itemProvider()
-                                    }
                                 }
                             }
                             .padding(.horizontal, 4)
@@ -277,34 +141,6 @@ struct TerminalPaneTabBar: View {
                         .frame(maxHeight: .infinity, alignment: .center)
                         .contentShape(Rectangle())
                         .coordinateSpace(name: coordinateSpaceName)
-                        .onPreferenceChange(TabStripFramePreferenceKey.self) { frames in
-                            let orderedTabIDs = terminalState.terminalTabs.map(\.id)
-                            tabFrames = frames
-                            autoScrollSession.updateGeometry(
-                                viewportWidth: geometry.size.width,
-                                orderedTabIDs: orderedTabIDs,
-                                frames: frames
-                            )
-                            refreshPreviewAfterGeometryChange(
-                                orderedTabIDs: orderedTabIDs,
-                                frames: frames,
-                                viewportWidth: geometry.size.width
-                            )
-                        }
-                        .overlay(alignment: .topLeading) {
-                            if let insertionIndicatorX {
-                                TabInsertionIndicator(x: insertionIndicatorX)
-                            }
-                        }
-                        .onDrop(of: [.paneTabDrag], delegate: dropDelegate(
-                            orderedTabIDs: terminalState.terminalTabs.map(\.id),
-                            frames: tabFrames,
-                            viewportWidth: geometry.size.width
-                        ))
-                        .task(id: autoScrollSession.request) {
-                            guard let request = autoScrollSession.request else { return }
-                            await runAutoScroll(request: request, proxy: proxy)
-                        }
                         .onAppear {
                             if let activeID = terminalState.activeTerminalID {
                                 // No anchor: smallest necessary reveal, not
@@ -312,25 +148,6 @@ struct TerminalPaneTabBar: View {
                                 // (#1537).
                                 proxy.scrollTo(activeID)
                             }
-                        }
-                        .onDisappear {
-                            autoScrollSession.end()
-                        }
-                        .onChange(of: geometry.size.width) { _, width in
-                            let orderedTabIDs = terminalState.terminalTabs.map(\.id)
-                            autoScrollSession.updateGeometry(
-                                viewportWidth: width,
-                                orderedTabIDs: orderedTabIDs,
-                                frames: tabFrames
-                            )
-                            refreshPreviewAfterGeometryChange(
-                                orderedTabIDs: orderedTabIDs,
-                                frames: tabFrames,
-                                viewportWidth: width
-                            )
-                        }
-                        .onChange(of: activeAutoScrollOwner) { _, owner in
-                            autoScrollSession.activeOwnerDidChange(to: owner)
                         }
                         .onChange(of: terminalState.activeTerminalID) {
                             guard let activeID = terminalState.activeTerminalID else { return }

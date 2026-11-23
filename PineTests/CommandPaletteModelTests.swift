@@ -228,11 +228,6 @@ struct CommandPaletteModelTests {
                 == Strings.commandPaletteRequiresActiveFile
         )
         #expect(
-            try #require(item(for: .showBranchSwitcher, in: items))
-                .unavailabilityReason
-                == Strings.commandPaletteRequiresGitRepository
-        )
-        #expect(
             try #require(item(for: .findInTerminal, in: items))
                 .unavailabilityReason
                 == Strings.commandPaletteRequiresTerminal

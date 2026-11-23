@@ -36,37 +36,6 @@ enum EditorContentPresentation: Equatable {
     }
 }
 
-/// Keeps pane-body routing consistent with whether a real tab strip exists.
-/// An optional count distinguishes missing backing state from a valid empty
-/// strip: zero tabs still expose the single N=0 insertion gap.
-nonisolated enum PaneLeafTabStripComposition {
-    static func rendersStrip(
-        content: PaneContent,
-        editorTabCount: Int?,
-        terminalTabCount: Int?
-    ) -> Bool {
-        switch content {
-        case .editor:
-            editorTabCount != nil
-        case .terminal:
-            terminalTabCount != nil
-        }
-    }
-
-    static func excludedTopInset(
-        content: PaneContent,
-        editorTabCount: Int?,
-        terminalTabCount: Int?,
-        tabBarHeight: CGFloat
-    ) -> CGFloat {
-        rendersStrip(
-            content: content,
-            editorTabCount: editorTabCount,
-            terminalTabCount: terminalTabCount
-        ) ? tabBarHeight : 0
-    }
-}
-
 /// A single leaf pane showing the editor area with its own tab bar.
 struct PaneLeafView: View {
     let paneID: PaneID
@@ -84,31 +53,16 @@ struct PaneLeafView: View {
     /// to call `CodeEditorView.updateNSView` even when `@State lineDiffs`
     /// changes inside a `Task` are optimized away (issue #809).
     @State private var diffVersion: UInt64 = 0
-    @State private var blameLines: [GitBlameLine] = []
-    @State private var blameTask: Task<Void, Never>?
     /// Handle for the most recently scheduled diff refresh so new triggers
     /// can cancel a stale run (e.g. rapid typing or overlapping observers).
     @State private var diffTask: Task<Void, Never>?
     @State private var configValidator = ConfigValidator()
-    @State private var isDragTargeted = false
     @State private var goToLineOffset: GoToRequest?
-    @State private var paneSize: CGSize = .zero
-    @AppStorage("minimapVisible", store: PineStorageContext.defaults) private var isMinimapVisible = true
-    @AppStorage(BlameConstants.storageKey, store: PineStorageContext.defaults) private var isBlameVisible = true
     @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) private var isWordWrapEnabled = true
 
     private var tabManager: TabManager? { paneManager.tabManager(for: paneID) }
     private var terminalState: TerminalPaneState? { paneManager.terminalState(for: paneID) }
     private var isActive: Bool { paneManager.activePaneID == paneID }
-    private var tabStripExcludedTopInset: CGFloat {
-        PaneLeafTabStripComposition.excludedTopInset(
-            content: content,
-            editorTabCount: tabManager?.tabs.count,
-            terminalTabCount: terminalState?.terminalTabs.count,
-            tabBarHeight: LayoutMetrics.tabBarHeight
-        )
-    }
-
     var body: some View {
         Group {
             switch content {
@@ -121,22 +75,13 @@ struct PaneLeafView: View {
         .background {
             PaneFocusDetector(paneID: paneID, paneManager: paneManager)
         }
-        .overlay {
-            GeometryReader { geometry in
-                Color.clear
-                    .preference(key: PaneSizePreferenceKey.self, value: geometry.size)
-            }
-        }
-        .onPreferenceChange(PaneSizePreferenceKey.self) { paneSize = $0 }
-        .overlay {
-            PaneDropOverlay(dropZone: paneManager.dropZones[paneID])
-        }
-        .onDrop(of: [.paneTabDrag, .sidebarFileDrag, .fileURL], delegate: PaneSplitDropDelegate(
-            paneID: paneID,
-            paneManager: paneManager,
-            paneSize: paneSize,
-            excludedTopInset: tabStripExcludedTopInset
-        ))
+        .onDrop(
+            of: [.sidebarFileDrag, .fileURL],
+            delegate: EditorFileDropDelegate(
+                paneID: paneID,
+                paneManager: paneManager
+            )
+        )
         .border(
             isActive && paneManager.root.leafCount > 1
                 ? Color.accentColor.opacity(0.5)
@@ -169,14 +114,12 @@ struct PaneLeafView: View {
             editorPaneContent(tabManager: tabManager)
                 .environment(tabManager)
                 .onAppear {
-                    // Initial load: refresh line diffs/blame for the active tab
+                    // Initial load: refresh line diffs for the active tab
                     // even if `activeTabID` never changes (issue #780).
                     refreshLineDiffs(tabManager: tabManager)
-                    refreshBlame(tabManager: tabManager)
                 }
                 .onChange(of: tabManager.activeTabID) { _, _ in
                     refreshLineDiffs(tabManager: tabManager)
-                    refreshBlame(tabManager: tabManager)
                 }
                 .onChange(of: tabManager.pendingGoToLocation) { _, location in
                     // Per-pane go-to handler (issue #971). ContentView and
@@ -222,31 +165,22 @@ struct PaneLeafView: View {
                     // same time, but `diffTask` cancellation coalesces the two
                     // observers into a single refresh.
                     refreshLineDiffs(tabManager: tabManager)
-                    refreshBlame(tabManager: tabManager)
                 }
                 .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
                     if isRepo {
                         refreshLineDiffs(tabManager: tabManager)
                     } else {
                         // Repo removed — clear every cached git-derived state,
-                        // including blame (previous fix only cleared diffs).
                         diffTask?.cancel()
                         diffTask = nil
-                        blameTask?.cancel()
-                        blameTask = nil
                         lineDiffs = []
                         diffHunks = []
-                        blameLines = []
                     }
                 }
                 .onDisappear {
                     diffTask?.cancel()
                     diffTask = nil
                 }
-                .modifier(BlameObserver(
-                    isBlameVisible: isBlameVisible,
-                    onRefresh: { refreshBlame(tabManager: tabManager) }
-                ))
         }
     }
 
@@ -380,13 +314,6 @@ struct PaneLeafView: View {
             diffVersion: diffVersion,
             diffHunks: diffHunks,
             validationDiagnostics: configValidator.diagnostics,
-            isBlameVisible: isBlameVisible,
-            blameLines: blameLines,
-            foldState: Binding(
-                get: { tab.foldState },
-                set: { tabManager.updateFoldState($0) }
-            ),
-            isMinimapVisible: isMinimapVisible,
             isWordWrapEnabled: isWordWrapEnabled,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
@@ -462,7 +389,7 @@ struct PaneLeafView: View {
         }
     }
 
-    // MARK: - Git diff & blame
+    // MARK: - Git diff
 
     /// Debounce applied to content-edit triggered refreshes (keystrokes).
     /// Matches the ~150ms used by other git-derived work in Pine.
@@ -532,44 +459,6 @@ struct PaneLeafView: View {
             lineDiffs = resolvedDiffs
             diffHunks = resolvedHunks
             diffVersion &+= 1
-        }
-    }
-
-    /// Refreshes cached blame data for the active tab.
-    private func refreshBlame(tabManager: TabManager) {
-        blameTask?.cancel()
-        guard isBlameVisible else {
-            blameLines = []
-            return
-        }
-        guard let tab = tabManager.activeTab,
-              let fileURL = tab.fileURL else {
-            blameLines = []
-            return
-        }
-        let provider = workspace.gitProvider
-        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
-            blameLines = []
-            return
-        }
-        let filePath = fileURL.path
-        blameTask = Task.detached {
-            let result = await GitStatusProvider.runGitAsync(
-                ["blame", "--porcelain", "--", filePath], at: repoURL
-            )
-            guard !Task.isCancelled else { return }
-            let lines: [GitBlameLine]
-            if result.succeeded, !result.output.isEmpty {
-                lines = GitStatusProvider.parseBlame(result.output)
-            } else {
-                lines = []
-            }
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                if tabManager.activeTab?.fileURL == fileURL {
-                    blameLines = lines
-                }
-            }
         }
     }
 
@@ -646,5 +535,48 @@ struct PaneLeafView: View {
 
     private func closeAllTabsWithConfirmation(tabManager: TabManager) {
         projectManager.requestCloseAllTabs(in: tabManager, paneID: paneID)
+    }
+}
+
+/// Opens sidebar/Finder files in the existing editor; it never creates a layout.
+private struct EditorFileDropDelegate: DropDelegate {
+    let paneID: PaneID
+    let paneManager: PaneManager
+
+    func validateDrop(info: DropInfo) -> Bool {
+        paneManager.tabManager(for: paneID) != nil
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard paneManager.tabManager(for: paneID) != nil else { return false }
+        if info.hasItemsConforming(to: [.sidebarFileDrag]) {
+            let providers = info.itemProviders(for: [.sidebarFileDrag])
+            Task {
+                guard let provider = providers.first,
+                      let data = try? await provider.loadItem(
+                        forTypeIdentifier: UTType.sidebarFileDrag.identifier
+                      ) as? Data,
+                      let drag = try? JSONDecoder().decode(
+                        SidebarFileDragInfo.self,
+                        from: data
+                      ) else { return }
+                await MainActor.run {
+                    paneManager.openFileInPane(url: drag.fileURL, paneID: paneID)
+                }
+            }
+            return true
+        }
+        let providers = info.itemProviders(for: [.fileURL])
+        for provider in providers {
+            Task {
+                guard let url = try? await provider.loadItem(
+                    forTypeIdentifier: UTType.fileURL.identifier
+                ) as? URL else { return }
+                await MainActor.run {
+                    paneManager.openFileInPane(url: url, paneID: paneID)
+                }
+            }
+        }
+        return !providers.isEmpty
     }
 }

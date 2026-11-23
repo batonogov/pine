@@ -8,7 +8,7 @@
 import Foundation
 import os
 
-/// Stable, portable identity for a tab in the global session MRU order.
+/// Legacy identity for a tab in the retired global session MRU order.
 ///
 /// Runtime tab UUIDs are intentionally not persisted: editor tabs are
 /// recreated from their project-scoped file path and terminal processes are
@@ -54,7 +54,7 @@ struct SessionState: Codable, Sendable {
     /// File paths where syntax highlighting was disabled (e.g. large files opened without highlighting).
     /// Optional for backwards compatibility with sessions saved before this field existed.
     var highlightingDisabledPaths: [String]?
-    /// Per-file editor state (cursor position, scroll offset, fold state).
+    /// Per-file editor state (cursor position, scroll offset).
     /// Key is the file path. Optional for backwards compatibility.
     var editorStates: [String: PerTabEditorState]?
     /// File paths of pinned tabs. Optional for backwards compatibility.
@@ -62,7 +62,7 @@ struct SessionState: Codable, Sendable {
 
     // MARK: - Pane layout (optional for backwards compatibility)
 
-    /// JSON-encoded PaneNode tree representing the split pane layout.
+    /// JSON-encoded fixed layout or legacy free-form layout used during migration.
     var paneLayoutData: Data?
     /// Maps pane leaf ID (UUID string) to ordered list of file paths in that pane.
     var paneTabAssignments: [String: [String]]?
@@ -74,7 +74,7 @@ struct SessionState: Codable, Sendable {
     var panePinnedPaths: [String: [String]]?
     /// At most one transient preview file per editor pane, keyed by pane UUID.
     var paneTransientPreviewPaths: [String: String]?
-    /// Global editor/terminal MRU order expressed through stable references.
+    /// Retired global MRU order. Decoded for compatibility and ignored.
     var globalTabSwitchOrder: [SessionTabReference]?
 
     // MARK: - Terminal state (optional for backwards compatibility)

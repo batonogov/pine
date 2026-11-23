@@ -68,14 +68,6 @@ nonisolated extension UserCommand {
             String(localized: "menu.acceptAllChanges")
         case .revertAllChanges:
             String(localized: "menu.revertAllChanges")
-        case .foldCode:
-            String(localized: "menu.foldCode")
-        case .unfoldCode:
-            String(localized: "menu.unfoldCode")
-        case .foldAll:
-            String(localized: "menu.foldAll")
-        case .unfoldAll:
-            String(localized: "menu.unfoldAll")
         case .symbolNavigator:
             String(localized: "menu.symbolNavigator")
         case .quickOpen:
@@ -84,8 +76,6 @@ nonisolated extension UserCommand {
             String(localized: "menu.commandPalette")
         case .openFolder:
             String(localized: "menu.openFolder")
-        case .showBranchSwitcher:
-            String(localized: "menu.switchBranch")
         case .increaseFontSize:
             String(localized: "menu.increaseFontSize")
         case .decreaseFontSize:
@@ -94,10 +84,6 @@ nonisolated extension UserCommand {
             String(localized: "menu.resetFontSize")
         case .toggleWordWrap:
             String(localized: "menu.toggleWordWrap")
-        case .toggleMinimap:
-            String(localized: "menu.toggleMinimap")
-        case .toggleBlame:
-            String(localized: "menu.toggleBlame")
         case .togglePreview:
             String(localized: "menu.togglePreview")
         case .revealFileInFinder:
@@ -147,19 +133,16 @@ nonisolated extension UserCommand {
              .findNext, .findPrevious, .useSelectionForFind,
              .findInProject, .goToLine, .nextChange, .previousChange,
              .acceptChange, .revertChange, .acceptAllChanges,
-             .revertAllChanges, .foldCode, .unfoldCode, .foldAll,
-             .unfoldAll:
+             .revertAllChanges:
             .edit
         case .increaseFontSize, .decreaseFontSize, .resetFontSize,
-             .toggleWordWrap, .toggleMinimap, .toggleBlame, .togglePreview,
+             .toggleWordWrap, .togglePreview,
              .revealFileInFinder, .revealProjectInFinder,
              .showAgentActivity, .showAgentHistory, .showAgentInbox,
              .newAgent:
             .view
         case .nextProjectInWindow, .previousProjectInWindow:
             .file
-        case .showBranchSwitcher:
-            .git
         case .toggleTerminal, .newTerminalTab, .findInTerminal,
              .sendToTerminal, .toggleTerminalZoom:
             .terminal
@@ -220,14 +203,6 @@ nonisolated extension UserCommand {
             MenuIcons.acceptAllChanges
         case .revertAllChanges:
             MenuIcons.revertAllChanges
-        case .foldCode:
-            MenuIcons.foldCode
-        case .unfoldCode:
-            MenuIcons.unfoldCode
-        case .foldAll:
-            MenuIcons.foldAll
-        case .unfoldAll:
-            MenuIcons.unfoldAll
         case .symbolNavigator:
             MenuIcons.symbolNavigator
         case .quickOpen:
@@ -236,8 +211,6 @@ nonisolated extension UserCommand {
             MenuIcons.commandPalette
         case .openFolder:
             MenuIcons.openFolder
-        case .showBranchSwitcher:
-            MenuIcons.switchBranch
         case .increaseFontSize:
             MenuIcons.increaseFontSize
         case .decreaseFontSize:
@@ -246,10 +219,6 @@ nonisolated extension UserCommand {
             MenuIcons.resetFontSize
         case .toggleWordWrap:
             MenuIcons.toggleWordWrap
-        case .toggleMinimap:
-            MenuIcons.toggleMinimap
-        case .toggleBlame:
-            MenuIcons.toggleBlame
         case .togglePreview:
             MenuIcons.togglePreview
         case .revealFileInFinder:
@@ -299,15 +268,13 @@ nonisolated extension UserCommand {
              .toggleFormatOnSave, .toggleSmartListContinuation,
              .closeTab, .closeWindow, .closeProject,
              .findInProject, .toggleTerminal, .newTerminalTab,
-             .toggleMinimap, .toggleBlame, .toggleWordWrap,
+             .toggleWordWrap,
              .revealProjectInFinder, .showAgentActivity, .showAgentHistory:
             .project
         case .newAgent:
             .agentWorktree
         case .nextProjectInWindow, .previousProjectInWindow:
             .projectSwitching
-        case .showBranchSwitcher:
-            .gitRepository
         case .findInTerminal, .toggleTerminalZoom:
             .terminal
         case .sendToTerminal:
@@ -320,8 +287,7 @@ nonisolated extension UserCommand {
         case .save, .saveAs, .duplicate, .toggleComment, .findInFile,
              .findAndReplace, .useSelectionForFind, .goToLine, .nextChange,
              .previousChange, .acceptChange, .revertChange,
-             .acceptAllChanges, .revertAllChanges, .foldCode,
-             .unfoldCode, .foldAll, .unfoldAll, .symbolNavigator,
+             .acceptAllChanges, .revertAllChanges, .symbolNavigator,
              .togglePreview, .revealFileInFinder:
             .activeFile
         }
@@ -370,14 +336,6 @@ nonisolated extension UserCommand {
             value = "ctrl+option+delete"
         case .acceptAllChanges, .revertAllChanges:
             value = nil
-        case .foldCode:
-            value = "cmd+option+left"
-        case .unfoldCode:
-            value = "cmd+option+right"
-        case .foldAll:
-            value = "cmd+option+shift+left"
-        case .unfoldAll:
-            value = "cmd+option+shift+right"
         case .symbolNavigator:
             value = "cmd+r"
         case .quickOpen:
@@ -386,8 +344,6 @@ nonisolated extension UserCommand {
             value = "cmd+option+p"
         case .openFolder:
             value = "cmd+shift+o"
-        case .showBranchSwitcher:
-            value = "cmd+shift+b"
         case .increaseFontSize:
             value = nil
         case .decreaseFontSize:
@@ -400,10 +356,6 @@ nonisolated extension UserCommand {
             // untypeable in the editor and the terminal). Command joins the
             // chord while the Z mnemonic survives (#1564).
             value = "cmd+option+z"
-        case .toggleMinimap:
-            value = "cmd+shift+m"
-        case .toggleBlame:
-            value = "cmd+control+b"
         case .togglePreview:
             value = "cmd+shift+p"
         case .revealFileInFinder:

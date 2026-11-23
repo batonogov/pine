@@ -8,9 +8,8 @@
 //    • EditorScrollView — NSScrollView subclass that tracks the find-bar
 //      height after tile() and pushes contentView below the overlay on
 //      macOS 26.
-//    • EditorContainerView — NSView that lays out the scroll view,
-//      LineNumberView, and MinimapView side by side without relying on
-//      autoresizingMask.
+//    • EditorContainerView — NSView that lays out the scroll view and
+//      LineNumberView without relying on autoresizingMask.
 //
 //  Also hosts GoToRequest — the unique navigation request value used by
 //  CodeEditorView's updateNSView to scroll to a specific offset exactly once.
@@ -65,15 +64,12 @@ final class EditorScrollView: NSScrollView {
     }
 }
 
-// MARK: - Editor container that manages scroll view + minimap layout
+// MARK: - Editor container that manages scroll view + gutter layout
 
-/// Custom container view that lays out the scroll view and minimap side by side.
-/// Replaces autoresizingMask with explicit layout so the minimap width is
-/// always accounted for.
+/// Custom container view that lays out the scroll view and line-number gutter.
 final class EditorContainerView: NSView {
     // Match NSScrollView's flipped coordinate system for correct find bar clipping
     override var isFlipped: Bool { true }
-    var minimapWidth: CGFloat = 0
     let destinationFocusCoordinator = AppKitFocusRequestCoordinator()
 
     override func viewDidMoveToWindow() {
@@ -85,21 +81,10 @@ final class EditorContainerView: NSView {
         super.layout()
         let findBarOffset = (subviews.compactMap { $0 as? EditorScrollView }.first)?.findBarOffset ?? 0
         for sub in subviews {
-            if let minimap = sub as? MinimapView {
-                if minimap.isHidden {
-                    continue
-                }
-                minimap.frame = NSRect(
-                    x: bounds.width - minimapWidth,
-                    y: 0,
-                    width: minimapWidth,
-                    height: bounds.height
-                )
-                minimap.needsDisplay = true
-            } else if sub is NSScrollView {
+            if sub is NSScrollView {
                 sub.frame = NSRect(
                     x: 0, y: 0,
-                    width: bounds.width - minimapWidth,
+                    width: bounds.width,
                     height: bounds.height
                 )
             } else {

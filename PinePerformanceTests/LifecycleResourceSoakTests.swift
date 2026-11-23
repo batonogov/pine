@@ -655,16 +655,9 @@ final class LifecycleResourceSoakTests: XCTestCase {
                 syntaxHighlightingDisabled: true
             )
         }
-        guard let sourcePane = manager.paneManager.root.firstLeafID,
-              let activeTabID = manager.primaryTabManager.activeTabID,
-              let splitPane = manager.paneManager.splitPane(
-                  sourcePane,
-                  axis: selector.isMultiple(of: 2) ? .horizontal : .vertical,
-                  tabID: activeTabID,
-                  sourcePane: sourcePane
-              ) else {
-            throw LifecycleSoakError.invariant("tab/pane churn could not split")
-        }
+        let terminalPane = manager.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: projectURL
+        )
 
         let searchResults = await ProjectSearchProvider.performSearch(
             query: "pine-soak-token",
@@ -674,7 +667,7 @@ final class LifecycleResourceSoakTests: XCTestCase {
         guard !searchResults.isEmpty else {
             throw LifecycleSoakError.invariant("large-project search returned no fixture result")
         }
-        manager.paneManager.removePane(splitPane)
+        manager.paneManager.removePane(terminalPane)
 
         manager.suspendEditorServices()
         guard manager.workspace.isSuspended,

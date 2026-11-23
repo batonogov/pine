@@ -52,22 +52,6 @@ final class LineNumberView: NSView {
         )
     }
 
-    /// Складываемые регионы для отрисовки disclosure triangles.
-    var foldableRanges: [FoldableRange] = [] {
-        didSet {
-            rebuildFoldStartMap()
-            needsDisplay = true
-        }
-    }
-
-    /// Текущее состояние свёрнутых регионов.
-    var foldState: FoldState = FoldState() {
-        didSet { needsDisplay = true }
-    }
-
-    /// Callback при клике по fold indicator.
-    var onFoldToggle: ((FoldableRange) -> Void)?
-
     /// Validation diagnostics for the current file (error/warning/info icons).
     ///
     /// `ValidationDiagnostic` already provides a manual `Equatable` that
@@ -116,12 +100,6 @@ final class LineNumberView: NSView {
     /// Pre-indexed diagnostic lookup: line number → highest severity diagnostic.
     private var diagnosticMap: [Int: ValidationDiagnostic] = [:]
 
-    /// Pre-indexed fold lookup: start line → FoldableRange.
-    private var foldStartMap: [Int: FoldableRange] = [:]
-
-    /// Whether the mouse is currently inside the gutter (for showing fold indicators).
-    private var isMouseInside = false
-
     /// Cached last-resolved line number used by `mouseMoved` to skip the
     /// per-pixel diagnostic lookup when the cursor is still hovering over
     /// the same line. Reset to `nil` whenever the cursor leaves the gutter.
@@ -133,7 +111,7 @@ final class LineNumberView: NSView {
     private var didSetPointingCursor = false
 
     /// Diagnostic icon hit-test zone (x range): `[0, diagnosticIconHitZoneWidth)`.
-    /// Sized to match the fold-indicator area so the icon (drawn at x=1..1+iconSize)
+    /// Sized to the leftmost gutter region so the icon (drawn at x=1..1+iconSize)
     /// is fully covered.
     static let diagnosticIconHitZoneWidth: CGFloat = 14
 
@@ -181,10 +159,6 @@ final class LineNumberView: NSView {
 
     private func rebuildDiffMap() {
         diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
-    }
-
-    private func rebuildFoldStartMap() {
-        foldStartMap = Dictionary(foldableRanges.map { ($0.startLine, $0) }, uniquingKeysWith: { _, last in last })
     }
 
     /// Rebuilds the diagnostic map, keeping only the highest-severity diagnostic per line.
@@ -235,9 +209,6 @@ final class LineNumberView: NSView {
     private let addedColor = NSColor.systemGreen
     private let modifiedColor = NSColor.systemYellow
     private let deletedColor = NSColor.systemRed
-
-    // Fold indicator colors
-    private let foldIndicatorColor = NSColor.secondaryLabelColor
 
     override var isFlipped: Bool { true }
 
@@ -292,7 +263,6 @@ final class LineNumberView: NSView {
         textView?.enclosingScrollView?.contentView.postsBoundsChangedNotifications = true
         // Initialize cached line count from the current text
         recountTotalLines()
-        // Tracking area for hover — fold indicators appear on hover
         updateTrackingAreas()
     }
 
@@ -312,7 +282,7 @@ final class LineNumberView: NSView {
         // popover to dismiss itself on any outside event.
     }
 
-    // MARK: - Mouse tracking for fold indicators
+    // MARK: - Mouse tracking for diagnostic icons
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -331,13 +301,7 @@ final class LineNumberView: NSView {
         addTrackingArea(area)
     }
 
-    override func mouseEntered(with event: NSEvent) {
-        isMouseInside = true
-        needsDisplay = true
-    }
-
     override func mouseExited(with event: NSEvent) {
-        isMouseInside = false
         needsDisplay = true
         // Clear dynamic tooltip when leaving the gutter so a stale message
         // doesn't linger after the cursor moves into the editor.
@@ -398,14 +362,11 @@ final class LineNumberView: NSView {
             }
         }
 
-        // Only handle clicks on the fold indicator area (left portion of gutter)
-        let foldIndicatorWidth: CGFloat = 14
-        guard point.x < foldIndicatorWidth else {
+        // Diagnostic icon click → show popover with full message (#679).
+        guard point.x < Self.diagnosticIconHitZoneWidth else {
             super.mouseDown(with: event)
             return
         }
-
-        // Diagnostic icon click → show popover with full message (#679).
         // Diagnostic icons are drawn at x=1..1+diagnosticIconDrawSize.
         if let lineNum = lineNumber(at: point),
            let diag = diagnosticMap[lineNum] {
@@ -413,11 +374,6 @@ final class LineNumberView: NSView {
             return
         }
 
-        // Find which line was clicked for fold toggle
-        if let lineNumber = lineNumber(at: point),
-           let foldable = foldStartMap[lineNumber] {
-            onFoldToggle?(foldable)
-        }
     }
 
     /// Currently displayed diagnostic popover, if any. Kept as a property so we can
@@ -634,8 +590,6 @@ final class LineNumberView: NSView {
         var previousLineCharIndex = -1
         let diffBarWidth: CGFloat = 3
         let diffMarkerCue = self.diffMarkerCue
-        let showFoldIndicators = isMouseInside && !foldStartMap.isEmpty
-        let hasFolds = !foldState.foldedRanges.isEmpty
 
         layoutManager.enumerateLineFragments(
             forGlyphRange: visibleGlyphRange
@@ -657,13 +611,6 @@ final class LineNumberView: NSView {
             }
 
             if isNewLogicalLine {
-                // Skip hidden lines (inside folded regions) — only increment counter
-                if hasFolds && self.foldState.isLineHidden(lineNumber) {
-                    lineNumber += 1
-                    previousLineCharIndex = charIndex
-                    return
-                }
-
                 // Y: позиция фрагмента в textContainer + сдвиг контейнера − скролл
                 let y = lineRect.origin.y + originY - visibleRect.origin.y
 
@@ -671,17 +618,6 @@ final class LineNumberView: NSView {
                 let size = numStr.size(withAttributes: attrs)
                 let x = self.gutterWidth - size.width - 8
                 numStr.draw(at: NSPoint(x: x, y: y + self.baselineOffset), withAttributes: attrs)
-
-                // ── Fold disclosure triangle ──
-                if showFoldIndicators || self.foldState.foldedRanges.contains(where: { $0.startLine == lineNumber }) {
-                    if let foldable = self.foldStartMap[lineNumber] {
-                        let isFolded = self.foldState.isFolded(foldable)
-                        self.drawFoldIndicator(
-                            at: y, lineHeight: lineRect.height,
-                            isFolded: isFolded
-                        )
-                    }
-                }
 
                 // ── Git diff marker ──
                 if let diffKind = self.diffMap[lineNumber] {
@@ -816,7 +752,7 @@ final class LineNumberView: NSView {
     static let diagnosticIconDrawSize: CGFloat = 12
 
     /// Draws an SF Symbol icon for a validation diagnostic at the given line position.
-    /// The icon is drawn inside the fold indicator area (leftmost ~14px of the gutter),
+    /// The icon is drawn in the leftmost ~14px of the gutter,
     /// keeping it clear of line number text.
     func drawDiagnosticIcon(at y: CGFloat, lineHeight: CGFloat, severity: ValidationSeverity) {
         guard let symbolName = Self.diagnosticSymbolNames[severity],
@@ -852,30 +788,4 @@ final class LineNumberView: NSView {
     func diagnosticTooltip(forLine line: Int) -> String? {
         diagnosticMap[line]?.message
     }
-
-    // MARK: - Fold indicator drawing
-
-    /// Draws a disclosure triangle for fold indicators.
-    private func drawFoldIndicator(at y: CGFloat, lineHeight: CGFloat, isFolded: Bool) {
-        let size: CGFloat = 8
-        let centerY = y + lineHeight / 2
-        let x: CGFloat = 3
-
-        let path = NSBezierPath()
-        if isFolded {
-            // ▶ (pointing right — folded)
-            path.move(to: NSPoint(x: x, y: centerY - size / 2))
-            path.line(to: NSPoint(x: x + size * 0.75, y: centerY))
-            path.line(to: NSPoint(x: x, y: centerY + size / 2))
-        } else {
-            // ▼ (pointing down — expanded)
-            path.move(to: NSPoint(x: x, y: centerY - size / 4))
-            path.line(to: NSPoint(x: x + size, y: centerY - size / 4))
-            path.line(to: NSPoint(x: x + size / 2, y: centerY + size / 2))
-        }
-        path.close()
-        foldIndicatorColor.setFill()
-        path.fill()
-    }
-
 }

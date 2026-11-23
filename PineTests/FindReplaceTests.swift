@@ -106,7 +106,6 @@ struct FindReplaceTests {
             contentVersion: 0,
             language: "txt",
             fileName: "test.txt",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -151,33 +150,8 @@ struct FindReplaceTests {
                 "LineNumberView height must shrink to container height minus findBarOffset")
     }
 
-    @Test func editorContainerView_withMinimap_scrollViewShrinks() {
-        // Regression #387: minimap must not break line number positioning
-        let container = EditorContainerView()
-        container.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
-        container.minimapWidth = 100
-
-        let scrollView = EditorScrollView(frame: .zero)
-        let textView = NSTextView(frame: .zero)
-        scrollView.documentView = textView
-        container.addSubview(scrollView)
-
-        let lineNumberView = LineNumberView(textView: textView)
-        lineNumberView.frame = NSRect(x: 0, y: 0, width: 40, height: 600)
-        container.addSubview(lineNumberView)
-
-        container.layout()
-
-        // ScrollView should shrink to make room for minimap
-        #expect(scrollView.frame.width == 700,
-                "ScrollView width must be container width minus minimapWidth")
-        // LineNumberView should still start at y=0
-        #expect(lineNumberView.frame.origin.y == 0)
-        #expect(lineNumberView.frame.height == 600)
-    }
-
     @Test func editorContainerView_multipleLineNumberViews_allOffset() {
-        // Edge case: verify layout handles multiple non-scroll, non-minimap subviews
+        // Edge case: verify layout handles multiple non-scroll subviews
         let container = EditorContainerView()
         container.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
 
@@ -221,25 +195,4 @@ struct FindReplaceTests {
         #expect(scrollView.findBarOffset == 0)
     }
 
-    @Test func editorContainerView_hiddenMinimap_stillReservesWidth() {
-        // minimapWidth is subtracted from scroll view regardless of minimap visibility;
-        // isHidden only skips repositioning the minimap itself
-        let container = EditorContainerView()
-        container.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
-        container.minimapWidth = 100
-
-        let scrollView = EditorScrollView(frame: .zero)
-        let textView = NSTextView(frame: .zero)
-        scrollView.documentView = textView
-        container.addSubview(scrollView)
-
-        let minimap = MinimapView(textView: textView)
-        minimap.isHidden = true
-        container.addSubview(minimap)
-
-        container.layout()
-
-        #expect(scrollView.frame.width == 700,
-                "ScrollView width still reduced by minimapWidth even when minimap is hidden")
-    }
 }

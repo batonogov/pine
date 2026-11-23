@@ -363,9 +363,7 @@ struct ProjectManagerSessionTests {
         let pm1 = ProjectManager(sessionDefaults: defaults)
         pm1.workspace.loadDirectory(url: dir)
         let editorPaneID = pm1.paneManager.activePaneID
-        _ = pm1.paneManager.createTerminalPane(
-            relativeTo: editorPaneID, axis: .vertical, workingDirectory: dir
-        )
+        _ = Optional(pm1.paneManager.createTerminalPaneAtBottom(workingDirectory: dir))
         // Editor pane is intentionally left empty.
         #expect(pm1.paneManager.root.leafCount(ofType: .editor) == 1)
         #expect(pm1.paneManager.root.leafCount(ofType: .terminal) == 1)

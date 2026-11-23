@@ -361,12 +361,9 @@ final class ProjectManager {
     /// configurator. For the *focused* pane's TabManager, use
     /// ``activeTabManager`` which delegates to ``PaneManager/activeEditorTabManager``.
     ///
-    /// Note: this instance can become an *orphan* — i.e. no pane in the
-    /// `PaneManager` tree references it — after `pruneEmptyEditorLeaves`
-    /// removes the root editor pane (terminals-only layout) or after a
-    /// session restore that does not bind it to any leaf. In that state it
-    /// is harmless: it holds no tabs, contributes nothing to `allTabs`, and
-    /// is recreated as a leaf-bound TabManager via `ensureEditorPane()`
+    /// Note: `PaneManager` retains this manager even when `pruneEmptyEditorLeaves`
+    /// hides the root editor pane (terminals-only layout) or when a session
+    /// restore binds it to no leaf; `ensureEditorPane()` rebinds it to a leaf
     /// when the user opens a file again. The reference remains as the stable
     /// fallback used by project-level commands while no editor pane exists.
     let primaryTabManager = TabManager()
@@ -1645,7 +1642,7 @@ final class ProjectManager {
 
     /// Updates tab URLs in every editor pane to reflect a renamed file or
     /// directory, preserving tab identity. The primary ``primaryTabManager``
-    /// alone is not enough — the same file may be open in a split pane, and
+    /// alone is not enough — the file may belong to a restored editor destination, and
     /// the primary TabManager may be orphaned after pane pruning.
     func handleFileRenamed(oldURL: URL, newURL: URL) {
         for tabManager in paneManager.allTabManagers {
@@ -2119,8 +2116,8 @@ final class ProjectManager {
             || taskRunStore.hasUnpersistedResultOwnership
     }
 
-    /// Applies project-owned services to every editor group, including groups
-    /// created later by pane splits or session restoration.
+    /// Applies project-owned services to the editor and to legacy layouts
+    /// collapsed during session restoration.
     private func configureEditorTabManager(_ tabManager: TabManager) {
         tabManager.recoveryManager = recoveryManager
         if isAutoSaveFrozenForTermination {
@@ -2137,7 +2134,7 @@ final class ProjectManager {
     }
 
     /// Persists current session (project + open file tabs) to UserDefaults.
-    /// Collects tabs from ALL panes so split-pane tabs are not lost on restore.
+    /// Collects every editor tab so restored documents are not lost.
     func saveSession() {
         guard let rootURL = workspace.rootURL else { return }
         let rootPath = rootURL.path + "/"
@@ -2178,7 +2175,7 @@ final class ProjectManager {
             ? nil
             : disabledTabs.compactMap(\.fileURL?.path)
 
-        // Per-tab editor state (cursor, scroll, folds)
+        // Per-tab editor state (cursor, scroll)
         var editorStates: [String: PerTabEditorState]?
         let tabsWithState = everyTab.filter { tab in
             (tab.fileURL?.path.hasPrefix(rootPath) ?? false)
@@ -2208,7 +2205,6 @@ final class ProjectManager {
         var paneActiveEditorPaths: [String: String]?
         var panePinnedPaths: [String: [String]]?
         var paneTransientPreviewPaths: [String: String]?
-        var globalTabSwitchOrder: [SessionTabReference]?
         var terminalPaneTabCounts: [String: Int]?
         var terminalPaneActiveIndices: [String: Int]?
 
@@ -2263,24 +2259,6 @@ final class ProjectManager {
         }
         terminalPaneTabCounts = tpCounts.isEmpty ? nil : tpCounts
         terminalPaneActiveIndices = tpActiveIndices.isEmpty ? nil : tpActiveIndices
-        let persistedSwitchOrder: [SessionTabReference] = paneManager
-            .validGlobalTabSwitchOrder().compactMap { identity -> SessionTabReference? in
-            switch identity.contentType {
-            case .editor:
-                guard let path = paneManager.tabManager(for: identity.paneID)?.tabs
-                    .first(where: { $0.id == identity.tabID })?.fileURL?.path,
-                      path.hasPrefix(rootPath) else { return nil }
-                return SessionTabReference.editor(paneID: identity.paneID, filePath: path)
-            case .terminal:
-                guard let index = paneManager.terminalState(for: identity.paneID)?
-                    .terminalTabs.firstIndex(where: { $0.id == identity.tabID }) else {
-                    return nil
-                }
-                return SessionTabReference.terminal(paneID: identity.paneID, tabIndex: index)
-            }
-        }
-        globalTabSwitchOrder = persistedSwitchOrder.isEmpty ? nil : persistedSwitchOrder
-
         SessionState.save(
             projectURL: rootURL,
             openFileURLs: openFileURLs,
@@ -2297,7 +2275,6 @@ final class ProjectManager {
             paneActiveEditorPaths: paneActiveEditorPaths,
             panePinnedPaths: panePinnedPaths,
             paneTransientPreviewPaths: paneTransientPreviewPaths,
-            globalTabSwitchOrder: globalTabSwitchOrder,
             defaults: sessionDefaults
         )
     }

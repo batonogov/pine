@@ -61,41 +61,6 @@ struct NativeFileWindowMenuTests {
         #expect(second.fileName == "\(Strings.recoveryUntitled) 2")
     }
 
-    @Test("New File retains its captured editor pane across focus drift")
-    func newFileTargetsCapturedPane() throws {
-        let projectManager = ProjectManager()
-        let firstPaneID = projectManager.paneManager.activePaneID
-        let firstTabManager = try #require(
-            projectManager.paneManager.tabManager(for: firstPaneID)
-        )
-        let secondPaneID = try #require(
-            projectManager.paneManager.splitPane(
-                firstPaneID,
-                axis: .horizontal
-            )
-        )
-        let secondTabManager = try #require(
-            projectManager.paneManager.tabManager(for: secondPaneID)
-        )
-        #expect(projectManager.paneManager.activePaneID == secondPaneID)
-
-        let createdID = try #require(
-            projectManager.createUntitledFile(in: firstPaneID)
-        )
-
-        #expect(
-            firstTabManager.tabs.contains(where: {
-                $0.id == createdID
-            })
-        )
-        #expect(
-            !secondTabManager.tabs.contains(where: {
-                $0.id == createdID
-            })
-        )
-        #expect(projectManager.paneManager.activePaneID == firstPaneID)
-    }
-
     @Test("Saving an untitled tab preserves the exact tab across focus drift")
     func untitledSaveTargetsCapturedIdentity() async throws {
         let projectManager = ProjectManager()
@@ -209,11 +174,7 @@ struct NativeFileWindowMenuTests {
 
         let editorPaneID = projectManager.paneManager.activePaneID
         let terminalPaneID = try #require(
-            projectManager.paneManager.createTerminalPane(
-                relativeTo: editorPaneID,
-                axis: .vertical,
-                workingDirectory: nil
-            )
+            Optional(projectManager.paneManager.createTerminalPaneAtBottom(workingDirectory: nil))
         )
         let terminalTabID = try #require(
             projectManager.paneManager
@@ -249,73 +210,6 @@ struct NativeFileWindowMenuTests {
                 for: projectManager
             ).satisfies(.project)
         )
-    }
-
-    @Test("Save All preflights every pane before writing any file")
-    func saveAllRejectsTruncatedPaneWithoutPartialWrite() async throws {
-        let root = try makeTemporaryDirectory(
-            prefix: "pine-save-all-preflight"
-        )
-        defer { try? FileManager.default.removeItem(at: root) }
-        let firstFile = root.appendingPathComponent("first.txt")
-        let secondFile = root.appendingPathComponent("second.txt")
-        try "first original\n".write(
-            to: firstFile,
-            atomically: true,
-            encoding: .utf8
-        )
-        try "second original\n".write(
-            to: secondFile,
-            atomically: true,
-            encoding: .utf8
-        )
-
-        let projectManager = ProjectManager()
-        projectManager.workspace.loadDirectory(url: root)
-        let firstPaneID = projectManager.paneManager.activePaneID
-        let firstTabManager = try #require(
-            projectManager.paneManager.tabManager(for: firstPaneID)
-        )
-        #expect(firstTabManager.openTab(url: firstFile) != .cancelled)
-        firstTabManager.updateContent("first changed\n")
-
-        let secondPaneID = try #require(
-            projectManager.paneManager.splitPane(
-                firstPaneID,
-                axis: .horizontal
-            )
-        )
-        let secondTabManager = try #require(
-            projectManager.paneManager.tabManager(for: secondPaneID)
-        )
-        #expect(secondTabManager.openTab(url: secondFile) != .cancelled)
-        secondTabManager.updateContent("second changed\n")
-        let secondIndex = try #require(
-            secondTabManager.tabs.firstIndex(where: {
-                $0.fileURL == secondFile
-            })
-        )
-        secondTabManager.tabs[secondIndex].isTruncated = true
-
-        let state = NativeMenuCommandState(
-            projectManager: projectManager
-        )
-        #expect(!state.canSaveAll)
-        let didSave = await projectManager.saveAllPaneTabs(
-            context: .unscoped
-        )
-        #expect(!didSave)
-        #expect(!projectManager.saveAllPaneTabs())
-        #expect(
-            try String(contentsOf: firstFile, encoding: .utf8)
-                == "first original\n"
-        )
-        #expect(
-            try String(contentsOf: secondFile, encoding: .utf8)
-                == "second original\n"
-        )
-        #expect(firstTabManager.activeTab?.isDirty == true)
-        #expect(secondTabManager.activeTab?.isDirty == true)
     }
 
     @Test("Save All cancellation preflights every untitled destination")
@@ -553,73 +447,6 @@ struct NativeFileWindowMenuTests {
         #expect(originalTabs.tabs.isEmpty)
         #expect(project.allTerminalTabs.isEmpty)
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["main.swift"])
-    }
-
-    @Test("Open File retains the initiating project and pane across focus drift")
-    func openFileUsesProjectScopedChooser() async throws {
-        let root = try makeTemporaryDirectory(prefix: "pine-open-root")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let file = root.appendingPathComponent("selected.swift")
-        try "let selected = true\n".write(
-            to: file,
-            atomically: true,
-            encoding: .utf8
-        )
-
-        let projectManager = ProjectManager()
-        projectManager.workspace.loadDirectory(url: root)
-        let firstTabID = try #require(
-            projectManager.createUntitledFile()
-        )
-        let firstPaneID = projectManager.paneManager.activePaneID
-        let firstTabManager = try #require(
-            projectManager.paneManager.tabManager(for: firstPaneID)
-        )
-        let secondPaneID = try #require(
-            projectManager.paneManager.splitPane(
-                firstPaneID,
-                axis: .horizontal
-            )
-        )
-        let secondTabID = try #require(
-            projectManager.createUntitledFile()
-        )
-        let secondTabManager = try #require(
-            projectManager.paneManager.tabManager(for: secondPaneID)
-        )
-        #expect(
-            projectManager.paneManager.selectEditorTab(
-                firstTabID,
-                in: firstPaneID
-            )
-        )
-        var chooserRoot: URL?
-        projectManager.openFileChooser = { rootURL, _ in
-            chooserRoot = rootURL
-            #expect(
-                projectManager.paneManager.selectEditorTab(
-                    secondTabID,
-                    in: secondPaneID
-                )
-            )
-            return file
-        }
-
-        projectManager.openFileFromMenu()
-        // The deferred open lands on the main actor; wait under a generous
-        // ceiling instead of a 200 ms iteration budget that measured the
-        // scheduler under a parallel run (#1568).
-        try #require(
-            await waitUntilMainActor {
-                firstTabManager.tabs.contains(where: { $0.fileURL == file })
-            },
-            "menu open must land in the first pane's tab manager"
-        )
-
-        #expect(chooserRoot == root)
-        #expect(firstTabManager.tabs.contains(where: { $0.fileURL == file }))
-        #expect(!secondTabManager.tabs.contains(where: { $0.fileURL == file }))
-        #expect(projectManager.paneManager.activePaneID == firstPaneID)
     }
 
     @Test("Effective shortcuts replace and shadow built-in menu equivalents")

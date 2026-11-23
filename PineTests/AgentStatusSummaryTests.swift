@@ -162,35 +162,6 @@ struct AgentStatusSummaryTests {
         #expect(!summary.isActivelyWorking)
     }
 
-    @Test func multipleAgentsAcrossPanesHaveCorrectLocations() throws {
-        let paneManager = PaneManager()
-        let editorPane = paneManager.activePaneID
-
-        // Two terminal panes, each with one agent-bearing tab.
-        let termPane1 = try #require(
-            paneManager.createTerminalPane(relativeTo: editorPane, axis: .vertical, workingDirectory: nil)
-        )
-        let termPane2 = try #require(
-            paneManager.createTerminalPane(relativeTo: editorPane, axis: .horizontal, workingDirectory: nil)
-        )
-        let state1 = try #require(paneManager.terminalState(for: termPane1))
-        let state2 = try #require(paneManager.terminalState(for: termPane2))
-
-        let tab1 = state1.terminalTabs[0]
-        let tab2 = state2.terminalTabs[0]
-        tab1.agentSession = AgentSession(agentType: .claudeCode, state: .executing)
-        tab2.agentSession = AgentSession(agentType: .codex, state: .thinking)
-
-        let summaries = AgentStatusSummary.activeSummaries(in: paneManager)
-        #expect(summaries.count == 2)
-
-        let byPane = Dictionary(uniqueKeysWithValues: summaries.map { ($0.paneID, $0) })
-        #expect(byPane[termPane1]?.agentType == .claudeCode)
-        #expect(byPane[termPane1]?.tabID == tab1.id)
-        #expect(byPane[termPane2]?.agentType == .codex)
-        #expect(byPane[termPane2]?.tabID == tab2.id)
-    }
-
     @Test func multipleAgentsInSamePaneAreAllListed() throws {
         let (paneManager, paneID, state) = try makeManagerWithTerminalPane()
         let tabA = state.terminalTabs[0]

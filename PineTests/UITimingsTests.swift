@@ -27,7 +27,7 @@ struct UITimingsTests {
     }
 
     /// `Delay.standard` is the canonical "let SwiftUI breathe" value
-    /// shared by drop-handler post-open, branch menu install, search
+    /// shared by drop-handler post-open, search
     /// toolbar configure, toast hand-off, markdown preview render.
     /// Unifying them is the whole point of this namespace — a value
     /// change here moves all of them.
@@ -53,10 +53,6 @@ struct UITimingsTests {
         #expect(UITimings.Debounce.edit == 0.1)
     }
 
-    @Test func debounceFoldRecalcIsExactly150ms() {
-        #expect(UITimings.Debounce.foldRecalc == 0.15)
-    }
-
     @Test func debounceFileWatcherIsExactly150ms() {
         #expect(UITimings.Debounce.fileWatcher == 0.15)
     }
@@ -69,33 +65,13 @@ struct UITimingsTests {
         #expect(UITimings.Debounce.configValidation == 0.3)
     }
 
-    @Test func renderMinimapRedrawIsExactly25ms() {
-        #expect(UITimings.Render.minimapRedraw == 0.025)
-    }
-
     // MARK: - Ordering invariants
-
-    /// Render cadence must be at least as tight as the edit-debounce —
-    /// otherwise the minimap would lag the syntax highlighter that
-    /// drives its colors, briefly showing stale colors after each
-    /// keystroke. Documents the contract in code so a casual tune of
-    /// either constant can't violate it silently.
-    @Test func renderMinimapRedrawIsTighterThanEditDebounce() {
-        #expect(UITimings.Render.minimapRedraw <= UITimings.Debounce.edit)
-    }
 
     /// Scroll highlighting fires faster than edit highlighting. Edits
     /// finish on key release; scrolls happen continuously and need a
     /// tighter loop to feel native.
     @Test func scrollDebounceIsTighterThanEditDebounce() {
         #expect(UITimings.Debounce.scroll < UITimings.Debounce.edit)
-    }
-
-    /// Fold recalculation is heavier than syntax highlighting (full
-    /// bracket-matching + comment/string skip ranges) and is therefore
-    /// debounced longer, never shorter, than `edit`.
-    @Test func foldRecalcDebounceIsAtLeastEditDebounce() {
-        #expect(UITimings.Debounce.foldRecalc >= UITimings.Debounce.edit)
     }
 
     /// Project-wide search fires far less often than per-tab edit
@@ -112,29 +88,6 @@ struct UITimingsTests {
         #expect(UITimings.Delay.standard < UITimings.Delay.long)
     }
 
-    /// Render cadence must be the smallest constant in the namespace —
-    /// it's a per-frame throttle, not a debounce. Sanity-check it
-    /// against the entire namespace so a future addition doesn't slot
-    /// in below.
-    @Test func renderMinimapRedrawIsSmallestConstant() {
-        let allDebounces = [
-            UITimings.Debounce.scroll,
-            UITimings.Debounce.edit,
-            UITimings.Debounce.foldRecalc,
-            UITimings.Debounce.fileWatcher,
-            UITimings.Debounce.projectSearch,
-            UITimings.Debounce.configValidation
-        ]
-        let allDelays = [
-            UITimings.Delay.short,
-            UITimings.Delay.standard,
-            UITimings.Delay.long
-        ]
-        for value in allDebounces + allDelays {
-            #expect(UITimings.Render.minimapRedraw <= value)
-        }
-    }
-
     // MARK: - Physical sanity bounds
 
     /// Every UI timing must be strictly positive. A zero or negative
@@ -148,11 +101,9 @@ struct UITimingsTests {
             UITimings.Delay.long,
             UITimings.Debounce.scroll,
             UITimings.Debounce.edit,
-            UITimings.Debounce.foldRecalc,
             UITimings.Debounce.fileWatcher,
             UITimings.Debounce.projectSearch,
             UITimings.Debounce.configValidation,
-            UITimings.Render.minimapRedraw
         ]
         for value in everything {
             #expect(value > 0)
@@ -170,11 +121,9 @@ struct UITimingsTests {
             UITimings.Delay.long,
             UITimings.Debounce.scroll,
             UITimings.Debounce.edit,
-            UITimings.Debounce.foldRecalc,
             UITimings.Debounce.fileWatcher,
             UITimings.Debounce.projectSearch,
             UITimings.Debounce.configValidation,
-            UITimings.Render.minimapRedraw
         ]
         for value in everything {
             #expect(value <= 1.0)

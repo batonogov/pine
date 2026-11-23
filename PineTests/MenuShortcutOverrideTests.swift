@@ -76,30 +76,19 @@ struct MenuShortcutOverrideTests {
             .previousChange: AdvertisedShortcut(.upArrow, [.control, .option]),
             .acceptChange: AdvertisedShortcut(.return, [.control, .option]),
             .revertChange: AdvertisedShortcut(.delete, [.control, .option]),
-            .foldCode: AdvertisedShortcut(.leftArrow, [.command, .option]),
-            .unfoldCode: AdvertisedShortcut(.rightArrow, [.command, .option]),
-            .foldAll: AdvertisedShortcut(
-                .leftArrow, [.command, .option, .shift]
-            ),
-            .unfoldAll: AdvertisedShortcut(
-                .rightArrow, [.command, .option, .shift]
-            ),
             // View
             .increaseFontSize: AdvertisedShortcut("+", .command),
             .decreaseFontSize: AdvertisedShortcut("-", .command),
             .resetFontSize: AdvertisedShortcut("0", .command),
             .toggleTerminal: AdvertisedShortcut("`", .command),
             .togglePreview: AdvertisedShortcut("p", [.command, .shift]),
-            .toggleMinimap: AdvertisedShortcut("m", [.command, .shift]),
-            .toggleBlame: AdvertisedShortcut("b", [.command, .control]),
+
             // ⌥Z claimed a typeable letter app-wide (#1564): ⌘ joins the
             // chord so the Z mnemonic survives without stealing text input.
             .toggleWordWrap: AdvertisedShortcut("z", [.command, .option]),
             .revealFileInFinder: AdvertisedShortcut("r", [.command, .shift]),
             .showAgentInbox: AdvertisedShortcut("i", [.command, .shift]),
             .newAgent: AdvertisedShortcut("a", [.command, .shift]),
-            // Git
-            .showBranchSwitcher: AdvertisedShortcut("b", [.command, .shift]),
             // Terminal
             .newTerminalTab: AdvertisedShortcut("t", .command),
             .sendToTerminal: AdvertisedShortcut(.return, [.command, .shift]),

@@ -2,26 +2,6 @@
     "_comment": "Performance test baselines. Update by manually editing this file after reviewing nightly-perf results.",
     "threshold_percent": 15,
     "tests": {
-        "FoldRangeCalculatorPerformanceTests/testDeeplyNestedBraces": {
-            "baseline_seconds": 0.002,
-            "description": "100-level deep nested braces"
-        },
-        "FoldRangeCalculatorPerformanceTests/testManyBlocks": {
-            "baseline_seconds": 0.005,
-            "description": "500 flat brace blocks"
-        },
-        "FoldRangeCalculatorPerformanceTests/testMixedBrackets": {
-            "baseline_seconds": 0.003,
-            "description": "200 mixed bracket groups ({}, [], ())"
-        },
-        "FoldRangeCalculatorPerformanceTests/testLargeFileWithSkipRanges": {
-            "baseline_seconds": 0.004,
-            "description": "300 blocks with skip ranges"
-        },
-        "FoldRangeCalculatorPerformanceTests/testVeryLargeFile": {
-            "baseline_seconds": 0.015,
-            "description": "1000 blocks x 5 lines each"
-        },
         "StructuralProviderPerformanceTests/testLargeRegexSymbolSnapshot": {
             "baseline_seconds": 0.850,
             "description": "Regex symbol fallback over a 5000-line Swift snapshot"
@@ -77,14 +57,6 @@
         "GitStatusParserPerformanceTests/testParseDiff500Hunks": {
             "baseline_seconds": 0.008,
             "description": "Parse git diff with 500 hunks"
-        },
-        "GitStatusParserPerformanceTests/testParseBlame500Lines": {
-            "baseline_seconds": 0.003,
-            "description": "Parse git blame output for 500 lines"
-        },
-        "GitStatusParserPerformanceTests/testParseBlame2000Lines": {
-            "baseline_seconds": 0.010,
-            "description": "Parse git blame output for 2000 lines"
         },
         "GitStatusParserPerformanceTests/testChangeRegionStarts": {
             "baseline_seconds": 0.001,
@@ -150,22 +122,6 @@
             "baseline_seconds": 0.005,
             "description": "Delete 500 chars + re-highlight in 2000-line file"
         },
-        "MinimapRenderPerformanceTests/testMinimapDataPrep2000Lines": {
-            "baseline_seconds": 0.020,
-            "description": "Minimap data preparation for 2000-line file"
-        },
-        "MinimapRenderPerformanceTests/testMinimapDataPrep5000Lines": {
-            "baseline_seconds": 0.050,
-            "description": "Minimap data preparation for 5000-line file"
-        },
-        "MinimapRenderPerformanceTests/testMinimapDataPrepWithDiffMarkers": {
-            "baseline_seconds": 0.030,
-            "description": "Minimap data prep with diff markers for 3000-line file"
-        },
-        "MinimapRenderPerformanceTests/testMinimapFullPipeline3000Lines": {
-            "baseline_seconds": 0.060,
-            "description": "Full minimap pipeline (highlight + data prep) for 3000 lines"
-        },
         "ScrollPerformanceTests/testScrollThrough100kLines": {
             "baseline_seconds": 0.500,
             "description": "Scroll through 100K-line file (layout + enumerate)"
@@ -205,10 +161,6 @@
         "EditorStressTests/testThroughputHighlightingAndGitParsing": {
             "baseline_seconds": 0.050,
             "description": "Combined highlight + git parse throughput"
-        },
-        "EditorStressTests/testThroughputHighlightAndFoldCalculation": {
-            "baseline_seconds": 0.050,
-            "description": "Combined highlight + fold calculation throughput"
         },
         "EditorStressTests/testLargeFileContentUpdate": {
             "baseline_seconds": 0.005,

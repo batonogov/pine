@@ -64,7 +64,6 @@ jobs:
             -destination "platform=macOS" \
             -derivedDataPath DerivedData \
             -only-testing:PineTests/FuzzGitDiffParserTests \
-            -only-testing:PineTests/FuzzGitBlameParserTests \
             -only-testing:PineTests/FuzzGitStatusParserTests \
             -only-testing:PineTests/FuzzSyntaxHighlighterTests \
             -only-testing:PineTests/FuzzQuickOpenProviderTests \

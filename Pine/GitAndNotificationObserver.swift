@@ -7,19 +7,6 @@
 
 import SwiftUI
 
-// MARK: - Blame observer
-
-/// Refreshes blame when visibility changes.
-struct BlameObserver: ViewModifier {
-    let isBlameVisible: Bool
-    let onRefresh: () -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .onChange(of: isBlameVisible) { _, _ in onRefresh() }
-    }
-}
-
 // MARK: - Terminal session state observer
 
 // Terminal session state is now tracked per-pane (TerminalPaneState).
@@ -40,7 +27,6 @@ struct GitAndNotificationObserver: ViewModifier {
     /// this through the shared command-overlay router (#975).
     var onPresentGoToLine: () -> Void
     var onRefreshLineDiffs: () -> Void
-    var onRefreshBlame: () -> Void
     var onOpenNewProject: () -> Void
     var onCloseProject: () -> Void
     var onHandleFileDeletion: (URL) -> Void
@@ -65,7 +51,6 @@ struct GitAndNotificationObserver: ViewModifier {
             }
             .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
                 onRefreshLineDiffs()
-                onRefreshBlame()
             }
             .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
                 onRefreshLineDiffs()
@@ -73,7 +58,6 @@ struct GitAndNotificationObserver: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
                 guard controlActiveState == .key else { return }
                 onRefreshLineDiffs()
-                onRefreshBlame()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { notification in
                 guard ContentView.shouldHandleTargetedCommand(

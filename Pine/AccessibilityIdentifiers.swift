@@ -63,7 +63,6 @@ nonisolated enum AccessibilityID {
     static let sidebar = "sidebar"
     static let openFolderToolbarButton = "openFolderToolbarButton"
     static let projectSwitcher = "projectSwitcher"
-    static let branchSwitcherButton = "branchSwitcherButton"
     static let projectSwitcherNewAgent = "projectSwitcherNewAgent"
     static let projectSwitcherCloseProject = "projectSwitcherCloseProject"
     static func projectSwitcherProject(_ name: String) -> String {
@@ -108,7 +107,6 @@ nonisolated enum AccessibilityID {
     static let editorPlaceholder = "editorPlaceholder"
     static let codeEditor = "codeEditor"
     static let lineNumberGutter = "lineNumberGutter"
-    static let minimap = "minimap"
     static let autoSaveIndicator = "autoSaveIndicator"
     static let editorTabOverflowMenu = "editorTabOverflowMenu"
     static let quickLookPreview = "quickLookPreview"
@@ -142,10 +140,6 @@ nonisolated enum AccessibilityID {
     static let goToLineInvalidMessage = "goToLineInvalidMessage"
 
     // MARK: - Branch switcher
-    static let branchSearchField = "branchSearchField"
-    static let branchList = "branchList"
-    static let branchCancelButton = "branchCancelButton"
-    static func branchItem(_ name: String) -> String { "branchItem_\(name)" }
 
     // MARK: - Project Search
     static let projectSearchResultsList = "projectSearchResultsList"
@@ -173,9 +167,8 @@ nonisolated enum AccessibilityID {
     static let symbolResultsList = "symbolResultsList"
     static func symbolItem(_ name: String) -> String { "symbolItem_\(name)" }
 
-    // MARK: - Split Panes
+    // MARK: - Editor and Adjacent Terminal
     static let paneDivider = "paneDivider"
-    static let paneDropOverlay = "paneDropOverlay"
     static func paneLeaf(_ id: String) -> String { "paneLeaf_\(id)" }
 
     // MARK: - Crash recovery sheet (#1503)
@@ -267,18 +260,6 @@ nonisolated enum AccessibilityID {
     static let agentInboxDismissTask = "agentInboxDismissTask"
     static func agentInboxRow(_ id: UUID) -> String {
         "agentInboxRow_\(id.uuidString)"
-    }
-
-    // MARK: - Global Tab Switcher overlay (#1239)
-    static let globalTabSwitcherOverlay = "globalTabSwitcherOverlay"
-    static let globalTabSwitcherList = "globalTabSwitcherList"
-    static func globalTabSwitcherItem(_ identity: GlobalTabIdentity) -> String {
-        [
-            "globalTabSwitcherItem",
-            identity.contentType.rawValue,
-            identity.paneID.id.uuidString,
-            identity.tabID.uuidString,
-        ].joined(separator: "_")
     }
 
     static let agentStatusBarMenu = "agentStatusBarMenu"

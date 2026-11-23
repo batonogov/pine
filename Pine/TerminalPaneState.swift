@@ -2,8 +2,7 @@
 //  TerminalPaneState.swift
 //  Pine
 //
-//  Per-pane terminal state. Each terminal leaf in the PaneNode tree
-//  owns one TerminalPaneState managing its terminal tabs.
+//  State for the single adjacent terminal and its tabs.
 //
 
 import SwiftUI
@@ -47,8 +46,7 @@ final class TerminalPaneState {
     /// completion from consuming a later request for the same terminal tab.
     private(set) var pendingFocusRequestID: UUID?
     var onActiveTabChanged: ((UUID?) -> Void)?
-    /// Called after terminal identities are inserted or removed so a live
-    /// global switcher can reconcile independently of SwiftUI rendering.
+    /// Called after terminal identities are inserted or removed.
     var onTabInventoryChanged: (() -> Void)?
     /// Applies project-scoped lifecycle wiring to every newly created tab.
     var onTabCreated: ((TerminalTab) -> Void)?

@@ -71,9 +71,7 @@ struct LocalizationCentralizationGuardTests {
         "diagnostic.line",
         "Enter a line number from 1 to %lld",
         // "3 of 4" position ratio.
-        "globalTabSwitcher.announcement",
         "Line %lld is out of range (1–%lld)",
-        "pane.positionLabel",
         "quit.summary.message %lld",
         "search.truncatedTotal %lld %lld",
         // Label-shaped reload summary: neither count agrees a noun, so

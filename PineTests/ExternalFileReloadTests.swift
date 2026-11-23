@@ -220,7 +220,6 @@ struct ExternalFileReloadTests {
             language: "txt",
             fileName: "x.txt",
             fileURL: url,
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
         coordinator.scrollView = scrollView
@@ -243,7 +242,6 @@ struct ExternalFileReloadTests {
             language: "txt",
             fileName: "me.txt",
             fileURL: myURL,
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
         coordinator.scrollView = scrollView
@@ -269,7 +267,6 @@ struct ExternalFileReloadTests {
             language: "txt",
             fileName: "x.txt",
             fileURL: url,
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
         coordinator.scrollView = scrollView
@@ -294,7 +291,6 @@ struct ExternalFileReloadTests {
             language: "txt",
             fileName: "x.txt",
             fileURL: url,
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
         coordinator.scrollView = scrollView
@@ -318,7 +314,6 @@ struct ExternalFileReloadTests {
             language: "txt",
             fileName: "x.txt",
             fileURL: url,
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
         coordinator.scrollView = scrollView
@@ -344,7 +339,6 @@ struct ExternalFileReloadTests {
             language: "txt",
             fileName: url.lastPathComponent,
             fileURL: url,
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
         coordinator.scrollView = scrollView
@@ -375,7 +369,6 @@ struct ExternalFileReloadTests {
             language: "txt",
             fileName: url.lastPathComponent,
             fileURL: url,
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
         coordinator.scrollView = scrollView

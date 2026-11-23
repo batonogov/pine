@@ -41,7 +41,6 @@ REQUIRED_NAMES=(
 )
 OPTIONAL_NAMES=(
   "screenshot-sidebar"
-  "screenshot-minimap"
 )
 
 # Clean previous result bundle

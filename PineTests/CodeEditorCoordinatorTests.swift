@@ -46,7 +46,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "yaml",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -69,7 +68,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 1,
             language: "yaml",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         coordinator.parent = updatedEditorView
         coordinator.didChangeFromTextView = true
@@ -97,7 +95,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "txt",
             fileName: "test.txt",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -114,7 +111,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 1,
             language: "txt",
             fileName: "test.txt",
-            foldState: .constant(FoldState())
         )
         coordinator.parent = updatedEditorView
         // didChangeFromTextView is NOT set — this is an external change
@@ -136,7 +132,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "swift",
             fileName: "test.swift",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -153,7 +148,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 1,
             language: "go",
             fileName: "test.go",
-            foldState: .constant(FoldState())
         )
         coordinator.parent = updatedEditorView
         coordinator.didChangeFromTextView = true
@@ -181,7 +175,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "txt",
             fileName: "a.txt",
-            foldState: .constant(FoldState()),
             initialCursorPosition: 0
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
@@ -198,7 +191,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 1,
             language: "swift",
             fileName: "b.swift",
-            foldState: .constant(FoldState()),
             initialCursorPosition: 15
         )
         coordinator.parent = editorViewB
@@ -222,7 +214,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "txt",
             fileName: "a.txt",
-            foldState: .constant(FoldState()),
             initialCursorPosition: 0
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
@@ -239,7 +230,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 1,
             language: "txt",
             fileName: "b.txt",
-            foldState: .constant(FoldState()),
             initialCursorPosition: 999
         )
         coordinator.parent = editorViewB
@@ -266,7 +256,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "txt",
             fileName: "a.txt",
-            foldState: .constant(FoldState()),
             initialCursorPosition: 10
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorA)
@@ -283,7 +272,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 1,
             language: "swift",
             fileName: "b.swift",
-            foldState: .constant(FoldState()),
             initialCursorPosition: 5
         )
         coordinator.parent = editorB
@@ -299,7 +287,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 2,
             language: "txt",
             fileName: "a.txt",
-            foldState: .constant(FoldState()),
             initialCursorPosition: 10
         )
         coordinator.parent = editorA2
@@ -318,7 +305,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "txt",
             fileName: "a.txt",
-            foldState: .constant(FoldState()),
             initialCursorPosition: 0
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
@@ -335,7 +321,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 1,
             language: "txt",
             fileName: "empty.txt",
-            foldState: .constant(FoldState()),
             initialCursorPosition: 0
         )
         coordinator.parent = editorB
@@ -362,7 +347,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "yaml",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -400,7 +384,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "yaml",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -435,7 +418,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "txt",
             fileName: "test.txt",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -452,7 +434,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 1,
             language: "txt",
             fileName: "test.txt",
-            foldState: .constant(FoldState())
         )
         coordinator.parent = updatedEditor
 
@@ -479,7 +460,6 @@ struct CodeEditorCoordinatorTests {
             contentVersion: 0,
             language: "yaml",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView

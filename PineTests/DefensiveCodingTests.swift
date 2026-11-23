@@ -72,23 +72,6 @@ struct DefensiveCodingTests {
         #expect(result?.closer == 101)
     }
 
-    // MARK: - FoldRangeCalculator stack limit
-
-    @Test func foldCalculatorHandlesDeeplyNestedBrackets() {
-        // Create 600 levels of nested braces (each on its own line)
-        var text = ""
-        for _ in 0..<600 {
-            text += "{\n"
-        }
-        for _ in 0..<600 {
-            text += "}\n"
-        }
-        // Should not crash; the stack is bounded by maxStackDepth
-        let results = FoldRangeCalculator.calculate(text: text)
-        // Some fold ranges should exist, but inner ones beyond stack limit are ignored
-        #expect(results.count <= FoldRangeCalculator.maxStackDepth)
-    }
-
     // MARK: - TabManager bounds assertions
 
     @Test func closeTabWithInvalidIDIsNoOp() {

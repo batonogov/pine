@@ -42,13 +42,12 @@ struct HelpBookShortcutTableTests {
         // Find stepping and selection feed: the table lists the entry
         // points (Find, Find and Replace), not the steppers.
         .findNext, .findPrevious, .useSelectionForFind,
-        // Diff navigation and folding: dense families behind the Edit menu.
-        .acceptChange, .revertChange, .foldCode, .unfoldCode, .foldAll,
-        .unfoldAll,
+        // Diff navigation: dense families behind the Edit menu.
+        .acceptChange, .revertChange,
         // Font zoom, panels, reveal, and agent launch: discoverable in the
         // View and Window menus; the ⌘= / ⇧⌘- aliases are invisible by
         // design.
-        .increaseFontSize, .decreaseFontSize, .resetFontSize, .toggleBlame,
+        .increaseFontSize, .decreaseFontSize, .resetFontSize,
         .revealFileInFinder, .showAgentInbox, .newAgent,
         // Terminal extras beyond the two the table carries.
         .sendToTerminal, .toggleTerminalZoom,
@@ -83,7 +82,6 @@ struct HelpBookShortcutTableTests {
         .goToLine: "menu.goToLine",
         .symbolNavigator: "menu.symbolNavigator",
         .togglePreview: "menu.togglePreview",
-        .toggleMinimap: "menu.toggleMinimap",
         .toggleWordWrap: "menu.toggleWordWrap",
     ]
 

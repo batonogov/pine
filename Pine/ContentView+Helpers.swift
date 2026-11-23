@@ -332,13 +332,7 @@ extension ContentView {
     }
 }
 
-// MARK: - Git blame & diff (stubs)
-
 extension ContentView {
-
-    /// No-op — each PaneLeafView manages its own blame data.
-    /// Kept as a stub because GitAndNotificationObserver calls it.
-    func refreshBlame() {}
 
     /// No-op — each PaneLeafView manages its own line diffs.
     /// Kept as a stub because GitAndNotificationObserver calls it.

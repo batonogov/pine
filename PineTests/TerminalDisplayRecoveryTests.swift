@@ -212,42 +212,6 @@ struct TerminalDisplayRecoveryTests {
         #expect(backgroundRedraws == 0)
     }
 
-    @Test("Manager recovery covers every terminal pane, not just the focused one")
-    func managerRecoveryCoversAllPanes() throws {
-        let paneManager = PaneManager()
-        let manager = TerminalManager()
-        manager.paneManager = paneManager
-        let firstPane = paneManager.createTerminalPaneAtBottom(
-            workingDirectory: URL(fileURLWithPath: "/tmp")
-        )
-        let secondPane = paneManager.createTerminalPaneAtBottom(
-            workingDirectory: URL(fileURLWithPath: "/tmp")
-        )
-        let firstTab = try #require(
-            paneManager.terminalState(for: firstPane)?.activeTab
-        )
-        let secondTab = try #require(
-            paneManager.terminalState(for: secondPane)?.activeTab
-        )
-        defer {
-            firstTab.stop()
-            secondTab.stop()
-        }
-        var firstRedraws = 0
-        var secondRedraws = 0
-        (firstTab.terminalView as? PineTerminalView)?
-            .backendRedrawRequestObserver = { firstRedraws += 1 }
-        (secondTab.terminalView as? PineTerminalView)?
-            .backendRedrawRequestObserver = { secondRedraws += 1 }
-
-        manager.recoverVisibleTerminalDisplays()
-
-        // The stuck pane is frequently not the focused one; a user reaching for
-        // this command should not have to guess which pane to click first.
-        #expect(firstRedraws >= 1)
-        #expect(secondRedraws >= 1)
-    }
-
     @Test("Manager recovery without a pane manager is a no-op")
     func managerRecoveryWithoutPaneManagerIsNoOp() {
         let manager = TerminalManager()

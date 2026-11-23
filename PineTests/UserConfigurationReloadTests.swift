@@ -138,7 +138,7 @@ struct UserConfigurationReloadTests {
         try write(
             """
             [
-              {"command": "toggleMinimap", "key": "cmd+k"},
+              {"command": "toggleWordWrap", "key": "cmd+k"},
               {"command": "quickOpen", "key": "f"},
               {"command": "goToLine", "key": "cmd+c"}
             ]
@@ -150,7 +150,7 @@ struct UserConfigurationReloadTests {
 
         #expect(report.outcome == .rejected)
         #expect(!report.diagnostics.map(\.reason).contains(
-            .unavailableCommand(id: "toggleMinimap")
+            .unavailableCommand(id: "toggleWordWrap")
         ))
         #expect(report.diagnostics.map(\.reason).contains(
             .textInputChord(value: "f")
@@ -161,7 +161,7 @@ struct UserConfigurationReloadTests {
         #expect(registry.isEmpty)
     }
 
-    @Test func retiredLSPCommandsDoNotRejectOtherBindings() async throws {
+    @Test func retiredCommandsDoNotRejectOtherBindings() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("keybindings.json")
@@ -172,6 +172,13 @@ struct UserConfigurationReloadTests {
               {"command": "showProblems", "key": "cmd+shift+x"},
               {"command": "nextDiagnostic", "key": "cmd+option+down"},
               {"command": "previousDiagnostic", "key": "cmd+option+up"},
+              {"command": "foldCode", "key": "cmd+option+left"},
+              {"command": "unfoldCode", "key": "cmd+option+right"},
+              {"command": "foldAll", "key": "cmd+option+shift+left"},
+              {"command": "unfoldAll", "key": "cmd+option+shift+right"},
+              {"command": "showBranchSwitcher", "key": "cmd+shift+b"},
+              {"command": "toggleMinimap", "key": "cmd+shift+m"},
+              {"command": "toggleBlame", "key": "cmd+control+b"},
               {"command": "quickOpen", "key": "cmd+p"}
             ]
             """,

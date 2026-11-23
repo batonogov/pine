@@ -196,11 +196,7 @@ struct SearchActivePaneRoutingTests {
         }
 
         // Create a terminal pane next to the editor
-        guard let terminalID = paneManager.createTerminalPane(
-            relativeTo: editorLeafID,
-            axis: .vertical,
-            workingDirectory: nil
-        ) else {
+        guard let terminalID = Optional(paneManager.createTerminalPaneAtBottom(workingDirectory: nil)) else {
             Issue.record("Expected terminal pane creation")
             return
         }
@@ -211,37 +207,5 @@ struct SearchActivePaneRoutingTests {
         // activeEditorTabManager should still resolve to the editor pane's TabManager
         let resolved = paneManager.activeEditorTabManager
         #expect(resolved === primary)
-    }
-
-    @Test("activeEditorTabManager follows active pane when it is an editor")
-    func followsActiveEditorPane() throws {
-        let primary = TabManager()
-        let paneManager = PaneManager(existingTabManager: primary)
-
-        guard let editorLeafID = paneManager.root.firstLeafID else {
-            Issue.record("Expected editor leaf")
-            return
-        }
-        guard let newEditorID = paneManager.splitPane(
-            editorLeafID,
-            axis: .horizontal
-        ) else {
-            Issue.record("Expected split pane creation")
-            return
-        }
-
-        // Each editor pane gets its own TabManager
-        guard let newTabManager = paneManager.tabManager(for: newEditorID) else {
-            Issue.record("Expected TabManager for new pane")
-            return
-        }
-
-        // Make the new pane active
-        paneManager.activePaneID = newEditorID
-
-        // activeEditorTabManager should return the NEW pane's TabManager, not primary
-        let resolved = paneManager.activeEditorTabManager
-        #expect(resolved === newTabManager)
-        #expect(resolved !== primary)
     }
 }

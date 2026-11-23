@@ -14,25 +14,6 @@ import Testing
 @Suite("Project Manager TabManager Wiring")
 @MainActor
 struct ProjectManagerTabManagerWiringTests {
-    @Test("Split editor groups inherit context and recovery services")
-    func splitManagersAreConfigured() throws {
-        let project = ProjectManager()
-        let directory = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        project.setupRecovery(projectURL: directory)
-
-        let firstPaneID = project.paneManager.activePaneID
-        let secondPaneID = try #require(
-            project.paneManager.splitPane(firstPaneID, axis: .horizontal)
-        )
-        let secondManager = try #require(
-            project.paneManager.tabManager(for: secondPaneID)
-        )
-
-        #expect(secondManager.recoveryManager === project.recoveryManager)
-        #expect(secondManager.onEditorContextChanged != nil)
-    }
-
     @Test("Restored editor groups inherit context and recovery services")
     func restoredManagersAreConfigured() throws {
         let project = ProjectManager()

@@ -51,7 +51,7 @@ struct AgentActivityTerminalRoutingTests {
         #expect(row.workingDirectory == fixture.secondDirectory)
     }
 
-    @Test("Routing selects the exact target in a multi-pane layout")
+    @Test("Routing selects the exact target in the shared terminal")
     func routesExactMultiPaneTarget() throws {
         let fixture = try makeTwoPaneFixture()
         let firstSessionID = UUID()
@@ -152,50 +152,6 @@ struct AgentActivityTerminalRoutingTests {
         )
     }
 
-    @Test("A tab in another pane never satisfies a mismatched pane target")
-    func rejectsWrongPaneForExistingTab() throws {
-        let fixture = try makeTwoPaneFixture()
-        let sessionID = UUID()
-        fixture.secondTab.agentSession = AgentSession(
-            id: sessionID,
-            agentType: .codex
-        )
-        let resolved = try #require(
-            AgentActivityTerminalTargetResolver.resolve(
-                attribution: makeAction(
-                    sessionID: sessionID,
-                    agentType: .codex
-                ).attribution,
-                in: fixture.paneManager
-            )
-        )
-        let wrongPaneTarget = AgentActivityTerminalTarget(
-            paneID: fixture.firstPaneID,
-            tabID: resolved.tabID,
-            sessionID: resolved.sessionID,
-            agentType: resolved.agentType,
-            liveness: resolved.liveness,
-            label: resolved.label,
-            workingDirectory: resolved.workingDirectory
-        )
-        fixture.paneManager.activePaneID = fixture.firstPaneID
-        let terminalManager = TerminalManager(
-            agentDetectionProcessRunner: Self.noOpProcessRunner
-        )
-        terminalManager.paneManager = fixture.paneManager
-        terminalManager.lastActiveTerminalPaneID = fixture.firstPaneID
-
-        let didRoute = AgentActivityTerminalRouter.route(
-            to: wrongPaneTarget,
-            paneManager: fixture.paneManager,
-            terminalManager: terminalManager
-        )
-
-        #expect(!didRoute)
-        #expect(fixture.paneManager.activePaneID == fixture.firstPaneID)
-        #expect(terminalManager.lastActiveTerminalPaneID == fixture.firstPaneID)
-    }
-
     @Test("A removed target fails closed without changing terminal focus")
     func rejectsMissingTarget() throws {
         let fixture = try makeTwoPaneFixture()
@@ -213,7 +169,9 @@ struct AgentActivityTerminalRoutingTests {
                 in: fixture.paneManager
             )
         )
-        fixture.paneManager.removePane(fixture.secondPaneID)
+        fixture.paneManager.terminalState(for: fixture.secondPaneID)?.removeTab(
+            id: fixture.secondTab.id
+        )
         fixture.paneManager.activePaneID = fixture.firstPaneID
         let terminalManager = TerminalManager(
             agentDetectionProcessRunner: Self.noOpProcessRunner
@@ -379,29 +337,16 @@ struct AgentActivityTerminalRoutingTests {
 
     private func makeTwoPaneFixture() throws -> TwoPaneFixture {
         let paneManager = PaneManager()
-        let editorPaneID = paneManager.activePaneID
         let firstDirectory = URL(fileURLWithPath: "/project/first")
         let secondDirectory = URL(fileURLWithPath: "/project/second")
-        let firstPaneID = try #require(
-            paneManager.createTerminalPane(
-                relativeTo: editorPaneID,
-                axis: .vertical,
-                workingDirectory: firstDirectory
-            )
+        let firstPaneID = paneManager.createTerminalPaneAtBottom(
+            workingDirectory: firstDirectory
         )
-        let secondPaneID = try #require(
-            paneManager.createTerminalPane(
-                relativeTo: firstPaneID,
-                axis: .horizontal,
-                workingDirectory: secondDirectory
-            )
-        )
-        let firstTab = try #require(
-            paneManager.terminalState(for: firstPaneID)?.activeTab
-        )
-        let secondTab = try #require(
-            paneManager.terminalState(for: secondPaneID)?.activeTab
-        )
+        let secondPaneID = firstPaneID
+        let state = try #require(paneManager.terminalState(for: firstPaneID))
+        let firstTab = try #require(state.activeTab)
+        let secondTab = state.addTab(workingDirectory: secondDirectory)
+        state.activeTerminalID = firstTab.id
         return TwoPaneFixture(
             paneManager: paneManager,
             firstPaneID: firstPaneID,

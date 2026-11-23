@@ -7,7 +7,7 @@ import Testing
 import AppKit
 @testable import Pine
 
-/// Tests for GutterTextView (CodeEditorView.swift) — blame data, auto-indent.
+/// Tests for GutterTextView (CodeEditorView.swift) — editing behavior.
 @Suite("GutterTextView Tests")
 @MainActor
 struct GutterTextViewTests {
@@ -37,34 +37,6 @@ struct GutterTextViewTests {
         tv.gutterInset = 60
         #expect(tv.textContainerOrigin.x == 60)
     }
-
-    // MARK: - Blame data
-
-    @Test func setBlameLinesPopulatesLookup() {
-        let tv = makeTextView(text: "line1\nline2\nline3")
-        let lines = [
-            GitBlameLine(hash: "abc123", author: "Alice", authorTime: Date(), summary: "init", finalLine: 1),
-            GitBlameLine(hash: "def456", author: "Bob", authorTime: Date(), summary: "update", finalLine: 2),
-        ]
-        tv.setBlameLines(lines)
-        // Calling again with same count should skip rebuild (optimization check)
-        tv.setBlameLines(lines)
-    }
-
-    @Test func setBlameLinesRebuildsOnCountChange() {
-        let tv = makeTextView(text: "line1\nline2\nline3")
-        let lines1 = [
-            GitBlameLine(hash: "abc123", author: "Alice", authorTime: Date(), summary: "init", finalLine: 1),
-        ]
-        let lines2 = [
-            GitBlameLine(hash: "abc123", author: "Alice", authorTime: Date(), summary: "init", finalLine: 1),
-            GitBlameLine(hash: "def456", author: "Bob", authorTime: Date(), summary: "update", finalLine: 2),
-        ]
-        tv.setBlameLines(lines1)
-        tv.setBlameLines(lines2)
-    }
-
-    // MARK: - Auto-indent
 
     @Test func insertNewlinePreservesLeadingWhitespace() {
         let tv = makeTextView(text: "    hello")

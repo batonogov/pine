@@ -240,145 +240,6 @@ struct FindStepPaneIntegrationTests {
         ))
     }
 
-    @Test("A pane without an open bar never swallows the step")
-    func paneWithoutBarDoesNotStep() throws {
-        let project = ProjectManager()
-        let paneManager = project.paneManager
-        let terminalPane = paneManager.createTerminalPaneAtBottom(
-            workingDirectory: nil
-        )
-        paneManager.terminalState(for: terminalPane)?.presentSearch()
-
-        // A second terminal pane without a bar must not react.
-        let otherPane = try #require(
-            paneManager.createTerminalPane(
-                relativeTo: terminalPane,
-                axis: .horizontal,
-                workingDirectory: nil
-            )
-        )
-        paneManager.activePaneID = terminalPane
-
-        #expect(!TerminalSearchObserver.shouldStepSearch(
-            in: otherPane,
-            paneManager: paneManager,
-            notificationObject: nil,
-            currentProject: project,
-            isKeyWindow: true
-        ))
-        // The active pane's bar still wins for itself.
-        #expect(TerminalSearchObserver.shouldStepSearch(
-            in: terminalPane,
-            paneManager: paneManager,
-            notificationObject: nil,
-            currentProject: project,
-            isKeyWindow: true
-        ))
-    }
-
-    @Test("With two open bars only the active pane's bar steps")
-    func activePaneBarWinsAmongTwoOpenBars() throws {
-        let project = ProjectManager()
-        let paneManager = project.paneManager
-        let first = paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
-        paneManager.terminalState(for: first)?.presentSearch()
-        let second = try #require(
-            paneManager.createTerminalPane(
-                relativeTo: first,
-                axis: .horizontal,
-                workingDirectory: nil
-            )
-        )
-        paneManager.terminalState(for: second)?.presentSearch()
-
-        // createTerminalPane made the second pane active: its bar wins.
-        paneManager.activePaneID = second
-        #expect(!TerminalSearchObserver.shouldStepSearch(
-            in: first,
-            paneManager: paneManager,
-            notificationObject: nil,
-            currentProject: project,
-            isKeyWindow: true
-        ))
-        #expect(TerminalSearchObserver.shouldStepSearch(
-            in: second,
-            paneManager: paneManager,
-            notificationObject: nil,
-            currentProject: project,
-            isKeyWindow: true
-        ))
-
-        // Activating the first pane flips the winner.
-        paneManager.activePaneID = first
-        #expect(TerminalSearchObserver.shouldStepSearch(
-            in: first,
-            paneManager: paneManager,
-            notificationObject: nil,
-            currentProject: project,
-            isKeyWindow: true
-        ))
-        #expect(!TerminalSearchObserver.shouldStepSearch(
-            in: second,
-            paneManager: paneManager,
-            notificationObject: nil,
-            currentProject: project,
-            isKeyWindow: true
-        ))
-    }
-
-    @Test("A bar hidden by maximizing another pane is not addressable")
-    func maximizedPaneDismantlesGhostBar() throws {
-        let project = ProjectManager()
-        let paneManager = project.paneManager
-        let ghostPane = paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
-        paneManager.terminalState(for: ghostPane)?.presentSearch()
-        let maximizedPane = try #require(
-            paneManager.createTerminalPane(
-                relativeTo: ghostPane,
-                axis: .horizontal,
-                workingDirectory: nil
-            )
-        )
-
-        paneManager.activePaneID = maximizedPane
-        paneManager.toggleMaximizeOnActiveTerminalPane()
-
-        // The ghost premise: maximize dismantles the other pane's views (its
-        // TerminalSearchObserver dies) but keeps its state, bar included.
-        #expect(paneManager.terminalState(for: ghostPane)?.isSearchVisible == true)
-        // The pane tree, not the state dictionary, decides addressability.
-        #expect(!paneManager.visibleTerminalSearchPaneIDs.contains(ghostPane))
-        #expect(paneManager.visibleTerminalSearchPaneIDs.isEmpty)
-        #expect(FindStepTargetPolicy.target(
-            activePaneID: paneManager.activePaneID,
-            visibleTerminalSearchPaneIDs: paneManager.visibleTerminalSearchPaneIDs
-        ) == .editor)
-        // Menu stays off rather than offering an enabled-but-dead ⌘G.
-        #expect(!FindStepTargetPolicy.isCommandEnabled(
-            activePaneID: paneManager.activePaneID,
-            visibleTerminalSearchPaneIDs: paneManager.visibleTerminalSearchPaneIDs,
-            hasActiveEditorTab: false
-        ))
-        #expect(!TerminalSearchObserver.shouldStepSearch(
-            in: ghostPane,
-            paneManager: paneManager,
-            notificationObject: nil,
-            currentProject: project,
-            isKeyWindow: true
-        ))
-
-        // Restore re-mounts the pane; its bar becomes addressable again.
-        paneManager.toggleMaximizeOnActiveTerminalPane()
-        #expect(paneManager.visibleTerminalSearchPaneIDs == [ghostPane])
-        #expect(TerminalSearchObserver.shouldStepSearch(
-            in: ghostPane,
-            paneManager: paneManager,
-            notificationObject: nil,
-            currentProject: project,
-            isKeyWindow: true
-        ))
-    }
-
     @Test("A bar in the maximized pane itself stays addressable")
     func barInMaximizedPaneStaysAddressable() {
         let project = ProjectManager()
@@ -452,7 +313,6 @@ struct EditorFindStepYieldTests {
             contentVersion: 0,
             language: "txt",
             fileName: "test.txt",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         #expect(coordinator.canStepFind())
@@ -466,7 +326,6 @@ struct EditorFindStepYieldTests {
             language: "txt",
             fileName: "test.txt",
             canHandleFindStepping: { false },
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: yielding)
         #expect(!coordinator.canStepFind())
@@ -494,7 +353,6 @@ struct EditorFindStepYieldTests {
                         paneManager.visibleTerminalSearchPaneIDs
                 ) == .editor
             },
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
 

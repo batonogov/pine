@@ -343,43 +343,6 @@ struct AgentProjectTerminalOwnershipTests {
         )
     }
 
-    @Test("Maximize keeps hidden owned terminal sessions in project scope")
-    func maximizePreservesHiddenTerminalOwnership() throws {
-        let fixture = try makeProjectFixture(name: "Maximize", terminalCount: 1)
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let secondPaneID = try #require(
-            fixture.project.paneManager.createTerminalPane(
-                relativeTo: fixture.paneID,
-                axis: .horizontal,
-                workingDirectory: fixture.root
-            )
-        )
-        let hiddenTab = try #require(
-            fixture.project.paneManager.terminalState(for: secondPaneID)?.activeTab
-        )
-        let visible = exactSession(type: .codex, pid: 460, generation: 1)
-        let hidden = exactSession(type: .pi, pid: 461, generation: 2)
-        fixture.tabs[0].agentSession = visible
-        hiddenTab.agentSession = hidden
-        fixture.project.terminal.captureProjectAgentOwnership(
-            of: visible,
-            in: fixture.tabs[0]
-        )
-        fixture.project.terminal.captureProjectAgentOwnership(
-            of: hidden,
-            in: hiddenTab
-        )
-
-        fixture.project.paneManager.maximize(paneID: fixture.paneID)
-
-        #expect(fixture.project.paneManager.maximizedPaneID == fixture.paneID)
-        #expect(fixture.project.paneManager.terminalPaneIDs == [fixture.paneID])
-        #expect(
-            Set(fixture.project.terminal.projectOwnedActiveAgentSessions.map(\.id))
-                == Set([visible.id, hidden.id])
-        )
-    }
-
     @Test("Duplicate binding deduplicates and conflicting identity fails closed")
     func duplicateAndConflictingBindings() throws {
         let fixture = try makeProjectFixture(name: "Conflicts", terminalCount: 3)

@@ -46,8 +46,6 @@ enum Strings {
         "settings.general.smartListContinuation"
     static let settingsGeneralWordWrap: LocalizedStringKey =
         "settings.general.wordWrap"
-    static let settingsGeneralMinimap: LocalizedStringKey =
-        "settings.general.minimap"
     static let settingsGeneralFontSize: LocalizedStringKey =
         "settings.general.fontSize"
 
@@ -2194,7 +2192,6 @@ enum Strings {
     static let menuView: LocalizedStringKey = "menu.view"
     static let menuGit: LocalizedStringKey = "menu.git"
     static let menuOpenFolder: LocalizedStringKey = "menu.openFolder"
-    static let menuSwitchBranch: LocalizedStringKey = "menu.switchBranch"
     static let menuRevealFileInFinder: LocalizedStringKey = "menu.revealFileInFinder"
     static let menuRevealProjectInFinder: LocalizedStringKey = "menu.revealProjectInFinder"
     static let menuTasks: LocalizedStringKey = "menu.tasks"
@@ -2624,41 +2621,9 @@ enum Strings {
         )
     }
 
-    // MARK: - Branch Switcher
-
-    static var branchFilterPlaceholder: String {
-        String(localized: "branch.filterPlaceholder")
-    }
-
-    static var branchSwitcherCancel: String {
-        String(localized: "branch.cancel")
-    }
-
-    static var branchCurrentAccessibilityValue: String {
-        String(localized: "branch.current")
-    }
-
-    static var branchSwitchErrorTitle: String {
-        String(localized: "branch.switchError.title")
-    }
-
     static let menuCheckForUpdates: LocalizedStringKey = "menu.checkForUpdates"
     static let menuToggleComment: LocalizedStringKey = "menu.toggleComment"
-    static let menuToggleMinimap: LocalizedStringKey = "menu.toggleMinimap"
-    static let menuToggleBlame: LocalizedStringKey = "menu.toggleBlame"
     static let menuToggleWordWrap: LocalizedStringKey = "menu.toggleWordWrap"
-
-    static var branchUncommittedChangesTitle: String {
-        String(localized: "branch.uncommittedChanges.title")
-    }
-
-    static func branchUncommittedChangesMessage(_ branch: String) -> String {
-        String(localized: "branch.uncommittedChanges.message \(branch)")
-    }
-
-    static var branchUncommittedChangesSwitch: String {
-        String(localized: "branch.uncommittedChanges.switch")
-    }
 
     static let autoSaving: LocalizedStringKey = "editor.autoSaving"
     static let menuSave: LocalizedStringKey = "menu.save"
@@ -2675,10 +2640,6 @@ enum Strings {
     /// File ▸ Sidebar submenu holding the row context menu's file operations
     /// (#1537); the item titles reuse the `context.*` keys.
     static let menuSidebarOperations: LocalizedStringKey = "menu.sidebarOperations"
-    /// Window ▸ Split Right / Split Down (#1537).
-    static let menuSplitRight: LocalizedStringKey = "menu.splitRight"
-    static let menuSplitDown: LocalizedStringKey = "menu.splitDown"
-
     // MARK: - Affordance / Accessibility Help
 
     static let statusbarEncodingDisabledDirty: LocalizedStringKey = "statusbar.encodingDisabledDirty"
@@ -2727,10 +2688,6 @@ enum Strings {
     static let agentResumeTask: LocalizedStringKey = "agent.resumeTask"
     static let tabMoveLeading: LocalizedStringKey = "tab.moveLeading"
     static let tabMoveTrailing: LocalizedStringKey = "tab.moveTrailing"
-    static let tabMoveToPreviousPane: LocalizedStringKey = "tab.moveToPreviousPane"
-    static let tabMoveToNextPane: LocalizedStringKey = "tab.moveToNextPane"
-    static let tabSwitchNext: LocalizedStringKey = "tab.switchNext"
-    static let tabSwitchPrevious: LocalizedStringKey = "tab.switchPrevious"
 
     // MARK: - Unsaved Changes Dialog (AppKit)
 
@@ -2941,10 +2898,6 @@ enum Strings {
     static let menuRevertChange: LocalizedStringKey = "menu.revertChange"
     static let menuAcceptAllChanges: LocalizedStringKey = "menu.acceptAllChanges"
     static let menuRevertAllChanges: LocalizedStringKey = "menu.revertAllChanges"
-    static let menuFoldCode: LocalizedStringKey = "menu.foldCode"
-    static let menuUnfoldCode: LocalizedStringKey = "menu.unfoldCode"
-    static let menuFoldAll: LocalizedStringKey = "menu.foldAll"
-    static let menuUnfoldAll: LocalizedStringKey = "menu.unfoldAll"
     static let sidebarFiles: LocalizedStringKey = "sidebar.files"
     static let sidebarSearch: LocalizedStringKey = "sidebar.search"
 
@@ -3390,12 +3343,6 @@ enum Strings {
             defaultValue: "More tabs"
         )
 
-    // Minimap
-    static let a11yMinimapLabel: String =
-        String(localized: "a11y.minimap.label", defaultValue: "Minimap")
-    static let a11yMinimapHint: String =
-        String(localized: "a11y.minimap.hint", defaultValue: "Code overview. Click to jump to a line.")
-
     // Editor gutter and git diff markers (#1540)
     static let a11yGutterLabel: String =
         String(localized: "a11y.gutter.label", defaultValue: "Line numbers")
@@ -3415,10 +3362,6 @@ enum Strings {
         String(localized: "a11y.terminal.close.label", defaultValue: "Close terminal pane")
     static let a11yCloseTerminalHint: String =
         String(localized: "a11y.terminal.close.hint", defaultValue: "Closes this terminal pane")
-
-    // Branch switcher
-    static let a11yBranchSwitcherHint: String =
-        String(localized: "a11y.branchSwitcher.hint", defaultValue: "Switches to this git branch")
 
     // Quick open
     static let a11yQuickOpenItemHint: String =
@@ -3500,83 +3443,6 @@ enum Strings {
             localized: "a11y.statusBar.fileSize",
             defaultValue: "File size"
         )
-
-    // MARK: - Global Tab Switcher overlay (#1239)
-
-    /// Title shown at the top of the Control-Tab overlay.
-    static var globalTabSwitcherTitle: String {
-        globalTabSwitcherTitle(locale: .current)
-    }
-
-    static func globalTabSwitcherTitle(locale: Locale) -> String {
-        localizedString(
-            forKey: "globalTabSwitcher.title",
-            fallback: "Switch Tab",
-            locale: locale
-        )
-    }
-
-    /// Footnote hint beneath the list, e.g. "Tab to cycle, release Control to switch".
-    static var globalTabSwitcherHint: String {
-        globalTabSwitcherHint(locale: .current)
-    }
-
-    static func globalTabSwitcherHint(locale: Locale) -> String {
-        localizedString(
-            forKey: "globalTabSwitcher.hint",
-            fallback: "Tab cycles · Release Control to switch · Esc cancels",
-            locale: locale
-        )
-    }
-
-    /// Generic pane label fallback used when a pane position cannot be derived.
-    static var paneGenericLabel: String {
-        paneGenericLabel(locale: .current)
-    }
-
-    static func paneGenericLabel(locale: Locale) -> String {
-        localizedString(
-            forKey: "pane.genericLabel",
-            fallback: "Pane",
-            locale: locale
-        )
-    }
-
-    /// 1-based pane position label, e.g. "Pane 2".
-    static func panePositionLabel(
-        _ position: Int,
-        locale: Locale = .current
-    ) -> String {
-        let format = localizedString(
-            forKey: "pane.positionLabel",
-            fallback: "Pane %lld",
-            locale: locale
-        )
-        return String(format: format, locale: locale, position)
-    }
-
-    /// VoiceOver description for the currently highlighted row.
-    static func globalTabSwitcherAnnouncement(
-        title: String,
-        paneContext: String,
-        position: Int,
-        total: Int,
-        locale: Locale = .current
-    ) -> String {
-        let format = localizedString(
-            forKey: "globalTabSwitcher.announcement",
-            fallback: "%1$@, %2$@, %3$lld of %4$lld",
-            locale: locale
-        )
-        return String(
-            format: format,
-            locale: locale,
-            title,
-            paneContext,
-            position,
-            total
-        )
-    }
 
     // MARK: - Searchable command overlay announcements (#1497)
 

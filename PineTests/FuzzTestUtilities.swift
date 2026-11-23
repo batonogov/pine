@@ -10,7 +10,7 @@ import Foundation
 // MARK: - Seed Registry
 //
 // Each fuzz test suite uses a unique seed range to avoid correlation.
-// Seed  42–46: FuzzGitParserTests (diff=42, hunk=43, blame=44, status=45, ignored=46)
+// Seed  42–46: parser fuzzing (diff=42, hunk=43, status=45, ignored=46)
 // Seed  47:    FuzzSyntaxHighlighterTests
 // Seed  48–49: FuzzQuickOpenProviderTests (score=48, subseq=49)
 // Seed  50–52: FuzzSymbolParserTests (parse=50, filter=51, lineNum=52)

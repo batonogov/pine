@@ -21,11 +21,9 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 **Debounce values** (centralised in `UITimings.Debounce` / `UITimings.Render`):
 - Syntax highlight on edit: 100ms (`Debounce.edit`)
 - Syntax highlight on scroll: 50ms (`Debounce.scroll`)
-- Fold range recalculation: 150ms (`Debounce.foldRecalc`)
 - Project search: 300ms (`Debounce.projectSearch`)
 - File system watcher: 150ms (`Debounce.fileWatcher`, `WorkspaceManager.watcherDebounce`)
 - Config validator (yamllint / shellcheck / hadolint / terraform validate): 300ms (`Debounce.configValidation`, `ConfigValidator.debounceInterval`)
-- Minimap redraw: 25ms with trailing coalesce (`Render.minimapRedraw`)
 
 **Performance thresholds:**
 - Viewport-only highlighting: files > 50 000 characters (`viewportHighlightThreshold`; lowered from 100KB in #637)

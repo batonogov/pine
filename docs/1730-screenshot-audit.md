@@ -14,9 +14,8 @@ corresponding user-visible UI change lands.
 | Capture | Shows | Claim it supports | Verdict |
 | --- | --- | --- | --- |
 | `screenshot-terminal.png` | `Pine Demo` project, `WorkspaceRouter.swift` tab, terminal with `git diff --stat` and `swift test` output, generic `pine@mac` host | built-in terminal, agent workflow, Git context | OK — released 2.x UI, relative paths only, no secrets |
-| `screenshot-editor.png` | `Pine Demo` project, `GreetingService.swift`, file-tree sidebar, minimap | code editor with syntax highlighting and minimap | OK — released 2.x UI |
+| `screenshot-editor.png` | `Pine Demo` project, `GreetingService.swift`, file-tree sidebar | code editor with syntax highlighting | OK — released 2.x UI |
 | `screenshot-markdown.png` | `Pine Demo` README split view: source + rendered preview | Markdown preview in split mode | OK, one fragile claim (below) |
-| `screenshot-minimap.png` | `Pine Demo` project, synthetic `Calculator.swift`, minimap with viewport | minimap overview | OK — released 2.x UI |
 | `screenshot-sidebar.png` | `Pine Demo` file tree, `No File Selected` empty state | sidebar with the project file tree | OK — released 2.x UI |
 | `screenshot-welcome.png` | Welcome window: Pine mark, tagline, `Open Folder…`, `Agent Inbox` button, `No Recent Projects` | Welcome screen, Agent Inbox entry point | OK — released 2.x UI |
 | `screenshot-agent-inbox.png` | Agent Inbox popover with seeded marketing tasks (Claude Code, OpenCode, Gemini CLI, Codex) and `Pine Demo` / `Launch Site` / `Documentation` fixture projects | cross-project Agent Inbox with task routing | OK with two flagged observations (below) |

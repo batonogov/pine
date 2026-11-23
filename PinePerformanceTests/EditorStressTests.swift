@@ -305,19 +305,6 @@ final class EditorStressTests: XCTestCase {
         }
     }
 
-    func testThroughputHighlightAndFoldCalculation() {
-        let code = generateSwiftFile(lines: 5000)
-        let textStorage = NSTextStorage(string: code)
-        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-
-        let skipRanges = highlighter.commentAndStringRanges(in: code, language: "stresstest")
-
-        measure {
-            highlighter.highlight(textStorage: textStorage, language: "stresstest", font: font)
-            _ = FoldRangeCalculator.calculate(text: code, skipRanges: skipRanges)
-        }
-    }
-
     func testThroughputSearchAndHighlight() {
         let code = generateSwiftFile(lines: 5000)
         let textStorage = NSTextStorage(string: code)

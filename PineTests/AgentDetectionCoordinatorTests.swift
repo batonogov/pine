@@ -659,107 +659,6 @@ struct AgentDetectionCoordinatorTests {
         #expect(taskRegistry.taskID(forSessionID: recovered.id) == nil)
     }
 
-    @Test func preciseLossIsIsolatedAcrossAgentsAndProjects() throws {
-        let taskRegistry = AgentTaskRegistry()
-        let firstProject = configuredProject(
-            path: "/tmp/pine-precise-loss-project-a",
-            registry: taskRegistry
-        )
-        let secondProject = configuredProject(
-            path: "/tmp/pine-precise-loss-project-b",
-            registry: taskRegistry
-        )
-        let firstPane = firstProject.paneManager.createTerminalPaneAtBottom(
-            workingDirectory: nil
-        )
-        let firstState = try #require(
-            firstProject.paneManager.terminalState(for: firstPane)
-        )
-        let affectedTab = try #require(firstState.activeTab)
-        let siblingTab = firstState.addTab(workingDirectory: nil)
-        let secondPane = secondProject.paneManager.createTerminalPaneAtBottom(
-            workingDirectory: nil
-        )
-        let otherProjectTab = try #require(
-            secondProject.paneManager.terminalState(for: secondPane)?.activeTab
-        )
-        let affected = process(
-            pid: 506,
-            parent: 400,
-            group: 506,
-            command: "claude",
-            startedAt: 506
-        )
-        let sibling = process(
-            pid: 507,
-            parent: 400,
-            group: 507,
-            command: "codex",
-            startedAt: 507
-        )
-        let otherProjectAgent = process(
-            pid: 508,
-            parent: 400,
-            group: 508,
-            command: "pi",
-            startedAt: 508
-        )
-        let firstCoordinator = AgentDetectionCoordinator(
-            detector: firstProject.terminal.agentDetector,
-            terminalManager: firstProject.terminal
-        )
-        let secondCoordinator = AgentDetectionCoordinator(
-            detector: secondProject.terminal.agentDetector,
-            terminalManager: secondProject.terminal
-        )
-
-        setLiveAgent(affected, on: affectedTab)
-        setForeground(affected, on: affectedTab)
-        setLiveAgent(sibling, on: siblingTab)
-        setForeground(sibling, on: siblingTab)
-        setLiveAgent(otherProjectAgent, on: otherProjectTab)
-        setForeground(otherProjectAgent, on: otherProjectTab)
-        firstCoordinator.applySnapshotForTesting(processes: [affected, sibling])
-        secondCoordinator.applySnapshotForTesting(processes: [otherProjectAgent])
-
-        let affectedSession = try #require(affectedTab.agentSession)
-        let siblingSession = try #require(siblingTab.agentSession)
-        let otherProjectSession = try #require(otherProjectTab.agentSession)
-        let affectedTaskID = try #require(
-            taskRegistry.taskID(forSessionID: affectedSession.id)
-        )
-        let siblingTaskID = try #require(
-            taskRegistry.taskID(forSessionID: siblingSession.id)
-        )
-        let otherProjectTaskID = try #require(
-            taskRegistry.taskID(forSessionID: otherProjectSession.id)
-        )
-        let otherProjectTask = try #require(
-            taskRegistry.task(for: otherProjectTaskID)
-        )
-
-        firstCoordinator.applySnapshotForTesting(processes: [
-            replacing(affected, preciseStartedAt: nil, cpuTime: 1),
-            replacing(
-                sibling,
-                preciseStartedAt: sibling.preciseStartedAt,
-                cpuTime: 1
-            ),
-        ])
-
-        #expect(affectedTab.agentSession == nil)
-        #expect(siblingTab.agentSession === siblingSession)
-        #expect(otherProjectTab.agentSession === otherProjectSession)
-        #expect(
-            firstProject.terminal.agentDetector.session(forPID: affected.pid)
-                === affectedSession
-        )
-        #expect(taskRegistry.tasks.count == 3)
-        #expect(taskRegistry.task(for: affectedTaskID)?.runs.count == 1)
-        #expect(taskRegistry.task(for: siblingTaskID)?.runs.count == 1)
-        #expect(taskRegistry.task(for: otherProjectTaskID) == otherProjectTask)
-    }
-
     @Test func pendingLaunchClaimSurvivesUnavailableAndWrongReplacement()
         throws {
         let taskRegistry = AgentTaskRegistry(claimTTL: .seconds(30))
@@ -1857,6 +1756,107 @@ struct AgentDetectionCoordinatorTests {
         #expect(processes[0].command == "claude --port 8080")
         #expect(processes[0].cpuTime == nil)
     }
+    @Test func preciseLossIsIsolatedAcrossAgentsAndProjects() throws {
+        let taskRegistry = AgentTaskRegistry()
+        let firstProject = configuredProject(
+            path: "/tmp/pine-precise-loss-project-a",
+            registry: taskRegistry
+        )
+        let secondProject = configuredProject(
+            path: "/tmp/pine-precise-loss-project-b",
+            registry: taskRegistry
+        )
+        let firstPane = firstProject.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let firstState = try #require(
+            firstProject.paneManager.terminalState(for: firstPane)
+        )
+        let affectedTab = try #require(firstState.activeTab)
+        let siblingTab = firstState.addTab(workingDirectory: nil)
+        let secondPane = secondProject.paneManager.createTerminalPaneAtBottom(
+            workingDirectory: nil
+        )
+        let otherProjectTab = try #require(
+            secondProject.paneManager.terminalState(for: secondPane)?.activeTab
+        )
+        let affected = process(
+            pid: 506,
+            parent: 400,
+            group: 506,
+            command: "claude",
+            startedAt: 506
+        )
+        let sibling = process(
+            pid: 507,
+            parent: 400,
+            group: 507,
+            command: "codex",
+            startedAt: 507
+        )
+        let otherProjectAgent = process(
+            pid: 508,
+            parent: 400,
+            group: 508,
+            command: "pi",
+            startedAt: 508
+        )
+        let firstCoordinator = AgentDetectionCoordinator(
+            detector: firstProject.terminal.agentDetector,
+            terminalManager: firstProject.terminal
+        )
+        let secondCoordinator = AgentDetectionCoordinator(
+            detector: secondProject.terminal.agentDetector,
+            terminalManager: secondProject.terminal
+        )
+
+        setLiveAgent(affected, on: affectedTab)
+        setForeground(affected, on: affectedTab)
+        setLiveAgent(sibling, on: siblingTab)
+        setForeground(sibling, on: siblingTab)
+        setLiveAgent(otherProjectAgent, on: otherProjectTab)
+        setForeground(otherProjectAgent, on: otherProjectTab)
+        firstCoordinator.applySnapshotForTesting(processes: [affected, sibling])
+        secondCoordinator.applySnapshotForTesting(processes: [otherProjectAgent])
+
+        let affectedSession = try #require(affectedTab.agentSession)
+        let siblingSession = try #require(siblingTab.agentSession)
+        let otherProjectSession = try #require(otherProjectTab.agentSession)
+        let affectedTaskID = try #require(
+            taskRegistry.taskID(forSessionID: affectedSession.id)
+        )
+        let siblingTaskID = try #require(
+            taskRegistry.taskID(forSessionID: siblingSession.id)
+        )
+        let otherProjectTaskID = try #require(
+            taskRegistry.taskID(forSessionID: otherProjectSession.id)
+        )
+        let otherProjectTask = try #require(
+            taskRegistry.task(for: otherProjectTaskID)
+        )
+
+        firstCoordinator.applySnapshotForTesting(processes: [
+            replacing(affected, preciseStartedAt: nil, cpuTime: 1),
+            replacing(
+                sibling,
+                preciseStartedAt: sibling.preciseStartedAt,
+                cpuTime: 1
+            ),
+        ])
+
+        #expect(affectedTab.agentSession == nil)
+        #expect(siblingTab.agentSession === siblingSession)
+        #expect(otherProjectTab.agentSession === otherProjectSession)
+        #expect(
+            firstProject.terminal.agentDetector.session(forPID: affected.pid)
+                === affectedSession
+        )
+        #expect(taskRegistry.tasks.count == 3)
+        #expect(taskRegistry.task(for: affectedTaskID)?.runs.count == 1)
+        #expect(taskRegistry.task(for: siblingTaskID)?.runs.count == 1)
+        #expect(taskRegistry.task(for: otherProjectTaskID) == otherProjectTask)
+    }
+
 }
 
 @MainActor

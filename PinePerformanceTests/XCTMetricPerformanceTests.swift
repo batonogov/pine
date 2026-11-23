@@ -20,19 +20,6 @@ import XCTest
 @MainActor
 final class XCTMetricPerformanceTests: XCTestCase {
 
-    // MARK: - XCTClockMetric — wall-clock time (explicit default)
-
-    /// Same measurement as the default `measure {}`, but with the metric
-    /// declared explicitly. Demonstrates the migration form that keeps
-    /// existing baselines valid while making the measured dimension explicit.
-    func testFoldRangeClockMetric() {
-        let text = generateManyBlocks(count: 1000, linesPerBlock: 5)
-
-        measure(metrics: [XCTClockMetric()]) {
-            _ = FoldRangeCalculator.calculate(text: text)
-        }
-    }
-
     // MARK: - XCTMemoryMetric — peak allocations
 
     /// Highlights a large file while tracking peak memory, which `measure {}`
