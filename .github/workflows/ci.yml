@@ -665,12 +665,12 @@ jobs:
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/SidebarFolderClickTests
-              -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
           # Shard 3 — Navigation (35 tests; accessibility matrix skips here)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
+              -only-testing:PineUITests/AgentTaskResultUITests
               -only-testing:PineUITests/QuickOpenUITests
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/DiffNavigationUITests
@@ -679,6 +679,7 @@ jobs:
           - shard-name: "Editor Chrome"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
+              -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
               -only-testing:PineUITests/ScreenshotTests
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/SplitPaneRoutingUITests
