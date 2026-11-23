@@ -249,7 +249,6 @@ struct TerminalManagerCoordinatorTests {
 
 }
 
-
 nonisolated private func completeClaudePsSnapshot() -> String {
     [
         "1 0 1 Wed Jul 22 15:08:40 2026 0:12.45 /sbin/launchd",
