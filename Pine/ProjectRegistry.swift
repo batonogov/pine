@@ -1291,10 +1291,13 @@ final class ProjectRegistry {
 
     /// Application-lifetime durable agent identity across every project.
     let agentTasks: AgentTaskRegistry
-    /// The existing app owner retains OpenCode runtimes; this is not a task store.
+    /// The existing app owner retains provider runtimes; this is not a task store.
     @ObservationIgnored private lazy var openCodeNativeComposition =
         OpenCodeACPNativeComposition(tasks: agentTasks)
     @ObservationIgnored private var openCodeNativeObserver: NSObjectProtocol?
+    @ObservationIgnored private lazy var claudeCodeNativeComposition =
+        ClaudeCodeACPNativeComposition(tasks: agentTasks)
+    @ObservationIgnored private var claudeCodeNativeObserver: NSObjectProtocol?
     @ObservationIgnored
     weak var quickTerminalAgentRouter: (any QuickTerminalAgentRouting)?
 
@@ -1507,11 +1510,28 @@ final class ProjectRegistry {
                 await self.openCodeNativeComposition.prepare(ownership)
             }
         }
+        claudeCodeNativeObserver = NotificationCenter.default.addObserver(
+            forName: .claudeCodeNativeOwnershipPrepared, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let ownership = note.object as? AgentTaskNativeOwnership else { return }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let task = self.agentTasks.task(for: ownership.policy.taskID),
+                      task.descriptor.typeIdentifier == "claudeCode",
+                      task.descriptor.typeIdentifier == ownership.policy.agentID.value else {
+                    return
+                }
+                await self.claudeCodeNativeComposition.prepare(ownership)
+            }
+        }
     }
 
     isolated deinit {
         if let openCodeNativeObserver {
             NotificationCenter.default.removeObserver(openCodeNativeObserver)
+        }
+        if let claudeCodeNativeObserver {
+            NotificationCenter.default.removeObserver(claudeCodeNativeObserver)
         }
     }
 
@@ -1524,6 +1544,17 @@ final class ProjectRegistry {
         _ materials: OpenCodeACPNativeMaterials
     ) async throws -> OpenCodeACPTaskRuntime {
         try await openCodeNativeComposition.compose(materials)
+    }
+
+    func claudeCodeRuntime(for taskID: UUID) -> ClaudeCodeACPTaskRuntime? {
+        claudeCodeNativeComposition.runtime(for: taskID)
+    }
+
+    @discardableResult
+    func composeClaudeCodeRuntime(
+        _ materials: ClaudeCodeACPNativeMaterials
+    ) async throws -> ClaudeCodeACPTaskRuntime {
+        try await claudeCodeNativeComposition.compose(materials)
     }
 
     private static func makeDefaultAgentTaskRegistry() -> AgentTaskRegistry {

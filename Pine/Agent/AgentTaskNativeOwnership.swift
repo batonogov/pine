@@ -88,6 +88,8 @@ nonisolated final class AgentTaskNativeOwnership: Sendable, CustomStringConverti
         environmentDigest = try Self.digest(environment)
         if policy.agentID.value == "openCode" {
             NotificationCenter.default.post(name: .openCodeNativeOwnershipPrepared, object: self)
+        } else if policy.agentID.value == "claudeCode" {
+            NotificationCenter.default.post(name: .claudeCodeNativeOwnershipPrepared, object: self)
         }
     }
 
@@ -332,6 +334,22 @@ nonisolated final class AgentTaskNativeOwnership: Sendable, CustomStringConverti
         }
     }
     #endif
+
+    /// Recheck the selected physical purpose at the actual write boundary.
+    /// Selection-time validation alone cannot fence a delayed replay write.
+    func validatePhysicalEffect(_ effect: Effect) throws {
+        switch effect {
+        case .decision:
+            try checkControl()
+            try state.withLock {
+                guard !$0.cancellationPending, !$0.cancellationWasDurable else {
+                    throw AgentTaskNativeAdmissionError.unavailable
+                }
+            }
+        case .cancellation: try checkCancellation()
+        default: throw AgentTaskNativeAdmissionError.invalidTransition
+        }
+    }
 
     private func checkControl() throws {
         try validate()
