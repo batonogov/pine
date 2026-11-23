@@ -34,13 +34,16 @@ struct ProjectManagerTabManagerWiringTests {
             activePaneUUID: secondPaneID.id
         )
 
-        for paneID in [firstPaneID, secondPaneID] {
-            let tabManager = try #require(
-                project.paneManager.tabManager(for: paneID)
-            )
-            #expect(tabManager.recoveryManager === project.recoveryManager)
-            #expect(tabManager.onEditorContextChanged != nil)
-        }
+        // The fixed single-editor workspace collapses the legacy split into
+        // the active editor leaf and retains its configured TabManager.
+        #expect(project.paneManager.root.leafCount(ofType: .editor) == 1)
+        #expect(project.paneManager.tabManager(for: firstPaneID) == nil)
+        let tabManager = try #require(
+            project.paneManager.tabManager(for: secondPaneID)
+        )
+        #expect(tabManager === project.primaryTabManager)
+        #expect(tabManager.recoveryManager === project.recoveryManager)
+        #expect(tabManager.onEditorContextChanged != nil)
     }
 
     private func makeTemporaryDirectory() throws -> URL {

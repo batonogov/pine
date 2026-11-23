@@ -391,7 +391,7 @@ struct NativeFileWindowMenuTests {
         )
     }
 
-    @Test("Open File uses the replacement editor after closing the last untitled tab")
+    @Test("Open File re-shows the retained editor after closing the last untitled tab")
     func openFileAfterClosingLastUntitledTab() async throws {
         let root = try makeTemporaryDirectory(prefix: "pine-menu-open-after-close")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -421,13 +421,16 @@ struct NativeFileWindowMenuTests {
         try #require(closeDelegate.closeActiveTab(expectedTarget: closeTarget))
         try #require(await waitUntilMainActor {
             project.allTabs.isEmpty
-                && project.paneManager.tabManager(for: originalPaneID) == nil
+                && project.paneManager.tabManager(for: originalPaneID)
+                    === project.primaryTabManager
         })
 
+        // The fixed single-editor workspace retains its TabManager and
+        // re-shows the same editor pane; there is no replacement pane.
         let destinationPaneID = try #require(project.nativeFileCommandPaneID())
         let destinationTabs = try #require(project.paneManager.tabManager(for: destinationPaneID))
-        #expect(destinationPaneID != originalPaneID)
-        #expect(destinationTabs !== originalTabs)
+        #expect(destinationPaneID == originalPaneID)
+        #expect(destinationTabs === originalTabs)
         var chooserCalls = 0
         project.openFileChooser = { chooserRoot, _ in
             chooserCalls += 1
@@ -444,7 +447,6 @@ struct NativeFileWindowMenuTests {
         #expect(destinationTabs.tabs.count == 1)
         #expect(destinationTabs.activeTab?.content == content)
         #expect(project.paneManager.activePaneID == destinationPaneID)
-        #expect(originalTabs.tabs.isEmpty)
         #expect(project.allTerminalTabs.isEmpty)
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["main.swift"])
     }
