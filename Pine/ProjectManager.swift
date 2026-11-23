@@ -1581,8 +1581,7 @@ final class ProjectManager {
 
     /// Checks every editor pane for externally modified or deleted files.
     /// Aggregates the per-pane results so global observers do not depend on
-    /// the root environment's `TabManager`, which may be orphaned after pane
-    /// pruning or simply not own the currently visible tab.
+    /// a single pane's `TabManager` not owning the currently visible tab.
     func checkExternalChanges() -> TabManager.ExternalChangeResult {
         var conflicts: [TabManager.ExternalConflict] = []
         var reloadedFileNames: [String] = []
@@ -1642,8 +1641,8 @@ final class ProjectManager {
 
     /// Updates tab URLs in every editor pane to reflect a renamed file or
     /// directory, preserving tab identity. The primary ``primaryTabManager``
-    /// alone is not enough — the file may belong to a restored editor destination, and
-    /// the primary TabManager may be orphaned after pane pruning.
+    /// alone is not enough — the file may belong to a restored editor
+    /// destination.
     func handleFileRenamed(oldURL: URL, newURL: URL) {
         for tabManager in paneManager.allTabManagers {
             tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)

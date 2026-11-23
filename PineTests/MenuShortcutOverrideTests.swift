@@ -82,7 +82,6 @@ struct MenuShortcutOverrideTests {
             .resetFontSize: AdvertisedShortcut("0", .command),
             .toggleTerminal: AdvertisedShortcut("`", .command),
             .togglePreview: AdvertisedShortcut("p", [.command, .shift]),
-
             // ⌥Z claimed a typeable letter app-wide (#1564): ⌘ joins the
             // chord so the Z mnemonic survives without stealing text input.
             .toggleWordWrap: AdvertisedShortcut("z", [.command, .option]),

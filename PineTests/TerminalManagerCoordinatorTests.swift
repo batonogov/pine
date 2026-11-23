@@ -220,7 +220,35 @@ struct TerminalManagerCoordinatorTests {
         #expect(terminal.agentDetector.detectedSessions.first?.agentType == .claudeCode)
     }
 
+    // MARK: - Agent detection wiring (regression: startTerminals was dead code)
+
+    @Test func allTerminalTabs_delegatesToPaneManager() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+
+        _ = paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+
+        #expect(terminal.allTerminalTabs.count == 1)
+    }
+
+    @Test func hasActiveProcesses_checksAllPanes() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+        #expect(!terminal.hasActiveProcesses)
+    }
+
+    @Test func agentDetection_notPolling_beforeAnyTerminal() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+        // Fresh manager with no terminals must not have started polling.
+        #expect(!terminal.isAgentDetectionPolling)
+    }
+
 }
+
 
 nonisolated private func completeClaudePsSnapshot() -> String {
     [
