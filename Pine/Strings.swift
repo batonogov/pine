@@ -1613,6 +1613,192 @@ enum Strings {
         )
         return String(format: format, locale: locale, Int64(count))
     }
+    // MARK: - Task result (#1725)
+
+    enum AgentResultCopy: String, CaseIterable {
+        case accepted, notAccepted, readyTitle, needsDecisionTitle, staleDecisionTitle
+        case workingTitle
+        case unverifiedTitle, notReadyTitle, outcomeTitle, tryTitle, evidenceTitle
+        case snapshotTitle, contextTitle, objectiveUnavailable, agentReportedSummary
+        case noVerifiedChanges, portConflictDetail, commandDisclosure, noResultAction
+        case selectResultAction, prepareResult, rebindResult, preparing, preparationRequired
+        case viewChanges, cancel, stop, openPreview, runApplication, runExample
+        case commandExit, outputTruncated, noChecks
+        case noRecordedLimitations, limitations, reviewerOutcome, noReviewerOutcome
+        case unknown, codeIdentity
+        case contextPlaceholder, decisionConsequence
+        case unresolvedFinding, preservedWork, replyPlaceholder, sendReply, verifyAgain
+        case staleDecisionDetail, historicalReview
+        case prepared, starting, actionReady, actionFailed, portConflict, stopping
+        case stopped, cancelled, stale, startupFailed, missingPrerequisite, processExited
+        case bindingChanged, launchNotReady, grantNotCurrent, environmentUnavailable
+        case originalCheckout, unsupportedOutput, authorityChanged, requiredCheck
+        case optionalCheck, exitUnavailable, checkMetadata, checkSucceeded, checkFailed
+        case checkTimedOut, outputUnavailable, cleanupFailed, identityChanged
+        case identityUnavailable, reviewPassed, reviewRequestedChanges, reviewFailed
+        case reviewedSnapshot, acceptedSnapshot, snapshotUnchanged, snapshotDiverged
+        case snapshotUnknown, snapshotNotRecorded, snapshotStatus, snapshotIdentity
+        case comparison, decisionCorrectionLimit, decisionDeliveryUnknown
+        case decisionInfrastructure, decisionChecksFailed, decisionReviewerBoundary
+        case actionCorrectionLimit, actionDeliveryUnknown, actionInfrastructure
+        case actionChecksFailed, actionReviewerBoundary, gapWorking, gapNoAttempt
+        case gapUnverified, gapFailed, gapCancelled, gapSuperseded, gapReverify
+        case gapMissing, gapFailing, gapStale, gapCodeUnknown, gapEnvironmentUnknown
+        case gapEnvironmentChanged, evidenceCheck, evidenceReview, evidenceCompletion
+
+        var fallback: String {
+            switch self {
+            case .accepted: "Accepted"
+            case .notAccepted: "Not accepted"
+            case .readyTitle: "Ready"
+            case .needsDecisionTitle: "Needs decision"
+            case .staleDecisionTitle: "Previous decision request"
+            case .workingTitle: "Working"
+            case .unverifiedTitle: "Unverified"
+            case .notReadyTitle: "Not ready"
+            case .outcomeTitle: "Requested outcome and changes"
+            case .tryTitle: "Try the result"
+            case .evidenceTitle: "Evidence and limitations"
+            case .snapshotTitle: "Changes since review or acceptance"
+            case .contextTitle: "Command outcomes and revisions"
+            case .objectiveUnavailable: "The requested outcome is unavailable."
+            case .agentReportedSummary: "Agent-reported change summary"
+            case .noVerifiedChanges: "No verified change rows were recorded."
+            case .portConflictDetail:
+                "The port is occupied by another process. Pine has not stopped that process."
+            case .commandDisclosure:
+                "This runs a project command in the task’s validated environment. "
+                    + "Commands can change files, use credentials, or affect external services."
+            case .noResultAction: "No project result action is selected."
+            case .selectResultAction: "Choose Swift example"
+            case .prepareResult: "Prepare example"
+            case .rebindResult: "Rebind result"
+            case .preparing: "Preparing"
+            case .preparationRequired: "Preparation required"
+            case .viewChanges: "View changes"
+            case .cancel: "Cancel"
+            case .stop: "Stop"
+            case .openPreview: "Open preview"
+            case .runApplication: "Run application"
+            case .runExample: "Run example"
+            case .commandExit: "Command exit code: %@"
+            case .outputTruncated: "Output is truncated for display."
+            case .noChecks: "No check-journal entries were recorded."
+            case .noRecordedLimitations: "No limitations were recorded."
+            case .limitations: "Recorded limitations"
+            case .reviewerOutcome: "Independent reviewer outcome"
+            case .noReviewerOutcome: "No reviewer outcome was recorded."
+            case .unknown: "Unknown"
+            case .codeIdentity: "Current code · HEAD %@ · tracked %@ · untracked %@ · relevant ignored %@"
+            case .contextPlaceholder:
+                "Contextual command outcomes and result-revision comparison are not available yet."
+            case .decisionConsequence:
+                "The result is not Ready until this decision is resolved."
+            case .unresolvedFinding: "Unresolved finding: %@"
+            case .preservedWork: "The task’s work and reviewed history are preserved."
+            case .replyPlaceholder: "Reply with how to continue"
+            case .sendReply: "Send reply"
+            case .verifyAgain: "Verify again"
+            case .staleDecisionDetail:
+                "This request belongs to an earlier result and can no longer be answered."
+            case .historicalReview: "Historical review for code %@; not current Ready evidence."
+            case .prepared: "Prepared; not running"
+            case .starting: "Starting"
+            case .actionReady: "Result available"
+            case .actionFailed: "Action failed"
+            case .portConflict: "Port conflict"
+            case .stopping: "Stopping"
+            case .stopped: "Stopped"
+            case .cancelled: "Cancelled"
+            case .stale: "Stale; rebind before running again"
+            case .startupFailed: "The result action could not start."
+            case .missingPrerequisite: "Missing prerequisite: %@"
+            case .processExited: "The result process exited with code %@."
+            case .bindingChanged: "The selected result changed before launch."
+            case .launchNotReady: "Only a current Ready result can be run."
+            case .grantNotCurrent: "The current command grant does not authorize this launch."
+            case .environmentUnavailable: "The task environment is unavailable or no longer current."
+            case .originalCheckout: "Pine refused to run the result in the original checkout."
+            case .unsupportedOutput: "This result-action type is not executable in this slice."
+            case .authorityChanged: "Command authority changed immediately before launch."
+            case .requiredCheck: "required"
+            case .optionalCheck: "optional"
+            case .exitUnavailable: "not recorded"
+            case .checkMetadata: "%@ · %@ · exit: %@"
+            case .checkSucceeded: "succeeded"
+            case .checkFailed: "failed"
+            case .checkTimedOut: "timed out"
+            case .outputUnavailable: "output unavailable"
+            case .cleanupFailed: "cleanup failed"
+            case .identityChanged: "identity changed"
+            case .identityUnavailable: "identity unavailable"
+            case .reviewPassed: "Passed"
+            case .reviewRequestedChanges: "Requested changes"
+            case .reviewFailed: "Failed"
+            case .reviewedSnapshot: "Reviewed result"
+            case .acceptedSnapshot: "Accepted result"
+            case .snapshotUnchanged: "matches the current code and environment"
+            case .snapshotDiverged: "differs from the current code or environment; it is not inherited"
+            case .snapshotUnknown: "cannot be compared because the current identity is unknown"
+            case .snapshotNotRecorded: "not recorded"
+            case .snapshotStatus: "%@: %@"
+            case .snapshotIdentity: "Code %@ · environment %@"
+            case .comparison: "Before %@ · after %@"
+            case .decisionCorrectionLimit:
+                "The three-correction limit was reached with unresolved findings."
+            case .decisionDeliveryUnknown:
+                "Pine could not confirm delivery of the requested correction."
+            case .decisionInfrastructure:
+                "Review could not finish because of an infrastructure failure."
+            case .decisionChecksFailed: "A required check failed."
+            case .decisionReviewerBoundary:
+                "An enforced read-only reviewer boundary is unavailable."
+            case .actionCorrectionLimit:
+                "Required action: reply with a new approach or explicit direction."
+            case .actionDeliveryUnknown:
+                "Required action: review the preserved result and explicitly retry verification."
+            case .actionInfrastructure:
+                "Required action: restore the reviewer capability, then retry."
+            case .actionChecksFailed:
+                "Required action: correct the failure and repeat the required checks."
+            case .actionReviewerBoundary:
+                "Required action: select a reviewer with an enforced read-only boundary."
+            case .gapWorking: "The attempt is still working; no result is Ready yet."
+            case .gapNoAttempt: "No settled attempt is available. Continue the task to create one."
+            case .gapUnverified: "The outcome is unverified; required checks and review must pass."
+            case .gapFailed: "The attempt failed. Continue with a correction; this is not Ready."
+            case .gapCancelled: "The attempt was cancelled. Continue explicitly when ready."
+            case .gapSuperseded: "A newer attempt replaced this result. Review the current attempt."
+            case .gapReverify: "Verification is not current. Re-verify the unchanged or revised result."
+            case .gapMissing: "Unverified: record the missing %@."
+            case .gapFailing: "Unverified: resolve and repeat the failing %@."
+            case .gapStale: "Unverified: repeat the stale %@ for the current result."
+            case .gapCodeUnknown:
+                "The current code state is unknown. Execution is disabled until it is revalidated."
+            case .gapEnvironmentUnknown:
+                "The current environment is unknown. Execution is disabled until it is revalidated."
+            case .gapEnvironmentChanged:
+                "The environment changed. Execution is disabled until evidence is renewed."
+            case .evidenceCheck: "independent check"
+            case .evidenceReview: "independent review"
+            case .evidenceCompletion: "agent completion claim"
+            }
+        }
+    }
+
+    static func agentResult(
+        _ value: AgentResultCopy,
+        arguments: [String] = [],
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentResult.\(value.rawValue)",
+            fallback: value.fallback,
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: arguments)
+    }
+
     static let agentHistoryUndoUnavailable: LocalizedStringKey = "agentHistory.undoUnavailable"
     static let agentHistoryUndoUnavailableReason: LocalizedStringKey = "agentHistory.undoUnavailableReason"
     static let agentHistoryRevertConfirmTitle: LocalizedStringKey = "agentHistory.revertConfirmTitle"

@@ -1529,6 +1529,16 @@ final class AgentTaskRegistry {
         return !Task.isCancelled && !isTerminating && nativeOwners[ownership.policy.taskID] === ownership
     }
 
+    /// Current native environment owner for result inspection/execution. The
+    /// returned object is not authority by itself; its operation and pre-spawn
+    /// validators still run for every declared command.
+    func resultActionOwnership(for taskID: UUID) -> AgentTaskNativeOwnership? {
+        guard let ownership = nativeOwners[taskID], ownership.binding.taskID == taskID else {
+            return nil
+        }
+        return ownership
+    }
+
     /// Negative-only and safe after transport/process loss or uncertain writes.
     /// A stopped/quiet provider is not aggregate settlement or a process exit.
     func invalidateNativeOwnership(_ ownership: AgentTaskNativeOwnership) {

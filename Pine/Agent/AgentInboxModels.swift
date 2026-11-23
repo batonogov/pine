@@ -43,6 +43,10 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     /// Recorded outcome of the latest attempt, when it has settled (#1722).
     let outcome: AgentTaskOutcome?
 
+    /// A settled attempt opens its task-local result, including native owned
+    /// tasks, before any live-run or recovery navigation is considered.
+    var canOpenResult: Bool { outcome != nil }
+
     var canNavigateToLiveRun: Bool {
         lifecycle == .active
             && liveness == .live
@@ -140,7 +144,7 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
         tasks: [AgentTask],
         accuracyPolicy: AgentLifecycleAccuracyPolicy = .production
     ) {
-        let visibleTasks = tasks.filter { $0.lifecycle != .dismissed && $0.route.surface != .ownedProcess }
+        let visibleTasks = tasks.filter { $0.lifecycle != .dismissed }
         let projectBackedTasks = visibleTasks.filter {
             $0.route.surface.isProjectBacked
         }

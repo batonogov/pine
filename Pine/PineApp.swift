@@ -1653,6 +1653,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return
         }
         #endif
+        #if PINE_TEST_HOST
+        let arguments = CommandLine.arguments
+        if arguments.contains("--ui-test-agent-result")
+                || arguments.contains("--ui-test-agent-result-decision") {
+            AgentTaskResultUITestLauncher.present(
+                needsDecision: arguments.contains("--ui-test-agent-result-decision")
+            )
+            return
+        }
+        #endif
 
         FocusDiagnosticsProbe.startIfRequested()
         NSWindow.allowsAutomaticWindowTabbing = false

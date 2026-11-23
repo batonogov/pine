@@ -84,6 +84,14 @@ Preparation and build are separate from execution: a state starts at
   application, CLI → Run example, document → View changes. Non-runnable
   changes keep View changes rather than a fictional launch action;
   localization is the presentation layer's concern (#1725).
+- #1725's production controller executes declared preparation and the
+  one-shot CLI example through `UserTaskRunner` with literal argv, bounded
+  output/supervision and process-group ownership. Selection, preparation and
+  launch are separate explicit actions. Launch requires current Ready evidence,
+  usable preparation for the same recipe, a current matching runtime grant,
+  and recaptured code/tool/environment identity with the exact child
+  environment immediately before spawn. Server and artifact execution remain
+  extension points; their model states do not pretend to run.
 
 ## Implemented kind vs extension points
 
@@ -107,8 +115,8 @@ are blocked by the shared command contract's absolute-executable requirement
 
 ## Not implemented here
 
-No command executor, no worktree creator, no universal build discovery, no
-selection UI, no durable recipe storage, no version migration, and no remote
-environments. Real execution of setup, checks, and result actions follows
-#1754's executor against #1723's environment binding; presentation follows
-#1725.
+No verification-check executor, worktree creator, universal build discovery,
+durable recipe storage, version migration, or remote environments is added here.
+Verification checks follow #1754's executor against #1723's environment binding;
+#1725 adds bounded recipe setup, the explicit one-shot CLI result driver, and
+its task-local presentation through the existing Agent Inbox.

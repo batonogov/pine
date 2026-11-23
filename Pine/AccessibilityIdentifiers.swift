@@ -339,4 +339,22 @@ nonisolated enum AccessibilityID {
     static func verifiedDiffOperation(_ index: Int) -> String {
         "verifiedDiffOperation_\(index)"
     }
+
+    // MARK: - Task result (#1725)
+    static let agentTaskResult = "agentTaskResult"
+    static let agentTaskResultOutcome = "agentTaskResultOutcome"
+    static let agentTaskResultTry = "agentTaskResultTry"
+    static let agentTaskResultEvidence = "agentTaskResultEvidence"
+    static let agentTaskResultSnapshots = "agentTaskResultSnapshots"
+    static let agentTaskResultContext = "agentTaskResultContext"
+    static let agentTaskResultAcceptance = "agentTaskResultAcceptance"
+    static let agentTaskResultPrimaryAction = "agentTaskResultPrimaryAction"
+    static let agentTaskResultStop = "agentTaskResultStop"
+    static let agentTaskResultPhase = "agentTaskResultPhase"
+    static let agentTaskResultReverify = "agentTaskResultReverify"
+    static let agentTaskResultReply = "agentTaskResultReply"
+    static let agentTaskResultSendReply = "agentTaskResultSendReply"
+    static let agentTaskResultLaunchEvidence = "agentTaskResultLaunchEvidence"
+    static let agentTaskResultReplyEvidence = "agentTaskResultReplyEvidence"
+    static let agentTaskResultUnsupported = "agentTaskResultUnsupported"
 }
