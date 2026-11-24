@@ -23,8 +23,10 @@ separates source review, fixtures, limited version/help observations, handshake,
 and end-to-end checks for every entry. It records identity, evidence dates and
 platform gaps, current upstream transport candidates, and required follow-up.
 The catalog's version labels are intentionally unchanged by the newer
-version/help observations: OpenCode 2.3.0 help does not upgrade the existing
-1.18.10 fixture into a verified V2 ACP integration.
+version/help observations: the 1.18.10 fixture remains the V1 detection
+record. The OpenCode V2 ACP integration landed on `main` on 2026-11-22
+(#1843), pinned to `opencode v2.3.2`, and is recorded in the OpenCode row
+and section below.
 
 Empry⊙ first-party recognition/presentation is retired with
 [#1766](https://github.com/batonogov/pine/issues/1766) (2026-11-14 decision).
@@ -38,7 +40,7 @@ The active catalog and all nine Help pages reflect this retirement.
 | [Pi](https://github.com/badlogic/pi-mono) | `pi` | 0.83.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Codex](https://github.com/openai/codex) | `codex` | 0.146.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Claude Code](https://github.com/anthropics/claude-code) | `claude` (terminal detection), `claude-agent-acp` (owned adapter) | 2.1.220 | Structured via official ACP adapter | ACP v1 over Pine-owned child stdio; observed process generation | Owned official adapter; exact `session/load` only by explicit user action as a new attempt; no auto-resume | Main-turn end is unverified, never Ready by itself | Adapter pin 0.109.1; synthetic fixtures and composition only. Real adapter handshake, provider authentication, and an authenticated real-model journey are not claimed. Provider auth/configuration remains adapter-owned. |
-| [OpenCode](https://github.com/anomalyco/opencode) | `opencode` | 1.18.10 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [OpenCode](https://github.com/anomalyco/opencode) | `opencode` (terminal detection), `opencode acp` (owned V2 adapter) | 1.18.10 (V1 detection); 2.3.2 (V2 ACP) | Structured via OpenCode V2 `acp` adapter | ACP v1 over Pine-owned child stdio; observed process generation | Owned V2 adapter task dispatch from the Pine UI (in development; not in the latest release) plus manual terminal / new session; exact-ID `session/load` only by explicit user action as a new attempt; no auto-resume | Process termination only | Pinned `opencode v2.3.2`; deterministic fixtures and composition only, with an opt-in real-binary smoke that uses no model prompt and no auth mutation. Provider authentication and an authenticated real-model journey are not claimed. Main-turn end is unverified, never Ready by itself. |
 | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | `github-copilot-cli`, `copilot` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Aider](https://github.com/Aider-AI/aider) | `aider` | 0.86.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `gemini` | 0.53.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
@@ -92,6 +94,29 @@ local smoke gate for the real adapter handshake; provider authentication and a
 real-model journey are separate acceptance evidence, not implications of this
 integration slice.
 
+## OpenCode V2 ACP adapter (#1843)
+
+OpenCode's structured route is the `opencode acp` entry point, launched as a
+Pine-owned child with ACP v1 JSON-RPC 2.0 over the shared bounded Pine-owned
+stdio channel/framer, per the [ACP reuse and dual-stack v1/v2 decision
+record](ade-acp-reuse-comparison-2026-11-23.md).
+
+| Item | OpenCode value |
+| --- | --- |
+| Transport | Literal-argv `opencode acp`; ACP v1 JSON-RPC 2.0 over the shared bounded Pine-owned stdio channel/framer; process-group stop/reap |
+| Pinned binary | `opencode v2.3.2` exactly (`--version` has a 5-second cap and ACP `agentInfo.version` must equal `2.3.2`; re-probe 2026-11-21); any other version is refused |
+| Protocol floor | ACP v1 only (`protocolVersion` 1); no v2 preview negotiation |
+| Sessions | `session/new`; exact-ID `session/load` is a separate explicit action that replays bounded saved updates in a new Pine attempt. No process reattachment, auto-resume, or automatic prompt resend |
+| User input | Request and same-session feedback through the Pine UI task sheet (in development); `session/request_permission` answered once with `allow_once`/`reject_once`; `session/cancel` remains requested until the provider confirms |
+| Configuration | ACP `configOptions` discovery maps model/effort to probed capabilities with native options; explicit overrides for unknown/unsupported capabilities fail the launch policy closed (#1850); no configuration UI yet |
+| Verification boundary | Deterministic fixture/contract suites (2.3.2 turn and fault fixtures) are the CI gate. The opt-in `PINE_RUN_OPENCODE_ACP_SMOKE=1` (or `$TMPDIR/pine-opencode-acp-smoke`) spawn check uses `PINE_OPENCODE_BINARY`, a synthetic working directory, no model prompt, and no auth mutation; it is the local gate for the real handshake. Provider authentication and an authenticated real-model journey are not claimed |
+
+In-app status: the task sheet is dispatchable from the Pine UI on `main`
+(#1848) and reports working, waiting, result, and unverified states as adapter
+observations; it is in development and is not part of the latest release.
+Notification accuracy remains process termination only: verified waiting-input
+notifications are not claimed for OpenCode (#1753/#1754).
+
 ## Tier meanings
 
 - **Generic:** Pine can host the command in a terminal but makes no identity or
@@ -101,10 +126,10 @@ integration slice.
 - **Attention-aware:** Pine has a verified provider signal for a user-action
   transition. No first-party adapter currently claims this tier.
 - **Structured:** Pine negotiates a documented structured lifecycle contract
-  over an owned authenticated channel. Claude's row marks the official ACP
-  adapter composition, not a completed authenticated provider journey. The
-  Kimi Code CLI structured adapter (#1732) below stays **Detected** until its
-  real-version smoke passes on the pinned binary.
+  over an owned authenticated channel. Claude's and OpenCode's rows mark
+  integrated ACP adapter composition, not a completed authenticated provider
+  journey. The Kimi Code CLI structured adapter (#1732) below stays
+  **Detected** until its real-version smoke passes on the pinned binary.
 
 ## Kimi Code CLI structured ACP floor (#1732)
 
@@ -197,7 +222,7 @@ establish for a durable task:
   silence, is `unknown`). A terminated attempt settles as `unverified`;
   process exit, terminal silence, and an agent claim alone can never produce
   a verified result or Ready.
-- Structured sessions (future) may additionally record agent-reported
+- Structured sessions may additionally record agent-reported
   completion claims with provider session references and source sequences.
   Even then, `success` and Ready require independent check and reviewer
   outcome facts bound to one code-state identity, so a structured claim
