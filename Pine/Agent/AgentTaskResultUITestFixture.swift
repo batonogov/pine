@@ -127,6 +127,21 @@ private struct AgentTaskResultUITestRoot: View {
             )
         }
         let action = binding.map(AgentTaskResultActionState.init)
+        // A Ready result is launchable only behind a current, usable
+        // preparation (AgentTaskResultPresentation.canLaunchAction). Drive
+        // the fixture's one to `.usable` so the explicit-launch UI is
+        // exercised; without it the primary action renders disabled and the
+        // keyboard/focus tests fail on every OS.
+        let preparation: AgentProjectPreparation? = selection.map { selected in
+            var prep = AgentProjectPreparation(recipe: selected.recipe)
+            for name in prep.prerequisiteNames {
+                prep = prep.reduced(by: .prerequisiteResolved(name))
+            }
+            for id in prep.setupActionIDs {
+                prep = prep.reduced(by: .setupSucceeded(id))
+            }
+            return prep
+        }
         let check = AgentTaskResultCheckEntry(
             result: AgentTaskCheckObservation.CommandResult(
                 operationID: UUID(),
@@ -155,7 +170,7 @@ private struct AgentTaskResultUITestRoot: View {
         }
         return AgentTaskResultPresentation(
             task: task, codeState: code, environment: environment, changes: changes,
-            action: action, checkJournal: [check],
+            action: action, preparation: preparation, checkJournal: [check],
             limitations: ["The fixture records one required build check."]
         )
     }
